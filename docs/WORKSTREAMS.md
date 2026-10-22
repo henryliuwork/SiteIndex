@@ -40,7 +40,8 @@
 
 - **`main` 只通过 PR 更新**。仓库是私有免费版，GitHub 不强制分支保护，以下规则靠自觉执行：
   - 禁止直接 push 到 `main`；禁止合并自己的 PR
-  - PR 合并前三系统 CI（windows/macos/ubuntu 的 install + typecheck + test）必须全部通过；**本地通过不算**
+  - PR 合并前 CI 必须通过；**本地通过不算**。为节省私有仓库的 Actions 分钟：PR 只跑 Linux；合并到 main 后加跑 Windows；macOS 只在打 tag 发布时打包（手动运行 Release 默认只打 Windows）
+  - 改动 Windows 相关逻辑（路径、计划任务、安装包）的 PR，作者需在 PR 描述里写明本机 Windows 上的验证结果
   - 由审核者（项目协调 agent）检查 CI、改动目录、契约后合并；用 **merge commit**（不用 squash）
   - 新增或升级依赖时，必须在同一个 PR 里提交更新后的根目录 `pnpm-lock.yaml`（CI 使用 `--frozen-lockfile`）
 - 分支命名：`a/<主题>`、`b/<主题>`、`c/<主题>`、契约 `contract/<主题>`。
