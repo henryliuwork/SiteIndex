@@ -11,23 +11,23 @@
 ## M1 · 基础与每日同步
 
 ### A1 文件基础 `core/src/io/`
-- [ ] `atomicWrite(path, data)`：同目录临时文件 → fsync → rename；Windows `EPERM/EBUSY` 重试 10 次（200ms 递增）
-- [ ] JSONL 读写：按主键排序（`compareKeys`，不用 localeCompare）、键顺序固定、末尾换行，与参考实现逐字节一致
-- [ ] CSV 读写：表头来自 `CSV_HEADERS`，引号规则与 Python `csv` 模块一致
-- [ ] `index/.lock`：`wx` 创建、30 秒心跳、10 分钟僵尸锁回收；`withLock(project, fn)`
-- [ ] `.runner.json` 读写；`assertRunner(project, deviceId, trigger)`（定时模式下非执行设备 → 退出码 5）
-- [ ] 云盘冲突副本检测（`DEFAULT_CONFLICT_PATTERNS`）
+- [x] `atomicWrite(path, data)`：同目录临时文件 → fsync → rename；Windows `EPERM/EBUSY` 重试 10 次（200ms 递增）
+- [x] JSONL 读写：按主键排序（`compareKeys`，不用 localeCompare）、键顺序固定、末尾换行，与参考实现逐字节一致
+- [x] CSV 读写：表头来自 `CSV_HEADERS`，引号规则与 Python `csv` 模块一致
+- [x] `index/.lock`：`wx` 创建、30 秒心跳、10 分钟僵尸锁回收；`withLock(project, fn)`
+- [x] `.runner.json` 读写；`assertRunner(project, deviceId, trigger)`（定时模式下非执行设备 → 退出码 5）
+- [x] 云盘冲突副本检测（`DEFAULT_CONFLICT_PATTERNS`）
 - **验收**：单测覆盖并发写同一文件、锁超时、冲突副本识别
 
 ### A2 feed 解析 `core/src/crawl/gmc-feed.ts`
-- [ ] XML（RSS/Atom，g: 命名空间）与 TSV（表头带空格）
-- [ ] 变体归组、sale_price 有效期、availability 映射（backorder→preorder，非标准→unknown）、重复 id、缺价格、URL 去跟踪参数、overrides
+- [x] XML（RSS/Atom，g: 命名空间）与 TSV（表头带空格）
+- [x] 变体归组、sale_price 有效期、availability 映射（backorder→preorder，非标准→unknown）、重复 id、缺价格、URL 去跟踪参数、overrides
 - **验收**：`fixtures/feeds/day1–4` 的解析结果等于 `fixtures/expected/snapshots/dayN.jsonl`
 
 ### A3 每日同步 `core/src/jobs/daily.ts`
-- [ ] 合并：首次基线、事件（restock/oos/price/new/removed）、`missing_as`、保护阈值（退出码 3，数据不变，runs 记 failed）
-- [ ] `daily_summary.csv`、日报 Markdown、`logs/runs.jsonl`
-- [ ] 分类计算：`categories.mode` = `url_rule` / `feed` / `manual`（DATA_SPEC §4.1），写入 `category` 与 `category_source`
+- [x] 合并：首次基线、事件（restock/oos/price/new/removed）、`missing_as`、保护阈值（退出码 3，数据不变，runs 记 failed）
+- [x] `daily_summary.csv`、日报 Markdown、`logs/runs.jsonl`
+- [x] 分类计算：`categories.mode` = `url_rule` / `feed` / `manual`（DATA_SPEC §4.1），写入 `category` 与 `category_source`
 - **验收**：黄金测试——依次跑 day1–4，每步与 `fixtures/expected/steps/dayN/` 一致，退出码一致（固定"今天"与时区见 fixtures/README）
 
 ## M2 · 全部 Job、查询服务与命令行
