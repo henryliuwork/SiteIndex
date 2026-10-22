@@ -7,6 +7,7 @@ export interface IpcTransport {
 }
 
 const IPC_ERROR_PREFIX = "__SITEINDEX_IPC_ERROR__:";
+type UiStateApi = NonNullable<SiteIndexApi["uiState"]>;
 
 function decodeIpcError(error: unknown): unknown {
   const message =
@@ -49,6 +50,10 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       installCli: () => invoke<SiteIndexApi["settings"]["installCli"]>("settings.installCli"),
       chooseDirectory: (...args) =>
         invoke<SiteIndexApi["settings"]["chooseDirectory"]>("settings.chooseDirectory", ...args),
+    },
+    uiState: {
+      get: (...args) => invoke<UiStateApi["get"]>("uiState.get", ...args),
+      set: (...args) => invoke<UiStateApi["set"]>("uiState.set", ...args),
     },
     projects: {
       list: () => invoke<SiteIndexApi["projects"]["list"]>("projects.list"),

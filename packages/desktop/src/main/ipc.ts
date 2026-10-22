@@ -1,7 +1,8 @@
 import { app, dialog, ipcMain } from "electron";
-import type { AppSettings } from "@siteindex/shared";
+import type { AppSettings, ProjectId, ProjectUiState } from "@siteindex/shared";
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import type { SettingsStore } from "./settings-store.js";
+import type { UiStateStore } from "./ui-state-store.js";
 
 export async function chooseDirectory(defaultPath?: string): Promise<string | null> {
   const result = await dialog.showOpenDialog({
@@ -13,7 +14,7 @@ export async function chooseDirectory(defaultPath?: string): Promise<string | nu
   return result.canceled ? null : (result.filePaths[0] ?? null);
 }
 
-export function registerIpcHandlers(settings: SettingsStore): void {
+export function registerIpcHandlers(settings: SettingsStore, uiState: UiStateStore): void {
   const handlers = createHandlerRegistry({
     "app.version": () => app.getVersion(),
     "app.platform": () => (process.platform === "darwin" ? "darwin" : "win32"),
@@ -21,6 +22,8 @@ export function registerIpcHandlers(settings: SettingsStore): void {
     "settings.set": (patch) => settings.set(patch as Partial<AppSettings>),
     "settings.chooseDirectory": (defaultPath) =>
       chooseDirectory(typeof defaultPath === "string" ? defaultPath : undefined),
+    "uiState.get": (id) => uiState.get(id as ProjectId),
+    "uiState.set": (id, patch) => uiState.set(id as ProjectId, patch as Partial<ProjectUiState>),
   });
 
   for (const [channel, handler] of handlers) {

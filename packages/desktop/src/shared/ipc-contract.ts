@@ -9,6 +9,8 @@ export const API_INVOKE_METHODS = [
   "settings.cliStatus",
   "settings.installCli",
   "settings.chooseDirectory",
+  "uiState.get",
+  "uiState.set",
   "projects.list",
   "projects.get",
   "projects.detect",
