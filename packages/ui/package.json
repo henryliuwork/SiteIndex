@@ -4,10 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "tsx scripts/build-mock-data.ts",
     "dev": "vite --host 127.0.0.1",
+    "prebuild": "tsx scripts/build-mock-data.ts",
     "build": "vite build",
+    "pretypecheck": "tsx scripts/build-mock-data.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "pretest": "tsx scripts/build-mock-data.ts",
+    "test": "vitest run",
+    "mock:build": "tsx scripts/build-mock-data.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.6",
@@ -32,6 +37,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.1.2",
     "tailwindcss": "^4.3.0",
+    "tsx": "^4.20.6",
     "vite": "^8.1.0"
   }
 }
