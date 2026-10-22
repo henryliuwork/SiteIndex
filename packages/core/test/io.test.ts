@@ -42,6 +42,13 @@ describe("core io", () => {
     expect((await readJsonl(file)).map((row) => row.sku)).toEqual(["A", "b"]);
   });
 
+  it("keeps integer-valued schema numbers in Python float form", async () => {
+    const root = await tempDir();
+    const file = path.join(root, "prices.jsonl");
+    await writeJsonl(file, [{ sku: "SKU-1", price: 39, compare_at_price: 40 }], "sku");
+    expect(await readFile(file, "utf8")).toContain('"price":39.0,"compare_at_price":40.0');
+  });
+
   it("matches Python CSV quoting, nulls, headers and key sorting", async () => {
     const root = await tempDir();
     const file = path.join(root, "summary.csv");

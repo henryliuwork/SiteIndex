@@ -6,6 +6,7 @@ export type JsonRecord = Record<string, unknown>;
 export interface JsonlOptions {
   primaryKey?: readonly string[];
   fieldOrder?: readonly string[];
+  floatFields?: readonly string[];
 }
 
 interface JsonSchema {
@@ -70,6 +71,26 @@ function ordered(row: JsonRecord, fields?: readonly string[]): JsonRecord {
   return result;
 }
 
+function stringifyRow(row: JsonRecord, floatFields: ReadonlySet<string>): string {
+  const serialize = (value: unknown, key?: string): string => {
+    if (value === null) return "null";
+    if (typeof value === "string") return JSON.stringify(value);
+    if (typeof value === "number") {
+      const jsonNumber = JSON.stringify(value);
+      return key && floatFields.has(key) && Number.isInteger(value) ? `${jsonNumber}.0` : jsonNumber;
+    }
+    if (typeof value === "boolean") return value ? "true" : "false";
+    if (Array.isArray(value)) return `[${value.map((child) => serialize(child)).join(",")}]`;
+    if (typeof value === "object") {
+      const pairs = Object.entries(value).filter(([, child]) => child !== undefined)
+        .map(([childKey, child]) => `${JSON.stringify(childKey)}:${serialize(child, childKey)}`);
+      return `{${pairs.join(",")}}`;
+    }
+    return "null";
+  };
+  return serialize(ordered(row, undefined));
+}
+
 /** 缺省字段顺序和主键从 schemas/*.schema.json 读取，与 Python common.py 一致。 */
 export async function writeJsonl(
   filePath: string,
@@ -77,8 +98,9 @@ export async function writeJsonl(
   schemaOrOptions?: string | JsonlOptions,
 ): Promise<void> {
   let options: JsonlOptions;
+  let schema: JsonSchema | undefined;
   if (typeof schemaOrOptions === "string") {
-    const schema = await loadSchema(schemaOrOptions);
+    schema = await loadSchema(schemaOrOptions);
     options = {
       fieldOrder: schema.properties ? Object.keys(schema.properties) : undefined,
       primaryKey: schema["x-primary-key"],
@@ -89,6 +111,15 @@ export async function writeJsonl(
   const sorted = options.primaryKey?.length
     ? [...rows].sort((a, b) => compareRows(a, b, options.primaryKey ?? []))
     : [...rows];
-  const output = sorted.map((row) => JSON.stringify(ordered(row, options.fieldOrder))).join("\n");
+  const floatFields = new Set(options.floatFields ?? Object.entries(schema?.properties ?? {}).flatMap(([key, definition]) => {
+    if (typeof definition !== "object" || definition === null || !("type" in definition)) return [];
+    const type = (definition as { type?: string | string[] }).type;
+    return (typeof type === "string" ? [type] : type ?? []).includes("number") ? [key] : [];
+  }));
+  if (typeof schemaOrOptions === "string" && schemaOrOptions === "inventory_event") {
+    floatFields.add("from");
+    floatFields.add("to");
+  }
+  const output = sorted.map((row) => stringifyRow(ordered(row, options.fieldOrder), floatFields)).join("\n");
   await atomicWrite(filePath, output ? `${output}\n` : "");
 }
