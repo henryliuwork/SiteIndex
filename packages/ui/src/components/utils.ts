@@ -1,5 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
 import { gradeDescriptionLength, gradeTitleLength } from "@siteindex/shared";
+import { api } from "../api";
 
 export function nextFilterValue<T extends string>(current: T | undefined, candidate: T): T | undefined {
   return current === candidate ? undefined : candidate;
@@ -61,44 +63,65 @@ export function writeColumnPrefs(tableId: string, visible: readonly string[]): v
 }
 
 export function useColumnPrefs(tableId: string) {
+  const { id: projectId } = useParams<{ id?: string }>();
+  const requestId = useRef(0);
   const [state, setState] = useState<{
     tableId: string;
+    projectId?: string;
     availableKey: string;
     defaultsKey: string;
     available: string[];
     defaults: string[];
     visible: string[] | null;
-  }>({ tableId, availableKey: "", defaultsKey: "", available: [], defaults: [], visible: null });
-  const current = state.tableId === tableId ? state : null;
+  }>({ tableId, projectId, availableKey: "", defaultsKey: "", available: [], defaults: [], visible: null });
+  const current = state.tableId === tableId && state.projectId === projectId ? state : null;
 
   const configure = useCallback((available: readonly string[], defaults: readonly string[] = available) => {
     const availableList = [...available];
     const defaultsList = [...defaults];
     const availableKey = availableList.join("\u0000");
     const defaultsKey = defaultsList.join("\u0000");
+    const request = ++requestId.current;
     setState((previous) => {
-      if (previous.tableId === tableId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey) return previous;
+      if (previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey) return previous;
       return {
-        tableId, availableKey, defaultsKey, available: availableList, defaults: defaultsList,
+        tableId, projectId, availableKey, defaultsKey, available: availableList, defaults: defaultsList,
         visible: readColumnPrefs(tableId, availableList, defaultsList),
       };
     });
-  }, [tableId]);
+    if (!projectId || !api.uiState) return;
+    void api.uiState.get(projectId).then((saved) => {
+      if (request !== requestId.current) return;
+      const stored = saved.columns[tableId];
+      if (!stored) return;
+      const allowed = new Set(availableList);
+      const visible = [...new Set(stored.filter((id) => allowed.has(id)))];
+      setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey
+        ? { ...previous, visible }
+        : previous);
+    }).catch(() => undefined);
+  }, [projectId, tableId]);
 
   const toggle = useCallback((id: string) => {
     if (!current) return;
+    requestId.current += 1;
     const visible = current.visible ?? current.defaults;
     const next = visible.includes(id) ? visible.filter((item) => item !== id) : [...visible, id];
-    writeColumnPrefs(tableId, next);
+    if (projectId && api.uiState) {
+      void api.uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
+    } else writeColumnPrefs(tableId, next);
     setState({ ...current, visible: next });
-  }, [current, tableId]);
+  }, [current, projectId, tableId]);
 
   const reset = useCallback(() => {
     if (!current) return;
+    requestId.current += 1;
     const next = [...current.defaults];
-    writeColumnPrefs(tableId, next);
+    if (projectId && api.uiState) {
+      void api.uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
+    } else writeColumnPrefs(tableId, next);
     setState({ ...current, visible: next });
-  }, [current, tableId]);
+  }, [current, projectId, tableId]);
 
   return { visible: current?.visible ?? null, configure, toggle, reset };
 }

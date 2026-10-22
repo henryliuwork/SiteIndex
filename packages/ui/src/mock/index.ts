@@ -3,7 +3,7 @@ import type {
   AppSettings, BlogPost, BrowserStatus, CategoriesConfig, Category, CategoryPreview, CliStatus,
   DesignTokens, DraftRow, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
   JobProgress, JobResult, Keyword, ListQuery, OverviewData, PageResult, ProductFilters,
-  ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, RepairAction, RunLog,
+  ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, ProjectUiState, RepairAction, RunLog,
   RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage,
   SeoPageFilters, SiteConfig, SiteIndexApi, SkuImageFilters, SkuImageRow, SkuRecord,
   SkuStockFilters, SkuStockView, StockStatus, ValidationReport,
@@ -37,6 +37,45 @@ const dateBefore = (days: number): string => {
   date.setUTCDate(date.getUTCDate() - days);
   return date.toISOString().slice(0, 10);
 };
+
+const birdTopics = ["Cardinals", "Blue Jays", "Goldfinches", "Chickadees", "Woodpeckers", "Hummingbirds", "Finches", "Robins", "Nuthatches", "Wrens", "Doves"];
+const generatedBlogs: BlogPost[] = Array.from({ length: 44 }, (_, index) => {
+  const topic = birdTopics[index % birdTopics.length]!;
+  const title = index % 3 === 0 ? "How to Attract " + topic + " to Your Yard"
+    : index % 3 === 1 ? "What Do " + topic + " Eat?" : "Best Feeders for " + topic;
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + (index >= birdTopics.length ? "-" + (index + 1) : "");
+  const noLinks = index % 11 === 0;
+  const noSchema = index % 10 === 7;
+  const linksOutOfStock = index % 9 === 3 && index < 39 ? ["feeder-12"] : [];
+  return {
+    url: "http://127.0.0.1:8765/blog/" + slug, slug, title, published_at: dateBefore(1 + index * 5),
+    updated_at: index % 4 === 0 ? dateBefore(index) : null, category: index % 2 ? "Bird Guides" : "Backyard Birds",
+    author: "SiteIndex Editorial", tags: [topic.toLowerCase(), "bird feeders"],
+    meta_description: "Helpful tips for " + topic.toLowerCase() + " and a healthier backyard habitat.",
+    word_count: 600 + index * 73, reading_minutes: 4 + Math.floor(index / 4), outline: ["Overview", "What to prepare", "Practical tips"],
+    has_faq: !noSchema, featured_image: null, primary_keyword: index % 13 === 4 ? null : topic.toLowerCase() + " bird feeder",
+    links_internal: noLinks ? [] : ["http://127.0.0.1:8765/collections/bird-feeders", "http://127.0.0.1:8765/blog/bird-feeder-guide"],
+    links_products: noLinks || index % 7 === 0 ? [] : ["window-feeder", "feeder-12"], links_in: index % 7,
+    linked_out_of_stock: linksOutOfStock, last_crawled: dateBefore(index % 5),
+  };
+});
+const generatedKeywords: Keyword[] = Array.from({ length: 50 }, (_, index) => {
+  const topic = birdTopics[index % birdTopics.length]!.toLowerCase();
+  const modifier = ["bird feeder", "backyard birds", "feeding tips", "best feeder", "bird bath"][Math.floor(index / birdTopics.length) % 5]!;
+  const keyword = topic + " " + modifier + (index >= birdTopics.length * 4 ? " " + (index + 1) : "");
+  return {
+    keyword, target_url: index % 13 === 0 ? null : "http://127.0.0.1:8765/blog/" + topic.replaceAll(" ", "-") + "-bird-feeder-guide",
+    role: index % 5 === 0 ? "secondary" : "primary", intent: index % 3 === 0 ? "informational" : "commercial",
+    cluster: topic + " care", status: index < 11 ? "planned" : "live",
+    priority: index % 8 === 0 ? 1 : null, source: "内容规划", note: index % 9 === 0 ? "核心词待补目标页" : null,
+    search_volume: 320 + index * 47, difficulty: 18 + (index * 7) % 65, current_rank: index % 6 === 0 ? null : 4 + index,
+    rank_checked_at: dateBefore(index % 12), updated_at: dateBefore(index % 30),
+  };
+});
+const generatedDrafts: DraftRow[] = [
+  { date: "2026-10-21", slug: "winter-bird-feeding-checklist", folder: "内容/drafts", files: ["brief.md", "draft.md"], status: "draft" },
+  { date: "2026-10-18", slug: "choose-a-squirrel-proof-feeder", folder: "内容/drafts", files: ["brief.md"], status: "brief" },
+];
 const delay = async (): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
   if (errorMode) throw new Error("模拟接口错误：请移除地址中的 ?mock=error 后重试。");
@@ -401,8 +440,21 @@ function beginRun(projectPath: string, job: JobName): string {
 }
 
 export function createMockApi(): SiteIndexApi {
+  const uiStates: Record<string, ProjectUiState> = {};
   const api: SiteIndexApi = {
     app: { version: () => reply("0.1.0-mock"), platform: () => reply("win32") },
+    uiState: {
+      get: (id) => reply(() => uiStates[id] ?? (uiStates[id] = { columns: {}, page_sizes: {} })),
+      set: (id, patch) => reply(() => {
+        const current = uiStates[id] ?? { columns: {}, page_sizes: {} };
+        const next: ProjectUiState = {
+          columns: { ...current.columns, ...Object.fromEntries(Object.entries(patch.columns ?? {}).map(([key, value]) => [key, [...new Set(value)]])) },
+          page_sizes: { ...current.page_sizes, ...patch.page_sizes },
+        };
+        uiStates[id] = next;
+        return next;
+      }),
+    },
     settings: {
       get: () => reply(settingsState),
       set: (patch) => reply(() => {
@@ -561,10 +613,19 @@ export function createMockApi(): SiteIndexApi {
       checkIndex: async (id, _urls) => { await delay(); return { runId: beginRun("C:/SiteIndex/Projects/" + id, "index-check") }; },
     },
     content: {
-      summary: () => reply({ kpis: [{ key: "blogs", label: "博客文章", value: String(fixtures.blogs.length) }, { key: "keywords", label: "关键词", value: String(fixtures.keywords.length) }], uncovered_core_keywords: ["bird feeder pole", "squirrel proof bird feeder"] }),
-      listBlog: (_id, query) => reply(() => selectRows(fixtures.blogs, query, (row) => [row.title, row.slug, row.category].join(" "), (row, filters) => !filters.issue || (filters.issue === "no_links" ? row.links_internal.length === 0 && row.links_products.length === 0 : filters.issue === "no_schema" ? !row.has_faq : (row.linked_out_of_stock?.length ?? 0) > 0))),
-      listKeywords: (_id, query) => reply(() => selectRows(fixtures.keywords, query, (row) => [row.keyword, row.cluster, row.target_url].join(" "), (row, filters) => (!filters.role || row.role === filters.role) && (!filters.status || row.status === filters.status))),
-      listDrafts: () => reply([] as DraftRow[]),
+      summary: () => reply({
+        kpis: [
+          { key: "blogs", label: "博客文章", value: "44" },
+          { key: "no_schema", label: "缺少 schema", value: String(generatedBlogs.filter((row) => !row.has_faq).length) },
+          { key: "no_links", label: "正文无站内链接", value: String(generatedBlogs.filter((row) => row.links_internal.length === 0 && row.links_products.length === 0).length) },
+          { key: "links_oos", label: "链接到缺货产品", value: String(generatedBlogs.filter((row) => (row.linked_out_of_stock?.length ?? 0) > 0).length), tone: "warn" },
+          { key: "keywords", label: "关键词", value: String(generatedKeywords.length), hint: "已上线 39 · 计划 11" },
+          { key: "uncovered", label: "核心词未覆盖", value: "2", hint: "suit feeders · bird baths", tone: "warn" },
+        ], uncovered_core_keywords: ["suit feeders", "bird baths"],
+      }),
+      listBlog: (_id, query) => reply(() => selectRows(generatedBlogs, query, (row) => [row.title, row.slug, row.category, row.primary_keyword].join(" "), (row, filters) => !filters.issue || (filters.issue === "no_links" ? row.links_internal.length === 0 && row.links_products.length === 0 : filters.issue === "no_schema" ? !row.has_faq : (row.linked_out_of_stock?.length ?? 0) > 0))),
+      listKeywords: (_id, query) => reply(() => selectRows(generatedKeywords, query, (row) => [row.keyword, row.cluster, row.target_url].join(" "), (row, filters) => (!filters.role || row.role === filters.role) && (!filters.status || row.status === filters.status))),
+      listDrafts: () => reply(generatedDrafts),
     },
     edm: {
       summary: (id) => reply(() => {
