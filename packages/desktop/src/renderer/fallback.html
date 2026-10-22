@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'"
+    />
+    <title>SiteIndex</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        color: #1f2c27;
+        background: #f6f7f5;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-width: 900px;
+        min-height: 100vh;
+      }
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 224px 1fr;
+      }
+      aside {
+        background: #fff;
+        border-right: 1px solid #e7ebe8;
+        padding: 26px 18px;
+      }
+      .brand {
+        color: #1e6b52;
+        font-size: 20px;
+        font-weight: 700;
+        padding: 4px 10px 30px;
+      }
+      nav {
+        display: grid;
+        gap: 8px;
+      }
+      .nav-item {
+        padding: 11px 12px;
+        border-radius: 8px;
+        color: #607068;
+        font-size: 14px;
+      }
+      .nav-item.active {
+        color: #1e6b52;
+        background: #eaf3ef;
+        font-weight: 600;
+      }
+      main {
+        padding: 36px 42px;
+      }
+      .topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 30px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 26px;
+        font-weight: 650;
+      }
+      .button {
+        border: 0;
+        border-radius: 8px;
+        padding: 11px 16px;
+        color: white;
+        background: #1e6b52;
+        font: inherit;
+      }
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(150px, 1fr));
+        gap: 16px;
+        margin-bottom: 26px;
+      }
+      .card {
+        background: white;
+        border: 1px solid #e7ebe8;
+        border-radius: 12px;
+        padding: 19px;
+      }
+      .label {
+        color: #718078;
+        font-size: 13px;
+      }
+      .value {
+        margin-top: 10px;
+        font-size: 25px;
+        font-weight: 650;
+      }
+      .project {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .project-name {
+        font-size: 17px;
+        font-weight: 650;
+      }
+      .domain {
+        margin-top: 6px;
+        color: #718078;
+        font-size: 13px;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: #68776f;
+        font-size: 13px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #a9b4ae;
+      }
+      .notice {
+        margin-top: 22px;
+        color: #718078;
+        font-size: 12px;
+      }
+      @media (max-width: 1000px) {
+        .app {
+          grid-template-columns: 180px 1fr;
+        }
+        main {
+          padding: 28px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside>
+        <div class="brand">SiteIndex</div>
+        <nav aria-label="主导航">
+          <div class="nav-item active">项目中心</div>
+          <div class="nav-item">Skill 中心</div>
+          <div class="nav-item">定时任务</div>
+          <div class="nav-item">设置</div>
+        </nav>
+      </aside>
+      <main>
+        <div class="topline">
+          <h1>项目中心</h1>
+          <button class="button">＋ 新建项目</button>
+        </div>
+        <section class="summary" aria-label="项目汇总">
+          <div class="card">
+            <div class="label">项目数</div>
+            <div class="value">1</div>
+          </div>
+          <div class="card">
+            <div class="label">待处理提醒</div>
+            <div class="value">0</div>
+          </div>
+          <div class="card">
+            <div class="label">今日新缺货</div>
+            <div class="value">0</div>
+          </div>
+        </section>
+        <section class="card project" aria-label="演示项目">
+          <div>
+            <div class="project-name">演示项目</div>
+            <div class="domain">example.com · 等待连接本地项目数据</div>
+          </div>
+          <div class="status"><span class="dot"></span>尚未同步</div>
+        </section>
+        <p class="notice">当前为 M1 占位界面，项目数据与完整界面将在后续版本接入</p>
+      </main>
+    </div>
+  </body>
+</html>

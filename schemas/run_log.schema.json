@@ -10,6 +10,16 @@
     "job": {
       "type": "string"
     },
+    "trigger": {
+      "enum": [
+        "schedule",
+        "manual",
+        "cli"
+      ]
+    },
+    "device_name": {
+      "type": "string"
+    },
     "started_at": {
       "type": "string",
       "format": "date-time"
