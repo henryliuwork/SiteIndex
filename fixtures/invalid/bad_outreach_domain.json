@@ -1,0 +1,10 @@
+{
+  "case": "bad_outreach_domain",
+  "file": "index/ledgers/outreach.jsonl",
+  "content": "{\"domain\":\"https://Backyard.com\",\"added_at\":\"2026-10-21\",\"status\":\"replied\",\"linkflow_id\":\"lf_002\",\"topic\":\"birding blogs\",\"note\":\"asked for guest post guidelines\"}\n{\"domain\":\"birdwatchingdaily.com\",\"added_at\":\"2026-10-21\",\"status\":\"pushed\",\"linkflow_id\":\"lf_001\",\"topic\":\"birding blogs\"}\n",
+  "expect_exit": 1,
+  "expect_errors": [
+    "index/ledgers/outreach.jsonl 第1行 domain: 'https://Backyard.com' does not match '^(?!www\\\\.)[a-z0-9.-]+\\\\.[a-z]{2,}$'",
+    "index/ledgers/outreach.jsonl: 未按主键 ['domain'] 排序（用脚本写入，或运行 python scripts/fix_sort.py）"
+  ]
+}

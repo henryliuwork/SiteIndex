@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · 分类设置</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.sub{display:inline-flex;align-items:center;min-height:32px;padding:0 14px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500;font-size:13px}
+.sub.on{background:#1B1F24;color:#fff}
+.mode{display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:10px;border:1.5px solid #E1E4E8;background:#fff;text-align:left;font:inherit;color:#1B1F24;cursor:pointer;min-height:44px}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA}
+.td{padding:8px 12px;border-bottom:1px solid #EEF0F2;font-size:13px;display:flex;align-items:center;gap:6px;min-height:48px;box-sizing:border-box}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 24px">Kingsyard</h1><span class="k mono">index/site.json → categories</span></div>
+      <div style="display: flex; gap: 10px"><button class="btn" type="button">预览匹配结果</button><button class="btn pri" type="button">保存并重新归类</button></div>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab on" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+    <nav style="display: flex; gap: 6px" aria-label="设置分区"><a class="sub" href="ProjectSettings.dc.html">配置</a><a class="sub on" href="Categories.dc.html">分类</a><a class="sub" href="Folders.dc.html">文件夹</a><a class="sub" href="LocalFiles.dc.html">本地文件</a></nav>
+
+    <section style="display: flex; flex-direction: column; gap: 10px">
+      <h2 style="margin: 0; font-size: 15px">分类识别方式</h2>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+        <sc-for list="{{modes}}" as="m" hint-placeholder-count="3">
+          <button class="mode" type="button" onClick="{{m.pick}}" style="border-color: {{m.bd}}; background: {{m.bg}}">
+            <span style="display: flex; justify-content: space-between; align-items: center; width: 100%"><span style="font-weight: 600">{{m.name}}</span><span class="chip {{m.tagCls}}">{{m.tag}}</span></span>
+            <span class="k" style="line-height: 18px">{{m.desc}}</span>
+          </button>
+        </sc-for>
+      </div>
+    </section>
+
+    <sc-if value="{{isUrl}}" hint-placeholder-val="{{false}}">
+      <section class="card" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
+        <label for="up" style="font-weight: 600; font-size: 13px">分类页 URL 规则</label>
+        <input id="up" class="mono" style="min-height: 40px; padding: 0 12px; border: 1px solid #CDD2D8; border-radius: 6px; font-size: 13px" value="/collections/{slug} , /product-category/{slug}/">
+        <span class="k">每周同步时，sitemap 中匹配规则的页面被识别为分类页；分类页上列出的产品归入该分类。适用于 Shopify、WooCommerce。</span>
+      </section>
+    </sc-if>
+    <sc-if value="{{isFeed}}" hint-placeholder-val="{{false}}">
+      <section class="card" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font-weight: 600; font-size: 13px">feed 分类字段</span>
+        <span>使用 <span class="mono">product_type</span> 第 <span class="mono">2</span> 层作为主分类：<span class="chip idle">bird-feeders · 11</span> <span class="chip idle">bird-houses · 4</span> <span class="chip idle">bird-baths · 4</span></span>
+        <span class="k">取决于 feed 的 product_type 是否规范；分类页 URL 需在下方手动补充或从 sitemap 匹配。</span>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{isManual}}" hint-placeholder-val="{{true}}">
+      <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+        <section class="card" style="flex: 999 1 600px; min-width: 0; overflow-x: auto">
+          <div style="padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px"><h2 style="margin: 0; font-size: 15px">手动分类 · 4</h2><button class="btn" type="button" style="min-height: 36px">+ 新增分类</button></div>
+          <div style="display: grid; grid-template-columns: minmax(150px, 1.2fr) minmax(170px, 1.4fr) minmax(220px, 2fr) 76px 120px; min-width: 820px">
+            <div class="th">分类</div><div class="th">分类页 URL</div><div class="th">匹配规则（满足任一条）</div><div class="th">SKU</div><div class="th">操作</div>
+            <sc-for list="{{cats}}" as="c" hint-placeholder-count="4">
+              <div class="td" style="flex-direction: column; align-items: flex-start; justify-content: center; gap: 0"><span style="font-weight: 500">{{c.name}}</span><span class="k mono">{{c.slug}}</span></div>
+              <div class="td mono" style="font-size: 12px">{{c.url}}</div>
+              <div class="td" style="flex-wrap: wrap"><sc-for list="{{c.rules}}" as="r" hint-placeholder-count="2"><span class="chip idle" style="font-weight: 500">{{r}}</span></sc-for></div>
+              <div class="td"><span class="chip {{c.ncls}}">{{c.n}}</span></div>
+              <div class="td"><button class="btn" type="button" style="min-height: 34px; padding: 0 10px">编辑</button><button class="btn" type="button" style="min-height: 34px; padding: 0 10px">删除</button></div>
+            </sc-for>
+          </div>
+          <div style="padding: 12px 18px; display: flex; gap: 20px; flex-wrap: wrap; border-top: 1px solid #EEF0F2">
+            <span><span class="k">未归类 SKU</span> <span style="font-weight: 600">0</span></span>
+            <span><span class="k">属于多个分类</span> <span style="font-weight: 600">0</span></span>
+            <span class="k">规则按顺序匹配，第一个命中的作为主分类；保存后立即重新归类，库存页与产品页同步更新。</span>
+          </div>
+        </section>
+
+        <section class="card" style="flex: 1 1 300px; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px">
+          <h2 style="margin: 0; font-size: 15px">从 sitemap 发现的候选分类页</h2>
+          <span class="k" style="padding-bottom: 8px">非产品、非博客、页面上列出多个产品的 URL</span>
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid #EEF0F2"><span class="mono" style="font-size: 12.5px">/hummingbird-feeders.html<br><span class="k">页面列出 6 个产品</span></span><button class="btn" type="button" style="min-height: 34px">加入</button></div>
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid #EEF0F2"><span class="mono" style="font-size: 12.5px">/accessories.html<br><span class="k">页面列出 9 个产品</span></span><button class="btn" type="button" style="min-height: 34px">加入</button></div>
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid #EEF0F2"><span class="mono" style="font-size: 12.5px">/bird-feeders.html<br><span class="k">已配置</span></span><span class="chip ok">已加入</span></div>
+          <div style="padding-top: 10px; display: flex; gap: 8px; flex-wrap: wrap"><button class="btn" type="button" style="min-height: 36px">从 feed 导入分类</button></div>
+        </section>
+      </div>
+    </sc-if>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { mode: 'manual' };
+  }
+  renderVals() {
+    const m = this.state.mode;
+    const modes = [
+      ['url', 'URL 规则', '分类页有固定路径，如 Shopify /collections/、WooCommerce /product-category/', 'Shopify · WooCommerce', 'idle'],
+      ['feed', 'feed 分类字段', '读取 feed 的 product_type 或 google_product_category 层级', '依赖 feed 质量', 'idle'],
+      ['manual', '手动配置', '逐个填写分类名、分类页 URL 和匹配规则；Magento 等分类无固定 URL 的站点使用', 'Magento 推荐', 'info']
+    ].map((x) => ({
+      name: x[1], desc: x[2], tag: m === x[0] ? '当前' : x[3], tagCls: m === x[0] ? 'ok' : x[4],
+      bd: m === x[0] ? '#1E6B52' : '#E1E4E8', bg: m === x[0] ? '#F2F8F5' : '#FFFFFF',
+      pick: () => this.setState({ mode: x[0] })
+    }));
+    const cats = [
+      { name: 'Bird Feeders', slug: 'bird-feeders', url: '/bird-feeders.html', rules: ['product_type 包含 "Bird Feeders"'], n: 11, ncls: 'ok' },
+      { name: 'Bird Houses', slug: 'bird-houses', url: '/bird-houses.html', rules: ['product_type 包含 "Bird Houses"'], n: 4, ncls: 'ok' },
+      { name: 'Bird Baths', slug: 'bird-baths', url: '/bird-baths.html', rules: ['product_type 包含 "Bird Baths"', 'SKU 前缀 KYBB'], n: 4, ncls: 'ok' },
+      { name: 'Hummingbird Feeders', slug: 'hummingbird-feeders', url: '/hummingbird-feeders.html', rules: ['URL 包含 "hummingbird"'], n: 0, ncls: 'warn' }
+    ];
+    return { modes, cats, isUrl: m === 'url', isFeed: m === 'feed', isManual: m === 'manual' };
+  }
+}
+</script>
+</body>
+</html>

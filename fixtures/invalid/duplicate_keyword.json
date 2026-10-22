@@ -1,0 +1,10 @@
+{
+  "case": "duplicate_keyword",
+  "file": "index/content/keywords.jsonl",
+  "content": "{\"keyword\":\"cardinal feeder\",\"target_url\":null,\"role\":\"secondary\",\"intent\":\"commercial\",\"cluster\":\"attract birds\",\"status\":\"planned\",\"updated_at\":\"2026-10-21\"}\n{\"keyword\":\"how to attract cardinals\",\"target_url\":\"http://127.0.0.1:8765/blog/how-to-attract-cardinals\",\"role\":\"primary\",\"intent\":\"informational\",\"cluster\":\"attract birds\",\"status\":\"live\",\"priority\":4,\"source\":\"manual\",\"updated_at\":\"2026-10-21\"}\n{\"keyword\":\"cardinal feeder\",\"target_url\":null,\"role\":\"secondary\",\"intent\":\"commercial\",\"cluster\":\"attract birds\",\"status\":\"planned\",\"updated_at\":\"2026-10-21\"}\n",
+  "expect_exit": 1,
+  "expect_errors": [
+    "index/content/keywords.jsonl: 主键重复 1 个，例如 ('cardinal feeder',)",
+    "index/content/keywords.jsonl: 未按主键 ['keyword'] 排序（用脚本写入，或运行 python scripts/fix_sort.py）"
+  ]
+}

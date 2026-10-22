@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
+<channel><title>Kingsyard</title>
+  <item>
+    <g:id>KYBF000-G</g:id><g:title>Kingsyard Feeder 0 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-0.html?color=Green&amp;utm_source=google</g:link><g:price>19.99 USD</g:price>
+    <g:availability>in stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-0.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Feeders > Tube Feeders</g:product_type><g:item_group_id>G0</g:item_group_id><g:color>Green</g:color>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF000-R</g:id><g:title>Kingsyard Feeder 0 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-0.html?color=Red&amp;utm_source=google</g:link><g:price>19.99 USD</g:price>
+    <g:availability>in stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-0.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Feeders > Tube Feeders</g:product_type><g:item_group_id>G0</g:item_group_id><g:color>Red</g:color>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF001</g:id><g:title>Kingsyard Feeder 1 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-1.html?utm_source=google</g:link><g:price>20.99 USD</g:price>
+    <g:availability>out of stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-1.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Feeders > Suet Feeders</g:product_type>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF002</g:id><g:title>Kingsyard Feeder 2 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-2.html?utm_source=google</g:link><g:price>21.99 USD</g:price><g:sale_price>16.99 USD</g:sale_price><g:sale_price_effective_date>2020-01-01T00:00+00:00/2099-12-31T23:59+00:00</g:sale_price_effective_date>
+    <g:availability>in stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-2.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Houses</g:product_type>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF003</g:id><g:title>Kingsyard Feeder 3 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-3.html?utm_source=google</g:link><g:price>22.99 USD</g:price>
+    <g:availability>in stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-3.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Baths</g:product_type>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF004-G</g:id><g:title>Kingsyard Feeder 4 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-4.html?color=Green&amp;utm_source=google</g:link><g:price>23.99 USD</g:price>
+    <g:availability>in stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-4.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Feeders > Tube Feeders</g:product_type><g:item_group_id>G4</g:item_group_id><g:color>Green</g:color>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF004-R</g:id><g:title>Kingsyard Feeder 4 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-4.html?color=Red&amp;utm_source=google</g:link><g:price>23.99 USD</g:price>
+    <g:availability>out of stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-4.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Feeders > Tube Feeders</g:product_type><g:item_group_id>G4</g:item_group_id><g:color>Red</g:color>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF005</g:id><g:title>Kingsyard Feeder 5 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-5.html?utm_source=google</g:link><g:price>24.99 USD</g:price>
+    <g:availability>in stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-5.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Feeders > Suet Feeders</g:product_type>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF006</g:id><g:title>Kingsyard Feeder 6 &amp; Co</g:title>
+    <g:link>http://127.0.0.1:8765/feeder-6.html?utm_source=google</g:link><g:price>25.99 USD</g:price><g:sale_price>15.99 USD</g:sale_price><g:sale_price_effective_date>2020-01-01T00:00+00:00/2020-12-31T23:59+00:00</g:sale_price_effective_date>
+    <g:availability>in stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/k/y/feeder-6.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Houses</g:product_type>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item>
+    <g:id>KYBF100</g:id><g:title>Kingsyard Window Feeder</g:title>
+    <g:link>http://127.0.0.1:8765/window-feeder.html</g:link><g:price>39.00 USD</g:price>
+    <g:availability>in stock</g:availability><g:image_link>http://127.0.0.1:8765/media/catalog/product/w/f/window.jpg</g:image_link>
+    <g:product_type>Home &amp; Garden > Bird Feeders > Tube Feeders</g:product_type>
+    <g:shipping><g:country>US</g:country><g:price>0 USD</g:price></g:shipping>
+  </item>
+  <item><g:id>KYBF000-G</g:id><g:title>Duplicate</g:title><g:link>https://x</g:link><g:price>1 USD</g:price></item>
+  <item><g:id>NOPRICE</g:id><g:title>No price</g:title><g:link>https://x/np.html</g:link></item>
+</channel></rss>

@@ -1,0 +1,5 @@
+fixtures/
+reference/
+design/
+schemas/
+pnpm-lock.yaml

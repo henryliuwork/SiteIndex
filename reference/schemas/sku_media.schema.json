@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "siteops/sku_media",
+  "title": "enrich/sku_media.csv",
+  "type": "object",
+  "properties": {
+    "sku": {
+      "type": "string",
+      "minLength": 1
+    },
+    "image_role": {
+      "enum": [
+        "main",
+        "alt",
+        "lifestyle"
+      ]
+    },
+    "image_url": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "alt_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source": {
+      "enum": [
+        "mailchimp",
+        "cdn"
+      ]
+    },
+    "updated_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "sku",
+    "image_role",
+    "image_url",
+    "source",
+    "updated_at"
+  ],
+  "x-primary-key": [
+    "sku",
+    "image_role"
+  ]
+}

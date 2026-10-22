@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>数据表结构</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F5F7;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:8px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA}
+.td{padding:7px 12px;border-bottom:1px solid #F0F2F4;font-size:12.5px;line-height:18px}
+.fl{display:inline-block;margin-right:6px;padding:0 6px;border-radius:4px;font-size:11px;font-weight:600;line-height:17px}
+</style>
+</helmet>
+<div style="max-width: 1440px; margin: 0 auto; padding: 40px 40px 60px; box-sizing: border-box; display: flex; flex-direction: column; gap: 30px">
+  <header style="display: flex; flex-direction: column; gap: 10px">
+    <span class="k mono">docs/DATA_SPEC.md · schema_version 1.1（草案）</span>
+    <h1 style="margin: 0; font-size: 30px">数据表结构</h1>
+    <p style="margin: 0; max-width: 860px; line-height: 22px; color: #3D4550">每个项目文件夹下的 <span class="mono">index/</span> 就是这个"数据库"，每张表是一个文件：JSONL 一行一条、CSV 首行为表头，均按主键排序。需要 SQL 时，软件在本机缓存目录把这些表重建成 <span class="mono">index.db</span>（不进云盘）。本版按 SEO、EDM、博客写作扩充了字段，并为销量、搜索表现、邮件报告预留了位置。</p>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding-top: 6px">
+      <span class="k">写入方：</span>
+      <span class="chip" style="background: #E3EFE9; color: #154D3B">SiteIndex 自动</span>
+      <span class="chip" style="background: #E6EEF8; color: #1F4E80">台账 · agent / 用户</span>
+      <span class="chip" style="background: #FFF1DB; color: #8A4B00">配置 · 用户</span>
+      <span class="chip" style="background: #ECEEF1; color: #4A525C">生成视图</span>
+      <span class="chip" style="background: #F3F4F6; color: #6B7280; border: 1px dashed #B9C0C8">预留 · 待接入</span>
+      <span class="k" style="padding-left: 12px">字段标记：</span>
+      <span class="fl" style="background: #E6EEF8; color: #1F4E80">新增</span><span class="k">本版新增</span>
+      <span class="fl" style="background: #F3F4F6; color: #6B7280; border: 1px dashed #B9C0C8">预留</span><span class="k">接入数据源后填充</span>
+      <span class="k" style="padding-left: 12px">✓ 必填 · ★ 主键</span>
+    </div>
+  </header>
+
+  <sc-for list="{{groups}}" as="g" hint-placeholder-count="8">
+    <section style="display: flex; flex-direction: column; gap: 14px">
+      <h2 style="margin: 0; font-size: 18px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap">{{g.title}}<span class="k" style="font-weight: 400">{{g.desc}}</span></h2>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start">
+        <sc-for list="{{g.tables}}" as="t" hint-placeholder-count="2">
+          <article class="card" style="overflow: hidden; border-style: {{t.border}}">
+            <div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid #E1E4E8">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap">
+                <span style="display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 14px; font-weight: 600">{{t.path}}</span><sc-if value="{{t.isNew}}" hint-placeholder-val="{{false}}"><span class="fl" style="background: #E6EEF8; color: #1F4E80">新表</span></sc-if></span>
+                <span class="chip" style="background: {{t.wbg}}; color: {{t.wfg}}">{{t.writer}}</span>
+              </div>
+              <div style="display: flex; gap: 14px; flex-wrap: wrap" class="k"><span>{{t.fmt}}</span><span>主键 <span class="mono" style="color: #1B1F24">{{t.pk}}</span></span><span>{{t.freq}}</span><span>来源 {{t.src}}</span></div>
+              <span style="font-size: 13px; color: #3D4550; line-height: 19px">{{t.note}}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: minmax(130px, 1.1fr) 86px 30px minmax(0, 2fr)">
+              <div class="th">字段</div><div class="th">类型</div><div class="th">必填</div><div class="th">说明</div>
+              <sc-for list="{{t.cols}}" as="c" hint-placeholder-count="6">
+                <div class="td mono" style="font-weight: {{c.w}}; background: {{c.bg}}">{{c.n}}</div><div class="td mono k" style="background: {{c.bg}}">{{c.t}}</div><div class="td" style="color: #154D3B; font-weight: 600; background: {{c.bg}}">{{c.r}}</div>
+                <div class="td" style="color: #3D4550; background: {{c.bg}}"><sc-if value="{{c.isNew}}" hint-placeholder-val="{{false}}"><span class="fl" style="background: #E6EEF8; color: #1F4E80">新增</span></sc-if><sc-if value="{{c.isRes}}" hint-placeholder-val="{{false}}"><span class="fl" style="background: #F3F4F6; color: #6B7280; border: 1px dashed #B9C0C8">预留</span></sc-if>{{c.d}}</div>
+              </sc-for>
+            </div>
+          </article>
+        </sc-for>
+      </div>
+    </section>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":7000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const W = {
+      sync: ['SiteIndex 自动', '#E3EFE9', '#154D3B'], ledger: ['台账 · agent / 用户', '#E6EEF8', '#1F4E80'],
+      user: ['配置 · 用户', '#FFF1DB', '#8A4B00'], view: ['生成视图', '#ECEEF1', '#4A525C'], res: ['预留 · 待接入', '#F3F4F6', '#6B7280']
+    };
+    const T = (path, writer, fmt, pk, freq, src, note, cols, isNew) => ({
+      path, writer: W[writer][0], wbg: W[writer][1], wfg: W[writer][2], fmt, pk, freq, src, note, isNew: !!isNew,
+      border: writer === 'res' ? 'dashed' : 'solid',
+      cols: cols.map((c) => ({
+        n: (c[2] === 'pk' ? '★ ' : '') + c[0], t: c[1], r: c[2] ? '✓' : '', d: c[3], w: c[2] === 'pk' ? 600 : 400,
+        isNew: c[4] === 'n', isRes: c[4] === 'r', bg: c[4] === 'n' ? '#F7FAFE' : (c[4] === 'r' ? '#FAFAFB' : '#FFFFFF')
+      }))
+    });
+    const groups = [
+      { title: '站点配置', desc: '新建向导生成，项目设置页可编辑', tables: [
+        T('index/site.json', 'user', 'JSON', '—', '按需', '用户 / 向导', '站点、品牌、抓取、SEO、EDM、集成设置（主要字段）', [
+          ['domain · base_url', 'string', 1, '域名；最终跳转地址'], ['platform', 'enum', 1, 'magento / wordpress / woocommerce / shopify / other'],
+          ['currency · locale · timezone', 'string', 1, 'USD · en-US · America/Los_Angeles'], ['brand.{name,tagline,voice,audience,usp}', 'object', 1, '品牌名、定位、文案调性、人群、卖点'],
+          ['sitemaps', 'string[]', 1, ''], ['crawl.feed_url', 'string|[]', 1, 'GMC feed，可多个'],
+          ['crawl.{sku_field,category_depth,missing_as,max_removed_ratio}', '—', 0, 'feed 解析与保护阈值'], ['crawl.crawl_product_pages', 'bool', 0, '每周是否抓取产品页 SEO', 'n'],
+          ['crawl.overrides', 'object', 0, '{sku: {字段: 值}} 修正 feed'],
+          ['categories.mode', 'enum', 1, 'url_rule / feed / manual（Magento 用 manual）', 'n'], ['categories.url_pattern', 'string', 0, '如 /collections/{slug}、/product-category/{slug}/', 'n'],
+          ['categories.manual', '[{slug,name,url,match}]', 0, 'match：product_type 包含 / SKU 前缀 / URL 关键词 / 指定 SKU，按顺序匹配', 'n'],
+          ['seo.{core_keywords,competitors}', 'string[]', 0, ''],
+          ['seo.{title_range,description_range}', '[int,int]', 0, '默认 [30,60] · [70,155]', 'n'], ['seo.ignore_rules', '[]', 0, '忽略的检查：{url, rule}', 'n'],
+          ['edm.{platform,max_products,cooldown_days,utm}', 'object', 0, ''], ['edm.image_priority', 'string[]', 0, '默认 ["feed", "manual"]：先抓取首图，再手动首图', 'n'],
+          ['workspace_folders', '[{name,default}]', 0, '默认文件夹不可删除；说明写在各文件夹 _about.md', 'n'],
+          ['schedule.{daily,validate,weekly,readme,monthly}', '{enabled,days,time}', 0, '定时计划：周几、几点；只在执行设备上注册', 'n'],
+          ['integrations.linkflow', 'object', 0, 'MCP 服务名、录入工具、项目名'], ['integrations.sales', 'object', 0, '销量数据源：magento_api / wp_rest / mcp', 'r'],
+          ['integrations.gsc · integrations.mailchimp', 'object', 0, '搜索表现、邮件报告数据源', 'r']
+        ]),
+        T('index/design/tokens.json', 'sync', 'JSON', '—', '每月', '系统浏览器渲染', '设计规范（结构摘要）', [
+          ['css_variables', 'object', 0, ':root 上的 CSS 变量'], ['color.{primary,text,text_muted,background,surface,border,sale}', 'hex', 0, '推断出的语义色'],
+          ['color.palette', '[]', 0, '使用频率前 16'], ['typography.{font_families,scale}', 'object', 0, '标题/正文字体；h1–h3、body、small'],
+          ['spacing · radius · shadow', 'string[]', 0, ''], ['components.{button_primary,button_secondary,input}', 'object', 0, ''],
+          ['assets.{logo,favicon}', 'url', 0, ''], ['email_safe.{font_stack,button_color}', 'object', 0, 'EDM 模板可用的安全字体与按钮色', 'n'],
+          ['extracted_at · source_pages', '—', 1, '']
+        ])
+      ]},
+      { title: '商品目录', desc: 'feed 每日 + 产品页每周', tables: [
+        T('index/catalog/skus.jsonl', 'sync', 'JSONL', 'sku', '每日', 'GMC feed', 'SKU 主表，一行一个变体', [
+          ['sku', 'string', 'pk', 'feed 的 id（可改用 mpn）'], ['product_id · handle', 'string', 1, 'item_group_id；URL 最后一段'],
+          ['title · variant_title', 'string', 1, ''], ['url', 'url', 1, '已去跟踪参数'], ['category · categories', 'slug · []', 1, ''],
+          ['price · compare_at_price · currency', 'number', 1, '促销有效时为折后价 · 原价'], ['image_url', 'url?', 0, 'feed image_link，EDM 可直接使用'],
+          ['additional_images', 'url[]', 0, 'feed additional_image_link', 'n'], ['gtin · mpn · brand', 'string?', 0, 'feed 原值', 'n'],
+          ['status', 'enum', 1, 'active / removed'], ['first_seen · last_seen · updated_at', 'date', 1, '']
+        ]),
+        T('index/catalog/product_details.jsonl', 'sync', 'JSONL', 'handle', '每周', '产品页 + JSON-LD', '产品页上才有的信息，供 EDM 文案、博客挂产品使用', [
+          ['handle', 'string', 'pk', ''], ['short_description', 'string?', 0, 'JSON-LD Product.description 或 meta description', 'n'],
+          ['rating · review_count', 'number?', 0, 'AggregateRating', 'n'], ['breadcrumbs', 'string[]', 0, '面包屑路径', 'n'],
+          ['gallery', 'url[]', 0, '页面全部产品图', 'n'], ['related_handles', 'handle[]', 0, '页面上的相关/搭配推荐', 'n'],
+          ['badges', 'string[]', 0, '页面角标：New / Sale / Best Seller', 'n'], ['shipping_note', 'string?', 0, '页面运费/发货说明', 'n'],
+          ['last_crawled', 'date', 1, '']
+        ], true),
+        T('index/catalog/categories.json', 'sync', 'JSON 数组', 'slug', '每周', 'feed + sitemap', '分类树', [
+          ['slug · name', 'string', 'pk', ''], ['url', 'string', 1, '匹配到的分类页，未匹配为空'], ['parent', 'slug?', 0, ''],
+          ['source', 'enum', 1, 'url_rule / feed / manual：分类是怎么识别出来的', 'n'], ['sku_count', 'int', 0, '归入该分类的 SKU 数', 'n'],
+          ['product_count', 'int', 0, '含子分类'], ['in_stock_count', 'int', 0, '有货产品数', 'n'], ['intro_text_words', 'int', 0, '分类页介绍文字词数（SEO 薄内容判断）', 'n'],
+          ['last_seen', 'date', 1, '']
+        ])
+      ]},
+      { title: '库存', desc: '每日同步写入', tables: [
+        T('index/inventory/latest.jsonl', 'sync', 'JSONL', 'sku', '每日', 'GMC feed', '每个 SKU 的当前状态', [
+          ['sku', 'string', 'pk', ''], ['stock_status', 'enum', 1, 'in_stock / out_of_stock / preorder / unknown'],
+          ['qty', 'int?', 0, ''], ['since', 'date', 1, '进入当前状态的日期'], ['checked_at', 'datetime', 1, '']
+        ]),
+        T('index/inventory/events/YYYY-MM.jsonl', 'sync', 'JSONL', 'date+sku+type', '每日追加', '计算', '只记变化，按月分文件；也用于"到货提醒""降价"邮件', [
+          ['date · sku · type', '—', 'pk', 'stock_change / price_change / new_sku / removed_sku / restored_sku'],
+          ['from · to', 'any', 0, ''], ['category · title', 'string', 1, '冗余存储，日报直接读']
+        ]),
+        T('index/inventory/daily_summary.csv', 'sync', 'CSV', 'date+category', '每日追加', '计算', '趋势图数据源；category=_all 为全站', [
+          ['date · category', '—', 'pk', ''], ['total', 'int', 1, ''], ['in_stock · out_of_stock · preorder · unknown', 'int', 1, '']
+        ])
+      ]},
+      { title: 'SEO', desc: '每周抓取 sitemap 中全部页面（含产品页、博客）', tables: [
+        T('index/seo/pages.jsonl', 'sync', 'JSONL', 'url', '每周', 'sitemap + 页面抓取', '每个页面的 SEO 信息（取代原 catalog/pages.jsonl）', [
+          ['url', 'url', 'pk', ''], ['page_type', 'enum', 1, 'home / collection / product / blog / page / other', 'n'],
+          ['status_code · final_url · redirect_chain', '—', 1, '状态码、跳转后地址、跳转链', 'n'], ['response_ms', 'int', 0, '', 'n'],
+          ['title · title_length', 'string · int', 0, 'Title 及长度', 'n'], ['meta_description · description_length', 'string · int', 0, '', 'n'],
+          ['meta_keywords', 'string?', 0, 'TDK 中的 K', 'n'], ['h1 · h1_count · h2', 'string · int · []', 0, 'H2 取前 10', 'n'],
+          ['canonical · canonical_status', 'url · enum', 0, 'self / other / missing', 'n'], ['robots_meta · x_robots_tag', 'string?', 0, 'meta robots 与响应头', 'n'],
+          ['indexable · in_sitemap', 'bool', 1, ''], ['google_indexed · index_checked_at', 'bool? · date', 0, 'Google site: 查询结果与检查时间', 'n'], ['hreflang', '[{lang,url}]', 0, '', 'n'],
+          ['og.{title,description,image} · twitter_card', 'object', 0, '', 'n'], ['schema_types · schema_errors', 'string[]', 0, 'JSON-LD 类型与缺失必填项', 'n'],
+          ['word_count · images_total · images_missing_alt', 'int', 0, '', 'n'], ['links_internal_out · links_external_out · links_internal_in', 'int', 0, '入链数由内链表计算', 'n'],
+          ['last_crawled', 'date', 1, '']
+        ], true),
+        T('index/seo/issues.jsonl', 'sync', 'JSONL', 'url+rule', '每周', '规则检查', 'SEO 问题清单；修复后自动标记 fixed', [
+          ['url · rule', 'string', 'pk', 'title_missing / title_length / title_duplicate / desc_missing / desc_length / h1_missing / h1_multiple / canonical_other / noindex / not_in_sitemap / http_4xx / redirect_chain / schema_missing / schema_error / img_alt_missing / thin_content / orphan', 'n'],
+          ['severity', 'enum', 1, 'high / mid / low', 'n'], ['detail', 'string', 1, '', 'n'],
+          ['status', 'enum', 1, 'open / fixed / ignored', 'n'], ['first_seen · last_seen', 'date', 1, '', 'n']
+        ], true),
+        T('index/seo/links.jsonl', 'sync', 'JSONL', 'from+to+anchor', '每周', '页面正文', '站内链接关系（已排除导航、页脚）；博客内链规划直接读', [
+          ['from · to', 'url', 'pk', '', 'n'], ['anchor', 'string', 'pk', '锚文本', 'n'],
+          ['to_type', 'enum', 1, 'product / collection / blog / page', 'n'], ['nofollow', 'bool', 0, '', 'n']
+        ], true),
+        T('index/seo/search_performance.jsonl', 'res', 'JSONL', 'url+period', '每周', 'Google Search Console', '收录与搜索表现（接入 GSC 后填充）', [
+          ['url · period', '—', 'pk', 'period 如 2026-W42', 'r'], ['impressions · clicks · ctr · position', 'number', 0, '', 'r'],
+          ['top_queries', '[{query,clicks,position}]', 0, '前 10 个查询词', 'r'], ['index_status', 'enum', 0, 'indexed / excluded / unknown', 'r']
+        ], true)
+      ]},
+      { title: '内容', desc: '博客索引由同步写入，关键词由 agent 维护', tables: [
+        T('index/content/blog_index.jsonl', 'sync', 'JSONL', 'url', '每周', 'sitemap + 页面', '已发布博客；SEO 字段见 seo/pages.jsonl', [
+          ['url', 'url', 'pk', ''], ['slug · title', 'string', 1, ''], ['published_at · updated_at', 'date', 1, ''],
+          ['category · author · tags', 'string?', 0, ''], ['meta_description', 'string?', 0, ''], ['word_count', 'int', 0, ''],
+          ['reading_minutes', 'int', 0, '', 'n'], ['outline', 'string[]', 0, 'H2/H3 大纲，避免选题重复', 'n'], ['has_faq', 'bool', 0, 'FAQ 区块或 FAQPage schema', 'n'],
+          ['featured_image', 'url?', 0, 'og:image 或首图', 'n'], ['primary_keyword', 'string?', 0, '来自关键词映射', 'n'],
+          ['links_internal · links_products', 'url[] · handle[]', 0, '文中链接'], ['links_in', 'int', 0, '被其他页面链接次数', 'n'],
+          ['linked_out_of_stock', 'handle[]', 0, '文中链接的缺货产品', 'n'], ['last_crawled', 'date', 1, '']
+        ]),
+        T('index/content/keywords.jsonl', 'ledger', 'JSONL', 'keyword', '按需', 'agent / 用户', '关键词 → 目标页；一个 URL 只能有一个 primary', [
+          ['keyword', 'string', 'pk', '小写'], ['target_url', 'url?', 1, ''], ['role · intent', 'enum', 1, ''],
+          ['cluster · status', 'string · enum', 1, 'planned / drafting / live'], ['priority · source · note', '—', 0, ''],
+          ['search_volume · difficulty', 'int', 0, '关键词工具', 'r'], ['current_rank · rank_checked_at', 'int · date', 0, 'GSC / 排名工具', 'r'],
+          ['updated_at', 'date', 1, '']
+        ])
+      ]},
+      { title: 'EDM 与台账', desc: 'agent 与用户通过 siteindex ledger 写入，同步永不覆盖', tables: [
+        T('index/ledgers/edm_campaigns.jsonl', 'ledger', 'JSONL', 'campaign_id', '每次 EDM', 'edm-builder', 'EDM 记录：冷却期判断、复盘', [
+          ['campaign_id', 'string', 'pk', 'YYYY-MM-DD-slug，对应 edm/ 下目录'], ['date · theme · status', '—', 1, 'draft / scheduled / sent'],
+          ['subject · preheader', 'string', 0, '', 'n'], ['audience', 'string?', 0, 'Mailchimp audience / segment', 'n'],
+          ['handles', 'handle[]', 1, '推荐的产品'], ['promo_code', 'string?', 0, '关联 promotions', 'n'], ['utm_campaign', 'string', 0, '', 'n'],
+          ['mailchimp_campaign_id · send_date', '—', 0, ''], ['recipients · open_rate · click_rate', 'number', 0, 'Mailchimp 报告', 'r'],
+          ['orders · revenue', 'number', 0, 'Mailchimp 电商追踪 / 网站订单', 'r']
+        ]),
+        T('index/ledgers/promotions.jsonl', 'ledger', 'JSONL', 'code', '按需', '用户 / agent', '促销活动；EDM 选品加权、文案、博客 CTA 共用', [
+          ['code', 'string', 'pk', '折扣码', 'n'], ['title', 'string', 1, '', 'n'], ['type · value', 'enum · number', 1, 'percent / amount / free_shipping / gift', 'n'],
+          ['min_spend', 'number?', 0, '', 'n'], ['scope · targets', 'enum · []', 1, 'all / categories / tags / handles', 'n'],
+          ['starts_at · ends_at', 'date', 1, '', 'n'], ['channels', 'string[]', 0, 'edm / site / social', 'n'], ['status · note', '—', 0, 'planned / active / ended', 'n']
+        ], true),
+        T('index/ledgers/sku_media.csv', 'ledger', 'CSV', 'sku+image_role', '按需', 'EDM 页 / sku-media-enrich', '手动首图（如 Mailchimp 托管图）；agent 优先用抓取首图，抓取不到时用这里的图', [
+          ['sku · image_role', '—', 'pk', 'main / alt / lifestyle'], ['image_url', 'url', 1, ''], ['alt_text', 'string?', 0, ''],
+          ['source', 'enum', 1, 'mailchimp / cdn'], ['width · height', 'int?', 0, '邮件排版用', 'n'], ['updated_at', 'date', 1, '']
+        ]),
+        T('index/ledgers/sku_tags.csv', 'ledger', 'CSV', 'sku', '按需', 'sku-media-enrich', '主题标签、推荐优先级、EDM 排除', [
+          ['sku', 'string', 'pk', ''], ['tags', 'string?', 0, '小写，; 分隔'], ['priority', 'int?', 0, '1–5'],
+          ['exclude_edm', '0/1', 0, ''], ['email_blurb', 'string?', 0, '固定的邮件卖点短句（≤20 词）', 'n'], ['season', 'string?', 0, 'spring / summer / fall / winter', 'n'],
+          ['note · updated_at', '—', 0, '']
+        ]),
+        T('index/ledgers/outreach.jsonl', 'ledger', 'JSONL', 'domain', '按需', 'link-prospect', '外链去重名单（真相源在 linkflow）', [
+          ['domain', 'string', 'pk', '小写、去 www'], ['added_at · status', '—', 1, 'pushed / contacted / replied / partnered / rejected / invalid'],
+          ['linkflow_id · topic · note', 'string?', 0, ''], ['target_url', 'url?', 0, '希望对方链接的本站页面', 'n'], ['live_link', 'url?', 0, '已上线的外链地址', 'n']
+        ])
+      ]},
+      { title: '销售（预留）', desc: '接入 Magento API、WordPress REST 或 MCP 后启用', tables: [
+        T('index/sales/product_sales.jsonl', 'res', 'JSONL', 'handle+period', '每日', 'Magento API / WP REST / MCP', '产品销量；产品表、EDM 选品（畅销加权）、博客挂产品使用', [
+          ['handle · period', '—', 'pk', 'period：rolling_7d / rolling_30d / YYYY-MM', 'r'], ['units · orders', 'int', 0, '', 'r'],
+          ['revenue · currency', 'number · string', 0, '', 'r'], ['refunds', 'int', 0, '', 'r'], ['sales_rank', 'int', 0, '全站排名', 'r'],
+          ['source · updated_at', '—', 0, '', 'r']
+        ], true)
+      ]},
+      { title: '视图与日志', desc: '由软件生成', tables: [
+        T('index/views/products.jsonl', 'view', 'JSONL', 'handle', '每日', '合并以上各表', '产品级合并视图，产品页、EDM 选品、博客挂产品直接读', [
+          ['handle', 'string', 'pk', ''], ['product_id · title · url · category · categories', '—', 1, ''],
+          ['price_min · price_max · compare_at_max · on_sale', '—', 1, ''], ['image_url · image_source', 'url · enum', 0, 'feed（抓取首图）优先，缺失时 manual（手动首图）', 'n'],
+          ['variant_count · skus · in_stock_variants · stock_status · stock_since', '—', 1, ''],
+          ['tags · priority · exclude_edm · email_blurb', '—', 0, '来自 sku_tags'], ['last_featured · days_since_featured', 'date · int', 0, '来自 edm_campaigns'],
+          ['is_new · restocked_at · price_dropped_at', 'bool · date', 0, '新品 / 到货 / 降价，来自 events', 'n'], ['active_promos', 'code[]', 0, '来自 promotions', 'n'],
+          ['short_description · rating · review_count', '—', 0, '来自 product_details', 'n'], ['seo_issue_count', 'int', 0, '来自 seo/issues', 'n'],
+          ['units_30d · revenue_30d · sales_rank', 'number', 0, '来自 sales', 'r'], ['first_seen · status', '—', 1, '']
+        ]),
+        T('index/views/sku_stock.jsonl', 'view', 'JSONL', 'sku', '每日', '由 latest + events 计算', 'SKU 级在线情况，库存页明细表直接读', [
+          ['sku', 'string', 'pk', '', 'n'], ['title · variant_title · category · price', '—', 1, '冗余存储，方便直接展示', 'n'],
+          ['stock_status · since · days_in_status', '—', 1, '当前状态与持续天数', 'n'], ['online_rate_7d · online_rate_30d', 'number', 1, '有货天数 / 在售天数', 'n'],
+          ['history_30d', 'string', 1, '30 个字符，每天一个：i 有货 / o 缺货 / p 预售 / u 未知 / - 未上架', 'n'],
+          ['changes_30d', 'int', 0, '30 天内状态变化次数（判断供货是否稳定）', 'n'], ['last_change · last_change_at', 'string · date', 0, '', 'n']
+        ], true),
+        T('index/logs/validation.json', 'sync', 'JSON', '—', '每日 + 手动', '数据校验脚本', '最近一次数据校验结果；本地文件页、项目卡片、概览读取', [
+          ['checked_at · trigger', 'datetime · enum', 1, 'schedule / manual / after_sync', 'n'],
+          ['files[].path · kind', 'string · enum', 1, 'sync / ledger / config / view / doc', 'n'],
+          ['files[].status', 'enum', 1, 'ok / error / missing / conflict_copy', 'n'],
+          ['files[].rule · message · line', '—', 0, '出错规则、原因、行号', 'n'], ['files[].records · size · modified_at', '—', 0, '', 'n'],
+          ['files[].repair', 'enum?', 0, 'regenerate:{job} / autofix / restore_archive / delete_copy', 'n']
+        ], true),
+        T('index/logs/runs.jsonl', 'sync', 'JSONL', 'run_id', '每次运行', '软件', '运行记录，项目卡片与运行页读取', [
+          ['run_id', 'string', 'pk', '{date}-{job}'], ['job', 'string', 1, 'daily / weekly / monthly / design / readme / audit'],
+          ['started_at · finished_at', 'datetime', 1, ''], ['status', 'enum', 1, 'ok / partial / failed / skipped'],
+          ['counts · errors', '—', 0, ''], ['device_name', 'string', 0, '执行设备', 'n']
+        ])
+      ]}
+    ];
+    return { groups };
+  }
+}
+</script>
+</body>
+</html>

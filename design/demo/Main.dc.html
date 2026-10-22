@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>SiteIndex 项目中心</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}
+.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}
+.k{font-size:12px;color:#5B6470}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg>
+      </div>
+      <span style="font-size: 17px; font-weight: 700; letter-spacing: 0.2px">SiteIndex</span>
+    </div>
+    <a class="nav on" href="Main.dc.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>项目中心</a>
+    <a class="nav" href="Skills.dc.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 4h10l4 4v12H5z"></path><path d="M9 12h6M9 16h4"></path></svg>Skill 中心</a>
+    <a class="nav" href="Runs.dc.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>定时任务</a>
+    <a class="nav" href="AppSettings.dc.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"></path></svg>设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px; letter-spacing: 0.4px">项目</div>
+    <a class="nav" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="#"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+    <div style="margin-top: auto; padding: 12px; border-top: 1px solid #E1E4E8; display: flex; flex-direction: column; gap: 2px">
+      <span class="k">本机</span>
+      <span style="font-weight: 600">Henry-PC</span>
+      <span class="k">Kingsyard 的执行设备</span>
+    </div>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 700">项目中心</h1>
+        <span class="k">项目根目录 <span class="mono" style="color: #1B1F24">D:\云盘\projects</span></span>
+      </div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap">
+        <button class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"></path></svg>添加已有项目</button>
+        <a class="btn pri" href="NewProjectUrl.dc.html" style="text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>新建项目</a>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+      <div style="background: #fff; border: 1px solid #E1E4E8; border-radius: 8px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px">
+        <span class="k">项目</span><span style="font-size: 26px; font-weight: 700">2</span>
+      </div>
+      <div style="background: #fff; border: 1px solid #E1E4E8; border-radius: 8px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px">
+        <span class="k">待处理提醒</span><span style="font-size: 26px; font-weight: 700; color: #8A4B00">1</span>
+      </div>
+      <div style="background: #fff; border: 1px solid #E1E4E8; border-radius: 8px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px">
+        <span class="k">今日新缺货 SKU</span><span style="font-size: 26px; font-weight: 700">2</span>
+      </div>
+      <div style="background: #fff; border: 1px solid #E1E4E8; border-radius: 8px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px">
+        <span class="k">下一个定时任务</span><span style="font-size: 15px; font-weight: 600; padding-top: 6px">今晚 02:00 · Kingsyard 每日同步</span>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+      <a href="Overview.dc.html" style="background: #fff; border: 1px solid #E1E4E8; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 16px; text-decoration: none; color: #1B1F24">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <span style="font-size: 18px; font-weight: 700">Kingsyard</span>
+            <span class="k mono">kingsyard.com · Magento</span>
+          </div>
+          <span class="chip ok">同步成功</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+          <div style="display: flex; flex-direction: column; gap: 2px"><span class="k">SKU / 产品</span><span style="font-size: 18px; font-weight: 600">19 / 17</span></div>
+          <div style="display: flex; flex-direction: column; gap: 2px"><span class="k">有货率</span><span style="font-size: 18px; font-weight: 600">73.7%</span></div>
+          <div style="display: flex; flex-direction: column; gap: 2px"><span class="k">博客</span><span style="font-size: 18px; font-weight: 600">2</span></div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+          <span class="chip ok">到货 +1</span><span class="chip bad">缺货 +2</span><span class="chip idle">调价 1</span><span class="chip idle">上新 1</span>
+        </div>
+        <div style="border-top: 1px solid #EEF0F2; padding-top: 12px; display: flex; justify-content: space-between" class="k">
+          <span>最近同步 今天 02:04</span><span>执行设备 Henry-PC</span>
+        </div>
+      </a>
+
+      <div style="background: #fff; border: 1px solid #E8C48A; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <span style="font-size: 18px; font-weight: 700">[WordPress 站点]</span>
+            <span class="k mono">[domain] · WordPress</span>
+          </div>
+          <span class="chip warn">待配置</span>
+        </div>
+        <div style="background: #FFF8EC; border-radius: 6px; padding: 12px 14px; font-size: 13px; line-height: 20px; color: #6B3A00">
+          尚未填写 GMC feed 地址，每日库存同步未启用。页面与博客已完成首次抓取。
+        </div>
+        <div style="display: flex; gap: 8px">
+          <a class="btn" href="ProjectSettings.dc.html" style="min-height: 36px; text-decoration: none">填写 feed</a>
+          <button class="btn" type="button" style="min-height: 36px">打开文件夹</button>
+        </div>
+        <div style="border-top: 1px solid #EEF0F2; padding-top: 12px; display: flex; justify-content: space-between" class="k">
+          <span>最近同步 周一 03:00（每周）</span><span>执行设备 Henry-PC</span>
+        </div>
+      </div>
+
+      <a href="NewProjectUrl.dc.html" style="border: 1.5px dashed #B9C0C8; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-decoration: none; color: #3D4550; min-height: 240px">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        <span style="font-weight: 600">新建项目</span>
+        <span class="k">输入网址，3 分钟生成工作区</span>
+      </a>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #E1E4E8; border-radius: 10px; display: flex; flex-direction: column">
+      <div style="padding: 16px 20px; border-bottom: 1px solid #EEF0F2; font-weight: 600">最近运行</div>
+      <div style="display: grid; grid-template-columns: 160px 160px 1fr 120px; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #EEF0F2; align-items: center">
+        <span class="mono k">今天 02:04</span><span>Kingsyard · 每日</span><span>+1 到货 · −2 缺货 · 1 调价 · 1 上新</span><span class="chip ok" style="justify-self: start">成功</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 160px 160px 1fr 120px; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #EEF0F2; align-items: center">
+        <span class="mono k">今天 02:30</span><span>Kingsyard · 数据校验</span><span>0 个错误 · unknown 库存 1/19（5.3%）</span><span class="chip warn" style="justify-self: start">提醒</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 160px 160px 1fr 120px; gap: 12px; padding: 12px 20px; align-items: center">
+        <span class="mono k">昨天 02:03</span><span>Kingsyard · 每日</span><span>无变化</span><span class="chip ok" style="justify-self: start">成功</span>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

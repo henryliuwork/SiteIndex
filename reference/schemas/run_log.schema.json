@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "siteops/run_log",
+  "title": "logs/runs.jsonl",
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "job": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "failed"
+      ]
+    },
+    "counts": {
+      "type": "object"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "run_id",
+    "job",
+    "started_at",
+    "status"
+  ],
+  "x-primary-key": [
+    "run_id"
+  ]
+}

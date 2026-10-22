@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "domain": "{{DOMAIN}}",
+  "base_url": "https://{{DOMAIN}}",
+  "platform": "shopify",
+  "currency": "USD",
+  "locale": "en-US",
+  "timezone": "America/Los_Angeles",
+  "markets": ["US"],
+  "brand": {
+    "name": "{{SITE}}",
+    "tagline": "TODO: 一句话品牌定位",
+    "voice": "TODO: 文案调性，例如 warm, practical, no hype; short sentences",
+    "audience": "TODO: 目标人群",
+    "usp": []
+  },
+  "sitemaps": ["https://{{DOMAIN}}/sitemap.xml"],
+  "crawl": {
+    "adapter": "gmc_feed",
+    "feed_url": "TODO: GMC 商品 feed 地址（XML/TSV，可为列表）",
+    "sku_field": "id",
+    "category_source": "product_type",
+    "category_depth": 1,
+    "category_map": {},
+    "missing_as": "out_of_stock",
+    "missing_removed_after_days": 30,
+    "blog_url_patterns": ["/blog/", "/news/", "/\\d{4}/\\d{2}/"],
+    "max_pages": 2000,
+    "rate_limit_ms": 1500,
+    "user_agent": "SiteOpsBot/1.0 (+https://{{DOMAIN}})",
+    "exclude_url_patterns": [],
+    "stock_rules": {
+      "in_stock": ["add to cart", "in stock"],
+      "out_of_stock": ["sold out", "out of stock", "notify me"],
+      "preorder": ["pre-order", "preorder"]
+    },
+    "overrides": {}
+  },
+  "seo": {
+    "core_keywords": [],
+    "competitors": []
+  },
+  "edm": {
+    "platform": "mailchimp",
+    "utm": { "source": "mailchimp", "medium": "email" },
+    "max_products": 6,
+    "cooldown_days": 21,
+    "brand_color": "#1f3a2e",
+    "font_stack": "Helvetica,Arial,sans-serif",
+    "template_notes": "600px 单栏；按钮色使用品牌主色；所有图片带 alt；价格保留两位小数"
+  },
+  "integrations": {
+    "linkflow": { "mcp_server": "TODO", "create_tool": "TODO", "project": "{{SITE}}" }
+  }
+}

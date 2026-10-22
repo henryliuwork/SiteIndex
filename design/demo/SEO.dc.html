@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · SEO</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 14px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.seg{min-height:32px;padding:0 14px;border:1px solid #CDD2D8;background:#fff;font:inherit;font-size:13px;font-weight:500;color:#3D4550;cursor:pointer}
+.seg.on{background:#1B1F24;border-color:#1B1F24;color:#fff}
+.pill{min-height:30px;padding:0 12px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;font:inherit;font-size:13px;font-weight:500;color:#3D4550;cursor:pointer;white-space:nowrap}
+.pill.on{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA;position:sticky;top:0;z-index:1}
+.td{padding:6px 12px;border-bottom:1px solid #EEF0F2;font-size:13px;display:flex;align-items:center;gap:6px;min-height:46px;box-sizing:border-box}
+.rowbtn{border:0;background:transparent;padding:0;font:inherit;color:#1F4E80;text-align:left;cursor:pointer;min-height:40px;font-family:"IBM Plex Mono",Consolas,monospace;font-size:12.5px}
+.rowbtn:hover{text-decoration:underline}
+.kv{display:grid;grid-template-columns:104px 1fr;gap:8px 12px;font-size:13px;align-items:baseline}
+.len{display:inline-block;padding:0 6px;border-radius:4px;font-size:12px;font-weight:600;font-family:"IBM Plex Mono",Consolas,monospace}
+.g{background:#E3EFE9;color:#154D3B}.o{background:#FFF1DB;color:#8A4B00}.r{background:#FDE8E7;color:#A3200F}
+.pop{position:absolute;background:#fff;border:1px solid #D5D9DE;border-radius:10px;box-shadow:0 12px 32px rgba(20,24,29,.16);z-index:5}
+.colopt{display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;cursor:pointer}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 24px">Kingsyard</h1><span class="k mono">kingsyard.com · Magento</span><span class="chip idle">SEO 抓取：周一 03:00 · 10 个页面</span></div>
+      <div style="display: flex; gap: 10px"><button class="btn" type="button">导出问题清单</button><a class="btn pri" href="Runs.dc.html">重新抓取</a></div>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab on" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">已抓取页面</span><span style="font-size: 20px; font-weight: 700">10</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">可索引</span><span style="font-size: 20px; font-weight: 700">7</span><span class="k">无 noindex 且 canonical 指向自身</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">收录</span><span style="font-size: 20px; font-weight: 700">6 / 10</span><span class="k">Google site: 检查 · 10-19</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">问题</span><span style="font-size: 20px; font-weight: 700">7</span><span class="k"><span style="color: #A3200F; font-weight: 600">高 1</span> · 中 3 · 低 3</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">Schema 覆盖</span><span style="font-size: 20px; font-weight: 700">8 / 9</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">孤立页面</span><span style="font-size: 20px; font-weight: 700">1</span><span class="k">站内无入链</span></div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+      <div style="display: flex" role="group" aria-label="视图">
+        <sc-for list="{{views}}" as="v" hint-placeholder-count="3"><button class="seg {{v.cls}}" type="button" onClick="{{v.pick}}" style="border-radius: {{v.radius}}">{{v.label}}</button></sc-for>
+      </div>
+      <sc-if value="{{isIssues}}" hint-placeholder-val="{{true}}">
+        <div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{sevPills}}" as="p" hint-placeholder-count="4"><button class="pill {{p.cls}}" type="button" onClick="{{p.pick}}">{{p.label}}</button></sc-for></div>
+      </sc-if>
+      <sc-if value="{{isPages}}" hint-placeholder-val="{{false}}">
+        <div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{typePills}}" as="p" hint-placeholder-count="5"><button class="pill {{p.cls}}" type="button" onClick="{{p.pick}}">{{p.label}}</button></sc-for></div>
+      </sc-if>
+      <span style="margin-left: auto; display: flex; gap: 10px; align-items: center; position: relative">
+        <button class="btn" type="button">检查全部收录</button>
+        <sc-if value="{{isPages}}" hint-placeholder-val="{{false}}">
+          <button class="btn" type="button" onClick="{{toggleCols}}">列设置</button>
+        </sc-if>
+        <sc-if value="{{showCols}}" hint-placeholder-val="{{false}}">
+          <div class="pop" style="top: 42px; right: 0; width: 200px; padding: 10px 12px" role="dialog" aria-label="列设置">
+            <sc-for list="{{colOpts}}" as="c" hint-placeholder-count="6"><label class="colopt"><input type="checkbox" checked="{{c.on}}" onChange="{{c.toggle}}">{{c.label}}</label></sc-for>
+          </div>
+        </sc-if>
+      </span>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+      <section class="card" style="flex: 999 1 560px; min-width: 0; overflow: hidden">
+        <div style="max-height: 520px; overflow: auto">
+          <sc-if value="{{isIssues}}" hint-placeholder-val="{{true}}">
+            <div style="display: grid; grid-template-columns: 64px minmax(200px, 1.4fr) minmax(240px, 2fr) 96px; min-width: 700px">
+              <div class="th">级别</div><div class="th">页面</div><div class="th">问题</div><div class="th">发现于</div>
+              <sc-for list="{{issues}}" as="i" hint-placeholder-count="7">
+                <div class="td" style="background: {{i.bg}}"><span class="chip {{i.cls}}">{{i.sev}}</span></div>
+                <div class="td" style="background: {{i.bg}}"><button class="rowbtn" type="button" onClick="{{i.pick}}">{{i.path}}</button></div>
+                <div class="td" style="background: {{i.bg}}; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px"><span style="font-weight: 500">{{i.rule}}</span><span class="k">{{i.detail}}</span></div>
+                <div class="td mono k" style="background: {{i.bg}}">{{i.seen}}</div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{isPages}}" hint-placeholder-val="{{false}}">
+            <div style="display: grid; grid-template-columns: {{pageGrid}}; min-width: 980px">
+              <div class="th">URL</div>
+              <sc-if value="{{pc.type}}" hint-placeholder-val="{{true}}"><div class="th">类型</div></sc-if>
+              <sc-if value="{{pc.status}}" hint-placeholder-val="{{true}}"><div class="th">状态</div></sc-if>
+              <sc-if value="{{pc.title}}" hint-placeholder-val="{{true}}"><div class="th">Title</div></sc-if>
+              <sc-if value="{{pc.len}}" hint-placeholder-val="{{true}}"><div class="th">T / D 长度</div></sc-if>
+              <sc-if value="{{pc.robots}}" hint-placeholder-val="{{true}}"><div class="th">Robots</div></sc-if>
+              <sc-if value="{{pc.schema}}" hint-placeholder-val="{{true}}"><div class="th">Schema</div></sc-if>
+              <sc-if value="{{pc.index}}" hint-placeholder-val="{{true}}"><div class="th">收录</div></sc-if>
+              <sc-for list="{{pages}}" as="p" hint-placeholder-count="10">
+                <div class="td" style="background: {{p.bg}}"><button class="rowbtn" type="button" onClick="{{p.pick}}">{{p.path}}</button></div>
+                <sc-if value="{{pc.type}}" hint-placeholder-val="{{true}}"><div class="td" style="background: {{p.bg}}">{{p.typeLabel}}</div></sc-if>
+                <sc-if value="{{pc.status}}" hint-placeholder-val="{{true}}"><div class="td mono" style="background: {{p.bg}}">{{p.status}}</div></sc-if>
+                <sc-if value="{{pc.title}}" hint-placeholder-val="{{true}}"><div class="td" style="background: {{p.bg}}; overflow: hidden">{{p.title}}</div></sc-if>
+                <sc-if value="{{pc.len}}" hint-placeholder-val="{{true}}"><div class="td" style="background: {{p.bg}}"><span class="len {{p.tc}}">{{p.tl}}</span><span class="len {{p.dc}}">{{p.dl}}</span></div></sc-if>
+                <sc-if value="{{pc.robots}}" hint-placeholder-val="{{true}}"><div class="td mono k" style="background: {{p.bg}}">{{p.robots}}</div></sc-if>
+                <sc-if value="{{pc.schema}}" hint-placeholder-val="{{true}}"><div class="td k" style="background: {{p.bg}}">{{p.schemaShort}}</div></sc-if>
+                <sc-if value="{{pc.index}}" hint-placeholder-val="{{true}}"><div class="td" style="background: {{p.bg}}"><span class="chip {{p.icls}}">{{p.idx}}</span></div></sc-if>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{isLinks}}" hint-placeholder-val="{{false}}">
+            <div style="display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(200px, 1.4fr) minmax(160px, 1fr) 90px; min-width: 760px">
+              <div class="th">来源页面</div><div class="th">目标页面</div><div class="th">锚文本</div><div class="th">目标类型</div>
+              <sc-for list="{{links}}" as="l" hint-placeholder-count="5">
+                <div class="td mono" style="font-size: 12.5px">{{l.from}}</div><div class="td mono" style="font-size: 12.5px">{{l.to}}</div><div class="td">{{l.anchor}}</div><div class="td"><span class="chip idle">{{l.type}}</span></div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+        <div style="padding: 10px 16px; border-top: 1px solid #EEF0F2; display: flex; gap: 14px; flex-wrap: wrap; align-items: center" class="k">
+          <span>长度：<span class="len g">绿</span> 最佳 <span class="len o">橙</span> 可接受 <span class="len r">红</span> 需修改 · Title 30–60 · Description 120–160</span>
+          <sc-if value="{{isLinks}}" hint-placeholder-val="{{false}}"><span>孤立页面：<span class="mono">/window-feeder.html</span>（已排除导航、页脚链接）</span></sc-if>
+        </div>
+      </section>
+
+      <sc-if value="{{hasSel}}" hint-placeholder-val="{{false}}">
+        <aside class="card" style="flex: 1 1 340px; max-width: 400px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px" aria-label="页面 SEO 详情">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px">
+            <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0"><span class="mono" style="font-weight: 600; font-size: 14px; overflow-wrap: anywhere">{{sel.path}}</span><span class="k">{{sel.typeLabel}} · HTTP {{sel.status}} · 响应 {{sel.ms}}</span></div>
+            <button class="btn" type="button" aria-label="关闭详情" onClick="{{closeSel}}" style="min-height: 32px; padding: 0 8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+          </div>
+          <div class="kv">
+            <span class="k">Index</span><span><span class="chip {{sel.icls}}">{{sel.idx}}</span> <span class="k">{{sel.idxNote}}</span></span>
+            <span class="k">Title</span><span>{{sel.title}} <span class="len {{sel.tc}}">{{sel.tl}} 字符</span></span>
+            <span class="k">Description</span><span>{{sel.desc}} <span class="len {{sel.dc}}">{{sel.dl}} 字符</span></span>
+            <span class="k">Keywords</span><span class="k">{{sel.kw}}</span>
+            <span class="k">H1</span><span>{{sel.h1}}</span>
+            <span class="k">Canonical</span><span>{{sel.canon}}</span>
+            <span class="k">Meta robots</span><span class="mono">{{sel.robots}}</span>
+            <span class="k">X-Robots-Tag</span><span class="mono k">{{sel.xrobots}}</span>
+            <span class="k">hreflang</span><span class="mono k">{{sel.hreflang}}</span>
+            <span class="k">Open Graph</span><span>{{sel.og}}</span>
+            <span class="k">Schema</span><span style="display: flex; gap: 4px; flex-wrap: wrap"><sc-for list="{{sel.schemaList}}" as="s" hint-placeholder-count="2"><span class="chip ok">{{s}}</span></sc-for></span>
+            <span class="k">字数 / 图片</span><span>{{sel.words}} 词 · {{sel.alt}}</span>
+            <span class="k">内链 出 / 入</span><span>{{sel.links}}</span>
+            <span class="k">Sitemap</span><span>{{sel.inSitemap}}</span>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px">
+            <a class="btn" href="{{sel.url}}" target="_blank" rel="noopener">打开页面</a>
+            <a class="btn pri" href="{{sel.gUrl}}" target="_blank" rel="noopener"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>检查收录</a>
+          </div>
+        </aside>
+      </sc-if>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { view: 'issues', sev: 'all', type: 'all', picked: null, showCols: false, hide: {} };
+  }
+  renderVals() {
+    const st = this.state;
+    const T = { home: '首页', collection: '分类页', product: '产品页', blog: '博客', page: '静态页' };
+    const tColor = (n) => (n >= 30 && n <= 60 ? 'g' : ((n >= 20 && n < 30) || (n > 60 && n <= 70) ? 'o' : 'r'));
+    const dColor = (n) => (n >= 120 && n <= 160 ? 'g' : ((n >= 70 && n < 120) || (n > 160 && n <= 180) ? 'o' : 'r'));
+    const IX = { yes: ['已收录', 'ok', 'site: 查询有结果'], no: ['未收录', 'bad', 'site: 查询无结果'], na: ['未检查', 'idle', ''] };
+    const P = [
+      { path: '/', type: 'home', status: 200, ms: '310ms', title: 'Home | Kingsyard', desc: 'About Home', idx: 'yes', h1: 'Home（1 个）', canon: '指向自身', robots: 'index, follow', og: '缺少 og:image', schema: ['Organization', 'WebSite'], words: 4, alt: '0 张缺 alt', links: '4 / —', sm: true },
+      { path: '/bird-feeders.html', type: 'collection', status: 200, ms: '420ms', title: 'Bird Feeders – Tube, Suet & Window Feeders | Kingsyard', desc: 'Shop squirrel-resistant tube, suet and window bird feeders built to last. Easy to clean, easy to fill, and loved by backyard birds all year round.', idx: 'yes', h1: 'Bird Feeders（1 个）', canon: '指向自身', robots: 'index, follow', og: '完整', schema: ['BreadcrumbList', 'ItemList'], words: 9, alt: '0 张缺 alt', links: '6 / 3', sm: true },
+      { path: '/bird-houses.html', type: 'collection', status: 200, ms: '380ms', title: 'Bird Houses | Kingsyard', desc: 'Cozy wooden nest boxes for wrens, bluebirds and chickadees.', idx: 'yes', h1: 'Bird Houses（1 个）', canon: '指向自身', robots: 'index, follow', og: '完整', schema: ['BreadcrumbList', 'ItemList'], words: 4, alt: '0 张缺 alt', links: '4 / 0', sm: true },
+      { path: '/feeder-1.html', type: 'product', status: 200, ms: '520ms', title: 'Kingsyard Feeder 1 & Co – 6-Port Tube Feeder | Kingsyard', desc: 'Squirrel-resistant tube feeder with 6 ports, metal base and easy-clean design. Holds 2 lbs of seed. Ideal for finches, chickadees and cardinals.', idx: 'yes', h1: 'Kingsyard Feeder 1 & Co（1 个）', canon: '指向自身', robots: 'index, follow', og: '完整', schema: ['Product', 'Offer', 'AggregateRating', 'BreadcrumbList'], words: 286, alt: '1 张缺 alt', links: '8 / 2', sm: true },
+      { path: '/window-feeder.html', type: 'product', status: 200, ms: '480ms', title: 'Kingsyard Window Feeder | Kingsyard', desc: '', idx: 'no', h1: 'Kingsyard Window Feeder（1 个）', canon: '指向自身', robots: 'index, follow', og: '缺少 og:description', schema: ['Product', 'Offer', 'BreadcrumbList'], words: 142, alt: '0 张缺 alt', links: '6 / 0', sm: false },
+      { path: '/blog/how-to-attract-cardinals', type: 'blog', status: 200, ms: '350ms', title: 'How to Attract Cardinals to Your Backyard | Kingsyard', desc: 'Learn what cardinals eat, which feeders they prefer and how to keep them visiting your yard all year.', idx: 'yes', h1: 'How to Attract Cardinals（1 个）', canon: '指向自身', robots: 'index, follow', og: '完整', schema: ['BlogPosting'], words: 35, alt: '0 张缺 alt', links: '4 / 0', sm: true },
+      { path: '/blog/clean-bird-bath', type: 'blog', status: 200, ms: '330ms', title: 'How to Clean a Bird Bath | Kingsyard', desc: 'About How to Clean a Bird Bath', idx: 'yes', h1: 'How to Clean a Bird Bath（1 个）', canon: '指向自身', robots: 'index, follow', og: '缺少 og:image', schema: [], words: 15, alt: '0 张缺 alt', links: '0 / 1', sm: true },
+      { path: '/blog/missing-post', type: 'blog', status: 404, ms: '120ms', title: '', desc: '', idx: 'no', h1: '—', canon: '—', robots: '—', og: '—', schema: [], words: 0, alt: '—', links: '— / 0', sm: true },
+      { path: '/about-us', type: 'page', status: 200, ms: '290ms', title: 'About Us | Kingsyard', desc: 'About About Us', idx: 'no', h1: 'About Us（1 个）', canon: '指向自身', robots: 'noindex, follow', og: '缺少 og:image', schema: ['Organization'], words: 7, alt: '0 张缺 alt', links: '2 / 4', sm: true },
+      { path: '/shipping-policy', type: 'page', status: 200, ms: '300ms', title: 'Shipping Policy | Kingsyard', desc: 'About Shipping Policy', idx: 'no', h1: 'Shipping Policy（1 个）', canon: '指向 /shipping-policy-old', robots: 'index, follow', og: '缺少 og:image', schema: ['WebPage'], words: 5, alt: '0 张缺 alt', links: '2 / 0', sm: true }
+    ].map((p) => {
+      const url = 'https://www.kingsyard.com' + p.path;
+      return {
+        ...p, typeLabel: T[p.type], url, gUrl: 'https://www.google.com/search?q=site%3A' + encodeURIComponent(url.replace('https://', '')),
+        tl: p.title.length, dl: p.desc.length, tc: tColor(p.title.length), dc: dColor(p.desc.length),
+        title: p.title || '（缺失）', desc: p.desc || '（缺失）', kw: '未设置', xrobots: '无', hreflang: '无',
+        schemaList: p.schema.length ? p.schema : ['无'], schemaShort: p.schema.length ? p.schema.length + ' 种' : '无',
+        inSitemap: p.sm ? '是' : '否', idx: IX[p.idx][0], icls: IX[p.idx][1], idxNote: IX[p.idx][2] + ' · 10-19'
+      };
+    });
+    const pick = (path) => () => this.setState({ picked: path });
+    const I = [
+      ['high', '/blog/missing-post', '页面 404', '出现在 sitemap 中', '10-20'],
+      ['mid', '/shipping-policy', 'Canonical 指向其他页面', '指向 /shipping-policy-old', '10-20'],
+      ['mid', '/window-feeder.html', 'Meta description 缺失', '新上架产品页', '10-20'],
+      ['mid', '/blog/clean-bird-bath', '缺少 Article / BlogPosting schema', '同类博客已有 BlogPosting', '10-20'],
+      ['low', '/about-us', 'noindex', '确认是否有意不收录', '10-20'],
+      ['low', '/blog/clean-bird-bath', '内容过短且无站内链接', '15 词，正文未链接任何产品或文章', '10-20'],
+      ['low', '/', 'Title 过短', '16 字符，建议 30–60', '10-20']
+    ];
+    const SV = { high: ['高', 'bad'], mid: ['中', 'warn'], low: ['低', 'idle'] };
+    const issues = I.filter((i) => st.sev === 'all' || st.sev === i[0]).map((i) => ({
+      sev: SV[i[0]][0], cls: SV[i[0]][1], path: i[1], rule: i[2], detail: i[3], seen: i[4], pick: pick(i[1]), bg: i[1] === st.picked ? '#F2F8F5' : '#FFFFFF'
+    }));
+    const pages = P.filter((p) => st.type === 'all' || p.type === st.type).map((p) => ({ ...p, pick: pick(p.path), bg: p.path === st.picked ? '#F2F8F5' : '#FFFFFF' }));
+    const sel = P.find((p) => p.path === st.picked) || P[0];
+    const COLS = [['type', '类型', '84px'], ['status', '状态', '60px'], ['title', 'Title', 'minmax(160px, 1.4fr)'], ['len', 'T / D 长度', '110px'], ['robots', 'Robots', '110px'], ['schema', 'Schema', '80px'], ['index', '收录', '86px']];
+    const pc = {};
+    let grid = 'minmax(200px, 1.5fr)';
+    COLS.forEach((c) => { pc[c[0]] = !st.hide[c[0]]; if (pc[c[0]]) grid += ' ' + c[2]; });
+    const colOpts = COLS.map((c) => ({ label: c[1], on: pc[c[0]], toggle: () => this.setState({ hide: { ...st.hide, [c[0]]: pc[c[0]] } }) }));
+    const views = [['issues', '问题 7'], ['pages', '页面 10'], ['links', '内链']].map((v, i) => ({
+      label: v[1], cls: st.view === v[0] ? 'on' : '', pick: () => this.setState({ view: v[0], showCols: false }),
+      radius: i === 0 ? '6px 0 0 6px' : (i === 2 ? '0 6px 6px 0' : '0')
+    }));
+    const sevPills = [['all', '全部'], ['high', '高'], ['mid', '中'], ['low', '低']].map((p) => ({ label: p[1], cls: st.sev === p[0] ? 'on' : '', pick: () => this.setState({ sev: p[0] }) }));
+    const typePills = [['all', '全部'], ['home', '首页'], ['collection', '分类页'], ['product', '产品页'], ['blog', '博客'], ['page', '静态页']].map((p) => ({ label: p[1], cls: st.type === p[0] ? 'on' : '', pick: () => this.setState({ type: p[0] }) }));
+    const links = [
+      { from: '/blog/how-to-attract-cardinals', to: '/feeder-1.html', anchor: 'a sturdy tube feeder', type: '产品' },
+      { from: '/blog/how-to-attract-cardinals', to: '/feeder-0.html', anchor: 'the green feeder', type: '产品' },
+      { from: '/blog/how-to-attract-cardinals', to: '/blog/clean-bird-bath', anchor: 'how to clean a bird bath', type: '博客' },
+      { from: '/blog/how-to-attract-cardinals', to: '/bird-feeders.html', anchor: 'all feeders', type: '分类' },
+      { from: '/bird-feeders.html', to: '/feeder-1.html', anchor: 'Kingsyard Feeder 1 & Co', type: '产品' }
+    ];
+    return {
+      issues, pages, links, sel, hasSel: !!st.picked, views, sevPills, typePills, pc, pageGrid: grid, colOpts, showCols: st.showCols,
+      toggleCols: () => this.setState({ showCols: !st.showCols }), closeSel: () => this.setState({ picked: null }),
+      isIssues: st.view === 'issues', isPages: st.view === 'pages', isLinks: st.view === 'links'
+    };
+  }
+}
+</script>
+</body>
+</html>

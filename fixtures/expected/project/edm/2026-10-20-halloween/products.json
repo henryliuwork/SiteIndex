@@ -1,0 +1,41 @@
+[
+  {
+    "handle": "feeder-2",
+    "title": "Kingsyard Feeder 2 & Co",
+    "price_min": 16.99,
+    "price_max": 16.99,
+    "compare_at_max": 21.99,
+    "currency": "USD",
+    "url": "http://127.0.0.1:8765/feeder-2.html",
+    "image_url": "http://127.0.0.1:8765/media/catalog/product/k/y/feeder-2.jpg",
+    "image_source": "feed",
+    "stock_status": "in_stock",
+    "blurb": "Squirrel-resistant & easy to clean."
+  },
+  {
+    "handle": "feeder-0",
+    "title": "Kingsyard Feeder 0 & Co",
+    "price_min": 19.99,
+    "price_max": 19.99,
+    "compare_at_max": null,
+    "currency": "USD",
+    "url": "http://127.0.0.1:8765/feeder-0.html",
+    "image_url": "http://127.0.0.1:8765/media/catalog/product/k/y/feeder-0.jpg",
+    "image_source": "feed",
+    "stock_status": "in_stock",
+    "blurb": null
+  },
+  {
+    "handle": "feeder-5",
+    "title": "Kingsyard Feeder 5 & Co",
+    "price_min": 24.99,
+    "price_max": 24.99,
+    "compare_at_max": null,
+    "currency": "USD",
+    "url": "http://127.0.0.1:8765/feeder-5.html",
+    "image_url": "http://127.0.0.1:8765/media/catalog/product/k/y/feeder-5.jpg",
+    "image_source": "feed",
+    "stock_status": "in_stock",
+    "blurb": null
+  }
+]

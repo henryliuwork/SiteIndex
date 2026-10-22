@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · 本地文件</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.btn.sm{min-height:34px;padding:0 10px;font-size:13px}
+.btn.fix{background:#FFF1DB;border-color:#E8C48A;color:#6B3A00}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.sub{display:inline-flex;align-items:center;min-height:32px;padding:0 14px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500;font-size:13px}
+.sub.on{background:#1B1F24;color:#fff}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA;position:sticky;top:0;z-index:2}
+.td{padding:8px 12px;border-bottom:1px solid #EEF0F2;font-size:13px;display:flex;align-items:center;gap:6px;min-height:52px;box-sizing:border-box}
+.grp{grid-column:1 / -1;padding:8px 12px;background:#FAFBFC;border-bottom:1px solid #EEF0F2;font-size:12px;font-weight:600;color:#4A525C}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 24px">Kingsyard</h1><span class="k mono">D:\云盘\projects\kingsyard</span></div>
+      <div style="display: flex; gap: 10px"><button class="btn" type="button">打开文件夹</button><button class="btn pri" type="button" onClick="{{checkAll}}">一键校验全部</button></div>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab on" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+    <nav style="display: flex; gap: 6px" aria-label="设置分区"><a class="sub" href="ProjectSettings.dc.html">配置</a><a class="sub" href="Categories.dc.html">分类</a><a class="sub" href="Folders.dc.html">文件夹</a><a class="sub on" href="LocalFiles.dc.html">本地文件</a></nav>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center" class="card">
+      <div style="display: flex; gap: 24px; padding: 14px 18px; flex-wrap: wrap; align-items: center; flex: 1">
+        <span><span class="k">文件</span> <span style="font-weight: 700; font-size: 18px">{{total}}</span></span>
+        <span><span class="k">正常</span> <span style="font-weight: 700; font-size: 18px; color: #154D3B">{{nOk}}</span></span>
+        <span><span class="k">错误</span> <span style="font-weight: 700; font-size: 18px; color: #A3200F">{{nBad}}</span></span>
+        <span><span class="k">缺失</span> <span style="font-weight: 700; font-size: 18px; color: #A3200F">{{nMiss}}</span></span>
+        <span><span class="k">冲突副本</span> <span style="font-weight: 700; font-size: 18px; color: #8A4B00">{{nConf}}</span></span>
+      </div>
+      <span class="k" style="padding: 0 18px">{{lastAll}}</span>
+    </div>
+
+    <section class="card" style="overflow: auto; max-height: 640px">
+      <div style="display: grid; grid-template-columns: minmax(250px, 1.6fr) 74px 70px 64px 90px minmax(240px, 1.7fr) 220px; min-width: 1100px">
+        <div class="th">文件</div><div class="th">类型</div><div class="th">记录</div><div class="th">大小</div><div class="th">最近修改</div><div class="th">状态</div><div class="th">操作</div>
+        <sc-for list="{{groups}}" as="g" hint-placeholder-count="8">
+          <div class="grp">{{g.name}}</div>
+          <sc-for list="{{g.files}}" as="f" hint-placeholder-count="3">
+            <div class="td mono" style="font-size: 12.5px; background: {{f.bg}}; overflow-wrap: anywhere">{{f.path}}</div>
+            <div class="td" style="background: {{f.bg}}"><span class="chip {{f.kcls}}">{{f.kind}}</span></div>
+            <div class="td k" style="background: {{f.bg}}">{{f.rec}}</div>
+            <div class="td k" style="background: {{f.bg}}">{{f.size}}</div>
+            <div class="td mono k" style="background: {{f.bg}}">{{f.mod}}</div>
+            <div class="td" style="background: {{f.bg}}; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px"><span class="chip {{f.scls}}">{{f.st}}</span><span class="k" style="line-height: 16px">{{f.msg}}</span></div>
+            <div class="td" style="background: {{f.bg}}; flex-wrap: wrap">
+              <button class="btn sm" type="button" onClick="{{f.check}}">校验</button>
+              <sc-if value="{{f.showRegen}}" hint-placeholder-val="{{false}}"><button class="btn sm fix" type="button" onClick="{{f.regen}}">{{f.regenLabel}}</button></sc-if>
+              <sc-if value="{{f.showOpen}}" hint-placeholder-val="{{false}}"><button class="btn sm" type="button">打开</button></sc-if>
+            </div>
+          </sc-for>
+        </sc-for>
+      </div>
+    </section>
+    <span class="k">"重新生成"会执行对应的同步脚本，只重建该文件；台账（agent / 用户写的数据）无法从网站重新生成，提供"从归档恢复"或"自动修复"（排序、格式）。每日 02:30 的"数据校验"定时任务会执行同样的全部检查。</span>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { fixed: {}, checked: {}, all: false };
+  }
+  renderVals() {
+    const st = this.state;
+    const K = { sync: ['自动', 'ok'], ledger: ['台账', 'info'], conf: ['配置', 'warn'], view: ['视图', 'idle'], doc: ['说明', 'idle'] };
+    const G = [
+      ['配置与说明', [
+        ['site', 'index/site.json', 'conf', '—', '3.4 KB', '10-19 14:02', 'ok', ''],
+        ['readme', 'README.md', 'doc', '6 区块', '7.9 KB', '10-19 05:00', 'ok', ''],
+        ['skills', '_agent/skills/（7 个）', 'doc', '7', '41 KB', '10-20 09:12', 'ok', '']
+      ]],
+      ['商品目录', [
+        ['skus', 'index/catalog/skus.jsonl', 'sync', '19 行', '7.1 KB', '10-20 02:04', 'ok', ''],
+        ['skusc', 'index/catalog/skus (Henry-MBP 的冲突副本).jsonl', 'sync', '18 行', '6.8 KB', '10-19 23:40', 'conf', '云盘冲突副本；正式文件正常，可删除', '删除副本'],
+        ['details', 'index/catalog/product_details.jsonl', 'sync', '17 行', '12 KB', '10-20 03:01', 'ok', ''],
+        ['cats', 'index/catalog/categories.json', 'sync', '4 个', '1.2 KB', '10-20 03:01', 'ok', '']
+      ]],
+      ['库存', [
+        ['latest', 'index/inventory/latest.jsonl', 'sync', '19 行', '2.6 KB', '10-20 02:04', 'ok', ''],
+        ['events', 'index/inventory/events/2026-10.jsonl', 'sync', '5 行', '0.9 KB', '10-20 02:04', 'ok', ''],
+        ['summary', 'index/inventory/daily_summary.csv', 'sync', '8 行', '0.4 KB', '10-20 02:04', 'ok', '']
+      ]],
+      ['SEO 与内容', [
+        ['pages', 'index/seo/pages.jsonl', 'sync', '10 行', '18 KB', '10-20 03:01', 'ok', ''],
+        ['issues', 'index/seo/issues.jsonl', 'sync', '7 行', '1.6 KB', '10-20 03:01', 'ok', ''],
+        ['links', 'index/seo/links.jsonl', 'sync', '—', '24 KB', '10-20 03:01', 'bad', '第 212 行 JSON 不完整，可能是云盘同步中断', '重新生成'],
+        ['blog', 'index/content/blog_index.jsonl', 'sync', '2 行', '1.1 KB', '10-20 03:01', 'ok', ''],
+        ['kw', 'index/content/keywords.jsonl', 'ledger', '2 行', '0.5 KB', '10-18 16:20', 'ok', '']
+      ]],
+      ['台账', [
+        ['media', 'index/ledgers/sku_media.csv', 'ledger', '4 行', '0.6 KB', '10-18 11:05', 'ok', ''],
+        ['tags', 'index/ledgers/sku_tags.csv', 'ledger', '4 行', '0.3 KB', '10-20 10:41', 'bad', '第 5 行 priority = 8，应为 1–5 的整数', '自动修复'],
+        ['edm', 'index/ledgers/edm_campaigns.jsonl', 'ledger', '2 行', '0.7 KB', '10-20 10:45', 'ok', ''],
+        ['promo', 'index/ledgers/promotions.jsonl', 'ledger', '2 行', '0.5 KB', '10-19 18:30', 'ok', ''],
+        ['outreach', 'index/ledgers/outreach.jsonl', 'ledger', '2 行', '0.3 KB', '10-15 15:12', 'ok', '']
+      ]],
+      ['视图与日志', [
+        ['products', 'index/views/products.jsonl', 'view', '—', '—', '—', 'miss', '文件不存在（可能被误删或未同步到本机）', '重新生成'],
+        ['skustock', 'index/views/sku_stock.jsonl', 'view', '19 行', '5.3 KB', '10-20 02:05', 'ok', ''],
+        ['runs', 'index/logs/runs.jsonl', 'sync', '41 行', '9.8 KB', '10-20 02:31', 'ok', '']
+      ]]
+    ];
+    const SS = { ok: ['正常', 'ok'], bad: ['错误', 'bad'], miss: ['缺失', 'bad'], conf: ['冲突副本', 'warn'] };
+    let total = 0, nOk = 0, nBad = 0, nMiss = 0, nConf = 0;
+    const groups = G.map((g) => ({
+      name: g[0],
+      files: g[1].map((f) => {
+        const id = f[0];
+        const fixed = !!st.fixed[id];
+        const s = fixed ? 'ok' : f[6];
+        total++;
+        if (s === 'ok') nOk++; else if (s === 'bad') nBad++; else if (s === 'miss') nMiss++; else nConf++;
+        const checkedNow = st.checked[id] || st.all;
+        let msg = fixed ? (f[8] === '删除副本' ? '已删除冲突副本' : '刚刚' + f[8] + '，校验通过') : f[7];
+        if (!fixed && s === 'ok') msg = checkedNow ? '刚刚校验 · 可解析、字段完整、主键唯一、已排序' : '';
+        return {
+          path: f[1], kind: K[f[2]][0], kcls: K[f[2]][1], rec: fixed && s === 'ok' && f[3] === '—' ? '17 行' : f[3],
+          size: fixed && f[4] === '—' ? '6.2 KB' : f[4], mod: fixed ? '刚刚' : f[5],
+          st: SS[s][0], scls: SS[s][1], msg,
+          bg: s === 'ok' ? '#FFFFFF' : (s === 'conf' ? '#FFFCF5' : '#FFF8F7'),
+          showRegen: s !== 'ok' && !!f[8], regenLabel: f[8] || '',
+          showOpen: f[2] === 'ledger' && s !== 'ok',
+          check: () => this.setState({ checked: { ...st.checked, [id]: true } }),
+          regen: () => this.setState({ fixed: { ...st.fixed, [id]: true } })
+        };
+      })
+    }));
+    return {
+      groups, total, nOk, nBad, nMiss, nConf,
+      lastAll: st.all ? '全部校验：刚刚（手动）' : '上次全部校验：今天 02:30（定时任务）',
+      checkAll: () => this.setState({ all: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

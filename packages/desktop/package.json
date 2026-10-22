@@ -1,0 +1,7 @@
+{
+  "name": "@siteindex/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@siteindex/core": "workspace:*", "@siteindex/shared": "workspace:*" }
+}

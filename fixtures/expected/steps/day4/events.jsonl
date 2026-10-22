@@ -1,0 +1,5 @@
+{"date":"2026-10-20","sku":"KYBF001","type":"stock_change","from":"in_stock","to":"out_of_stock","category":"bird-feeders","title":"Kingsyard Feeder 1 & Co"}
+{"date":"2026-10-20","sku":"KYBF003","type":"stock_change","from":"out_of_stock","to":"in_stock","category":"bird-baths","title":"Kingsyard Feeder 3 & Co"}
+{"date":"2026-10-20","sku":"KYBF004-R","type":"stock_change","from":"in_stock","to":"out_of_stock","category":"bird-feeders","title":"Kingsyard Feeder 4 & Co / Red"}
+{"date":"2026-10-20","sku":"KYBF010","type":"price_change","from":29.99,"to":24.5,"category":"bird-houses","title":"Kingsyard Feeder 10 & Co"}
+{"date":"2026-10-20","sku":"KYBF100","type":"new_sku","from":null,"to":39.0,"category":"bird-feeders","title":"Kingsyard Window Feeder"}

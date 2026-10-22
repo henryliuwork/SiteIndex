@@ -1,0 +1,42 @@
+[
+  {
+    "slug": "bird-baths",
+    "name": "Bird Baths",
+    "parent": null,
+    "url": "",
+    "product_count": 3,
+    "last_seen": "2026-10-22"
+  },
+  {
+    "slug": "bird-feeders",
+    "name": "Bird Feeders",
+    "parent": null,
+    "url": "http://127.0.0.1:8765/bird-feeders.html",
+    "product_count": 9,
+    "last_seen": "2026-10-22"
+  },
+  {
+    "slug": "bird-houses",
+    "name": "Bird Houses",
+    "parent": null,
+    "url": "http://127.0.0.1:8765/bird-houses.html",
+    "product_count": 4,
+    "last_seen": "2026-10-22"
+  },
+  {
+    "slug": "suet-feeders",
+    "name": "Suet Feeders",
+    "parent": "bird-feeders",
+    "url": "",
+    "product_count": 4,
+    "last_seen": "2026-10-22"
+  },
+  {
+    "slug": "tube-feeders",
+    "name": "Tube Feeders",
+    "parent": "bird-feeders",
+    "url": "",
+    "product_count": 5,
+    "last_seen": "2026-10-22"
+  }
+]

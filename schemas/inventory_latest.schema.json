@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "siteindex/inventory_latest",
+  "title": "inventory/latest.jsonl",
+  "type": "object",
+  "properties": {
+    "sku": {
+      "type": "string"
+    },
+    "stock_status": {
+      "enum": [
+        "in_stock",
+        "out_of_stock",
+        "preorder",
+        "unknown"
+      ]
+    },
+    "qty": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "since": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "checked_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "sku",
+    "stock_status",
+    "since",
+    "checked_at"
+  ],
+  "x-primary-key": [
+    "sku"
+  ]
+}

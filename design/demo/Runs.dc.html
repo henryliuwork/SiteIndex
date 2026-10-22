@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · 运行与定时任务</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA}
+.td{padding:10px 12px;border-bottom:1px solid #EEF0F2;font-size:13px;display:flex;align-items:center;gap:6px}
+.job{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid #E1E4E8;border-radius:8px;background:#fff;text-align:left;font:inherit;color:#1B1F24;cursor:pointer;min-height:44px}
+.job:hover{border-color:#1E6B52}
+.log{font-family:"IBM Plex Mono",Consolas,monospace;font-size:12px;line-height:20px;white-space:pre}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="#"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+      <h1 style="margin: 0; font-size: 24px">Kingsyard</h1>
+      <span class="k mono">kingsyard.com · Magento</span>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab on" href="Runs.dc.html">运行</a><a class="tab" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+        <section style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px" aria-label="手动执行">
+          <sc-for list="{{jobs}}" as="j" hint-placeholder-count="6">
+            <button class="job" type="button">
+              <span style="display: flex; justify-content: space-between; align-items: center; width: 100%"><span style="font-weight: 600">{{j.name}}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="#1E6B52" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg></span>
+              <span class="k">{{j.desc}}</span>
+              <span class="k">上次 {{j.last}}</span>
+            </button>
+          </sc-for>
+        </section>
+
+        <section class="card" style="overflow: hidden">
+          <div style="padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid #EEF0F2">
+            <div style="display: flex; align-items: center; gap: 10px"><span style="font-weight: 600">每周同步</span><span class="chip info">运行中 · 62%</span></div>
+            <button class="btn" type="button" style="min-height: 34px">停止</button>
+          </div>
+          <div style="height: 4px; background: #ECEEF1"><div style="height: 4px; width: 62%; background: #1E6B52"></div></div>
+          <div class="log" style="background: #14181D; color: #D5DAE0; padding: 14px 18px; overflow-x: auto">02:58:01  获取运行锁 index/.lock（Henry-PC）
+02:58:01  读取 feed → 18 个 SKU，6 个分类节点
+02:58:03  展开 sitemap：1 个索引 → 1 个子 sitemap → 9 个 URL
+02:58:03  跳过产品 URL 1 个
+02:58:05  [1/8] /                              200  首页
+02:58:07  [2/8] /bird-feeders.html             200  分类页
+02:58:09  [3/8] /bird-houses.html              200  分类页
+02:58:11  [4/8] /about-us                      200  noindex
+02:58:13  [5/8] /shipping-policy               200  canonical 指向其他页面
+<span style="color: #F2B36B">02:58:15  [6/8] /blog/missing-post             404  已跳过</span>
+02:58:17  [7/8] /blog/how-to-attract-cardinals 200  博客 · 内链 2 · 产品 2
+02:58:17  …</div>
+        </section>
+
+        <section class="card" style="overflow: auto; max-height: 380px">
+          <div style="padding: 14px 18px; font-weight: 600">运行历史</div>
+          <div style="display: grid; grid-template-columns: 150px 90px 110px minmax(220px, 1fr) 90px; min-width: 700px">
+            <div class="th">时间</div><div class="th">任务</div><div class="th">设备</div><div class="th">结果</div><div class="th">状态</div>
+            <sc-for list="{{history}}" as="h" hint-placeholder-count="5">
+              <div class="td mono k">{{h.t}}</div><div class="td">{{h.job}}</div><div class="td">{{h.dev}}</div><div class="td">{{h.res}}</div><div class="td"><span class="chip {{h.cls}}">{{h.st}}</span></div>
+            </sc-for>
+          </div>
+        </section>
+      </div>
+
+      <div style="flex: 1 1 340px; display: flex; flex-direction: column; gap: 18px">
+        <section class="card" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
+          <h2 style="margin: 0; font-size: 15px">执行设备</h2>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: #F2F8F5; border-radius: 8px">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#154D3B" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            <div style="display: flex; flex-direction: column"><span style="font-weight: 600">Henry-PC（本机）</span><span class="k">定时任务只在这台设备上执行</span></div>
+          </div>
+          <span class="k">其他设备打开 SiteIndex 时只能手动执行；可在那台设备上点"改为本机"。</span>
+        </section>
+
+        <section class="card" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 4px">
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px"><h2 style="margin: 0; font-size: 15px">定时计划</h2><span class="chip ok">已注册到任务计划程序</span></div>
+          <span class="k">选择每个任务在周几、几点执行；保存后自动更新系统计划任务。</span>
+          <sc-for list="{{plan}}" as="p" hint-placeholder-count="5">
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid #EEF0F2; opacity: {{p.opacity}}">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+                <span style="font-weight: 600">{{p.name}}</span>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px"><input type="checkbox" checked="{{p.on}}" onChange="{{p.toggle}}">启用</label>
+              </div>
+              <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
+                <sc-if value="{{p.weekly}}" hint-placeholder-val="{{true}}">
+                  <span style="display: flex; gap: 3px"><sc-for list="{{p.days}}" as="d" hint-placeholder-count="7"><button type="button" onClick="{{d.pick}}" aria-pressed="{{d.sel}}" style="width: 30px; height: 30px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; border: 1px solid {{d.bd}}; background: {{d.bg}}; color: {{d.fg}}">{{d.label}}</button></sc-for></span>
+                </sc-if>
+                <sc-if value="{{p.monthly}}" hint-placeholder-val="{{false}}">
+                  <span style="font-size: 13px">每月 <input value="1" aria-label="每月几号" style="width: 40px; min-height: 30px; border: 1px solid #CDD2D8; border-radius: 6px; text-align: center; font: inherit"> 日</span>
+                </sc-if>
+                <input type="time" value="{{p.time}}" aria-label="{{p.name}} 执行时间" style="min-height: 30px; border: 1px solid #CDD2D8; border-radius: 6px; padding: 0 8px; font: inherit; font-size: 13px">
+              </div>
+              <span class="k">{{p.summary}}</span>
+            </div>
+          </sc-for>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid #EEF0F2">
+            <label style="display: flex; gap: 8px; font-size: 13px"><input type="checkbox" checked>到点唤醒电脑执行</label>
+            <label style="display: flex; gap: 8px; font-size: 13px"><input type="checkbox" checked>错过后开机尽快补跑</label>
+            <label style="display: flex; gap: 8px; font-size: 13px"><input type="checkbox" checked>失败时发系统通知</label>
+            <label style="display: flex; gap: 8px; font-size: 13px"><input type="checkbox" checked>每次同步结束后自动校验写入的文件</label>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap"><button class="btn pri" type="button">保存计划</button><a class="btn" href="LocalFiles.dc.html">查看数据校验结果</a></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      days: { daily: [1, 2, 3, 4, 5, 6, 7], validate: [1, 2, 3, 4, 5, 6, 7], weekly: [1], readme: [7] },
+      off: {}
+    };
+  }
+  renderVals() {
+    const st = this.state;
+    const DN = ['一', '二', '三', '四', '五', '六', '日'];
+    const J = [['daily', '每日同步', '02:00', 'w'], ['validate', '数据校验', '02:30', 'w'], ['weekly', '每周同步（页面 / 博客 / SEO）', '03:00', 'w'], ['readme', '刷新 README', '05:00', 'w'], ['monthly', '每月同步（站点概况 / 设计规范）', '04:00', 'm']];
+    const plan = J.map((j) => {
+      const sel = st.days[j[0]] || [];
+      const on = !st.off[j[0]];
+      const txt = j[3] === 'm' ? '每月 1 日 ' + j[2] : (sel.length === 7 ? '每天 ' + j[2] : (sel.length ? '每周' + sel.map((d) => DN[d - 1]).join('、') + ' ' + j[2] : '未选择执行日'));
+      return {
+        name: j[1], time: j[2], weekly: j[3] === 'w', monthly: j[3] === 'm', on, opacity: on ? 1 : 0.5,
+        summary: on ? txt + ' · 只在执行设备 Henry-PC 上运行' : '已停用',
+        toggle: () => this.setState({ off: { ...st.off, [j[0]]: on } }),
+        days: DN.map((label, i) => {
+          const d = i + 1, s = sel.indexOf(d) >= 0;
+          return {
+            label, sel: s, bg: s ? '#1E6B52' : '#FFFFFF', fg: s ? '#FFFFFF' : '#3D4550', bd: s ? '#1E6B52' : '#CDD2D8',
+            pick: () => this.setState({ days: { ...st.days, [j[0]]: s ? sel.filter((x) => x !== d) : sel.concat(d).sort() } })
+          };
+        })
+      };
+    });
+    return {
+      plan,
+      jobs: [
+        { name: '每日同步', desc: 'feed → SKU、库存、日报、视图', last: '今天 02:04 · 成功' },
+        { name: '每周同步', desc: 'sitemap → 页面、博客、分类', last: '运行中' },
+        { name: '每月同步', desc: '站点概况、设计规范、归档', last: '10-01 04:00 · 成功' },
+        { name: '提取设计规范', desc: '用 Edge 打开 3 个页面提取 tokens', last: '10-01 04:06 · 成功' },
+        { name: '刷新 README', desc: '更新 README 自动区块', last: '10-19 05:00 · 成功' },
+        { name: '数据校验', desc: '逐个校验数据文件：能否解析、字段、主键、排序、冲突副本', last: '今天 02:30 · 3 个问题' }
+      ],
+      history: [
+        { t: '10-20 02:30', job: '数据校验', dev: 'Henry-PC', res: '22 个文件：2 个错误、1 个缺失、1 个冲突副本', st: '需处理', cls: 'bad' },
+        { t: '10-20 02:04', job: '每日', dev: 'Henry-PC', res: '+1 到货 · −2 缺货 · 1 调价 · 1 上新', st: '成功', cls: 'ok' },
+        { t: '10-19 02:05', job: '每日', dev: 'Henry-PC', res: '首次同步：建立基线 18 个 SKU', st: '成功', cls: 'ok' },
+        { t: '10-18 14:22', job: '每日', dev: 'Henry-MBP', res: '非执行设备，已跳过', st: '跳过', cls: 'idle' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

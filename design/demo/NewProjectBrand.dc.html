@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>新建项目 · 品牌配置</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.f{display:flex;flex-direction:column;gap:6px}
+.f label,.lb{font-size:13px;font-weight:600}
+.inp{min-height:38px;padding:0 12px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;background:#fff;color:#1B1F24;box-sizing:border-box;width:100%}
+.fold{display:grid;grid-template-columns:24px 110px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid #EEF0F2;font-size:13px}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav on" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: center; gap: 10px" class="k"><a href="Main.dc.html">项目中心</a><span>/</span><span style="color: #1B1F24; font-weight: 600">新建项目</span></div>
+    <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px">
+      <li><a href="NewProjectUrl.dc.html" style="display: block; padding: 8px 14px; border-radius: 999px; background: #E3EFE9; color: #154D3B; font-weight: 600; text-decoration: none">✓ 1 网址</a></li>
+      <li><a href="NewProject.dc.html" style="display: block; padding: 8px 14px; border-radius: 999px; background: #E3EFE9; color: #154D3B; font-weight: 600; text-decoration: none">✓ 2 数据源</a></li>
+      <li style="padding: 8px 14px; border-radius: 999px; background: #1E6B52; color: #fff; font-weight: 600">3 品牌配置</li>
+      <li style="padding: 8px 14px; border-radius: 999px; background: #ECEEF1; color: #4A525C; font-weight: 500">4 完成</li>
+    </ol>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <section class="card" style="flex: 999 1 520px; min-width: 0; padding: 22px 24px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px"><h2 style="margin: 0; font-size: 17px">品牌信息</h2><span class="chip info">已从首页、About 页自动提取，可修改</span></div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px">
+          <div class="f"><label for="b1">品牌名</label><input id="b1" class="inp" value="Kingsyard"></div>
+          <div class="f"><label for="b2">目标市场</label><input id="b2" class="inp" value="US"></div>
+          <div class="f" style="grid-column: 1 / -1"><label for="b3">一句话定位</label><input id="b3" class="inp" value="Wild bird feeding supplies for backyard birders."></div>
+          <div class="f"><label for="b4">目标人群</label><input id="b4" class="inp" value="Backyard bird lovers and gift buyers"></div>
+          <div class="f"><label for="b5">文案调性</label><input id="b5" class="inp" value="Warm, practical, nature-loving; short sentences"></div>
+        </div>
+        <div class="f"><span class="lb">核心卖点</span><div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center"><span class="chip idle">Squirrel-resistant designs ×</span><span class="chip idle">Easy to clean ×</span><button class="btn" type="button" style="min-height: 30px; padding: 0 10px; font-size: 13px">+ 添加</button></div></div>
+        <span class="k">这些信息写入 index/site.json 与 README「项目概况」，agent 写文案时会读取。可以先留空，之后在项目设置里补充。</span>
+      </section>
+
+      <section class="card" style="flex: 1 1 380px; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px">
+        <h2 style="margin: 0; font-size: 17px">项目位置</h2>
+        <div class="f"><span class="lb">项目根目录</span><div style="display: flex; gap: 8px"><input class="inp mono" value="D:\云盘\projects" aria-label="项目根目录"><button class="btn" type="button">更改</button></div><span class="k">默认取自软件设置</span></div>
+        <div class="f"><label for="fn">项目文件夹名</label><input id="fn" class="inp mono" value="{{folder}}" onChange="{{onFolder}}"></div>
+        <div style="background: #F8F9FA; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px"><span class="k">将创建</span><span class="mono" style="font-size: 13px; overflow-wrap: anywhere">{{fullPath}}</span></div>
+        <div class="f">
+          <span class="lb">工作区文件夹</span>
+          <sc-for list="{{folders}}" as="d" hint-placeholder-count="6">
+            <label class="fold"><input type="checkbox" checked="{{d.on}}" onChange="{{d.toggle}}"><span class="mono">{{d.name}}/</span><span class="k">{{d.desc}}</span><span class="chip idle">默认</span></label>
+          </sc-for>
+          <span class="k">创建后可在 项目设置 › 文件夹 中修改说明、新建或删除自定义文件夹。</span>
+        </div>
+      </section>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; gap: 12px">
+      <a class="btn" href="NewProject.dc.html">上一步</a>
+      <a class="btn pri" href="NewProjectDone.dc.html">创建项目</a>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { folder: 'kingsyard', off: {} };
+  }
+  renderVals() {
+    const st = this.state;
+    const D = [['seo', '关键词研究、排名记录、站内优化'], ['edm', '每次邮件一个子文件夹'], ['产品', '产品图、上新资料、利润测算'], ['内容', '博客 brief 与草稿'], ['设计', '页面、Banner、邮件模板设计稿'], ['报告', '月度汇报、复盘']];
+    const folders = D.map((d) => ({ name: d[0], desc: d[1], on: !st.off[d[0]], toggle: () => this.setState({ off: { ...st.off, [d[0]]: !st.off[d[0]] } }) }));
+    return {
+      folder: st.folder, folders, fullPath: 'D:\\云盘\\projects\\' + (st.folder || '[文件夹名]'),
+      onFolder: (e) => this.setState({ folder: e.target.value })
+    };
+  }
+}
+</script>
+</body>
+</html>

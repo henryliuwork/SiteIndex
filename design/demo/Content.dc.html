@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · 内容</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 14px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.btn:disabled{opacity:.45;cursor:default}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.seg{min-height:32px;padding:0 14px;border:1px solid #CDD2D8;background:#fff;font:inherit;font-size:13px;font-weight:500;color:#3D4550;cursor:pointer}
+.seg.on{background:#1B1F24;border-color:#1B1F24;color:#fff}
+.pill{min-height:30px;padding:0 12px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;font:inherit;font-size:13px;font-weight:500;color:#3D4550;cursor:pointer;white-space:nowrap}
+.pill.on{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA;position:sticky;top:0;z-index:1}
+.th.res{background:#F3F4F6;color:#8A939D}
+.td{padding:6px 12px;border-bottom:1px solid #EEF0F2;font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:44px;box-sizing:border-box}
+.inp{min-height:34px;padding:0 10px 0 32px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;font-size:13px;background:#fff;color:#1B1F24;box-sizing:border-box;width:100%}
+.pg{min-width:32px;min-height:32px;border:1px solid #CDD2D8;border-radius:6px;background:#fff;font:inherit;font-size:13px;cursor:pointer}
+.pg.on{background:#1B1F24;border-color:#1B1F24;color:#fff}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 24px">Kingsyard</h1><span class="k mono">kingsyard.com · Magento</span><span class="chip idle">示例数据</span></div>
+      <div style="display: flex; gap: 10px"><button class="btn" type="button">导出 CSV</button><button class="btn" type="button">打开 内容/ 文件夹</button></div>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab on" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">博客文章</span><span style="font-size: 20px; font-weight: 700">{{blogTotal}}</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">缺少 schema</span><span style="font-size: 20px; font-weight: 700">{{noSchema}}</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">正文无站内链接</span><span style="font-size: 20px; font-weight: 700">{{noLinks}}</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">链接到缺货产品</span><span style="font-size: 20px; font-weight: 700; color: #8A4B00">{{oosLinks}}</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">关键词</span><span style="font-size: 20px; font-weight: 700">{{kwTotal}}</span><span class="k">已上线 {{kwLive}} · 计划 {{kwPlan}}</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">核心词未覆盖</span><span style="font-size: 20px; font-weight: 700">2</span><span class="k">suet feeders · bird baths</span></div>
+    </div>
+
+    <section class="card" style="overflow: hidden">
+      <div style="padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; border-bottom: 1px solid #E1E4E8">
+        <div style="display: flex" role="group" aria-label="视图">
+          <sc-for list="{{views}}" as="v" hint-placeholder-count="3"><button class="seg {{v.cls}}" type="button" onClick="{{v.pick}}" style="border-radius: {{v.radius}}">{{v.label}}</button></sc-for>
+        </div>
+        <label style="position: relative; flex: 1 1 220px; max-width: 320px; display: flex">
+          <span style="position: absolute; left: -9999px">搜索</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A939D" stroke-width="2" aria-hidden="true" style="position: absolute; left: 10px; top: 10px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+          <input class="inp" value="{{q}}" onChange="{{onSearch}}" placeholder="{{placeholder}}">
+        </label>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{filters}}" as="p" hint-placeholder-count="4"><button class="pill {{p.cls}}" type="button" onClick="{{p.pick}}">{{p.label}}</button></sc-for></div>
+        <span class="k" style="margin-left: auto">共 {{matched}} 条</span>
+      </div>
+      <div style="max-height: 520px; overflow: auto">
+        <sc-if value="{{isBlog}}" hint-placeholder-val="{{true}}">
+          <div style="display: grid; grid-template-columns: minmax(260px, 2.4fr) 96px 64px minmax(170px, 1.2fr) 88px 96px 100px 92px; min-width: 1060px">
+            <div class="th">标题</div><div class="th">发布</div><div class="th">字数</div><div class="th">主关键词</div><div class="th">内链 出/入</div><div class="th">链接产品</div><div class="th">Schema</div><div class="th res">展现 / 点击</div>
+            <sc-for list="{{blogRows}}" as="b" hint-placeholder-count="20">
+              <div class="td" style="flex-direction: column; align-items: flex-start; justify-content: center; gap: 0"><span style="font-weight: 500">{{b.title}}</span><span class="k mono">{{b.slug}}</span></div>
+              <div class="td mono k">{{b.date}}</div><div class="td">{{b.words}}</div><div class="td">{{b.kw}}</div><div class="td mono">{{b.links}}</div>
+              <div class="td"><span class="chip {{b.pcls}}">{{b.prods}}</span></div>
+              <div class="td"><span class="chip {{b.scls}}">{{b.schema}}</span></div><div class="td k">—</div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{isKw}}" hint-placeholder-val="{{false}}">
+          <div style="display: grid; grid-template-columns: minmax(190px, 1.4fr) minmax(220px, 1.7fr) 72px 92px 80px minmax(110px, 1fr) 70px 80px; min-width: 1000px">
+            <div class="th">关键词</div><div class="th">目标页面</div><div class="th">角色</div><div class="th">意图</div><div class="th">状态</div><div class="th">主题簇</div><div class="th res">排名</div><div class="th res">搜索量</div>
+            <sc-for list="{{kwRows}}" as="w" hint-placeholder-count="20">
+              <div class="td">{{w.kw}}</div><div class="td mono k" style="font-size: 12px">{{w.url}}</div><div class="td">{{w.role}}</div><div class="td">{{w.intent}}</div>
+              <div class="td"><span class="chip {{w.scls}}">{{w.status}}</span></div><div class="td k">{{w.cluster}}</div><div class="td k">—</div><div class="td k">—</div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{isDraft}}" hint-placeholder-val="{{false}}">
+          <div style="display: grid; grid-template-columns: 110px minmax(240px, 2fr) minmax(200px, 1.4fr) 90px; min-width: 700px">
+            <div class="th">日期</div><div class="th">草稿</div><div class="th">文件</div><div class="th">状态</div>
+            <div class="td mono k">2026-10-18</div><div class="td">best-suet-feeders-for-winter</div><div class="td k">brief.md · draft.md · meta.json</div><div class="td"><span class="chip info">草稿</span></div>
+            <div class="td mono k">2026-10-12</div><div class="td">bird-bath-buying-guide</div><div class="td k">brief.md</div><div class="td"><span class="chip idle">brief</span></div>
+          </div>
+        </sc-if>
+      </div>
+      <div style="padding: 10px 16px; border-top: 1px solid #EEF0F2; display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+        <span class="k">每页 20 条 · 第 {{page}} / {{pages}} 页</span>
+        <span style="margin-left: auto; display: flex; gap: 4px">
+          <button class="pg" type="button" onClick="{{prev}}" aria-label="上一页">‹</button>
+          <sc-for list="{{pageBtns}}" as="p" hint-placeholder-count="4"><button class="pg {{p.cls}}" type="button" onClick="{{p.pick}}">{{p.n}}</button></sc-for>
+          <button class="pg" type="button" onClick="{{next}}" aria-label="下一页">›</button>
+        </span>
+      </div>
+    </section>
+    <span class="k">数据：index/content/blog_index.jsonl · index/content/keywords.jsonl · 灰色列为 GSC / 关键词工具预留位</span>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { view: 'blog', q: '', f: 'all', page: 1 };
+  }
+  renderVals() {
+    const st = this.state;
+    const birds = ['Cardinals', 'Blue Jays', 'Goldfinches', 'Hummingbirds', 'Chickadees', 'Woodpeckers', 'Orioles', 'Bluebirds', 'Wrens', 'Nuthatches', 'Robins'];
+    const forms = [['How to Attract ', ' to Your Yard', 'how to attract {b}'], ['What Do ', ' Eat?', 'what do {b} eat'], ['Best Feeders for ', '', 'best feeder for {b}'], ['', ' Nesting Guide', '{b} nesting']];
+    const blogs = [];
+    let i = 0;
+    birds.forEach((b) => forms.forEach((f) => {
+      if (blogs.length >= 63) return;
+      const t = f[0] + b + f[1];
+      const kw = f[2].replace('{b}', b.toLowerCase());
+      const n = i++;
+      blogs.push({
+        title: t, slug: t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        date: '2026-' + String(10 - (n % 10)).padStart(2, '0') + '-' + String(1 + (n * 7) % 27).padStart(2, '0'),
+        words: 600 + (n * 137) % 1400, kw: n % 9 === 4 ? '未登记' : kw.trim(),
+        lo: n % 11 === 5 ? 0 : 2 + n % 5, li: n % 4, prods: n % 13 === 3 ? 1 : n % 4, oos: n % 13 === 3, schema: n % 12 === 7 ? '缺失' : (n % 5 === 0 ? 'BlogPosting · FAQ' : 'BlogPosting')
+      });
+    }));
+    const kws = [];
+    blogs.forEach((b, n) => {
+      if (b.kw !== '未登记') kws.push({ kw: b.kw, url: '/blog/' + b.slug, role: '主词', intent: '信息型', status: '已上线', cluster: b.title.split(' ').slice(-3).join(' ').toLowerCase() });
+      if (n % 4 === 0) kws.push({ kw: b.title.split(' ').filter((x) => birds.join(' ').indexOf(x) >= 0).join(' ').toLowerCase() + ' feeder', url: '—', role: '次词', intent: '商业型', status: '计划', cluster: 'feeders' });
+    });
+    const q = (st.q || '').toLowerCase();
+    const isBlog = st.view === 'blog', isKw = st.view === 'kw';
+    let list;
+    if (isBlog) {
+      list = blogs.filter((b) => (!q || (b.title + ' ' + b.kw).toLowerCase().indexOf(q) >= 0) &&
+        (st.f === 'all' || (st.f === 'nolink' && b.lo === 0) || (st.f === 'noschema' && b.schema === '缺失') || (st.f === 'oos' && b.oos)));
+    } else if (isKw) {
+      list = kws.filter((w) => (!q || (w.kw + ' ' + w.url).toLowerCase().indexOf(q) >= 0) &&
+        (st.f === 'all' || (st.f === 'primary' && w.role === '主词') || (st.f === 'secondary' && w.role === '次词') || (st.f === 'plan' && w.status === '计划') || (st.f === 'live' && w.status === '已上线')));
+    } else list = [1, 2];
+    const pages = Math.max(1, Math.ceil(list.length / 20));
+    const page = Math.min(st.page, pages);
+    const slice = list.slice((page - 1) * 20, page * 20);
+    const blogRows = isBlog ? slice.map((b) => ({ ...b, links: b.lo + ' / ' + b.li, prods: b.oos ? b.prods + ' · 含缺货' : String(b.prods), pcls: b.oos ? 'warn' : 'idle', scls: b.schema === '缺失' ? 'bad' : 'ok' })) : [];
+    const kwRows = isKw ? slice.map((w) => ({ ...w, scls: w.status === '已上线' ? 'ok' : 'idle' })) : [];
+    const views = [['blog', '博客文章 ' + blogs.length], ['kw', '关键词映射 ' + kws.length], ['draft', '草稿 2']].map((v, n) => ({
+      label: v[1], cls: st.view === v[0] ? 'on' : '', pick: () => this.setState({ view: v[0], f: 'all', page: 1, q: '' }),
+      radius: n === 0 ? '6px 0 0 6px' : (n === 2 ? '0 6px 6px 0' : '0')
+    }));
+    const F = isBlog ? [['all', '全部'], ['nolink', '无站内链接'], ['noschema', '缺 schema'], ['oos', '链接缺货产品']]
+      : (isKw ? [['all', '全部'], ['primary', '主词'], ['secondary', '次词'], ['live', '已上线'], ['plan', '计划']] : []);
+    const filters = F.map((p) => ({ label: p[1], cls: st.f === p[0] ? 'on' : '', pick: () => this.setState({ f: p[0], page: 1 }) }));
+    const pageBtns = [];
+    for (let n = 1; n <= pages; n++) pageBtns.push({ n, cls: n === page ? 'on' : '', pick: () => this.setState({ page: n }) });
+    return {
+      views, filters, blogRows, kwRows, isBlog, isKw, isDraft: st.view === 'draft', q: st.q, matched: list.length,
+      page, pages, pageBtns, placeholder: isKw ? '搜索关键词或页面' : '搜索标题或关键词',
+      prev: () => this.setState({ page: Math.max(1, page - 1) }), next: () => this.setState({ page: Math.min(pages, page + 1) }),
+      onSearch: (e) => this.setState({ q: e.target.value, page: 1 }),
+      blogTotal: blogs.length, noSchema: blogs.filter((b) => b.schema === '缺失').length, noLinks: blogs.filter((b) => b.lo === 0).length,
+      oosLinks: blogs.filter((b) => b.oos).length, kwTotal: kws.length, kwLive: kws.filter((w) => w.status === '已上线').length, kwPlan: kws.filter((w) => w.status === '计划').length
+    };
+  }
+}
+</script>
+</body>
+</html>

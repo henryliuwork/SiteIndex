@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · 设计规范</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=Inter:wght@400;600&amp;family=Lora:wght@600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.idle{background:#ECEEF1;color:#4A525C}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.sw{display:flex;flex-direction:column;gap:6px}
+.typ{display:grid;grid-template-columns:70px 1fr 180px;gap:12px;align-items:baseline;padding:10px 0;border-top:1px solid #EEF0F2}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 24px">Kingsyard</h1><span class="k mono">kingsyard.com · Magento</span><span class="chip idle">提取于 10-01 · 3 个页面 · 示例数据</span></div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap"><button class="btn" type="button">打开 tokens.json</button><button class="btn" type="button">复制 page-design 指令</button><a class="btn pri" href="Runs.dc.html">重新提取</a></div>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab on" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+        <section class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <h2 style="margin: 0; font-size: 15px">颜色</h2>
+          <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px">
+            <sc-for list="{{colors}}" as="c" hint-placeholder-count="7">
+              <button class="sw" type="button" onClick="{{c.copy}}" title="点击复制 {{c.hex}}" style="border: 0; background: transparent; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer"><span style="display: block; height: 64px; border-radius: 8px; border: 1px solid #E1E4E8; background: {{c.hex}}"></span><span style="font-weight: 600; font-size: 13px">{{c.name}}</span><span class="mono" style="font-size: 12px; color: {{c.labelColor}}; display: flex; align-items: center; gap: 4px">{{c.label}}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M4 16V6a2 2 0 0 1 2-2h10"></path></svg></span></button>
+            </sc-for>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span class="k">使用频率前 12（palette）</span>
+            <div style="display: flex; gap: 0; border-radius: 6px; overflow: hidden; height: 24px">
+              <sc-for list="{{palette}}" as="p" hint-placeholder-count="12"><div style="flex: {{p.w}} 1 0; background: {{p.hex}}" title="{{p.hex}}"></div></sc-for>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 4px">
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px"><h2 style="margin: 0; font-size: 15px">字体</h2><span class="k">标题 <span class="mono">Lora, serif</span> · 正文 <span class="mono">Inter, sans-serif</span></span></div>
+          <div class="typ"><span class="k mono">h1</span><span style="font-family: Lora, serif; font-size: 40px; font-weight: 700; line-height: 48px; color: #222222">Feed the birds</span><span class="k mono">40 / 48 · 700</span></div>
+          <div class="typ"><span class="k mono">h2</span><span style="font-family: Lora, serif; font-size: 28px; font-weight: 600; line-height: 36px; color: #222222">Squirrel-proof feeders</span><span class="k mono">28 / 36 · 600</span></div>
+          <div class="typ"><span class="k mono">h3</span><span style="font-family: Lora, serif; font-size: 20px; font-weight: 600; line-height: 28px; color: #222222">Easy to clean</span><span class="k mono">20 / 28 · 600</span></div>
+          <div class="typ"><span class="k mono">body</span><span style="font-family: Inter, sans-serif; font-size: 16px; line-height: 26px; color: #222222">Durable feeders and baths for backyard birders.</span><span class="k mono">16 / 26 · 400</span></div>
+          <div class="typ"><span class="k mono">small</span><span style="font-family: Inter, sans-serif; font-size: 13px; line-height: 20px; color: #6B6B6B">Free shipping over $49</span><span class="k mono">13 / 20 · 400</span></div>
+        </section>
+      </div>
+
+      <div style="flex: 1 1 340px; display: flex; flex-direction: column; gap: 18px">
+        <section class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <h2 style="margin: 0; font-size: 15px">组件</h2>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center">
+            <span style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 24px; background: #2F5D3A; color: #fff; border-radius: 4px; font-family: Inter, sans-serif; font-weight: 600">Add to Cart</span>
+            <span style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 24px; background: #fff; color: #2F5D3A; border: 1.5px solid #2F5D3A; border-radius: 4px; font-family: Inter, sans-serif; font-weight: 600">Learn more</span>
+          </div>
+          <div class="k mono" style="line-height: 18px">button_primary · #2F5D3A / #FFFFFF · 圆角 4px · 内边距 12px 24px · 600</div>
+          <span style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid #E5E2DA; border-radius: 4px; color: #6B6B6B; font-family: Inter, sans-serif">Enter your email</span>
+          <div class="k mono">input · 边框 #E5E2DA · 圆角 4px · 高 44px</div>
+        </section>
+        <section class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+          <h2 style="margin: 0; font-size: 15px">间距 · 圆角 · 阴影</h2>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap"><span class="chip idle mono">4</span><span class="chip idle mono">8</span><span class="chip idle mono">12</span><span class="chip idle mono">16</span><span class="chip idle mono">24</span><span class="chip idle mono">32</span><span class="chip idle mono">48</span></div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap"><span class="chip idle mono">r 4px</span><span class="chip idle mono">r 8px</span><span class="chip idle mono">r 999px</span></div>
+          <div class="k mono">shadow · 0 2px 8px rgba(0,0,0,.08)</div>
+        </section>
+        <section class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+          <h2 style="margin: 0; font-size: 15px">页面截图 · 6</h2>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+            <div style="height: 64px; border-radius: 6px; background: #E9ECEF; display: flex; align-items: center; justify-content: center" class="k">首页 · 桌面</div>
+            <div style="height: 64px; border-radius: 6px; background: #E9ECEF; display: flex; align-items: center; justify-content: center" class="k">分类 · 桌面</div>
+            <div style="height: 64px; border-radius: 6px; background: #E9ECEF; display: flex; align-items: center; justify-content: center" class="k">产品 · 桌面</div>
+            <div style="height: 64px; border-radius: 6px; background: #E9ECEF; display: flex; align-items: center; justify-content: center" class="k">首页 · 手机</div>
+            <div style="height: 64px; border-radius: 6px; background: #E9ECEF; display: flex; align-items: center; justify-content: center" class="k">分类 · 手机</div>
+            <div style="height: 64px; border-radius: 6px; background: #E9ECEF; display: flex; align-items: center; justify-content: center" class="k">产品 · 手机</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { copied: null };
+  }
+  renderVals() {
+    const st = this.state;
+    const base = [
+      { name: 'primary', hex: '#2F5D3A' }, { name: 'text', hex: '#222222' }, { name: 'text_muted', hex: '#6B6B6B' },
+      { name: 'background', hex: '#FFFFFF' }, { name: 'surface', hex: '#F6F4EF' }, { name: 'border', hex: '#E5E2DA' }, { name: 'sale', hex: '#C0392B' }
+    ];
+    return {
+      colors: base.map((c) => ({
+        ...c, label: st.copied === c.hex ? '已复制' : c.hex, labelColor: st.copied === c.hex ? '#154D3B' : '#5B6470',
+        copy: () => { try { navigator.clipboard.writeText(c.hex); } catch (e) {} this.setState({ copied: c.hex }); }
+      })),
+      palette: [
+        { hex: '#FFFFFF', w: 30 }, { hex: '#222222', w: 18 }, { hex: '#2F5D3A', w: 12 }, { hex: '#F6F4EF', w: 10 }, { hex: '#6B6B6B', w: 8 },
+        { hex: '#E5E2DA', w: 6 }, { hex: '#C0392B', w: 4 }, { hex: '#8DA07A', w: 3 }, { hex: '#D9B26F', w: 3 }, { hex: '#4A7C59', w: 2 },
+        { hex: '#B5502C', w: 2 }, { hex: '#1D3A25', w: 2 }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

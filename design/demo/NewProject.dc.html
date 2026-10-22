@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>新建项目 · 数据源</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:600}
+.inp{min-height:40px;padding:0 12px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;background:#fff;color:#1B1F24;box-sizing:border-box}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA}
+.td{padding:10px 12px;border-bottom:1px solid #EEF0F2;font-size:13px}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav on" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; align-items: center; gap: 10px" class="k">
+      <a href="Main.dc.html">项目中心</a><span>/</span><span style="color: #1B1F24; font-weight: 600">新建项目</span>
+    </div>
+
+    <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px">
+      <li><a href="NewProjectUrl.dc.html" style="display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: #E3EFE9; color: #154D3B; font-weight: 600; text-decoration: none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>1 网址</a></li>
+      <li style="display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: #1E6B52; color: #fff; font-weight: 600">2 数据源</li>
+      <li><a href="NewProjectBrand.dc.html" style="display: block; padding: 8px 14px; border-radius: 999px; background: #ECEEF1; color: #4A525C; font-weight: 500; text-decoration: none">3 品牌配置</a></li>
+      <li style="padding: 8px 14px; border-radius: 999px; background: #ECEEF1; color: #4A525C; font-weight: 500">4 完成</li>
+    </ol>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <section class="card" style="flex: 1 1 260px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+        <h2 style="margin: 0; font-size: 15px">网址检测结果</h2>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span class="k">最终地址</span><span class="mono">https://www.kingsyard.com</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span class="k">平台</span><span>Magento（前台 Next.js）</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span class="k">robots.txt</span><span>已读取 · 1 条 Disallow</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span class="k">Sitemap</span><span>1 个索引 · 1 个子 sitemap · 9 个 URL</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span class="k">语言 / 币种</span><span>en-US / USD</span></div>
+        <div style="background: #F8F9FA; border-radius: 6px; padding: 10px 12px; font-size: 12px; line-height: 18px; color: #4A525C">GMC feed 不在网站上公开，请从 Merchant Center 的数据源或 feed 插件中复制地址。</div>
+      </section>
+
+      <section style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+        <div class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <div class="field">
+            <label for="feed">GMC 商品 feed 地址</label>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap">
+              <input id="feed" class="inp mono" style="flex: 1 1 360px" value="https://www.kingsyard.com/feeds/google_us.xml">
+              <button class="btn pri" type="button">重新检测</button>
+            </div>
+            <span class="k">可添加多个 feed，按顺序合并；同一 id 以先出现的为准。</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+            <div style="background: #F8F9FA; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="k">feed 条目</span><span style="font-size: 22px; font-weight: 700">20</span></div>
+            <div style="background: #F8F9FA; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="k">可用 SKU</span><span style="font-size: 22px; font-weight: 700">18</span></div>
+            <div style="background: #F8F9FA; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="k">产品（归组后）</span><span style="font-size: 22px; font-weight: 700">16</span></div>
+            <div style="background: #FFF8EC; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="k">已跳过</span><span style="font-size: 22px; font-weight: 700; color: #8A4B00">2</span><span class="k">重复 id 1 · 缺价格 1</span></div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+          <div class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+            <h2 style="margin: 0 0 4px; font-size: 15px">字段覆盖率</h2>
+            <sc-for list="{{coverage}}" as="f" hint-placeholder-count="8">
+              <div style="display: grid; grid-template-columns: 120px 1fr 48px; gap: 10px; align-items: center">
+                <span class="mono" style="font-size: 12px">{{f.name}}</span>
+                <div style="height: 8px; background: #ECEEF1; border-radius: 4px"><div style="height: 8px; border-radius: 4px; background: #1E6B52; width: {{f.pct}}"></div></div>
+                <span style="font-size: 12px; text-align: right">{{f.pct}}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+            <h2 style="margin: 0; font-size: 15px">解析设置</h2>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+              <div class="field"><label for="skuf">SKU 字段</label><select id="skuf" class="inp"><option>id</option><option>mpn</option></select></div>
+              <div class="field"><label for="dep">主分类层级</label><select id="dep" class="inp"><option>第 2 层</option><option>第 1 层</option><option>第 3 层</option></select></div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <span class="k">主分类分布（product_type 第 2 层）</span>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap"><span class="chip idle">bird-feeders · 10</span><span class="chip idle">bird-houses · 4</span><span class="chip idle">bird-baths · 4</span></div>
+            </div>
+            <fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px">
+              <legend style="font-size: 13px; font-weight: 600; padding: 0 0 6px">商品从 feed 消失时</legend>
+              <label style="display: flex; gap: 8px; align-items: flex-start; font-size: 13px"><input type="radio" name="miss" checked style="margin-top: 3px">先记为缺货，连续 30 天不出现再判定下架（feed 会剔除缺货商品时选这个）</label>
+              <label style="display: flex; gap: 8px; align-items: flex-start; font-size: 13px"><input type="radio" name="miss" style="margin-top: 3px">立即判定下架</label>
+            </fieldset>
+          </div>
+        </div>
+
+        <div class="card" style="overflow-x: auto">
+          <div style="padding: 16px 20px; font-weight: 600; font-size: 15px">示例数据（前 4 条）</div>
+          <div style="display: grid; grid-template-columns: 120px minmax(200px, 2fr) 110px 120px 90px 110px; min-width: 760px">
+            <div class="th">sku</div><div class="th">title</div><div class="th">variant</div><div class="th">category</div><div class="th">price</div><div class="th">stock</div>
+            <sc-for list="{{samples}}" as="s" hint-placeholder-count="4">
+              <div class="td mono">{{s.sku}}</div><div class="td">{{s.title}}</div><div class="td">{{s.variant}}</div><div class="td">{{s.cat}}</div><div class="td mono">{{s.price}}</div><div class="td"><span class="chip {{s.cls}}">{{s.stock}}</span></div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; gap: 12px">
+          <a class="btn" href="NewProjectUrl.dc.html">上一步</a>
+          <a class="btn pri" href="NewProjectBrand.dc.html">下一步：品牌配置</a>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      coverage: [
+        { name: 'id', pct: '100%' }, { name: 'title', pct: '100%' }, { name: 'link', pct: '100%' },
+        { name: 'price', pct: '95%' }, { name: 'availability', pct: '90%' }, { name: 'image_link', pct: '90%' },
+        { name: 'product_type', pct: '90%' }, { name: 'item_group_id', pct: '20%' }, { name: 'sale_price', pct: '10%' }
+      ],
+      samples: [
+        { sku: 'KYBF000-G', title: 'Kingsyard Feeder 0 & Co', variant: 'Green', cat: 'bird-feeders', price: '19.99', stock: '有货', cls: 'ok' },
+        { sku: 'KYBF000-R', title: 'Kingsyard Feeder 0 & Co', variant: 'Red', cat: 'bird-feeders', price: '19.99', stock: '有货', cls: 'ok' },
+        { sku: 'KYBF002', title: 'Kingsyard Feeder 2 & Co', variant: '—', cat: 'bird-houses', price: '16.99', stock: '有货', cls: 'ok' },
+        { sku: 'KYBF003', title: 'Kingsyard Feeder 3 & Co', variant: '—', cat: 'bird-baths', price: '22.99', stock: '缺货', cls: 'bad' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

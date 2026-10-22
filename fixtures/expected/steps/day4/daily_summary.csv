@@ -1,0 +1,13 @@
+date,category,total,in_stock,out_of_stock,preorder,unknown
+2026-10-19,_all,18,14,2,1,1
+2026-10-19,bird-baths,4,1,2,0,1
+2026-10-19,bird-feeders,10,9,0,1,0
+2026-10-19,bird-houses,4,4,0,0,0
+2026-10-20,_all,19,14,3,1,1
+2026-10-20,bird-baths,4,2,1,0,1
+2026-10-20,bird-feeders,11,8,2,1,0
+2026-10-20,bird-houses,4,4,0,0,0
+2026-10-21,_all,19,14,3,1,1
+2026-10-21,bird-baths,4,2,1,0,1
+2026-10-21,bird-feeders,11,8,2,1,0
+2026-10-21,bird-houses,4,4,0,0,0

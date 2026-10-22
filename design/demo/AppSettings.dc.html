@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>SiteIndex 设置</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.idle{background:#ECEEF1;color:#4A525C}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.inp{min-height:40px;padding:0 12px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;background:#fff;color:#1B1F24;box-sizing:border-box;width:100%}
+.row{display:grid;grid-template-columns:200px 1fr auto;gap:16px;align-items:center;padding:14px 0;border-top:1px solid #EEF0F2}
+.row label,.row .lb{font-weight:600;font-size:13px}
+.sec{padding:8px 24px 12px}
+.sec h2{margin:14px 0 6px;font-size:16px}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav on" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; max-width: 1080px">
+    <div style="display: flex; flex-direction: column; gap: 4px"><h1 style="margin: 0; font-size: 24px">设置</h1><span class="k mono">%APPDATA%\SiteIndex\settings.json · 只对本机生效</span></div>
+
+    <section class="card sec">
+      <h2>常规</h2>
+      <div class="row"><label for="a1">项目根目录</label><input id="a1" class="inp mono" value="D:\云盘\projects"><button class="btn" type="button">选择…</button></div>
+      <div class="row"><label for="a2">本机设备名</label><input id="a2" class="inp" value="Henry-PC"><span class="k">执行设备按此名称识别</span></div>
+      <div class="row"><label for="a3">本机缓存目录</label><input id="a3" class="inp mono" value="%LOCALAPPDATA%\SiteIndex\cache"><span class="k">数据库等不进云盘</span></div>
+    </section>
+
+    <section class="card sec">
+      <h2>浏览器（设计规范提取）</h2>
+      <div class="row"><span class="lb">检测到的浏览器</span><span><span class="mono">Microsoft Edge 141</span> <span class="k mono">C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe</span></span><span class="chip ok">可用</span></div>
+      <div class="row"><label for="a4">自定义路径</label><input id="a4" class="inp mono" placeholder="留空则自动使用 Edge / Chrome"><button class="btn" type="button">测试</button></div>
+    </section>
+
+    <section class="card sec">
+      <h2>命令行</h2>
+      <div class="row"><span class="lb">siteindex 命令</span><span>安装后可在任意终端和 agent 中使用 <span class="mono">siteindex …</span></span><button class="btn pri" type="button">安装到 PATH</button></div>
+      <div class="row"><span class="lb">状态</span><span class="mono k">%LOCALAPPDATA%\SiteIndex\bin\siteindex.cmd</span><span class="chip warn">未安装</span></div>
+    </section>
+
+    <section class="card sec">
+      <h2>通知</h2>
+      <div class="row"><span class="lb">系统通知</span><span style="display: flex; gap: 20px; flex-wrap: wrap"><label style="display: flex; gap: 8px; font-weight: 400"><input type="checkbox" checked>失败时</label><label style="display: flex; gap: 8px; font-weight: 400"><input type="checkbox">成功时</label><label style="display: flex; gap: 8px; font-weight: 400"><input type="checkbox" checked>新缺货超过 5 个时</label></span><span></span></div>
+      <div class="row"><label for="a5">钉钉机器人 Webhook</label><input id="a5" class="inp mono" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…"><button class="btn" type="button">发送测试</button></div>
+    </section>
+
+    <section class="card sec">
+      <h2>Agent 平台 skill 目录</h2>
+      <div class="row"><span class="lb">Claude Code</span><span class="mono k">%USERPROFILE%\.claude\skills</span><span class="chip ok">已检测到</span></div>
+      <div class="row"><span class="lb">Codex</span><input class="inp mono" placeholder="[首次使用时确认路径]" aria-label="Codex skill 目录"><button class="btn" type="button">保存</button></div>
+      <div class="row"><span class="lb">qwenpaw</span><span class="mono k">D:\qwenpaw\workspace\ops-agent\skills</span><button class="btn" type="button">移除</button></div>
+      <div class="row" style="grid-template-columns: 1fr"><button class="btn" type="button" style="justify-self: start">+ 添加平台目录</button></div>
+    </section>
+
+    <section class="card sec">
+      <h2>关于</h2>
+      <div class="row"><span class="lb">版本</span><span>SiteIndex 0.1.0 · 数据规范 1.0 · 内置 skill 7 个</span><button class="btn" type="button">检查更新</button></div>
+      <div class="row"><span class="lb">日志</span><span class="mono k">%APPDATA%\SiteIndex\logs</span><button class="btn" type="button">打开</button></div>
+    </section>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

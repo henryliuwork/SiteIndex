@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "siteindex/blog_post",
+  "title": "content/blog_index.jsonl",
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "published_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "updated_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "author": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "meta_description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "word_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "links_internal": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "links_products": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "last_crawled": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "url",
+    "slug",
+    "title",
+    "published_at",
+    "last_crawled"
+  ],
+  "x-primary-key": [
+    "url"
+  ]
+}

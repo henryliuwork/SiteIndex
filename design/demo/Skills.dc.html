@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Skill 中心</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.sk{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:8px;border:1px solid transparent;text-align:left;font:inherit;color:#1B1F24;cursor:pointer;width:100%;min-height:44px}
+.sk:hover{background:#F4F5F7}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav on" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 24px">Skill 中心</h1>
+        <span class="k">内置 7 个 skill · 版本随 SiteIndex 更新 · 2 个有更新未同步到项目</span>
+      </div>
+      <button class="btn pri" type="button">同步到所有项目</button>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <section class="card" style="flex: 1 1 300px; padding: 10px; display: flex; flex-direction: column; gap: 2px" aria-label="Skill 列表">
+        <sc-for list="{{skills}}" as="s" hint-placeholder-count="7">
+          <button class="sk" type="button" onClick="{{s.pick}}" style="background: {{s.bg}}; border-color: {{s.bd}}">
+            <span style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 8px"><span class="mono" style="font-weight: 600">{{s.name}}</span><span class="chip {{s.cls}}">{{s.ver}}</span></span>
+            <span class="k">{{s.desc}}</span>
+          </button>
+        </sc-for>
+      </section>
+
+      <section style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+        <div class="card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap">
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <span style="display: flex; gap: 10px; align-items: center"><span class="mono" style="font-size: 18px; font-weight: 700">{{cur.name}}</span><span class="chip {{cur.cls}}">{{cur.ver}}</span></span>
+              <span class="k">{{cur.desc}}</span>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+              <button class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M4 16V6a2 2 0 0 1 2-2h10"></path></svg>复制全文</button>
+              <button class="btn" type="button">复制安装说明</button>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+            <div style="background: #F8F9FA; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="k">读取</span><span class="mono" style="font-size: 12px; line-height: 18px">{{cur.reads}}</span></div>
+            <div style="background: #F8F9FA; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="k">写入</span><span class="mono" style="font-size: 12px; line-height: 18px">{{cur.writes}}</span></div>
+          </div>
+          <div class="mono" style="background: #14181D; color: #D5DAE0; border-radius: 8px; padding: 14px 16px; font-size: 12px; line-height: 20px; white-space: pre-wrap; max-height: 260px; overflow: auto">{{cur.body}}</div>
+        </div>
+
+        <div class="card" style="overflow-x: auto">
+          <div style="padding: 16px 20px; font-weight: 600">安装位置 · {{cur.name}}</div>
+          <div style="display: grid; grid-template-columns: 150px minmax(240px, 1fr) 110px 140px; min-width: 680px">
+            <sc-for list="{{targets}}" as="t" hint-placeholder-count="4">
+              <div style="padding: 12px 20px; border-top: 1px solid #EEF0F2; font-weight: 500">{{t.name}}</div>
+              <div class="mono k" style="padding: 12px 8px; border-top: 1px solid #EEF0F2; overflow-wrap: anywhere">{{t.path}}</div>
+              <div style="padding: 12px 8px; border-top: 1px solid #EEF0F2"><span class="chip {{t.cls}}">{{t.st}}</span></div>
+              <div style="padding: 8px 20px 8px 8px; border-top: 1px solid #EEF0F2"><button class="btn" type="button" style="min-height: 36px">{{t.act}}</button></div>
+            </sc-for>
+          </div>
+          <div style="padding: 12px 20px 16px; border-top: 1px solid #EEF0F2; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+            <span class="k">项目内的 skill 写在 _agent/skills/，README 的任务路由指向它们，任何 agent 读 README 即可找到。</span>
+            <a class="btn" href="AppSettings.dc.html" style="min-height: 36px">管理平台目录</a>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { picked: 'edm-builder' };
+  }
+  renderVals() {
+    const list = [
+      { name: 'edm-builder', v: '1.2.0', upd: true, desc: '按主题选品，生成可粘贴到 Mailchimp 的 EDM HTML，登记推品记录',
+        reads: 'index/views/products.jsonl\nindex/ledgers/edm_campaigns.jsonl\nindex/ledgers/promotions.jsonl', writes: 'edm/{date}-{slug}/\nindex/ledgers/edm_campaigns.jsonl',
+        body: '# edm-builder\n1. 确认主题、产品数、折扣码、CTA\n2. siteindex query . products --in-stock --tag {主题} --json\n   硬性条件：有货、未排除、过冷却期、有图片\n   排序：标签 +3 · 标题/分类 +2 · 优先级/2 · 参与活动 +1\n3. 写 brief.md、content.json（文案遵循 brand.voice）\n4. siteindex edm render . edm/{campaign_id}\n5. siteindex ledger upsert . edm_campaigns --rows -' },
+      { name: 'stock-report', v: '1.0.0', upd: false, desc: '库存日报、周报、趋势分析（只读）',
+        reads: 'index/reports/daily/\nindex/inventory/\nindex/logs/runs.jsonl', writes: '（无，只汇报）',
+        body: '# stock-report\n先检查 runs.jsonl 最后一次 daily 是否成功\n日报：结论 → 新到货/新缺货（变体合并）→ 需要行动\n需要行动：缺货 ≥14 天；有货率 7 天降 ≥10pt；\n近 30 天 EDM 推过但现在缺货的产品' },
+      { name: 'blog-writer', v: '1.1.0', upd: true, desc: '选题、蚕食检查、brief、带内链正文、关键词登记',
+        reads: 'index/content/*\nindex/seo/pages.jsonl\nindex/seo/links.jsonl\nindex/views/products.jsonl', writes: '内容/drafts/{date}-{slug}/\nindex/content/keywords.jsonl',
+        body: '# blog-writer\n1. 蚕食检查：主关键词已有 target_url → 停止\n2. brief：大纲 + 内链计划（URL 只取自数据文件）\n   相关博客 3–5 · 分类页 1–2 · 有货产品 2–4\n3. draft.md + meta.json（title ≤60，description ≤155）\n4. 反向内链建议 2–3 篇' },
+      { name: 'link-prospect', v: '1.0.0', upd: false, desc: '外链搜集 → linkflow + 去重台账',
+        reads: 'index/site.json\nindex/ledgers/outreach.jsonl', writes: 'linkflow（MCP）\nindex/ledgers/outreach.jsonl',
+        body: '# link-prospect\n排除：已在台账、竞品、12 个月未更新、无联系方式\n联系方式必须来自页面实际内容\n录入 linkflow 后写入去重台账' },
+      { name: 'sku-media-enrich', v: '1.0.0', upd: false, desc: 'Mailchimp 图片匹配、标签与优先级',
+        reads: 'index/catalog/skus.jsonl', writes: 'index/ledgers/sku_media.csv\nindex/ledgers/sku_tags.csv',
+        body: '# sku-media-enrich\n匹配顺序：SKU → handle → 文件名包含\n一对多 / 多对一 → 待确认，不写入\n标签与已有值合并，不覆盖' },
+      { name: 'page-design', v: '1.0.0', upd: false, desc: '按网站设计规范做页面、Banner、邮件模板',
+        reads: 'index/design/tokens.json\nindex/design/brand.md', writes: '设计/',
+        body: '# page-design\n颜色只用 tokens 语义色与 palette\n字体、字号、按钮、间距、圆角照搬规范\n规范超过 60 天时提醒用户重新提取' },
+      { name: 'project-readme', v: '1.0.0', upd: false, desc: '补充文件夹 _about.md 与 README 用户区块',
+        reads: '工作区文件夹\nREADME.md', writes: '{文件夹}/_about.md\nREADME.md 用户区块',
+        body: '# project-readme\n不修改 siteindex:auto 区块、index/、_agent/\n为"待补充说明"的文件夹写 _about.md\n用户区块修改前先展示对比' }
+    ];
+    const p = this.state.picked;
+    const skills = list.map((s) => ({
+      name: s.name, desc: s.desc, ver: s.upd ? s.v + ' 有更新' : s.v, cls: s.upd ? 'warn' : 'idle',
+      bg: s.name === p ? '#F2F8F5' : 'transparent', bd: s.name === p ? '#BFD9CC' : 'transparent',
+      pick: () => this.setState({ picked: s.name })
+    }));
+    const c = list.find((s) => s.name === p);
+    const cur = { ...c, ver: c.v, cls: c.upd ? 'warn' : 'idle' };
+    const targets = [
+      { name: '项目 Kingsyard', path: 'D:\\云盘\\projects\\kingsyard\\_agent\\skills', st: c.upd ? '旧版' : '最新', cls: c.upd ? 'warn' : 'ok', act: c.upd ? '更新' : '重新同步' },
+      { name: 'Claude Code', path: '%USERPROFILE%\\.claude\\skills', st: '已安装', cls: 'ok', act: '重新安装' },
+      { name: 'Codex', path: '[首次使用时确认路径]', st: '未安装', cls: 'idle', act: '安装' },
+      { name: 'qwenpaw', path: 'D:\\qwenpaw\\workspace\\ops-agent\\skills', st: '未安装', cls: 'idle', act: '安装' }
+    ];
+    return { skills, cur, targets };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · 库存</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 10px;border-bottom:1px solid #E1E4E8;background:#F8F9FA;display:flex;align-items:center;gap:4px;position:sticky;top:0;z-index:1}
+.pop{position:absolute;background:#fff;border:1px solid #D5D9DE;border-radius:10px;box-shadow:0 12px 32px rgba(20,24,29,.16);z-index:5}
+.colopt{display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;cursor:pointer}
+.btn.sm{min-height:32px;padding:0 12px;font-size:13px}
+.td{padding:6px 10px;border-bottom:1px solid #EEF0F2;font-size:13px;display:flex;align-items:center;gap:6px;min-height:44px;box-sizing:border-box}
+.pill{min-height:30px;padding:0 12px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;font:inherit;font-size:13px;font-weight:500;color:#3D4550;cursor:pointer;white-space:nowrap}
+.pill.on{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.inp{min-height:40px;padding:0 12px 0 36px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;background:#fff;color:#1B1F24;box-sizing:border-box;width:100%}
+.cell{width:5px;height:16px;border-radius:1.5px;flex:none}
+.cbar{display:grid;grid-template-columns:110px 1fr 46px;gap:10px;align-items:center;padding:7px 0;font-size:13px}
+.chg{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;padding:8px 0;border-top:1px solid #EEF0F2;font-size:12.5px}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+        <h1 style="margin: 0; font-size: 24px">Kingsyard</h1>
+        <span class="k mono">kingsyard.com · Magento</span>
+        <span class="chip ok">今天 02:04 同步成功</span>
+      </div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap">
+        <button class="btn" type="button">导出 CSV</button>
+        <button class="btn" type="button">查看今日日报</button>
+        <a class="btn pri" href="Runs.dc.html">立即同步</a>
+      </div>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab on" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px">
+      <div class="card" style="padding: 12px 16px; display: flex; flex-direction: column; gap: 2px"><span class="k">当前在线率（SKU）</span><span style="font-size: 24px; font-weight: 700">73.7%</span><span class="k">14 / 19 有货</span></div>
+      <div class="card" style="padding: 12px 16px; display: flex; flex-direction: column; gap: 2px"><span class="k">近 30 天平均在线率</span><span style="font-size: 24px; font-weight: 700">{{avg30}}</span><span class="k">较前 30 天 −3.2pt</span></div>
+      <div class="card" style="padding: 12px 16px; display: flex; flex-direction: column; gap: 2px"><span class="k">今日变化</span><span style="font-size: 24px; font-weight: 700"><span style="color: #154D3B">+1</span> <span style="color: #A3200F">−2</span></span><span class="k">到货 1 · 缺货 2 · 调价 1 · 上新 1</span></div>
+      <div class="card" style="padding: 12px 16px; display: flex; flex-direction: column; gap: 2px"><span class="k">长期缺货（≥ 14 天）</span><span style="font-size: 24px; font-weight: 700">1</span><span class="k">KYBF007 · 18 天</span></div>
+      <div class="card" style="padding: 12px 16px; display: flex; flex-direction: column; gap: 2px"><span class="k">状态波动（30 天 ≥ 3 次）</span><span style="font-size: 24px; font-weight: 700">2</span><span class="k">供货不稳定的 SKU</span></div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch">
+      <section class="card" style="flex: 999 1 520px; min-width: 0; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+          <h2 style="margin: 0; font-size: 15px">分类在线率趋势 · 近 30 天</h2>
+          <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px">
+            <span style="display: flex; align-items: center; gap: 6px"><span style="width: 14px; height: 3px; background: #1E6B52"></span>bird-feeders</span>
+            <span style="display: flex; align-items: center; gap: 6px"><span style="width: 14px; height: 3px; background: #D9822B"></span>bird-baths</span>
+            <span style="display: flex; align-items: center; gap: 6px"><span style="width: 14px; height: 3px; background: #7FB2E5"></span>bird-houses</span>
+            <span class="chip idle">示例数据</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <div style="position: relative; width: 38px; height: 240px; flex: none" class="k mono" aria-hidden="true">
+            <span style="position: absolute; right: 0; top: 3px">100%</span>
+            <span style="position: absolute; right: 0; top: 58px">75%</span>
+            <span style="position: absolute; right: 0; top: 113px">50%</span>
+            <span style="position: absolute; right: 0; top: 168px">25%</span>
+            <span style="position: absolute; right: 0; top: 223px">0%</span>
+          </div>
+          <svg width="100%" height="240" viewBox="0 0 700 240" preserveAspectRatio="none" role="img" aria-label="三个分类近 30 天在线率走势：bird-houses 维持约 100%，bird-feeders 由约 95% 降到 73%，bird-baths 在 50% 到 75% 之间波动">
+            <path d="M0 10H700M0 65H700M0 120H700M0 175H700M0 230H700" stroke="#EEF0F2" stroke-width="1" vector-effect="non-scaling-stroke"></path>
+            <polyline fill="none" stroke="#7FB2E5" stroke-width="2.5" vector-effect="non-scaling-stroke" points="0,10 78,10 156,10 233,21 311,21 389,10 467,10 544,10 622,10 700,10"></polyline>
+            <polyline fill="none" stroke="#1E6B52" stroke-width="2.5" vector-effect="non-scaling-stroke" points="0,21 78,21 156,32 233,32 311,27.6 389,21 467,21 544,27.6 622,32 700,69.4"></polyline>
+            <polyline fill="none" stroke="#D9822B" stroke-width="2.5" vector-effect="non-scaling-stroke" points="0,65 78,65 156,65 233,120 311,120 389,93.6 467,93.6 544,120 622,120 700,120"></polyline>
+          </svg>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding-left: 46px" class="k mono"><span>09-21</span><span>09-28</span><span>10-05</span><span>10-12</span><span>10-20</span></div>
+      </section>
+      <section class="card" style="flex: 1 1 300px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px">
+        <div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 15px">分类在线率</h2><a href="Categories.dc.html" style="font-size: 12px">管理分类</a></div>
+        <span class="k" style="padding-bottom: 6px">分类来源：手动配置（Magento）· 未归类 0</span>
+        <div class="cbar"><span class="mono">bird-feeders</span><div style="height: 8px; background: #ECEEF1; border-radius: 4px"><div style="height: 8px; width: 73%; background: #1E6B52; border-radius: 4px"></div></div><span style="text-align: right">73%</span></div>
+        <div class="cbar"><span class="mono">bird-houses</span><div style="height: 8px; background: #ECEEF1; border-radius: 4px"><div style="height: 8px; width: 100%; background: #1E6B52; border-radius: 4px"></div></div><span style="text-align: right">100%</span></div>
+        <div class="cbar"><span class="mono">bird-baths</span><div style="height: 8px; background: #ECEEF1; border-radius: 4px"><div style="height: 8px; width: 50%; background: #D9822B; border-radius: 4px"></div></div><span style="text-align: right">50%</span></div>
+        <div style="border-top: 1px solid #EEF0F2; margin-top: 6px; padding-top: 8px; display: flex; flex-direction: column; gap: 2px">
+          <span class="k">今日变化</span>
+          <div class="chg" style="border-top: 0"><span class="chip ok">到货</span><span><span class="mono">KYBF003</span> Feeder 3 &amp; Co</span></div>
+          <div class="chg"><span class="chip bad">缺货</span><span><span class="mono">KYBF001</span> · <span class="mono">KYBF004-R</span></span></div>
+          <div class="chg"><span class="chip warn">调价</span><span><span class="mono">KYBF010</span> 29.99 → 24.50</span></div>
+          <div class="chg"><span class="chip info">上新</span><span><span class="mono">KYBF100</span> Window Feeder</span></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" style="display: flex; flex-direction: column">
+      <div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid #E1E4E8">
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+          <h2 style="margin: 0 8px 0 0; font-size: 15px">SKU 库存明细</h2>
+          <label style="position: relative; flex: 1 1 260px; max-width: 360px; display: flex">
+            <span style="position: absolute; left: -9999px">搜索 SKU 或标题</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A939D" stroke-width="2" aria-hidden="true" style="position: absolute; left: 12px; top: 12px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+            <input class="inp" value="{{q}}" onChange="{{onSearch}}" placeholder="搜索 SKU、标题、变体">
+          </label>
+          <button class="pill {{sortCls}}" type="button" onClick="{{toggleSort}}">{{sortLabel}}</button>
+          <span style="margin-left: auto; display: flex; align-items: center; gap: 10px; position: relative">
+            <span class="k">显示 {{count}} / 19 个 SKU</span>
+            <button class="btn sm" type="button" onClick="{{toggleCols}}">列设置</button>
+            <sc-if value="{{showCols}}" hint-placeholder-val="{{false}}">
+              <div class="pop" style="top: 40px; right: 0; width: 200px; padding: 10px 12px" role="dialog" aria-label="列设置">
+                <sc-for list="{{colOpts}}" as="c" hint-placeholder-count="6"><label class="colopt"><input type="checkbox" checked="{{c.on}}" onChange="{{c.toggle}}">{{c.label}}</label></sc-for>
+              </div>
+            </sc-if>
+          </span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+          <span class="k">状态</span>
+          <sc-for list="{{statusPills}}" as="p" hint-placeholder-count="6"><button class="pill {{p.cls}}" type="button" onClick="{{p.pick}}">{{p.label}}</button></sc-for>
+          <span class="k" style="padding-left: 10px">分类</span>
+          <sc-for list="{{catPills}}" as="p" hint-placeholder-count="4"><button class="pill {{p.cls}}" type="button" onClick="{{p.pick}}">{{p.label}}</button></sc-for>
+        </div>
+      </div>
+      <div style="overflow: auto; max-height: 560px">
+        <div style="display: grid; grid-template-columns: {{gridCols}}; min-width: {{minW}}">
+          <div class="th">SKU</div><div class="th">产品 / 变体</div>
+          <sc-if value="{{col.cat}}" hint-placeholder-val="{{true}}"><div class="th">分类</div></sc-if>
+          <sc-if value="{{col.price}}" hint-placeholder-val="{{true}}"><div class="th">价格</div></sc-if>
+          <div class="th">当前</div>
+          <sc-if value="{{col.dur}}" hint-placeholder-val="{{true}}"><div class="th">持续</div></sc-if>
+          <sc-if value="{{col.rate}}" hint-placeholder-val="{{true}}"><div class="th">30 天在线率</div></sc-if>
+          <sc-if value="{{col.hist}}" hint-placeholder-val="{{true}}"><div class="th">近 30 天（左旧右新）</div></sc-if>
+          <sc-if value="{{col.last}}" hint-placeholder-val="{{true}}"><div class="th">最近变化</div></sc-if>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+            <div class="td mono" style="font-size: 12.5px">{{r.sku}}</div>
+            <div class="td" style="flex-direction: column; align-items: flex-start; justify-content: center; gap: 0"><span>{{r.title}}</span><span class="k">{{r.variant}}</span></div>
+            <sc-if value="{{col.cat}}" hint-placeholder-val="{{true}}"><div class="td mono k">{{r.cat}}</div></sc-if>
+            <sc-if value="{{col.price}}" hint-placeholder-val="{{true}}"><div class="td mono">{{r.price}}</div></sc-if>
+            <div class="td"><span class="chip {{r.scls}}">{{r.s}}</span></div>
+            <sc-if value="{{col.dur}}" hint-placeholder-val="{{true}}"><div class="td k">{{r.dur}}</div></sc-if>
+            <sc-if value="{{col.rate}}" hint-placeholder-val="{{true}}"><div class="td" style="gap: 8px"><div style="flex: 1; height: 6px; background: #ECEEF1; border-radius: 3px"><div style="height: 6px; border-radius: 3px; background: {{r.rateColor}}; width: {{r.rate}}"></div></div><span class="mono" style="font-size: 12px; width: 36px; text-align: right">{{r.rate}}</span></div></sc-if>
+            <sc-if value="{{col.hist}}" hint-placeholder-val="{{true}}"><div class="td" style="gap: 1px" role="img" aria-label="{{r.histLabel}}"><sc-for list="{{r.hist}}" as="h" hint-placeholder-count="30"><span class="cell" style="background: {{h.c}}"></span></sc-for></div></sc-if>
+            <sc-if value="{{col.last}}" hint-placeholder-val="{{true}}"><div class="td k">{{r.last}}</div></sc-if>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding: 10px 16px; display: flex; gap: 16px; flex-wrap: wrap; align-items: center" class="k">
+        <span style="display: flex; align-items: center; gap: 6px"><span class="cell" style="background: #2E8A63"></span>有货</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span class="cell" style="background: #D64532"></span>缺货</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span class="cell" style="background: #E0A33A"></span>预售</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span class="cell" style="background: #C4C9CF"></span>未知 / 未上架</span>
+        <span>数据：index/views/sku_stock.jsonl（由每日事件计算）· 30 天走势为示例数据</span>
+      </div>
+    </section>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { q: '', status: 'all', cat: 'all', sortAsc: false };
+  }
+  renderVals() {
+    const st = this.state;
+    const S = { i: ['有货', 'ok'], o: ['缺货', 'bad'], p: ['预售', 'warn'], u: ['未知', 'idle'] };
+    const C = { i: '#2E8A63', o: '#D64532', p: '#E0A33A', u: '#C4C9CF', n: '#C4C9CF' };
+    const fill = (base, spans) => {
+      const a = new Array(30).fill(base);
+      spans.forEach((sp) => { for (let d = sp[0]; d <= sp[1]; d++) a[d] = sp[2]; });
+      return a;
+    };
+    const raw = [
+      ['KYBF000-G', 'Kingsyard Feeder 0 & Co', 'Green', 'bird-feeders', '19.99', 'i', '41 天', fill('i', [[9, 12, 'o']]), '10-01 到货', false],
+      ['KYBF000-R', 'Kingsyard Feeder 0 & Co', 'Red', 'bird-feeders', '19.99', 'i', '60 天+', fill('i', []), '—', false],
+      ['KYBF001', 'Kingsyard Feeder 1 & Co', '', 'bird-feeders', '20.99', 'o', '今天', fill('i', [[29, 29, 'o']]), '今天 缺货', true],
+      ['KYBF002', 'Kingsyard Feeder 2 & Co', '', 'bird-houses', '16.99', 'i', '60 天+', fill('i', []), '—', false],
+      ['KYBF003', 'Kingsyard Feeder 3 & Co', '', 'bird-baths', '22.99', 'i', '今天', fill('i', [[16, 28, 'o']]), '今天 到货', true],
+      ['KYBF004-G', 'Kingsyard Feeder 4 & Co', 'Green', 'bird-feeders', '23.99', 'i', '22 天', fill('i', [[3, 7, 'o']]), '09-28 到货', false],
+      ['KYBF004-R', 'Kingsyard Feeder 4 & Co', 'Red', 'bird-feeders', '23.99', 'o', '今天', fill('i', [[2, 5, 'o'], [14, 17, 'o'], [29, 29, 'o']]), '今天 缺货', true],
+      ['KYBF005', 'Kingsyard Feeder 5 & Co', '', 'bird-feeders', '24.99', 'i', '60 天+', fill('i', []), '—', false],
+      ['KYBF006', 'Kingsyard Feeder 6 & Co', '', 'bird-houses', '25.99', 'i', '60 天+', fill('i', []), '—', false],
+      ['KYBF007', 'Kingsyard Feeder 7 & Co', '', 'bird-baths', '26.99', 'o', '18 天', fill('i', [[12, 29, 'o']]), '10-02 缺货（已不在 feed）', false],
+      ['KYBF008', 'Kingsyard Feeder 8 & Co', '', 'bird-feeders', '27.99', 'i', '60 天+', fill('i', []), '—', false],
+      ['KYBF009', 'Kingsyard Feeder 9 & Co', '', 'bird-feeders', '28.99', 'p', '9 天', fill('i', [[21, 29, 'p']]), '10-11 转预售', false],
+      ['KYBF010', 'Kingsyard Feeder 10 & Co', '', 'bird-houses', '24.50', 'i', '60 天+', fill('i', []), '今天 调价 29.99 → 24.50', true],
+      ['KYBF011', 'Kingsyard Feeder 11 & Co', '', 'bird-baths', '30.99', 'u', '30 天+', fill('u', []), 'feed 值 "limited" 无法识别', false],
+      ['KYBF012', 'Kingsyard Feeder 12 (Override)', '', 'bird-feeders', '31.99', 'i', '60 天+', fill('i', []), '—', false],
+      ['KYBF013', 'Kingsyard Feeder 13 & Co', '', 'bird-feeders', '32.99', 'i', '15 天', fill('i', [[6, 14, 'o']]), '10-05 到货', false],
+      ['KYBF014', 'Kingsyard Feeder 14 & Co', '', 'bird-houses', '33.99', 'i', '60 天+', fill('i', []), '—', false],
+      ['KYBF015', 'Kingsyard Feeder 15 & Co', '', 'bird-baths', '34.99', 'i', '60 天+', fill('i', []), '—', false],
+      ['KYBF100', 'Kingsyard Window Feeder', '', 'bird-feeders', '39.00', 'i', '今天', fill('n', [[29, 29, 'i']]), '今天 上新', true]
+    ];
+    const all = raw.map((a) => {
+      const hist = a[7];
+      const listed = hist.filter((h) => h !== 'n').length;
+      const inDays = hist.filter((h) => h === 'i').length;
+      const pct = listed ? Math.round((inDays / listed) * 100) : 0;
+      return {
+        sku: a[0], title: a[1], variant: a[2] || '—', cat: a[3], price: a[4], sk: a[5], s: S[a[5]][0], scls: S[a[5]][1],
+        dur: a[6], last: a[8], today: a[9], pct, rate: pct + '%',
+        rateColor: pct >= 90 ? '#2E8A63' : (pct >= 60 ? '#E0A33A' : '#D64532'),
+        hist: hist.map((h) => ({ c: C[h] })), histLabel: '近 30 天有货 ' + inDays + ' 天'
+      };
+    });
+    const q = (st.q || '').trim().toLowerCase();
+    let rows = all.filter((r) => {
+      if (q && (r.sku + ' ' + r.title + ' ' + r.variant).toLowerCase().indexOf(q) < 0) return false;
+      if (st.status === 'today') { if (!r.today) return false; }
+      else if (st.status !== 'all' && r.sk !== st.status) return false;
+      if (st.cat !== 'all' && r.cat !== st.cat) return false;
+      return true;
+    });
+    if (st.sortAsc) rows = rows.slice().sort((x, y) => x.pct - y.pct);
+    const avg = Math.round(all.reduce((s, r) => s + r.pct, 0) / all.length * 10) / 10;
+    const statusPills = [['all', '全部'], ['i', '有货'], ['o', '缺货'], ['p', '预售'], ['u', '未知'], ['today', '今日有变化']].map((p) => ({
+      label: p[1], cls: st.status === p[0] ? 'on' : '', pick: () => this.setState({ status: p[0] })
+    }));
+    const catPills = [['all', '全部'], ['bird-feeders', 'bird-feeders'], ['bird-houses', 'bird-houses'], ['bird-baths', 'bird-baths']].map((p) => ({
+      label: p[1], cls: st.cat === p[0] ? 'on' : '', pick: () => this.setState({ cat: p[0] })
+    }));
+    const COLS = [['cat', '分类', '110px'], ['price', '价格', '70px'], ['dur', '持续', '76px'], ['rate', '30 天在线率', '130px'], ['hist', '近 30 天走势', '190px'], ['last', '最近变化', 'minmax(110px, 1fr)']];
+    const hide = st.hide || {};
+    const col = {};
+    let grid = '110px minmax(200px, 2fr)';
+    let w = 400;
+    COLS.forEach((c, i) => {
+      col[c[0]] = !hide[c[0]];
+      if (i === 2) grid += ' 82px';
+      if (col[c[0]]) { grid += ' ' + c[2]; w += 120; }
+    });
+    const colOpts = COLS.map((c) => ({ label: c[1], on: col[c[0]], toggle: () => this.setState({ hide: { ...hide, [c[0]]: col[c[0]] } }) }));
+    return {
+      col, gridCols: grid, minW: w + 'px', colOpts, showCols: !!st.showCols,
+      toggleCols: () => this.setState({ showCols: !st.showCols }),
+      rows, count: rows.length, q: st.q, avg30: avg + '%', statusPills, catPills,
+      onSearch: (e) => this.setState({ q: e.target.value }),
+      toggleSort: () => this.setState({ sortAsc: !st.sortAsc }),
+      sortLabel: st.sortAsc ? '在线率 低 → 高 ✓' : '按在线率排序', sortCls: st.sortAsc ? 'on' : ''
+    };
+  }
+}
+</script>
+</body>
+</html>

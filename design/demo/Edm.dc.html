@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · EDM</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 14px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.btn.sm{min-height:32px;padding:0 10px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.bad{background:#FDE8E7;color:#A3200F}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.pill{min-height:30px;padding:0 12px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;font:inherit;font-size:13px;font-weight:500;color:#3D4550;cursor:pointer;white-space:nowrap}
+.pill.on{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA;position:sticky;top:0;z-index:1}
+.td{padding:8px 12px;border-bottom:1px solid #EEF0F2;font-size:13px;display:flex;align-items:center;gap:8px;min-height:60px;box-sizing:border-box}
+.inp{min-height:34px;padding:0 10px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;font-size:12.5px;background:#fff;color:#1B1F24;box-sizing:border-box;width:100%;font-family:"IBM Plex Mono",Consolas,monospace}
+.sinp{min-height:34px;padding:0 10px 0 32px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;font-size:13px;background:#fff;box-sizing:border-box;width:100%}
+.thumb{width:44px;height:44px;border-radius:6px;background:#E9ECEF;flex:none;display:flex;align-items:center;justify-content:center}
+.url{font-family:"IBM Plex Mono",Consolas,monospace;font-size:12px;color:#3D4550;overflow-wrap:anywhere;line-height:16px}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 24px">Kingsyard</h1><span class="k mono">kingsyard.com · Magento</span></div>
+      <div style="display: flex; gap: 10px"><button class="btn" type="button">打开 edm/ 文件夹</button><button class="btn pri" type="button" onClick="{{toggleCmd}}">复制 edm-builder 指令</button></div>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab on" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+
+    <sc-if value="{{showCmd}}" hint-placeholder-val="{{false}}">
+      <section class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; border-color: #BFD9CC">
+        <div style="display: flex; justify-content: space-between; align-items: center"><span style="font-weight: 600">edm-builder 指令</span><span class="k">粘贴给任意 agent（Claude Code、Codex、qwenpaw…）</span></div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600">主题<input class="inp" style="font-family: inherit" value="{{theme}}" onChange="{{onTheme}}"></label>
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600">产品数量<input class="inp" style="font-family: inherit" value="6"></label>
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600">折扣码（可空）<input class="inp" style="font-family: inherit" placeholder="如 BOO15"></label>
+        </div>
+        <div class="mono" style="background: #14181D; color: #D5DAE0; border-radius: 8px; padding: 12px 14px; font-size: 12.5px; line-height: 20px; white-space: pre-wrap">{{cmdText}}</div>
+        <div style="display: flex; gap: 8px; align-items: center"><button class="btn pri sm" type="button" onClick="{{copyCmd}}">{{copyLabel}}</button><span class="k">选品规则：有货、未标记"不进 EDM"、21 天内没推荐过，再按主题标签、优先级排序；图片按下表"agent 使用"列。</span></div>
+      </section>
+    </sc-if>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">SKU</span><span style="font-size: 20px; font-weight: 700">{{total}}</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">有抓取首图</span><span style="font-size: 20px; font-weight: 700">{{nFeed}}</span><span class="k">来自 GMC feed image_link</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">有手动首图</span><span style="font-size: 20px; font-weight: 700">{{nManual}}</span><span class="k">保存在 ledgers/sku_media.csv</span></div>
+      <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 2px"><span class="k">缺图（两者都没有）</span><span style="font-size: 20px; font-weight: 700; color: #A3200F">{{nNone}}</span><span class="k">agent 写 EDM 时会跳过</span></div>
+    </div>
+
+    <section class="card" style="overflow: hidden">
+      <div style="padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; border-bottom: 1px solid #E1E4E8">
+        <h2 style="margin: 0 6px 0 0; font-size: 15px">SKU 宣传图</h2>
+        <label style="position: relative; flex: 1 1 220px; max-width: 300px; display: flex">
+          <span style="position: absolute; left: -9999px">搜索 SKU 或标题</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A939D" stroke-width="2" aria-hidden="true" style="position: absolute; left: 10px; top: 10px"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+          <input class="sinp" value="{{q}}" onChange="{{onSearch}}" placeholder="搜索 SKU、标题">
+        </label>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{filters}}" as="p" hint-placeholder-count="5"><button class="pill {{p.cls}}" type="button" onClick="{{p.pick}}">{{p.label}}</button></sc-for></div>
+        <span class="k" style="margin-left: auto">显示 {{count}} 个</span>
+      </div>
+      <div style="max-height: 560px; overflow: auto">
+        <div style="display: grid; grid-template-columns: 110px minmax(180px, 1.3fr) 76px minmax(260px, 2fr) minmax(280px, 2fr) 110px; min-width: 1120px">
+          <div class="th">SKU</div><div class="th">产品 / 变体</div><div class="th">库存</div><div class="th">抓取到的首图 URL</div><div class="th">手动输入的首图 URL</div><div class="th">agent 使用</div>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+            <div class="td mono" style="font-size: 12.5px">{{r.sku}}</div>
+            <div class="td" style="flex-direction: column; align-items: flex-start; justify-content: center; gap: 0"><span>{{r.title}}</span><span class="k">{{r.variant}}</span></div>
+            <div class="td"><span class="chip {{r.scls}}">{{r.s}}</span></div>
+            <div class="td"><span class="thumb" style="opacity: {{r.feedOpacity}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A939D" stroke-width="1.6" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 16l5-5 4 4 3-3 6 6"></path></svg></span><span class="url">{{r.feed}}</span></div>
+            <div class="td" style="flex-direction: column; align-items: stretch; justify-content: center; gap: 4px">
+              <div style="display: flex; gap: 6px"><label style="flex: 1; display: flex"><span style="position: absolute; left: -9999px">{{r.sku}} 手动首图 URL</span><input class="inp" value="{{r.draft}}" onChange="{{r.onInput}}" placeholder="粘贴 Mailchimp 等图片地址"></label><button class="btn sm" type="button" onClick="{{r.save}}">保存</button></div>
+              <sc-if value="{{r.saved}}" hint-placeholder-val="{{false}}"><span class="k" style="color: #154D3B">已保存到 sku_media.csv</span></sc-if>
+            </div>
+            <div class="td"><span class="chip {{r.ucls}}">{{r.use}}</span></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding: 10px 16px; border-top: 1px solid #EEF0F2" class="k">规则：agent 默认使用抓取到的首图；没有抓取到时使用手动输入的首图；两者都没有则该 SKU 不进入 EDM。手动首图写入 index/ledgers/sku_media.csv，每日同步不会覆盖。</div>
+    </section>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      q: '', f: 'all', showCmd: false, theme: 'Halloween', copied: false, drafts: {},
+      manual: { 'KYBF002': 'https://mcusercontent.com/abc123/images/kybf002.jpg', 'KYBF100': 'https://mcusercontent.com/abc123/images/window-feeder.jpg' },
+      savedNow: {}
+    };
+  }
+  renderVals() {
+    const st = this.state;
+    const S = { i: ['有货', 'ok'], o: ['缺货', 'bad'], p: ['预售', 'warn'], u: ['未知', 'idle'] };
+    const img = (p) => 'https://www.kingsyard.com/media/catalog/product/k/y/feeder-' + p + '.jpg';
+    const raw = [
+      ['KYBF000-G', 'Kingsyard Feeder 0 & Co', 'Green', 'i', img(0)], ['KYBF000-R', 'Kingsyard Feeder 0 & Co', 'Red', 'i', img(0)],
+      ['KYBF001', 'Kingsyard Feeder 1 & Co', '', 'o', img(1)], ['KYBF002', 'Kingsyard Feeder 2 & Co', '', 'i', img(2)],
+      ['KYBF003', 'Kingsyard Feeder 3 & Co', '', 'i', img(3)], ['KYBF004-G', 'Kingsyard Feeder 4 & Co', 'Green', 'i', img(4)],
+      ['KYBF004-R', 'Kingsyard Feeder 4 & Co', 'Red', 'o', img(4)], ['KYBF005', 'Kingsyard Feeder 5 & Co', '', 'i', img(5)],
+      ['KYBF006', 'Kingsyard Feeder 6 & Co', '', 'i', img(6)], ['KYBF007', 'Kingsyard Feeder 7 & Co', '', 'o', img(7)],
+      ['KYBF008', 'Kingsyard Feeder 8 & Co', '', 'i', img(8)], ['KYBF009', 'Kingsyard Feeder 9 & Co', '', 'p', img(9)],
+      ['KYBF010', 'Kingsyard Feeder 10 & Co', '', 'i', img(10)], ['KYBF011', 'Kingsyard Feeder 11 & Co', '', 'u', ''],
+      ['KYBF012', 'Kingsyard Feeder 12 (Override)', '', 'i', img(12)], ['KYBF013', 'Kingsyard Feeder 13 & Co', '', 'i', img(13)],
+      ['KYBF014', 'Kingsyard Feeder 14 & Co', '', 'i', img(14)], ['KYBF015', 'Kingsyard Feeder 15 & Co', '', 'i', img(15)],
+      ['KYBF100', 'Kingsyard Window Feeder', '', 'i', '']
+    ];
+    const all = raw.map((a) => {
+      const manual = st.manual[a[0]] || '';
+      const use = a[4] ? ['抓取首图', 'ok', 'feed'] : (manual ? ['手动首图', 'info', 'manual'] : ['缺图', 'bad', 'none']);
+      return {
+        sku: a[0], title: a[1], variant: a[2] || '—', sk: a[3], s: S[a[3]][0], scls: S[a[3]][1],
+        feed: a[4] || '（未抓取到）', hasFeed: !!a[4], feedOpacity: a[4] ? 1 : 0.35, manual, use: use[0], ucls: use[1], kind: use[2],
+        draft: st.drafts[a[0]] !== undefined ? st.drafts[a[0]] : manual, saved: !!st.savedNow[a[0]],
+        onInput: (e) => this.setState({ drafts: { ...st.drafts, [a[0]]: e.target.value } }),
+        save: () => {
+          const v = (st.drafts[a[0]] !== undefined ? st.drafts[a[0]] : manual).trim();
+          const m = { ...st.manual };
+          if (v) m[a[0]] = v; else delete m[a[0]];
+          this.setState({ manual: m, savedNow: { ...st.savedNow, [a[0]]: true } });
+        }
+      };
+    });
+    const q = (st.q || '').toLowerCase();
+    const rows = all.filter((r) => (!q || (r.sku + ' ' + r.title).toLowerCase().indexOf(q) >= 0) &&
+      (st.f === 'all' || (st.f === 'nofeed' && !r.hasFeed) || (st.f === 'manual' && r.manual) || (st.f === 'none' && r.kind === 'none') || (st.f === 'in' && r.sk === 'i')));
+    const filters = [['all', '全部'], ['in', '有货'], ['nofeed', '未抓取到首图'], ['manual', '已填手动图'], ['none', '缺图']].map((p) => ({ label: p[1], cls: st.f === p[0] ? 'on' : '', pick: () => this.setState({ f: p[0] }) }));
+    const cmdText = '进入 D:\\云盘\\projects\\kingsyard，先完整阅读 README.md。\n按 _agent/skills/edm-builder/SKILL.md 写一封 EDM：\n- 主题：' + (st.theme || '[主题]') + '\n- 产品数量：6\n- 折扣码：无\n完成后把 email.html 放到 edm/ 下对应目录，并在台账 edm_campaigns 登记。';
+    return {
+      rows, count: rows.length, filters, q: st.q, showCmd: st.showCmd, theme: st.theme, cmdText,
+      total: all.length, nFeed: all.filter((r) => r.hasFeed).length, nManual: all.filter((r) => r.manual).length, nNone: all.filter((r) => r.kind === 'none').length,
+      copyLabel: st.copied ? '已复制' : '复制指令',
+      toggleCmd: () => this.setState({ showCmd: !st.showCmd }),
+      onTheme: (e) => this.setState({ theme: e.target.value, copied: false }),
+      onSearch: (e) => this.setState({ q: e.target.value }),
+      copyCmd: () => { try { navigator.clipboard.writeText(cmdText); } catch (e) {} this.setState({ copied: true }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

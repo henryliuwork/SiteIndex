@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>新建项目 · 网址</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.idle{background:#ECEEF1;color:#4A525C}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.inp{min-height:44px;padding:0 14px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;background:#fff;color:#1B1F24;box-sizing:border-box}
+.chk{display:grid;grid-template-columns:24px 140px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid #EEF0F2;font-size:13px}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav on" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 28px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; align-items: center; gap: 10px" class="k"><a href="Main.dc.html">项目中心</a><span>/</span><span style="color: #1B1F24; font-weight: 600">新建项目</span></div>
+    <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px">
+      <li style="padding: 8px 14px; border-radius: 999px; background: #1E6B52; color: #fff; font-weight: 600">1 网址</li>
+      <li><a href="NewProject.dc.html" style="display: block; padding: 8px 14px; border-radius: 999px; background: #ECEEF1; color: #4A525C; font-weight: 500; text-decoration: none">2 数据源</a></li>
+      <li style="padding: 8px 14px; border-radius: 999px; background: #ECEEF1; color: #4A525C; font-weight: 500">3 品牌配置</li>
+      <li style="padding: 8px 14px; border-radius: 999px; background: #ECEEF1; color: #4A525C; font-weight: 500">4 完成</li>
+    </ol>
+
+    <section class="card" style="max-width: 880px; padding: 28px; display: flex; flex-direction: column; gap: 18px">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <h1 style="margin: 0; font-size: 22px">输入网站地址</h1>
+        <span class="k">SiteIndex 会自动检测跳转、robots.txt、sitemap、建站平台、语言和币种。</span>
+      </div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap">
+        <label for="url" style="position: absolute; left: -9999px">网站地址</label>
+        <input id="url" class="inp mono" style="flex: 1 1 420px" value="kingsyard.com">
+        <button class="btn pri" type="button" style="min-height: 44px">检测</button>
+      </div>
+      <div style="display: flex; flex-direction: column">
+        <div class="chk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E6B52" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span style="font-weight: 600">跳转</span><span class="mono">kingsyard.com → https://www.kingsyard.com</span><span class="chip ok">301</span></div>
+        <div class="chk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E6B52" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span style="font-weight: 600">robots.txt</span><span>1 条 Disallow（/checkout/），声明 1 个 sitemap</span><span class="chip ok">200</span></div>
+        <div class="chk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E6B52" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span style="font-weight: 600">Sitemap</span><span>1 个索引 → 1 个子 sitemap → 9 个 URL</span><span class="chip ok">已展开</span></div>
+        <div class="chk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E6B52" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span style="font-weight: 600">平台</span><span>Magento（依据：/media/catalog/product/ 图片路径）· 前台 Next.js</span><span class="chip ok">已识别</span></div>
+        <div class="chk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E6B52" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span style="font-weight: 600">语言 / 币种</span><span>en-US / USD</span><span class="chip ok">已识别</span></div>
+        <div class="chk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A4B00" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6M12 16.5v.5"></path></svg><span style="font-weight: 600">GMC feed</span><span>网站上未发现公开的 feed 地址，下一步手动填写</span><span class="chip warn">待填写</span></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; gap: 12px; padding-top: 6px">
+        <a class="btn" href="Main.dc.html">取消</a>
+        <a class="btn pri" href="NewProject.dc.html">下一步：数据源</a>
+      </div>
+    </section>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · 文件夹</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 14px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.btn.sm{min-height:32px;padding:0 10px}
+.btn.del{color:#A3200F;border-color:#EBB5AE}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.sub{display:inline-flex;align-items:center;min-height:32px;padding:0 14px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500;font-size:13px}
+.sub.on{background:#1B1F24;color:#fff}
+.th{font-size:12px;color:#5B6470;font-weight:600;padding:10px 12px;border-bottom:1px solid #E1E4E8;background:#F8F9FA;position:sticky;top:0;z-index:1}
+.td{padding:8px 12px;border-bottom:1px solid #EEF0F2;font-size:13px;display:flex;align-items:center;gap:8px;min-height:54px;box-sizing:border-box}
+.inp{min-height:34px;padding:0 10px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;font-size:13px;background:#fff;color:#1B1F24;box-sizing:border-box;width:100%}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 32px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 24px">Kingsyard</h1><span class="k mono">D:\云盘\projects\kingsyard</span></div>
+      <button class="btn" type="button">打开项目文件夹</button>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab on" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+    <nav style="display: flex; gap: 6px" aria-label="设置分区"><a class="sub" href="ProjectSettings.dc.html">配置</a><a class="sub" href="Categories.dc.html">分类</a><a class="sub on" href="Folders.dc.html">文件夹</a><a class="sub" href="LocalFiles.dc.html">本地文件</a></nav>
+
+    <section class="card" style="overflow: hidden">
+      <div style="padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap">
+        <div style="display: flex; flex-direction: column; gap: 2px"><h2 style="margin: 0; font-size: 15px">工作区文件夹 · {{count}}</h2><span class="k">说明保存到各文件夹的 _about.md 第一段，并显示在 README 的目录地图中</span></div>
+        <span class="chip ok">所有操作直接作用于本地文件夹</span>
+      </div>
+      <div style="max-height: 520px; overflow: auto">
+        <div style="display: grid; grid-template-columns: minmax(130px, 0.9fr) minmax(320px, 3fr) 84px 64px 90px 190px; min-width: 980px">
+          <div class="th">文件夹</div><div class="th">说明</div><div class="th">类型</div><div class="th">文件</div><div class="th">最近修改</div><div class="th">操作</div>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="7">
+            <div class="td mono" style="font-weight: 600">{{r.name}}/</div>
+            <div class="td" style="flex-direction: column; align-items: stretch; justify-content: center; gap: 4px">
+              <div style="display: flex; gap: 6px"><label style="flex: 1; display: flex"><span style="position: absolute; left: -9999px">{{r.name}} 的说明</span><input class="inp" value="{{r.desc}}" onChange="{{r.onDesc}}" placeholder="一句话说明这个文件夹的用途"></label><button class="btn sm" type="button" onClick="{{r.save}}">保存</button></div>
+              <sc-if value="{{r.saved}}" hint-placeholder-val="{{false}}"><span class="k" style="color: #154D3B">已写入 {{r.name}}/_about.md</span></sc-if>
+            </div>
+            <div class="td"><span class="chip {{r.tcls}}">{{r.type}}</span></div>
+            <div class="td k">{{r.files}}</div>
+            <div class="td mono k">{{r.mod}}</div>
+            <div class="td"><button class="btn sm" type="button">打开</button><sc-if value="{{r.custom}}" hint-placeholder-val="{{false}}"><button class="btn sm del" type="button" onClick="{{r.del}}">删除</button></sc-if><sc-if value="{{r.locked}}" hint-placeholder-val="{{true}}"><button class="btn sm" type="button" disabled title="默认文件夹不能删除">删除</button></sc-if></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding: 14px 18px; border-top: 1px solid #E1E4E8; display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; background: #FAFBFC">
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; flex: 0 1 200px">新文件夹名<input class="inp mono" value="{{newName}}" onChange="{{onNewName}}" placeholder="如 广告"></label>
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; flex: 1 1 320px">说明<input class="inp" value="{{newDesc}}" onChange="{{onNewDesc}}" placeholder="一句话说明用途"></label>
+        <button class="btn pri" type="button" onClick="{{create}}">新建文件夹</button>
+      </div>
+    </section>
+
+    <section class="card" style="padding: 14px 18px; display: flex; flex-direction: column; gap: 6px">
+      <span style="font-weight: 600; font-size: 13px">系统文件夹（由 SiteIndex 维护，不在此编辑）</span>
+      <div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px"><span><span class="mono">index/</span> <span class="k">网站数据，见"本地文件"</span></span><span><span class="mono">_agent/</span> <span class="k">agent skills，见 Skill 中心</span></span></div>
+    </section>
+    <span class="k">删除自定义文件夹时，文件夹及其中文件会移到系统回收站，可以恢复；默认文件夹不能删除，可以修改说明。</span>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      list: [
+        { name: 'seo', desc: '关键词研究、排名周报、站内优化记录', custom: false, files: 24, mod: '10-19' },
+        { name: 'edm', desc: '每次 campaign 一个子文件夹（brief、content.json、email.html）', custom: false, files: 31, mod: '10-20' },
+        { name: '产品', desc: '产品图、上新资料、利润测算', custom: false, files: 112, mod: '10-18' },
+        { name: '内容', desc: '博客 brief 与草稿（drafts/），已发布文章存档', custom: false, files: 40, mod: '10-15' },
+        { name: '设计', desc: '', custom: false, files: 8, mod: '09-30' },
+        { name: '报告', desc: '月度钉钉汇报、复盘', custom: false, files: 9, mod: '10-01' },
+        { name: '广告', desc: 'Google Ads 素材与投放记录', custom: true, files: 14, mod: '10-17' }
+      ],
+      drafts: {}, saved: {}, newName: '', newDesc: ''
+    };
+  }
+  renderVals() {
+    const st = this.state;
+    const rows = st.list.map((f) => ({
+      name: f.name, desc: st.drafts[f.name] !== undefined ? st.drafts[f.name] : f.desc, custom: f.custom, locked: !f.custom,
+      type: f.custom ? '自定义' : '默认', tcls: f.custom ? 'info' : 'idle', files: f.files, mod: f.mod, saved: !!st.saved[f.name],
+      onDesc: (e) => this.setState({ drafts: { ...st.drafts, [f.name]: e.target.value } }),
+      save: () => this.setState({
+        list: st.list.map((x) => (x.name === f.name ? { ...x, desc: st.drafts[f.name] !== undefined ? st.drafts[f.name] : x.desc } : x)),
+        saved: { ...st.saved, [f.name]: true }
+      }),
+      del: () => this.setState({ list: st.list.filter((x) => x.name !== f.name) })
+    }));
+    return {
+      rows, count: st.list.length, newName: st.newName, newDesc: st.newDesc,
+      onNewName: (e) => this.setState({ newName: e.target.value }),
+      onNewDesc: (e) => this.setState({ newDesc: e.target.value }),
+      create: () => {
+        const n = (st.newName || '').trim();
+        if (!n || st.list.some((x) => x.name === n)) return;
+        this.setState({ list: st.list.concat({ name: n, desc: st.newDesc, custom: true, files: 0, mod: '刚刚' }), newName: '', newDesc: '', saved: { ...st.saved, [n]: true } });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

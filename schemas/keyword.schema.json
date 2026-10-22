@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "siteindex/keyword",
+  "title": "content/keywords.jsonl",
+  "type": "object",
+  "properties": {
+    "keyword": {
+      "type": "string",
+      "pattern": "^[^A-Z]+$"
+    },
+    "target_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "role": {
+      "enum": [
+        "primary",
+        "secondary"
+      ]
+    },
+    "intent": {
+      "enum": [
+        "informational",
+        "commercial",
+        "transactional",
+        "navigational"
+      ]
+    },
+    "cluster": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "drafting",
+        "live"
+      ]
+    },
+    "priority": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 5
+    },
+    "source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "updated_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "keyword",
+    "target_url",
+    "role",
+    "intent",
+    "cluster",
+    "status",
+    "updated_at"
+  ],
+  "x-primary-key": [
+    "keyword"
+  ]
+}

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Kingsyard · 项目设置</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#D8DCE1;color:#1B1F24;font-family:"IBM Plex Sans","Microsoft YaHei UI","PingFang SC",sans-serif;font-size:14px}
+a{color:#1E6B52}a:hover{color:#154D3B}
+.nav{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500}
+.nav:hover{background:#ECEEF1;color:#1B1F24}.nav.on{background:#E3EFE9;color:#154D3B}
+.mono{font-family:"IBM Plex Mono",Consolas,monospace}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:6px;border:1px solid #CDD2D8;background:#fff;color:#1B1F24;font:inherit;font-weight:500;cursor:pointer;text-decoration:none}
+.btn.pri{background:#1E6B52;border-color:#1E6B52;color:#fff}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:#E3EFE9;color:#154D3B}.warn{background:#FFF1DB;color:#8A4B00}.idle{background:#ECEEF1;color:#4A525C}.info{background:#E6EEF8;color:#1F4E80}
+.k{font-size:12px;color:#5B6470}
+.card{background:#fff;border:1px solid #E1E4E8;border-radius:10px}
+.tab{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;color:#4A525C;text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
+.tab.on{color:#1B1F24;border-color:#1E6B52;font-weight:600}
+.f{display:flex;flex-direction:column;gap:6px}
+.f label,.lb{font-size:13px;font-weight:600}
+.inp{min-height:40px;padding:0 12px;border:1px solid #CDD2D8;border-radius:6px;font:inherit;background:#fff;color:#1B1F24;box-sizing:border-box;width:100%}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 18px}
+.sec{padding:22px 24px;display:flex;flex-direction:column;gap:16px}
+.sec h2{margin:0;font-size:16px}
+.toc{display:block;padding:8px 12px;border-radius:6px;color:#3D4550;text-decoration:none;font-size:13px}
+.toc:hover{background:#ECEEF1}
+.sub{display:inline-flex;align-items:center;min-height:32px;padding:0 14px;border-radius:6px;color:#3D4550;text-decoration:none;font-weight:500;font-size:13px}
+.sub.on{background:#1B1F24;color:#fff}
+</style>
+</helmet>
+<div style="margin: 14px; min-height: calc(100vh - 28px); border: 1px solid #C9CED5; border-radius: 12px; overflow: hidden; background: #F4F5F7; box-shadow: 0 8px 28px rgba(20, 24, 29, 0.14); display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 38px; padding-left: 16px; background: #FFFFFF; border-bottom: 1px solid #E1E4E8; flex: none">
+  <span style="font-size: 12px; color: #5B6470; font-weight: 600">SiteIndex</span>
+  <div style="display: flex; height: 38px" aria-hidden="true">
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="none" stroke="#3D4550" stroke-width="1"></rect></svg></span>
+    <span style="width: 46px; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#3D4550" stroke-width="1"></path></svg></span>
+  </div>
+</div>
+<div style="display: flex; flex-wrap: wrap; flex: 1 0 auto">
+  <aside style="flex: 1 1 232px; background: #FFFFFF; border-right: 1px solid #E1E4E8; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+      <div style="width: 28px; height: 28px; border-radius: 7px; background: #1E6B52; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h6"></path></svg></div>
+      <span style="font-size: 17px; font-weight: 700">SiteIndex</span>
+    </div>
+    <a class="nav" href="Main.dc.html">项目中心</a>
+    <a class="nav" href="Skills.dc.html">Skill 中心</a>
+    <a class="nav" href="Runs.dc.html">定时任务</a>
+    <a class="nav" href="AppSettings.dc.html">设置</a>
+    <div style="font-size: 12px; color: #5B6470; font-weight: 600; padding: 22px 12px 8px">项目</div>
+    <a class="nav on" href="Overview.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1E6B52"></span>Kingsyard</a>
+    <a class="nav" href="Main.dc.html"><span style="width: 8px; height: 8px; border-radius: 50%; background: #C77700"></span>[WordPress 站点]</a>
+  </aside>
+
+  <main style="flex: 999 1 560px; min-width: 0; padding: 24px 36px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 24px">Kingsyard</h1><span class="k mono">index/site.json</span></div>
+      <div style="display: flex; gap: 10px"><button class="btn" type="button">以 JSON 编辑</button><button class="btn pri" type="button">保存配置</button></div>
+    </div>
+    <nav style="display: flex; gap: 24px; border-bottom: 1px solid #E1E4E8; flex-wrap: wrap" aria-label="项目标签">
+      <a class="tab" href="Overview.dc.html">概览</a><a class="tab" href="Inventory.dc.html">库存</a><a class="tab" href="Products.dc.html">产品</a><a class="tab" href="SEO.dc.html">SEO</a><a class="tab" href="Content.dc.html">内容</a><a class="tab" href="Edm.dc.html">EDM</a><a class="tab" href="Design.dc.html">设计</a><a class="tab" href="Readme.dc.html">README</a><a class="tab" href="Runs.dc.html">运行</a><a class="tab on" href="ProjectSettings.dc.html">设置</a>
+    </nav>
+    <nav style="display: flex; gap: 6px" aria-label="设置分区"><a class="sub on" href="ProjectSettings.dc.html">配置</a><a class="sub" href="Categories.dc.html">分类</a><a class="sub" href="Folders.dc.html">文件夹</a><a class="sub" href="LocalFiles.dc.html">本地文件</a></nav>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+      <nav class="card" style="flex: 1 1 180px; padding: 10px; display: flex; flex-direction: column; gap: 2px" aria-label="设置分区">
+        <a class="toc" href="#basic">基本信息</a><a class="toc" href="#brand">品牌</a><a class="toc" href="#source">数据源</a><a class="toc" href="#crawl">抓取</a><a class="toc" href="#seo">SEO</a><a class="toc" href="#edm">EDM</a><a class="toc" href="#integ">集成与预留数据源</a>
+      </nav>
+
+      <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+        <section id="basic" class="card sec">
+          <h2>基本信息</h2>
+          <div class="g3">
+            <div class="f"><label for="s1">域名</label><input id="s1" class="inp mono" value="kingsyard.com"></div>
+            <div class="f"><label for="s2">网站地址</label><input id="s2" class="inp mono" value="https://www.kingsyard.com"></div>
+            <div class="f"><label for="s3">平台</label><select id="s3" class="inp"><option>Magento</option><option>WordPress / WooCommerce</option><option>Shopify</option><option>其他</option></select></div>
+            <div class="f"><label for="s4">币种</label><input id="s4" class="inp" value="USD"></div>
+            <div class="f"><label for="s5">语言</label><input id="s5" class="inp" value="en-US"></div>
+            <div class="f"><label for="s6">时区</label><input id="s6" class="inp" value="America/Los_Angeles"></div>
+          </div>
+        </section>
+
+        <section id="brand" class="card sec">
+          <h2>品牌</h2>
+          <div class="g2">
+            <div class="f"><label for="b1">品牌名</label><input id="b1" class="inp" value="Kingsyard"></div>
+            <div class="f"><label for="b2">一句话定位</label><input id="b2" class="inp" value="Wild bird feeding supplies for backyard birders."></div>
+            <div class="f"><label for="b3">文案调性</label><input id="b3" class="inp" value="Warm, practical, nature-loving; short sentences"></div>
+            <div class="f"><label for="b4">目标人群</label><input id="b4" class="inp" value="Backyard bird lovers and gift buyers"></div>
+          </div>
+          <div class="f"><span class="lb">核心卖点</span><div style="display: flex; gap: 8px; flex-wrap: wrap"><span class="chip idle">Squirrel-resistant designs ×</span><span class="chip idle">Easy to clean ×</span><button class="btn" type="button" style="min-height: 32px; padding: 0 10px">+ 添加</button></div></div>
+        </section>
+
+        <section id="source" class="card sec">
+          <div style="display: flex; justify-content: space-between; align-items: center"><h2>数据源 · GMC feed</h2><button class="btn" type="button" style="min-height: 36px">检测 feed</button></div>
+          <div class="f"><span class="lb">feed 地址（按顺序合并）</span>
+            <div style="display: flex; gap: 8px"><input class="inp mono" value="https://www.kingsyard.com/feeds/google_us.xml" aria-label="feed 地址 1"><button class="btn" type="button" aria-label="删除 feed 1">删除</button></div>
+            <button class="btn" type="button" style="align-self: flex-start; min-height: 36px">+ 添加 feed</button>
+          </div>
+          <div class="g3">
+            <div class="f"><label for="d1">SKU 字段</label><select id="d1" class="inp"><option>id</option><option>mpn</option></select></div>
+            <div class="f"><label for="d2">分类来源</label><select id="d2" class="inp"><option>product_type</option><option>google_product_category</option><option>URL 路径</option></select></div>
+            <div class="f"><label for="d3">主分类层级</label><select id="d3" class="inp"><option>第 2 层</option><option>第 1 层</option><option>第 3 层</option></select></div>
+            <div class="f"><label for="d4">商品消失时</label><select id="d4" class="inp"><option>先记缺货，30 天后判定下架</option><option>立即判定下架</option></select></div>
+            <div class="f"><label for="d5">保护阈值</label><input id="d5" class="inp" value="10%"></div>
+            <div class="f"><label for="d6">feed 生成时间</label><input id="d6" class="inp" value="每天 01:00（同步前 1 小时）"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #F2F8F5; border-radius: 8px; padding: 12px 14px"><span><span style="font-weight: 600">分类识别：手动配置</span> <span class="k">· 4 个分类 · 未归类 0（Magento 分类无固定 URL）</span></span><a class="btn" href="Categories.dc.html" style="min-height: 36px">分类设置</a></div>
+          <div class="f"><span class="lb">数据修正（overrides）</span><div class="mono k" style="background: #F8F9FA; border-radius: 6px; padding: 10px 12px">KYBF012 → title = "Kingsyard Feeder 12 (Override)"</div></div>
+        </section>
+
+        <section id="crawl" class="card sec">
+          <h2>抓取</h2>
+          <div class="g3">
+            <div class="f"><label for="c1">请求间隔</label><input id="c1" class="inp" value="1500 ms"></div>
+            <div class="f"><label for="c2">每周最多页面</label><input id="c2" class="inp" value="2000"></div>
+            <div class="f"><label for="c3">抓取产品页 SEO</label><select id="c3" class="inp"><option>是（每周）</option><option>否</option></select></div>
+          </div>
+          <div class="g2">
+            <div class="f"><label for="c4">博客 URL 规则</label><input id="c4" class="inp mono" value="/blog/ , /news/ , /\d{4}/\d{2}/"></div>
+            <div class="f"><label for="c5">排除 URL 规则</label><input id="c5" class="inp mono" value="/checkout/ , /customer/ , ?sort="></div>
+          </div>
+        </section>
+
+        <section id="seo" class="card sec">
+          <h2>SEO</h2>
+          <div class="f"><span class="lb">核心关键词</span><div style="display: flex; gap: 8px; flex-wrap: wrap"><span class="chip idle">bird feeders ×</span><span class="chip idle">suet feeders ×</span><span class="chip idle">bird houses ×</span><span class="chip idle">bird baths ×</span><button class="btn" type="button" style="min-height: 32px; padding: 0 10px">+ 添加</button></div></div>
+          <div class="g2">
+            <div class="f"><label for="e1">竞品域名</label><input id="e1" class="inp mono" placeholder="example.com, …"></div>
+            <div class="f"><label for="e2">Title 长度范围</label><input id="e2" class="inp" value="30–60 字符"></div>
+            <div class="f"><label for="e3">Description 长度范围</label><input id="e3" class="inp" value="70–155 字符"></div>
+            <div class="f"><label for="e4">忽略的检查规则</label><input id="e4" class="inp" value="/about-us 的 noindex"></div>
+          </div>
+        </section>
+
+        <section id="edm" class="card sec">
+          <h2>EDM</h2>
+          <div class="g3">
+            <div class="f"><label for="m1">邮件平台</label><select id="m1" class="inp"><option>Mailchimp</option><option>WordPress 邮件插件</option><option>其他</option></select></div>
+            <div class="f"><label for="m2">每封产品数</label><input id="m2" class="inp" value="6"></div>
+            <div class="f"><label for="m3">推荐冷却期</label><input id="m3" class="inp" value="21 天"></div>
+            <div class="f"><label for="m4">UTM source / medium</label><input id="m4" class="inp mono" value="mailchimp / email"></div>
+            <div class="f"><label for="m5">图片优先级</label><select id="m5" class="inp"><option>抓取首图 → 手动首图</option><option>手动首图 → 抓取首图</option></select></div>
+            <div class="f"><label for="m6">默认受众</label><input id="m6" class="inp" placeholder="[Mailchimp audience / segment]"></div>
+          </div>
+        </section>
+
+        <section id="integ" class="card sec">
+          <h2>集成与预留数据源</h2>
+          <div class="g2">
+            <div class="f"><label for="i1">linkflow MCP 服务</label><input id="i1" class="inp mono" value="linkflow"></div>
+            <div class="f"><label for="i2">录入工具</label><input id="i2" class="inp mono" value="create_prospect"></div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+            <div style="border: 1px dashed #B9C0C8; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 600">销量数据</span><span class="k">Magento API / WordPress REST / MCP → index/sales/</span><span class="chip idle" style="align-self: flex-start">预留 · 未连接</span></div>
+            <div style="border: 1px dashed #B9C0C8; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 600">Google Search Console</span><span class="k">收录、展现、点击、排名 → index/seo/</span><span class="chip idle" style="align-self: flex-start">预留 · 未连接</span></div>
+            <div style="border: 1px dashed #B9C0C8; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 600">Mailchimp 报告</span><span class="k">收件、打开、点击、收入 → edm_campaigns</span><span class="chip idle" style="align-self: flex-start">预留 · 未连接</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2200}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
