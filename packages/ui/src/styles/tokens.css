@@ -1,0 +1,30 @@
+@theme {
+  --color-brand: #1E6B52;
+  --color-brand-strong: #154D3B;
+  --color-brand-soft: #E3EFE9;
+  --color-ink: #1B1F24;
+  --color-ink-2: #3D4550;
+  --color-muted: #5B6470;
+  --color-faint: #8A939D;
+  --color-line: #E1E4E8;
+  --color-line-soft: #EEF0F2;
+  --color-surface: #FFFFFF;
+  --color-canvas: #F4F5F7;
+  --color-subtle: #F8F9FA;
+  --color-warn: #8A4B00;
+  --color-warn-soft: #FFF1DB;
+  --color-danger: #A3200F;
+  --color-danger-soft: #FDE8E7;
+  --color-info: #1F4E80;
+  --color-info-soft: #E6EEF8;
+  --color-neutral-soft: #ECEEF1;
+  --color-stock-in: #2E8A63;
+  --color-stock-out: #D64532;
+  --color-stock-preorder: #E0A33A;
+  --color-stock-unknown: #C4C9CF;
+  --color-chart-feeders: #1E6B52;
+  --color-chart-baths: #D9822B;
+  --color-chart-houses: #7FB2E5;
+  --font-sans: "IBM Plex Sans", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, monospace;
+}
