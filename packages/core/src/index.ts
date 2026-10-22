@@ -5,10 +5,10 @@
  * 实现清单见 docs/tasks/A-core.md。
  */
 import { SCHEMA_VERSION } from "@siteindex/shared";
+export { atomicWrite } from "./io/atomic-write";
+export { readCsv, writeCsv } from "./io/csv";
+export { compareKeys } from "./io/compare";
+export { readJsonl, writeJsonl } from "./io/jsonl";
+export { assertRunner, CoreIOError, findConflictCopies, isConflictCopy, readRunner, withLock, writeRunner } from "./io/runner-lock";
 
 export const CORE_SCHEMA_VERSION = SCHEMA_VERSION;
-
-/** 与参考实现一致的字符串排序（按 UTF-16 码元 `<` 比较，不用 localeCompare） */
-export function compareKeys(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
