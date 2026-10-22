@@ -60,10 +60,12 @@
 - [ ] 新建项目：`detect(url)`、`inspectFeed`、`createProject`（复制 `templates/project`、写 site.json、_about.md、首次 daily）
 
 ### A8 查询服务 `core/src/service/`
-- [ ] `createCoreService(ctx: { resolveProject(id): string; deviceId: string; cacheDir: string })`，实现 WORKSTREAMS §2 中 core 列的全部方法，签名与 `SiteIndexApi` 一致
-- [ ] 列表统一分页/排序/筛选/搜索；内存缓存，`invalidate(projectPath)` 由 C 在文件变化时调用
-- [ ] `runJob(req: JobRequest, report: ProgressReporter): Promise<JobResult>` —— 统一入口，含执行前检查（项目可读 → 执行设备 → 锁）与 runs.jsonl
-- **验收**：用 `fixtures/expected/project` 作为项目，对每个查询方法写单测；1 万 SKU 合成数据下列表查询 < 50ms
+- [x] `createCoreService(ctx: { resolveProject(id): string; deviceId: string; cacheDir: string })` 覆盖 WORKSTREAMS §2 分配给 core 的项目、概览、库存、产品、SEO、内容、EDM、设计、README、分类、文件夹、文件、计划与执行设备方法；桌面专属方法留给 C
+- [x] 已实现方法使用统一分页/排序/筛选/搜索和内存缓存；暴露 `invalidate(projectPath)` 供 C 在文件变化时调用
+- [x] `projects.detect`、`inspectFeed`、`create`；新建项目复制模板、写配置与工作区、触发首次 daily
+- [x] `runJob(req: JobRequest, report: ProgressReporter): Promise<JobResult>` —— 统一入口、执行前检查、锁、runs.jsonl；daily、views、readme 已接入
+- [ ] weekly、monthly、validate、design、index-check 等 Job 在 A5、A6、A10 模块完成后接入统一入口
+- **首批验收**：用 `fixtures/expected/project` 覆盖 projects/inventory/products 查询与台账写入；1 万 SKU 合成数据下热缓存列表查询 < 50ms。全部 core 方法和 runJob 完成后再完成 A8 验收
 
 ### A9 命令行 `packages/cli/`
 - [ ] ARCHITECTURE §6 全部命令；`--json` 输出 `CliJsonOutput`；退出码用 `EXIT`

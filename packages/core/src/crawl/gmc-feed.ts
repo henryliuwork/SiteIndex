@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
-import { EXIT, type SiteIndexErrorCode } from "@siteindex/shared";
+import { EXIT, type SiteIndexErrorCode, type StockStatus } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
+
+export type { StockStatus };
 
 export type FeedItem = Record<string, string | string[] | undefined>;
 export type FeedSnapshot = Record<string, unknown> & {
@@ -21,8 +23,6 @@ export type FeedSnapshot = Record<string, unknown> & {
   stock_status: StockStatus;
   qty: number | null;
 };
-export type StockStatus = "in_stock" | "out_of_stock" | "preorder" | "unknown";
-
 export interface FeedSiteConfig {
   base_url: string;
   currency?: string;

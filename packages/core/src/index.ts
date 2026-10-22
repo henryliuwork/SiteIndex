@@ -16,5 +16,7 @@ export { runDaily, runDailyFromFile } from "./jobs/daily";
 export type { DailyOptions, DailyResult, DailySnapshot } from "./jobs/daily";
 export { buildViews } from "./views/build";
 export type { BuildViewsOptions, BuildViewsResult } from "./views/build";
+export { createCoreService } from "./service";
+export type { CoreService, CoreServiceContext } from "./service";
 
 export const CORE_SCHEMA_VERSION = SCHEMA_VERSION;
