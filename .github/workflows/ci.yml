@@ -26,3 +26,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - if: matrix.os == 'windows-latest'
+        run: pnpm --filter @siteindex/desktop build
