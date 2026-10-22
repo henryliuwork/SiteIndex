@@ -84,6 +84,12 @@ export interface AppSettings {
   conflict_patterns: string[];
 }
 
+/** 本机缓存中的项目界面偏好，不写入项目云盘目录。 */
+export interface ProjectUiState {
+  columns: Record<string, string[]>;
+  page_sizes: Record<string, 20 | 50 | 100>;
+}
+
 export interface BrowserStatus {
   available: boolean;
   name: string | null; // "Microsoft Edge 141"
@@ -358,6 +364,10 @@ export interface SiteIndexApi {
     cliStatus(): Promise<CliStatus>;
     installCli(): Promise<CliStatus>;
     chooseDirectory(defaultPath?: string): Promise<string | null>;
+  };
+  uiState?: {
+    get(id: ProjectId): Promise<ProjectUiState>;
+    set(id: ProjectId, patch: Partial<ProjectUiState>): Promise<ProjectUiState>;
   };
   projects: {
     list(): Promise<ProjectSummary[]>;
