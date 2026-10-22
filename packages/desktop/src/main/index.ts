@@ -2,7 +2,8 @@ import { app, BrowserWindow, screen, session, shell } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { registerIpcHandlers } from "./ipc.js";
+import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
+import { createSettingsStore } from "./settings-store.js";
 
 interface WindowBounds {
   x?: number;
@@ -34,8 +35,16 @@ if (!hasSingleInstanceLock) {
       return;
     }
 
+    const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
+    const isFirstRun = !(await settingsStore.exists());
+    await settingsStore.get();
+    registerIpcHandlers(settingsStore);
+    if (isFirstRun) {
+      const projectsRoot = await chooseDirectory();
+      if (projectsRoot) await settingsStore.set({ projects_root: projectsRoot });
+    }
+
     registerContentSecurityPolicy();
-    registerIpcHandlers();
     mainWindow = await createMainWindow();
     mainWindow.on("closed", () => {
       mainWindow = null;
