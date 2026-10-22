@@ -3,5 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "dependencies": { "@siteindex/core": "workspace:*", "@siteindex/shared": "workspace:*" }
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist:win": "pnpm build && electron-builder --win nsis",
+    "dist:mac": "pnpm build && electron-builder --mac dmg --universal"
+  },
+  "dependencies": {
+    "@siteindex/core": "workspace:*",
+    "@siteindex/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-vite": "^6.0.0",
+    "vite": "^8.3.5"
+  }
 }
