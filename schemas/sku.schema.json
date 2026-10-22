@@ -36,6 +36,14 @@
         "type": "string"
       }
     },
+    "category_source": {
+      "enum": [
+        "url_rule",
+        "feed",
+        "manual",
+        "none"
+      ]
+    },
     "price": {
       "type": "number",
       "minimum": 0
@@ -83,6 +91,7 @@
     "title",
     "url",
     "category",
+    "category_source",
     "price",
     "currency",
     "status",

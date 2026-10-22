@@ -38,9 +38,13 @@
 
 ## 3. 分支与 PR
 
-- 主干 `main` 受保护：只接受 PR；CI（windows/macos/ubuntu 的 typecheck + test）必须通过。
+- **`main` 只通过 PR 更新**。仓库是私有免费版，GitHub 不强制分支保护，以下规则靠自觉执行：
+  - 禁止直接 push 到 `main`；禁止合并自己的 PR
+  - PR 合并前三系统 CI（windows/macos/ubuntu 的 install + typecheck + test）必须全部通过；**本地通过不算**
+  - 由审核者（项目协调 agent）检查 CI、改动目录、契约后合并；用 **merge commit**（不用 squash）
+  - 新增或升级依赖时，必须在同一个 PR 里提交更新后的根目录 `pnpm-lock.yaml`（CI 使用 `--frozen-lockfile`）
 - 分支命名：`a/<主题>`、`b/<主题>`、`c/<主题>`、契约 `contract/<主题>`。
-- PR 小而频繁（建议 ≤ 600 行改动），squash merge。标题前缀 `[A]`/`[B]`/`[C]`/`[contract]`。
+- PR 小而频繁（建议 ≤ 600 行改动）。**每个 PR 都基于最新 `main` 开分支**，不要叠在自己未合并的分支上；前一个 PR 未合并时可以先开下一个，但依赖前一个的改动要等它合并后再 rebase。标题前缀 `[A]`/`[B]`/`[C]`/`[contract]`。
 - 每个 PR 勾选对应任务清单条目；开工前先 `git pull --rebase origin main`。
 - 不要修改其他工作流目录下的文件；发现对方的 bug，开 issue 并 @ 对应工作流（标签 `ws:A`/`ws:B`/`ws:C`）。
 
