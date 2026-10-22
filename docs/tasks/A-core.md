@@ -20,8 +20,8 @@
 - **验收**：单测覆盖并发写同一文件、锁超时、冲突副本识别
 
 ### A2 feed 解析 `core/src/crawl/gmc-feed.ts`
-- [ ] XML（RSS/Atom，g: 命名空间）与 TSV（表头带空格）
-- [ ] 变体归组、sale_price 有效期、availability 映射（backorder→preorder，非标准→unknown）、重复 id、缺价格、URL 去跟踪参数、overrides
+- [x] XML（RSS/Atom，g: 命名空间）与 TSV（表头带空格）
+- [x] 变体归组、sale_price 有效期、availability 映射（backorder→preorder，非标准→unknown）、重复 id、缺价格、URL 去跟踪参数、overrides
 - **验收**：`fixtures/feeds/day1–4` 的解析结果等于 `fixtures/expected/snapshots/dayN.jsonl`
 
 ### A3 每日同步 `core/src/jobs/daily.ts`
