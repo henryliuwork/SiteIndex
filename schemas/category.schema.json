@@ -19,12 +19,18 @@
         "null"
       ]
     },
+    "source": {
+      "enum": ["url_rule", "feed", "manual", "none"]
+    },
     "product_count": {
       "type": [
         "integer",
         "null"
       ]
     },
+    "sku_count": { "type": "integer", "minimum": 0 },
+    "in_stock_count": { "type": "integer", "minimum": 0 },
+    "intro_text_words": { "type": ["integer", "null"], "minimum": 0 },
     "last_seen": {
       "type": "string",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
@@ -34,6 +40,8 @@
     "slug",
     "name",
     "url",
+    "parent",
+    "source",
     "last_seen"
   ],
   "x-primary-key": [

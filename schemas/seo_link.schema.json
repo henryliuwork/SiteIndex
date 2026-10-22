@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "siteindex/seo_link",
+  "title": "seo/links.jsonl",
+  "type": "object",
+  "properties": {
+    "from": { "type": "string", "format": "uri" },
+    "to": { "type": "string", "format": "uri" },
+    "anchor": { "type": "string" },
+    "to_type": { "enum": ["product", "collection", "blog", "page"] },
+    "nofollow": { "type": "boolean" }
+  },
+  "required": ["from", "to", "anchor", "to_type"],
+  "x-primary-key": ["from", "to", "anchor"]
+}

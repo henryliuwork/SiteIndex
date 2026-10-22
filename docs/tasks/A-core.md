@@ -38,17 +38,17 @@
 - **验收**：products 与 `fixtures/expected/project/index/views/products.jsonl` 一致（该黄金文件已按 feed 优先重新生成；fixtures 中只有 feed 图场景，manual 与 none 场景自行补单测）；sku_stock 补单测
 
 ### A5 每周同步 `core/src/jobs/weekly.ts`
-- [ ] sitemap index 展开、限速抓取（默认 1 req/s，可配置）
-- [ ] `seo/pages.jsonl`、`seo/issues.jsonl`（DATA_SPEC §5.8 规则表，长度规则用 shared/seo.ts 的 grade 函数）、`seo/links.jsonl`（排除导航/页脚）
-- [ ] `content/blog_index.jsonl`（日期三种来源、作者、404 处理）
-- [ ] `catalog/product_details.jsonl`、`catalog/categories.json`（url_rule 模式识别分类页）
-- [ ] `--only <step>`：只跑某一步（用于校验页"重新生成"）
+- [x] sitemap index 展开、限速抓取（默认 1 req/s，可配置）
+- [x] `seo/pages.jsonl`、`seo/issues.jsonl`（DATA_SPEC §5.8 规则表，长度规则用 shared/seo.ts 的 grade 函数）、`seo/links.jsonl`（排除导航/页脚）
+- [x] `content/blog_index.jsonl`（日期来源、作者、404 处理）
+- [x] `catalog/product_details.jsonl`、`catalog/categories.json`（url_rule 模式识别分类页）
+- [x] `--only <step>`：只跑某一步（用于校验页"重新生成"）
 - **验收**：用 http 服务托管 `fixtures/www/` 后结果与 `expected/project/` 一致；1.1 新表补单测
 
 ### A6 校验与修复 `core/src/validate/`
-- [ ] 按 DATA_SPEC §6 规则产出 `logs/validation.json`（`ValidationReport`）
-- [ ] 修复映射：`regenerate:{job}.{step}`、`autofix`（排序/去重/换行）、`restore_archive`、`delete_copy`
-- [ ] ajv 校验用 `schemas/`；补齐 1.1 新 schema（seo_page、seo_issue、seo_link、product_details、sku_stock、validation，并更新 site/category/sku_media/sku_tags/edm_campaign）
+- [x] 按 DATA_SPEC §6 规则产出 `logs/validation.json`（`ValidationReport`）
+- [x] 修复映射：`regenerate:{job}.{step}`、`autofix`（排序/去重/换行）、`restore_archive`、`delete_copy`
+- [x] ajv 校验用 `schemas/`；补齐 1.1 新 schema（seo_page、seo_issue、seo_link、product_details、sku_stock、validation，并更新 site/category/sku_media/sku_tags/edm_campaign）
 - **验收**：`fixtures/invalid/*` 退出码一致、每条期望错误都有对应项；人为损坏 links.jsonl → repair → 恢复
 
 ### A7 README、台账、分类、文件夹
@@ -63,8 +63,8 @@
 - [x] `createCoreService(ctx: { resolveProject(id): string; deviceId: string; cacheDir: string })` 覆盖 WORKSTREAMS §2 分配给 core 的项目、概览、库存、产品、SEO、内容、EDM、设计、README、分类、文件夹、文件、计划与执行设备方法；桌面专属方法留给 C
 - [x] 已实现方法使用统一分页/排序/筛选/搜索和内存缓存；暴露 `invalidate(projectPath)` 供 C 在文件变化时调用
 - [x] `projects.detect`、`inspectFeed`、`create`；新建项目复制模板、写配置与工作区、触发首次 daily
-- [x] `runJob(req: JobRequest, report: ProgressReporter): Promise<JobResult>` —— 统一入口、执行前检查、锁、runs.jsonl；daily、views、readme 已接入
-- [ ] weekly、monthly、validate、design、index-check 等 Job 在 A5、A6、A10 模块完成后接入统一入口
+- [x] `runJob(req: JobRequest, report: ProgressReporter): Promise<JobResult>` —— 统一入口、执行前检查、锁、runs.jsonl；daily、views、readme、weekly、validate 已接入
+- [ ] monthly、design、index-check 等 Job 在对应模块完成后接入统一入口
 - **首批验收**：用 `fixtures/expected/project` 覆盖 projects/inventory/products 查询与台账写入；1 万 SKU 合成数据下热缓存列表查询 < 50ms。全部 core 方法和 runJob 完成后再完成 A8 验收
 
 ### A9 命令行 `packages/cli/`

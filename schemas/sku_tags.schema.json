@@ -33,6 +33,8 @@
         null
       ]
     },
+    "email_blurb": { "type": ["string", "null"] },
+    "season": { "type": ["string", "null"] },
     "note": {
       "type": [
         "string",

@@ -4,155 +4,118 @@
   "title": "site.json",
   "type": "object",
   "properties": {
-    "schema_version": {
-      "type": "string"
-    },
-    "domain": {
-      "type": "string",
-      "pattern": "^(?!https?://)[a-z0-9.-]+$"
-    },
-    "base_url": {
-      "type": "string",
-      "pattern": "^https?://"
-    },
-    "platform": {
-      "type": "string"
-    },
-    "currency": {
-      "type": "string"
-    },
-    "locale": {
-      "type": "string"
-    },
-    "timezone": {
-      "type": "string"
-    },
-    "markets": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
+    "schema_version": { "type": "string" },
+    "domain": { "type": "string", "pattern": "^(?!https?://)[a-z0-9.-]+$" },
+    "base_url": { "type": "string", "format": "uri" },
+    "platform": { "enum": ["magento", "wordpress", "woocommerce", "shopify", "other"] },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "locale": { "type": "string" },
+    "timezone": { "type": "string" },
+    "markets": { "type": "array", "items": { "type": "string" } },
     "brand": {
       "type": "object",
-      "required": [
-        "name",
-        "voice",
-        "audience"
-      ],
       "properties": {
-        "name": {
-          "type": "string"
-        },
-        "tagline": {
-          "type": "string"
-        },
-        "voice": {
-          "type": "string"
-        },
-        "audience": {
-          "type": "string"
-        },
-        "usp": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
+        "name": { "type": "string", "minLength": 1 },
+        "tagline": { "type": "string" },
+        "voice": { "type": "string" },
+        "audience": { "type": "string" },
+        "usp": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name"]
     },
-    "sitemaps": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
+    "sitemaps": { "type": "array", "items": { "type": "string", "format": "uri" } },
     "crawl": {
       "type": "object",
-      "required": [
-        "adapter",
-        "rate_limit_ms",
-        "stock_rules"
-      ],
       "properties": {
-        "adapter": {
-          "type": "string"
-        },
-        "rate_limit_ms": {
-          "type": "integer",
-          "minimum": 200
-        },
-        "user_agent": {
-          "type": "string"
-        },
-        "exclude_url_patterns": {
+        "adapter": { "const": "gmc_feed" },
+        "feed_url": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+        "sku_field": { "type": "string" },
+        "category_depth": { "type": "integer", "minimum": 1 },
+        "category_source": { "type": "string" },
+        "category_map": { "type": "object", "additionalProperties": { "type": "string" } },
+        "missing_as": { "enum": ["out_of_stock", "removed"] },
+        "missing_removed_after_days": { "type": "integer", "minimum": 0 },
+        "max_removed_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "feed_generated_at": { "type": "string" },
+        "blog_url_patterns": { "type": "array", "items": { "type": "string" } },
+        "exclude_url_patterns": { "type": "array", "items": { "type": "string" } },
+        "max_pages": { "type": "integer", "minimum": 1 },
+        "crawl_product_pages": { "type": "boolean" },
+        "rate_limit_ms": { "type": "integer", "minimum": 200 },
+        "user_agent": { "type": "string" },
+        "overrides": { "type": "object" },
+        "stock_rules": { "type": "object" }
+      },
+      "required": ["adapter", "feed_url", "rate_limit_ms"]
+    },
+    "categories": {
+      "type": "object",
+      "properties": {
+        "mode": { "enum": ["url_rule", "feed", "manual"] },
+        "url_pattern": { "type": "string" },
+        "manual": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "slug": { "type": "string" },
+              "name": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "match": { "type": "array", "items": { "type": "object", "required": ["type", "value"], "properties": { "type": { "enum": ["product_type_contains", "sku_prefix", "url_contains", "skus"] }, "value": { "type": "string" } } } }
+            },
+            "required": ["slug", "name", "url"]
           }
-        },
-        "stock_rules": {
-          "type": "object"
-        },
-        "overrides": {
-          "type": "object"
         }
-      }
+      },
+      "required": ["mode"]
     },
     "seo": {
       "type": "object",
       "properties": {
-        "core_keywords": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "competitors": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
+        "core_keywords": { "type": "array", "items": { "type": "string" } },
+        "competitors": { "type": "array", "items": { "type": "string" } },
+        "title_range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+        "description_range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+        "ignore_rules": { "type": "array", "items": { "type": "object", "required": ["url", "rule"], "properties": { "url": { "type": "string", "format": "uri" }, "rule": { "type": "string" } } } }
       }
     },
     "edm": {
       "type": "object",
       "properties": {
-        "platform": {
-          "type": "string"
-        },
-        "utm": {
-          "type": "object"
-        },
-        "max_products": {
-          "type": "integer"
-        },
-        "cooldown_days": {
-          "type": "integer"
-        },
-        "template_notes": {
-          "type": "string"
-        }
+        "platform": { "enum": ["mailchimp", "wordpress", "other"] },
+        "max_products": { "type": "integer", "minimum": 1 },
+        "cooldown_days": { "type": "integer", "minimum": 0 },
+        "utm": { "type": "object" },
+        "image_priority": { "type": "array", "items": { "enum": ["feed", "manual"] } }
       }
     },
-    "integrations": {
-      "type": "object"
+    "workspace_folders": { "type": "array", "items": { "type": "object", "required": ["name", "default"], "properties": { "name": { "type": "string" }, "default": { "type": "boolean" } } } },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "daily": { "$ref": "#/$defs/job_schedule" },
+        "validate": { "$ref": "#/$defs/job_schedule" },
+        "weekly": { "$ref": "#/$defs/job_schedule" },
+        "readme": { "$ref": "#/$defs/job_schedule" },
+        "monthly": { "allOf": [{ "$ref": "#/$defs/job_schedule" }, { "properties": { "day_of_month": { "type": "integer", "minimum": 1, "maximum": 31 } } }] },
+        "options": { "type": "object", "properties": { "wake_to_run": { "type": "boolean" }, "run_if_missed": { "type": "boolean" }, "notify_on_failure": { "type": "boolean" }, "validate_after_sync": { "type": "boolean" } } }
+      }
+    },
+    "integrations": { "type": "object" },
+    "readme": { "type": "object", "properties": { "disabled_blocks": { "type": "array", "items": { "type": "string" } } } }
+  },
+  "$defs": {
+    "job_schedule": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "days": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 7 } },
+        "time": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$" },
+        "day_of_month": { "type": "integer", "minimum": 1, "maximum": 31 }
+      },
+      "required": ["enabled", "time"]
     }
   },
-  "required": [
-    "schema_version",
-    "domain",
-    "base_url",
-    "platform",
-    "currency",
-    "locale",
-    "timezone",
-    "brand",
-    "sitemaps",
-    "crawl",
-    "seo",
-    "edm"
-  ],
+  "required": ["schema_version", "domain", "base_url", "platform", "currency", "locale", "timezone", "brand", "sitemaps", "crawl"],
   "x-primary-key": []
 }
