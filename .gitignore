@@ -2,6 +2,7 @@ node_modules/
 dist/
 out/
 release/
+packages/desktop/build-resources/
 coverage/
 *.log
 .DS_Store
