@@ -15,7 +15,9 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 - 禁止原生 Node 模块（better-sqlite3、sharp 等）；新增大型依赖需在 PR 中说明
 - 路径常量一律用 `PATHS`；退出码用 `EXIT`；错误用 `SiteIndexError`
 - core 输出必须与 `fixtures/expected/` 逐字节一致（排序用 `compareKeys`）
-- 每个 PR：`pnpm typecheck` 与 `pnpm test` 通过；勾选任务清单；标题前缀 `[A]`/`[B]`/`[C]`/`[contract]`
+- **不要直接 push 到 `main`，不要合并自己的 PR**：提交 PR 后由审核者合并（WORKSTREAMS §3）
+- 每个 PR：三系统 CI 全部通过（本地通过不算）；改了依赖就同时提交 `pnpm-lock.yaml`；勾选任务清单；标题前缀 `[A]`/`[B]`/`[C]`/`[contract]`
+- 每个 PR 基于最新 `main` 开分支，不要叠在自己未合并的分支上
 - 小步提交，PR ≤ 600 行改动为宜；开工前 `git pull --rebase origin main`
 - 界面文案为中文；代码注释中文或英文均可
 
