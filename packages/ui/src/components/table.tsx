@@ -30,6 +30,8 @@ export interface DataTableProps<T, F = Record<string, unknown>> {
   onRowClick?: (row: T) => void;
   getRowId?: (row: T, index: number) => string;
   maxHeight?: number;
+  showHeader?: boolean;
+  showPagination?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
   toolbar?: ReactNode;
@@ -47,7 +49,7 @@ function pageSizeValue(value: number): 20 | 50 | 100 {
 
 export function DataTable<T, F = Record<string, unknown>>({
   tableId, rows, total, columns, query, onQueryChange, onRowClick, getRowId,
-  maxHeight = 560, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
+  maxHeight = 560, showHeader = true, showPagination = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
 }: DataTableProps<T, F>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
@@ -118,7 +120,7 @@ export function DataTable<T, F = Record<string, unknown>>({
       </div>
       <div className="si-table-scroll" ref={scrollRef} style={{ height: maxHeight }}>
         <table className="si-table">
-          <thead>
+          {showHeader && <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
@@ -137,7 +139,7 @@ export function DataTable<T, F = Record<string, unknown>>({
                 })}
               </tr>
             ))}
-          </thead>
+          </thead>}
           <tbody>
             {rowModel.rows.length === 0 ? (
               <tr><td colSpan={visibleColumnCount}><div className="si-table-empty"><strong>{emptyTitle}</strong><span>{emptyDescription}</span></div></td></tr>
@@ -180,13 +182,13 @@ export function DataTable<T, F = Record<string, unknown>>({
           </tbody>
         </table>
       </div>
-      <Pagination
+      {showPagination && <Pagination
         page={query.page}
         pageSize={pageSize}
         total={total}
         onPageChange={(page) => onQueryChange({ ...query, page })}
         onPageSizeChange={(nextSize) => onQueryChange({ ...query, page: 1, pageSize: nextSize })}
-      />
+      />}
     </section>
   );
 }

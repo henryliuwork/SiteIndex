@@ -28,9 +28,11 @@ export function WindowChrome({ platform, children }: WindowChromeProps) {
 
 interface SideNavProps {
   projects?: SideNavProject[];
+  runnerName?: string | null;
+  runnerProject?: string | null;
 }
 
-export function SideNav({ projects = [] }: SideNavProps) {
+export function SideNav({ projects = [], runnerName, runnerProject }: SideNavProps) {
   const [collapsed, setCollapsed] = useState(false);
   const navClass = ({ isActive }: { isActive: boolean }): string => "si-nav-link" + (isActive ? " active" : "");
 
@@ -65,7 +67,7 @@ export function SideNav({ projects = [] }: SideNavProps) {
       <div className="si-nav-caption">项目</div>
       <div className="si-nav-projects">
         {projects.map((project) => (
-          <NavLink key={project.id} to={"/p/" + project.id} className={navClass} title={project.name}>
+          <NavLink key={project.id} to={"/p/" + project.id + "/inventory"} className={navClass} title={project.name}>
             <span className={"si-project-indicator si-project-indicator-" + (project.state ?? "ok")} aria-hidden="true" />
             <span className="si-nav-label">{project.name}</span>
           </NavLink>
@@ -73,8 +75,8 @@ export function SideNav({ projects = [] }: SideNavProps) {
       </div>
       <div className="si-runner">
         <span>本机</span>
-        <strong>本地开发</strong>
-        <span>浏览器 mock 模式</span>
+        <strong>{runnerName ?? "本地开发"}</strong>
+        <span>{runnerProject ? runnerProject + " 的执行设备" : "浏览器 mock 模式"}</span>
       </div>
     </aside>
   );

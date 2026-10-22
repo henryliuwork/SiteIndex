@@ -1,7 +1,11 @@
+import { lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { HashRouter, Route, Routes, useLocation } from "react-router-dom";
 import { api } from "./api";
 import { SideNav, WindowChrome } from "./components";
+
+const InventoryPage = lazy(() => import("./pages/InventoryPage").then(({ InventoryPage }) => ({ default: InventoryPage })));
+const ProjectCenterPage = lazy(() => import("./pages/ProjectCenterPage").then(({ ProjectCenterPage }) => ({ default: ProjectCenterPage })));
 
 const routes = [
   ["/new/url", "新建项目 · 网站"],
@@ -44,12 +48,15 @@ function AppShell() {
   const platform = useQuery({ queryKey: ["app", "platform"], queryFn: () => api.app.platform() });
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api.projects.list() });
   const navProjects = projects.data?.map(({ id, name, sync }) => ({ id, name, state: sync.state })) ?? [{ id: "kingsyard", name: "Kingsyard", state: "partial" as const }];
+  const runnerProject = projects.data?.find((project) => project.is_runner);
   return (
     <WindowChrome platform={platform.data ?? "win32"}>
       <div className="si-layout">
-        <SideNav projects={navProjects} />
+        <SideNav projects={navProjects} runnerName={runnerProject?.runner_device} runnerProject={runnerProject?.name} />
         <main className="si-content">
           <Routes>
+            <Route path="/" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开项目中心…</div>}><ProjectCenterPage /></Suspense>} />
+            <Route path="/p/:id/inventory" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开库存页…</div>}><InventoryPage /></Suspense>} />
             <Route path="*" element={<RouteContent />} />
           </Routes>
         </main>
