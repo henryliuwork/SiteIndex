@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
 import { createSettingsStore } from "./settings-store.js";
+import { createUiStateStore } from "./ui-state-store.js";
 
 interface WindowBounds {
   x?: number;
@@ -38,7 +39,7 @@ if (!hasSingleInstanceLock) {
     const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
     const isFirstRun = !(await settingsStore.exists());
     await settingsStore.get();
-    registerIpcHandlers(settingsStore);
+    registerIpcHandlers(settingsStore, createUiStateStore(async () => (await settingsStore.get()).cache_dir));
     if (isFirstRun) {
       const projectsRoot = await chooseDirectory();
       if (projectsRoot) await settingsStore.set({ projects_root: projectsRoot });
