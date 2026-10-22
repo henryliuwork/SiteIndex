@@ -7,6 +7,7 @@ import { WizardDraftProvider } from "./pages/wizard-state";
 
 const InventoryPage = lazy(() => import("./pages/InventoryPage").then(({ InventoryPage }) => ({ default: InventoryPage })));
 const ProjectCenterPage = lazy(() => import("./pages/ProjectCenterPage").then(({ ProjectCenterPage }) => ({ default: ProjectCenterPage })));
+const OverviewPage = lazy(() => import("./pages/OverviewPage").then(({ OverviewPage }) => ({ default: OverviewPage })));
 const NewProjectWizardPage = lazy(() => import("./pages/NewProjectWizardPage").then(({ NewProjectWizardPage }) => ({ default: NewProjectWizardPage })));
 
 const routes = [
@@ -60,6 +61,7 @@ function AppShell() {
           <Routes>
             <Route path="/" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开项目中心…</div>}><ProjectCenterPage /></Suspense>} />
             <Route path="/new/*" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开新建向导…</div>}><NewProjectWizardPage /></Suspense>} />
+            <Route path="/p/:id" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开项目概览…</div>}><OverviewPage /></Suspense>} />
             <Route path="/p/:id/inventory" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开库存页…</div>}><InventoryPage /></Suspense>} />
             <Route path="*" element={<RouteContent />} />
           </Routes>
