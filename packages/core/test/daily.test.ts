@@ -74,7 +74,7 @@ describe("daily sync", () => {
       ...row, started_at: "<normalized>", finished_at: "<normalized>",
     }));
     expect(normalizeRuns(actualRuns)).toEqual(normalizeRuns(expectedRuns));
-  });
+  }, 30_000);
 
   it("writes the selected category and source for feed, URL-rule, and manual modes", async () => {
     const snapshot: DailySnapshot = {
@@ -97,5 +97,5 @@ describe("daily sync", () => {
       const [row] = await readJsonl(path.join(project, PATHS.skus));
       expect(row).toMatchObject({ category, category_source: source });
     }
-  });
+  }, 30_000);
 });

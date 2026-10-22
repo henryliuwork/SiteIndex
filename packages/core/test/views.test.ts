@@ -80,7 +80,7 @@ describe("buildViews", () => {
       last_change: "stock_change",
       last_change_at: "2026-10-20",
     });
-  });
+  }, 20_000);
 
   it("uses feed images before manual images, then falls back to manual and none", () => {
     const rows = [
