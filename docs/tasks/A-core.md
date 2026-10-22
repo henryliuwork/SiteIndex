@@ -25,9 +25,9 @@
 - **验收**：`fixtures/feeds/day1–4` 的解析结果等于 `fixtures/expected/snapshots/dayN.jsonl`
 
 ### A3 每日同步 `core/src/jobs/daily.ts`
-- [ ] 合并：首次基线、事件（restock/oos/price/new/removed）、`missing_as`、保护阈值（退出码 3，数据不变，runs 记 failed）
-- [ ] `daily_summary.csv`、日报 Markdown、`logs/runs.jsonl`
-- [ ] 分类计算：`categories.mode` = `url_rule` / `feed` / `manual`（DATA_SPEC §4.1），写入 `category` 与 `category_source`
+- [x] 合并：首次基线、事件（restock/oos/price/new/removed）、`missing_as`、保护阈值（退出码 3，数据不变，runs 记 failed）
+- [x] `daily_summary.csv`、日报 Markdown、`logs/runs.jsonl`
+- [x] 分类计算：`categories.mode` = `url_rule` / `feed` / `manual`（DATA_SPEC §4.1），写入 `category` 与 `category_source`
 - **验收**：黄金测试——依次跑 day1–4，每步与 `fixtures/expected/steps/dayN/` 一致，退出码一致（固定"今天"与时区见 fixtures/README）
 
 ## M2 · 全部 Job、查询服务与命令行

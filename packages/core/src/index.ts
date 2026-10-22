@@ -12,5 +12,7 @@ export { readJsonl, writeJsonl } from "./io/jsonl";
 export { assertRunner, CoreIOError, findConflictCopies, isConflictCopy, readRunner, withLock, writeRunner } from "./io/runner-lock";
 export { applyFeedOverrides, FeedError, parseFeed, readFeeds, toSnapshot, writeSnapshot } from "./crawl/gmc-feed";
 export type { FeedItem, FeedSiteConfig, FeedSnapshot, SnapshotResult, StockStatus } from "./crawl/gmc-feed";
+export { runDaily, runDailyFromFile } from "./jobs/daily";
+export type { DailyOptions, DailyResult, DailySnapshot } from "./jobs/daily";
 
 export const CORE_SCHEMA_VERSION = SCHEMA_VERSION;
