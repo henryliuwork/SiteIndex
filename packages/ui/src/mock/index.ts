@@ -1,4 +1,4 @@
-import { googleSiteSearchUrl } from "@siteindex/shared";
+import { googleSiteSearchUrl, PATHS } from "@siteindex/shared";
 import type {
   AppSettings, BlogPost, BrowserStatus, CategoriesConfig, Category, CategoryPreview, CliStatus,
   DesignTokens, DraftRow, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
@@ -226,6 +226,52 @@ const folderRows: Record<MockProjectId, FolderRow[]> = {
 const userReadmeBlocks: Record<MockProjectId, { overview: string; focus: string; rules: string }> = {
   kingsyard: { overview: "为后院观鸟者提供实用的喂鸟产品。", focus: "检查缺货 SKU，并优先补齐高流量产品。", rules: "保留品牌温暖、实用的语气。" },
   riverstone: { overview: "为庭院和户外生活提供耐用装备。", focus: "维护商品资料与季节性内容。", rules: "说明要简洁、具体。" },
+};
+const designTokens: DesignTokens = {
+  extracted_at: "2026-10-01T13:12:00-07:00",
+  source_pages: ["https://www.kingsyard.com/", "https://www.kingsyard.com/bird-feeders", "https://www.kingsyard.com/products/feeder"],
+  css_variables: {
+    "--color-primary": "#2F5D3A", "--color-text": "#222222", "--color-text-muted": "#6B6B6B",
+    "--color-background": "#FFFFFF", "--color-surface": "#F6F4EF", "--color-border": "#E5E2DA", "--color-sale": "#C0392B",
+  },
+  color: {
+    primary: "#2F5D3A", text: "#222222", text_muted: "#6B6B6B", background: "#FFFFFF",
+    surface: "#F6F4EF", border: "#E5E2DA", sale: "#C0392B",
+    palette: [
+      { value: "#FFFFFF", count: 30 }, { value: "#222222", count: 18 }, { value: "#2F5D3A", count: 12 },
+      { value: "#F6F4EF", count: 10 }, { value: "#6B6B6B", count: 8 }, { value: "#E5E2DA", count: 6 },
+      { value: "#C0392B", count: 4 }, { value: "#8DA07A", count: 3 }, { value: "#D9B26F", count: 3 },
+      { value: "#4A7C59", count: 2 }, { value: "#B5502C", count: 2 }, { value: "#1D3A25", count: 2 },
+    ],
+  },
+  typography: {
+    font_families: { heading: "Lora, serif", body: "Inter, sans-serif" },
+    scale: {
+      h1: { size: "40px", weight: 700, line_height: "48px" },
+      h2: { size: "28px", weight: 600, line_height: "36px" },
+      h3: { size: "20px", weight: 600, line_height: "28px" },
+      body: { size: "16px", weight: 400, line_height: "26px" },
+      small: { size: "13px", weight: 400, line_height: "20px" },
+    },
+  },
+  spacing: ["4", "8", "12", "16", "24", "32", "48"],
+  radius: ["4px", "8px", "999px"],
+  shadow: ["0 2px 8px rgba(0,0,0,.08)"],
+  components: {
+    button_primary: { background: "#2F5D3A", color: "#FFFFFF", radius: "4px", padding: "12px 24px", weight: 600 },
+    button_secondary: { background: "#FFFFFF", color: "#2F5D3A", border: "1px solid #2F5D3A", radius: "4px", padding: "12px 24px", weight: 600 },
+    input: { border: "#E5E2DA", radius: "4px", height: "44px", color: "#6B6B6B", padding: "0 14px" },
+  },
+  assets: { logo: null, favicon: null },
+  email_safe: { font_stack: "Arial, Helvetica, sans-serif", button_color: "#2F5D3A" },
+};
+const designScreenshotNames = ["首页 · 桌面", "分类 · 桌面", "产品 · 桌面", "首页 · 手机", "分类 · 手机", "产品 · 手机"];
+const designScreenshots = (id: ProjectId): { name: string; path: string }[] => {
+  const root = id === "kingsyard" ? "D:/云盘/projects/Kingsyard" : "D:/云盘/projects/Riverstone-Outdoor";
+  return designScreenshotNames.map((name, index) => ({
+    name,
+    path: root + "/" + PATHS.designScreenshots + "/" + ["home-desktop", "category-desktop", "product-desktop", "home-mobile", "category-mobile", "product-mobile"][index] + ".png",
+  }));
 };
 const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "manual" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
 const tagsByHandle = new Map<string, string[]>();
@@ -599,7 +645,7 @@ export function createMockApi(): SiteIndexApi {
       }),
       buildCommand: (_id, input: EdmCommandInput) => reply("edm-builder --theme \"" + input.theme + "\" --count " + input.count + (input.promo_code ? " --promo-code \"" + input.promo_code + "\"" : "")),
     },
-    design: { get: () => reply({ tokens: null as DesignTokens | null, screenshots: [] }) },
+    design: { get: (id) => reply({ tokens: clone(designTokens), screenshots: designScreenshots(id) }) },
     readme: {
       get: (id) => reply(() => ({
         user_blocks: userReadmeBlocks[projectKey(id)],
@@ -685,7 +731,7 @@ export function createMockApi(): SiteIndexApi {
         { name: "site-index-onboarding", version: "1.0.0", description: "SiteIndex 项目接入指南", has_update: false, reads: ["README.md", "site.json"], writes: [] },
         { name: "site-index-maintain", version: "1.0.0", description: "SiteIndex 数据维护指南", has_update: false, reads: ["index/"], writes: ["README.md"] },
       ]),
-      get: (name) => reply({ info: { name, version: "1.0.0", description: "SiteIndex 项目技能说明", has_update: false, reads: ["README.md"], writes: [] }, body: "# SiteIndex Skill\n\n请先阅读项目 README，再根据当前数据完成任务。" }),
+      get: (name) => reply({ info: { name, version: "1.0.0", description: "SiteIndex 项目技能说明", has_update: false, reads: ["README.md"], writes: [] }, body: name === "page-design" ? "# page-design\n\n颜色只用 index/design/tokens.json 中的语义色与 palette。\n字体、字号、按钮、间距、圆角按设计规范实现。\n规范超过 60 天时提醒项目负责人重新提取。" : "# SiteIndex Skill\n\n请先阅读项目 README，再根据当前数据完成任务。" }),
       targets: (name) => reply([
         { target_id: "project:kingsyard", name: "Kingsyard 项目", dir: "C:/SiteIndex/Projects/Kingsyard/.agent/skills/" + name, status: "latest" },
         { target_id: "codex", name: "Codex", dir: null, status: "not_installed" },
