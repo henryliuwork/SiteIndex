@@ -28,7 +28,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build UI with mock API
+        run: pnpm --filter @siteindex/ui build
+        env:
+          VITE_MOCK: "1"
       - run: pnpm --filter @siteindex/desktop dist:${{ matrix.target }}
+        env:
+          VITE_MOCK: "1"
       - uses: actions/upload-artifact@v4
         with:
           name: siteindex-${{ matrix.target }}
