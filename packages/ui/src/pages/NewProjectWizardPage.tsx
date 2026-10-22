@@ -41,23 +41,23 @@ function WizardSteps({ active }: { active: number }) {
   </li>)}</ol>;
 }
 
-function ResultLine({ label, children, tone = "ok" }: { label: string; children: ReactNode; tone?: "ok" | "warn" }) {
-  return <div className="si-wizard-result-line"><Check size={16} aria-hidden="true" /><strong>{label}</strong><span>{children}</span><Chip tone={tone}>{tone === "ok" ? "已识别" : "待填写"}</Chip></div>;
+function ResultLine({ label, children, tone = "ok", status }: { label: string; children: ReactNode; tone?: "ok" | "warn"; status?: string }) {
+  return <div className="si-wizard-result-line"><Check size={16} aria-hidden="true" /><strong>{label}</strong><span>{children}</span><Chip tone={tone}>{status ?? (tone === "ok" ? "已识别" : "待填写")}</Chip></div>;
 }
 
 function DetectSummary({ result }: { result: DetectResult }) {
   const sitemapText = result.sitemaps.map((item) => (item.type === "index" ? "索引" : "URL 集") + " · " + item.url_count + " 个 URL").join("；") || "未发现 sitemap";
   return <div className="si-wizard-detect-list">
-    <ResultLine label="跳转">{result.redirect_status ? result.input + " → " + result.final_url : result.final_url}</ResultLine>
-    <ResultLine label="robots.txt">{result.robots.found ? result.robots.disallow_count + " 条 Disallow，声明 " + result.robots.sitemaps.length + " 个 sitemap" : "未找到 robots.txt"}</ResultLine>
-    <ResultLine label="Sitemap">{sitemapText}</ResultLine>
+    <ResultLine label="跳转" status={result.redirect_status ? String(result.redirect_status) : "无跳转"}>{result.redirect_status ? result.input + " → " + result.final_url : result.final_url}</ResultLine>
+    <ResultLine label="robots.txt" status={result.robots.found ? "200" : "未找到"}>{result.robots.found ? result.robots.disallow_count + " 条 Disallow，声明 " + result.robots.sitemaps.length + " 个 sitemap" : "未找到 robots.txt"}</ResultLine>
+    <ResultLine label="Sitemap" status={result.sitemaps.length ? "已展开" : "未发现"}>{sitemapText}</ResultLine>
     <ResultLine label="平台">{platformNames[result.platform]}（{result.platform_evidence}）{result.frontend ? " · 前台 " + result.frontend : ""}</ResultLine>
     <ResultLine label="语言 / 币种">{result.locale ?? "未识别语言"} / {result.currency ?? "未识别币种"}</ResultLine>
-    <ResultLine label="GMC feed" tone={result.feed_candidates.length ? "ok" : "warn"}>{result.feed_candidates.length ? "发现 " + result.feed_candidates.length + " 个候选地址" : "网站上未发现公开的 feed 地址，下一步手动填写"}</ResultLine>
+    <ResultLine label="GMC feed" tone={result.feed_candidates.length ? "ok" : "warn"} status={result.feed_candidates.length ? "已识别" : "待填写"}>{result.feed_candidates.length ? "发现 " + result.feed_candidates.length + " 个候选地址" : "网站上未发现公开的 feed 地址，下一步手动填写"}</ResultLine>
   </div>;
 }
 
-function FeedInspection({ result }: { result: FeedInspectResult }) {
+function FeedStats({ result }: { result: FeedInspectResult }) {
   const skipped = result.skipped.duplicate + result.skipped.missing_price_or_link + result.skipped.no_id;
   const stats = [
     { label: "feed 条目", value: result.items, hint: "" },
@@ -65,13 +65,16 @@ function FeedInspection({ result }: { result: FeedInspectResult }) {
     { label: "产品（归组后）", value: result.products, hint: "" },
     { label: "已跳过", value: skipped, hint: "重复 id " + result.skipped.duplicate + " · 缺价格或链接 " + result.skipped.missing_price_or_link },
   ];
+  return <div className="si-wizard-stats">{stats.map((stat) => <div key={stat.label}><span>{stat.label}</span><strong>{stat.value}</strong>{stat.hint && <small>{stat.hint}</small>}</div>)}</div>;
+}
+
+function FeedInspection({ result, settings }: { result: FeedInspectResult; settings: ReactNode }) {
   return <>
-    <div className="si-wizard-stats">{stats.map((stat) => <div key={stat.label}><span>{stat.label}</span><strong>{stat.value}</strong>{stat.hint && <small>{stat.hint}</small>}</div>)}</div>
     <div className="si-wizard-inspect-grid">
       <section className="si-wizard-subpanel"><h2>字段覆盖率</h2>{result.field_coverage.map((field) => <div className="si-wizard-coverage" key={field.field}><code>{field.field}</code><span><i style={{ width: field.pct + "%" }} /></span><small>{field.pct}%</small></div>)}</section>
-      <section className="si-wizard-subpanel"><h2>主分类分布</h2>{result.category_distribution.map((category) => <div className="si-wizard-category" key={category.slug}><code>{category.slug}</code><Chip>{category.count}</Chip></div>)}</section>
+      {settings}
     </div>
-    <div className="si-wizard-samples"><h2>示例数据（前 4 条）</h2><div className="si-wizard-table-scroll"><table><thead><tr><th>SKU</th><th>产品 / 变体</th><th>分类</th><th>价格</th><th>库存</th></tr></thead><tbody>{result.samples.slice(0, 4).map((row) => <tr key={row.sku}><td><code>{row.sku}</code></td><td>{row.title}{row.variant_title ? " · " + row.variant_title : ""}</td><td><code>{row.category || "—"}</code></td><td>{row.price}</td><td>{row.stock_status === "in_stock" ? "有货" : row.stock_status === "out_of_stock" ? "缺货" : row.stock_status === "preorder" ? "预售" : "未知"}</td></tr>)}</tbody></table></div></div>
+    <div className="si-wizard-samples"><h2>示例数据（前 4 条）</h2><div className="si-wizard-table-scroll"><table><thead><tr><th>SKU</th><th>产品</th><th>变体</th><th>分类</th><th>价格</th><th>库存</th></tr></thead><tbody>{result.samples.slice(0, 4).map((row) => <tr key={row.sku}><td><code>{row.sku}</code></td><td>{row.title}</td><td>{row.variant_title || "—"}</td><td><code>{row.category || "—"}</code></td><td>{row.price}</td><td><Chip tone={row.stock_status === "in_stock" ? "ok" : row.stock_status === "out_of_stock" ? "danger" : row.stock_status === "preorder" ? "warn" : "neutral"}>{row.stock_status === "in_stock" ? "有货" : row.stock_status === "out_of_stock" ? "缺货" : row.stock_status === "preorder" ? "预售" : "未知"}</Chip></td></tr>)}</tbody></table></div></div>
   </>;
 }
 
@@ -89,6 +92,7 @@ export function NewProjectWizardPage() {
   const [finished, setFinished] = useState<JobResult | null>(null);
   const active = Math.max(0, steps.findIndex((step) => pathname.endsWith(step.path)));
 
+  useEffect(() => { setError(""); setFeedback(""); }, [pathname]);
   useEffect(() => {
     if (settings.data?.projects_root && !draft.projectsRoot) update({ projectsRoot: settings.data.projects_root });
   }, [settings.data, draft.projectsRoot, update]);
@@ -189,21 +193,18 @@ export function NewProjectWizardPage() {
       </dl><p>GMC feed 可能不在网站上公开，请从 Merchant Center 或 Feed 插件中复制地址。</p></section>
       <div className="si-wizard-source-main">
         <section className="si-wizard-card">
-          <div className="si-wizard-field"><label>GMC 商品 Feed 地址</label>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null })} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null })}><X size={14} /></Button>}</div>)}
+          <div className="si-wizard-field"><label>GMC 商品 Feed 地址</label>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null })} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null })}><X size={14} /></Button>}{index === 0 && <Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button>}</div>)}
             <div className="si-wizard-feed-actions"><Button size="small" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null })}><Plus size={14} />添加 Feed</Button><span>可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。</span></div>
+            {draft.feedResult && <FeedStats result={draft.feedResult} />}
           </div>
-          {draft.feedResult && <FeedInspection result={draft.feedResult} />}
           {error && <p className="si-form-error" role="alert">{error}</p>}{feedback && <p className="si-feedback" role="status">{feedback}</p>}
         </section>
-        <div className="si-wizard-source-lower">
-          <section className="si-wizard-card"><h2>解析设置</h2><div className="si-wizard-config-grid">
+        {draft.feedResult && <FeedInspection result={draft.feedResult} settings={<section className="si-wizard-subpanel"><h2>解析设置</h2><div className="si-wizard-config-grid">
             <label className="si-wizard-field">SKU 字段<input className="si-text-field" value={draft.skuField} onChange={(event) => update({ skuField: event.target.value, feedResult: null })} /></label>
             <label className="si-wizard-field">主分类层级<select className="si-text-field" value={draft.categoryDepth} onChange={(event) => update({ categoryDepth: Number(event.target.value), feedResult: null })}><option value={1}>第 1 层</option><option value={2}>第 2 层</option><option value={3}>第 3 层</option></select></label>
           </div><div className="si-wizard-field"><span>商品从 Feed 消失时</span><label className="si-radio-row"><input type="radio" checked={draft.missingAs === "out_of_stock"} onChange={() => update({ missingAs: "out_of_stock" })} />先记为缺货，连续 30 天未出现再判定下架</label><label className="si-radio-row"><input type="radio" checked={draft.missingAs === "removed"} onChange={() => update({ missingAs: "removed" })} />立即判定下架</label></div>
-            {draft.feedResult && <div className="si-wizard-category-chips">{draft.feedResult.category_distribution.slice(0, 4).map((category) => <Chip key={category.slug}>{category.slug} · {category.count}</Chip>)}</div>}
-          </section>
-          <section className="si-wizard-card si-wizard-feed-hint"><h2>Feed 检测</h2><p>检测会统计条目、可用 SKU、字段覆盖率和分类分布，并显示几条示例数据。</p><Button variant="primary" onClick={() => void inspectFeed()} disabled={busy || !draft.feedUrls.some((url) => url.trim())}>{busy ? "正在检测…" : "检测 Feed"}</Button></section>
-        </div>
+            <div className="si-wizard-category-chips">{draft.feedResult.category_distribution.slice(0, 4).map((category) => <Chip key={category.slug}>{category.slug} · {category.count}</Chip>)}</div>
+          </section>} />}
         <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/url")}>上一步</Button><Button variant="primary" disabled={!draft.feedResult} onClick={() => navigate("/new/brand")}>下一步：品牌配置</Button></footer>
       </div>
     </div>}

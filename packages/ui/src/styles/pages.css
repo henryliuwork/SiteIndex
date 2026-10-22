@@ -151,6 +151,7 @@
 .si-wizard-feed-input,.si-wizard-directory { display:flex; gap:8px; }
 .si-wizard-feed-input input,.si-wizard-directory input { flex:1; min-width:0; }
 .si-wizard-feed-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:4px; }
+.si-wizard-source-main > .si-wizard-card > .si-feedback { margin:0; }
 .si-wizard-feed-actions>span { color:var(--color-muted); font-size:11px; font-weight:400; }
 .si-wizard-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-top:16px; }
 .si-wizard-stats>div { display:grid; min-height:82px; align-content:start; gap:4px; padding:11px 13px; border-radius:8px; background:var(--color-subtle); }
