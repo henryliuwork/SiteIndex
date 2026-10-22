@@ -445,7 +445,7 @@ export function createMockApi(): SiteIndexApi {
           price: row.price, stock_status: stockSeeds.get(row.sku)?.stock_status ?? "in_stock",
         })),
       })),
-      create: (input) => reply(() => ({ id: input.folder_name || "new-project", runId: "mock-run-create" })),
+      create: (input) => reply(() => ({ id: input.folder_name || "new-project", runId: beginRun(input.projects_root + "/" + input.folder_name, "daily") })),
       addExisting: () => reply(projectSummaries.riverstone),
       updateConfig: (id, patch) => reply(() => {
         const key = projectKey(id);

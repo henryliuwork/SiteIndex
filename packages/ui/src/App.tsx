@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { HashRouter, Route, Routes, useLocation } from "react-router-dom";
 import { api } from "./api";
 import { SideNav, WindowChrome } from "./components";
+import { WizardDraftProvider } from "./pages/wizard-state";
 
 const InventoryPage = lazy(() => import("./pages/InventoryPage").then(({ InventoryPage }) => ({ default: InventoryPage })));
 const ProjectCenterPage = lazy(() => import("./pages/ProjectCenterPage").then(({ ProjectCenterPage }) => ({ default: ProjectCenterPage })));
+const NewProjectWizardPage = lazy(() => import("./pages/NewProjectWizardPage").then(({ NewProjectWizardPage }) => ({ default: NewProjectWizardPage })));
 
 const routes = [
   ["/new/url", "新建项目 · 网站"],
@@ -54,11 +56,14 @@ function AppShell() {
       <div className="si-layout">
         <SideNav projects={navProjects} runnerName={runnerProject?.runner_device} runnerProject={runnerProject?.name} />
         <main className="si-content">
+          <WizardDraftProvider>
           <Routes>
             <Route path="/" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开项目中心…</div>}><ProjectCenterPage /></Suspense>} />
+            <Route path="/new/*" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开新建向导…</div>}><NewProjectWizardPage /></Suspense>} />
             <Route path="/p/:id/inventory" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开库存页…</div>}><InventoryPage /></Suspense>} />
             <Route path="*" element={<RouteContent />} />
           </Routes>
+          </WizardDraftProvider>
         </main>
       </div>
     </WindowChrome>
