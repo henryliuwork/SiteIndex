@@ -12,3 +12,4 @@ if (!window.siteindex) {
 }
 
 export const api: SiteIndexApi = window.siteindex ?? mock!;
+if (!window.siteindex && mock) window.siteindex = mock;

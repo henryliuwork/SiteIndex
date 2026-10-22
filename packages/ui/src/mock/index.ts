@@ -2,7 +2,7 @@ import { googleSiteSearchUrl } from "@siteindex/shared";
 import type {
   AppSettings, BlogPost, BrowserStatus, CategoriesConfig, Category, CategoryPreview, CliStatus,
   DesignTokens, DraftRow, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
-  JobProgress, JobResult, Keyword, ListQuery, OverviewData, PageResult, ProductFilters,
+  JobProgress, JobResult, Keyword, ListQuery, OverviewData, PageResult, ProductFilters, ProjectUiState,
   ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, RepairAction, RunLog,
   RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage,
   SeoPageFilters, SiteConfig, SiteIndexApi, SkuImageFilters, SkuImageRow, SkuRecord,
@@ -230,7 +230,13 @@ const userReadmeBlocks: Record<MockProjectId, { overview: string; focus: string;
 const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "manual" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
 const tagsByHandle = new Map<string, string[]>();
 const manualImages = new Map<string, string | null>();
-const tagNames = new Set<string>(["spring", "bestseller", "seasonal"]);
+const tagNamesByProject: Record<MockProjectId, Set<string>> = {
+  kingsyard: new Set(productsByProject.kingsyard.flatMap((product) => product.tags)),
+  riverstone: new Set(productsByProject.riverstone.flatMap((product) => product.tags)),
+};
+const uiStates: Record<MockProjectId, ProjectUiState> = {
+  kingsyard: { columns: {}, page_sizes: {} }, riverstone: { columns: {}, page_sizes: {} },
+};
 const runners: Record<MockProjectId, RunnerInfo | null> = {
   kingsyard: { device_id: "mock-device", device_name: "Henry-PC", claimed_at: "2026-10-20T09:00:00+08:00" },
   riverstone: null,
@@ -352,7 +358,7 @@ function selectRows<T, F = Record<string, unknown>>(
 }
 
 function productRows(id: ProjectId): ProductView[] {
-  return productsByProject[projectKey(id)].map((row) => ({ ...row, tags: tagsByHandle.get(id + ":" + row.handle) ?? row.tags }));
+  return productsByProject[projectKey(id)].map((row) => ({ ...row, image_url: null, feed_image_url: null, manual_image_url: null, image_source: "none", tags: tagsByHandle.get(id + ":" + row.handle) ?? row.tags }));
 }
 const progressListeners = new Set<(progress: JobProgress) => void>();
 const finishedListeners = new Set<(result: JobResult) => void>();
@@ -415,6 +421,17 @@ export function createMockApi(): SiteIndexApi {
       cliStatus: () => reply<CliStatus>({ installed: false, path: null }),
       installCli: () => reply<CliStatus>({ installed: true, path: "C:/Users/Developer/.codex/skills/siteindex" }),
       chooseDirectory: (defaultPath) => reply(defaultPath ?? "C:/SiteIndex/Projects"),
+    },
+    uiState: {
+      get: (id) => reply(() => clone(uiStates[projectKey(id)])),
+      set: (id, patch) => reply(() => {
+        const key = projectKey(id);
+        uiStates[key] = {
+          columns: { ...uiStates[key].columns, ...clone(patch.columns ?? {}) },
+          page_sizes: { ...uiStates[key].page_sizes, ...clone(patch.page_sizes ?? {}) },
+        };
+        return clone(uiStates[key]);
+      }),
     },
     projects: {
       list: () => reply(() => projectIds.map((id) => projectSummaries[id])),
@@ -535,16 +552,38 @@ export function createMockApi(): SiteIndexApi {
         const rows = productRows(id);
         const product = rows.find((row) => row.handle === handle) ?? rows[0] ?? (fixtures.products[0] as ProductView);
         const skus = recordsByProject[projectKey(id)].filter((row) => row.handle === product.handle);
-        return { product, skus, details: null, seo: null };
+        const seoPage = seoPages.find((page) => page.url === product.url) ?? seoPages.find((page) => page.page_type === "product");
+        return {
+          product, skus,
+          details: {
+            handle: product.handle, short_description: product.short_description ?? "为日常户外使用设计的耐用产品。",
+            rating: product.rating ?? null, review_count: product.review_count ?? null,
+            breadcrumbs: ["首页", product.category, product.title],
+            gallery: product.image_url ? [product.image_url] : [],
+            related_handles: rows.filter((row) => row.handle !== product.handle && row.category === product.category).slice(0, 3).map((row) => row.handle),
+            badges: [product.is_new ? "新品" : "", product.on_sale ? "促销" : ""].filter(Boolean),
+            shipping_note: "订单满 $50 免运费。", last_crawled: FIXED_TODAY,
+          },
+          seo: seoPage
+            ? { url: seoPage.url, title: seoPage.title, robots_meta: seoPage.robots_meta, schema_types: seoPage.schema_types.length ? seoPage.schema_types : ["Product"], google_indexed: seoPage.google_indexed ?? null }
+            : { url: product.url, title: product.title, robots_meta: null, schema_types: ["Product"], google_indexed: null },
+        };
       }),
       setTags: (id, handle, tags) => reply(() => {
         tagsByHandle.set(id + ":" + handle, [...new Set(tags)]);
-        tags.forEach((tag) => tagNames.add(tag));
+        tags.forEach((tag) => tagNamesByProject[projectKey(id)].add(tag));
         return tagsByHandle.get(id + ":" + handle) ?? [];
       }),
-      listTags: (id) => reply(() => [...tagNames].sort().map((tag) => ({ tag, products: productRows(id).filter((row) => row.tags.includes(tag)).length }))),
-      createTag: (_id, tag) => reply(() => { tagNames.add(tag); return [...tagNames].sort().map((item) => ({ tag: item, products: 0 })); }),
-      deleteTag: (_id, tag) => reply(() => { tagNames.delete(tag); return [...tagNames].sort().map((item) => ({ tag: item, products: 0 })); }),
+      listTags: (id) => reply(() => [...tagNamesByProject[projectKey(id)]].sort().map((tag) => ({ tag, products: productRows(id).filter((row) => row.tags.includes(tag)).length }))),
+      createTag: (id, tag) => reply(() => { tagNamesByProject[projectKey(id)].add(tag); return [...tagNamesByProject[projectKey(id)]].sort().map((item) => ({ tag: item, products: productRows(id).filter((row) => row.tags.includes(item)).length })); }),
+      deleteTag: (id, tag) => reply(() => {
+        tagNamesByProject[projectKey(id)].delete(tag);
+        for (const product of productsByProject[projectKey(id)]) {
+          const current = tagsByHandle.get(id + ":" + product.handle) ?? product.tags;
+          tagsByHandle.set(id + ":" + product.handle, current.filter((item) => item !== tag));
+        }
+        return [...tagNamesByProject[projectKey(id)]].sort().map((item) => ({ tag: item, products: productRows(id).filter((row) => row.tags.includes(item)).length }));
+      }),
       exportCsv: (id) => reply("mock:/exports/" + id + "-products.csv"),
     },
     seo: {

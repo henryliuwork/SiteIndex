@@ -22,6 +22,7 @@ declare module "@tanstack/react-table" {
 
 export interface DataTableProps<T, F = Record<string, unknown>> {
   tableId: string;
+  scopeId?: string;
   rows: T[];
   total: number;
   columns: ColumnDef<T, unknown>[];
@@ -30,6 +31,7 @@ export interface DataTableProps<T, F = Record<string, unknown>> {
   onRowClick?: (row: T) => void;
   getRowId?: (row: T, index: number) => string;
   maxHeight?: number;
+  rowHeight?: number;
   showHeader?: boolean;
   showPagination?: boolean;
   emptyTitle?: string;
@@ -48,14 +50,14 @@ function pageSizeValue(value: number): 20 | 50 | 100 {
 }
 
 export function DataTable<T, F = Record<string, unknown>>({
-  tableId, rows, total, columns, query, onQueryChange, onRowClick, getRowId,
-  maxHeight = 560, showHeader = true, showPagination = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
+  tableId, scopeId, rows, total, columns, query, onQueryChange, onRowClick, getRowId,
+  maxHeight = 560, rowHeight = 44, showHeader = true, showPagination = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
 }: DataTableProps<T, F>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const columnIds = useMemo(() => columns.map(getColumnId), [columns]);
   const defaultVisible = useMemo(() => columns.flatMap((column, index) => column.meta?.defaultHidden ? [] : [getColumnId(column, index)]), [columns]);
-  const columnPrefs = useColumnPrefs(tableId);
+  const columnPrefs = useColumnPrefs(tableId, scopeId);
   const columnIdsKey = columnIds.join("\u0000");
   const defaultsKey = defaultVisible.join("\u0000");
   useEffect(() => columnPrefs.configure(columnIds, defaultVisible), [columnPrefs.configure, columnIdsKey, defaultsKey]);
@@ -76,7 +78,7 @@ export function DataTable<T, F = Record<string, unknown>>({
   const virtualizer = useVirtualizer({
     count: rowModel.rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 44,
+    estimateSize: () => rowHeight,
     overscan: 8,
   });
   const virtualRows = virtualizer.getVirtualItems();
