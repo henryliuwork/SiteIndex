@@ -2,6 +2,7 @@ import { app, BrowserWindow, screen, session, shell } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerIpcHandlers } from "./ipc.js";
 
 interface WindowBounds {
   x?: number;
@@ -34,6 +35,7 @@ if (!hasSingleInstanceLock) {
     }
 
     registerContentSecurityPolicy();
+    registerIpcHandlers();
     mainWindow = await createMainWindow();
     mainWindow.on("closed", () => {
       mainWindow = null;
@@ -70,15 +72,22 @@ function readWindowBounds(): WindowBounds {
     const height = typeof parsed.height === "number" ? Math.max(720, parsed.height) : 800;
     const x = typeof parsed.x === "number" ? parsed.x : undefined;
     const y = typeof parsed.y === "number" ? parsed.y : undefined;
-    const bounds: WindowBounds = { width, height, ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y }) };
-    const visible = screen.getAllDisplays().some(({ workArea }) =>
-      bounds.x !== undefined && bounds.y !== undefined
-        ? bounds.x < workArea.x + workArea.width - 100 &&
-          bounds.x + bounds.width > workArea.x + 100 &&
-          bounds.y < workArea.y + workArea.height - 100 &&
-          bounds.y + bounds.height > workArea.y + 100
-        : true,
-    );
+    const bounds: WindowBounds = {
+      width,
+      height,
+      ...(x === undefined ? {} : { x }),
+      ...(y === undefined ? {} : { y }),
+    };
+    const visible = screen
+      .getAllDisplays()
+      .some(({ workArea }) =>
+        bounds.x !== undefined && bounds.y !== undefined
+          ? bounds.x < workArea.x + workArea.width - 100 &&
+            bounds.x + bounds.width > workArea.x + 100 &&
+            bounds.y < workArea.y + workArea.height - 100 &&
+            bounds.y + bounds.height > workArea.y + 100
+          : true,
+      );
     return visible ? bounds : { width, height };
   } catch {
     return { width: 1200, height: 800 };
@@ -87,20 +96,15 @@ function readWindowBounds(): WindowBounds {
 
 function saveWindowBounds(window: BrowserWindow): void {
   const { x, y, width, height } = window.getBounds();
-  writeFileSync(
-    join(app.getPath("userData"), "window-state.json"),
-    JSON.stringify({ x, y, width, height }),
-    "utf8",
-  );
+  writeFileSync(join(app.getPath("userData"), "window-state.json"), JSON.stringify({ x, y, width, height }), "utf8");
 }
 
 function registerContentSecurityPolicy(): void {
   let parsedDevUrl: URL;
   try {
     const candidate = new URL(devUiUrl);
-    parsedDevUrl = candidate.protocol === "http:" || candidate.protocol === "https:"
-      ? candidate
-      : new URL("http://localhost:5173");
+    parsedDevUrl =
+      candidate.protocol === "http:" || candidate.protocol === "https:" ? candidate : new URL("http://localhost:5173");
   } catch {
     parsedDevUrl = new URL("http://localhost:5173");
   }
