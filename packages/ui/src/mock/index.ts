@@ -57,15 +57,17 @@ const generatedStatus = (index: number): StockStatus => {
 };
 
 function makeHistory(index: number, current: StockStatus): string {
-  const states: string[] = Array.from({ length: 29 }, (_, day) => {
-    const value = (index * 37 + day * 23 + 11) % 100;
-    if (value < 71) return "i";
-    if (value < 89) return "o";
-    if (value < 96) return "p";
-    return "u";
-  });
-  states.push(statusChars[current]);
-  return states.join("");
+  const currentChar = statusChars[current];
+  const previousChar = currentChar === "i" ? "o" : "i";
+  if (index === 2) return "i".repeat(29) + "o";
+  if (index === 4) return "i".repeat(17) + "o".repeat(9) + "i".repeat(4);
+  if (index === 6) return "i".repeat(21) + "o".repeat(9);
+  if (index === 7) return "i".repeat(12) + "o".repeat(18);
+  if (index === 9) return "i".repeat(21) + "p".repeat(9);
+  if (index === 11) return "i".repeat(29) + "u";
+  if (index === 0 || index === 17) return previousChar.repeat(5) + currentChar.repeat(5) + previousChar.repeat(5) + currentChar.repeat(15);
+  if (index % 11 === 0) return previousChar.repeat(26) + currentChar.repeat(4);
+  return currentChar.repeat(30);
 }
 
 function rowFromSku(record: SkuRecord, history: string, since: string): SkuStockView {
@@ -74,8 +76,8 @@ function rowFromSku(record: SkuRecord, history: string, since: string): SkuStock
   const online7 = states.slice(-7).filter((state) => state === "i").length;
   let changes = 0;
   for (let i = 1; i < states.length; i += 1) if (states[i] !== states[i - 1]) changes += 1;
-  let daysInStatus = 1;
-  for (let i = states.length - 2; i >= 0 && states[i] === states[states.length - 1]; i -= 1) daysInStatus += 1;
+  const age = Math.floor((Date.parse(FIXED_TODAY) - Date.parse(since)) / 86_400_000);
+  const daysInStatus = Math.max(1, Number.isFinite(age) ? age : 1);
   const previous = states[states.length - 2] as string;
   const current = states[states.length - 1] as string;
   const reverseNames: Record<string, string> = { i: "有货", o: "缺货", p: "预售", u: "未知", "-": "未上架" };
@@ -125,7 +127,10 @@ for (let index = 0; index < fixtures.generatedSkuCount; index += 1) {
     last_seen: FIXED_TODAY, updated_at: FIXED_TODAY,
   };
   recordsByProject[projectId].push(record);
-  rowsByProject[projectId].push(rowFromSku(record, makeHistory(index, status), seedStock?.since ?? dateBefore((index % 75) + 1)));
+  const stockHistory = realFixture && seed.sku === "KYBF007" ? "i".repeat(12) + "o".repeat(18) : makeHistory(index, status);
+  const stockView = rowFromSku(record, stockHistory, seedStock?.since ?? dateBefore((index % 75) + 1));
+  if (realFixture && seed.sku === "KYBF007") { stockView.since = dateBefore(18); stockView.days_in_status = 18; }
+  rowsByProject[projectId].push(stockView);
   if (localIndex % 19 === 0 || localIndex % 31 === 0) todaySkus[projectId].add(sku);
 }
 
@@ -141,11 +146,11 @@ const productsByProject: Record<MockProjectId, ProductView[]> = {
 function defaultSchedule(): ScheduleConfig {
   const weekdays = [1, 2, 3, 4, 5, 6, 7] as const;
   return {
-    daily: { enabled: true, days: [...weekdays], time: "03:00" },
-    validate: { enabled: true, days: [...weekdays], time: "03:30" },
-    weekly: { enabled: true, days: [1], time: "04:00" },
-    readme: { enabled: true, days: [1], time: "04:30" },
-    monthly: { enabled: false, day_of_month: 1, time: "05:00" },
+    daily: { enabled: true, days: [...weekdays], time: "02:00" },
+    validate: { enabled: true, days: [...weekdays], time: "02:30" },
+    weekly: { enabled: true, days: [1], time: "03:00" },
+    readme: { enabled: true, days: [7], time: "05:00" },
+    monthly: { enabled: false, day_of_month: 1, time: "04:00" },
     options: { wake_to_run: true, run_if_missed: true, notify_on_failure: true, validate_after_sync: true },
   };
 }
@@ -165,8 +170,8 @@ function defaultConfig(id: ProjectId): SiteConfig {
       usp: kingsyard ? ["Squirrel-resistant designs", "Easy to clean"] : ["Weather-ready materials", "Simple setup"],
     },
     sitemaps: ["https://" + domain + "/sitemap.xml"],
-    crawl: { adapter: "gmc_feed", feed_url: "https://" + domain + "/feed.xml", sku_field: "id", category_depth: 2, missing_as: "out_of_stock", rate_limit_ms: 200 },
-    categories: { mode: "feed" },
+    crawl: { adapter: "gmc_feed", feed_url: kingsyard ? "https://" + domain + "/feed.xml" : "", sku_field: "id", category_depth: 2, missing_as: "out_of_stock", rate_limit_ms: 200 },
+    categories: { mode: kingsyard ? "manual" : "url_rule" },
     workspace_folders: [{ name: "产品素材", default: true }, { name: "营销活动", default: true }, { name: "草稿", default: true }],
     schedule: defaultSchedule(),
   };
@@ -177,21 +182,20 @@ const projectIds: MockProjectId[] = ["kingsyard", "riverstone"];
 const makeProjectSummary = (id: MockProjectId): ProjectSummary => {
   const rows = rowsByProject[id] ?? [];
   const inStock = rows.filter((row) => row.stock_status === "in_stock").length;
-  const outOfStock = rows.filter((row) => row.stock_status === "out_of_stock").length;
   const project = fixtures.projects.find((item) => item.id === id);
   const isKingsyard = id === "kingsyard";
   return {
     id, name: project?.name ?? (isKingsyard ? "Kingsyard" : "Riverstone Outdoor"),
-    path: "C:/SiteIndex/Projects/" + (isKingsyard ? "Kingsyard" : "Riverstone-Outdoor"),
+    path: "D:/云盘/projects/" + (isKingsyard ? "Kingsyard" : "Riverstone-Outdoor"),
     domain: project?.domain ?? (isKingsyard ? "kingsyard.com" : "riverstoneoutdoor.com"),
     platform: isKingsyard ? "magento" : "shopify",
-    sync: { state: isKingsyard ? "partial" : "ok", at: "2026-10-22T10:15:00+08:00", job: null },
+    sync: { state: isKingsyard ? "ok" : "never", at: isKingsyard ? "2026-10-22T02:04:00+08:00" : null, job: isKingsyard ? "daily" : null },
     sku_count: rows.length, product_count: Math.ceil(rows.length / 2),
     online_rate: rows.length === 0 ? null : inStock / rows.length,
     blog_count: isKingsyard ? fixtures.blogs.length : Math.max(7, fixtures.blogs.length),
-    today: { restock: 14, oos: outOfStock, price: 5, new: 12, removed: 2 },
-    attention: isKingsyard ? 7 : 1, warnings: isKingsyard ? ["库存异常待复核", "1 个文件需要检查"] : [],
-    runner_device: isKingsyard ? "开发工作站" : null, is_runner: isKingsyard,
+    today: isKingsyard ? { restock: 1, oos: 2, price: 1, new: 1, removed: 0 } : { restock: 0, oos: 0, price: 0, new: 0, removed: 0 },
+    attention: isKingsyard ? 0 : 1, warnings: isKingsyard ? [] : ["尚未填写 GMC feed 地址，每日库存同步未启用。"],
+    runner_device: isKingsyard ? "Henry-PC" : null, is_runner: isKingsyard,
   };
 };
 const projectSummaries: Record<MockProjectId, ProjectSummary> = { kingsyard: makeProjectSummary("kingsyard"), riverstone: makeProjectSummary("riverstone") };
@@ -199,7 +203,7 @@ const projectsChanged = new Set<(id: ProjectId) => void>();
 const notifyProjectChanged = (id: ProjectId): void => projectsChanged.forEach((callback) => callback(id));
 
 const settingsState: AppSettings = {
-  device_id: "mock-device", device_name: "本地开发工作站", projects_root: "C:/SiteIndex/Projects",
+  device_id: "mock-device", device_name: "Henry-PC", projects_root: "D:/云盘/projects",
   extra_projects: [], cache_dir: "C:/SiteIndex/Cache", browser: { channel: "msedge", executable_path: null },
   notify: { on_failure: true, on_success: false, oos_threshold: 0.12, dingtalk_webhook: null },
   skill_platforms: [
@@ -223,17 +227,17 @@ const userReadmeBlocks: Record<MockProjectId, { overview: string; focus: string;
   kingsyard: { overview: "为后院观鸟者提供实用的喂鸟产品。", focus: "检查缺货 SKU，并优先补齐高流量产品。", rules: "保留品牌温暖、实用的语气。" },
   riverstone: { overview: "为庭院和户外生活提供耐用装备。", focus: "维护商品资料与季节性内容。", rules: "说明要简洁、具体。" },
 };
-const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "feed" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
+const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "manual" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
 const tagsByHandle = new Map<string, string[]>();
 const manualImages = new Map<string, string | null>();
 const tagNames = new Set<string>(["spring", "bestseller", "seasonal"]);
 const runners: Record<MockProjectId, RunnerInfo | null> = {
-  kingsyard: { device_id: "mock-device", device_name: "开发工作站", claimed_at: "2026-10-20T09:00:00+08:00" },
+  kingsyard: { device_id: "mock-device", device_name: "Henry-PC", claimed_at: "2026-10-20T09:00:00+08:00" },
   riverstone: null,
 };
 const scheduleStates: Record<MockProjectId, ScheduleState> = {
-  kingsyard: { config: defaultSchedule(), registered: false, next_runs: [{ job: "daily", at: "2026-10-23T03:00:00-07:00" }] },
-  riverstone: { config: defaultSchedule(), registered: false, next_runs: [{ job: "daily", at: "2026-10-23T03:00:00-07:00" }] },
+  kingsyard: { config: defaultSchedule(), registered: false, next_runs: [{ job: "daily", at: "2026-10-23T02:00:00+08:00" }] },
+  riverstone: { config: defaultSchedule(), registered: false, next_runs: [{ job: "daily", at: "2026-10-23T02:00:00+08:00" }] },
 };
 
 function pageFromSeed(seed: MockFixtures["pages"][number]): SeoPage {
@@ -267,29 +271,51 @@ function inventorySummary(id: ProjectId, days = 30): InventorySummary {
     categories.set(row.category, group);
   }
   const total = rows.length;
-  const names = [...categories.keys()];
+  const categoryPriority = (name: string) => /bird-feeders/i.test(name) ? 0 : /bird-houses/i.test(name) ? 1 : /bird-baths/i.test(name) ? 2 : 3;
+  const names = [...categories.keys()].sort((left, right) => categoryPriority(left) - categoryPriority(right));
   const dates = Array.from({ length: days }, (_, index) => dateBefore(days - index - 1));
-  const trendSeries = names.slice(0, 5).map((name, categoryIndex) => ({
-    category: categoryNames.find((item) => item.slug === name)?.name ?? name,
-    rates: dates.map((_, day) => Math.max(0.42, Math.min(0.99, 0.79 + ((day * 7 + categoryIndex * 13) % 19) / 100))),
+  const trendNames = names.slice(0, 3).sort((left, right) => {
+    const priority = (name: string) => /bird-feeders/i.test(name) ? 0 : /bird-baths/i.test(name) ? 1 : /bird-houses/i.test(name) ? 2 : 3;
+    return priority(left) - priority(right);
+  });
+  const trendSeries = trendNames.map((name) => ({
+    category: name,
+    rates: dates.map((_, day) => {
+      if (/bath/i.test(name)) return day < 8 ? 0.75 : day < 13 ? 0.5 : day < 19 ? 0.62 : 0.5;
+      if (/house/i.test(name)) return day < 8 ? 1 : 0.98;
+      const rate = 0.91 + Math.sin(day / 4) * 0.025 - (day > 25 ? (day - 25) * 0.04 : 0);
+      return Math.max(0.72, Math.min(0.98, rate));
+    }),
   }));
   const categoryRates = names.map((name) => {
     const group = categories.get(name) ?? { total: 0, inStock: 0 };
-    return { category: categoryNames.find((item) => item.slug === name)?.name ?? name, rate: group.total ? group.inStock / group.total : 0, total: group.total };
-  }).sort((left, right) => right.total - left.total).slice(0, 8);
-  const todayRows = rows.filter((row) => todaySkus[key].has(row.sku)).slice(0, 8);
+    const rate = /bath/i.test(name) ? 0.5 : /house/i.test(name) ? 1 : 0.73;
+    return { category: name, rate, total: group.total };
+  }).sort((left, right) => categoryPriority(left.category) - categoryPriority(right.category)).slice(0, 3);
+  const todayRows = rows.filter((row) => todaySkus[key].has(row.sku)).slice(0, 4);
   const today = todayRows.map((row, index) => ({
     type: (["restock", "oos", "price", "new", "removed"] as const)[index % 5]!,
     sku: row.sku, title: row.title, detail: row.last_change ?? statusNames[row.stock_status],
   }));
+  const averageRate = trendSeries.flatMap((series) => series.rates).filter((rate): rate is number => rate !== null).reduce((sum, rate, _, all) => sum + rate / all.length, 0);
+  const sampleRows = key === "kingsyard" ? rows.slice(0, fixtures.skus.length) : rows;
+  const longOut = sampleRows.filter((row) => row.stock_status === "out_of_stock" && row.days_in_status >= 14).sort((left, right) => right.days_in_status - left.days_in_status);
+  const volatile = sampleRows.filter((row) => row.changes_30d >= 3).length;
+  const todayCounts = projectSummaries[key].today;
+  const todayHint = [
+    todayCounts.restock ? "到货 " + todayCounts.restock : "",
+    todayCounts.oos ? "缺货 " + todayCounts.oos : "",
+    todayCounts.price ? "调价 " + todayCounts.price : "",
+    todayCounts.new ? "上新 " + todayCounts.new : "",
+  ].filter(Boolean).join(" · ") || "今天无库存变化";
   return {
     as_of: FIXED_TODAY,
     kpis: [
-      { key: "in-stock", label: "有货 SKU", value: counts.in_stock.toLocaleString("zh-CN"), hint: "当前可售", tone: "ok" },
-      { key: "out-of-stock", label: "缺货 SKU", value: counts.out_of_stock.toLocaleString("zh-CN"), hint: "需要关注", tone: "danger" },
-      { key: "online-rate", label: "在线率", value: total ? ((counts.in_stock / total) * 100).toFixed(1) + "%" : "—", hint: "全站 SKU" },
-      { key: "preorder", label: "预售 SKU", value: counts.preorder.toLocaleString("zh-CN"), hint: "仍可下单", tone: "warn" },
-      { key: "sales", label: "30 日销量", value: "—", hint: "接入销售数据后显示", reserved: true },
+      { key: "current-rate", label: "当前在线率（SKU）", value: total ? ((counts.in_stock / total) * 100).toFixed(1) + "%" : "—", hint: counts.in_stock.toLocaleString("zh-CN") + " / " + total.toLocaleString("zh-CN") + " 有货", tone: "ok" },
+      { key: "average-rate", label: "近 30 天平均在线率", value: (averageRate * 100).toFixed(1) + "%", hint: "较前 30 天 −3.2pt" },
+      { key: "today-changes", label: "今日变化", value: todayCounts.restock + " −" + todayCounts.oos, hint: todayHint, tone: todayCounts.oos ? "danger" : "default" },
+      { key: "long-out", label: "长期缺货（≥ 14 天）", value: longOut.length.toLocaleString("zh-CN"), hint: longOut[0] ? longOut[0].sku + " · " + longOut[0].days_in_status + " 天" : "暂无长期缺货" , tone: longOut.length ? "warn" : "default" },
+      { key: "volatility", label: "状态波动（30 天 ≥ 3 次）", value: volatile.toLocaleString("zh-CN"), hint: "供货不稳定的 SKU" },
     ],
     trend: { dates, series: trendSeries }, category_rates: categoryRates,
     category_source: categoryConfigs[key].mode,
@@ -332,7 +358,12 @@ const progressListeners = new Set<(progress: JobProgress) => void>();
 const finishedListeners = new Set<(result: JobResult) => void>();
 const activeRuns = new Map<string, { projectPath: string; job: JobName; timer: ReturnType<typeof setInterval>; pct: number }>();
 let runCounter = 0;
-const runHistory: RunLog[] = [...fixtures.runs];
+const runHistory: RunLog[] = [
+  { run_id: "mock-daily-today", job: "daily", trigger: "schedule", device_name: "Henry-PC", started_at: "2026-10-22T02:04:00+08:00", finished_at: "2026-10-22T02:05:16+08:00", status: "ok", counts: { restock: 1, out_of_stock: 2, price: 1, new: 1 } },
+  { run_id: "mock-validate-today", job: "validate", trigger: "schedule", device_name: "Henry-PC", started_at: "2026-10-22T02:30:00+08:00", finished_at: "2026-10-22T02:30:08+08:00", status: "partial", errors: ["0 个错误 · unknown 库存 1/19（5.3%）"] },
+  { run_id: "mock-daily-yesterday", job: "daily", trigger: "schedule", device_name: "Henry-PC", started_at: "2026-10-21T02:03:00+08:00", finished_at: "2026-10-21T02:04:12+08:00", status: "ok" },
+  ...fixtures.runs,
+];
 
 function finishRun(runId: string, status: "ok" | "skipped" = "ok"): void {
   const active = activeRuns.get(runId);
@@ -612,11 +643,11 @@ export function createMockApi(): SiteIndexApi {
       }),
     },
     runner: {
-      get: (id) => reply<RunnerState>(() => ({ runner: runners[projectKey(id)], this_device: { device_id: "mock-device", device_name: "本地开发工作站" }, is_this_device: projectKey(id) === "kingsyard" })),
+      get: (id) => reply<RunnerState>(() => ({ runner: runners[projectKey(id)], this_device: { device_id: "mock-device", device_name: "Henry-PC" }, is_this_device: projectKey(id) === "kingsyard" })),
       claim: (id) => reply<RunnerState>(() => {
         const key = projectKey(id);
         runners[key] = { device_id: "mock-device", device_name: "本地开发工作站", claimed_at: new Date().toISOString() };
-        return { runner: runners[key], this_device: { device_id: "mock-device", device_name: "本地开发工作站" }, is_this_device: true };
+        return { runner: runners[key], this_device: { device_id: "mock-device", device_name: "Henry-PC" }, is_this_device: true };
       }),
     },
     skills: {
