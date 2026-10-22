@@ -230,6 +230,30 @@ const userReadmeBlocks: Record<MockProjectId, { overview: string; focus: string;
 const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "manual" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
 const tagsByHandle = new Map<string, string[]>();
 const manualImages = new Map<string, string | null>();
+for (const projectId of ["kingsyard", "riverstone"] as const) {
+  for (const [index, record] of recordsByProject[projectId].entries()) {
+    if ((index === 3 || index === 4) && record.image_url) manualImages.set(projectId + ":" + record.sku, "https://mcusercontent.com/siteindex/demo/" + record.sku + ".jpg");
+  }
+}
+function mockFeedImageUrl(record: SkuRecord): string | null {
+  if (!record.image_url) return null;
+  try { return "https://www.kingsyard.com" + new URL(record.image_url).pathname; }
+  catch { return record.image_url; }
+}
+function edmImageRows(id: ProjectId): SkuImageRow[] {
+  const key = projectKey(id);
+  const records = recordsByProject[key].slice(0, fixtures.skus.length);
+  const stockBySku = new Map(rowsByProject[key].map((row) => [row.sku, row.stock_status]));
+  return records.map((record, index) => {
+    const manual = manualImages.get(id + ":" + record.sku) ?? null;
+    const feed = index === 4 || index === 18 ? null : mockFeedImageUrl(record);
+    return {
+      sku: record.sku, title: record.title, variant_title: record.variant_title,
+      stock_status: stockBySku.get(record.sku) ?? "unknown", feed_image_url: feed,
+      manual_image_url: manual, used: manual ? "manual" : feed ? "feed" : "none",
+    };
+  });
+}
 const tagNames = new Set<string>(["spring", "bestseller", "seasonal"]);
 const runners: Record<MockProjectId, RunnerInfo | null> = {
   kingsyard: { device_id: "mock-device", device_name: "Henry-PC", claimed_at: "2026-10-20T09:00:00+08:00" },
@@ -568,33 +592,24 @@ export function createMockApi(): SiteIndexApi {
     },
     edm: {
       summary: (id) => reply(() => {
-        const rows = recordsByProject[projectKey(id)];
-        const feed = rows.filter((row) => row.image_url).length;
-        const manual = rows.filter((row) => manualImages.has(id + ":" + row.sku)).length;
-        return { total: rows.length, feed, manual, none: rows.length - feed };
+        const rows = edmImageRows(id);
+        return { total: rows.length, feed: rows.filter((row) => row.feed_image_url).length, manual: rows.filter((row) => row.manual_image_url).length, none: rows.filter((row) => row.used === "none").length };
       }),
       listImages: (id, query: ListQuery<SkuImageFilters>) => reply(() => {
-        const key = projectKey(id);
-        const rows: SkuImageRow[] = recordsByProject[key].map((record) => {
-          const manual = manualImages.get(id + ":" + record.sku) ?? null;
-          const feed = record.image_url;
-          return {
-            sku: record.sku, title: record.title, variant_title: record.variant_title,
-            stock_status: rowsByProject[key].find((row) => row.sku === record.sku)?.stock_status ?? "unknown",
-            feed_image_url: feed, manual_image_url: manual, used: manual ? "manual" : feed ? "feed" : "none",
-          };
-        });
-        return selectRows(rows, query, (row) => [row.sku, row.title].join(" "), (row, filters) => !filters.view || (filters.view === "in_stock" ? row.stock_status === "in_stock" : filters.view === "no_feed" ? row.feed_image_url == null : filters.view === "has_manual" ? row.manual_image_url != null : row.used === "none"));
+        return selectRows(edmImageRows(id), query, (row) => [row.sku, row.title].join(" "), (row, filters) => !filters.view || (filters.view === "in_stock" ? row.stock_status === "in_stock" : filters.view === "no_feed" ? row.feed_image_url == null : filters.view === "has_manual" ? row.manual_image_url != null : row.used === "none"));
       }),
       setManualImage: (id, sku, url) => reply(() => {
-        manualImages.set(id + ":" + sku, url);
+        if (url) manualImages.set(id + ":" + sku, url);
+        else manualImages.delete(id + ":" + sku);
         const key = projectKey(id);
-        const record = recordsByProject[key].find((row) => row.sku === sku);
+        const index = recordsByProject[key].slice(0, fixtures.skus.length).findIndex((row) => row.sku === sku);
+        const record = recordsByProject[key][index];
         const stock = rowsByProject[key].find((row) => row.sku === sku);
+        const feed = index === 4 || index === 18 ? null : record ? mockFeedImageUrl(record) : null;
         return {
           sku, title: record?.title ?? sku, variant_title: record?.variant_title ?? null,
-          stock_status: stock?.stock_status ?? "unknown", feed_image_url: record?.image_url ?? null,
-          manual_image_url: url, used: url ? "manual" : record?.image_url ? "feed" : "none",
+          stock_status: stock?.stock_status ?? "unknown", feed_image_url: feed,
+          manual_image_url: url, used: url ? "manual" : feed ? "feed" : "none",
         };
       }),
       buildCommand: (_id, input: EdmCommandInput) => reply("edm-builder --theme \"" + input.theme + "\" --count " + input.count + (input.promo_code ? " --promo-code \"" + input.promo_code + "\"" : "")),
