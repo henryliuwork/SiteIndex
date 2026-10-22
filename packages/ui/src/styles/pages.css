@@ -247,3 +247,50 @@
   .si-table-total { margin-left: 0; }
   .si-category-panel { padding: 14px; }
 }
+
+.si-readme-page { gap: 18px; }
+.si-readme-title-line { flex-wrap: wrap; }
+.si-readme-title-line code { font-family: var(--font-mono); }
+.si-readme-layout { display: grid; grid-template-columns: minmax(390px, .75fr) minmax(0, 1fr); align-items: start; gap: 20px; }
+.si-readme-card { display: grid; min-width: 0; padding: 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-readme-user-card { gap: 14px; }
+.si-readme-card-heading { display: flex; min-height: 22px; align-items: center; justify-content: space-between; gap: 12px; }
+.si-readme-card-heading h2 { margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 700; }
+.si-readme-card-heading .si-chip { flex: none; }
+.si-readme-field { display: grid; min-width: 0; gap: 6px; color: var(--color-ink); font-size: 13px; font-weight: 600; }
+.si-readme-textarea { width: 100%; min-height: 76px; padding: 11px 12px; border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink-2); font-family: var(--font-sans); font-size: 13px; font-weight: 400; line-height: 1.55; resize: vertical; }
+.si-readme-textarea:focus { border-color: var(--color-brand); box-shadow: 0 0 0 2px rgba(30,107,82,.12); }
+.si-readme-edit-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.si-readme-auto-card { gap: 4px; }
+.si-readme-auto-card > .si-readme-card-heading { padding-bottom: 8px; }
+.si-readme-auto-row { display: flex; min-width: 0; min-height: 46px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--color-line-soft); }
+.si-readme-auto-label { display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; column-gap: 5px; row-gap: 2px; color: var(--color-ink-2); font-size: 12px; }
+.si-readme-auto-label strong { color: var(--color-ink); font-size: 13px; }
+.si-readme-auto-label code, .si-readme-auto-label > span, .si-readme-auto-row > span { color: var(--color-muted); font-family: var(--font-mono); font-size: 10px; }
+.si-readme-auto-row > span { flex: none; font-family: var(--font-sans); font-size: 11px; }
+.si-readme-block { display: grid; min-width: 0; gap: 8px; padding: 7px 0 10px; border-bottom: 1px solid var(--color-line-soft); }
+.si-readme-block-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
+.si-readme-block-heading > div { display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; gap: 5px; font-size: 12px; }
+.si-readme-block-heading strong { color: var(--color-ink); font-size: 13px; }
+.si-readme-block-heading code, .si-readme-block-heading > div > span { color: var(--color-muted); font-family: var(--font-mono); font-size: 10px; }
+.si-readme-block-heading .si-button { height: 34px; flex: none; padding: 0 12px; font-size: 12px; text-decoration: none; }
+.si-readme-folder-table { min-width: 0; padding: 6px 12px 8px; border-radius: 8px; background: #F8F9FA; }
+.si-readme-folder-row { display: grid; min-height: 34px; grid-template-columns: 84px minmax(0, 1fr) 48px 64px; align-items: center; gap: 10px; border-top: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: 11px; }
+.si-readme-folder-row.is-heading { min-height: 31px; border-top: 0; color: var(--color-muted); font-size: 10px; font-weight: 600; }
+.si-readme-folder-row > :nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-readme-folder-row > :nth-child(3), .si-readme-folder-row > :nth-child(4) { text-align: right; }
+.si-readme-folder-row code { color: var(--color-ink-2); font-family: var(--font-mono); font-size: 10px; }
+.si-readme-folder-row a { overflow: hidden; color: #8A4B00; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.si-readme-folder-row.is-heading > span:nth-child(2) { text-align: left; }
+.si-readme-auto-note { margin: 8px 0 0; color: var(--color-muted); font-size: 11px; }
+
+@media (max-width: 980px) {
+  .si-readme-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .si-readme-layout { gap: 14px; }
+  .si-readme-card { padding: 16px; }
+  .si-readme-folder-row { grid-template-columns: 56px minmax(0, 1fr) 32px 50px; gap: 6px; font-size: 10px; }
+  .si-readme-block-heading { align-items: flex-start; flex-direction: column; }
+  .si-readme-auto-row { align-items: flex-start; flex-direction: column; justify-content: center; gap: 3px; padding: 9px 0; }
+}

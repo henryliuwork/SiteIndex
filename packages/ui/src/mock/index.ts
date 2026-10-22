@@ -224,8 +224,30 @@ const folderRows: Record<MockProjectId, FolderRow[]> = {
   ],
 };
 const userReadmeBlocks: Record<MockProjectId, { overview: string; focus: string; rules: string }> = {
-  kingsyard: { overview: "为后院观鸟者提供实用的喂鸟产品。", focus: "检查缺货 SKU，并优先补齐高流量产品。", rules: "保留品牌温暖、实用的语气。" },
+  kingsyard: {
+    overview: "Wild bird feeding supplies for backyard birders.\n- 网站：https://www.kingsyard.com（magento）\n- 目标市场：US\n- 目标人群：Backyard bird lovers and gift buyers",
+    focus: "- 10 月：Halloween / 秋季喂鸟季 EDM\n- 补齐吸鸟指南类博客",
+    rules: "- 工作成果放入对应工作区文件夹，不要写入 index/（台账除外）\n- 数据缺失或冲突时停下来询问，不要编造 SKU、价格、库存、图片 URL\n- EDM 文案用英文，subject ≤ 50 字符",
+  },
   riverstone: { overview: "为庭院和户外生活提供耐用装备。", focus: "维护商品资料与季节性内容。", rules: "说明要简洁、具体。" },
+};
+const readmeFolderMaps: Record<MockProjectId, FolderRow[]> = {
+  kingsyard: [
+    { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 24, modified_at: "2026-10-19T12:00:00+08:00" },
+    { name: "edm", description: "每次 campaign 一个子文件夹", default: true, files: 31, modified_at: "2026-10-20T12:00:00+08:00" },
+    { name: "产品", description: "产品图、上新资料、利润测算", default: true, files: 112, modified_at: "2026-10-18T12:00:00+08:00" },
+    { name: "内容", description: "博客 brief 与草稿（drafts/）", default: true, files: 40, modified_at: "2026-10-15T12:00:00+08:00" },
+    { name: "设计", description: "", default: true, files: 8, modified_at: "2026-09-30T12:00:00+08:00" },
+    { name: "报告", description: "月度钉钉汇报、复盘", default: true, files: 9, modified_at: "2026-10-01T12:00:00+08:00" },
+  ],
+  riverstone: [
+    { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 18, modified_at: "2026-10-19T12:00:00+08:00" },
+    { name: "edm", description: "每次 campaign 一个子文件夹", default: true, files: 12, modified_at: "2026-10-20T12:00:00+08:00" },
+    { name: "产品", description: "产品图、上新资料、利润测算", default: true, files: 45, modified_at: "2026-10-18T12:00:00+08:00" },
+    { name: "内容", description: "博客 brief 与草稿（drafts/）", default: true, files: 16, modified_at: "2026-10-15T12:00:00+08:00" },
+    { name: "设计", description: "", default: true, files: 3, modified_at: "2026-09-30T12:00:00+08:00" },
+    { name: "报告", description: "月度汇报与复盘", default: true, files: 5, modified_at: "2026-10-01T12:00:00+08:00" },
+  ],
 };
 const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "manual" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
 const tagsByHandle = new Map<string, string[]>();
@@ -603,8 +625,15 @@ export function createMockApi(): SiteIndexApi {
     readme: {
       get: (id) => reply(() => ({
         user_blocks: userReadmeBlocks[projectKey(id)],
-        auto_blocks: [{ id: "inventory", title: "库存摘要", updated_at: "2026-10-22T10:00:00+08:00", schedule: "每天同步后更新" }, { id: "folders", title: "工作区文件夹", updated_at: null, schedule: "手动刷新" }],
-        folder_map: folderRows[projectKey(id)],
+        auto_blocks: [
+          { id: "index-summary", title: "网站数据速览", updated_at: "2026-10-19T05:00:00+08:00", schedule: "每日同步后" },
+          { id: "folder-map", title: "目录地图", updated_at: "2026-10-19T05:00:00+08:00", schedule: "每周日" },
+          { id: "task-routing", title: "任务路由", updated_at: null, schedule: "skill 更新后" },
+          { id: "data-guide", title: "数据指南", updated_at: null, schedule: "规范升级后" },
+          { id: "design-summary", title: "设计规范速览", updated_at: "2026-10-01T04:00:00+08:00", schedule: "每月" },
+          { id: "changelog", title: "变更记录", updated_at: "2026-10-22T05:00:00+08:00", schedule: "每次运行" },
+        ],
+        folder_map: readmeFolderMaps[projectKey(id)],
       })),
       saveUserBlocks: (id, blocks) => reply(() => { userReadmeBlocks[projectKey(id)] = clone(blocks); }),
       refresh: async (id) => { await delay(); return { runId: beginRun("C:/SiteIndex/Projects/" + id, "readme") }; },
@@ -685,7 +714,7 @@ export function createMockApi(): SiteIndexApi {
         { name: "site-index-onboarding", version: "1.0.0", description: "SiteIndex 项目接入指南", has_update: false, reads: ["README.md", "site.json"], writes: [] },
         { name: "site-index-maintain", version: "1.0.0", description: "SiteIndex 数据维护指南", has_update: false, reads: ["index/"], writes: ["README.md"] },
       ]),
-      get: (name) => reply({ info: { name, version: "1.0.0", description: "SiteIndex 项目技能说明", has_update: false, reads: ["README.md"], writes: [] }, body: "# SiteIndex Skill\n\n请先阅读项目 README，再根据当前数据完成任务。" }),
+      get: (name) => reply({ info: { name, version: "1.0.0", description: "SiteIndex 项目技能说明", has_update: false, reads: ["README.md"], writes: [] }, body: name === "project-readme" ? "# project-readme\n\n不修改 siteindex:auto 区块、index/、_agent/。\n为待补充说明的文件夹写 _about.md。\n用户区块修改前先展示对比。" : "# SiteIndex Skill\n\n请先阅读项目 README，再根据当前数据完成任务。" }),
       targets: (name) => reply([
         { target_id: "project:kingsyard", name: "Kingsyard 项目", dir: "C:/SiteIndex/Projects/Kingsyard/.agent/skills/" + name, status: "latest" },
         { target_id: "codex", name: "Codex", dir: null, status: "not_installed" },
