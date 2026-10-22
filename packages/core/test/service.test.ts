@@ -135,6 +135,43 @@ describe("createCoreService initial namespaces", () => {
     expect((await api.projects.get("fixture")).config.locale).toBe("en-GB");
   });
 
+  it("serves the remaining core query namespaces and runs a dry-run views Job", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const [overview, seo, content, edmSummary, design, readme, categories, folders, schedule, runner] = await Promise.all([
+      api.overview.get("fixture"),
+      api.seo.summary("fixture"),
+      api.content.summary("fixture"),
+      api.edm.summary("fixture"),
+      api.design.get("fixture"),
+      api.readme.get("fixture"),
+      api.categories.get("fixture"),
+      api.folders.list("fixture"),
+      api.schedule.get("fixture"),
+      api.runner.get("fixture"),
+    ]);
+
+    expect(overview.agent_instruction).toContain("README.md");
+    expect(seo.kpis.length).toBeGreaterThan(0);
+    expect(content.kpis.length).toBeGreaterThan(0);
+    expect(edmSummary.total).toBeGreaterThan(0);
+    expect(design.tokens).not.toBeUndefined();
+    expect(readme.folder_map.length).toBe(folders.length);
+    expect(categories.mode).toBe("feed");
+    expect(schedule.registered).toBe(false);
+    expect(runner.this_device.device_id).toBe("test-device");
+    expect((await api.seo.listPages("fixture", { page: 1, pageSize: 0 })).rows).toBeInstanceOf(Array);
+    expect((await api.content.listBlog("fixture", { page: 1, pageSize: 0 })).rows).toBeInstanceOf(Array);
+    expect((await api.edm.listImages("fixture", { page: 1, pageSize: 0 })).rows).toBeInstanceOf(Array);
+    expect((await api.categories.preview("fixture", categories)).categories.length).toBeGreaterThan(0);
+    const validation = await api.files.validate("fixture");
+    expect(validation.summary.total).toBeGreaterThan(0);
+    expect((await api.files.lastReport("fixture"))?.checked_at).toBe(validation.checked_at);
+
+    const result = await api.runJob({ projectPath, job: "views", trigger: "manual", dryRun: true }, () => undefined);
+    expect(result).toMatchObject({ job: "views", status: "ok", exitCode: 0 });
+  }, 20_000);
+
   it("keeps warm 10,000-row inventory queries under 50 ms", async () => {
     const { projectPath } = await makeProject();
     const rows = Array.from({ length: 10_000 }, (_, index) => stockRow(`SKU-${String(index).padStart(5, "0")}`, `Product ${index}`, "in_stock"));
