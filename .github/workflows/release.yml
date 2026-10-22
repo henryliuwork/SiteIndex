@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      mac:
+        description: "同时打包 macOS（macOS 分钟按 10 倍计费，测试时一般不需要）"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,12 +19,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            target: win
-          - os: macos-latest
-            target: mac
+        # 打 tag 正式发布时打两个平台；手动运行默认只打 Windows
+        include: ${{ (github.event_name == 'push' || inputs.mac) && fromJSON('[{"os":"windows-latest","target":"win"},{"os":"macos-latest","target":"mac"}]') || fromJSON('[{"os":"windows-latest","target":"win"}]') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
