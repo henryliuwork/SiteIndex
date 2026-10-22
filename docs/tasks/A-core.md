@@ -33,8 +33,8 @@
 ## M2 · 全部 Job、查询服务与命令行
 
 ### A4 视图 `core/src/views/`
-- [ ] `views/products.jsonl`：**图片规则 feed 优先 → 手动（`ledgers/sku_media.csv`）→ none**，写 `image_source`/`feed_image_url`/`manual_image_url`
-- [ ] `views/sku_stock.jsonl`：在线率、`history_30d`（字符 i/o/p/u/-）
+- [x] `views/products.jsonl`：**图片规则 feed 优先 → 手动（`ledgers/sku_media.csv`）→ none**，写 `image_source`/`feed_image_url`/`manual_image_url`
+- [x] `views/sku_stock.jsonl`：在线率、`history_30d`（字符 i/o/p/u/-）
 - **验收**：products 与 `fixtures/expected/project/index/views/products.jsonl` 一致（该黄金文件已按 feed 优先重新生成；fixtures 中只有 feed 图场景，manual 与 none 场景自行补单测）；sku_stock 补单测
 
 ### A5 每周同步 `core/src/jobs/weekly.ts`
