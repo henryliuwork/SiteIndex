@@ -944,7 +944,7 @@ export function createMockApi(): SiteIndexApi {
       get: (id) => reply(categoryConfigs[projectKey(id)]),
       preview: (_id, config) => reply<CategoryPreview>(() => ({
         categories: (config.manual ?? categorySeeds.slice(0, 5)).map((category, index) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: [11, 4, 4, 0][index] ?? 0 })),
-        uncategorized: 12, multi_matched: 3,
+        uncategorized: 0, multi_matched: 0,
         candidates: [
           { url: "/hummingbird-feeders.html", product_links: 6 },
           { url: "/accessories.html", product_links: 9 },
@@ -953,7 +953,7 @@ export function createMockApi(): SiteIndexApi {
       })),
       save: (id, config) => reply(() => {
         categoryConfigs[projectKey(id)] = clone(config);
-        return { categories: (config.manual ?? categorySeeds).map((category, index) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: [11, 4, 4, 0][index] ?? 0 })), uncategorized: 12, multi_matched: 3, candidates: [] };
+        return { categories: (config.manual ?? categorySeeds).map((category, index) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: [11, 4, 4, 0][index] ?? 0 })), uncategorized: 0, multi_matched: 0, candidates: [] };
       }),
     },
     folders: {
