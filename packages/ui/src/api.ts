@@ -13,4 +13,5 @@ if (!hostApi) {
 }
 
 export const api: SiteIndexApi = hostApi ?? mock!;
+export const isMockApi = Boolean(mock);
 if (typeof window !== "undefined" && !window.siteindex && mock) window.siteindex = mock;
