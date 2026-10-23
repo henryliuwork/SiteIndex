@@ -1,7 +1,8 @@
-import { app, dialog, ipcMain } from "electron";
-import { writeFile } from "node:fs/promises";
+import { app, clipboard, dialog, ipcMain, shell } from "electron";
+import { lstat, realpath, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { CoreService } from "@siteindex/core";
+import { writeRunner, type CoreService } from "@siteindex/core";
+import { PATHS } from "@siteindex/shared";
 import type {
   AppSettings,
   JobRequest,
@@ -107,6 +108,26 @@ function invalidJobRequest(message: string): SiteIndexError {
   return { code: "CONFIG_INVALID", message };
 }
 
+function desktopError(code: SiteIndexError["code"], message: string, detail?: string): SiteIndexError {
+  return { code, message, ...(detail ? { detail } : {}) };
+}
+
+function childPath(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function httpUrl(value: unknown): string {
+  if (typeof value !== "string") throw desktopError("CONFIG_INVALID", "外部链接无效。");
+  try {
+    const url = new URL(value);
+    if (url.protocol === "http:" || url.protocol === "https:") return url.href;
+  } catch {
+    // 统一转换为安全策略错误。
+  }
+  throw desktopError("CONFIG_INVALID", "外部链接只允许 http 或 https。");
+}
+
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = Array.isArray(value)
@@ -149,6 +170,7 @@ export function registerIpcHandlers(
   projects: ProjectCatalog,
   settingsChanged: (value: AppSettings) => Promise<void>,
   jobs: JobManager,
+  onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>,
 ): void {
   const withProject = async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>): Promise<T> => {
     const id = projectId(value);
@@ -291,6 +313,130 @@ export function registerIpcHandlers(
     "jobs.running": (id) => {
       if (typeof id !== "string" || !id.trim()) throw invalidJobRequest("项目标识无效。");
       return jobs.running(id as ProjectId);
+    },
+    "folders.list": (id) => withProject(id, (projectIdValue) => core.folders.list(projectIdValue)),
+    "folders.create": (...args) =>
+      withProject(args[0], (id) => core.folders.create(id, args[1] as string, args[2] as string)),
+    "folders.describe": (...args) =>
+      withProject(args[0], (id) => core.folders.describe(id, args[1] as string, args[2] as string)),
+    "folders.remove": (...args) =>
+      withProject(args[0], async (id) => {
+        if (typeof args[1] !== "string" || !args[1].trim()) {
+          throw desktopError("PROJECT_NOT_FOUND", "请选择要删除的工作区文件夹。");
+        }
+        const requestedName = args[1].trim();
+        const entries = await core.folders.list(id);
+        const folder = entries.find((entry) => entry.name === requestedName);
+        if (!folder) throw desktopError("PROJECT_NOT_FOUND", "找不到工作区文件夹。", requestedName);
+        if (folder.default) throw desktopError("CONFIG_INVALID", "默认工作区文件夹不能删除。", folder.name);
+
+        const projectPath = await realpath(projects.resolveProject(id));
+        const targetPath = path.resolve(projectPath, folder.name);
+        if (!childPath(projectPath, targetPath) || path.relative(projectPath, targetPath).includes(path.sep)) {
+          throw desktopError("PATH_OUTSIDE_PROJECT", "只能删除项目根目录下的自定义文件夹。", folder.name);
+        }
+        const targetInfo = await lstat(targetPath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        });
+        if (!targetInfo?.isDirectory() || targetInfo.isSymbolicLink()) {
+          throw desktopError("PATH_OUTSIDE_PROJECT", "目标不是项目内的普通文件夹，已拒绝删除。", folder.name);
+        }
+        const resolvedTarget = await realpath(targetPath);
+        if (!childPath(projectPath, resolvedTarget) || path.relative(projectPath, resolvedTarget).includes(path.sep)) {
+          throw desktopError("PATH_OUTSIDE_PROJECT", "文件夹解析后不在项目目录内，已拒绝删除。", folder.name);
+        }
+
+        const project = await core.projects.get(id);
+        const previousFolders = project.config.workspace_folders;
+        const nextFolders = previousFolders.filter((entry) => entry.name !== folder.name);
+        await core.projects.updateConfig(id, { workspace_folders: nextFolders });
+        try {
+          await shell.trashItem(resolvedTarget);
+        } catch (error) {
+          await core.projects.updateConfig(id, { workspace_folders: previousFolders }).catch((rollbackError) => {
+            console.error("恢复工作区配置失败。", id, folder.name, rollbackError);
+          });
+          throw desktopError("WRITE_FAILED", "无法将工作区文件夹移入回收站。", String(error));
+        }
+
+        core.invalidate(projectPath);
+        await core.readme.refresh(id).catch((error) => {
+          console.warn("工作区文件夹已删除，但 README 刷新失败。", id, error);
+        });
+        return core.folders.list(id);
+      }),
+    "folders.open": (...args) =>
+      withProject(args[0], async (id) => {
+        const requestedName = args[1];
+        const projectPath = await realpath(projects.resolveProject(id));
+        let targetPath = projectPath;
+        if (requestedName !== undefined) {
+          if (typeof requestedName !== "string" || !requestedName.trim()) {
+            throw desktopError("PROJECT_NOT_FOUND", "请选择有效的工作区文件夹。");
+          }
+          const folder = (await core.folders.list(id)).find((entry) => entry.name === requestedName.trim());
+          if (!folder) throw desktopError("PROJECT_NOT_FOUND", "找不到工作区文件夹。", requestedName);
+          targetPath = path.resolve(projectPath, folder.name);
+          if (!childPath(projectPath, targetPath) || path.relative(projectPath, targetPath).includes(path.sep)) {
+            throw desktopError("PATH_OUTSIDE_PROJECT", "只能打开项目根目录下的工作区文件夹。", folder.name);
+          }
+          const targetInfo = await lstat(targetPath);
+          if (!targetInfo.isDirectory() || targetInfo.isSymbolicLink()) {
+            throw desktopError("PATH_OUTSIDE_PROJECT", "目标不是项目内的普通文件夹。", folder.name);
+          }
+          const resolvedTarget = await realpath(targetPath);
+          if (!childPath(projectPath, resolvedTarget) || path.relative(projectPath, resolvedTarget).includes(path.sep)) {
+            throw desktopError("PATH_OUTSIDE_PROJECT", "文件夹解析后不在项目目录内。", folder.name);
+          }
+          targetPath = resolvedTarget;
+        }
+        const error = await shell.openPath(targetPath);
+        if (error) throw desktopError("UNKNOWN", "无法打开文件夹。", error);
+      }),
+    "runner.get": (id) => withProject(id, (projectIdValue) => core.runner.get(projectIdValue)),
+    "runner.claim": (id) =>
+      withProject(id, async (projectIdValue) => {
+        const projectPath = projects.resolveProject(projectIdValue);
+        const current = await settings.get();
+        const previous = await core.runner.get(projectIdValue);
+        const nextRunner = {
+          device_id: current.device_id,
+          device_name: current.device_name,
+          claimed_at: new Date().toISOString(),
+        };
+        await writeRunner(projectPath, nextRunner);
+        core.invalidate(projectPath);
+        try {
+          await onRunnerClaimed?.(projectIdValue, projectPath);
+        } catch (error) {
+          if (previous.runner) await writeRunner(projectPath, previous.runner).catch(() => undefined);
+          else await unlink(path.join(projectPath, PATHS.runner)).catch(() => undefined);
+          core.invalidate(projectPath);
+          throw desktopError("WRITE_FAILED", "本机计划任务注册失败，已恢复原执行设备。", String(error));
+        }
+        await dialog.showMessageBox({
+          type: "info",
+          title: "执行设备已更新",
+          message: "本机已认领为此项目的执行设备。",
+          detail:
+            previous.runner && previous.runner.device_id !== current.device_id
+              ? `原执行设备“${previous.runner.device_name}”上的计划任务在同步到新认领状态后会自动跳过。`
+              : "项目计划任务将在本机同步并执行。",
+        });
+        return core.runner.get(projectIdValue);
+      }),
+    "shell.openPath": async (value) => {
+      if (typeof value !== "string" || !value.trim()) throw desktopError("CONFIG_INVALID", "打开路径无效。");
+      const error = await shell.openPath(value);
+      if (error) throw desktopError("UNKNOWN", "无法打开路径。", error);
+    },
+    "shell.openExternal": async (value) => {
+      await shell.openExternal(httpUrl(value));
+    },
+    "shell.copyText": async (value) => {
+      if (typeof value !== "string") throw desktopError("CONFIG_INVALID", "复制内容必须是文本。");
+      clipboard.writeText(value);
     },
   });
 
