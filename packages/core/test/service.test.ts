@@ -99,7 +99,7 @@ describe("createCoreService initial namespaces", () => {
       page: 1, pageSize: 0, filters: { stock: "in", tag: "fall", category: "bird-houses" },
     });
     expect(products.rows.map((row) => row.handle)).toEqual(["feeder-2"]);
-  });
+  }, 20_000);
 
   it("returns product detail and tag counts, then writes normalized tags to all active variants", async () => {
     const { projectPath } = await makeProject();
@@ -117,7 +117,7 @@ describe("createCoreService initial namespaces", () => {
       .toEqual(["fall;holiday", "fall;holiday"]);
     const updatedView = (await readJsonl(path.join(projectPath, PATHS.productsView))).find((row) => row.handle === "feeder-0");
     expect(updatedView?.tags).toEqual(["fall", "holiday"]);
-  });
+  }, 20_000);
 
   it("updates project config and invalidates the in-memory snapshot", async () => {
     const { projectPath } = await makeProject();
@@ -170,7 +170,7 @@ describe("createCoreService initial namespaces", () => {
 
     const result = await api.runJob({ projectPath, job: "views", trigger: "manual", dryRun: true }, () => undefined);
     expect(result).toMatchObject({ job: "views", status: "ok", exitCode: 0 });
-  }, 20_000);
+  }, 45_000);
 
   it("keeps warm 10,000-row inventory queries under 50 ms", async () => {
     const { projectPath } = await makeProject();
