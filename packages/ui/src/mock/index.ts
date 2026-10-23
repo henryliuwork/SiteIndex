@@ -246,8 +246,9 @@ const settingsState: AppSettings = {
   extra_projects: [], cache_dir: "C:/SiteIndex/Cache", browser: { channel: "msedge", executable_path: null },
   notify: { on_failure: true, on_success: false, oos_threshold: 0.12, dingtalk_webhook: null },
   skill_platforms: [
-    { id: "claude-code", name: "Claude Code", dir: "~/.claude/skills", detected: false },
-    { id: "codex", name: "Codex", dir: "~/.codex/skills", detected: true },
+    { id: "claude-code", name: "Claude Code", dir: "%USERPROFILE%/.claude/skills", detected: true },
+    { id: "codex", name: "Codex", dir: "[首次使用时确认路径]", detected: false },
+    { id: "qwenpaw", name: "qwenpaw", dir: "D:/qwenpaw/workspace/ops-agent/skills", detected: false },
   ],
   conflict_patterns: ["*.conflict-*", "*.copy"],
 };
@@ -683,9 +684,9 @@ export function createMockApi(): SiteIndexApi {
         if (patch.notify) settingsState.notify = { ...settingsState.notify, ...patch.notify };
         return settingsState;
       }),
-      detectBrowser: () => reply<BrowserStatus>({ available: true, name: "浏览器 mock", path: null }),
-      cliStatus: () => reply<CliStatus>({ installed: false, path: null }),
-      installCli: () => reply<CliStatus>({ installed: true, path: "C:/Users/Developer/.codex/skills/siteindex" }),
+      detectBrowser: () => reply<BrowserStatus>({ available: true, name: "Microsoft Edge mock", path: "C:/Program Files/Microsoft/Edge/Application/msedge.exe" }),
+      cliStatus: () => reply<CliStatus>({ installed: false, path: "C:/SiteIndex/bin/siteindex.cmd" }),
+      installCli: () => reply<CliStatus>({ installed: true, path: "C:/SiteIndex/bin/siteindex.cmd" }),
       chooseDirectory: (defaultPath) => reply(defaultPath ?? "C:/SiteIndex/Projects"),
     },
     projects: {
