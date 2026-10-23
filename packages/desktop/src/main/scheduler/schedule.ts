@@ -290,6 +290,7 @@ export function createSystemScheduler(options: {
     try {
       await ensureWindowsTaskFolder();
     } catch (error) {
+      if (!isAccessDenied(error)) throw error;
       console.warn("无法访问 SiteIndex 计划任务文件夹，将尝试注册到任务根目录。", error);
       nestedFolderAvailable = false;
     }
