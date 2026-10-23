@@ -253,9 +253,13 @@ const settingsState: AppSettings = {
 };
 const folderRows: Record<MockProjectId, FolderRow[]> = {
   kingsyard: [
-    { name: "产品素材", description: "产品图片、Feed 素材与规格表。", default: true, files: 24, modified_at: "2026-10-21T18:00:00-07:00" },
-    { name: "营销活动", description: "EDM、促销与渠道活动资料。", default: true, files: 8, modified_at: "2026-10-20T12:00:00-07:00" },
-    { name: "草稿", description: "待审核的内容草稿。", default: true, files: 3, modified_at: null },
+    { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 24, modified_at: "2026-10-19T12:00:00+08:00" },
+    { name: "edm", description: "每次 campaign 一个子文件夹（brief、content.json、email.html）", default: true, files: 31, modified_at: "2026-10-20T12:00:00+08:00" },
+    { name: "产品", description: "产品图、上新资料、利润测算", default: true, files: 112, modified_at: "2026-10-18T12:00:00+08:00" },
+    { name: "内容", description: "博客 brief 与草稿（drafts/），已发布文章存档", default: true, files: 40, modified_at: "2026-10-15T12:00:00+08:00" },
+    { name: "设计", description: "", default: true, files: 8, modified_at: "2026-09-30T12:00:00+08:00" },
+    { name: "报告", description: "月度钉钉汇报、复盘", default: true, files: 9, modified_at: "2026-10-01T12:00:00+08:00" },
+    { name: "广告", description: "Google Ads 素材与投放记录", default: false, files: 14, modified_at: "2026-10-17T12:00:00+08:00" },
   ],
   riverstone: [
     { name: "产品素材", description: "产品图片与规格表。", default: true, files: 12, modified_at: "2026-10-21T12:00:00-07:00" },
@@ -372,7 +376,16 @@ const readmeFolderMaps: Record<MockProjectId, FolderRow[]> = {
     { name: "报告", description: "月度汇报与复盘", default: true, files: 5, modified_at: "2026-10-01T12:00:00+08:00" },
   ],
 };
-const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "manual" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
+const initialManualCategories: NonNullable<CategoriesConfig["manual"]> = categorySeeds.slice(0, 4).map((category, index) => ({
+  slug: category.slug,
+  name: category.name,
+  url: category.url ? (() => { try { return new URL(category.url).pathname; } catch { return category.url; } })() : "/collections/" + category.slug,
+  match: [{ type: index === 3 ? "url_contains" : "product_type_contains", value: category.name }],
+}));
+const categoryConfigs: Record<MockProjectId, CategoriesConfig> = {
+  kingsyard: { mode: "manual", manual: initialManualCategories },
+  riverstone: { mode: "url_rule", url_pattern: "/collections/:category" },
+};
 const tagsByHandle = new Map<string, string[]>();
 const manualImages = new Map<string, string | null>();
 const tagNamesByProject: Record<MockProjectId, Set<string>> = {
@@ -930,13 +943,17 @@ export function createMockApi(): SiteIndexApi {
     categories: {
       get: (id) => reply(categoryConfigs[projectKey(id)]),
       preview: (_id, config) => reply<CategoryPreview>(() => ({
-        categories: categorySeeds.slice(0, 5).map((category) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: category.sku_count ?? 0 })),
+        categories: (config.manual ?? categorySeeds.slice(0, 5)).map((category, index) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: [11, 4, 4, 0][index] ?? 0 })),
         uncategorized: 12, multi_matched: 3,
-        candidates: categorySeeds.slice(0, 2).map((category) => ({ url: category.url, product_links: category.product_count ?? 0, configured: config.mode === "manual" })),
+        candidates: [
+          { url: "/hummingbird-feeders.html", product_links: 6 },
+          { url: "/accessories.html", product_links: 9 },
+          { url: "/bird-feeders.html", product_links: 11 },
+        ].map((candidate) => ({ ...candidate, configured: (config.manual ?? []).some((item) => item.url === candidate.url || item.url.endsWith(candidate.url)) })),
       })),
       save: (id, config) => reply(() => {
         categoryConfigs[projectKey(id)] = clone(config);
-        return { categories: categorySeeds.map((category) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: category.sku_count ?? 0 })), uncategorized: 12, multi_matched: 3, candidates: [] };
+        return { categories: (config.manual ?? categorySeeds).map((category, index) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: [11, 4, 4, 0][index] ?? 0 })), uncategorized: 12, multi_matched: 3, candidates: [] };
       }),
     },
     folders: {
