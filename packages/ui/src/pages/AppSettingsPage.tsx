@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api } from "../api";
 import { Button, Chip } from "../components";
@@ -104,6 +104,10 @@ export function AppSettingsPage() {
     void saveSettings({ skill_platforms: skillPlatforms });
   };
 
+  const savePlatform = () => {
+    if (draft) void saveSettings({ skill_platforms: draft.skill_platforms });
+  };
+
   if (settingsQuery.isError) return <div className="si-page-error" role="alert">软件设置加载失败。<button type="button" onClick={() => void settingsQuery.refetch()}>重试</button></div>;
   if (settingsQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载软件设置…</div>;
 
@@ -185,14 +189,17 @@ export function AppSettingsPage() {
 
       <section className="si-app-settings-card">
         <h2>Agent 平台 Skill 目录</h2>
-        {draft.skill_platforms.map((platform, index) => <div className="si-app-setting-row" key={platform.id}>
-          <strong>{platform.name}</strong>
-          <input aria-label={`${platform.name} Skill 目录`} className="si-setting-input si-setting-mono" value={platform.dir} onChange={(event) => setDraft({ ...draft, skill_platforms: draft.skill_platforms.map((item, itemIndex) => itemIndex === index ? { ...item, dir: event.target.value, detected: false } : item) })} onBlur={() => void saveSettings({ skill_platforms: draft.skill_platforms })} />
-          <div className="si-platform-actions">
-            <Chip tone={platform.detected ? "ok" : "neutral"}>{platform.detected ? "已检测到" : "未检测"}</Chip>
-            <Button aria-label={`移除 ${platform.name}`} icon={<Trash2 size={14} />} onClick={() => savePlatforms(draft.skill_platforms.filter((_, itemIndex) => itemIndex !== index))}>移除</Button>
-          </div>
-        </div>)}
+        {draft.skill_platforms.map((platform, index) => {
+          const detectedPlatform = platform.id === "claude-code" && platform.detected;
+          const editablePlatform = platform.id === "codex" || platform.id.startsWith("custom-");
+          return <div className="si-app-setting-row" key={platform.id}>
+            <strong>{platform.name}</strong>
+            {detectedPlatform || platform.id === "qwenpaw" ? <code className="si-setting-mono si-platform-path">{platform.dir}</code> : <input aria-label={`${platform.name} Skill 目录`} className="si-setting-input si-setting-mono" value={platform.dir} onChange={(event) => setDraft({ ...draft, skill_platforms: draft.skill_platforms.map((item, itemIndex) => itemIndex === index ? { ...item, dir: event.target.value, detected: false } : item) })} onBlur={editablePlatform && platform.id !== "codex" ? () => void saveSettings({ skill_platforms: draft.skill_platforms }) : undefined} />}
+            <div className="si-platform-actions">
+              {detectedPlatform ? <Chip tone="ok">已检测到</Chip> : editablePlatform && platform.id === "codex" ? <Button onClick={savePlatform}>保存</Button> : <Button aria-label={`移除 ${platform.name}`} onClick={() => savePlatforms(draft.skill_platforms.filter((_, itemIndex) => itemIndex !== index))}>移除</Button>}
+            </div>
+          </div>;
+        })}
         <div className="si-platform-add-row"><Button icon={<Plus size={15} />} onClick={() => savePlatforms([...draft.skill_platforms, { id: `custom-${Date.now()}`, name: "新平台", dir: "", detected: false }])}>添加平台目录</Button></div>
       </section>
 
