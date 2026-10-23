@@ -141,3 +141,4 @@ export function EdmPage() {
     </DetailPanel>
   </div>;
 }
+import "./edm/page.css";

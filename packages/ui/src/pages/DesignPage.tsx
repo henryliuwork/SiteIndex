@@ -245,3 +245,4 @@ export function DesignPage() {
     </div>
   );
 }
+import "./design/page.css";

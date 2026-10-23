@@ -194,3 +194,4 @@ export function ReadmePage() {
     </div>
   </div>;
 }
+import "./readme/page.css";

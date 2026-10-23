@@ -45,12 +45,16 @@ export function readColumnPrefs(tableId: string, available: readonly string[], d
     const storage = typeof localStorage === "undefined" ? undefined : localStorage;
     if (!storage) return [...defaults];
     const parsed: unknown = JSON.parse(storage.getItem(columnKey(tableId)) ?? "null");
-    if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) return [...defaults];
-    const allowed = new Set(available);
-    return [...new Set(parsed.filter((item: string) => allowed.has(item)))];
+    return normalizeColumnPrefs(parsed, available, defaults);
   } catch {
     return [...defaults];
   }
+}
+
+function normalizeColumnPrefs(value: unknown, available: readonly string[], defaults: readonly string[]): string[] {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return [...defaults];
+  const allowed = new Set(available);
+  return [...new Set(value.filter((item: string) => allowed.has(item)))];
 }
 
 export function writeColumnPrefs(tableId: string, visible: readonly string[]): void {
@@ -62,9 +66,11 @@ export function writeColumnPrefs(tableId: string, visible: readonly string[]): v
   }
 }
 
-export function useColumnPrefs(tableId: string) {
-  const { id: projectId } = useParams<{ id?: string }>();
+export function useColumnPrefs(tableId: string, scopeId?: string) {
+  const { id: routeProjectId } = useParams<{ id?: string }>();
+  const projectId = scopeId ?? routeProjectId;
   const requestId = useRef(0);
+  const configuredKey = useRef("");
   const [state, setState] = useState<{
     tableId: string;
     projectId?: string;
@@ -81,25 +87,29 @@ export function useColumnPrefs(tableId: string) {
     const defaultsList = [...defaults];
     const availableKey = availableList.join("\u0000");
     const defaultsKey = defaultsList.join("\u0000");
+    const configKey = [tableId, projectId ?? "", availableKey, defaultsKey].join("\u0001");
+    if (configuredKey.current === configKey) return;
+    configuredKey.current = configKey;
     const request = ++requestId.current;
-    setState((previous) => {
-      if (previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey) return previous;
-      return {
-        tableId, projectId, availableKey, defaultsKey, available: availableList, defaults: defaultsList,
-        visible: readColumnPrefs(tableId, availableList, defaultsList),
-      };
-    });
-    if (!projectId || !api.uiState) return;
-    void api.uiState.get(projectId).then((saved) => {
+    const fallback = () => readColumnPrefs(tableId, availableList, defaultsList);
+    const base = { tableId, projectId, availableKey, defaultsKey, available: availableList, defaults: defaultsList };
+    setState({ ...base, visible: fallback() });
+    const uiState = api.uiState;
+    if (!projectId || !uiState) return;
+    void uiState.get(projectId).then((saved) => {
       if (request !== requestId.current) return;
       const stored = saved.columns[tableId];
-      if (!stored) return;
-      const allowed = new Set(availableList);
-      const visible = [...new Set(stored.filter((id) => allowed.has(id)))];
+      const visible = stored === undefined ? fallback() : normalizeColumnPrefs(stored, availableList, defaultsList);
       setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey
         ? { ...previous, visible }
         : previous);
-    }).catch(() => undefined);
+      if (stored === undefined) void uiState.set(projectId, { columns: { [tableId]: visible } }).catch(() => undefined);
+    }).catch(() => {
+      if (request !== requestId.current) return;
+      setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey
+        ? { ...previous, visible: fallback() }
+        : previous);
+    });
   }, [projectId, tableId]);
 
   const toggle = useCallback((id: string) => {
@@ -107,8 +117,9 @@ export function useColumnPrefs(tableId: string) {
     requestId.current += 1;
     const visible = current.visible ?? current.defaults;
     const next = visible.includes(id) ? visible.filter((item) => item !== id) : [...visible, id];
-    if (projectId && api.uiState) {
-      void api.uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
+    const uiState = api.uiState;
+    if (projectId && uiState) {
+      void uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
     } else writeColumnPrefs(tableId, next);
     setState({ ...current, visible: next });
   }, [current, projectId, tableId]);
@@ -117,8 +128,9 @@ export function useColumnPrefs(tableId: string) {
     if (!current) return;
     requestId.current += 1;
     const next = [...current.defaults];
-    if (projectId && api.uiState) {
-      void api.uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
+    const uiState = api.uiState;
+    if (projectId && uiState) {
+      void uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
     } else writeColumnPrefs(tableId, next);
     setState({ ...current, visible: next });
   }, [current, projectId, tableId]);

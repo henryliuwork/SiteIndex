@@ -181,3 +181,4 @@ export function ContentPage() {
     </DetailPanel>
   </div>;
 }
+import "./content/page.css";

@@ -341,9 +341,6 @@ const tagNamesByProject: Record<MockProjectId, Set<string>> = {
   kingsyard: new Set(productsByProject.kingsyard.flatMap((product) => product.tags)),
   riverstone: new Set(productsByProject.riverstone.flatMap((product) => product.tags)),
 };
-const uiStates: Record<MockProjectId, ProjectUiState> = {
-  kingsyard: { columns: {}, page_sizes: {} }, riverstone: { columns: {}, page_sizes: {} },
-};
 for (const projectId of ["kingsyard", "riverstone"] as const) {
   for (const [index, record] of recordsByProject[projectId].entries()) {
     if ((index === 3 || index === 4) && record.image_url) manualImages.set(projectId + ":" + record.sku, "https://mcusercontent.com/siteindex/demo/" + record.sku + ".jpg");
@@ -612,15 +609,19 @@ export function createMockApi(): SiteIndexApi {
   const api: SiteIndexApi = {
     app: { version: () => reply("0.1.0-mock"), platform: () => reply("win32") },
     uiState: {
-      get: (id) => reply(() => uiStates[id] ?? (uiStates[id] = { columns: {}, page_sizes: {} })),
+      get: (id) => reply(() => {
+        const key = projectKey(id);
+        return clone(uiStates[key] ?? (uiStates[key] = { columns: {}, page_sizes: {} }));
+      }),
       set: (id, patch) => reply(() => {
-        const current = uiStates[id] ?? { columns: {}, page_sizes: {} };
+        const key = projectKey(id);
+        const current = uiStates[key] ?? { columns: {}, page_sizes: {} };
         const next: ProjectUiState = {
-          columns: { ...current.columns, ...Object.fromEntries(Object.entries(patch.columns ?? {}).map(([key, value]) => [key, [...new Set(value)]])) },
-          page_sizes: { ...current.page_sizes, ...patch.page_sizes },
+          columns: { ...current.columns, ...clone(patch.columns ?? {}) },
+          page_sizes: { ...current.page_sizes, ...clone(patch.page_sizes ?? {}) },
         };
-        uiStates[id] = next;
-        return next;
+        uiStates[key] = next;
+        return clone(next);
       }),
     },
     settings: {
@@ -635,17 +636,6 @@ export function createMockApi(): SiteIndexApi {
       cliStatus: () => reply<CliStatus>({ installed: false, path: null }),
       installCli: () => reply<CliStatus>({ installed: true, path: "C:/Users/Developer/.codex/skills/siteindex" }),
       chooseDirectory: (defaultPath) => reply(defaultPath ?? "C:/SiteIndex/Projects"),
-    },
-    uiState: {
-      get: (id) => reply(() => clone(uiStates[projectKey(id)])),
-      set: (id, patch) => reply(() => {
-        const key = projectKey(id);
-        uiStates[key] = {
-          columns: { ...uiStates[key].columns, ...clone(patch.columns ?? {}) },
-          page_sizes: { ...uiStates[key].page_sizes, ...clone(patch.page_sizes ?? {}) },
-        };
-        return clone(uiStates[key]);
-      }),
     },
     projects: {
       list: () => reply(() => projectIds.map((id) => projectSummaries[id])),

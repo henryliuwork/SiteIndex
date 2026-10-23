@@ -302,3 +302,4 @@ export function InventoryPage() {
     </div>
   );
 }
+import "./inventory/page.css";

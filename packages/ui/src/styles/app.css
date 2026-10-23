@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "./tokens.css";
 @import "./components.css";
-@import "./pages.css";
+@import "./common.css";
 
 :root {
   font-family: var(--font-sans);

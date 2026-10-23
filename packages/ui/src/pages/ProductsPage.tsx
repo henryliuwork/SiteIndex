@@ -265,3 +265,4 @@ export function ProductsPage() {
     <ConfirmDialog open={Boolean(deleteTag)} onOpenChange={(open) => { if (!open) setDeleteTag(null); }} title="删除标签？" description={deleteTag ? "将从所有“" + deleteTag + "”产品中移除该标签。" : "删除标签后无法恢复。"} confirmLabel="删除标签" tone="danger" onConfirm={removeManagedTag} />
   </div>;
 }
+import "./products/page.css";
