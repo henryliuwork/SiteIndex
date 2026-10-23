@@ -9,6 +9,8 @@ export { atomicWrite } from "./io/atomic-write";
 export { readCsv, writeCsv } from "./io/csv";
 export { compareKeys } from "./io/compare";
 export { readJsonl, writeJsonl } from "./io/jsonl";
+export { deleteLedger, upsertLedger } from "./ledger";
+export type { LedgerKey, LedgerMutationOptions, LedgerMutationResult, LedgerName } from "./ledger";
 export { assertRunner, CoreIOError, findConflictCopies, isConflictCopy, readRunner, withLock, writeRunner } from "./io/runner-lock";
 export { applyFeedOverrides, FeedError, parseFeed, readFeeds, toSnapshot, writeSnapshot } from "./crawl/gmc-feed";
 export type { FeedItem, FeedSiteConfig, FeedSnapshot, SnapshotResult, StockStatus } from "./crawl/gmc-feed";
