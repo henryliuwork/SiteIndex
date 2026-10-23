@@ -9,6 +9,7 @@ import { createJobManager } from "./job-manager.js";
 import { showJobNotification } from "./notifications.js";
 import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
 import { parseRunJobArguments } from "./run-job-args.js";
+import { createDesktopIntegrations } from "./desktop-integrations.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
 
@@ -53,6 +54,11 @@ if (!hasSingleInstanceLock) {
       emitFinished: (result) => sendToWindows("si:jobs.onFinished", result),
       notify: showJobNotification,
     });
+    const desktopIntegrations = createDesktopIntegrations({
+      executablePath: app.getPath("exe"),
+      resourcesDirectory: process.resourcesPath,
+      isPackaged: app.isPackaged,
+    });
     app.on("before-quit", (event) => {
       if ((jobs.activeCount === 0 && !projectCatalog) || isShuttingDown) return;
       event.preventDefault();
@@ -70,10 +76,7 @@ if (!hasSingleInstanceLock) {
         return;
       }
       try {
-        const result = await jobs.runAndWait(
-          { projectPath: resolve(args.projectPath), job: args.job },
-          "schedule",
-        );
+        const result = await jobs.runAndWait({ projectPath: resolve(args.projectPath), job: args.job }, "schedule");
         app.exit(result.exitCode);
       } catch (error) {
         process.stderr.write(`SiteIndex Job 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
@@ -130,6 +133,7 @@ if (!hasSingleInstanceLock) {
         if (projectsChanged) await catalog.refresh(currentSettings);
       },
       jobs,
+      desktopIntegrations,
     );
 
     registerContentSecurityPolicy();

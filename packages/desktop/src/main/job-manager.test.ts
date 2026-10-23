@@ -15,7 +15,7 @@ function settings(): AppSettings {
     projects_root: "",
     extra_projects: [],
     cache_dir: "C:/SiteIndex/cache",
-    browser: { channel: "msedge", executable_path: null },
+    browser: { channel: "msedge", executable_path: "C:/Browser/msedge.exe" },
     notify: { on_failure: true, on_success: false, oos_threshold: 0.12, dingtalk_webhook: null },
     skill_platforms: [],
     conflict_patterns: [],
@@ -81,6 +81,7 @@ describe("desktop job manager", () => {
 
     const start = manager.run({ projectPath, job: "daily" });
     const { runId } = await start;
+    expect(child.messages[0]).toMatchObject({ context: { browserPath: "C:/Browser/msedge.exe" } });
     await expect(manager.run({ projectPath, job: "weekly" })).rejects.toMatchObject({ code: "LOCKED" });
     expect(runId).not.toBe("2026-10-23-daily");
     expect(manager.running(path.basename(projectPath) as ProjectId)).toEqual({ runId, job: "daily" });
