@@ -198,8 +198,8 @@ export function RunsPage() {
     finally { setClaimingRunner(false); }
   };
 
-  if (projectQuery.isLoading || scheduleQuery.isLoading || runnerQuery.isLoading || historyQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载运行与计划…</div>;
   if (projectQuery.isError || scheduleQuery.isError || runnerQuery.isError || historyQuery.isError || !projectQuery.data || !scheduleQuery.data || !runnerQuery.data) return <div className="si-page-error" role="alert">运行与计划加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void scheduleQuery.refetch(); void runnerQuery.refetch(); void historyQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading || scheduleQuery.isLoading || runnerQuery.isLoading || historyQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载运行与计划…</div>;
   const project = projectQuery.data.summary;
   const scheduleState = scheduleQuery.data;
   const runnerState: RunnerState = runnerQuery.data;
