@@ -21,6 +21,10 @@
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
+input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
 .si-button:disabled { cursor: not-allowed; opacity: 0.4; }
 .si-button-primary { border-color: var(--color-brand); background: var(--color-brand); color: #fff; }
 .si-button-primary:hover:not(:disabled) { border-color: var(--color-brand-strong); background: var(--color-brand-strong); color: #fff; }

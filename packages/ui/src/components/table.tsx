@@ -164,6 +164,7 @@ export function DataTable<T, F = Record<string, unknown>>({
                       }}
                       onKeyDown={(event) => {
                         if (onRowClick && (event.key === "Enter" || event.key === " ")) {
+                          if ((event.target as HTMLElement).closest("button,a,input,select,textarea,[contenteditable=true]")) return;
                           event.preventDefault();
                           setSelectedRowId(row.id);
                           onRowClick(row.original);

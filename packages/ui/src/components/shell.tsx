@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Activity, Boxes, FolderKanban, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 
@@ -33,9 +33,17 @@ interface SideNavProps {
 }
 
 export function SideNav({ projects = [], runnerName, runnerProject }: SideNavProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth <= 1100);
   const { pathname } = useLocation();
   const navClass = ({ isActive }: { isActive: boolean }): string => "si-nav-link" + (isActive ? " active" : "");
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1100px)");
+    const updateCollapsed = () => setCollapsed(media.matches);
+    updateCollapsed();
+    media.addEventListener("change", updateCollapsed);
+    return () => media.removeEventListener("change", updateCollapsed);
+  }, []);
 
   return (
     <aside className={"si-side-nav" + (collapsed ? " is-collapsed" : "")} aria-label="主导航">
