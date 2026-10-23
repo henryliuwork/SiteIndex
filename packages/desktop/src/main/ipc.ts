@@ -16,6 +16,7 @@ import type {
 } from "@siteindex/shared";
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import type { DesktopIntegrations } from "./desktop-integrations.js";
+import { createDesktopIntegrationIpcHandlers } from "./desktop-integrations-ipc.js";
 import type { JobManager } from "./job-manager.js";
 import { isProjectInsideRoot, type ProjectCatalog } from "./project-catalog.js";
 import type { SettingsStore } from "./settings-store.js";
@@ -167,9 +168,7 @@ export function registerIpcHandlers(
       await settingsChanged(updated);
       return updated;
     },
-    "settings.detectBrowser": async () => desktopIntegrations.detectBrowser((await settings.get()).browser),
-    "settings.cliStatus": () => desktopIntegrations.cliStatus(),
-    "settings.installCli": () => desktopIntegrations.installCli(),
+    ...createDesktopIntegrationIpcHandlers(settings, desktopIntegrations),
     "settings.chooseDirectory": (defaultPath) =>
       chooseDirectory(typeof defaultPath === "string" ? defaultPath : undefined),
     "uiState.get": (id) => uiState.get(id as ProjectId),
