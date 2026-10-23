@@ -243,7 +243,8 @@ function buildElevatedScript(operations: WindowsTaskOperation[], resultPath: str
   const operationsBase64 = Buffer.from(JSON.stringify(serializedOperations), "utf8").toString("base64");
   return `param([string]$ResultPath)
 $ErrorActionPreference = 'Stop'
-$operations = @([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${operationsBase64}')) | ConvertFrom-Json)
+$operationsJson = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${operationsBase64}'))
+$operations = ConvertFrom-Json -InputObject $operationsJson
 $results = @()
 for ($index = 0; $index -lt $operations.Count; $index++) {
   $operation = $operations[$index]
@@ -254,9 +255,9 @@ for ($index = 0; $index -lt $operations.Count; $index++) {
     if ($operation.action -eq 'create') {
       $xmlPath = Join-Path $env:TEMP ('siteindex-task-' + [Guid]::NewGuid().ToString('N') + '.xml')
       [IO.File]::WriteAllBytes($xmlPath, [Convert]::FromBase64String($operation.xmlBase64))
-      $output = (& schtasks.exe /Create /TN $operation.name /XML $xmlPath /F 2>&1 | Out-String)
+      $output = (& schtasks.exe /Create /TN "$($operation.name)" /XML "$xmlPath" /F 2>&1 | Out-String)
     } else {
-      $output = (& schtasks.exe /Delete /TN $operation.name /F 2>&1 | Out-String)
+      $output = (& schtasks.exe /Delete /TN "$($operation.name)" /F 2>&1 | Out-String)
     }
     $code = $LASTEXITCODE
     $missing = $output -match '0x80070002|cannot find the file specified|cannot find the path specified|does not exist|not found|找不到|不存在'

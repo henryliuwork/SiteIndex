@@ -141,7 +141,7 @@ describe("Windows schedule registration", () => {
     const beforeElevation = vi.fn(async () => undefined);
     const elevated = vi.fn(async (scriptPath: string, resultPath: string) => {
       script = await readFile(scriptPath, "utf8");
-      const encodedOperations = /FromBase64String\('([^']+)'\)\) \| ConvertFrom-Json/.exec(script)?.[1];
+      const encodedOperations = /FromBase64String\('([^']+)'\)\)/.exec(script)?.[1];
       const operations = JSON.parse(Buffer.from(encodedOperations!, "base64").toString("utf8")) as {
         action: string;
         name: string;
@@ -180,7 +180,10 @@ describe("Windows schedule registration", () => {
     expect(beforeElevation).toHaveBeenCalledOnce();
     expect(elevated).toHaveBeenCalledOnce();
     expect(script.startsWith("\uFEFF")).toBe(true);
-    const encodedOperations = /FromBase64String\('([^']+)'\)\) \| ConvertFrom-Json/.exec(script)?.[1];
+    const encodedOperations = /FromBase64String\('([^']+)'\)\)/.exec(script)?.[1];
+    expect(script).toContain("$operations = ConvertFrom-Json -InputObject $operationsJson");
+    expect(script).toContain('for ($index = 0; $index -lt $operations.Count; $index++)');
+    expect(script).toContain('/TN "$($operation.name)"');
     expect(encodedOperations).toBeTruthy();
     const operations = JSON.parse(Buffer.from(encodedOperations!, "base64").toString("utf8")) as {
       action: string;
