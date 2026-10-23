@@ -6,6 +6,7 @@ import type { ScheduleRuntimeStatus, SystemScheduler } from "../scheduler/schedu
 import type { SettingsStore } from "../settings-store.js";
 import type { UiStateStore } from "../ui-state-store.js";
 import type { SkillService } from "../skill-service.js";
+import type { DesktopIntegrations } from "../desktop-integrations.js";
 
 export interface IpcDependencies {
   settings: SettingsStore;
@@ -18,6 +19,7 @@ export interface IpcDependencies {
   reconcileSchedules: (allowElevation: boolean) => Promise<ScheduleRuntimeStatus>;
   onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>;
   skills: SkillService;
+  desktopIntegrations: DesktopIntegrations;
 }
 
 export interface IpcContext extends IpcDependencies {

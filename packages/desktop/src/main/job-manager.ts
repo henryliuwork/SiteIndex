@@ -37,6 +37,7 @@ export interface UtilityProcessLike {
 export interface JobManagerOptions {
   workerPath: string;
   getSettings(): Promise<AppSettings>;
+  getBrowserExecutablePath?(settings: AppSettings): Promise<string | null>;
   resolveProject(id: ProjectId): string | Promise<string>;
   fork(modulePath: string): UtilityProcessLike;
   emitProgress(progress: JobProgress): void;
@@ -51,6 +52,7 @@ interface JobEntry {
   request: Omit<JobRequest, "trigger">;
   trigger: JobTrigger;
   settings: AppSettings;
+  browserPath: string | null;
   child: UtilityProcessLike;
   started: Promise<string>;
   resolveStarted(runId: string): void;
@@ -230,6 +232,7 @@ export function createJobManager(options: JobManagerOptions) {
           deviceId: entry.settings.device_id,
           deviceName: entry.settings.device_name,
           cacheDir: entry.settings.cache_dir,
+          browserPath: entry.browserPath,
         },
       };
       entry.child.postMessage(workerMessage);
@@ -275,6 +278,9 @@ export function createJobManager(options: JobManagerOptions) {
     const key = projectKey(projectPath);
     if (entriesByProject.has(key)) throw jobError("LOCKED", "此项目已有任务正在运行。", projectPath);
     const settings = await options.getSettings();
+    const browserPath = options.getBrowserExecutablePath
+      ? await options.getBrowserExecutablePath(settings)
+      : settings.browser.executable_path;
     const child = options.fork(options.workerPath);
 
     let resolveStarted!: (runId: string) => void;
@@ -294,6 +300,7 @@ export function createJobManager(options: JobManagerOptions) {
       request,
       trigger,
       settings,
+      browserPath,
       child,
       started,
       resolveStarted,

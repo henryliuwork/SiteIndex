@@ -6,6 +6,7 @@ export interface JobWorkerContext {
   deviceId: string;
   deviceName: string;
   cacheDir: string;
+  browserPath?: string | null;
 }
 
 export interface JobWorkerStartMessage {
