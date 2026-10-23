@@ -184,7 +184,7 @@ export function scheduledOccurrenceKey(job: ScheduledJob, config: ScheduleConfig
 
 function execute(file: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { windowsHide: true, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+    execFile(file, args, { windowsHide: true, maxBuffer: 1024 * 1024, encoding: "utf8" }, (error, stdout) => {
       if (error) {
         const detail = [stdout, (error as Error & { stderr?: string }).stderr].filter(Boolean).join("\n");
         const code = (error as Error & { code?: number | string }).code;
