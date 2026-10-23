@@ -52,7 +52,7 @@
 - **验收**：`fixtures/invalid/*` 退出码一致、每条期望错误都有对应项；人为损坏 links.jsonl → repair → 恢复
 
 ### A7 README、台账、分类、文件夹
-- [ ] README 区块解析/替换（`<!-- siteindex:auto:{id} -->`），6 个自动区块 + 用户区块保留
+- [x] README 区块解析/替换（`<!-- siteindex:auto:{id} -->`），6 个自动区块 + 用户区块保留
 - [x] 台账 upsert/delete（keywords、sku_media、sku_tags、edm_campaigns、outreach），含规范化（大小写、www）
 - [x] categories preview/apply（返回 `CategoryPreview`）
 - [x] folders：create/describe（写 `_about.md`、`site.json.workspace_folders`，刷新 README folder-map），默认文件夹不可删（删除保护由 Desktop C 实现）

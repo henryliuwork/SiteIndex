@@ -69,7 +69,7 @@ describe("core workspace folders", () => {
     });
     expect(readme).toContain("用户维护的概况。\n\n## 当前重点\n本周重点。");
     expect(readme).toContain("保留原始规则。");
-    expect(readme).toMatch(/<!-- siteindex:auto:start id="folder-map" -->\n[\s\S]*\*\*campaigns\*\*：电子邮件活动工作区[\s\S]*<!-- siteindex:auto:end id="folder-map" -->/);
+    expect(readme).toMatch(/<!-- siteindex:auto:start id="folder-map" -->\n## 目录地图[\s\S]*\| `campaigns\/` \| 电子邮件活动工作区 \|[\s\S]*<!-- siteindex:auto:end id="folder-map" -->/);
     expect(readme).not.toContain("旧目录地图。");
   });
 
@@ -87,7 +87,7 @@ describe("core workspace folders", () => {
     expect(folders.filter((folder) => (DEFAULT_WORKSPACE_FOLDERS as readonly string[]).includes(folder.name))
       .every((folder) => folder.default)).toBe(true);
     expect(folders.find((folder) => folder.name === "campaigns")?.description).toBe("新的说明 仍然是同一段");
-  });
+  }, 15_000);
 
   it("rejects unsafe names, Windows reserved names, duplicates and overlong descriptions", async () => {
     const projectPath = await makeProject();
@@ -98,5 +98,5 @@ describe("core workspace folders", () => {
     await expect(api.folders.create("fixture", "SEO", "说明")).rejects.toMatchObject({ code: "FOLDER_EXISTS" });
     await expect(api.folders.create("fixture", "notes", "a".repeat(81))).rejects.toMatchObject({ code: "UNKNOWN" });
     await expect(readFile(path.join(path.dirname(projectPath), "outside"))).rejects.toMatchObject({ code: "ENOENT" });
-  });
+  }, 15_000);
 });

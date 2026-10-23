@@ -81,6 +81,12 @@ import { createProjectFiles } from "../projects/create";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
+import {
+  buildReadmeAutoContent,
+  parseReadmeAutoBlocks,
+  README_AUTO_BLOCK_TITLES,
+  replaceReadmeAutoBlocks,
+} from "../readme";
 
 export interface CoreServiceContext {
   resolveProject(id: ProjectId): string;
@@ -346,11 +352,16 @@ function paginate<T extends object>(
     : [...rows];
   const field = query.sort?.field ?? defaultSortField;
   const direction = query.sort?.dir === "desc" ? -1 : 1;
-  const sorted = [...filtered].sort((left, right) => {
+  const compareRows = (left: T, right: T) => {
     const a = (left as Record<string, unknown>)[field];
     const b = (right as Record<string, unknown>)[field];
     return compareValue(a, b) * direction || codeUnitCompare(defaultKey(left), defaultKey(right));
-  });
+  };
+  let alreadySorted = !query.sort;
+  for (let index = 1; alreadySorted && index < filtered.length; index += 1) {
+    if (compareRows(filtered[index - 1]!, filtered[index]!) > 0) alreadySorted = false;
+  }
+  const sorted = alreadySorted ? filtered : [...filtered].sort(compareRows);
   if (query.pageSize === 0) return { rows: sorted, total: sorted.length };
   const page = Math.max(1, Math.floor(query.page || 1));
   const pageSize = Math.max(1, Math.floor(query.pageSize || 20));
@@ -813,39 +824,44 @@ function applyCategoryConfig(skus: SkuRecord[], config: CategoriesConfig): SkuRe
   });
 }
 
-function readmeAutoContent(snapshot: ProjectSnapshot, folders: readonly FolderRow[]): Record<string, string> {
-  const activeSkus = snapshot.skus.filter((sku) => sku.status === "active").length;
-  const activeProducts = snapshot.products.filter((product) => product.status === "active").length;
-  const latestRuns = [...snapshot.runs].sort((a, b) => codeUnitCompare(b.started_at, a.started_at)).slice(0, 8);
-  return {
-    "index-summary": [
-      `- 网站：${snapshot.config.domain}（${snapshot.config.platform}）`,
-      `- 在售产品：${activeProducts}；在售 SKU：${activeSkus}`,
-      `- 数据日期：${snapshot.asOf}`,
-    ].join("\n"),
-    "folder-map": folders.length ? folders.map((folder) => `- **${folder.name}**：${folder.description}`).join("\n") : "待创建工作区文件夹。",
-    "task-routing": "- 库存与产品数据：读取 `index/views/`。\n- SEO 与内容数据：读取 `index/seo/` 和 `index/content/`。\n- 内容、EDM、设计成果：写入对应工作区文件夹。",
-    "data-guide": "- `index/` 由 SiteIndex 维护；台账通过软件或 `siteindex ledger` 修改。\n- 数据结构与字段以项目配置和 SiteIndex 数据规范为准。",
-    "design-summary": snapshot.config.platform ? `- 平台：${snapshot.config.platform}\n- 设计数据：${snapshot.config.domain}` : "尚未生成设计数据。",
-    changelog: latestRuns.length ? latestRuns.map((run) => `- ${run.started_at.slice(0, 10)} · ${run.job} · ${run.status}`).join("\n") : "暂无同步记录。",
-  };
+async function readmeAutoContent(snapshot: ProjectSnapshot, folders: readonly FolderRow[]) {
+  const knownFolders = new Set(folders.map((folder) => folder.name.toLowerCase()));
+  const agentFolder = PATHS.skillsDir.split("/")[0]!;
+  const systemFolders = [
+    { name: PATHS.index, description: "网站数据库（SiteIndex 维护，见下方数据指南）" },
+    { name: agentFolder, description: "agent skills（SiteIndex 分发）" },
+  ].filter((folder) => !knownFolders.has(folder.name.toLowerCase()));
+  const systemFolderRows = await Promise.all(systemFolders.map(async (folder) => ({
+    ...await describeFolder(snapshot.projectPath, folder.name, true),
+    description: folder.description,
+  })));
+  const designTokens = await readJsonAs<DesignTokens | null>(snapshot.projectPath, PATHS.designTokens, null);
+  return buildReadmeAutoContent({
+    site: snapshot.config,
+    asOf: snapshot.asOf,
+    activeSkus: snapshot.skus.filter((sku) => sku.status === "active").length,
+    activeProducts: snapshot.products.filter((product) => product.status === "active").length,
+    categories: snapshot.categories.length,
+    blogPosts: snapshot.blogIndex.length,
+    dailySummary: snapshot.dailySummary,
+    events: snapshot.events,
+    folders: [...folders, ...systemFolderRows],
+    designTokens,
+    runs: snapshot.runs,
+  });
 }
 
 async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot): Promise<void> {
-  let markdown = await readFile(path.join(projectPath, PATHS.readme), "utf8").catch(() => "# 项目说明\n");
-  const folders = await listProjectFolders(projectPath, snapshot.config);
-  const blocks = readmeAutoContent(snapshot, folders);
-  const disabled = new Set<string>(snapshot.config.readme?.disabled_blocks ?? []);
-  for (const [id, body] of Object.entries(blocks)) {
-    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const blockPattern = new RegExp(`(<!-- siteindex:auto:start id=\"${escaped}\" -->)[\\s\\S]*?(<!-- siteindex:auto:end id=\"${escaped}\" -->)`, "m");
-    const match = blockPattern.exec(markdown);
-    if (match) {
-      markdown = markdown.replace(blockPattern, `${match[1]}\n${body}\n${match[2]}`);
-    } else if (!disabled.has(id)) {
-      markdown = `${markdown.trimEnd()}\n\n<!-- siteindex:auto:start id=\"${id}\" -->\n${body}\n<!-- siteindex:auto:end id=\"${id}\" -->\n`;
-    }
+  let markdown: string;
+  try { markdown = await readFile(path.join(projectPath, PATHS.readme), "utf8"); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    markdown = "# 项目说明\n";
   }
+  const folders = await listProjectFolders(projectPath, snapshot.config);
+  const blocks = await readmeAutoContent(snapshot, folders);
+  const disabled = new Set<string>(snapshot.config.readme?.disabled_blocks ?? []);
+  markdown = replaceReadmeAutoBlocks(markdown, blocks, disabled);
   await atomicWrite(path.join(projectPath, PATHS.readme), markdown);
 }
 
@@ -1493,13 +1509,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const snapshot = await load(projectPath);
       const markdown = await readFile(path.join(projectPath, PATHS.readme), "utf8").catch(() => "");
       const updatedAt = await stat(path.join(projectPath, PATHS.readme)).then((value) => value.mtime.toISOString()).catch(() => null);
-      const auto_blocks = [...markdown.matchAll(/<!-- siteindex:auto:start id="([^"]+)" -->([\s\S]*?)<!-- siteindex:auto:end id="\1" -->/g)]
-        .map((match) => ({
-          id: match[1]!,
-          title: ({
-            "index-summary": "数据概况", "folder-map": "工作区目录", "task-routing": "任务路由",
-            "data-guide": "数据指南", "design-summary": "设计摘要", changelog: "最近变更",
-          } as Record<string, string>)[match[1]!] ?? match[1]!,
+      const auto_blocks = parseReadmeAutoBlocks(markdown)
+        .map(({ id }) => ({
+          id,
+          title: (README_AUTO_BLOCK_TITLES as Record<string, string>)[id] ?? id,
           updated_at: updatedAt,
           schedule: Object.entries(snapshot.config.schedule)
             .filter(([, value]) => "enabled" in value && value.enabled)

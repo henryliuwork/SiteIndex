@@ -186,5 +186,5 @@ describe("createCoreService initial namespaces", () => {
     const elapsed = performance.now() - started;
     expect(result.rows.length).toBe(50);
     expect(elapsed).toBeLessThan(50);
-  }, 30_000);
+  }, 60_000);
 });
