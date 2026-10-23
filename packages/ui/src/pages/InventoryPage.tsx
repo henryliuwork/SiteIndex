@@ -278,6 +278,7 @@ export function InventoryPage() {
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
       <DataTable
         tableId="inventory.skus"
+        scopeId={id}
         rows={skuQuery.data?.rows ?? []}
         total={skuQuery.data?.total ?? 0}
         columns={columns}
@@ -301,3 +302,4 @@ export function InventoryPage() {
     </div>
   );
 }
+import "./inventory/page.css";

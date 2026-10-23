@@ -10,9 +10,6 @@ export default defineConfig({
     build: { rollupOptions: { input: resolve(desktopRoot, "src/main/index.ts") } },
   },
   preload: {
-    define: {
-      __SITEINDEX_MOCK_UI__: JSON.stringify(process.env.VITE_MOCK === "1"),
-    },
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {

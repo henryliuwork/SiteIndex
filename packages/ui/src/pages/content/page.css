@@ -1,0 +1,109 @@
+.si-content-page {
+gap: 16px;
+}
+
+.si-content-kpis {
+display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px;
+}
+
+.si-content-kpis .si-kpi-card {
+min-height: 88px; padding: 11px 13px;
+}
+
+.si-content-toolbar {
+display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 10px;
+}
+
+.si-content-toolbar > .si-search-input {
+width: min(280px, 100%);
+}
+
+.si-content-filter-row {
+display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+
+.si-content-total {
+margin-left: auto; color: var(--color-muted); font-size: 11px; white-space: nowrap;
+}
+
+.si-content-page .si-data-table {
+border-radius: 8px;
+}
+
+.si-content-title-cell,.si-content-keyword-cell {
+display: grid; min-width: 190px; gap: 3px;
+}
+
+.si-content-title-cell strong,.si-content-keyword-cell strong {
+max-width: 390px; overflow: hidden; color: var(--color-ink); font-size: 12px; font-weight: 600; text-overflow: ellipsis;
+}
+
+.si-content-title-cell code,.si-content-date,.si-content-url {
+color: var(--color-muted); font-family: var(--font-mono); font-size: 10px;
+}
+
+.si-content-keyword-cell small {
+color: var(--color-muted); font-size: 10px;
+}
+
+.si-content-url {
+display: inline-block; max-width: 270px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
+}
+
+.si-content-data-note {
+margin: -5px 0 0; color: var(--color-muted); font-size: 11px;
+}
+
+.si-content-data-note code {
+color: var(--color-ink-2); font-family: var(--font-mono); font-size: 10px;
+}
+
+.si-content-detail {
+display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 18px;
+}
+
+.si-content-detail>div {
+display: grid; gap: 4px; align-content: center; min-height: 54px; padding: 8px 0; border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: 12px; overflow-wrap: anywhere;
+}
+
+.si-content-detail>div>span {
+color: var(--color-muted); font-size: 10px;
+}
+
+.si-content-detail>div.full,.si-content-detail>.si-button {
+grid-column: 1/-1;
+}
+
+.si-content-detail>.si-button {
+justify-self: start; margin-top: 12px;
+}
+
+@media (max-width: 1280px) {
+.si-content-kpis {
+grid-template-columns: repeat(3,minmax(0,1fr));
+}
+}
+
+@media (max-width: 900px) {
+.si-content-kpis {
+grid-template-columns: repeat(2,minmax(0,1fr));
+}
+}
+
+@media (max-width: 760px) {
+.si-content-toolbar {
+align-items: stretch;
+}
+}
+
+@media (max-width: 760px) {
+.si-content-toolbar>.si-search-input {
+width: 100%;
+}
+}
+
+@media (max-width: 760px) {
+.si-content-total {
+margin-left: 0;
+}
+}

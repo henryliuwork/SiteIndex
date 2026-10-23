@@ -1,4 +1,4 @@
-import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
+import { access, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -629,10 +629,13 @@ async function describeFolder(projectPath: string, name: string, isDefault: bool
   let modifiedAt: string | null = null;
   let files = 0;
   try {
-    const info = await stat(folderPath);
+    const info = await lstat(folderPath);
+    if (info.isSymbolicLink() || !info.isDirectory()) return { name, description, default: isDefault, files, modified_at: modifiedAt };
     modifiedAt = info.mtime.toISOString();
     const aboutPath = path.join(folderPath, PATHS.aboutFile);
     try {
+      const aboutInfo = await lstat(aboutPath);
+      if (aboutInfo.isSymbolicLink() || !aboutInfo.isFile()) throw new Error("_about.md is not a regular file");
       const about = (await readFile(aboutPath, "utf8")).replace(/<!--[\s\S]*?-->/g, "");
       const paragraph = about.trim().split(/\r?\n\s*\r?\n/, 1)[0]?.trim();
       if (paragraph) description = paragraph.replace(/\r?\n/g, " ").trim();
@@ -784,11 +787,48 @@ function setFirstParagraph(markdown: string, description: string): string {
   return `${lines.join("\n").replace(/\n*$/, "\n")}`;
 }
 
+function folderNameKey(name: string): string {
+  return name.toLowerCase();
+}
+
+function normalizeFolderName(name: string): string {
+  const folderName = name.trim();
+  const windowsDeviceName = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?$/i;
+  if (!folderName || folderName === "." || folderName === ".." ||
+    /[\\/<>:"|?*\u0000-\u001f\u007f]/u.test(folderName) || folderName.endsWith(".") ||
+    windowsDeviceName.test(folderName) || path.isAbsolute(folderName)) {
+    throw siteError("UNKNOWN", "文件夹名称无效。", name);
+  }
+  return folderName;
+}
+
+function normalizeFolderDescription(description: string): string {
+  const normalized = description.trim().replace(/\s+/gu, " ") || "待补充说明";
+  if ([...normalized].length > 80) throw siteError("UNKNOWN", "文件夹说明不能超过 80 个字符。", description);
+  return normalized;
+}
+
+function folderPathWithinProject(projectPath: string, folderName: string): string {
+  const root = path.resolve(projectPath);
+  const folderPath = path.resolve(root, folderName);
+  const relative = path.relative(root, folderPath);
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw siteError("PATH_OUTSIDE_PROJECT", "文件夹路径必须位于项目目录内。", folderName);
+  }
+  return folderPath;
+}
+
 export function createCoreService(ctx: CoreServiceContext): CoreService {
   const cache = new Map<string, Promise<ProjectSnapshot>>();
   const createdTags = new Map<string, Set<string>>();
   const resolve = (id: ProjectId) => path.resolve(ctx.resolveProject(id));
   const invalidate = (projectPath: string) => { cache.delete(path.resolve(projectPath)); };
+  const refreshReadmeAfterFolderChange = async (projectPath: string) => {
+    const result = await runJob({ projectPath, job: "readme", trigger: "manual" }, () => undefined);
+    if (result.status !== "ok") {
+      throw siteError("WRITE_FAILED", "文件夹已保存，但 README 目录地图刷新失败。", result.errors?.join("\n") || result.summary);
+    }
+  };
 
   const load = (projectPath: string): Promise<ProjectSnapshot> => {
     const key = path.resolve(projectPath);
@@ -1420,39 +1460,56 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     create: async (id, name, description) => {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
-      const folderName = name.trim();
-      if (!folderName || folderName === "." || folderName === ".." || /[\\/<>:"|?*\u0000-\u001f]/.test(folderName)) {
-        throw siteError("UNKNOWN", "文件夹名称无效。", name);
-      }
-      if (snapshot.config.workspace_folders.some((folder) => folder.name === folderName)) {
+      const folderName = normalizeFolderName(name);
+      const folderKey = folderNameKey(folderName);
+      const folderDescription = normalizeFolderDescription(description);
+      if (snapshot.config.workspace_folders.some((folder) => folderNameKey(folder.name) === folderKey)) {
         throw siteError("FOLDER_EXISTS", "工作区文件夹已存在。", folderName);
       }
-      const folderPath = path.join(projectPath, folderName);
+      const folderPath = folderPathWithinProject(projectPath, folderName);
+      if ((await readdir(projectPath)).some((entry) => folderNameKey(entry) === folderKey)) {
+        throw siteError("FOLDER_EXISTS", "项目目录中已存在同名文件或文件夹。", folderName);
+      }
+      let folderCreated = false;
+      let configWritten = false;
       try {
         await mkdir(folderPath, { recursive: false });
-        await atomicWrite(path.join(folderPath, PATHS.aboutFile), `${description.trim() || "待补充说明"}\n`);
+        folderCreated = true;
+        await atomicWrite(path.join(folderPath, PATHS.aboutFile), `${folderDescription}\n`);
         const config: SiteConfig = { ...snapshot.config, workspace_folders: [...snapshot.config.workspace_folders, { name: folderName, default: false }] };
         await atomicWrite(path.join(projectPath, PATHS.site), `${JSON.stringify(config, null, 2)}\n`);
+        configWritten = true;
       } catch (error) {
+        if (folderCreated && !configWritten) await rm(folderPath, { recursive: true, force: true }).catch(() => undefined);
         if ((error as NodeJS.ErrnoException).code === "EEXIST") throw siteError("FOLDER_EXISTS", "目标文件夹已存在。", folderName);
         throw setError(error);
       }
       invalidate(projectPath);
-      await runJob({ projectPath, job: "readme", trigger: "manual" }, () => undefined);
+      await refreshReadmeAfterFolderChange(projectPath);
       return await listProjectFolders(projectPath, (await load(projectPath)).config);
     },
     describe: async (id, name, description) => {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
-      if (!snapshot.config.workspace_folders.some((folder) => folder.name === name)) throw siteError("PROJECT_NOT_FOUND", "找不到工作区文件夹。", name);
-      const folderPath = path.join(projectPath, name);
+      const folderName = normalizeFolderName(name);
+      const folder = snapshot.config.workspace_folders.find((row) => folderNameKey(row.name) === folderNameKey(folderName));
+      if (!folder) throw siteError("PROJECT_NOT_FOUND", "找不到工作区文件夹。", name);
+      const folderDescription = normalizeFolderDescription(description);
+      const folderPath = folderPathWithinProject(projectPath, folder.name);
       try {
-        const current = await readFile(path.join(folderPath, PATHS.aboutFile), "utf8").catch(() => "");
+        let folderInfo: Awaited<ReturnType<typeof lstat>> | undefined;
+        try { folderInfo = await lstat(folderPath); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+        if (folderInfo?.isSymbolicLink()) throw siteError("PATH_OUTSIDE_PROJECT", "不能修改指向项目外部的文件夹。", folder.name);
+        if (folderInfo && !folderInfo.isDirectory()) throw siteError("FOLDER_EXISTS", "工作区路径已存在，但不是文件夹。", folder.name);
         await mkdir(folderPath, { recursive: true });
-        await atomicWrite(path.join(folderPath, PATHS.aboutFile), setFirstParagraph(current, description));
+        let current = "";
+        try { current = await readFile(path.join(folderPath, PATHS.aboutFile), "utf8"); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+        await atomicWrite(path.join(folderPath, PATHS.aboutFile), setFirstParagraph(current, folderDescription));
       } catch (error) { throw setError(error); }
       invalidate(projectPath);
-      await runJob({ projectPath, job: "readme", trigger: "manual" }, () => undefined);
+      await refreshReadmeAfterFolderChange(projectPath);
       return await listProjectFolders(projectPath, (await load(projectPath)).config);
     },
   };
