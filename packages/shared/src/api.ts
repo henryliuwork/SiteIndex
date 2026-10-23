@@ -364,6 +364,10 @@ export interface SiteIndexApi {
     cliStatus(): Promise<CliStatus>;
     installCli(): Promise<CliStatus>;
     chooseDirectory(defaultPath?: string): Promise<string | null>;
+    /** 在不暴露 Webhook 内容的前提下发送一条通知测试消息。 */
+    sendTestNotification?(): Promise<void>;
+    /** 在系统文件管理器中打开应用日志目录。 */
+    openLogs?(): Promise<void>;
   };
   uiState?: {
     get(id: ProjectId): Promise<ProjectUiState>;
