@@ -31,7 +31,9 @@ type MockProjectId = "kingsyard" | "riverstone";
 const projectKey = (id: ProjectId): MockProjectId => id === "riverstone" ? "riverstone" : "kingsyard";
 const FIXED_TODAY = "2026-10-22";
 const clone = <T,>(value: T): T => value === undefined ? value : JSON.parse(JSON.stringify(value)) as T;
-const errorMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mock") === "error";
+const mockMode = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("mock") : null;
+const errorMode = mockMode === "error";
+const performanceMode = mockMode === "perf";
 const dateBefore = (days: number): string => {
   const date = new Date(FIXED_TODAY + "T12:00:00Z");
   date.setUTCDate(date.getUTCDate() - days);
@@ -77,7 +79,7 @@ const generatedDrafts: DraftRow[] = [
   { date: "2026-10-18", slug: "choose-a-squirrel-proof-feeder", folder: "内容/drafts", files: ["brief.md"], status: "brief" },
 ];
 const delay = async (): Promise<void> => {
-  await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
+  if (!performanceMode) await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
   if (errorMode) throw new Error("模拟接口错误：请移除地址中的 ?mock=error 后重试。");
 };
 const reply = async <T,>(value: T | (() => T)): Promise<T> => {
@@ -582,9 +584,10 @@ function selectRows<T, F = Record<string, unknown>>(
   source: readonly T[], query: ListQuery<F>, searchText: (row: T) => string,
   matches: (row: T, filters: F) => boolean = () => true,
 ): PageResult<T> {
+  const search = query.search?.trim().toLocaleLowerCase();
+  const filters = (query.filters ?? {}) as F;
   let rows = source.filter((row) => {
-    const search = query.search?.trim().toLocaleLowerCase();
-    return (!search || searchText(row).toLocaleLowerCase().includes(search)) && matches(row, (query.filters ?? {}) as F);
+    return (!search || searchText(row).toLocaleLowerCase().includes(search)) && matches(row, filters);
   });
   if (query.sort) {
     const field = query.sort.field;
