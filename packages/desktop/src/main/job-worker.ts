@@ -49,7 +49,10 @@ function isStartMessage(value: unknown): value is JobWorkerStartMessage {
     (value.request.trigger === "schedule" || value.request.trigger === "manual" || value.request.trigger === "cli") &&
     typeof value.context.deviceId === "string" &&
     typeof value.context.deviceName === "string" &&
-    typeof value.context.cacheDir === "string"
+    typeof value.context.cacheDir === "string" &&
+    (value.context.browserPath === undefined ||
+      value.context.browserPath === null ||
+      typeof value.context.browserPath === "string")
   );
 }
 
@@ -83,6 +86,10 @@ port.postMessage({ type: "ready" } satisfies JobWorkerMessage);
 async function run(message: JobWorkerStartMessage): Promise<void> {
   const projectPath = path.resolve(message.request.projectPath);
   const request: JobRequest = { ...message.request, projectPath, trigger: message.request.trigger };
+  if (request.job === "design" || request.job === "index-check") {
+    if (message.context.browserPath) process.env.SITEINDEX_BROWSER_EXECUTABLE_PATH = message.context.browserPath;
+    else delete process.env.SITEINDEX_BROWSER_EXECUTABLE_PATH;
+  }
   const core = createCoreService({
     resolveProject: () => projectPath,
     deviceId: message.context.deviceId,

@@ -230,6 +230,7 @@ export function createJobManager(options: JobManagerOptions) {
           deviceId: entry.settings.device_id,
           deviceName: entry.settings.device_name,
           cacheDir: entry.settings.cache_dir,
+          browserPath: entry.settings.browser.executable_path,
         },
       };
       entry.child.postMessage(workerMessage);

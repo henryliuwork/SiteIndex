@@ -15,6 +15,8 @@ import type {
   SiteIndexError,
 } from "@siteindex/shared";
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
+import type { DesktopIntegrations } from "./desktop-integrations.js";
+import { createDesktopIntegrationIpcHandlers } from "./desktop-integrations-ipc.js";
 import type { JobManager } from "./job-manager.js";
 import { isProjectInsideRoot, type ProjectCatalog } from "./project-catalog.js";
 import type { SettingsStore } from "./settings-store.js";
@@ -149,6 +151,7 @@ export function registerIpcHandlers(
   projects: ProjectCatalog,
   settingsChanged: (value: AppSettings) => Promise<void>,
   jobs: JobManager,
+  desktopIntegrations: DesktopIntegrations,
 ): void {
   const withProject = async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>): Promise<T> => {
     const id = projectId(value);
@@ -165,6 +168,7 @@ export function registerIpcHandlers(
       await settingsChanged(updated);
       return updated;
     },
+    ...createDesktopIntegrationIpcHandlers(settings, desktopIntegrations),
     "settings.chooseDirectory": (defaultPath) =>
       chooseDirectory(typeof defaultPath === "string" ? defaultPath : undefined),
     "uiState.get": (id) => uiState.get(id as ProjectId),
