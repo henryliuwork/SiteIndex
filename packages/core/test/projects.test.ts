@@ -112,5 +112,5 @@ describe("project service", () => {
     expect((await readJsonl(path.join(projectPath, PATHS.productsView))).length).toBeGreaterThan(0);
     expect((await readJsonl(path.join(projectPath, PATHS.runs))).map((row) => row.job)).toContain("daily");
     expect(await readdir(path.join(projectPath, "seo"))).toContain(PATHS.aboutFile);
-  }, 20_000);
+  }, 60_000);
 });

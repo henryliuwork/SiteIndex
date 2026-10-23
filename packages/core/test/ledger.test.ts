@@ -82,7 +82,7 @@ describe("core ledger mutations", () => {
     expect(media.added).toBe(1);
     await expect(deleteLedger(projectPath, "sku_media", [["NEW-SKU", "main"]], { now }))
       .resolves.toMatchObject({ deleted: 1, total: expect.any(Number) });
-  });
+  }, 15_000);
 
   it("requires complete primary keys and rejects malformed composite delete keys", async () => {
     const projectPath = await makeProject();

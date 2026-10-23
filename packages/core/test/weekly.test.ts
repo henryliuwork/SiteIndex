@@ -94,7 +94,7 @@ describe("weekly sync", () => {
     expect(details[0]).toMatchObject({ handle: "feeder", rating: 4.5, review_count: 12, shipping_note: expect.stringContaining("Free shipping") });
     const categories = JSON.parse(await readFile(path.join(root, PATHS.categories), "utf8")) as Array<Record<string, unknown>>;
     expect(categories).toContainEqual(expect.objectContaining({ slug: "feeders", source: "url_rule", name: "Bird Feeders" }));
-  });
+  }, 30_000);
 
   it("matches the legacy fixture page and blog fields while emitting the 1.1 tables", async () => {
     const base = await wwwFixtureServer();

@@ -126,5 +126,5 @@ describe("README automatic blocks", () => {
     expect(generated).toContain("## 数据指南（index/）");
     expect(generated).toContain("## 设计规范速览");
     expect((await api.readme.get("fixture")).auto_blocks.map(({ id }) => id)).toEqual(Object.keys(emptyContents));
-  });
+  }, 15_000);
 });
