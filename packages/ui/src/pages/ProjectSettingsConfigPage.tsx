@@ -137,8 +137,8 @@ export function ProjectSettingsConfigPage() {
     }
   };
 
-  if (projectQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载项目配置…</div>;
-  if (projectQuery.isError || !projectQuery.data) return <div className="si-page-error" role="alert">项目配置加载失败。<button type="button" onClick={() => void projectQuery.refetch()}>重试</button></div>;
+  if (projectQuery.isError) return <div className="si-page-error" role="alert">项目配置加载失败。<button type="button" onClick={() => void projectQuery.refetch()}>重试</button></div>;
+  if (projectQuery.isLoading || !projectQuery.data || !draft) return <div className="si-page-loading" role="status">正在加载项目配置…</div>;
   const project = projectQuery.data.summary;
 
   return <div className="si-page si-project-config-page">
