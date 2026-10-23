@@ -63,7 +63,7 @@
 - [x] `schedule.save`：写 site.json（core）→ 本机是执行设备时注册/更新系统任务；遇到权限错误时提示一次 UAC，根据授权结果继续系统任务或切换常驻；不是执行设备时只保存并提示
 - [x] 软件启动时校正：执行设备上的项目，系统任务与 site.json 不一致时自动修正；如需提权，仅在运行页显示授权待更新，不自动弹出 UAC
 - [x] XML 与 plist 生成快照测试（覆盖 Windows 用户身份、权限级别、UTF-16LE、唤醒和补跑设置）
-- **验收**：本机 Windows 将每日同步设为“工作日 + 当前时间后 3 分钟”，确认一次 UAC 后完全退出应用，并检查 `runs.jsonl` 到点执行；需附运行页与运行记录截图
+- [x] **验收**：本机 Windows 实测工作日 17:44 计划经 UAC 保存，任务计划程序于 17:44 触发，`runs.jsonl` 在 17:44:03 写入 `trigger=schedule`。另一次在应用完全退出后，系统任务于 17:26 触发。合成项目没有 Feed 快照，Job 按预期记录为失败；计划触发验收通过。运行页与运行历史截图见 `packages/desktop/docs/screenshots/c7-windows-scheduler.png` 和 `packages/desktop/docs/screenshots/c7-windows-run-record.png`。
 - **文档交接**：本 PR 描述提醒审核者同步更新 `docs/ARCHITECTURE.md` §9.1 中 Windows 注册、一次性提权与常驻回退方案
 
 ### C8 执行设备、文件夹、外壳操作
