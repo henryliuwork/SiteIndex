@@ -115,7 +115,6 @@ export function NewProjectWizardPage() {
       const result = await api.projects.detect(draft.url.trim());
       const brandName = draft.brand.name || slugFor(draft.url).replace(/(^|-)([a-z])/g, (_match, _dash, letter: string) => letter.toUpperCase());
       update({ detect: result, feedUrls: result.feed_candidates, feedResult: null, folderName: draft.folderName || slugFor(draft.url), brand: { ...draft.brand, name: brandName } });
-      setFeedback("网站检测完成。");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "网站检测失败，请重试。"); }
     finally { setBusy(false); }
   };
@@ -126,7 +125,7 @@ export function NewProjectWizardPage() {
     setBusy(true); setError("");
     try {
       const result = await api.projects.inspectFeed(feedUrls, { sku_field: draft.skuField, category_depth: draft.categoryDepth });
-      update({ feedUrls, feedResult: result }); setFeedback("Feed 检测完成。"); return true;
+      update({ feedUrls, feedResult: result }); return true;
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Feed 检测失败，请检查地址后重试。"); return false; }
     finally { setBusy(false); }
   };
@@ -193,8 +192,8 @@ export function NewProjectWizardPage() {
       </dl><p>GMC feed 可能不在网站上公开，请从 Merchant Center 或 Feed 插件中复制地址。</p></section>
       <div className="si-wizard-source-main">
         <section className="si-wizard-card">
-          <div className="si-wizard-field"><label>GMC 商品 Feed 地址</label>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null })} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null })}><X size={14} /></Button>}{index === 0 && <Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button>}</div>)}
-            <div className="si-wizard-feed-actions"><Button size="small" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null })}><Plus size={14} />添加 Feed</Button><span>可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。</span></div>
+          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null })} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null })}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null })}><Plus size={14} /></Button></>}</div>)}
+            <div className="si-wizard-feed-actions"><span>可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。</span></div>
             {draft.feedResult && <FeedStats result={draft.feedResult} />}
           </div>
           {error && <p className="si-form-error" role="alert">{error}</p>}{feedback && <p className="si-feedback" role="status">{feedback}</p>}
