@@ -4,6 +4,7 @@ import path from "node:path";
 import type { CoreService } from "@siteindex/core";
 import type {
   AppSettings,
+  JobRequest,
   ListQuery,
   ProductFilters,
   ProductView,
@@ -14,6 +15,7 @@ import type {
   SiteIndexError,
 } from "@siteindex/shared";
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
+import type { JobManager } from "./job-manager.js";
 import { isProjectInsideRoot, type ProjectCatalog } from "./project-catalog.js";
 import type { SettingsStore } from "./settings-store.js";
 import type { UiStateStore } from "./ui-state-store.js";
@@ -80,6 +82,31 @@ function projectId(value: unknown): ProjectId {
   return value;
 }
 
+function isJobRequest(value: unknown): value is Omit<JobRequest, "trigger"> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const request = value as Record<string, unknown>;
+  return (
+    typeof request.projectPath === "string" &&
+    request.projectPath.trim().length > 0 &&
+    (request.job === "daily" ||
+      request.job === "weekly" ||
+      request.job === "monthly" ||
+      request.job === "validate" ||
+      request.job === "readme" ||
+      request.job === "design" ||
+      request.job === "index-check" ||
+      request.job === "views") &&
+    (request.only === undefined || typeof request.only === "string") &&
+    (request.date === undefined || typeof request.date === "string") &&
+    (request.force === undefined || typeof request.force === "boolean") &&
+    (request.dryRun === undefined || typeof request.dryRun === "boolean")
+  );
+}
+
+function invalidJobRequest(message: string): SiteIndexError {
+  return { code: "CONFIG_INVALID", message };
+}
+
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = Array.isArray(value)
@@ -121,6 +148,7 @@ export function registerIpcHandlers(
   core: CoreService,
   projects: ProjectCatalog,
   settingsChanged: (value: AppSettings) => Promise<void>,
+  jobs: JobManager,
 ): void {
   const withProject = async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>): Promise<T> => {
     const id = projectId(value);
@@ -246,6 +274,24 @@ export function registerIpcHandlers(
       withProject(args[0], (id) =>
         core.files.repair(id, args[1] as string, args[2] as Parameters<CoreService["files"]["repair"]>[2]),
       ),
+    "jobs.run": (request) => {
+      if (!isJobRequest(request)) throw invalidJobRequest("Job 请求无效。");
+      return jobs.run(request);
+    },
+    "jobs.cancel": (runId) => {
+      if (typeof runId !== "string" || !runId.trim()) throw invalidJobRequest("Job 标识无效。");
+      return jobs.cancel(runId);
+    },
+    "jobs.history": (id, limit) => {
+      if (typeof id !== "string" || !id.trim() || (limit !== undefined && typeof limit !== "number")) {
+        throw invalidJobRequest("Job 历史查询参数无效。");
+      }
+      return jobs.history(id as ProjectId, limit as number | undefined);
+    },
+    "jobs.running": (id) => {
+      if (typeof id !== "string" || !id.trim()) throw invalidJobRequest("项目标识无效。");
+      return jobs.running(id as ProjectId);
+    },
   });
 
   for (const [channel, handler] of handlers) {

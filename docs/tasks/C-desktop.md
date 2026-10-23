@@ -43,10 +43,10 @@
 - [x] 导出 CSV：保存对话框 → 写文件 → 返回路径
 
 ### C6 Job 执行
-- [ ] 每个 Job 一个 `utilityProcess`（入口打包 core 的 `runJob`）；进度转发到 `jobs.onProgress`；`cancel` 结束进程并释放锁
-- [ ] 同一项目同一时间一个 Job；`jobs.running`
-- [ ] **无界面模式** `SiteIndex.exe --run-job "<projectPath>" <job>`：不创建窗口，直接执行，完成后按设置发系统通知，退出码同 `EXIT`
-- [ ] 系统通知（失败通知 / 成功通知 / 缺货阈值）
+- [x] 每个 Job 一个 `utilityProcess`（入口打包 core 的 `runJob`）；进度转发到 `jobs.onProgress`；`cancel` 结束进程并释放锁
+- [x] 同一项目同一时间一个 Job；`jobs.running`
+- [x] **无界面模式** `SiteIndex.exe --run-job "<projectPath>" <job>`：不创建窗口，直接执行，完成后按设置发系统通知，退出码同 `EXIT`
+- [x] 系统通知（失败通知 / 成功通知 / 缺货阈值）
 
 ### C7 系统计划任务 `src/main/scheduler/`
 - [ ] Windows：按 ARCHITECTURE §9.1 生成 UTF-16LE XML（每周几、每月几号、StartWhenAvailable、WakeToRun、InteractiveToken、IgnoreNew、PT2H）→ `schtasks /Create /TN "\SiteIndex\{projectId}-{job}" /XML … /F`；删除用 `/Delete /F`；`next_runs` 用 `schtasks /Query /XML` 读取
