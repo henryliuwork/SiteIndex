@@ -253,9 +253,13 @@ const settingsState: AppSettings = {
 };
 const folderRows: Record<MockProjectId, FolderRow[]> = {
   kingsyard: [
-    { name: "产品素材", description: "产品图片、Feed 素材与规格表。", default: true, files: 24, modified_at: "2026-10-21T18:00:00-07:00" },
-    { name: "营销活动", description: "EDM、促销与渠道活动资料。", default: true, files: 8, modified_at: "2026-10-20T12:00:00-07:00" },
-    { name: "草稿", description: "待审核的内容草稿。", default: true, files: 3, modified_at: null },
+    { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 24, modified_at: "2026-10-19T12:00:00+08:00" },
+    { name: "edm", description: "每次 campaign 一个子文件夹（brief、content.json、email.html）", default: true, files: 31, modified_at: "2026-10-20T12:00:00+08:00" },
+    { name: "产品", description: "产品图、上新资料、利润测算", default: true, files: 112, modified_at: "2026-10-18T12:00:00+08:00" },
+    { name: "内容", description: "博客 brief 与草稿（drafts/），已发布文章存档", default: true, files: 40, modified_at: "2026-10-15T12:00:00+08:00" },
+    { name: "设计", description: "", default: true, files: 8, modified_at: "2026-09-30T12:00:00+08:00" },
+    { name: "报告", description: "月度钉钉汇报、复盘", default: true, files: 9, modified_at: "2026-10-01T12:00:00+08:00" },
+    { name: "广告", description: "Google Ads 素材与投放记录", default: false, files: 14, modified_at: "2026-10-17T12:00:00+08:00" },
   ],
   riverstone: [
     { name: "产品素材", description: "产品图片与规格表。", default: true, files: 12, modified_at: "2026-10-21T12:00:00-07:00" },
