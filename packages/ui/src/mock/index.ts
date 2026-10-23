@@ -376,12 +376,12 @@ const readmeFolderMaps: Record<MockProjectId, FolderRow[]> = {
     { name: "报告", description: "月度汇报与复盘", default: true, files: 5, modified_at: "2026-10-01T12:00:00+08:00" },
   ],
 };
-const initialManualCategories: NonNullable<CategoriesConfig["manual"]> = categorySeeds.slice(0, 4).map((category, index) => ({
-  slug: category.slug,
-  name: category.name,
-  url: category.url ? (() => { try { return new URL(category.url).pathname; } catch { return category.url; } })() : "/collections/" + category.slug,
-  match: [{ type: index === 3 ? "url_contains" : "product_type_contains", value: category.name }],
-}));
+const initialManualCategories: NonNullable<CategoriesConfig["manual"]> = [
+  { slug: "bird-feeders", name: "Bird Feeders", url: "/bird-feeders.html", match: [{ type: "product_type_contains", value: "Bird Feeders" }] },
+  { slug: "bird-houses", name: "Bird Houses", url: "/bird-houses.html", match: [{ type: "product_type_contains", value: "Bird Houses" }] },
+  { slug: "bird-baths", name: "Bird Baths", url: "/bird-baths.html", match: [{ type: "product_type_contains", value: "Bird Baths" }, { type: "sku_prefix", value: "KYBB" }] },
+  { slug: "hummingbird-feeders", name: "Hummingbird Feeders", url: "/hummingbird-feeders.html", match: [{ type: "url_contains", value: "hummingbird" }] },
+];
 const categoryConfigs: Record<MockProjectId, CategoriesConfig> = {
   kingsyard: { mode: "manual", manual: initialManualCategories },
   riverstone: { mode: "url_rule", url_pattern: "/collections/:category" },
