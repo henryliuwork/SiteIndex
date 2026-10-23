@@ -9,6 +9,13 @@ export { atomicWrite } from "./io/atomic-write";
 export { readCsv, writeCsv } from "./io/csv";
 export { compareKeys } from "./io/compare";
 export { readJsonl, writeJsonl } from "./io/jsonl";
+export {
+  buildReadmeAutoContent,
+  parseReadmeAutoBlocks,
+  README_AUTO_BLOCK_TITLES,
+  replaceReadmeAutoBlocks,
+} from "./readme";
+export type { ReadmeAutoBlockId, ReadmeAutoContent, ReadmeAutoContentInput } from "./readme";
 export { deleteLedger, upsertLedger } from "./ledger";
 export type { LedgerKey, LedgerMutationOptions, LedgerMutationResult, LedgerName } from "./ledger";
 export { assertRunner, CoreIOError, findConflictCopies, isConflictCopy, readRunner, withLock, writeRunner } from "./io/runner-lock";

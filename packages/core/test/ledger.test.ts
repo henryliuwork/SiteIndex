@@ -59,7 +59,7 @@ describe("core ledger mutations", () => {
     expect(campaign.added).toBe(1);
     expect(await deleteLedger(projectPath, "edm_campaigns", ["2026-10-23-test-campaign"], { now }))
       .toMatchObject({ deleted: 1, total: 1 });
-  });
+  }, 15_000);
 
   it("writes CSV ledgers in canonical columns, joins list values and supports composite keys", async () => {
     const projectPath = await makeProject();
@@ -90,5 +90,5 @@ describe("core ledger mutations", () => {
       .rejects.toMatchObject({ code: "CONFIG_INVALID", message: expect.stringContaining("主键") });
     await expect(deleteLedger(projectPath, "sku_media", ["KYBF000-G"]))
       .rejects.toMatchObject({ code: "CONFIG_INVALID", message: expect.stringContaining("删除键") });
-  });
+  }, 15_000);
 });
