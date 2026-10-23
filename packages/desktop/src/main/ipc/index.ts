@@ -17,6 +17,7 @@ import { createScheduleHandlers } from "./schedule.js";
 import { createSeoHandlers } from "./seo.js";
 import { createSettingsHandlers } from "./settings.js";
 import { createShellHandlers } from "./shell.js";
+import { createSkillsHandlers } from "./skills.js";
 import { createUiStateHandlers } from "./ui-state.js";
 
 export function registerIpcHandlers(dependencies: IpcDependencies): void {
@@ -39,6 +40,7 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
     ...createScheduleHandlers(context),
     ...createRunnerHandlers(context),
     ...createShellHandlers(),
+    ...createSkillsHandlers(context),
   });
 
   for (const [channel, handler] of handlers) {

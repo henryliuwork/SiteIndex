@@ -5,6 +5,7 @@ import type { ProjectCatalog } from "../project-catalog.js";
 import type { ScheduleRuntimeStatus, SystemScheduler } from "../scheduler/schedule.js";
 import type { SettingsStore } from "../settings-store.js";
 import type { UiStateStore } from "../ui-state-store.js";
+import type { SkillService } from "../skill-service.js";
 
 export interface IpcDependencies {
   settings: SettingsStore;
@@ -16,6 +17,7 @@ export interface IpcDependencies {
   scheduler: SystemScheduler;
   reconcileSchedules: (allowElevation: boolean) => Promise<ScheduleRuntimeStatus>;
   onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>;
+  skills: SkillService;
 }
 
 export interface IpcContext extends IpcDependencies {
