@@ -184,9 +184,9 @@ export function ProjectCenterPage() {
   const totalAttention = projects.reduce((sum, project) => sum + project.attention, 0);
   const newOutOfStock = projects.reduce((sum, project) => sum + project.today.oos, 0);
   const nextRun = scheduleQuery.data?.next_runs[0];
-  const nextJob = nextRun ? (jobNames[nextRun.job] ?? nextRun.job) : "暂无计划";
+  const nextJob = scheduleQuery.isLoading ? "正在读取计划" : scheduleQuery.isError ? "计划读取失败" : nextRun ? (jobNames[nextRun.job] ?? nextRun.job) : "暂无计划";
   const nextTime = nextRun?.at ? new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(nextRun.at)) : "—";
-  const projectRoot = settingsQuery.data?.projects_root?.replaceAll("/", "\\") ?? "正在读取项目根目录…";
+  const projectRoot = settingsQuery.isLoading ? "正在读取项目根目录…" : settingsQuery.isError ? "项目根目录读取失败" : settingsQuery.data?.projects_root?.replaceAll("/", "\\") ?? "尚未设置";
 
   const openFolder = async (path: string) => {
     try { await api.shell.openPath(path); setFeedback("已打开项目文件夹。"); }
@@ -201,23 +201,41 @@ export function ProjectCenterPage() {
     { key: "projects", label: "项目", value: String(projects.length) },
     { key: "attention", label: "待处理提醒", value: String(totalAttention), tone: totalAttention ? "warn" : "default", link: primary ? "/p/" + primary.id : undefined },
     { key: "today-oos", label: "今日新缺货 SKU", value: String(newOutOfStock), tone: newOutOfStock ? "danger" : "default", link: primary ? "/p/" + primary.id + "/inventory" : undefined },
-    { key: "next-run", label: "下一个定时任务", value: nextTime === "—" ? "暂无计划" : nextTime + " · " + (primary?.name ?? ""), hint: nextJob },
+    { key: "next-run", label: "下一个定时任务", value: scheduleQuery.isLoading ? "正在读取…" : scheduleQuery.isError ? "读取失败" : nextTime === "—" ? "暂无计划" : nextTime + " · " + (primary?.name ?? ""), hint: nextJob },
   ];
 
   return (
     <div className="si-page si-project-center">
       <header className="si-page-heading si-center-heading">
-        <div><h1>项目中心</h1><p>项目根目录 <code>{projectRoot}</code></p></div>
+        <div>
+          <h1>项目中心</h1>
+          <p>
+            项目根目录 <code>{projectRoot}</code>
+            {settingsQuery.isError && <button className="si-center-retry" type="button" onClick={() => void settingsQuery.refetch()}>重试</button>}
+          </p>
+        </div>
         <div className="si-page-actions">
           <Button icon={<FolderOpen size={15} />} onClick={() => setAddExistingOpen(true)}>添加已有项目</Button>
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
         </div>
       </header>
       {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <div className="si-page-error" role="alert">项目列表加载失败。<button type="button" onClick={() => void projectsQuery.refetch()}>重试</button></div> : <>
-        <div className="si-center-kpis">{metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+        <div className="si-center-kpis">
+          {metrics.slice(0, 3).map((metric) => <KpiCard key={metric.key} metric={metric} />)}
+          <div className="si-center-kpi-with-retry">
+            <KpiCard metric={metrics[3]!} />
+            {scheduleQuery.isError && <button className="si-center-kpi-retry" type="button" onClick={() => void scheduleQuery.refetch()}>重试</button>}
+          </div>
+        </div>
         <section className="si-project-grid" aria-label="项目列表">
-          {projects.map((project) => <ProjectCard key={project.id} project={project} onOpenFolder={(path) => void openFolder(path)} />)}
-          <Link className="si-new-project-card" to="/new/url"><Plus size={22} /><strong>新建项目</strong><span>输入网址，3 分钟生成工作区</span></Link>
+          {projects.length === 0 ? <div className="si-project-empty" role="status">
+            <FolderOpen size={22} aria-hidden="true" />
+            <strong>还没有项目</strong>
+            <span>新建项目，或添加云盘中已有的 SiteIndex 项目文件夹。</span>
+          </div> : <>
+            {projects.map((project) => <ProjectCard key={project.id} project={project} onOpenFolder={(path) => void openFolder(path)} />)}
+            <Link className="si-new-project-card" to="/new/url"><Plus size={22} /><strong>新建项目</strong><span>输入网址，3 分钟生成工作区</span></Link>
+          </>}
         </section>
         {feedback && <p className="si-feedback" role="status">{feedback}</p>}
         <section className="si-recent-runs" aria-label="最近运行">
@@ -233,9 +251,13 @@ export function ProjectCenterPage() {
             maxHeight={138}
             showHeader={false}
             showPagination={false}
-            emptyTitle="暂无运行记录"
-            emptyDescription="项目执行同步或校验后，最近运行会显示在这里。"
-            toolbar={<div className="si-recent-heading"><h2>最近运行</h2>{runsQuery.isLoading && <span className="si-muted">正在读取…</span>}</div>}
+            emptyTitle={runsQuery.isLoading ? "正在加载运行记录…" : runsQuery.isError ? "运行记录加载失败" : "暂无运行记录"}
+            emptyDescription={runsQuery.isLoading ? "请稍候。" : runsQuery.isError ? "重试后即可查看最近执行情况。" : "项目执行同步或校验后，最近运行会显示在这里。"}
+            toolbar={<div className="si-recent-heading">
+              <h2>最近运行</h2>
+              {runsQuery.isLoading && <span className="si-muted" role="status">正在读取…</span>}
+              {runsQuery.isError && <button className="si-center-retry" type="button" onClick={() => void runsQuery.refetch()}>重试</button>}
+            </div>}
           />
         </section>
       </>}
