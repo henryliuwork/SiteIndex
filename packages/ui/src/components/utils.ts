@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
 import { gradeDescriptionLength, gradeTitleLength } from "@siteindex/shared";
+import { api } from "../api";
 
 export function nextFilterValue<T extends string>(current: T | undefined, candidate: T): T | undefined {
   return current === candidate ? undefined : candidate;
@@ -42,16 +44,13 @@ export function readColumnPrefs(tableId: string, available: readonly string[], d
   try {
     const storage = typeof localStorage === "undefined" ? undefined : localStorage;
     if (!storage) return [...defaults];
-    return normalizeColumnPrefs(JSON.parse(storage.getItem(columnKey(tableId)) ?? "null"), available, defaults);
+    const parsed: unknown = JSON.parse(storage.getItem(columnKey(tableId)) ?? "null");
+    if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) return [...defaults];
+    const allowed = new Set(available);
+    return [...new Set(parsed.filter((item: string) => allowed.has(item)))];
   } catch {
     return [...defaults];
   }
-}
-
-function normalizeColumnPrefs(value: unknown, available: readonly string[], defaults: readonly string[]): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return [...defaults];
-  const allowed = new Set(available);
-  return [...new Set(value.filter((item: string) => allowed.has(item)))];
 }
 
 export function writeColumnPrefs(tableId: string, visible: readonly string[]): void {
@@ -63,73 +62,66 @@ export function writeColumnPrefs(tableId: string, visible: readonly string[]): v
   }
 }
 
-export function useColumnPrefs(tableId: string, scopeId?: string) {
+export function useColumnPrefs(tableId: string) {
+  const { id: projectId } = useParams<{ id?: string }>();
+  const requestId = useRef(0);
   const [state, setState] = useState<{
     tableId: string;
-    scopeId?: string;
+    projectId?: string;
     availableKey: string;
     defaultsKey: string;
     available: string[];
     defaults: string[];
     visible: string[] | null;
-  }>({ tableId, scopeId, availableKey: "", defaultsKey: "", available: [], defaults: [], visible: null });
-  const requestVersion = useRef(0);
-  const configuredKey = useRef("");
-  const current = state.tableId === tableId && state.scopeId === scopeId ? state : null;
+  }>({ tableId, projectId, availableKey: "", defaultsKey: "", available: [], defaults: [], visible: null });
+  const current = state.tableId === tableId && state.projectId === projectId ? state : null;
 
   const configure = useCallback((available: readonly string[], defaults: readonly string[] = available) => {
     const availableList = [...available];
     const defaultsList = [...defaults];
     const availableKey = availableList.join("\u0000");
     const defaultsKey = defaultsList.join("\u0000");
-    const configKey = [tableId, scopeId ?? "", availableKey, defaultsKey].join("\u0001");
-    if (configuredKey.current === configKey) return;
-    configuredKey.current = configKey;
-    const version = ++requestVersion.current;
-    const base = { tableId, scopeId, availableKey, defaultsKey, available: availableList, defaults: defaultsList, visible: null as string[] | null };
-    const uiState = typeof window === "undefined" ? undefined : window.siteindex?.uiState;
-    if (!scopeId || !uiState) {
-      setState({ ...base, visible: readColumnPrefs(tableId, availableList, defaultsList) });
-      return;
-    }
-    setState(base);
-    const fallback = () => readColumnPrefs(tableId, availableList, defaultsList);
-    void uiState.get(scopeId).then((saved) => {
-      if (requestVersion.current !== version) return;
-      const stored = saved.columns[tableId];
-      const visible = stored === undefined ? fallback() : normalizeColumnPrefs(stored, availableList, defaultsList);
-      setState((previous) => previous.tableId === tableId && previous.scopeId === scopeId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey
-        ? { ...previous, visible } : previous);
-      if (stored === undefined) void uiState.set(scopeId, { columns: { [tableId]: visible } }).catch(() => undefined);
-    }).catch(() => {
-      if (requestVersion.current !== version) return;
-      setState((previous) => previous.tableId === tableId && previous.scopeId === scopeId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey
-        ? { ...previous, visible: fallback() } : previous);
+    const request = ++requestId.current;
+    setState((previous) => {
+      if (previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey) return previous;
+      return {
+        tableId, projectId, availableKey, defaultsKey, available: availableList, defaults: defaultsList,
+        visible: readColumnPrefs(tableId, availableList, defaultsList),
+      };
     });
-  }, [scopeId, tableId]);
-
-  const persist = useCallback((visible: string[]) => {
-    const uiState = typeof window === "undefined" ? undefined : window.siteindex?.uiState;
-    if (scopeId && uiState) void uiState.set(scopeId, { columns: { [tableId]: visible } }).catch(() => writeColumnPrefs(tableId, visible));
-    else writeColumnPrefs(tableId, visible);
-  }, [scopeId, tableId]);
+    if (!projectId || !api.uiState) return;
+    void api.uiState.get(projectId).then((saved) => {
+      if (request !== requestId.current) return;
+      const stored = saved.columns[tableId];
+      if (!stored) return;
+      const allowed = new Set(availableList);
+      const visible = [...new Set(stored.filter((id) => allowed.has(id)))];
+      setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey
+        ? { ...previous, visible }
+        : previous);
+    }).catch(() => undefined);
+  }, [projectId, tableId]);
 
   const toggle = useCallback((id: string) => {
     if (!current) return;
-    requestVersion.current += 1;
+    requestId.current += 1;
     const visible = current.visible ?? current.defaults;
     const next = visible.includes(id) ? visible.filter((item) => item !== id) : [...visible, id];
-    persist(next);
+    if (projectId && api.uiState) {
+      void api.uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
+    } else writeColumnPrefs(tableId, next);
     setState({ ...current, visible: next });
-  }, [current, persist]);
+  }, [current, projectId, tableId]);
 
   const reset = useCallback(() => {
     if (!current) return;
-    requestVersion.current += 1;
+    requestId.current += 1;
     const next = [...current.defaults];
-    persist(next);
+    if (projectId && api.uiState) {
+      void api.uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
+    } else writeColumnPrefs(tableId, next);
     setState({ ...current, visible: next });
-  }, [current, persist]);
+  }, [current, projectId, tableId]);
 
   return { visible: current?.visible ?? null, configure, toggle, reset };
 }
