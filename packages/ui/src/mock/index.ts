@@ -1,9 +1,9 @@
-import { googleSiteSearchUrl } from "@siteindex/shared";
+import { googleSiteSearchUrl, PATHS } from "@siteindex/shared";
 import type {
   AppSettings, BlogPost, BrowserStatus, CategoriesConfig, Category, CategoryPreview, CliStatus,
   DesignTokens, DraftRow, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
   JobProgress, JobResult, Keyword, ListQuery, OverviewData, PageResult, ProductFilters,
-  ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, RepairAction, RunLog,
+  ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, ProjectUiState, RepairAction, RunLog,
   RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage,
   SeoPageFilters, SiteConfig, SiteIndexApi, SkuImageFilters, SkuImageRow, SkuRecord,
   SkuStockFilters, SkuStockView, StockStatus, ValidationReport,
@@ -37,6 +37,45 @@ const dateBefore = (days: number): string => {
   date.setUTCDate(date.getUTCDate() - days);
   return date.toISOString().slice(0, 10);
 };
+
+const birdTopics = ["Cardinals", "Blue Jays", "Goldfinches", "Chickadees", "Woodpeckers", "Hummingbirds", "Finches", "Robins", "Nuthatches", "Wrens", "Doves"];
+const generatedBlogs: BlogPost[] = Array.from({ length: 44 }, (_, index) => {
+  const topic = birdTopics[index % birdTopics.length]!;
+  const title = index % 3 === 0 ? "How to Attract " + topic + " to Your Yard"
+    : index % 3 === 1 ? "What Do " + topic + " Eat?" : "Best Feeders for " + topic;
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + (index >= birdTopics.length ? "-" + (index + 1) : "");
+  const noLinks = index % 11 === 0;
+  const noSchema = index % 10 === 7;
+  const linksOutOfStock = index % 9 === 3 && index < 39 ? ["feeder-12"] : [];
+  return {
+    url: "http://127.0.0.1:8765/blog/" + slug, slug, title, published_at: dateBefore(1 + index * 5),
+    updated_at: index % 4 === 0 ? dateBefore(index) : null, category: index % 2 ? "Bird Guides" : "Backyard Birds",
+    author: "SiteIndex Editorial", tags: [topic.toLowerCase(), "bird feeders"],
+    meta_description: "Helpful tips for " + topic.toLowerCase() + " and a healthier backyard habitat.",
+    word_count: 600 + index * 73, reading_minutes: 4 + Math.floor(index / 4), outline: ["Overview", "What to prepare", "Practical tips"],
+    has_faq: !noSchema, featured_image: null, primary_keyword: index % 13 === 4 ? null : topic.toLowerCase() + " bird feeder",
+    links_internal: noLinks ? [] : ["http://127.0.0.1:8765/collections/bird-feeders", "http://127.0.0.1:8765/blog/bird-feeder-guide"],
+    links_products: noLinks || index % 7 === 0 ? [] : ["window-feeder", "feeder-12"], links_in: index % 7,
+    linked_out_of_stock: linksOutOfStock, last_crawled: dateBefore(index % 5),
+  };
+});
+const generatedKeywords: Keyword[] = Array.from({ length: 50 }, (_, index) => {
+  const topic = birdTopics[index % birdTopics.length]!.toLowerCase();
+  const modifier = ["bird feeder", "backyard birds", "feeding tips", "best feeder", "bird bath"][Math.floor(index / birdTopics.length) % 5]!;
+  const keyword = topic + " " + modifier + (index >= birdTopics.length * 4 ? " " + (index + 1) : "");
+  return {
+    keyword, target_url: index % 13 === 0 ? null : "http://127.0.0.1:8765/blog/" + topic.replaceAll(" ", "-") + "-bird-feeder-guide",
+    role: index % 5 === 0 ? "secondary" : "primary", intent: index % 3 === 0 ? "informational" : "commercial",
+    cluster: topic + " care", status: index < 11 ? "planned" : "live",
+    priority: index % 8 === 0 ? 1 : null, source: "内容规划", note: index % 9 === 0 ? "核心词待补目标页" : null,
+    search_volume: 320 + index * 47, difficulty: 18 + (index * 7) % 65, current_rank: index % 6 === 0 ? null : 4 + index,
+    rank_checked_at: dateBefore(index % 12), updated_at: dateBefore(index % 30),
+  };
+});
+const generatedDrafts: DraftRow[] = [
+  { date: "2026-10-21", slug: "winter-bird-feeding-checklist", folder: "内容/drafts", files: ["brief.md", "draft.md"], status: "draft" },
+  { date: "2026-10-18", slug: "choose-a-squirrel-proof-feeder", folder: "内容/drafts", files: ["brief.md"], status: "brief" },
+];
 const delay = async (): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
   if (errorMode) throw new Error("模拟接口错误：请移除地址中的 ?mock=error 后重试。");
@@ -224,13 +263,108 @@ const folderRows: Record<MockProjectId, FolderRow[]> = {
   ],
 };
 const userReadmeBlocks: Record<MockProjectId, { overview: string; focus: string; rules: string }> = {
-  kingsyard: { overview: "为后院观鸟者提供实用的喂鸟产品。", focus: "检查缺货 SKU，并优先补齐高流量产品。", rules: "保留品牌温暖、实用的语气。" },
+  kingsyard: {
+    overview: "Wild bird feeding supplies for backyard birders.\n- 网站：https://www.kingsyard.com（magento）\n- 目标市场：US\n- 目标人群：Backyard bird lovers and gift buyers",
+    focus: "- 10 月：Halloween / 秋季喂鸟季 EDM\n- 补齐吸鸟指南类博客",
+    rules: "- 工作成果放入对应工作区文件夹，不要写入 index/（台账除外）\n- 数据缺失或冲突时停下来询问，不要编造 SKU、价格、库存、图片 URL\n- EDM 文案用英文，subject ≤ 50 字符",
+  },
   riverstone: { overview: "为庭院和户外生活提供耐用装备。", focus: "维护商品资料与季节性内容。", rules: "说明要简洁、具体。" },
+};
+const designTokens: DesignTokens = {
+  extracted_at: "2026-10-01T13:12:00-07:00",
+  source_pages: ["https://www.kingsyard.com/", "https://www.kingsyard.com/bird-feeders", "https://www.kingsyard.com/products/feeder"],
+  css_variables: {
+    "--color-primary": "#2F5D3A", "--color-text": "#222222", "--color-text-muted": "#6B6B6B",
+    "--color-background": "#FFFFFF", "--color-surface": "#F6F4EF", "--color-border": "#E5E2DA", "--color-sale": "#C0392B",
+  },
+  color: {
+    primary: "#2F5D3A", text: "#222222", text_muted: "#6B6B6B", background: "#FFFFFF",
+    surface: "#F6F4EF", border: "#E5E2DA", sale: "#C0392B",
+    palette: [
+      { value: "#FFFFFF", count: 30 }, { value: "#222222", count: 18 }, { value: "#2F5D3A", count: 12 },
+      { value: "#F6F4EF", count: 10 }, { value: "#6B6B6B", count: 8 }, { value: "#E5E2DA", count: 6 },
+      { value: "#C0392B", count: 4 }, { value: "#8DA07A", count: 3 }, { value: "#D9B26F", count: 3 },
+      { value: "#4A7C59", count: 2 }, { value: "#B5502C", count: 2 }, { value: "#1D3A25", count: 2 },
+    ],
+  },
+  typography: {
+    font_families: { heading: "Lora, serif", body: "Inter, sans-serif" },
+    scale: {
+      h1: { size: "40px", weight: 700, line_height: "48px" },
+      h2: { size: "28px", weight: 600, line_height: "36px" },
+      h3: { size: "20px", weight: 600, line_height: "28px" },
+      body: { size: "16px", weight: 400, line_height: "26px" },
+      small: { size: "13px", weight: 400, line_height: "20px" },
+    },
+  },
+  spacing: ["4", "8", "12", "16", "24", "32", "48"],
+  radius: ["4px", "8px", "999px"],
+  shadow: ["0 2px 8px rgba(0,0,0,.08)"],
+  components: {
+    button_primary: { background: "#2F5D3A", color: "#FFFFFF", radius: "4px", padding: "12px 24px", weight: 600 },
+    button_secondary: { background: "#FFFFFF", color: "#2F5D3A", border: "1px solid #2F5D3A", radius: "4px", padding: "12px 24px", weight: 600 },
+    input: { border: "#E5E2DA", radius: "4px", height: "44px", color: "#6B6B6B", padding: "0 14px" },
+  },
+  assets: { logo: null, favicon: null },
+  email_safe: { font_stack: "Arial, Helvetica, sans-serif", button_color: "#2F5D3A" },
+};
+const designScreenshotNames = ["首页 · 桌面", "分类 · 桌面", "产品 · 桌面", "首页 · 手机", "分类 · 手机", "产品 · 手机"];
+const designScreenshots = (id: ProjectId): { name: string; path: string }[] => {
+  const root = id === "kingsyard" ? "D:/云盘/projects/Kingsyard" : "D:/云盘/projects/Riverstone-Outdoor";
+  return designScreenshotNames.map((name, index) => ({
+    name,
+    path: root + "/" + PATHS.designScreenshots + "/" + ["home-desktop", "category-desktop", "product-desktop", "home-mobile", "category-mobile", "product-mobile"][index] + ".png",
+  }));
+};
+const readmeFolderMaps: Record<MockProjectId, FolderRow[]> = {
+  kingsyard: [
+    { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 24, modified_at: "2026-10-19T12:00:00+08:00" },
+    { name: "edm", description: "每次 campaign 一个子文件夹", default: true, files: 31, modified_at: "2026-10-20T12:00:00+08:00" },
+    { name: "产品", description: "产品图、上新资料、利润测算", default: true, files: 112, modified_at: "2026-10-18T12:00:00+08:00" },
+    { name: "内容", description: "博客 brief 与草稿（drafts/）", default: true, files: 40, modified_at: "2026-10-15T12:00:00+08:00" },
+    { name: "设计", description: "", default: true, files: 8, modified_at: "2026-09-30T12:00:00+08:00" },
+    { name: "报告", description: "月度钉钉汇报、复盘", default: true, files: 9, modified_at: "2026-10-01T12:00:00+08:00" },
+  ],
+  riverstone: [
+    { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 18, modified_at: "2026-10-19T12:00:00+08:00" },
+    { name: "edm", description: "每次 campaign 一个子文件夹", default: true, files: 12, modified_at: "2026-10-20T12:00:00+08:00" },
+    { name: "产品", description: "产品图、上新资料、利润测算", default: true, files: 45, modified_at: "2026-10-18T12:00:00+08:00" },
+    { name: "内容", description: "博客 brief 与草稿（drafts/）", default: true, files: 16, modified_at: "2026-10-15T12:00:00+08:00" },
+    { name: "设计", description: "", default: true, files: 3, modified_at: "2026-09-30T12:00:00+08:00" },
+    { name: "报告", description: "月度汇报与复盘", default: true, files: 5, modified_at: "2026-10-01T12:00:00+08:00" },
+  ],
 };
 const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "manual" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
 const tagsByHandle = new Map<string, string[]>();
 const manualImages = new Map<string, string | null>();
-const tagNames = new Set<string>(["spring", "bestseller", "seasonal"]);
+const tagNamesByProject: Record<MockProjectId, Set<string>> = {
+  kingsyard: new Set(productsByProject.kingsyard.flatMap((product) => product.tags)),
+  riverstone: new Set(productsByProject.riverstone.flatMap((product) => product.tags)),
+};
+for (const projectId of ["kingsyard", "riverstone"] as const) {
+  for (const [index, record] of recordsByProject[projectId].entries()) {
+    if ((index === 3 || index === 4) && record.image_url) manualImages.set(projectId + ":" + record.sku, "https://mcusercontent.com/siteindex/demo/" + record.sku + ".jpg");
+  }
+}
+function mockFeedImageUrl(record: SkuRecord): string | null {
+  if (!record.image_url) return null;
+  try { return "https://www.kingsyard.com" + new URL(record.image_url).pathname; }
+  catch { return record.image_url; }
+}
+function edmImageRows(id: ProjectId): SkuImageRow[] {
+  const key = projectKey(id);
+  const records = recordsByProject[key].slice(0, fixtures.skus.length);
+  const stockBySku = new Map(rowsByProject[key].map((row) => [row.sku, row.stock_status]));
+  return records.map((record, index) => {
+    const manual = manualImages.get(id + ":" + record.sku) ?? null;
+    const feed = index === 4 || index === 18 ? null : mockFeedImageUrl(record);
+    return {
+      sku: record.sku, title: record.title, variant_title: record.variant_title,
+      stock_status: stockBySku.get(record.sku) ?? "unknown", feed_image_url: feed,
+      manual_image_url: manual, used: manual ? "manual" : feed ? "feed" : "none",
+    };
+  });
+}
 const runners: Record<MockProjectId, RunnerInfo | null> = {
   kingsyard: { device_id: "mock-device", device_name: "Henry-PC", claimed_at: "2026-10-20T09:00:00+08:00" },
   riverstone: null,
@@ -422,7 +556,7 @@ function selectRows<T, F = Record<string, unknown>>(
 }
 
 function productRows(id: ProjectId): ProductView[] {
-  return productsByProject[projectKey(id)].map((row) => ({ ...row, tags: tagsByHandle.get(id + ":" + row.handle) ?? row.tags }));
+  return productsByProject[projectKey(id)].map((row) => ({ ...row, image_url: null, feed_image_url: null, manual_image_url: null, image_source: "none", tags: tagsByHandle.get(id + ":" + row.handle) ?? row.tags }));
 }
 const progressListeners = new Set<(progress: JobProgress) => void>();
 const finishedListeners = new Set<(result: JobResult) => void>();
@@ -471,8 +605,25 @@ function beginRun(projectPath: string, job: JobName): string {
 }
 
 export function createMockApi(): SiteIndexApi {
+  const uiStates: Record<string, ProjectUiState> = {};
   const api: SiteIndexApi = {
     app: { version: () => reply("0.1.0-mock"), platform: () => reply("win32") },
+    uiState: {
+      get: (id) => reply(() => {
+        const key = projectKey(id);
+        return clone(uiStates[key] ?? (uiStates[key] = { columns: {}, page_sizes: {} }));
+      }),
+      set: (id, patch) => reply(() => {
+        const key = projectKey(id);
+        const current = uiStates[key] ?? { columns: {}, page_sizes: {} };
+        const next: ProjectUiState = {
+          columns: { ...current.columns, ...clone(patch.columns ?? {}) },
+          page_sizes: { ...current.page_sizes, ...clone(patch.page_sizes ?? {}) },
+        };
+        uiStates[key] = next;
+        return clone(next);
+      }),
+    },
     settings: {
       get: () => reply(settingsState),
       set: (patch) => reply(() => {
@@ -621,16 +772,38 @@ export function createMockApi(): SiteIndexApi {
         const rows = productRows(id);
         const product = rows.find((row) => row.handle === handle) ?? rows[0] ?? (fixtures.products[0] as ProductView);
         const skus = recordsByProject[projectKey(id)].filter((row) => row.handle === product.handle);
-        return { product, skus, details: null, seo: null };
+        const seoPage = seoPages.find((page) => page.url === product.url) ?? seoPages.find((page) => page.page_type === "product");
+        return {
+          product, skus,
+          details: {
+            handle: product.handle, short_description: product.short_description ?? "为日常户外使用设计的耐用产品。",
+            rating: product.rating ?? null, review_count: product.review_count ?? null,
+            breadcrumbs: ["首页", product.category, product.title],
+            gallery: product.image_url ? [product.image_url] : [],
+            related_handles: rows.filter((row) => row.handle !== product.handle && row.category === product.category).slice(0, 3).map((row) => row.handle),
+            badges: [product.is_new ? "新品" : "", product.on_sale ? "促销" : ""].filter(Boolean),
+            shipping_note: "订单满 $50 免运费。", last_crawled: FIXED_TODAY,
+          },
+          seo: seoPage
+            ? { url: seoPage.url, title: seoPage.title, robots_meta: seoPage.robots_meta, schema_types: seoPage.schema_types.length ? seoPage.schema_types : ["Product"], google_indexed: seoPage.google_indexed ?? null }
+            : { url: product.url, title: product.title, robots_meta: null, schema_types: ["Product"], google_indexed: null },
+        };
       }),
       setTags: (id, handle, tags) => reply(() => {
         tagsByHandle.set(id + ":" + handle, [...new Set(tags)]);
-        tags.forEach((tag) => tagNames.add(tag));
+        tags.forEach((tag) => tagNamesByProject[projectKey(id)].add(tag));
         return tagsByHandle.get(id + ":" + handle) ?? [];
       }),
-      listTags: (id) => reply(() => [...tagNames].sort().map((tag) => ({ tag, products: productRows(id).filter((row) => row.tags.includes(tag)).length }))),
-      createTag: (_id, tag) => reply(() => { tagNames.add(tag); return [...tagNames].sort().map((item) => ({ tag: item, products: 0 })); }),
-      deleteTag: (_id, tag) => reply(() => { tagNames.delete(tag); return [...tagNames].sort().map((item) => ({ tag: item, products: 0 })); }),
+      listTags: (id) => reply(() => [...tagNamesByProject[projectKey(id)]].sort().map((tag) => ({ tag, products: productRows(id).filter((row) => row.tags.includes(tag)).length }))),
+      createTag: (id, tag) => reply(() => { tagNamesByProject[projectKey(id)].add(tag); return [...tagNamesByProject[projectKey(id)]].sort().map((item) => ({ tag: item, products: productRows(id).filter((row) => row.tags.includes(item)).length })); }),
+      deleteTag: (id, tag) => reply(() => {
+        tagNamesByProject[projectKey(id)].delete(tag);
+        for (const product of productsByProject[projectKey(id)]) {
+          const current = tagsByHandle.get(id + ":" + product.handle) ?? product.tags;
+          tagsByHandle.set(id + ":" + product.handle, current.filter((item) => item !== tag));
+        }
+        return [...tagNamesByProject[projectKey(id)]].sort().map((item) => ({ tag: item, products: productRows(id).filter((row) => row.tags.includes(item)).length }));
+      }),
       exportCsv: (id) => reply("mock:/exports/" + id + "-products.csv"),
     },
     seo: {
@@ -661,50 +834,57 @@ export function createMockApi(): SiteIndexApi {
       checkIndex: async (id, _urls) => { await delay(); return { runId: beginRun("C:/SiteIndex/Projects/" + id, "index-check") }; },
     },
     content: {
-      summary: () => reply({ kpis: [{ key: "blogs", label: "博客文章", value: String(fixtures.blogs.length) }, { key: "keywords", label: "关键词", value: String(fixtures.keywords.length) }], uncovered_core_keywords: ["bird feeder pole", "squirrel proof bird feeder"] }),
-      listBlog: (_id, query) => reply(() => selectRows(fixtures.blogs, query, (row) => [row.title, row.slug, row.category].join(" "), (row, filters) => !filters.issue || (filters.issue === "no_links" ? row.links_internal.length === 0 && row.links_products.length === 0 : filters.issue === "no_schema" ? !row.has_faq : (row.linked_out_of_stock?.length ?? 0) > 0))),
-      listKeywords: (_id, query) => reply(() => selectRows(fixtures.keywords, query, (row) => [row.keyword, row.cluster, row.target_url].join(" "), (row, filters) => (!filters.role || row.role === filters.role) && (!filters.status || row.status === filters.status))),
-      listDrafts: () => reply([] as DraftRow[]),
+      summary: () => reply({
+        kpis: [
+          { key: "blogs", label: "博客文章", value: "44" },
+          { key: "no_schema", label: "缺少 schema", value: String(generatedBlogs.filter((row) => !row.has_faq).length) },
+          { key: "no_links", label: "正文无站内链接", value: String(generatedBlogs.filter((row) => row.links_internal.length === 0 && row.links_products.length === 0).length) },
+          { key: "links_oos", label: "链接到缺货产品", value: String(generatedBlogs.filter((row) => (row.linked_out_of_stock?.length ?? 0) > 0).length), tone: "warn" },
+          { key: "keywords", label: "关键词", value: String(generatedKeywords.length), hint: "已上线 39 · 计划 11" },
+          { key: "uncovered", label: "核心词未覆盖", value: "2", hint: "suit feeders · bird baths", tone: "warn" },
+        ], uncovered_core_keywords: ["suit feeders", "bird baths"],
+      }),
+      listBlog: (_id, query) => reply(() => selectRows(generatedBlogs, query, (row) => [row.title, row.slug, row.category, row.primary_keyword].join(" "), (row, filters) => !filters.issue || (filters.issue === "no_links" ? row.links_internal.length === 0 && row.links_products.length === 0 : filters.issue === "no_schema" ? !row.has_faq : (row.linked_out_of_stock?.length ?? 0) > 0))),
+      listKeywords: (_id, query) => reply(() => selectRows(generatedKeywords, query, (row) => [row.keyword, row.cluster, row.target_url].join(" "), (row, filters) => (!filters.role || row.role === filters.role) && (!filters.status || row.status === filters.status))),
+      listDrafts: () => reply(generatedDrafts),
     },
     edm: {
       summary: (id) => reply(() => {
-        const rows = recordsByProject[projectKey(id)];
-        const feed = rows.filter((row) => row.image_url).length;
-        const manual = rows.filter((row) => manualImages.has(id + ":" + row.sku)).length;
-        return { total: rows.length, feed, manual, none: rows.length - feed };
+        const rows = edmImageRows(id);
+        return { total: rows.length, feed: rows.filter((row) => row.feed_image_url).length, manual: rows.filter((row) => row.manual_image_url).length, none: rows.filter((row) => row.used === "none").length };
       }),
       listImages: (id, query: ListQuery<SkuImageFilters>) => reply(() => {
-        const key = projectKey(id);
-        const rows: SkuImageRow[] = recordsByProject[key].map((record) => {
-          const manual = manualImages.get(id + ":" + record.sku) ?? null;
-          const feed = record.image_url;
-          return {
-            sku: record.sku, title: record.title, variant_title: record.variant_title,
-            stock_status: rowsByProject[key].find((row) => row.sku === record.sku)?.stock_status ?? "unknown",
-            feed_image_url: feed, manual_image_url: manual, used: manual ? "manual" : feed ? "feed" : "none",
-          };
-        });
-        return selectRows(rows, query, (row) => [row.sku, row.title].join(" "), (row, filters) => !filters.view || (filters.view === "in_stock" ? row.stock_status === "in_stock" : filters.view === "no_feed" ? row.feed_image_url == null : filters.view === "has_manual" ? row.manual_image_url != null : row.used === "none"));
+        return selectRows(edmImageRows(id), query, (row) => [row.sku, row.title].join(" "), (row, filters) => !filters.view || (filters.view === "in_stock" ? row.stock_status === "in_stock" : filters.view === "no_feed" ? row.feed_image_url == null : filters.view === "has_manual" ? row.manual_image_url != null : row.used === "none"));
       }),
       setManualImage: (id, sku, url) => reply(() => {
-        manualImages.set(id + ":" + sku, url);
+        if (url) manualImages.set(id + ":" + sku, url);
+        else manualImages.delete(id + ":" + sku);
         const key = projectKey(id);
-        const record = recordsByProject[key].find((row) => row.sku === sku);
+        const index = recordsByProject[key].slice(0, fixtures.skus.length).findIndex((row) => row.sku === sku);
+        const record = recordsByProject[key][index];
         const stock = rowsByProject[key].find((row) => row.sku === sku);
+        const feed = index === 4 || index === 18 ? null : record ? mockFeedImageUrl(record) : null;
         return {
           sku, title: record?.title ?? sku, variant_title: record?.variant_title ?? null,
-          stock_status: stock?.stock_status ?? "unknown", feed_image_url: record?.image_url ?? null,
-          manual_image_url: url, used: url ? "manual" : record?.image_url ? "feed" : "none",
+          stock_status: stock?.stock_status ?? "unknown", feed_image_url: feed,
+          manual_image_url: url, used: url ? "manual" : feed ? "feed" : "none",
         };
       }),
       buildCommand: (_id, input: EdmCommandInput) => reply("edm-builder --theme \"" + input.theme + "\" --count " + input.count + (input.promo_code ? " --promo-code \"" + input.promo_code + "\"" : "")),
     },
-    design: { get: () => reply({ tokens: null as DesignTokens | null, screenshots: [] }) },
+    design: { get: (id) => reply({ tokens: clone(designTokens), screenshots: designScreenshots(id) }) },
     readme: {
       get: (id) => reply(() => ({
         user_blocks: userReadmeBlocks[projectKey(id)],
-        auto_blocks: [{ id: "inventory", title: "库存摘要", updated_at: "2026-10-22T10:00:00+08:00", schedule: "每天同步后更新" }, { id: "folders", title: "工作区文件夹", updated_at: null, schedule: "手动刷新" }],
-        folder_map: folderRows[projectKey(id)],
+        auto_blocks: [
+          { id: "index-summary", title: "网站数据速览", updated_at: "2026-10-19T05:00:00+08:00", schedule: "每日同步后" },
+          { id: "folder-map", title: "目录地图", updated_at: "2026-10-19T05:00:00+08:00", schedule: "每周日" },
+          { id: "task-routing", title: "任务路由", updated_at: null, schedule: "skill 更新后" },
+          { id: "data-guide", title: "数据指南", updated_at: null, schedule: "规范升级后" },
+          { id: "design-summary", title: "设计规范速览", updated_at: "2026-10-01T04:00:00+08:00", schedule: "每月" },
+          { id: "changelog", title: "变更记录", updated_at: "2026-10-22T05:00:00+08:00", schedule: "每次运行" },
+        ],
+        folder_map: readmeFolderMaps[projectKey(id)],
       })),
       saveUserBlocks: (id, blocks) => reply(() => { userReadmeBlocks[projectKey(id)] = clone(blocks); }),
       refresh: async (id) => { await delay(); return { runId: beginRun("C:/SiteIndex/Projects/" + id, "readme") }; },
@@ -785,7 +965,14 @@ export function createMockApi(): SiteIndexApi {
         { name: "site-index-onboarding", version: "1.0.0", description: "SiteIndex 项目接入指南", has_update: false, reads: ["README.md", "site.json"], writes: [] },
         { name: "site-index-maintain", version: "1.0.0", description: "SiteIndex 数据维护指南", has_update: false, reads: ["index/"], writes: ["README.md"] },
       ]),
-      get: (name) => reply({ info: { name, version: "1.0.0", description: "SiteIndex 项目技能说明", has_update: false, reads: ["README.md"], writes: [] }, body: "# SiteIndex Skill\n\n请先阅读项目 README，再根据当前数据完成任务。" }),
+      get: (name) => reply({
+        info: { name, version: "1.0.0", description: "SiteIndex 项目技能说明", has_update: false, reads: ["README.md"], writes: [] },
+        body: name === "page-design"
+          ? "# page-design\n\n颜色只用 index/design/tokens.json 中的语义色与 palette。\n字体、字号、按钮、间距、圆角按设计规范实现。\n规范超过 60 天时提醒项目负责人重新提取。"
+          : name === "project-readme"
+            ? "# project-readme\n\n不修改 siteindex:auto 区块、index/、_agent/。\n为待补充说明的文件夹写 _about.md。\n用户区块修改前先展示对比。"
+            : "# SiteIndex Skill\n\n请先阅读项目 README，再根据当前数据完成任务。",
+      }),
       targets: (name) => reply([
         { target_id: "project:kingsyard", name: "Kingsyard 项目", dir: "C:/SiteIndex/Projects/Kingsyard/.agent/skills/" + name, status: "latest" },
         { target_id: "codex", name: "Codex", dir: null, status: "not_installed" },

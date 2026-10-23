@@ -1,0 +1,179 @@
+.si-center-kpis {
+display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;
+}
+
+.si-center-kpis .si-kpi-card {
+min-height: 88px; padding: 12px 16px;
+}
+
+.si-center-kpis .si-kpi-card:last-child .si-kpi-value {
+font-size: 14px; line-height: 1.35;
+}
+
+.si-project-grid {
+display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 16px;
+}
+
+.si-project-card {
+display: flex; min-width: 0; min-height: 282px; flex-direction: column; padding: 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
+}
+
+.si-project-card.is-warning {
+border-color: #E8B568;
+}
+
+.si-project-card.is-warning .si-project-stats {
+margin-top: 20px;
+}
+
+.si-project-card-heading {
+display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+
+.si-project-heading-copy {
+display: grid; min-width: 0; gap: 4px;
+}
+
+.si-project-title {
+overflow: hidden; color: var(--color-ink); font-size: 17px; font-weight: 700; text-decoration: none; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.si-project-title:hover {
+color: var(--color-brand);
+}
+
+.si-project-domain {
+overflow: hidden; color: var(--color-muted); font-family: var(--font-mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.si-project-stats {
+display: grid; grid-template-columns: 1.25fr .85fr .5fr; gap: 12px; margin-top: 22px;
+}
+
+.si-project-stats div {
+display: grid; min-width: 0; gap: 4px;
+}
+
+.si-project-stats span {
+color: var(--color-muted); font-size: 11px;
+}
+
+.si-project-stats strong {
+overflow: hidden; color: var(--color-ink); font-size: 15px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.si-project-changes {
+display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px;
+}
+
+.si-project-card-footer {
+display: flex; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--color-line-soft); color: var(--color-muted); font-size: 11px;
+}
+
+.si-project-card-footer span {
+overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.si-project-warning {
+display: grid; gap: 10px; margin-top: 14px; padding: 12px 13px; border-radius: 7px; font-size: 12px; line-height: 1.5;
+}
+
+.si-project-warning-warn {
+background: #FFF7EA; color: #85500E;
+}
+
+.si-project-warning-danger {
+background: var(--color-danger-soft); color: var(--color-danger);
+}
+
+.si-project-warning > div:first-child {
+display: grid; gap: 2px;
+}
+
+.si-project-warning-actions {
+display: flex; gap: 8px;
+}
+
+.si-project-warning-actions a, .si-project-warning-actions button {
+min-height: 30px; padding: 0 10px; border: 1px solid rgba(117, 83, 35, .22); border-radius: 5px; background: rgba(255,255,255,.72); color: inherit; font-size: 11px; text-decoration: none;
+}
+
+.si-project-warning-actions a {
+display: inline-flex; align-items: center;
+}
+
+.si-new-project-card {
+display: flex; min-height: 282px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 1px dashed #B8C3CC; border-radius: 10px; color: var(--color-muted); text-decoration: none;
+}
+
+.si-new-project-card svg {
+color: var(--color-ink-2);
+}
+
+.si-new-project-card strong {
+color: var(--color-ink-2); font-size: 14px;
+}
+
+.si-new-project-card span {
+font-size: 12px;
+}
+
+.si-new-project-card:hover {
+border-color: var(--color-brand); background: var(--color-brand-soft);
+}
+
+.si-recent-runs {
+min-width: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
+}
+
+.si-recent-runs .si-data-table {
+border: 0; border-radius: 0;
+}
+
+.si-recent-runs .si-table td {
+height: 46px;
+}
+
+.si-recent-heading {
+display: flex; min-height: 32px; align-items: center; gap: 12px;
+}
+
+.si-recent-heading h2 {
+margin: 0; color: var(--color-ink); font-size: 14px;
+}
+
+.si-run-summary {
+display: block; max-width: 520px; overflow: hidden; text-overflow: ellipsis;
+}
+
+.si-add-project-dialog .si-dialog-description {
+margin-bottom: 18px;
+}
+
+.si-add-project-dialog .si-dialog-actions {
+margin-top: 20px;
+}
+
+@media (max-width: 1280px) {
+.si-center-kpis {
+grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+}
+
+@media (max-width: 1280px) {
+.si-project-grid {
+grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+}
+
+@media (max-width: 760px) {
+.si-center-kpis, .si-project-grid {
+grid-template-columns: minmax(0, 1fr);
+}
+}
+
+@media (max-width: 760px) {
+.si-project-card, .si-new-project-card {
+min-height: 240px;
+}
+}
