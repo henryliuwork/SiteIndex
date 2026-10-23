@@ -370,7 +370,7 @@ const runners: Record<MockProjectId, RunnerInfo | null> = {
   riverstone: null,
 };
 const scheduleStates: Record<MockProjectId, ScheduleState> = {
-  kingsyard: { config: defaultSchedule(), registered: false, next_runs: [{ job: "daily", at: "2026-10-23T02:00:00+08:00" }] },
+  kingsyard: { config: defaultSchedule(), registered: true, next_runs: [{ job: "daily", at: "2026-10-23T02:00:00+08:00" }] },
   riverstone: { config: defaultSchedule(), registered: false, next_runs: [{ job: "daily", at: "2026-10-23T02:00:00+08:00" }] },
 };
 
@@ -948,7 +948,7 @@ export function createMockApi(): SiteIndexApi {
       get: (id) => reply(scheduleStates[projectKey(id)]),
       save: (id, config) => reply(() => {
         const key = projectKey(id);
-        scheduleStates[key] = { ...scheduleStates[key], config: clone(config) };
+        scheduleStates[key] = { ...scheduleStates[key], config: clone(config), registered: true };
         return scheduleStates[key];
       }),
     },
