@@ -9,6 +9,7 @@ import { createJobManager } from "./job-manager.js";
 import { showJobNotification } from "./notifications.js";
 import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
 import { parseRunJobArguments } from "./run-job-args.js";
+import { createSkillService } from "./skill-service.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
 
@@ -70,10 +71,7 @@ if (!hasSingleInstanceLock) {
         return;
       }
       try {
-        const result = await jobs.runAndWait(
-          { projectPath: resolve(args.projectPath), job: args.job },
-          "schedule",
-        );
+        const result = await jobs.runAndWait({ projectPath: resolve(args.projectPath), job: args.job }, "schedule");
         app.exit(result.exitCode);
       } catch (error) {
         process.stderr.write(`SiteIndex Job 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
@@ -115,6 +113,13 @@ if (!hasSingleInstanceLock) {
         : resolve(mainDirectory, "../../../../templates/project"),
     });
     core = coreService;
+    const skillService = createSkillService({
+      sourceDirectory: app.isPackaged
+        ? join(process.resourcesPath, "skills")
+        : resolve(mainDirectory, "../../../../skills"),
+      listProjects: () => catalog.refresh(currentSettings),
+      getPlatforms: async () => (await settingsStore.get()).skill_platforms,
+    });
     await catalog.refresh(currentSettings);
     registerIpcHandlers(
       settingsStore,
@@ -130,6 +135,7 @@ if (!hasSingleInstanceLock) {
         if (projectsChanged) await catalog.refresh(currentSettings);
       },
       jobs,
+      skillService,
     );
 
     registerContentSecurityPolicy();
