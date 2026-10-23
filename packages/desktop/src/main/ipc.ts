@@ -10,6 +10,8 @@ import type {
   ProductView,
   ProjectId,
   ProjectUiState,
+  ScheduleConfig,
+  ScheduleState,
   SkuStockFilters,
   SkuStockView,
   SiteIndexError,
@@ -17,6 +19,7 @@ import type {
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import type { JobManager } from "./job-manager.js";
 import { isProjectInsideRoot, type ProjectCatalog } from "./project-catalog.js";
+import { type ScheduleRuntimeStatus, type SystemScheduler } from "./scheduler/schedule.js";
 import type { SettingsStore } from "./settings-store.js";
 import type { UiStateStore } from "./ui-state-store.js";
 
@@ -107,6 +110,53 @@ function invalidJobRequest(message: string): SiteIndexError {
   return { code: "CONFIG_INVALID", message };
 }
 
+function isScheduleConfig(value: unknown): value is ScheduleConfig {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const config = value as Record<string, unknown>;
+  const keys = ["daily", "validate", "weekly", "readme", "monthly"] as const;
+  for (const key of keys) {
+    const entry = config[key];
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+    const schedule = entry as Record<string, unknown>;
+    if (
+      typeof schedule.enabled !== "boolean" ||
+      typeof schedule.time !== "string" ||
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.time)
+    ) {
+      return false;
+    }
+    if (key === "monthly") {
+      if (
+        schedule.day_of_month !== undefined &&
+        (!Number.isInteger(schedule.day_of_month) ||
+          Number(schedule.day_of_month) < 1 ||
+          Number(schedule.day_of_month) > 31)
+      )
+        return false;
+      if (schedule.enabled && schedule.day_of_month === undefined) return false;
+    } else if (schedule.days !== undefined) {
+      if (
+        !Array.isArray(schedule.days) ||
+        schedule.days.some((day) => !Number.isInteger(day) || Number(day) < 1 || Number(day) > 7)
+      )
+        return false;
+      if (schedule.enabled && schedule.days.length === 0) return false;
+    } else if (schedule.enabled) {
+      return false;
+    }
+  }
+  const options = config.options;
+  if (typeof options !== "object" || options === null || Array.isArray(options)) return false;
+  const flags = options as Record<string, unknown>;
+  return ["wake_to_run", "run_if_missed", "notify_on_failure", "validate_after_sync"].every(
+    (key) => typeof flags[key] === "boolean",
+  );
+}
+
+function invalidSchedule(): SiteIndexError {
+  return { code: "CONFIG_INVALID", message: "定时任务计划无效。" };
+}
+
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = Array.isArray(value)
@@ -149,6 +199,8 @@ export function registerIpcHandlers(
   projects: ProjectCatalog,
   settingsChanged: (value: AppSettings) => Promise<void>,
   jobs: JobManager,
+  scheduler: SystemScheduler,
+  reconcileSchedules: (allowElevation: boolean) => Promise<ScheduleRuntimeStatus>,
 ): void {
   const withProject = async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>): Promise<T> => {
     const id = projectId(value);
@@ -181,6 +233,7 @@ export function registerIpcHandlers(
     "projects.create": async (...args) => {
       const result = await core.projects.create(args[0] as Parameters<CoreService["projects"]["create"]>[0]);
       await projects.refresh(await settings.get());
+      await reconcileSchedules(true);
       return result;
     },
     "projects.addExisting": async (value) => {
@@ -200,6 +253,7 @@ export function registerIpcHandlers(
       }
       const id = path.basename(projectPath);
       await projects.ensureProject(id, updated);
+      await reconcileSchedules(true);
       return (await core.projects.get(id)).summary;
     },
     "projects.updateConfig": (...args) =>
@@ -292,6 +346,32 @@ export function registerIpcHandlers(
       if (typeof id !== "string" || !id.trim()) throw invalidJobRequest("项目标识无效。");
       return jobs.running(id as ProjectId);
     },
+    "schedule.get": async (id) =>
+      withProject(id, async (projectIdValue) => {
+        const state = await core.schedule.get(projectIdValue);
+        return scheduler.getState(projectIdValue, projects.resolveProject(projectIdValue), state.config);
+      }),
+    "runner.get": (id) => withProject(id, (projectIdValue) => core.runner.get(projectIdValue)),
+    "schedule.save": async (id, config) =>
+      withProject(id, async (projectIdValue) => {
+        if (!isScheduleConfig(config)) throw invalidSchedule();
+        const saved = await core.schedule.save(projectIdValue, config as ScheduleConfig);
+        const runner = await core.runner.get(projectIdValue);
+        await reconcileSchedules(true);
+        const state = await scheduler.getState(projectIdValue, projects.resolveProject(projectIdValue), saved.config);
+        if (!runner.is_this_device) {
+          await dialog.showMessageBox({
+            type: "info",
+            title: "计划已保存",
+            message: "计划已写入项目配置，但本机不是此项目的执行设备。",
+            detail: runner.runner
+              ? `请在执行设备“${runner.runner.device_name}”上同步计划，任务将由该设备运行。`
+              : "请先在要运行任务的设备上认领此项目。",
+          });
+          return { ...state, registered: false } satisfies ScheduleState;
+        }
+        return state;
+      }),
   });
 
   for (const [channel, handler] of handlers) {

@@ -1,0 +1,40 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`system schedule definitions > generates a macOS monthly LaunchAgent plist 1`] = `
+"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.siteindex.sample-store.47b344db.monthly</string>
+  <key>ProgramArguments</key><array><string>/Applications/SiteIndex.app/Contents/MacOS/SiteIndex</string><string>--run-job</string><string>/Users/tester/Cloud &amp; Drive/sample-store</string><string>monthly</string></array>
+  <key>StartCalendarInterval</key><array><dict><key>Day</key><integer>15</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>15</integer></dict></array>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+</dict></plist>
+"
+`;
+
+exports[`system schedule definitions > generates a macOS weekday LaunchAgent plist 1`] = `
+"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.siteindex.sample-store.47b344db.daily</string>
+  <key>ProgramArguments</key><array><string>/Applications/SiteIndex.app/Contents/MacOS/SiteIndex</string><string>--run-job</string><string>/Users/tester/Cloud &amp; Drive/sample-store</string><string>daily</string></array>
+  <key>StartCalendarInterval</key><array><dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict></array>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+</dict></plist>
+"
+`;
+
+exports[`system schedule definitions > uses launchd weekday zero for Sunday 1`] = `
+"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.siteindex.sample-store.47b344db.weekly</string>
+  <key>ProgramArguments</key><array><string>/Applications/SiteIndex.app/Contents/MacOS/SiteIndex</string><string>--run-job</string><string>/Users/tester/Cloud &amp; Drive/sample-store</string><string>weekly</string></array>
+  <key>StartCalendarInterval</key><array><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict></array>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+</dict></plist>
+"
+`;
