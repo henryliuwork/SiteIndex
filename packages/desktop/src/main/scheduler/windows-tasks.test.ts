@@ -184,6 +184,8 @@ describe("Windows schedule registration", () => {
     expect(script).toContain("$operations = ConvertFrom-Json -InputObject $operationsJson");
     expect(script).toContain('for ($index = 0; $index -lt $operations.Count; $index++)');
     expect(script).toContain('/TN "$($operation.name)"');
+    expect(script).toContain("$ErrorActionPreference = 'Continue'");
+    expect(script).toContain('$ErrorActionPreference = $previousErrorActionPreference');
     expect(encodedOperations).toBeTruthy();
     const operations = JSON.parse(Buffer.from(encodedOperations!, "base64").toString("utf8")) as {
       action: string;

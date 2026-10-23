@@ -251,7 +251,9 @@ for ($index = 0; $index -lt $operations.Count; $index++) {
   $output = ''
   $code = 0
   $xmlPath = $null
+  $previousErrorActionPreference = $ErrorActionPreference
   try {
+    $ErrorActionPreference = 'Continue'
     if ($operation.action -eq 'create') {
       $xmlPath = Join-Path $env:TEMP ('siteindex-task-' + [Guid]::NewGuid().ToString('N') + '.xml')
       [IO.File]::WriteAllBytes($xmlPath, [Convert]::FromBase64String($operation.xmlBase64))
@@ -267,6 +269,7 @@ for ($index = 0; $index -lt $operations.Count; $index++) {
     $output = $_.Exception.Message
     $success = $false
   } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
     if ($xmlPath) { Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue }
   }
   $results += [pscustomobject]@{ name = $operation.name; action = $operation.action; success = [bool]$success; exit_code = $code; detail = $output.Trim() }
