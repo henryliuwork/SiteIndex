@@ -7,7 +7,14 @@ const desktopRoot = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: ["@siteindex/core", "@siteindex/shared"] })],
-    build: { rollupOptions: { input: resolve(desktopRoot, "src/main/index.ts") } },
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve(desktopRoot, "src/main/index.ts"),
+          "job-worker": resolve(desktopRoot, "src/main/job-worker.ts"),
+        },
+      },
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
