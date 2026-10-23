@@ -19,7 +19,7 @@ import type {
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import type { JobManager } from "./job-manager.js";
 import { isProjectInsideRoot, type ProjectCatalog } from "./project-catalog.js";
-import { calculateNextRuns, type SystemScheduler } from "./scheduler/schedule.js";
+import { type ScheduleRuntimeStatus, type SystemScheduler } from "./scheduler/schedule.js";
 import type { SettingsStore } from "./settings-store.js";
 import type { UiStateStore } from "./ui-state-store.js";
 
@@ -126,10 +126,20 @@ function isScheduleConfig(value: unknown): value is ScheduleConfig {
       return false;
     }
     if (key === "monthly") {
-      if (schedule.day_of_month !== undefined && (!Number.isInteger(schedule.day_of_month) || Number(schedule.day_of_month) < 1 || Number(schedule.day_of_month) > 31)) return false;
+      if (
+        schedule.day_of_month !== undefined &&
+        (!Number.isInteger(schedule.day_of_month) ||
+          Number(schedule.day_of_month) < 1 ||
+          Number(schedule.day_of_month) > 31)
+      )
+        return false;
       if (schedule.enabled && schedule.day_of_month === undefined) return false;
     } else if (schedule.days !== undefined) {
-      if (!Array.isArray(schedule.days) || schedule.days.some((day) => !Number.isInteger(day) || Number(day) < 1 || Number(day) > 7)) return false;
+      if (
+        !Array.isArray(schedule.days) ||
+        schedule.days.some((day) => !Number.isInteger(day) || Number(day) < 1 || Number(day) > 7)
+      )
+        return false;
       if (schedule.enabled && schedule.days.length === 0) return false;
     } else if (schedule.enabled) {
       return false;
@@ -190,6 +200,7 @@ export function registerIpcHandlers(
   settingsChanged: (value: AppSettings) => Promise<void>,
   jobs: JobManager,
   scheduler: SystemScheduler,
+  reconcileSchedules: (allowElevation: boolean) => Promise<ScheduleRuntimeStatus>,
 ): void {
   const withProject = async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>): Promise<T> => {
     const id = projectId(value);
@@ -222,6 +233,7 @@ export function registerIpcHandlers(
     "projects.create": async (...args) => {
       const result = await core.projects.create(args[0] as Parameters<CoreService["projects"]["create"]>[0]);
       await projects.refresh(await settings.get());
+      await reconcileSchedules(true);
       return result;
     },
     "projects.addExisting": async (value) => {
@@ -241,6 +253,7 @@ export function registerIpcHandlers(
       }
       const id = path.basename(projectPath);
       await projects.ensureProject(id, updated);
+      await reconcileSchedules(true);
       return (await core.projects.get(id)).summary;
     },
     "projects.updateConfig": (...args) =>
@@ -343,6 +356,8 @@ export function registerIpcHandlers(
         if (!isScheduleConfig(config)) throw invalidSchedule();
         const saved = await core.schedule.save(projectIdValue, config as ScheduleConfig);
         const runner = await core.runner.get(projectIdValue);
+        await reconcileSchedules(true);
+        const state = await scheduler.getState(projectIdValue, projects.resolveProject(projectIdValue), saved.config);
         if (!runner.is_this_device) {
           await dialog.showMessageBox({
             type: "info",
@@ -352,13 +367,9 @@ export function registerIpcHandlers(
               ? `请在执行设备“${runner.runner.device_name}”上同步计划，任务将由该设备运行。`
               : "请先在要运行任务的设备上认领此项目。",
           });
-          return {
-            config: saved.config,
-            registered: false,
-            next_runs: calculateNextRuns(saved.config),
-          } satisfies ScheduleState;
+          return { ...state, registered: false } satisfies ScheduleState;
         }
-        return scheduler.sync(projectIdValue, projects.resolveProject(projectIdValue), saved.config);
+        return state;
       }),
   });
 

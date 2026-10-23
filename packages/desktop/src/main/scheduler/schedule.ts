@@ -1,9 +1,19 @@
 import type { JobSchedule, ScheduleConfig, ScheduleState, Weekday } from "@siteindex/shared";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+  createWindowsTaskRegistrar,
+  windowsRootTaskName,
+  windowsTaskName,
+  WINDOWS_SCHEDULED_JOBS,
+  type WindowsTaskDefinition,
+  type WindowsTaskRegistrar,
+} from "./windows-tasks.js";
+
+export { buildWindowsTaskXml, windowsRootTaskName, windowsTaskName } from "./windows-tasks.js";
 
 export const SCHEDULED_JOBS = ["daily", "validate", "weekly", "readme", "monthly"] as const;
 export type ScheduledJob = (typeof SCHEDULED_JOBS)[number];
@@ -18,8 +28,25 @@ export interface LaunchAgentDefinition {
 
 export interface SystemScheduler {
   getState(projectId: string, projectPath: string, config: ScheduleConfig): Promise<ScheduleState>;
-  sync(projectId: string, projectPath: string, config: ScheduleConfig): Promise<ScheduleState>;
-  removeProject(projectId: string): Promise<void>;
+  getRuntimeStatus(): Promise<ScheduleRuntimeStatus>;
+  reconcile(projects: ScheduleProjectDefinition[], allowElevation: boolean): Promise<ScheduleRuntimeStatus>;
+  reauthorize(projects: ScheduleProjectDefinition[]): Promise<ScheduleRuntimeStatus>;
+}
+
+export interface ScheduleRuntimeStatus {
+  mode: "system" | "resident";
+  authorization_required: boolean;
+}
+
+export interface ScheduleProjectDefinition {
+  projectId: string;
+  projectPath: string;
+  config: ScheduleConfig;
+  isThisDevice: boolean;
+}
+
+interface PersistedWindowsScheduleState extends ScheduleRuntimeStatus {
+  registered_task_names: string[];
 }
 
 const LAUNCHD_WEEKDAYS: Record<Weekday, number> = {
@@ -71,20 +98,6 @@ function localDate(date: Date): string {
   const month = (date.getMonth() + 1).toString().padStart(2, "0");
   const day = date.getDate().toString().padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-export function windowsTaskName(projectId: string, job: ScheduledJob): string {
-  assertSafeProjectId(projectId);
-  return `\\SiteIndex\\${projectId}-${job}`;
-}
-
-export function windowsRootTaskName(projectId: string, job: ScheduledJob): string {
-  assertSafeProjectId(projectId);
-  return `SiteIndex - ${projectId}-${job}`;
-}
-
-export function windowsTaskNames(projectId: string, job: ScheduledJob): string[] {
-  return [windowsTaskName(projectId, job), windowsRootTaskName(projectId, job)];
 }
 
 export function launchAgentLabel(projectId: string, job: ScheduledJob): string {
@@ -190,50 +203,64 @@ export function createSystemScheduler(options: {
   executablePath: string;
   homeDirectory?: string;
   uid?: number;
-  windowsResidentReady?: () => boolean;
+  runtimeStatePath?: string;
   runCommand?: (file: string, args: string[]) => Promise<string>;
+  windowsTaskRegistrar?: WindowsTaskRegistrar;
+  beforeElevation?: () => Promise<void>;
 }): SystemScheduler {
   const platform = options.platform ?? process.platform;
   const runCommand = options.runCommand ?? execute;
   const homeDirectory = options.homeDirectory ?? homedir();
   const uid = options.uid ?? (typeof process.getuid === "function" ? process.getuid() : 0);
   const agentDirectory = path.join(homeDirectory, "Library", "LaunchAgents");
+  const windowsTaskRegistrar =
+    options.windowsTaskRegistrar ??
+    createWindowsTaskRegistrar({ runCommand, beforeElevation: options.beforeElevation });
+  const runtimeState: PersistedWindowsScheduleState = {
+    mode: "system",
+    authorization_required: false,
+    registered_task_names: [],
+  };
+  let macProjectIds = new Set<string>();
+
   function plistPath(projectId: string, job: ScheduledJob): string {
     return path.join(agentDirectory, `${launchAgentLabel(projectId, job)}.plist`);
   }
 
-  async function removeWindows(projectId: string, job: ScheduledJob): Promise<void> {
-    for (const name of windowsTaskNames(projectId, job)) {
-      try {
-        await runCommand("schtasks.exe", ["/Query", "/TN", name, "/XML"]);
-        await runCommand("schtasks.exe", ["/Delete", "/TN", name, "/F"]);
-      } catch {
-        // 旧版本任务可能不存在或当前用户没有删除权限。
+  async function loadRuntimeState(): Promise<PersistedWindowsScheduleState> {
+    if (!options.runtimeStatePath) return runtimeState;
+    try {
+      const value: unknown = JSON.parse(await readFile(options.runtimeStatePath, "utf8"));
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        const state = value as Record<string, unknown>;
+        if (
+          (state.mode === "system" || state.mode === "resident") &&
+          typeof state.authorization_required === "boolean" &&
+          Array.isArray(state.registered_task_names) &&
+          state.registered_task_names.every((name) => typeof name === "string")
+        ) {
+          Object.assign(runtimeState, {
+            mode: state.mode,
+            authorization_required: state.authorization_required,
+            registered_task_names: state.registered_task_names,
+          });
+        }
+      }
+    } catch (error) {
+      if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) {
+        console.warn("读取计划任务状态失败，将重新校正计划。", error);
       }
     }
+    return runtimeState;
   }
 
-  async function registerMac(projectId: string, projectPath: string, config: ScheduleConfig): Promise<void> {
-    await mkdir(agentDirectory, { recursive: true });
-    for (const job of SCHEDULED_JOBS) {
-      const schedule = jobDefinition(config, job);
-      if (!schedule.enabled) {
-        await removeMac(projectId, job);
-        continue;
-      }
-      const label = launchAgentLabel(projectId, job);
-      const filePath = plistPath(projectId, job);
-      const content = buildLaunchAgentPlist({
-        projectId,
-        projectPath,
-        executablePath: options.executablePath,
-        job,
-        schedule,
-      });
-      await runCommand("launchctl", ["bootout", `gui/${uid}`, filePath]).catch(() => undefined);
-      await writeFile(filePath, content, { encoding: "utf8", mode: 0o600 });
-      await runCommand("launchctl", ["bootstrap", `gui/${uid}`, filePath]);
-    }
+  async function saveRuntimeState(value: PersistedWindowsScheduleState): Promise<void> {
+    Object.assign(runtimeState, value);
+    if (!options.runtimeStatePath) return;
+    await mkdir(path.dirname(options.runtimeStatePath), { recursive: true });
+    const temporaryPath = `${options.runtimeStatePath}.tmp`;
+    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    await rename(temporaryPath, options.runtimeStatePath);
   }
 
   async function removeMac(projectId: string, job: ScheduledJob): Promise<void> {
@@ -254,6 +281,29 @@ export function createSystemScheduler(options: {
     }
   }
 
+  async function registerMac(project: ScheduleProjectDefinition): Promise<void> {
+    await mkdir(agentDirectory, { recursive: true });
+    for (const job of SCHEDULED_JOBS) {
+      const schedule = jobDefinition(project.config, job);
+      if (!project.isThisDevice || !schedule.enabled) {
+        await removeMac(project.projectId, job);
+        continue;
+      }
+      const label = launchAgentLabel(project.projectId, job);
+      const filePath = plistPath(project.projectId, job);
+      const content = buildLaunchAgentPlist({
+        projectId: project.projectId,
+        projectPath: project.projectPath,
+        executablePath: options.executablePath,
+        job,
+        schedule,
+      });
+      await runCommand("launchctl", ["bootout", `gui/${uid}`, filePath]).catch(() => undefined);
+      await writeFile(filePath, content, { encoding: "utf8", mode: 0o600 });
+      await runCommand("launchctl", ["bootstrap", `gui/${uid}`, filePath]);
+    }
+  }
+
   async function isMacRegistered(projectId: string, job: ScheduledJob): Promise<boolean> {
     try {
       await access(plistPath(projectId, job));
@@ -264,40 +314,99 @@ export function createSystemScheduler(options: {
     }
   }
 
-  async function registered(projectId: string, config: ScheduleConfig): Promise<boolean> {
-    if (platform !== "win32" && platform !== "darwin") return false;
-    if (platform === "win32") return options.windowsResidentReady?.() ?? false;
-    const checks = await Promise.all(
-      SCHEDULED_JOBS.filter((job) => config[job].enabled).map((job) => isMacRegistered(projectId, job)),
-    );
-    return checks.every(Boolean);
+  async function getRuntimeStatus(): Promise<ScheduleRuntimeStatus> {
+    if (platform !== "win32") return { mode: "system", authorization_required: false };
+    const state = await loadRuntimeState();
+    return { mode: state.mode, authorization_required: state.authorization_required };
+  }
+
+  async function reconcile(
+    projects: ScheduleProjectDefinition[],
+    allowElevation: boolean,
+  ): Promise<ScheduleRuntimeStatus> {
+    if (platform === "win32") {
+      const state = await loadRuntimeState();
+      const desired: WindowsTaskDefinition[] = [];
+      const obsoleteNames: string[] = [];
+      for (const project of projects) {
+        assertSafeProjectId(project.projectId);
+        for (const job of WINDOWS_SCHEDULED_JOBS) {
+          const nestedName = windowsTaskName(project.projectId, job);
+          const rootName = windowsRootTaskName(project.projectId, job);
+          obsoleteNames.push(nestedName, rootName);
+          const schedule = project.config[job];
+          if (!project.isThisDevice || !schedule.enabled) continue;
+          desired.push({
+            projectId: project.projectId,
+            projectPath: project.projectPath,
+            executablePath: options.executablePath,
+            userId: "",
+            job,
+            schedule,
+            options: project.config.options,
+          });
+        }
+      }
+      const result = await windowsTaskRegistrar.reconcile(
+        desired,
+        obsoleteNames.filter(
+          (name) => !desired.some((definition) => windowsTaskName(definition.projectId, definition.job) === name),
+        ),
+        state.registered_task_names,
+        allowElevation,
+        state.mode,
+      );
+      const nextState: PersistedWindowsScheduleState = {
+        mode: result.mode,
+        authorization_required: result.authorization_required,
+        registered_task_names: result.registered_task_names,
+      };
+      await saveRuntimeState(nextState);
+      return { mode: nextState.mode, authorization_required: nextState.authorization_required };
+    }
+
+    if (platform === "darwin") {
+      const currentIds = new Set(projects.map(({ projectId }) => projectId));
+      for (const staleId of macProjectIds) {
+        if (currentIds.has(staleId)) continue;
+        for (const job of SCHEDULED_JOBS) await removeMac(staleId, job);
+      }
+      for (const project of projects) await registerMac(project);
+      macProjectIds = currentIds;
+    }
+    return { mode: "system", authorization_required: false };
   }
 
   return {
-    async getState(projectId, projectPath, config) {
-      void projectPath;
-      return {
-        config,
-        registered: await registered(projectId, config),
-        next_runs: calculateNextRuns(config),
-      };
-    },
-    async sync(projectId, projectPath, config) {
-      assertSafeProjectId(projectId);
+    async getState(projectId, _projectPath, config) {
       if (platform === "win32") {
-        await Promise.all(SCHEDULED_JOBS.map((job) => removeWindows(projectId, job)));
-      } else if (platform === "darwin") await registerMac(projectId, projectPath, config);
+        const state = await loadRuntimeState();
+        const enabledNames = WINDOWS_SCHEDULED_JOBS.filter((job) => config[job].enabled).map((job) =>
+          windowsTaskName(projectId, job),
+        );
+        return {
+          config,
+          registered:
+            state.mode === "system" && enabledNames.every((name) => state.registered_task_names.includes(name)),
+          next_runs: calculateNextRuns(config),
+        };
+      }
+      const checks =
+        platform === "darwin"
+          ? await Promise.all(
+              SCHEDULED_JOBS.filter((job) => config[job].enabled).map((job) => isMacRegistered(projectId, job)),
+            )
+          : [];
       return {
         config,
-        registered: await registered(projectId, config),
+        registered: platform === "darwin" ? checks.every(Boolean) : false,
         next_runs: calculateNextRuns(config),
       };
     },
-    async removeProject(projectId) {
-      for (const job of SCHEDULED_JOBS) {
-        if (platform === "win32") await removeWindows(projectId, job);
-        else if (platform === "darwin") await removeMac(projectId, job);
-      }
+    getRuntimeStatus,
+    reconcile,
+    reauthorize(projects) {
+      return reconcile(projects, true);
     },
   };
 }

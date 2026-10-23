@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, screen, session, shell, Tray, utilityProcess } from "electron";
+import { app, BrowserWindow, dialog, Menu, screen, session, shell, Tray, utilityProcess } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,10 +7,10 @@ import { EXIT, type AppSettings, type ProjectId } from "@siteindex/shared";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
 import { createJobManager } from "./job-manager.js";
 import { showJobNotification } from "./notifications.js";
-import { createProjectCatalog, type ProjectCatalog, type ProjectPathEntry } from "./project-catalog.js";
+import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
 import { parseRunJobArguments } from "./run-job-args.js";
 import { createResidentScheduler, type ResidentScheduler } from "./scheduler/resident-scheduler.js";
-import { createSystemScheduler } from "./scheduler/schedule.js";
+import { createSystemScheduler, type ScheduleRuntimeStatus } from "./scheduler/schedule.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
 
@@ -33,8 +33,7 @@ let isShuttingDown = false;
 let launchHidden = process.platform === "win32" && process.argv.includes(backgroundSchedulerArgument);
 let systemTray: Tray | null = null;
 let residentScheduler: ResidentScheduler | null = null;
-let residentSchedulerReady = false;
-let windowsAutostartEnabled = false;
+let scheduleMode: ScheduleRuntimeStatus["mode"] = "system";
 
 if (process.platform === "win32") app.setAppUserModelId("com.siteindex.desktop");
 
@@ -50,7 +49,19 @@ if (!hasSingleInstanceLock) {
     const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
     const scheduler = createSystemScheduler({
       executablePath: app.getPath("exe"),
-      windowsResidentReady: () => residentSchedulerReady && windowsAutostartEnabled,
+      runtimeStatePath: join(app.getPath("userData"), "schedule-runtime-state.json"),
+      beforeElevation: async () => {
+        const prompt = {
+          type: "info" as const,
+          title: "需要管理员授权",
+          message: "注册系统定时任务需要管理员授权一次。",
+          detail: "点击“继续”后会显示 Windows 用户帐户控制窗口；如果拒绝授权，SiteIndex 会改用软件常驻调度器。",
+          buttons: ["继续"],
+          defaultId: 0,
+        };
+        if (mainWindow && !mainWindow.isDestroyed()) await dialog.showMessageBox(mainWindow, prompt);
+        else await dialog.showMessageBox(prompt);
+      },
     });
     const jobs = createJobManager({
       workerPath: join(mainDirectory, "job-worker.js"),
@@ -124,53 +135,49 @@ if (!hasSingleInstanceLock) {
         : resolve(mainDirectory, "../../../../templates/project"),
     });
     core = coreService;
-    let knownProjectIds = new Set<ProjectId>();
-    const reconcileSchedules = async (entries: ProjectPathEntry[]): Promise<void> => {
-      const currentIds = new Set(entries.map(({ id }) => id));
-      for (const staleId of knownProjectIds) {
-        if (currentIds.has(staleId)) continue;
-        try {
-          await scheduler.removeProject(staleId);
-        } catch (error) {
-          console.warn("清理已移除项目的系统计划任务失败。", staleId, error);
-        }
+    residentScheduler =
+      process.platform === "win32"
+        ? createResidentScheduler({
+            statePath: join(app.getPath("userData"), "resident-schedule-state.json"),
+            listProjects: () => catalog.refresh(currentSettings),
+            getSchedule: async (id) => (await coreService.schedule.get(id)).config,
+            isThisDevice: async (id) => (await coreService.runner.get(id)).is_this_device,
+            isJobRunning: async (id) => Boolean(await jobs.running(id)),
+            runJob: async (project, job) => jobs.runAndWait({ projectPath: project.path, job }, "schedule"),
+          })
+        : null;
+    const applyScheduleMode = async (status: ScheduleRuntimeStatus): Promise<void> => {
+      scheduleMode = status.mode;
+      if (process.platform !== "win32") return;
+      if (scheduleMode === "resident") {
+        systemTray ??= await createWindowsTray();
+        if (systemTray) {
+          residentScheduler?.start();
+          updateWindowsAutostart(Boolean(currentSettings.projects_root || currentSettings.extra_projects.length));
+        } else updateWindowsAutostart(false);
+        return;
       }
-      await Promise.all(
+      residentScheduler?.stop();
+      updateWindowsAutostart(false);
+      systemTray?.destroy();
+      systemTray = null;
+    };
+    const reconcileSchedules = async (allowElevation: boolean): Promise<ScheduleRuntimeStatus> => {
+      const entries = await catalog.refresh(currentSettings);
+      const definitions = await Promise.all(
         entries.map(async ({ id, path: projectPath }) => {
-          try {
-            const [schedule, runner] = await Promise.all([coreService.schedule.get(id), coreService.runner.get(id)]);
-            if (runner.is_this_device) await scheduler.sync(id, projectPath, schedule.config);
-            else await scheduler.removeProject(id);
-          } catch (error) {
-            console.warn("校正项目系统计划任务失败。", id, error);
-          }
+          const [schedule, runner] = await Promise.all([coreService.schedule.get(id), coreService.runner.get(id)]);
+          return { projectId: id, projectPath, config: schedule.config, isThisDevice: runner.is_this_device };
         }),
       );
-      knownProjectIds = currentIds;
+      const status = await scheduler.reconcile(definitions, allowElevation);
+      await applyScheduleMode(status);
+      return status;
     };
-    await reconcileSchedules(await catalog.refresh(currentSettings));
-    if (process.platform === "win32") {
-      systemTray = await createWindowsTray();
-      if (!systemTray) {
-        launchHidden = false;
-        windowsAutostartEnabled = updateWindowsAutostart(false);
-      } else {
-        residentSchedulerReady = true;
-        windowsAutostartEnabled = updateWindowsAutostart(
-          Boolean(currentSettings.projects_root || currentSettings.extra_projects.length),
-        );
-      }
-    }
-    if (process.platform === "win32" && systemTray) {
-      residentScheduler = createResidentScheduler({
-        statePath: join(app.getPath("userData"), "resident-schedule-state.json"),
-        listProjects: () => catalog.refresh(currentSettings),
-        getSchedule: async (id) => (await coreService.schedule.get(id)).config,
-        isThisDevice: async (id) => (await coreService.runner.get(id)).is_this_device,
-        isJobRunning: async (id) => Boolean(await jobs.running(id)),
-        runJob: async (project, job) => jobs.runAndWait({ projectPath: project.path, job }, "schedule"),
-      });
-      residentScheduler.start();
+    await reconcileSchedules(false);
+    if (launchHidden && scheduleMode === "system") {
+      app.quit();
+      return;
     }
     registerIpcHandlers(
       settingsStore,
@@ -183,13 +190,11 @@ if (!hasSingleInstanceLock) {
           currentSettings.extra_projects.length !== updated.extra_projects.length ||
           currentSettings.extra_projects.some((entry, index) => entry !== updated.extra_projects[index]);
         currentSettings = updated;
-        windowsAutostartEnabled = updateWindowsAutostart(
-          Boolean(systemTray && (currentSettings.projects_root || currentSettings.extra_projects.length)),
-        );
-        if (projectsChanged) await reconcileSchedules(await catalog.refresh(currentSettings));
+        if (projectsChanged) await reconcileSchedules(true);
       },
       jobs,
       scheduler,
+      reconcileSchedules,
     );
 
     registerContentSecurityPolicy();
@@ -205,7 +210,8 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin" && !(process.platform === "win32" && systemTray)) app.quit();
+  if (process.platform !== "darwin" && !(process.platform === "win32" && scheduleMode === "resident" && systemTray))
+    app.quit();
 });
 
 function updateWindowsAutostart(enabled: boolean): boolean {
@@ -414,7 +420,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   });
   window.on("close", (event) => {
     saveWindowBounds(window);
-    if (process.platform === "win32" && systemTray && !isShuttingDown) {
+    if (process.platform === "win32" && scheduleMode === "resident" && systemTray && !isShuttingDown) {
       event.preventDefault();
       window.hide();
     }

@@ -77,29 +77,41 @@ describe("system schedule definitions", () => {
     expect(scheduledOccurrenceKey("daily", noCatchUp, new Date(2026, 9, 26, 2, 1, 0))).toBeNull();
   });
 
-  it("uses the in-process Windows scheduler readiness and removes old Task Scheduler registrations", async () => {
-    const commands: { file: string; args: string[] }[] = [];
-    let ready = false;
-    const scheduler = createSystemScheduler({
-      platform: "win32",
-      executablePath: "unused.exe",
-      windowsResidentReady: () => ready,
-      runCommand: async (file, args) => {
-        commands.push({ file, args });
-        if (file === "schtasks.exe" && args[0] === "/Query") throw new Error("missing task");
-        return "ok";
-      },
-    });
-
-    const state = await scheduler.sync("sample-store", "C:\\Users\\Tester\\sample-store", config);
-    expect(state.registered).toBe(false);
-    expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Create")).toBe(false);
-    ready = true;
-    await expect(scheduler.getState("sample-store", "C:\\Users\\Tester\\sample-store", config)).resolves.toMatchObject({
-      registered: true,
-    });
-    await scheduler.removeProject("sample-store");
-    expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Delete")).toBe(false);
+  it("tracks Windows system registration status from the scheduler state", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "siteindex-windows-schedule-test-"));
+    try {
+      const statePath = path.join(directory, "state.json");
+      const registrar = {
+        reconcile: vi.fn(async () => ({
+          mode: "system" as const,
+          authorization_required: false,
+          registered_task_names: [
+            "\\SiteIndex\\sample-store-daily",
+            "\\SiteIndex\\sample-store-weekly",
+            "\\SiteIndex\\sample-store-monthly",
+          ],
+        })),
+      };
+      const scheduler = createSystemScheduler({
+        platform: "win32",
+        executablePath: "unused.exe",
+        runtimeStatePath: statePath,
+        windowsTaskRegistrar: registrar,
+      });
+      await scheduler.reconcile(
+        [{ projectId: "sample-store", projectPath: "C:\\Users\\Tester\\sample-store", config, isThisDevice: true }],
+        false,
+      );
+      await expect(
+        scheduler.getState("sample-store", "C:\\Users\\Tester\\sample-store", config),
+      ).resolves.toMatchObject({
+        registered: true,
+      });
+      await expect(scheduler.getRuntimeStatus()).resolves.toEqual({ mode: "system", authorization_required: false });
+      expect(registrar.reconcile).toHaveBeenCalledOnce();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   it("writes and loads macOS LaunchAgents through launchctl", async () => {
     const homeDirectory = await mkdtemp(path.join(tmpdir(), "siteindex-launchd-test-"));
@@ -122,11 +134,14 @@ describe("system schedule definitions", () => {
       monthly: { ...config.monthly, enabled: false },
     };
     try {
-      const state = await scheduler.sync("sample-store", macDefinition.projectPath, macConfig);
-      expect(state.registered).toBe(true);
+      const state = await scheduler.reconcile(
+        [{ projectId: "sample-store", projectPath: macDefinition.projectPath, config: macConfig, isThisDevice: true }],
+        false,
+      );
+      expect(state).toEqual({ mode: "system", authorization_required: false });
       expect(commands.some(({ file, args }) => file === "launchctl" && args[0] === "bootstrap")).toBe(true);
       await expect(access(path.join(homeDirectory, "Library", "LaunchAgents"))).resolves.toBeUndefined();
-      await scheduler.removeProject("sample-store");
+      await scheduler.reconcile([], false);
       expect(commands.some(({ file, args }) => file === "launchctl" && args[0] === "bootout")).toBe(true);
     } finally {
       await rm(homeDirectory, { recursive: true, force: true });
