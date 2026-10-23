@@ -1,0 +1,37 @@
+.si-files-page { gap: 16px; }
+.si-files-page .si-project-title-line code { max-width: 560px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-files-subtabs { display: flex; align-items: center; gap: 6px; }
+.si-files-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 14px; border-radius: 6px; color: var(--color-ink-2); font-size: 13px; text-decoration: none; }
+.si-files-subtabs a:hover { background: var(--color-neutral-soft); }
+.si-files-subtabs a.active { background: var(--color-ink); color: #fff; }
+.si-files-summary { display: flex; min-height: 50px; align-items: center; flex-wrap: wrap; gap: 20px; padding: 10px 16px; border: 1px solid var(--color-line); border-radius: 9px; background: var(--color-surface); }
+.si-files-summary > div { display: flex; align-items: baseline; gap: 6px; color: var(--color-muted); font-size: 12px; }
+.si-files-summary strong { color: var(--color-ink); font-size: 16px; font-variant-numeric: tabular-nums; }
+.si-files-summary .is-ok { color: var(--color-brand); }
+.si-files-summary .is-error { color: var(--color-danger); }
+.si-files-summary .is-warn { color: var(--color-warning); }
+.si-files-summary small { margin-left: auto; color: var(--color-muted); font-size: 11px; }
+.si-files-table-card { min-width: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-files-table-card .si-data-table { border: 0; border-radius: 0; }
+.si-files-table-card .si-table { width: 100%; min-width: 0; table-layout: fixed; }
+.si-files-table-card .si-table th { padding: 0 12px; }
+.si-files-table-card .si-table th:nth-child(1) { width: 28%; }
+.si-files-table-card .si-table th:nth-child(2) { width: 7%; }
+.si-files-table-card .si-table th:nth-child(3) { width: 8%; }
+.si-files-table-card .si-table th:nth-child(4) { width: 8%; }
+.si-files-table-card .si-table th:nth-child(5) { width: 11%; }
+.si-files-table-card .si-table th:nth-child(6) { width: 22%; }
+.si-files-table-card .si-table th:nth-child(7) { width: 16%; }
+.si-files-table-card .si-table td { height: 48px; padding: 0 12px; }
+.si-files-table-card .si-table tr:has(.si-files-group-label) td { height: 34px; background: var(--color-subtle); }
+.si-files-group-label { color: var(--color-ink-2); font-size: 11px; }
+.si-files-path { display: block; overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.si-files-number { color: var(--color-ink-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.si-files-date { color: var(--color-muted); font-size: 10px; }
+.si-files-status { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 6px; }
+.si-files-status > span:last-child:not(.si-chip) { overflow: hidden; color: var(--color-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.si-files-actions { display: flex; align-items: center; gap: 6px; }
+.si-files-actions .si-button { flex: none; }
+.si-files-actions .si-button-danger:not(:disabled) { color: var(--color-danger); }
+.si-files-note { margin: -4px 0 0; color: var(--color-muted); font-size: 11px; line-height: 1.6; }
+@media (max-width: 900px) { .si-files-summary { gap: 12px; } .si-files-summary small { flex-basis: 100%; margin-left: 0; } }
