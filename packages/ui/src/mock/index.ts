@@ -261,7 +261,7 @@ const mockSkills: SkillInfo[] = [
   { name: "project-readme", version: "1.0.0", description: "补充文件夹 _about.md 与 README 用户区块", has_update: false, reads: ["工作区文件夹", "README.md"], writes: ["{文件夹}/_about.md", "README.md 用户区块"] },
 ];
 const mockSkillBodies: Record<string, string> = {
-  "edm-builder": "# edm-builder\n1. 确认主题、产品数、折扣码与 CTA。\n2. 只选有货、未排除、过冷却期且有图片的产品。\n3. 写 brief.md、content.json，文案遵循品牌 voice。\n4. 渲染 EDM HTML 并登记推品记录。",
+  "edm-builder": "# edm-builder\n1. 确认主题、产品数、折扣码与 CTA。\n2. siteindex query · products --in-stock --tag {主题} --json\n   硬性条件：有货、未排除、过冷却期、有图片\n   排序：标签 +3 · 标题/分类 +2 · 优先级 / 2 · 参与活动 +1\n3. 写 brief.md、content.json（文案遵循品牌 voice）。\n4. siteindex edm render · edm/{campaign_id}\n5. siteindex ledger upsert · edm_campaigns --rows -",
   "stock-report": "# stock-report\n先检查 runs.jsonl 最后一次 daily 是否成功。\n日报：结论 → 新到货/新缺货 → 需要行动。\n只读汇报，不修改项目数据。",
   "blog-writer": "# blog-writer\n1. 检查主关键词是否已有目标页面。\n2. 生成大纲与内链计划，只使用数据文件中的 URL。\n3. 写 draft.md 与 meta.json。\n4. 提供反向内链建议。",
   "link-prospect": "# link-prospect\n检查外链候选并排除台账重复项。\n联系方式必须来自页面实际内容。\n完成后更新去重台账。",
