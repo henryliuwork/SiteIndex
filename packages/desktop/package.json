@@ -97,5 +97,8 @@
     "dmg": {
       "title": "${productName} ${version}"
     }
+  },
+  "dependencies": {
+    "chokidar": "^6.0.0"
   }
 }

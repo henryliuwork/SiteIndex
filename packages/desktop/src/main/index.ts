@@ -2,7 +2,10 @@ import { app, BrowserWindow, screen, session, shell } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createCoreService, type CoreService } from "@siteindex/core";
+import type { AppSettings } from "@siteindex/shared";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
+import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
 
@@ -19,6 +22,8 @@ const mainDirectory = dirname(fileURLToPath(import.meta.url));
 const fallbackPath = resolve(mainDirectory, "../renderer/fallback.html");
 const devUiUrl = process.env.SITEINDEX_UI_URL ?? "http://localhost:5173";
 let mainWindow: BrowserWindow | null = null;
+let projectCatalog: ProjectCatalog | null = null;
+let closingCatalog = false;
 
 if (!hasSingleInstanceLock) {
   app.quit();
@@ -38,12 +43,53 @@ if (!hasSingleInstanceLock) {
 
     const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
     const isFirstRun = !(await settingsStore.exists());
-    await settingsStore.get();
-    registerIpcHandlers(settingsStore, createUiStateStore(async () => (await settingsStore.get()).cache_dir));
+    let currentSettings = await settingsStore.get();
     if (isFirstRun) {
       const projectsRoot = await chooseDirectory();
-      if (projectsRoot) await settingsStore.set({ projects_root: projectsRoot });
+      if (projectsRoot) currentSettings = await settingsStore.set({ projects_root: projectsRoot });
     }
+
+    let core: CoreService | null = null;
+    const catalog = createProjectCatalog(
+      (projectPath) => core?.invalidate(projectPath),
+      (id) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.isDestroyed()) window.webContents.send("si:projects.onChanged", id);
+        }
+      },
+    );
+    projectCatalog = catalog;
+    const coreService = createCoreService({
+      resolveProject: catalog.resolveProject,
+      get deviceId() {
+        return currentSettings.device_id;
+      },
+      get deviceName() {
+        return currentSettings.device_name;
+      },
+      get cacheDir() {
+        return currentSettings.cache_dir;
+      },
+      templateDir: app.isPackaged
+        ? join(process.resourcesPath, "templates", "project")
+        : resolve(mainDirectory, "../../../../templates/project"),
+    });
+    core = coreService;
+    await catalog.refresh(currentSettings);
+    registerIpcHandlers(
+      settingsStore,
+      createUiStateStore(async () => (await settingsStore.get()).cache_dir),
+      coreService,
+      catalog,
+      async (updated) => {
+        const projectsChanged =
+          currentSettings.projects_root !== updated.projects_root ||
+          currentSettings.extra_projects.length !== updated.extra_projects.length ||
+          currentSettings.extra_projects.some((entry, index) => entry !== updated.extra_projects[index]);
+        currentSettings = updated;
+        if (projectsChanged) await catalog.refresh(currentSettings);
+      },
+    );
 
     registerContentSecurityPolicy();
     mainWindow = await createMainWindow();
@@ -63,6 +109,13 @@ if (!hasSingleInstanceLock) {
     });
   });
 }
+
+app.on("before-quit", (event) => {
+  if (!projectCatalog || closingCatalog) return;
+  event.preventDefault();
+  closingCatalog = true;
+  void projectCatalog.close().finally(() => app.quit());
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
