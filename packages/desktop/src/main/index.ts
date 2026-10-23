@@ -192,6 +192,9 @@ if (!hasSingleInstanceLock) {
       jobs,
       scheduler,
       reconcileSchedules,
+      onRunnerClaimed: async () => {
+        await reconcileSchedules(true);
+      },
     });
 
     windowManager.registerContentSecurityPolicy();

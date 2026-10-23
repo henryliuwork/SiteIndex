@@ -5,6 +5,7 @@ import { createContentHandlers } from "./content.js";
 import { createIpcContext, type IpcDependencies } from "./context.js";
 import { createEdmHandlers } from "./edm.js";
 import { createFilesHandlers } from "./files.js";
+import { createFoldersHandlers } from "./folders.js";
 import { createInventoryHandlers } from "./inventory.js";
 import { createJobsHandlers } from "./jobs.js";
 import { createOverviewHandlers } from "./overview.js";
@@ -15,6 +16,7 @@ import { createRunnerHandlers } from "./runner.js";
 import { createScheduleHandlers } from "./schedule.js";
 import { createSeoHandlers } from "./seo.js";
 import { createSettingsHandlers } from "./settings.js";
+import { createShellHandlers } from "./shell.js";
 import { createUiStateHandlers } from "./ui-state.js";
 
 export function registerIpcHandlers(dependencies: IpcDependencies): void {
@@ -32,9 +34,11 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
     ...createEdmHandlers(context),
     ...createReadmeHandlers(context),
     ...createFilesHandlers(context),
+    ...createFoldersHandlers(context),
     ...createJobsHandlers(context),
     ...createScheduleHandlers(context),
     ...createRunnerHandlers(context),
+    ...createShellHandlers(),
   });
 
   for (const [channel, handler] of handlers) {
