@@ -118,7 +118,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-pagination-controls button:disabled { color: var(--color-faint); cursor: not-allowed; }
 .si-pagination-controls span { min-width: 90px; text-align: center; }
 
-.si-status-cells { display: inline-flex; gap: 1px; vertical-align: middle; }
+.si-status-cells { display: inline-block; width: 179px; height: 16px; border-radius: 1px; background-repeat: no-repeat; vertical-align: middle; }
 .si-status-cell { display: block; width: 5px; height: 16px; border-radius: 1px; }
 .si-status-in { background: var(--color-stock-in); }
 .si-status-out { background: var(--color-stock-out); }
