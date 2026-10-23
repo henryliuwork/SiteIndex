@@ -50,9 +50,9 @@
 
 ### C7 系统计划任务 `src/main/scheduler/`
 - [ ] Windows：按 ARCHITECTURE §9.1 生成 UTF-16LE XML（每周几、每月几号、StartWhenAvailable、WakeToRun、InteractiveToken、IgnoreNew、PT2H）→ `schtasks /Create /TN "\SiteIndex\{projectId}-{job}" /XML … /F`；删除用 `/Delete /F`；`next_runs` 用 `schtasks /Query /XML` 读取
-- [ ] macOS：launchd plist（StartCalendarInterval 数组）→ `launchctl bootstrap gui/$UID`
-- [ ] `schedule.save`：写 site.json（core）→ 本机是执行设备时注册/更新系统任务；不是执行设备时只保存并提示
-- [ ] 软件启动时校正：执行设备上的项目，系统任务与 site.json 不一致时自动修正
+- [x] macOS：launchd plist（StartCalendarInterval 数组）→ `launchctl bootstrap gui/$UID`
+- [x] `schedule.save`：写 site.json（core）→ 本机是执行设备时注册/更新系统任务；不是执行设备时只保存并提示
+- [x] 软件启动时校正：执行设备上的项目，系统任务与 site.json 不一致时自动修正
 - **验收**：XML 与 plist 生成有快照测试；Windows 上实测"工作日 02:00"任务注册成功并按时运行（PRD §8 场景 7）
 
 ### C8 执行设备、文件夹、外壳操作

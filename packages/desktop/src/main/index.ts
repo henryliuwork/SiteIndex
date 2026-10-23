@@ -7,8 +7,9 @@ import { EXIT, type AppSettings, type ProjectId } from "@siteindex/shared";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
 import { createJobManager } from "./job-manager.js";
 import { showJobNotification } from "./notifications.js";
-import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
+import { createProjectCatalog, type ProjectCatalog, type ProjectPathEntry } from "./project-catalog.js";
 import { parseRunJobArguments } from "./run-job-args.js";
+import { createSystemScheduler } from "./scheduler/schedule.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
 
@@ -41,6 +42,7 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
+    const scheduler = createSystemScheduler({ executablePath: app.getPath("exe") });
     const jobs = createJobManager({
       workerPath: join(mainDirectory, "job-worker.js"),
       getSettings: () => settingsStore.get(),
@@ -115,7 +117,31 @@ if (!hasSingleInstanceLock) {
         : resolve(mainDirectory, "../../../../templates/project"),
     });
     core = coreService;
-    await catalog.refresh(currentSettings);
+    let knownProjectIds = new Set<ProjectId>();
+    const reconcileSchedules = async (entries: ProjectPathEntry[]): Promise<void> => {
+      const currentIds = new Set(entries.map(({ id }) => id));
+      for (const staleId of knownProjectIds) {
+        if (currentIds.has(staleId)) continue;
+        try {
+          await scheduler.removeProject(staleId);
+        } catch (error) {
+          console.warn("清理已移除项目的系统计划任务失败。", staleId, error);
+        }
+      }
+      await Promise.all(
+        entries.map(async ({ id, path: projectPath }) => {
+          try {
+            const [schedule, runner] = await Promise.all([coreService.schedule.get(id), coreService.runner.get(id)]);
+            if (runner.is_this_device) await scheduler.sync(id, projectPath, schedule.config);
+            else await scheduler.removeProject(id);
+          } catch (error) {
+            console.warn("校正项目系统计划任务失败。", id, error);
+          }
+        }),
+      );
+      knownProjectIds = currentIds;
+    };
+    await reconcileSchedules(await catalog.refresh(currentSettings));
     registerIpcHandlers(
       settingsStore,
       createUiStateStore(async () => (await settingsStore.get()).cache_dir),
@@ -127,9 +153,10 @@ if (!hasSingleInstanceLock) {
           currentSettings.extra_projects.length !== updated.extra_projects.length ||
           currentSettings.extra_projects.some((entry, index) => entry !== updated.extra_projects[index]);
         currentSettings = updated;
-        if (projectsChanged) await catalog.refresh(currentSettings);
+        if (projectsChanged) await reconcileSchedules(await catalog.refresh(currentSettings));
       },
       jobs,
+      scheduler,
     );
 
     registerContentSecurityPolicy();
