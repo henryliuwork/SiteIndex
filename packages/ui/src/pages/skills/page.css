@@ -1,0 +1,64 @@
+.si-skills-page { gap: 16px; }
+.si-skills-page > .si-page-heading { align-items: flex-start; }
+.si-skills-layout { display: grid; grid-template-columns: minmax(270px, 322px) minmax(0, 1fr); gap: 20px; align-items: start; min-width: 0; }
+.si-skills-list { display: grid; gap: 2px; padding: 10px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-skill-option { display: grid; gap: 6px; min-width: 0; padding: 12px 14px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--color-ink); text-align: left; cursor: pointer; }
+.si-skill-option:hover { background: var(--color-subtle); }
+.si-skill-option:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+.si-skill-option.active { border-color: #b8d9ca; background: #f3f8f5; }
+.si-skill-option-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.si-skill-option-heading code, .si-skill-info-heading h2 code { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+.si-skill-option-version .si-chip { white-space: nowrap; }
+.si-skill-option-description { display: -webkit-box; overflow: hidden; color: var(--color-muted); font-size: 12px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.si-skills-detail { display: grid; gap: 16px; min-width: 0; }
+.si-skill-info-card, .si-skill-targets-card { overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-skill-info-card { padding: 18px 20px 20px; }
+.si-skill-info-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.si-skill-info-heading h2 { display: flex; align-items: center; gap: 12px; margin: 0; font-size: 16px; }
+.si-skill-info-heading p { margin: 8px 0 0; color: var(--color-muted); font-size: 12px; }
+.si-skill-copy-actions { display: flex; flex: none; gap: 8px; }
+.si-skill-access-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.si-skill-access-grid section { min-width: 0; padding: 12px 14px; border-radius: 8px; background: var(--color-subtle); }
+.si-skill-access-grid h3 { margin: 0 0 8px; color: var(--color-muted); font-size: 12px; font-weight: 500; }
+.si-skill-access-grid ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.si-skill-access-grid li code { overflow-wrap: anywhere; color: var(--color-ink); font-size: 11px; }
+.si-skill-access-grid p { margin: 0; color: var(--color-muted); font-size: 12px; }
+.si-skill-body { max-height: 220px; overflow: auto; margin: 0; padding: 14px 16px; border-radius: 8px; background: #15191d; color: #e8eaed; font-family: var(--font-mono); font-size: 11px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.si-skill-targets-card > header { display: flex; align-items: center; justify-content: space-between; min-height: 54px; padding: 0 18px; border-bottom: 1px solid var(--color-line-soft); }
+.si-skill-targets-card > header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.si-skill-target-list { display: grid; }
+.si-skill-target-row { display: grid; grid-template-columns: minmax(90px, 130px) minmax(0, 1fr) auto 92px; align-items: center; gap: 12px; min-height: 52px; padding: 8px 18px; border-bottom: 1px solid var(--color-line-soft); }
+.si-skill-target-row > strong { font-size: 12px; font-weight: 500; }
+.si-skill-target-row > code { overflow: hidden; color: var(--color-muted); font-family: var(--font-mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.si-skill-target-row > .si-chip { justify-self: start; }
+.si-skill-target-row .si-button { justify-self: end; }
+.si-skill-target-action { display: inline-flex; align-items: center; justify-self: end; gap: 4px; color: var(--color-brand-strong); font-size: 12px; }
+.si-skill-targets-card > footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 18px; }
+.si-skill-targets-card > footer span { color: var(--color-muted); font-size: 11px; line-height: 1.5; }
+.si-skill-targets-card > footer code { color: var(--color-ink-2); font-family: var(--font-mono); }
+.si-skills-target-empty { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 88px; padding: 16px 18px; color: var(--color-muted); font-size: 13px; }
+.si-skills-target-empty a { display: inline-flex; align-items: center; gap: 5px; color: var(--color-brand-strong); }
+.si-skills-detail-loading { display: grid; min-height: 420px; place-items: center; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); }
+.si-skills-detail-error { min-height: 220px; }
+.si-skills-action-error { margin: -8px 0 0; color: var(--color-danger); font-size: 12px; }
+.si-skills-empty { display: grid; justify-items: center; gap: 10px; min-height: 280px; place-content: center; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); text-align: center; }
+.si-skills-empty strong { color: var(--color-ink); }
+.si-skills-empty span { color: var(--color-muted); font-size: 13px; }
+@media (max-width: 900px) {
+  .si-skills-layout { grid-template-columns: minmax(0, 1fr); }
+  .si-skills-list { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 280px; overflow: auto; }
+  .si-skill-target-row { grid-template-columns: minmax(80px, 120px) minmax(0, 1fr) auto; }
+  .si-skill-target-row > .si-button, .si-skill-target-action { grid-column: 3; grid-row: 2; }
+}
+@media (max-width: 580px) {
+  .si-skills-page > .si-page-heading { align-items: flex-start; flex-direction: column; }
+  .si-skills-list { grid-template-columns: 1fr; max-height: 340px; }
+  .si-skill-info-heading { flex-direction: column; }
+  .si-skill-copy-actions { flex-wrap: wrap; }
+  .si-skill-access-grid { grid-template-columns: 1fr; }
+  .si-skill-target-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .si-skill-target-row > code { grid-column: 1; grid-row: 2; }
+  .si-skill-target-row > .si-chip { grid-column: 2; grid-row: 1; }
+  .si-skill-target-row > .si-button, .si-skill-target-action { grid-column: 2; grid-row: 2; }
+  .si-skill-targets-card > footer { align-items: flex-start; flex-direction: column; }
+}

@@ -32,6 +32,7 @@ const projectKey = (id: ProjectId): MockProjectId => id === "riverstone" ? "rive
 const FIXED_TODAY = "2026-10-22";
 const clone = <T,>(value: T): T => value === undefined ? value : JSON.parse(JSON.stringify(value)) as T;
 const errorMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mock") === "error";
+const installedSkillTargets = new Set<string>();
 const dateBefore = (days: number): string => {
   const date = new Date(FIXED_TODAY + "T12:00:00Z");
   date.setUTCDate(date.getUTCDate() - days);
@@ -1023,22 +1024,51 @@ export function createMockApi(): SiteIndexApi {
     },
     skills: {
       list: () => reply([
-        { name: "site-index-onboarding", version: "1.0.0", description: "SiteIndex 项目接入指南", has_update: false, reads: ["README.md", "site.json"], writes: [] },
-        { name: "site-index-maintain", version: "1.0.0", description: "SiteIndex 数据维护指南", has_update: false, reads: ["index/"], writes: ["README.md"] },
+        { name: "edm-builder", version: "1.2.0", description: "按主题选品，生成可粘贴到 Mailchimp 的 EDM HTML，登记推品记录", has_update: true, reads: ["index/views/products.jsonl", "index/ledgers/edm_campaigns.jsonl", "index/ledgers/promotions.jsonl"], writes: ["edm/{date}-{slug}/", "index/ledgers/edm_campaigns.jsonl"] },
+        { name: "stock-report", version: "1.0.0", description: "库存日报、周报、趋势分析（只读）", has_update: false, reads: ["index/views/sku_stock.jsonl", "index/ledger/events.jsonl"], writes: [] },
+        { name: "blog-writer", version: "1.1.0", description: "选题、竞食检查、brief、带内链正文、关键词登记", has_update: true, reads: ["README.md", "index/views/products.jsonl", "index/content/blogs.jsonl"], writes: ["内容/", "index/content/blogs.jsonl"] },
+        { name: "link-prospect", version: "1.0.0", description: "外链搜集 → linkflow + 去重台账", has_update: false, reads: ["README.md"], writes: ["seo/", "index/ledgers/backlinks.csv"] },
+        { name: "sku-media-enrich", version: "1.0.0", description: "Mailchimp 图片匹配、标签与优先级", has_update: false, reads: ["index/views/products.jsonl", "index/ledgers/sku_media.csv"], writes: ["index/ledgers/sku_media.csv"] },
+        { name: "page-design", version: "1.0.0", description: "按网站设计规范做页面、Banner、邮件模板", has_update: false, reads: ["index/design/tokens.json", "index/design/screenshots/"], writes: ["设计/"] },
+        { name: "project-readme", version: "1.0.0", description: "补充文件夹 _about.md 与 README 用户区块", has_update: false, reads: ["README.md", "_about.md"], writes: ["README.md", "*/_about.md"] },
       ]),
-      get: (name) => reply({
-        info: { name, version: "1.0.0", description: "SiteIndex 项目技能说明", has_update: false, reads: ["README.md"], writes: [] },
-        body: name === "page-design"
-          ? "# page-design\n\n颜色只用 index/design/tokens.json 中的语义色与 palette。\n字体、字号、按钮、间距、圆角按设计规范实现。\n规范超过 60 天时提醒项目负责人重新提取。"
-          : name === "project-readme"
-            ? "# project-readme\n\n不修改 siteindex:auto 区块、index/、_agent/。\n为待补充说明的文件夹写 _about.md。\n用户区块修改前先展示对比。"
-            : "# SiteIndex Skill\n\n请先阅读项目 README，再根据当前数据完成任务。",
+      get: (name) => reply(() => {
+        const info = [
+          { name: "edm-builder", version: "1.2.0", description: "按主题选品，生成可粘贴到 Mailchimp 的 EDM HTML，登记推品记录", has_update: true, reads: ["index/views/products.jsonl", "index/ledgers/edm_campaigns.jsonl", "index/ledgers/promotions.jsonl"], writes: ["edm/{date}-{slug}/", "index/ledgers/edm_campaigns.jsonl"] },
+          { name: "stock-report", version: "1.0.0", description: "库存日报、周报、趋势分析（只读）", has_update: false, reads: ["index/views/sku_stock.jsonl"], writes: [] },
+          { name: "blog-writer", version: "1.1.0", description: "选题、竞食检查、brief、带内链正文、关键词登记", has_update: true, reads: ["README.md", "index/views/products.jsonl"], writes: ["内容/", "index/content/blogs.jsonl"] },
+          { name: "link-prospect", version: "1.0.0", description: "外链搜集 → linkflow + 去重台账", has_update: false, reads: ["README.md"], writes: ["seo/", "index/ledgers/backlinks.csv"] },
+          { name: "sku-media-enrich", version: "1.0.0", description: "Mailchimp 图片匹配、标签与优先级", has_update: false, reads: ["index/views/products.jsonl"], writes: ["index/ledgers/sku_media.csv"] },
+          { name: "page-design", version: "1.0.0", description: "按网站设计规范做页面、Banner、邮件模板", has_update: false, reads: ["index/design/tokens.json"], writes: ["设计/"] },
+          { name: "project-readme", version: "1.0.0", description: "补充文件夹 _about.md 与 README 用户区块", has_update: false, reads: ["README.md", "_about.md"], writes: ["README.md", "*/_about.md"] },
+        ].find((skill) => skill.name === name) ?? { name, version: "1.0.0", description: "SiteIndex Skill", has_update: false, reads: [], writes: [] };
+        return {
+          info,
+          body: name === "edm-builder"
+            ? "# edm-builder\n1. 确认主题、产品数、折扣码、CTA\n2. siteindex query · products --in-stock --tag {主题} --json\n   硬性条件：有货、未排除、过冷却期、有图片\n   排序：标签 +3 · 标题/分类 +2 · 优先级/2 · 参与活动 +1\n3. 写 brief.md、content.json（文案遵循 brand.voice）\n4. siteindex edm render · edm/{campaign_id}\n5. siteindex ledger upsert · edm_campaigns --rows -"
+            : name === "project-readme"
+              ? "# project-readme\n\n不修改 siteindex:auto 区块、index/、_agent/。\n为待补充说明的文件夹写 _about.md。\n用户区块修改前先展示对比。"
+              : name === "page-design"
+                ? "# page-design\n\n颜色只用 index/design/tokens.json 中的语义色与 palette。\n字体、字号、按钮、间距、圆角按设计规范实现。\n规范超过 60 天时提醒项目负责人重新提取。"
+                : `# ${name}\n\n${info.description}\n\n先完整阅读项目 README，再按项目数据与 Skill 规范完成任务。`,
+        };
       }),
-      targets: (name) => reply([
-        { target_id: "project:kingsyard", name: "Kingsyard 项目", dir: "C:/SiteIndex/Projects/Kingsyard/.agent/skills/" + name, status: "latest" },
-        { target_id: "codex", name: "Codex", dir: null, status: "not_installed" },
+      targets: (name) => reply(() => [
+        { target_id: "project:kingsyard", name: "项目 Kingsyard", dir: "D:/云盘/projects/kingsyard/_agent/skills", status: installedSkillTargets.has(name + ":project:kingsyard") ? "latest" : name === "edm-builder" || name === "blog-writer" ? "outdated" : "latest" },
+        { target_id: "claude-code", name: "Claude Code", dir: "%USERPROFILE%/.claude/skills", status: installedSkillTargets.has(name + ":claude-code") ? "latest" : "latest" },
+        { target_id: "codex", name: "Codex", dir: null, status: installedSkillTargets.has(name + ":codex") ? "latest" : "not_installed" },
+        { target_id: "qwenpaw", name: "qwenpaw", dir: "D:/qwenpaw/workspace/ops-agent/skills", status: installedSkillTargets.has(name + ":qwenpaw") ? "latest" : "not_installed" },
       ]),
-      install: (name, targetId) => reply({ target_id: targetId, name: name + " · " + targetId, dir: "C:/SiteIndex/mock-skills/" + name, status: "latest" }),
+      install: (name, targetId) => reply(() => {
+        installedSkillTargets.add(name + ":" + targetId);
+        const directories: Record<string, string | null> = {
+          "project:kingsyard": "D:/云盘/projects/kingsyard/_agent/skills",
+          "claude-code": "%USERPROFILE%/.claude/skills",
+          codex: "%USERPROFILE%/.codex/skills",
+          qwenpaw: "D:/qwenpaw/workspace/ops-agent/skills",
+        };
+        return { target_id: targetId, name: targetId, dir: directories[targetId] ?? null, status: "latest" };
+      }),
       syncAllProjects: () => reply(undefined),
     },
     shell: {
