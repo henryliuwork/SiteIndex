@@ -41,7 +41,7 @@ function ProductThumbnail({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
   return src && !failed
     ? <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
-    : <span className="si-product-thumb-placeholder"><ImageIcon size={16} /></span>;
+    : <span className="si-product-thumb-placeholder" role="img" aria-label="暂无商品图片" />;
 }
 
 function ProductPreview({ src, alt }: { src: string | null; alt: string }) {
