@@ -1,16 +1,13 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildLaunchAgentPlist,
-  buildWindowsTaskXml,
   calculateNextRuns,
   createSystemScheduler,
-  windowsRootTaskName,
-  windowsTaskName,
+  scheduledOccurrenceKey,
   type LaunchAgentDefinition,
-  type WindowsTaskDefinition,
 } from "./schedule.js";
 import type { ScheduleConfig } from "@siteindex/shared";
 
@@ -21,23 +18,6 @@ const config: ScheduleConfig = {
   readme: { enabled: false, days: [1], time: "05:00" },
   monthly: { enabled: true, day_of_month: 15, time: "06:15" },
   options: { wake_to_run: true, run_if_missed: true, notify_on_failure: true, validate_after_sync: false },
-};
-
-const windowsDefinition: WindowsTaskDefinition = {
-  projectId: "sample-store",
-  projectPath: "C:\Users\Tester\Cloud & Drive\sample-store",
-  executablePath: "C:\Program Files\SiteIndex\SiteIndex.exe",
-  userId: "TEST-PC\Tester",
-  job: "daily",
-  schedule: config.daily,
-  options: config.options,
-  now: new Date(2026, 9, 23, 11, 30, 0),
-};
-
-const monthlyWindowsDefinition: WindowsTaskDefinition = {
-  ...windowsDefinition,
-  job: "monthly",
-  schedule: config.monthly,
 };
 
 const macDefinition: LaunchAgentDefinition = {
@@ -61,14 +41,6 @@ const sundayMacDefinition: LaunchAgentDefinition = {
 };
 
 describe("system schedule definitions", () => {
-  it("generates Windows weekday XML", () => {
-    expect(buildWindowsTaskXml(windowsDefinition)).toMatchSnapshot();
-  });
-
-  it("generates Windows monthly XML", () => {
-    expect(buildWindowsTaskXml(monthlyWindowsDefinition)).toMatchSnapshot();
-  });
-
   it("generates a macOS weekday LaunchAgent plist", () => {
     expect(buildLaunchAgentPlist(macDefinition)).toMatchSnapshot();
   });
@@ -95,105 +67,40 @@ describe("system schedule definitions", () => {
     vi.useRealTimers();
   });
 
-  it("writes UTF-16LE task XML and uses schtasks to register and query Windows tasks", async () => {
+  it("recognizes a due weekday occurrence and respects the missed-run window", () => {
+    expect(scheduledOccurrenceKey("daily", config, new Date(2026, 9, 26, 1, 59, 59))).toBeNull();
+    expect(scheduledOccurrenceKey("daily", config, new Date(2026, 9, 26, 2, 0, 0))).toBe("2026-10-26T02:00");
+    expect(scheduledOccurrenceKey("daily", config, new Date(2026, 9, 25, 2, 0, 0))).toBeNull();
+
+    const noCatchUp = { ...config, options: { ...config.options, run_if_missed: false } };
+    expect(scheduledOccurrenceKey("daily", noCatchUp, new Date(2026, 9, 26, 2, 0, 59))).toBe("2026-10-26T02:00");
+    expect(scheduledOccurrenceKey("daily", noCatchUp, new Date(2026, 9, 26, 2, 1, 0))).toBeNull();
+  });
+
+  it("uses the in-process Windows scheduler readiness and removes old Task Scheduler registrations", async () => {
     const commands: { file: string; args: string[] }[] = [];
-    const tasks = new Set<string>();
-    let registeredXml = "";
+    let ready = false;
     const scheduler = createSystemScheduler({
       platform: "win32",
-      executablePath: windowsDefinition.executablePath,
-      userId: windowsDefinition.userId,
+      executablePath: "unused.exe",
+      windowsResidentReady: () => ready,
       runCommand: async (file, args) => {
         commands.push({ file, args });
-        if (file === "schtasks.exe" && args[0] === "/Create") {
-          const xmlPath = args[args.indexOf("/XML") + 1]!;
-          const bytes = await readFile(xmlPath);
-          expect(bytes.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xfe]));
-          registeredXml = bytes.subarray(2).toString("utf16le");
-          tasks.add(args[args.indexOf("/TN") + 1]!);
-          return "created";
-        }
-        if (file === "schtasks.exe" && args[0] === "/Query") {
-          if (!tasks.has(args[args.indexOf("/TN") + 1]!)) throw new Error("missing task");
-          return "task xml";
-        }
-        if (file === "schtasks.exe" && args[0] === "/Delete") {
-          tasks.delete(args[args.indexOf("/TN") + 1]!);
-          return "deleted";
-        }
+        if (file === "schtasks.exe" && args[0] === "/Query") throw new Error("missing task");
         return "ok";
       },
     });
-    const windowsConfig: ScheduleConfig = {
-      ...config,
-      validate: { ...config.validate, enabled: false },
-      weekly: { ...config.weekly, enabled: false },
-      readme: { ...config.readme, enabled: false },
-      monthly: { ...config.monthly, enabled: false },
-    };
 
-    const state = await scheduler.sync("sample-store", windowsDefinition.projectPath, windowsConfig);
-
-    expect(state.registered).toBe(true);
-    expect(registeredXml).toContain("<StartWhenAvailable>true</StartWhenAvailable>");
-    expect(registeredXml).toContain("<ExecutionTimeLimit>PT2H</ExecutionTimeLimit>");
-    expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Create")).toBe(true);
-    expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Query")).toBe(true);
-    await scheduler.removeProject("sample-store");
-    expect(tasks.size).toBe(0);
-  });
-
-  it("falls back to a root task after Access Denied and removes either registration path", async () => {
-    const commands: { file: string; args: string[] }[] = [];
-    const tasks = new Set<string>();
-    let userIdXml = "";
-    const scheduler = createSystemScheduler({
-      platform: "win32",
-      executablePath: windowsDefinition.executablePath,
-      runCommand: async (file, args) => {
-        commands.push({ file, args });
-        if (file === "whoami.exe") return "TEST-PC\\Tester\r\n";
-        const taskName = args[args.indexOf("/TN") + 1];
-        if (file === "schtasks.exe" && args[0] === "/Create") {
-          if (taskName === windowsTaskName("sample-store", "daily")) {
-            throw Object.assign(new Error("schtasks failed"), { code: -2147024891 });
-          }
-          const xmlPath = args[args.indexOf("/XML") + 1]!;
-          const bytes = await readFile(xmlPath);
-          userIdXml = bytes.subarray(2).toString("utf16le");
-          tasks.add(taskName!);
-          return "created";
-        }
-        if (file === "schtasks.exe" && args[0] === "/Query") {
-          if (!tasks.has(taskName!)) throw new Error("missing task");
-          return "task xml";
-        }
-        if (file === "schtasks.exe" && args[0] === "/Delete") {
-          tasks.delete(taskName!);
-          return "deleted";
-        }
-        return "ok";
-      },
+    const state = await scheduler.sync("sample-store", "C:\\Users\\Tester\\sample-store", config);
+    expect(state.registered).toBe(false);
+    expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Create")).toBe(false);
+    ready = true;
+    await expect(scheduler.getState("sample-store", "C:\\Users\\Tester\\sample-store", config)).resolves.toMatchObject({
+      registered: true,
     });
-    const windowsConfig: ScheduleConfig = {
-      ...config,
-      validate: { ...config.validate, enabled: false },
-      weekly: { ...config.weekly, enabled: false },
-      readme: { ...config.readme, enabled: false },
-      monthly: { ...config.monthly, enabled: false },
-    };
-
-    const state = await scheduler.sync("sample-store", windowsDefinition.projectPath, windowsConfig);
-
-    expect(state.registered).toBe(true);
-    expect(commands.some(({ args }) => args[0] === "/Create" && args.includes(windowsTaskName("sample-store", "daily")))).toBe(true);
-    expect(commands.some(({ args }) => args[0] === "/Create" && args.includes(windowsRootTaskName("sample-store", "daily")))).toBe(true);
-    expect(commands.some(({ args }) => args[0] === "/Query" && args.includes(windowsRootTaskName("sample-store", "daily")))).toBe(true);
-    expect(userIdXml).toContain("<UserId>TEST-PC\\Tester</UserId>");
     await scheduler.removeProject("sample-store");
-    expect(tasks.size).toBe(0);
+    expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Delete")).toBe(false);
   });
-
   it("writes and loads macOS LaunchAgents through launchctl", async () => {
     const homeDirectory = await mkdtemp(path.join(tmpdir(), "siteindex-launchd-test-"));
     const commands: { file: string; args: string[] }[] = [];

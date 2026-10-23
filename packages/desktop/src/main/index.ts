@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, session, shell, utilityProcess } from "electron";
+import { app, BrowserWindow, Menu, screen, session, shell, Tray, utilityProcess } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import { createJobManager } from "./job-manager.js";
 import { showJobNotification } from "./notifications.js";
 import { createProjectCatalog, type ProjectCatalog, type ProjectPathEntry } from "./project-catalog.js";
 import { parseRunJobArguments } from "./run-job-args.js";
+import { createResidentScheduler, type ResidentScheduler } from "./scheduler/resident-scheduler.js";
 import { createSystemScheduler } from "./scheduler/schedule.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
@@ -21,6 +22,7 @@ interface WindowBounds {
 }
 
 const isRunJob = process.argv.includes("--run-job");
+const backgroundSchedulerArgument = "--siteindex-background";
 const hasSingleInstanceLock = isRunJob || app.requestSingleInstanceLock();
 const mainDirectory = dirname(fileURLToPath(import.meta.url));
 const fallbackPath = resolve(mainDirectory, "../renderer/fallback.html");
@@ -28,21 +30,28 @@ const devUiUrl = process.env.SITEINDEX_UI_URL ?? "http://localhost:5173";
 let mainWindow: BrowserWindow | null = null;
 let projectCatalog: ProjectCatalog | null = null;
 let isShuttingDown = false;
+let launchHidden = process.platform === "win32" && process.argv.includes(backgroundSchedulerArgument);
+let systemTray: Tray | null = null;
+let residentScheduler: ResidentScheduler | null = null;
+let residentSchedulerReady = false;
+let windowsAutostartEnabled = false;
 
 if (process.platform === "win32") app.setAppUserModelId("com.siteindex.desktop");
 
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (isRunJob || !mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+  app.on("second-instance", (_event, commandLine) => {
+    if (isRunJob || commandLine.includes(backgroundSchedulerArgument)) return;
+    showMainWindow();
   });
 
   app.whenReady().then(async () => {
     const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
-    const scheduler = createSystemScheduler({ executablePath: app.getPath("exe") });
+    const scheduler = createSystemScheduler({
+      executablePath: app.getPath("exe"),
+      windowsResidentReady: () => residentSchedulerReady && windowsAutostartEnabled,
+    });
     const jobs = createJobManager({
       workerPath: join(mainDirectory, "job-worker.js"),
       getSettings: () => settingsStore.get(),
@@ -59,6 +68,7 @@ if (!hasSingleInstanceLock) {
       if ((jobs.activeCount === 0 && !projectCatalog) || isShuttingDown) return;
       event.preventDefault();
       isShuttingDown = true;
+      residentScheduler?.stop();
       void Promise.all([jobs.shutdown(), projectCatalog?.close()]).finally(() => {
         projectCatalog = null;
         app.quit();
@@ -72,10 +82,7 @@ if (!hasSingleInstanceLock) {
         return;
       }
       try {
-        const result = await jobs.runAndWait(
-          { projectPath: resolve(args.projectPath), job: args.job },
-          "schedule",
-        );
+        const result = await jobs.runAndWait({ projectPath: resolve(args.projectPath), job: args.job }, "schedule");
         app.exit(result.exitCode);
       } catch (error) {
         process.stderr.write(`SiteIndex Job 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
@@ -86,7 +93,7 @@ if (!hasSingleInstanceLock) {
 
     const isFirstRun = !(await settingsStore.exists());
     let currentSettings = await settingsStore.get();
-    if (isFirstRun) {
+    if (isFirstRun && !launchHidden) {
       const projectsRoot = await chooseDirectory();
       if (projectsRoot) currentSettings = await settingsStore.set({ projects_root: projectsRoot });
     }
@@ -142,6 +149,29 @@ if (!hasSingleInstanceLock) {
       knownProjectIds = currentIds;
     };
     await reconcileSchedules(await catalog.refresh(currentSettings));
+    if (process.platform === "win32") {
+      systemTray = await createWindowsTray();
+      if (!systemTray) {
+        launchHidden = false;
+        windowsAutostartEnabled = updateWindowsAutostart(false);
+      } else {
+        residentSchedulerReady = true;
+        windowsAutostartEnabled = updateWindowsAutostart(
+          Boolean(currentSettings.projects_root || currentSettings.extra_projects.length),
+        );
+      }
+    }
+    if (process.platform === "win32" && systemTray) {
+      residentScheduler = createResidentScheduler({
+        statePath: join(app.getPath("userData"), "resident-schedule-state.json"),
+        listProjects: () => catalog.refresh(currentSettings),
+        getSchedule: async (id) => (await coreService.schedule.get(id)).config,
+        isThisDevice: async (id) => (await coreService.runner.get(id)).is_this_device,
+        isJobRunning: async (id) => Boolean(await jobs.running(id)),
+        runJob: async (project, job) => jobs.runAndWait({ projectPath: project.path, job }, "schedule"),
+      });
+      residentScheduler.start();
+    }
     registerIpcHandlers(
       settingsStore,
       createUiStateStore(async () => (await settingsStore.get()).cache_dir),
@@ -153,6 +183,9 @@ if (!hasSingleInstanceLock) {
           currentSettings.extra_projects.length !== updated.extra_projects.length ||
           currentSettings.extra_projects.some((entry, index) => entry !== updated.extra_projects[index]);
         currentSettings = updated;
+        windowsAutostartEnabled = updateWindowsAutostart(
+          Boolean(systemTray && (currentSettings.projects_root || currentSettings.extra_projects.length)),
+        );
         if (projectsChanged) await reconcileSchedules(await catalog.refresh(currentSettings));
       },
       jobs,
@@ -160,27 +193,76 @@ if (!hasSingleInstanceLock) {
     );
 
     registerContentSecurityPolicy();
-    mainWindow = await createMainWindow();
-    mainWindow.on("closed", () => {
-      mainWindow = null;
-    });
+    if (!launchHidden) {
+      mainWindow = await createMainWindow();
+      trackMainWindow(mainWindow);
+    }
 
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        void createMainWindow().then((window) => {
-          mainWindow = window;
-          mainWindow.on("closed", () => {
-            mainWindow = null;
-          });
-        });
-      }
+      showMainWindow();
     });
   });
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin" && !(process.platform === "win32" && systemTray)) app.quit();
 });
+
+function updateWindowsAutostart(enabled: boolean): boolean {
+  if (process.platform !== "win32") return true;
+  if (!app.isPackaged) return true;
+  try {
+    app.setLoginItemSettings({ openAtLogin: enabled, args: [backgroundSchedulerArgument] });
+    return app.getLoginItemSettings({ args: [backgroundSchedulerArgument] }).openAtLogin;
+  } catch (error) {
+    console.warn("无法设置 Windows 用户登录自启。", error);
+    return false;
+  }
+}
+
+async function createWindowsTray(): Promise<Tray | null> {
+  try {
+    const icon = await app.getFileIcon(app.getPath("exe"), { size: "small" });
+    if (icon.isEmpty()) throw new Error("应用图标为空。");
+    const tray = new Tray(icon);
+    tray.setToolTip("SiteIndex 正在后台检查计划任务。");
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: "打开 SiteIndex", click: showMainWindow },
+        { type: "separator" },
+        { label: "退出 SiteIndex", click: () => app.quit() },
+      ]),
+    );
+    tray.on("click", showMainWindow);
+    tray.on("double-click", showMainWindow);
+    return tray;
+  } catch (error) {
+    console.error("创建 SiteIndex 系统托盘失败。", error);
+    return null;
+  }
+}
+
+function trackMainWindow(window: BrowserWindow): void {
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
+  });
+}
+
+function showMainWindow(): void {
+  launchHidden = false;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  void createMainWindow().then((window) => {
+    mainWindow = window;
+    trackMainWindow(window);
+    window.show();
+    window.focus();
+  });
+}
 
 function sendToWindows(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -326,8 +408,17 @@ async function createMainWindow(): Promise<BrowserWindow> {
     },
   });
 
-  window.once("ready-to-show", () => window.show());
-  window.on("close", () => saveWindowBounds(window));
+  window.once("ready-to-show", () => {
+    if (launchHidden) window.hide();
+    else window.show();
+  });
+  window.on("close", (event) => {
+    saveWindowBounds(window);
+    if (process.platform === "win32" && systemTray && !isShuttingDown) {
+      event.preventDefault();
+      window.hide();
+    }
+  });
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isHttpUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
