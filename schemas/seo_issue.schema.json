@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "siteindex/seo_issue",
+  "title": "seo/issues.jsonl",
+  "type": "object",
+  "properties": {
+    "url": { "type": "string", "format": "uri" },
+    "rule": { "enum": ["http_4xx", "http_5xx", "redirect_chain", "noindex", "canonical_other", "canonical_missing", "not_in_sitemap", "title_missing", "desc_missing", "title_length", "desc_length", "title_duplicate", "desc_duplicate", "h1_missing", "h1_multiple", "schema_missing", "schema_error", "img_alt_missing", "thin_content", "orphan"] },
+    "severity": { "enum": ["high", "mid", "low"] },
+    "detail": { "type": "string" },
+    "status": { "enum": ["open", "fixed", "ignored"] },
+    "first_seen": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "last_seen": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+  },
+  "required": ["url", "rule", "severity", "detail", "status", "first_seen", "last_seen"],
+  "x-primary-key": ["url", "rule"]
+}

@@ -25,7 +25,6 @@ import {
   type EdmCampaign,
   type EdmCommandInput,
   type FeedInspectResult,
-  type FileCheck,
   type FolderRow,
   type InventoryEvent,
   type InventoryLatest,
@@ -49,7 +48,6 @@ import {
   type ProjectId,
   type ProjectSummary,
   type ReadmeData,
-  type RepairAction,
   type RunLog,
   type RunnerState,
   type ScheduleState,
@@ -78,9 +76,11 @@ import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
 import { runDaily } from "../jobs/daily";
 import { buildViews } from "../views/build";
-import { assertRunner, findConflictCopies, isConflictCopy, readRunner, withLock } from "../io/runner-lock";
+import { assertRunner, readRunner, withLock } from "../io/runner-lock";
 import { createProjectFiles } from "../projects/create";
 import { detectSite } from "../projects/detect";
+import { runWeekly } from "../jobs/weekly";
+import { repairProjectFile, validateProjectFiles } from "../validate";
 
 export interface CoreServiceContext {
   resolveProject(id: ProjectId): string;
@@ -876,9 +876,45 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           progress(20, "readme", "正在刷新 README 自动区块");
           await refreshReadmeFile(executionPath, await load(executionPath));
           jobResult = { runId, job: req.job, status: "ok", exitCode: EXIT.OK, summary: "README 已更新。" };
+        } else if (req.job === "weekly") {
+          const weekly = await runWeekly(executionPath, config, {
+            date: requestedDate,
+            only: req.only,
+            onProgress: (step, message) => progress(15 + Math.round(70 * (["pages", "issues", "links", "blog", "product_details", "categories"].indexOf(step) + 1) / 6), step, message),
+          });
+          jobResult = {
+            runId, job: req.job, status: weekly.status,
+            exitCode: weekly.status === "failed" ? EXIT.SOURCE_FAILED : EXIT.OK,
+            summary: weekly.status === "failed" ? "每周同步失败。" : weekly.status === "partial" ? "每周同步完成，部分页面抓取失败。" : "每周同步完成。",
+            ...(Object.keys(weekly.counts).length ? { counts: weekly.counts } : {}),
+            ...(weekly.errors.length ? { errors: weekly.errors } : {}),
+          };
+        } else if (req.job === "validate") {
+          progress(35, "validate", "正在校验项目文件");
+          const validation = await validateProjectFiles(executionPath, { trigger: req.trigger });
+          const hasErrors = validation.summary.error > 0 || validation.summary.missing > 0 || validation.summary.conflict_copy > 0;
+          jobResult = {
+            runId, job: req.job, status: hasErrors ? "failed" : "ok",
+            exitCode: hasErrors ? EXIT.VALIDATION_FAILED : EXIT.OK,
+            summary: hasErrors ? "项目校验发现错误。" : "项目校验通过。",
+            counts: { files: validation.summary.total, errors: validation.summary.error, missing: validation.summary.missing, conflict_copy: validation.summary.conflict_copy },
+            ...(hasErrors ? { errors: validation.files.filter((file) => file.status === "error" || file.status === "missing" || file.status === "conflict_copy").map((file) => file.path + ": " + (file.message ?? file.rule ?? "validation error")) } : {}),
+          };
         } else {
           const message = `Job「${req.job}」尚未接入 core 执行器。`;
           jobResult = jobFailure(req, runId, EXIT.SOURCE_FAILED, message, [message]);
+        }
+
+        if ((req.job === "daily" || req.job === "weekly") && jobResult.status !== "failed" && config.schedule.options.validate_after_sync) {
+          progress(94, "validate", "同步后正在校验本次生成的数据");
+          const validation = await validateProjectFiles(executionPath, { trigger: "after_sync" });
+          if (validation.summary.error || validation.summary.missing || validation.summary.conflict_copy) {
+            jobResult = {
+              ...jobResult,
+              status: jobResult.status === "ok" ? "partial" : jobResult.status,
+              errors: [...(jobResult.errors ?? []), "同步后校验发现 " + validation.summary.error + " 个错误、" + validation.summary.missing + " 个缺失文件和 " + validation.summary.conflict_copy + " 个冲突副本。"],
+            };
+          }
         }
 
         if (!req.dryRun) {
@@ -1483,99 +1519,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
   };
 
-  const fileSpecs: { relative: string; kind: FileCheck["kind"]; format: "json" | "jsonl" | "csv" | "text"; repair?: RepairAction }[] = [
-    { relative: PATHS.readme, kind: "doc", format: "text", repair: "regenerate:readme" },
-    { relative: PATHS.agentsMd, kind: "doc", format: "text" },
-    { relative: PATHS.claudeMd, kind: "doc", format: "text" },
-    { relative: PATHS.site, kind: "config", format: "json" },
-    { relative: PATHS.skus, kind: "sync", format: "jsonl", repair: "regenerate:daily" },
-    { relative: PATHS.productDetails, kind: "sync", format: "jsonl", repair: "regenerate:weekly.product_details" },
-    { relative: PATHS.categories, kind: "sync", format: "json", repair: "regenerate:weekly.categories" },
-    { relative: PATHS.inventoryLatest, kind: "sync", format: "jsonl", repair: "regenerate:daily" },
-    { relative: PATHS.dailySummary, kind: "sync", format: "csv", repair: "regenerate:daily" },
-    { relative: PATHS.seoPages, kind: "sync", format: "jsonl", repair: "regenerate:weekly.pages" },
-    { relative: PATHS.seoIssues, kind: "sync", format: "jsonl", repair: "regenerate:weekly.issues" },
-    { relative: PATHS.seoLinks, kind: "sync", format: "jsonl", repair: "regenerate:weekly.links" },
-    { relative: PATHS.blogIndex, kind: "sync", format: "jsonl", repair: "regenerate:weekly.blog" },
-    { relative: PATHS.keywords, kind: "ledger", format: "jsonl" },
-    { relative: PATHS.skuMedia, kind: "ledger", format: "csv" },
-    { relative: PATHS.skuTags, kind: "ledger", format: "csv" },
-    { relative: PATHS.edmCampaigns, kind: "ledger", format: "jsonl" },
-    { relative: PATHS.outreach, kind: "ledger", format: "jsonl" },
-    { relative: PATHS.productsView, kind: "view", format: "jsonl", repair: "regenerate:views" },
-    { relative: PATHS.skuStockView, kind: "view", format: "jsonl", repair: "regenerate:views" },
-    { relative: PATHS.runs, kind: "sync", format: "jsonl" },
-  ];
-
-  const validateProject = async (id: ProjectId, selectedPath?: string): Promise<ValidationReport> => {
+  const validateProject = async (id: ProjectId, selectedPath?: string, trigger: ValidationReport["trigger"] = "manual"): Promise<ValidationReport> => {
     const projectPath = resolve(id);
-    const snapshot = await load(projectPath);
-    let selected = "";
-    if (selectedPath) {
-      selected = selectedPath.replaceAll("\\", "/").replace(/^\.\//, "");
-      const absolute = path.resolve(projectPath, selected);
-      const relative = path.relative(projectPath, absolute);
-      if (relative.startsWith("..") || path.isAbsolute(relative)) throw siteError("PATH_OUTSIDE_PROJECT", "校验路径必须位于项目目录内。", selectedPath);
-      selected = relative.replaceAll("\\", "/");
+    try {
+      return await validateProjectFiles(projectPath, { trigger, ...(selectedPath ? { selectedPath } : {}) });
+    } catch (error) {
+      if (error instanceof Error && /路径必须/.test(error.message)) throw siteError("PATH_OUTSIDE_PROJECT", "校验路径必须位于项目目录内。", selectedPath ?? "");
+      throw setError(error);
     }
-    const specs = fileSpecs.filter((spec) => !selected || spec.relative === selected || spec.relative.startsWith(`${selected}/`));
-    const checks: FileCheck[] = [];
-    for (const spec of specs) {
-      const filePath = path.join(projectPath, spec.relative);
-      try {
-        const info = await stat(filePath);
-        let records: number | null = null;
-        try {
-          if (spec.format === "json") {
-            const value: unknown = JSON.parse(await readFile(filePath, "utf8"));
-            records = Array.isArray(value) ? value.length : 1;
-          } else if (spec.format === "jsonl") records = (await readJsonl(filePath)).length;
-          else if (spec.format === "csv") {
-            const rows = await readCsv(filePath);
-            records = rows.length;
-            const expected = spec.relative === PATHS.dailySummary ? CSV_HEADERS.dailySummary
-              : spec.relative === PATHS.skuMedia ? CSV_HEADERS.skuMedia
-                : spec.relative === PATHS.skuTags ? CSV_HEADERS.skuTags : null;
-            if (expected) {
-              const header = (await readFile(filePath, "utf8")).split(/\r?\n/, 1)[0] ?? "";
-              if (header !== expected.join(",")) throw Object.assign(new Error(`CSV 表头应为 ${expected.join(",")}`), { rule: "header" });
-            }
-          } else {
-            records = 1;
-            await readFile(filePath, "utf8");
-          }
-          const copies = await findConflictCopies(path.dirname(filePath));
-          const targetCopy = copies.find((copy) => path.basename(copy).toLowerCase().startsWith(path.basename(filePath).toLowerCase()));
-          checks.push({
-            path: spec.relative, kind: spec.kind, status: targetCopy ? "conflict_copy" : "ok",
-            ...(targetCopy ? { rule: "conflict_copy", message: `发现冲突副本：${path.basename(targetCopy)}` } : {}),
-            records, size: info.size, modified_at: info.mtime.toISOString(), repair: targetCopy ? "delete_copy" : spec.repair ?? null,
-          });
-        } catch (error) {
-          const rule = typeof error === "object" && error !== null && "rule" in error && error.rule === "header" ? "header" : "parse";
-          checks.push({ path: spec.relative, kind: spec.kind, status: "error", rule, message: error instanceof Error ? error.message : String(error), records: null, size: info.size, modified_at: info.mtime.toISOString(), repair: spec.repair ?? "autofix" });
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-          checks.push({ path: spec.relative, kind: spec.kind, status: "error", rule: "parse", message: error instanceof Error ? error.message : String(error), repair: spec.repair ?? null });
-        } else checks.push({ path: spec.relative, kind: spec.kind, status: "missing", rule: "missing", message: "文件不存在。", repair: spec.repair ?? null });
-      }
-    }
-    const report: ValidationReport = {
-      checked_at: zonedTimestamp(snapshot.config.timezone),
-      trigger: "manual",
-      summary: {
-        total: checks.length,
-        ok: checks.filter((check) => check.status === "ok").length,
-        error: checks.filter((check) => check.status === "error").length,
-        missing: checks.filter((check) => check.status === "missing").length,
-        conflict_copy: checks.filter((check) => check.status === "conflict_copy").length,
-      },
-      files: checks,
-    };
-    try { await atomicWrite(path.join(projectPath, PATHS.validation), `${JSON.stringify(report, null, 2)}\n`); }
-    catch (error) { throw setError(error); }
-    return report;
   };
 
   const files: CoreService["files"] = {
@@ -1584,34 +1535,13 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     repair: async (id, relativePath, action) => {
       const projectPath = resolve(id);
       const normalized = relativePath.replaceAll("\\", "/").replace(/^\.\//, "");
-      const absolute = path.resolve(projectPath, normalized);
-      const inside = path.relative(projectPath, absolute);
-      if (inside.startsWith("..") || path.isAbsolute(inside)) throw siteError("PATH_OUTSIDE_PROJECT", "修复路径必须位于项目目录内。", relativePath);
-      if (action === "delete_copy") {
-        if (!isConflictCopy(path.basename(absolute))) throw siteError("UNKNOWN", "指定文件不是已识别的冲突副本。", relativePath);
-        await unlink(absolute).catch((error: unknown) => { throw setError(error); });
-      } else if (action === "autofix") {
-        const schemaByPath: Record<string, string | { primaryKey: string[]; fieldOrder: string[] }> = {
-          [PATHS.skus]: "sku", [PATHS.inventoryLatest]: "inventory_latest", [PATHS.seoPages]: "page",
-          [PATHS.seoIssues]: { primaryKey: ["url", "rule"], fieldOrder: ["url", "rule", "severity", "detail", "status", "first_seen", "last_seen"] },
-          [PATHS.seoLinks]: { primaryKey: ["from", "to", "anchor"], fieldOrder: ["from", "to", "anchor", "to_type", "nofollow"] },
-          [PATHS.blogIndex]: "blog_post", [PATHS.keywords]: "keyword", [PATHS.edmCampaigns]: "edm_campaign",
-          [PATHS.outreach]: "outreach_contact",
-        };
-        const schema = schemaByPath[normalized];
-        if (schema) await writeJsonl(absolute, await readJsonl(absolute), schema);
-        else if (normalized === PATHS.skuMedia || normalized === PATHS.skuTags || normalized === PATHS.dailySummary) {
-          const headers = normalized === PATHS.skuMedia ? CSV_HEADERS.skuMedia : normalized === PATHS.skuTags ? CSV_HEADERS.skuTags : CSV_HEADERS.dailySummary;
-          const key = normalized === PATHS.skuMedia ? ["sku", "image_role"] : normalized === PATHS.dailySummary ? ["date", "category"] : ["sku"];
-          await writeCsv(absolute, await readCsv(absolute), headers, key);
-        } else throw siteError("UNKNOWN", "此文件暂不支持自动整理。", normalized);
-      } else if (action.startsWith("regenerate:")) {
-        const task = action.slice("regenerate:".length).split(".", 1)[0] ?? "";
-        if (!(JOB_NAMES as readonly string[]).includes(task)) throw siteError("UNKNOWN", "不支持此文件的重新生成操作。", action);
-        const result = await runJob({ projectPath, job: task as JobRequest["job"], trigger: "manual" }, () => undefined);
-        if (result.status === "failed") throw siteError("WRITE_FAILED", result.summary, result.errors?.join("\n"));
-      } else {
-        throw siteError("UNKNOWN", "此修复操作尚未实现。", action);
+      try {
+        await repairProjectFile(projectPath, relativePath, action, {
+          runJob: (job, only) => runJob({ projectPath, job, trigger: "manual", ...(only ? { only } : {}) }, () => undefined),
+        });
+      } catch (error) {
+        if (error instanceof Error && /路径必须/.test(error.message)) throw siteError("PATH_OUTSIDE_PROJECT", "修复路径必须位于项目目录内。", relativePath);
+        throw siteError("WRITE_FAILED", error instanceof Error ? error.message : String(error));
       }
       invalidate(projectPath);
       const report = await validateProject(id, normalized);

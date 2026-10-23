@@ -1,7 +1,7 @@
 {
   "case": "bad_url_in_media",
   "file": "index/ledgers/sku_media.csv",
-  "content": "sku,image_role,image_url,alt_text,source,updated_at\nKYBF000-G,main,https://mcusercontent.com/abc123/images/kybf000.jpg,Kingsyard Feeder 0,mailchimp,2026-10-21\nKYBF000-R,main,https://mcusercontent.com/abc123/images/kybf000.jpg,Kingsyard Feeder 0,mailchimp,2026-10-21\nKYBF002,main,https://mcusercontent.com/abc123/images/kybf002.jpg,Kingsyard Feeder 2,mailchimp,2026-10-21\nKYBF005,lifestyle,https://mcusercontent.com/abc123/images/kybf005-life.jpg,,mailchimp,2026-10-21\nKYBF003,main,not-a-url,,mailchimp,2026-10-21\n",
+  "content": "sku,image_role,image_url,alt_text,source,width,height,updated_at\nKYBF000-G,main,https://mcusercontent.com/abc123/images/kybf000.jpg,Kingsyard Feeder 0,mailchimp,,,2026-10-21\nKYBF000-R,main,https://mcusercontent.com/abc123/images/kybf000.jpg,Kingsyard Feeder 0,mailchimp,,,2026-10-21\nKYBF002,main,https://mcusercontent.com/abc123/images/kybf002.jpg,Kingsyard Feeder 2,mailchimp,,,2026-10-21\nKYBF005,lifestyle,https://mcusercontent.com/abc123/images/kybf005-life.jpg,,mailchimp,,,2026-10-21\nKYBF003,main,not-a-url,,mailchimp,,,2026-10-21\n",
   "expect_exit": 1,
   "expect_errors": [
     "index/ledgers/sku_media.csv 第5行 image_url: 'not-a-url' does not match '^https?://'",

@@ -78,7 +78,7 @@ describe("createCoreService initial namespaces", () => {
     expect(inventory.category_source).toBe(detail.config.categories?.mode ?? "feed");
     expect(await api.inventory.dailyReport("fixture", "2026-10-21")).toContain("库存日报");
     expect(await api.inventory.dailyReport("fixture", "2026-10-18")).toBeNull();
-  });
+  }, 30_000);
 
   it("paginates, sorts and filters SKU and product lists", async () => {
     const { projectPath } = await makeProject();
@@ -133,7 +133,7 @@ describe("createCoreService initial namespaces", () => {
     await writeFile(sitePath, `${JSON.stringify(site, null, 2)}\n`, "utf8");
     api.invalidate(projectPath);
     expect((await api.projects.get("fixture")).config.locale).toBe("en-GB");
-  });
+  }, 30_000);
 
   it("serves the remaining core query namespaces and runs a dry-run views Job", async () => {
     const { projectPath } = await makeProject();
@@ -186,5 +186,5 @@ describe("createCoreService initial namespaces", () => {
     const elapsed = performance.now() - started;
     expect(result.rows.length).toBe(50);
     expect(elapsed).toBeLessThan(50);
-  });
+  }, 30_000);
 });

@@ -1,54 +1,27 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "siteindex/edm_campaign",
-  "title": "edm/index.jsonl",
+  "title": "edm_campaigns.jsonl",
   "type": "object",
   "properties": {
-    "campaign_id": {
-      "type": "string",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}-[a-z0-9-]+$"
-    },
-    "date": {
-      "type": "string",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-    },
-    "theme": {
-      "type": "string"
-    },
-    "status": {
-      "enum": [
-        "draft",
-        "scheduled",
-        "sent"
-      ]
-    },
-    "handles": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "mailchimp_campaign_id": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "send_date": {
-      "type": [
-        "string",
-        "null"
-      ]
-    }
+    "campaign_id": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}-[a-z0-9-]+$" },
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "theme": { "type": "string" },
+    "status": { "enum": ["draft", "scheduled", "sent"] },
+    "subject": { "type": ["string", "null"] },
+    "preheader": { "type": ["string", "null"] },
+    "audience": { "type": ["string", "null"] },
+    "handles": { "type": "array", "items": { "type": "string" } },
+    "promo_code": { "type": ["string", "null"] },
+    "utm_campaign": { "type": ["string", "null"] },
+    "mailchimp_campaign_id": { "type": ["string", "null"] },
+    "send_date": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "recipients": { "type": ["integer", "null"], "minimum": 0 },
+    "open_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "click_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "orders": { "type": ["integer", "null"], "minimum": 0 },
+    "revenue": { "type": ["number", "null"], "minimum": 0 }
   },
-  "required": [
-    "campaign_id",
-    "date",
-    "theme",
-    "status",
-    "handles"
-  ],
-  "x-primary-key": [
-    "campaign_id"
-  ]
+  "required": ["campaign_id", "date", "theme", "status", "handles"],
+  "x-primary-key": ["campaign_id"]
 }

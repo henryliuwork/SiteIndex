@@ -34,7 +34,8 @@
       "enum": [
         "ok",
         "partial",
-        "failed"
+        "failed",
+        "skipped"
       ]
     },
     "counts": {

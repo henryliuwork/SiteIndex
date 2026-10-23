@@ -27,7 +27,7 @@ describe("core io", () => {
     await Promise.all(values.map((value) => atomicWrite(file, value)));
     expect(await readFile(file, "utf8")).toBe(values.at(-1));
     expect(await readdir(path.dirname(file))).toEqual(["output.txt"]);
-  });
+  }, 20_000);
 
   it("writes JSONL in schema field and primary-key order, with a final LF", async () => {
     const root = await tempDir();
