@@ -11,36 +11,36 @@
 ## M1 · 能安装、能打开
 
 ### C1 Electron 骨架
-- [ ] electron-vite：main、preload；开发时加载 `pnpm dev:ui` 的地址，生产加载 `packages/ui/dist/index.html`（`file://`，hash 路由）
-- [ ] 窗口：最小 1100×720、记住位置大小；Windows `titleBarStyle: "hidden"` + `titleBarOverlay`（高 38，颜色与标题栏一致）→ 原生圆角与系统按钮；macOS `hiddenInset`
-- [ ] 单实例锁（界面模式）；`--run-job` 模式不受单实例限制
-- [ ] 安全：`contextIsolation`、`sandbox`、CSP、外链只允许 http/https
-- [ ] `package.json` 加 `dev`、`build`、`typecheck`、`dist:win`、`dist:mac` 脚本
+- [x] electron-vite：main、preload；开发时加载 `pnpm dev:ui` 的地址，生产加载 `packages/ui/dist/index.html`（`file://`，hash 路由）
+- [x] 窗口：最小 1100×720、记住位置大小；Windows `titleBarStyle: "hidden"` + `titleBarOverlay`（高 38，颜色与标题栏一致）→ 原生圆角与系统按钮；macOS `hiddenInset`
+- [x] 单实例锁（界面模式）；`--run-job` 模式不受单实例限制
+- [x] 安全：`contextIsolation`、`sandbox`、CSP、外链只允许 http/https
+- [x] `package.json` 加 `dev`、`build`、`typecheck`、`dist:win`、`dist:mac` 脚本
 
 ### C2 IPC 骨架
-- [ ] preload：用 `contextBridge.exposeInMainWorld("siteindex", api)` 暴露 `SiteIndexApi`，**只做 invoke 透传**；事件（onProgress / onFinished / onChanged）用 `ipcRenderer.on` 包装并返回 Unsubscribe
-- [ ] main：按命名空间注册 `ipcMain.handle("si:<ns>.<method>")`；错误统一转为 `SiteIndexError`
-- [ ] 契约测试：用类型保证 preload 暴露的对象 `satisfies SiteIndexApi`；单测遍历方法名与 handler 注册表一致
-- [ ] M1 期间 core 方法未就绪时返回 `NOT_IMPLEMENTED` 错误（界面显示占位）
+- [x] preload：用 `contextBridge.exposeInMainWorld("siteindex", api)` 暴露 `SiteIndexApi`，**只做 invoke 透传**；事件（onProgress / onFinished / onChanged）用 `ipcRenderer.on` 包装并返回 Unsubscribe
+- [x] main：按命名空间注册 `ipcMain.handle("si:<ns>.<method>")`；错误统一转为 `SiteIndexError`
+- [x] 契约测试：用类型保证 preload 暴露的对象 `satisfies SiteIndexApi`；单测遍历方法名与 handler 注册表一致
+- [x] M1 期间 core 方法未就绪时返回 `NOT_IMPLEMENTED` 错误（界面显示占位）
 
 ### C3 打包与 CI
-- [ ] electron-builder：Windows NSIS（`oneClick: false`、`perMachine: false`、可改安装目录、桌面与开始菜单快捷方式、中文安装界面）；macOS dmg universal
-- [ ] `resources/`：`cli.js`（A 的 tsup 产物）、`skills/`、`templates/`、`schemas/`、字体
-- [ ] `.github/workflows/release.yml`：tag `v*` → windows-latest 构建 exe、macos-latest 构建 dmg → 上传到 GitHub Release
-- [ ] CI 增加：每个 PR 在 windows-latest 上执行 `pnpm --filter @siteindex/desktop build`（不打安装包）以尽早发现打包问题
-- **验收（M1 集成）**：从 Actions 下载 exe，在 Windows 11 上安装、打开，看到 mock/占位的项目中心
+- [x] electron-builder：Windows NSIS（`oneClick: false`、`perMachine: false`、可改安装目录、桌面与开始菜单快捷方式、中文安装界面）；macOS dmg universal
+- [x] `resources/`：`cli.js`（A 的 tsup 产物）、`skills/`、`templates/`、`schemas/`、字体
+- [x] `.github/workflows/release.yml`：tag `v*` → windows-latest 构建 exe、macos-latest 构建 dmg → 上传到 GitHub Release
+- [x] CI 增加：每个 PR 在 windows-latest 上执行 `pnpm --filter @siteindex/desktop build`（不打安装包）以尽早发现打包问题
+- [x] **验收（M1 集成）**：从 Actions 下载 exe，在 Windows 11 上安装、打开，看到 mock/占位的项目中心
 
 ## M2 · 系统集成全部完成
 
 ### C4 设置与本机状态
-- [ ] `%APPDATA%\SiteIndex\settings.json`（mac `~/Library/Application Support/SiteIndex/`）；首次启动生成 device_id、默认 device_name（计算机名）
-- [ ] 首次启动引导选择项目根目录（`settings.chooseDirectory`）
-- [ ] `ui-state.json`：列设置、每页条数（与 B 约定 `useColumnPrefs` 的存储适配，通过一个额外的 `uiState` IPC，走契约流程添加）
+- [x] `%APPDATA%\SiteIndex\settings.json`（mac `~/Library/Application Support/SiteIndex/`）；首次启动生成 device_id、默认 device_name（计算机名）
+- [x] 首次启动引导选择项目根目录（`settings.chooseDirectory`）
+- [x] `ui-state.json`：列设置、每页条数（与 B 约定 `useColumnPrefs` 的存储适配，通过一个额外的 `uiState` IPC，走契约流程添加）
 
 ### C5 接 core
-- [ ] `createCoreService({ resolveProject, deviceId, cacheDir })` 接到 IPC；`projects.list` 扫描 projects_root 与 extra_projects（有 `index/site.json` 的文件夹）
-- [ ] chokidar 监听各项目 `index/`、`README.md`（防抖 1 秒）→ `core.invalidate(path)` + `projects.onChanged`
-- [ ] 导出 CSV：保存对话框 → 写文件 → 返回路径
+- [x] `createCoreService({ resolveProject, deviceId, cacheDir })` 接到 IPC；`projects.list` 扫描 projects_root 与 extra_projects（有 `index/site.json` 的文件夹）；接通 projects、overview、inventory、products、seo、content、edm、readme、files core 方法
+- [x] chokidar 监听各项目 `index/`、`README.md`（防抖 1 秒）→ `core.invalidate(path)` + `projects.onChanged`
+- [x] 导出 CSV：保存对话框 → 写文件 → 返回路径
 
 ### C6 Job 执行
 - [ ] 每个 Job 一个 `utilityProcess`（入口打包 core 的 `runJob`）；进度转发到 `jobs.onProgress`；`cancel` 结束进程并释放锁
