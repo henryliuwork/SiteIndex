@@ -182,7 +182,11 @@ export function windowsTaskXmlBytes(xml: string): Uint8Array {
 function isAccessDenied(error: unknown): boolean {
   const value = error as CommandError;
   const detail = `${value?.message ?? ""}\n${value?.detail ?? ""}`;
-  return /0x80070005|0x5\b|access is denied|拒绝访问/i.test(detail) || value?.code === 1;
+  const containsUndecodableOutput = detail.includes("\uFFFD");
+  return (
+    /0x80070005|0x5\b|access is denied|拒绝访问/i.test(detail) ||
+    (value?.code === 1 && (!value.detail?.trim() || containsUndecodableOutput))
+  );
 }
 
 function isMissingTask(error: unknown): boolean {

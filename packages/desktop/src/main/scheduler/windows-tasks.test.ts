@@ -282,6 +282,25 @@ describe("Windows schedule registration", () => {
     expect(elevated).toHaveBeenCalledOnce();
   });
 
+  it("does not treat a readable non-access schtasks error as an authorization request", async () => {
+    const directory = await temporaryDirectory();
+    const elevated = vi.fn(async () => undefined);
+    const scheduler = createWindowsTaskRegistrar({
+      temporaryDirectory: directory,
+      runCommand: async (file) => {
+        if (file === "whoami.exe") return "TEST-PC\\tester";
+        throw Object.assign(new Error("schtasks.exe 执行失败。"), {
+          code: 1,
+          detail: "ERROR: The task XML is invalid.",
+        });
+      },
+      runElevatedScript: elevated,
+    });
+
+    await expect(scheduler.reconcile([dailyDefinition], [], [], true)).rejects.toThrow("schtasks.exe 执行失败");
+    expect(elevated).not.toHaveBeenCalled();
+  });
+
   it("keeps the previous system mode on startup without showing UAC", async () => {
     const directory = await temporaryDirectory();
     const beforeElevation = vi.fn(async () => undefined);
