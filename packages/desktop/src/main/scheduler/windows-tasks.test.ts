@@ -248,6 +248,40 @@ describe("Windows schedule registration", () => {
     expect(elevated).toHaveBeenCalledOnce();
   });
 
+  it("retries a localized schtasks exit code through elevation when its output cannot be decoded", async () => {
+    const directory = await temporaryDirectory();
+    const beforeElevation = vi.fn(async () => undefined);
+    const elevated = vi.fn(async (_scriptPath: string, resultPath: string) => {
+      await writeFile(
+        resultPath,
+        JSON.stringify({
+          success: true,
+          results: [{ action: "create", name: "\\SiteIndex\\sample-store-daily", success: true }],
+        }),
+        "utf8",
+      );
+    });
+    const scheduler = createWindowsTaskRegistrar({
+      temporaryDirectory: directory,
+      beforeElevation,
+      runCommand: async (file) => {
+        if (file === "whoami.exe") return "TEST-PC\\tester";
+        throw Object.assign(new Error("schtasks.exe 执行失败。"), {
+          code: 1,
+          detail: "����: ϵͳ�Ҳ���ָ����·����",
+        });
+      },
+      runElevatedScript: elevated,
+    });
+
+    await expect(scheduler.reconcile([dailyDefinition], [], [], true)).resolves.toMatchObject({
+      mode: "system",
+      authorization_required: false,
+    });
+    expect(beforeElevation).toHaveBeenCalledOnce();
+    expect(elevated).toHaveBeenCalledOnce();
+  });
+
   it("keeps the previous system mode on startup without showing UAC", async () => {
     const directory = await temporaryDirectory();
     const beforeElevation = vi.fn(async () => undefined);
