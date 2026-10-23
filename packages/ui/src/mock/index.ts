@@ -338,7 +338,16 @@ const readmeFolderMaps: Record<MockProjectId, FolderRow[]> = {
     { name: "报告", description: "月度汇报与复盘", default: true, files: 5, modified_at: "2026-10-01T12:00:00+08:00" },
   ],
 };
-const categoryConfigs: Record<MockProjectId, CategoriesConfig> = { kingsyard: { mode: "manual" }, riverstone: { mode: "url_rule", url_pattern: "/collections/:category" } };
+const initialManualCategories: NonNullable<CategoriesConfig["manual"]> = categorySeeds.slice(0, 4).map((category, index) => ({
+  slug: category.slug,
+  name: category.name,
+  url: category.url ? (() => { try { return new URL(category.url).pathname; } catch { return category.url; } })() : "/collections/" + category.slug,
+  match: [{ type: index === 3 ? "url_contains" : "product_type_contains", value: category.name }],
+}));
+const categoryConfigs: Record<MockProjectId, CategoriesConfig> = {
+  kingsyard: { mode: "manual", manual: initialManualCategories },
+  riverstone: { mode: "url_rule", url_pattern: "/collections/:category" },
+};
 const tagsByHandle = new Map<string, string[]>();
 const manualImages = new Map<string, string | null>();
 const tagNamesByProject: Record<MockProjectId, Set<string>> = {
@@ -896,13 +905,17 @@ export function createMockApi(): SiteIndexApi {
     categories: {
       get: (id) => reply(categoryConfigs[projectKey(id)]),
       preview: (_id, config) => reply<CategoryPreview>(() => ({
-        categories: categorySeeds.slice(0, 5).map((category) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: category.sku_count ?? 0 })),
+        categories: (config.manual ?? categorySeeds.slice(0, 5)).map((category, index) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: [11, 4, 4, 0][index] ?? 0 })),
         uncategorized: 12, multi_matched: 3,
-        candidates: categorySeeds.slice(0, 2).map((category) => ({ url: category.url, product_links: category.product_count ?? 0, configured: config.mode === "manual" })),
+        candidates: [
+          { url: "/hummingbird-feeders.html", product_links: 6 },
+          { url: "/accessories.html", product_links: 9 },
+          { url: "/bird-feeders.html", product_links: 11 },
+        ].map((candidate) => ({ ...candidate, configured: (config.manual ?? []).some((item) => item.url === candidate.url || item.url.endsWith(candidate.url)) })),
       })),
       save: (id, config) => reply(() => {
         categoryConfigs[projectKey(id)] = clone(config);
-        return { categories: categorySeeds.map((category) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: category.sku_count ?? 0 })), uncategorized: 12, multi_matched: 3, candidates: [] };
+        return { categories: (config.manual ?? categorySeeds).map((category, index) => ({ slug: category.slug, name: category.name, url: category.url, sku_count: [11, 4, 4, 0][index] ?? 0 })), uncategorized: 12, multi_matched: 3, candidates: [] };
       }),
     },
     folders: {

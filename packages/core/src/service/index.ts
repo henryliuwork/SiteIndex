@@ -660,61 +660,135 @@ async function listProjectFolders(projectPath: string, config: SiteConfig): Prom
 }
 
 function categorySlug(value: string): string {
-  return value.toLowerCase().trim().replaceAll("&", " and ").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || "uncategorized";
+  return value.toLowerCase().replaceAll("&", " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "uncategorized";
 }
 
 function matchManualCategory(sku: SkuRecord, category: ManualCategory): boolean {
   return (category.match ?? []).some((rule) => {
-    if (rule.type === "product_type_contains") return (sku.category ?? "").toLowerCase().includes(rule.value.toLowerCase());
-    if (rule.type === "sku_prefix") return sku.sku.toLowerCase().startsWith(rule.value.toLowerCase());
-    if (rule.type === "url_contains") return sku.url.toLowerCase().includes(rule.value.toLowerCase());
-    return rule.value.split(/[;,]/).map((value) => value.trim()).includes(sku.sku);
+    const value = rule.value.trim();
+    if (!value) return false;
+    if (rule.type === "product_type_contains") {
+      const source = [sku.category, ...(sku.categories ?? [])].filter(Boolean).join(" ").toLowerCase();
+      return source.includes(value.toLowerCase()) || source.includes(categorySlug(value));
+    }
+    if (rule.type === "sku_prefix") return sku.sku.toLowerCase().startsWith(value.toLowerCase());
+    if (rule.type === "url_contains") return sku.url.toLowerCase().includes(value.toLowerCase());
+    return rule.value.split(/[,;|]/).some((candidate) => candidate.trim() === sku.sku);
   });
 }
 
-function urlRuleCategory(skuUrl: string, patterns: string): { slug: string; url: string } | null {
+interface UrlRuleMatch {
+  slug: string;
+  url: string;
+}
+
+function urlRuleMatches(value: string, patterns: string): UrlRuleMatch[] {
   let url: URL;
-  try { url = new URL(skuUrl); } catch { return null; }
-  for (const pattern of patterns.split(",").map((value) => value.trim()).filter(Boolean)) {
+  try { url = new URL(value); } catch { return []; }
+  const matches = new Map<string, UrlRuleMatch>();
+  for (const pattern of patterns.split(",").map((item) => item.trim()).filter(Boolean)) {
     const escaped = pattern.split("{slug}").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("([^/]+)");
-    const match = new RegExp(`^${escaped}/?$`, "i").exec(url.pathname);
-    if (match?.[1]) return { slug: categorySlug(decodeURIComponent(match[1])), url: `${url.origin}${url.pathname}` };
+    const match = new RegExp(`^${escaped}(?:/|$)`, "i").exec(url.pathname);
+    if (!match?.[1]) continue;
+    let valueSlug = match[1];
+    try { valueSlug = decodeURIComponent(valueSlug); } catch { /* malformed escape stays encoded, as in daily sync */ }
+    const slug = categorySlug(valueSlug);
+    const categoryPath = match[0].replace(/\/$/, "");
+    if (!matches.has(slug)) matches.set(slug, { slug, url: `${url.origin}${categoryPath}` });
   }
-  return null;
+  return [...matches.values()];
+}
+
+function normalizeCategoryUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname.replace(/\/$/, "") || "/"}`;
+  } catch { return ""; }
+}
+
+function validateCategoriesConfig(config: CategoriesConfig): void {
+  if (!config || !["url_rule", "feed", "manual"].includes(config.mode)) {
+    throw siteError("CONFIG_INVALID", "分类模式无效。", String((config as { mode?: unknown } | null)?.mode));
+  }
+  if (config.url_pattern !== undefined && typeof config.url_pattern !== "string") {
+    throw siteError("CONFIG_INVALID", "分类 URL 规则必须是文本。");
+  }
+  if (config.manual !== undefined && !Array.isArray(config.manual)) {
+    throw siteError("CONFIG_INVALID", "手动分类必须是数组。");
+  }
 }
 
 function categoryPreview(snapshot: ProjectSnapshot, config: CategoriesConfig): CategoryPreview {
+  validateCategoriesConfig(config);
   const activeSkus = snapshot.skus.filter((sku) => sku.status === "active");
   const counts = new Map<string, { name: string; url: string; sku_count: number }>();
+  const addCategory = (value: { slug: string; name: string; url: string }, increment = false, preferName = false) => {
+    const current = counts.get(value.slug);
+    if (!current) {
+      counts.set(value.slug, { ...value, sku_count: increment ? 1 : 0 });
+      return;
+    }
+    if (preferName && value.name) current.name = value.name;
+    if (!current.url && value.url) current.url = value.url;
+    if (increment) current.sku_count += 1;
+  };
   let uncategorized = 0;
   let multiMatched = 0;
+
+  if (config.mode === "manual") {
+    for (const category of config.manual ?? []) {
+      addCategory({ slug: category.slug, name: category.name, url: category.url });
+    }
+  }
+
   for (const sku of activeSkus) {
     let matches: { slug: string; name: string; url: string }[] = [];
     if (config.mode === "feed") {
-      const categories = sku.categories?.length ? sku.categories : [sku.category || "uncategorized"];
-      matches = categories.map((slug) => ({ slug, name: slug, url: "" }));
+      const slugs = [...new Set(sku.categories?.length ? sku.categories : [sku.category || "uncategorized"])]
+        .filter((slug) => slug && slug !== "uncategorized");
+      matches = slugs.map((slug) => ({ slug, name: slug, url: "" }));
     } else if (config.mode === "manual") {
-      matches = (config.manual ?? []).filter((category) => matchManualCategory(sku, category))
-        .map((category) => ({ slug: category.slug, name: category.name, url: category.url }));
+      const matchingCategories = (config.manual ?? []).filter((category) => matchManualCategory(sku, category));
+      if (matchingCategories.length > 1) multiMatched += 1;
+      matches = matchingCategories.slice(0, 1).map((category) => ({ slug: category.slug, name: category.name, url: category.url }));
     } else {
-      const result = urlRuleCategory(sku.url, config.url_pattern ?? "");
-      if (result) matches = [{ ...result, name: result.slug }];
+      const results = urlRuleMatches(sku.url, config.url_pattern ?? "");
+      if (results.length > 1) multiMatched += 1;
+      matches = results.slice(0, 1).map((result) => ({ ...result, name: result.slug }));
     }
-    if (matches.length > 1) multiMatched += 1;
-    if (!matches.length) { uncategorized += 1; continue; }
-    for (const match of matches) {
-      const current = counts.get(match.slug) ?? { name: match.name, url: match.url, sku_count: 0 };
-      current.sku_count += 1;
-      if (!current.url && match.url) current.url = match.url;
-      counts.set(match.slug, current);
+    if (config.mode === "feed" && matches.length > 1) multiMatched += 1;
+    if (!matches.length) {
+      uncategorized += 1;
+      continue;
     }
+    for (const match of matches) addCategory(match, true);
   }
-  const configuredUrls = new Set((config.manual ?? []).map((category) => category.url).filter(Boolean));
-  const candidates = snapshot.seoPages.filter((page) => page.page_type === "collection").map((page) => ({
-    url: page.url,
-    product_links: snapshot.seoLinks.filter((link) => link.from === page.url && link.to_type === "product").length,
-    configured: configuredUrls.has(page.url),
-  })).sort((a, b) => codeUnitCompare(a.url, b.url));
+
+  const feedSlugs = new Set(activeSkus.flatMap((sku) => sku.categories?.length ? sku.categories : [sku.category])
+    .filter((slug): slug is string => !!slug && slug !== "uncategorized"));
+  const productLinks = new Map<string, number>();
+  for (const link of snapshot.seoLinks) {
+    if (link.to_type === "product") productLinks.set(link.from, (productLinks.get(link.from) ?? 0) + 1);
+  }
+  const candidates = snapshot.seoPages.filter((page) => page.page_type === "collection").map((page) => {
+    const ruleMatches = config.mode === "url_rule" ? urlRuleMatches(page.url, config.url_pattern ?? "") : [];
+    const pathParts = new URL(page.url).pathname.split("/").filter(Boolean);
+    const pageSlug = categorySlug(pathParts.at(-1)?.replace(/\.(html?|php)$/i, "") ?? "");
+    const feedCategory = config.mode === "feed" && feedSlugs.has(pageSlug);
+    const manualCategory = config.mode === "manual" ? (config.manual ?? []).find((category) => normalizeCategoryUrl(category.url) === normalizeCategoryUrl(page.url)) : undefined;
+    if (ruleMatches.length) {
+      const rule = ruleMatches[0]!;
+      addCategory({ slug: rule.slug, name: page.h1 || page.title || rule.slug, url: page.url }, false, true);
+    } else if (feedCategory) {
+      const current = counts.get(pageSlug);
+      if (current) addCategory({ slug: pageSlug, name: page.h1 || page.title || current.name, url: page.url }, false, true);
+    }
+    return {
+      url: page.url,
+      product_links: productLinks.get(page.url) ?? 0,
+      configured: config.mode === "url_rule" ? ruleMatches.length > 0 : config.mode === "feed" ? feedCategory : !!manualCategory,
+    };
+  }).sort((a, b) => codeUnitCompare(a.url, b.url));
   return {
     categories: [...counts].sort(([a], [b]) => codeUnitCompare(a, b)).map(([slug, row]) => ({ slug, ...row })),
     uncategorized,
@@ -724,18 +798,18 @@ function categoryPreview(snapshot: ProjectSnapshot, config: CategoriesConfig): C
 }
 
 function applyCategoryConfig(skus: SkuRecord[], config: CategoriesConfig): SkuRecord[] {
+  validateCategoriesConfig(config);
   return skus.map((sku) => {
     if (config.mode === "feed") {
-      const categories = sku.categories?.length ? [...sku.categories] : [sku.category || "uncategorized"];
+      const categories = [...new Set(sku.categories?.length ? sku.categories : [sku.category || "uncategorized"])];
       return { ...sku, categories, category: categories[0] ?? "uncategorized", category_source: "feed" };
     }
     if (config.mode === "manual") {
-      const matches = (config.manual ?? []).filter((category) => matchManualCategory(sku, category));
-      const categories = matches.map((category) => category.slug);
-      return { ...sku, categories, category: categories[0] ?? "uncategorized", category_source: categories.length ? "manual" : "none" };
+      const match = (config.manual ?? []).find((category) => matchManualCategory(sku, category));
+      return { ...sku, categories: match ? [match.slug] : ["uncategorized"], category: match?.slug ?? "uncategorized", category_source: match ? "manual" : "none" };
     }
-    const match = urlRuleCategory(sku.url, config.url_pattern ?? "");
-    return { ...sku, categories: match ? [match.slug] : [], category: match?.slug ?? "uncategorized", category_source: match ? "url_rule" : "none" };
+    const match = urlRuleMatches(sku.url, config.url_pattern ?? "")[0];
+    return { ...sku, categories: match ? [match.slug] : ["uncategorized"], category: match?.slug ?? "uncategorized", category_source: match ? "url_rule" : "none" };
   });
 }
 
@@ -1528,7 +1602,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         await writeJsonl(path.join(projectPath, PATHS.skus), skus as unknown as JsonRecord[], "sku");
         const latest = new Map(snapshot.latest.map((row) => [row.sku, row.stock_status]));
         const categoryRows: Category[] = preview.categories.map((category) => {
-          const members = skus.filter((sku) => sku.status === "active" && sku.category === category.slug);
+          const members = skus.filter((sku) => sku.status === "active" && (sku.category === category.slug || sku.categories?.includes(category.slug)));
           return {
             slug: category.slug,
             name: category.name,
@@ -1544,7 +1618,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         });
         await atomicWrite(path.join(projectPath, PATHS.categories), `${JSON.stringify(categoryRows, null, 2)}\n`);
         await buildViews(projectPath, { date: snapshot.asOf });
-      } catch (error) { throw setError(error); }
+      } catch (error) {
+        invalidate(projectPath);
+        throw setError(error);
+      }
       invalidate(projectPath);
       return preview;
     },
