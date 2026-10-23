@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Activity, Boxes, FolderKanban, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 
 export interface SideNavProject {
   id: string;
@@ -34,6 +34,7 @@ interface SideNavProps {
 
 export function SideNav({ projects = [], runnerName, runnerProject }: SideNavProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const { pathname } = useLocation();
   const navClass = ({ isActive }: { isActive: boolean }): string => "si-nav-link" + (isActive ? " active" : "");
 
   return (
@@ -67,7 +68,7 @@ export function SideNav({ projects = [], runnerName, runnerProject }: SideNavPro
       <div className="si-nav-caption">项目</div>
       <div className="si-nav-projects">
         {projects.map((project) => (
-          <NavLink key={project.id} to={"/p/" + project.id + "/inventory"} className={navClass} title={project.name}>
+          <NavLink key={project.id} to={"/p/" + project.id + "/inventory"} className={({ isActive }) => "si-nav-link" + (isActive || pathname === "/p/" + project.id || pathname.startsWith("/p/" + project.id + "/") ? " active" : "")} title={project.name}>
             <span className={"si-project-indicator si-project-indicator-" + (project.state ?? "ok")} aria-hidden="true" />
             <span className="si-nav-label">{project.name}</span>
           </NavLink>
