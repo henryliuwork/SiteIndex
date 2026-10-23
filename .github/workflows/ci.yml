@@ -1,13 +1,11 @@
 name: CI
 
-# 私有仓库 Actions 按分钟计费：Linux ×1、Windows ×2、macOS ×10。
-# PR 只跑 Linux；合并到 main 时加跑 Windows（主平台）；macOS 只在 Release 打包时跑。
+# 仓库已公开，GitHub 托管 runner 不计分钟：每个 PR 与 main 都跑三个系统。
+# 不使用 paths-ignore：main 的 ruleset 要求这三个检查，跳过会导致 PR 无法合并。
 on:
   push:
     branches: [main]
-    paths-ignore: ["**.md", "docs/**", "design/**"]
   pull_request:
-    paths-ignore: ["**.md", "docs/**", "design/**"]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -18,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
