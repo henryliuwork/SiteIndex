@@ -156,7 +156,7 @@ describe("system schedule definitions", () => {
         const taskName = args[args.indexOf("/TN") + 1];
         if (file === "schtasks.exe" && args[0] === "/Create") {
           if (taskName === windowsTaskName("sample-store", "daily")) {
-            throw Object.assign(new Error("schtasks failed"), { detail: "Access is denied." });
+            throw Object.assign(new Error("schtasks failed"), { code: -2147024891 });
           }
           const xmlPath = args[args.indexOf("/XML") + 1]!;
           const bytes = await readFile(xmlPath);

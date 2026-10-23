@@ -216,7 +216,8 @@ function execute(file: string, args: string[]): Promise<string> {
     execFile(file, args, { windowsHide: true, maxBuffer: 1024 * 1024 }, (error, stdout) => {
       if (error) {
         const detail = [stdout, (error as Error & { stderr?: string }).stderr].filter(Boolean).join("\n");
-        reject(Object.assign(new Error(`${file} 执行失败。`), { detail, cause: error }));
+        const code = (error as Error & { code?: number | string }).code;
+        reject(Object.assign(new Error(`${file} 执行失败。`), { detail, cause: error, code }));
       } else resolve(stdout);
     });
   });
@@ -237,7 +238,11 @@ async function windowsUserId(runCommand: (file: string, args: string[]) => Promi
 function isAccessDenied(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const record = error as { code?: unknown; message?: unknown; detail?: unknown; cause?: unknown };
-  if (record.code === "EACCES" || record.code === "EPERM" || record.code === "E_ACCESSDENIED") return true;
+  const numericCode = typeof record.code === "number" ? record.code >>> 0 : Number.NaN;
+  if (
+    record.code === "EACCES" || record.code === "EPERM" || record.code === "E_ACCESSDENIED" ||
+    numericCode === 0x80070005
+  ) return true;
   const text = [record.message, record.detail, record.cause instanceof Error ? record.cause.message : ""]
     .filter((value): value is string => typeof value === "string")
     .join("\n");
@@ -285,7 +290,7 @@ export function createSystemScheduler(options: {
     try {
       await ensureWindowsTaskFolder();
     } catch (error) {
-      if (!isAccessDenied(error)) throw error;
+      console.warn("无法访问 SiteIndex 计划任务文件夹，将尝试注册到任务根目录。", error);
       nestedFolderAvailable = false;
     }
     const userId = options.userId ?? await windowsUserId(runCommand);
@@ -314,14 +319,14 @@ export function createSystemScheduler(options: {
         const rootName = windowsRootTaskName(projectId, job);
         if (nestedFolderAvailable) {
           try {
-            await runCommand("schtasks.exe", ["/Create", "/TN", nestedName, "/XML", xmlPath, "/F"]);
+            await runCommand("schtasks.exe", ["/Create", "/TN", nestedName, "/XML", xmlPath, "/F", "/HRESULT"]);
             continue;
           } catch (error) {
             if (!isAccessDenied(error)) throw error;
             nestedFolderAvailable = false;
           }
         }
-        await runCommand("schtasks.exe", ["/Create", "/TN", rootName, "/XML", xmlPath, "/F"]);
+        await runCommand("schtasks.exe", ["/Create", "/TN", rootName, "/XML", xmlPath, "/F", "/HRESULT"]);
       } finally {
         await rm(directory, { recursive: true, force: true });
       }
