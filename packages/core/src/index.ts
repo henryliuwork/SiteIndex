@@ -9,6 +9,8 @@ export { atomicWrite } from "./io/atomic-write";
 export { readCsv, writeCsv } from "./io/csv";
 export { compareKeys } from "./io/compare";
 export { readJsonl, writeJsonl } from "./io/jsonl";
+export { renderEdm } from "./edm-render";
+export type { EdmRenderOptions, EdmRenderResult } from "./edm-render";
 export {
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,

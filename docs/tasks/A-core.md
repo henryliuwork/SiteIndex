@@ -56,7 +56,7 @@
 - [x] 台账 upsert/delete（keywords、sku_media、sku_tags、edm_campaigns、outreach），含规范化（大小写、www）
 - [x] categories preview/apply（返回 `CategoryPreview`）
 - [x] folders：create/describe（写 `_about.md`、`site.json.workspace_folders`，刷新 README folder-map），默认文件夹不可删（删除保护由 Desktop C 实现）
-- [ ] EDM 渲染（`edm render`，缺货跳过，`--allow-oos`）
+- [x] EDM 渲染（`edm render`，缺货跳过，`--allow-oos`）
 - [ ] 新建项目：`detect(url)`、`inspectFeed`、`createProject`（复制 `templates/project`、写 site.json、_about.md、首次 daily）
 
 ### A8 查询服务 `core/src/service/`

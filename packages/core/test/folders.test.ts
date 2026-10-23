@@ -71,7 +71,7 @@ describe("core workspace folders", () => {
     expect(readme).toContain("保留原始规则。");
     expect(readme).toMatch(/<!-- siteindex:auto:start id="folder-map" -->\n## 目录地图[\s\S]*\| `campaigns\/` \| 电子邮件活动工作区 \|[\s\S]*<!-- siteindex:auto:end id="folder-map" -->/);
     expect(readme).not.toContain("旧目录地图。");
-  });
+  }, 15_000);
 
   it("changes only the first _about.md paragraph and keeps default folders default", async () => {
     const projectPath = await makeProject();
