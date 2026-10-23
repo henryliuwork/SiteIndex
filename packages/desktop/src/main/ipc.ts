@@ -18,6 +18,7 @@ import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import type { JobManager } from "./job-manager.js";
 import { isProjectInsideRoot, type ProjectCatalog } from "./project-catalog.js";
 import type { SkillService } from "./skill-service.js";
+import { createSkillIpcHandlers } from "./skills-ipc.js";
 import type { SettingsStore } from "./settings-store.js";
 import type { UiStateStore } from "./ui-state-store.js";
 
@@ -294,11 +295,7 @@ export function registerIpcHandlers(
       if (typeof id !== "string" || !id.trim()) throw invalidJobRequest("项目标识无效。");
       return jobs.running(id as ProjectId);
     },
-    "skills.list": () => skills.list(),
-    "skills.get": (name) => skills.get(name as string),
-    "skills.targets": (name) => skills.targets(name as string),
-    "skills.install": (name, targetId) => skills.install(name as string, targetId as string),
-    "skills.syncAllProjects": () => skills.syncAllProjects(),
+    ...createSkillIpcHandlers(skills),
   });
 
   for (const [channel, handler] of handlers) {
