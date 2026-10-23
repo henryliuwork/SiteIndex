@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -61,7 +61,7 @@ function trendPoints(summary: InventorySummary | undefined) {
   });
 }
 
-function TrendChart({ summary }: { summary: InventorySummary }) {
+const TrendChart = memo(function TrendChart({ summary }: { summary: InventorySummary }) {
   const points = trendPoints(summary);
   return (
     <section className="si-inventory-chart si-panel" aria-label="分类在线率趋势">
@@ -85,9 +85,9 @@ function TrendChart({ summary }: { summary: InventorySummary }) {
       </div>
     </section>
   );
-}
+});
 
-function CategoryPanel({ summary, project }: { summary: InventorySummary; project: ProjectSummary | undefined }) {
+const CategoryPanel = memo(function CategoryPanel({ summary, project }: { summary: InventorySummary; project: ProjectSummary | undefined }) {
   return (
     <aside className="si-category-panel si-panel">
       <div className="si-panel-heading">
@@ -117,7 +117,7 @@ function CategoryPanel({ summary, project }: { summary: InventorySummary; projec
       </div>
     </aside>
   );
-}
+});
 
 function StockDetail({ row }: { row: SkuStockView }) {
   return (

@@ -22,8 +22,9 @@ const dailyReports = await Promise.all(reportFiles.map(async (name) => ({
   markdown: await readFile(resolve(reportDirectory, name), "utf8"),
 })));
 
+const generatedSkuCountPerProject = 10_000;
 const mockData = {
-  generatedSkuCount: 10_000,
+  generatedSkuCount: generatedSkuCountPerProject * 2,
   projects: [
     { id: "kingsyard", name: "Kingsyard", domain: "kingsyard.com", source: "fixture" },
     { id: "riverstone", name: "Riverstone Outdoor", domain: "riverstoneoutdoor.com", source: "generated" },
@@ -46,4 +47,4 @@ if (mockData.skus.length === 0 || mockData.products.length === 0) {
 }
 
 await writeFile(resolve(scriptDirectory, "../src/mock/data.json"), `${JSON.stringify(mockData, null, 2)}\n`, "utf8");
-console.log(`Built mock data from Kingsyard fixtures (${mockData.skus.length} seed SKUs, ${mockData.generatedSkuCount} generated SKU slots).`);
+console.log(`Built mock data from Kingsyard fixtures (${mockData.skus.length} seed SKUs, ${generatedSkuCountPerProject.toLocaleString("en-US")} generated SKU slots per project).`);

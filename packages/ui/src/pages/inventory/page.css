@@ -190,8 +190,8 @@ display: grid; gap: 12px; margin-top: 20px;
 margin: 0; color: var(--color-ink); font-size: 13px;
 }
 
-.si-stock-detail-history .si-status-cell {
-width: 7px; height: 18px;
+.si-stock-detail-history .si-status-cells {
+width:239px; height:18px;
 }
 
 .si-report-dialog {
