@@ -351,6 +351,7 @@ export function registerIpcHandlers(
         const state = await core.schedule.get(projectIdValue);
         return scheduler.getState(projectIdValue, projects.resolveProject(projectIdValue), state.config);
       }),
+    "runner.get": (id) => withProject(id, (projectIdValue) => core.runner.get(projectIdValue)),
     "schedule.save": async (id, config) =>
       withProject(id, async (projectIdValue) => {
         if (!isScheduleConfig(config)) throw invalidSchedule();
