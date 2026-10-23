@@ -240,23 +240,93 @@ const scheduleStates: Record<MockProjectId, ScheduleState> = {
   riverstone: { config: defaultSchedule(), registered: false, next_runs: [{ job: "daily", at: "2026-10-23T02:00:00+08:00" }] },
 };
 
-function pageFromSeed(seed: MockFixtures["pages"][number]): SeoPage {
-  const title = seed.title;
-  const description = seed.meta_description;
+function makeSeoPage(input: Pick<SeoPage, "url" | "page_type"> & Partial<SeoPage>): SeoPage {
+  const title = input.title ?? null;
+  const description = input.meta_description ?? null;
+  const canonical = input.canonical === undefined ? input.url : input.canonical;
+  const statusCode = input.status_code ?? 200;
   return {
-    url: seed.url, page_type: seed.type as SeoPage["page_type"], status_code: seed.status_code,
-    title, title_length: title?.length ?? 0, meta_description: description, description_length: description?.length ?? 0,
-    h1: seed.h1, h1_count: seed.h1 ? 1 : 0, canonical: seed.canonical,
-    canonical_status: seed.canonical === seed.url ? "self" : seed.canonical ? "other" : "missing",
-    robots_meta: null, x_robots_tag: null, indexable: seed.indexable, in_sitemap: true,
-    schema_types: [], word_count: seed.word_count, last_crawled: seed.last_crawled,
+    url: input.url, page_type: input.page_type, status_code: statusCode,
+    final_url: input.final_url === undefined ? input.url : input.final_url,
+    redirect_chain: input.redirect_chain ?? [], response_ms: input.response_ms ?? 238,
+    title, title_length: input.title_length ?? title?.length ?? 0,
+    meta_description: description, description_length: input.description_length ?? description?.length ?? 0,
+    meta_keywords: input.meta_keywords ?? "bird feeders, outdoor living",
+    h1: input.h1 === undefined ? title : input.h1, h1_count: input.h1_count ?? (input.h1 ?? title ? 1 : 0),
+    h2: input.h2 ?? ["产品特点", "配送与退货"], canonical,
+    canonical_status: input.canonical_status ?? (canonical === input.url ? "self" : canonical ? "other" : "missing"),
+    robots_meta: input.robots_meta ?? null, x_robots_tag: input.x_robots_tag ?? null,
+    indexable: input.indexable ?? statusCode < 400, in_sitemap: input.in_sitemap ?? true,
+    google_indexed: "google_indexed" in input ? input.google_indexed : true,
+    index_checked_at: "index_checked_at" in input ? input.index_checked_at : FIXED_TODAY,
+    hreflang: input.hreflang ?? [{ lang: "en-US", url: input.url }],
+    og: input.og ?? { title, description }, twitter_card: input.twitter_card ?? "summary_large_image",
+    schema_types: input.schema_types ?? ["WebPage"], schema_errors: input.schema_errors ?? [],
+    word_count: input.word_count === undefined ? 348 : input.word_count,
+    images_total: input.images_total ?? 8, images_missing_alt: input.images_missing_alt ?? 0,
+    links_internal_out: input.links_internal_out ?? 5, links_external_out: input.links_external_out ?? 1,
+    links_internal_in: input.links_internal_in ?? 3, last_crawled: input.last_crawled ?? FIXED_TODAY,
   };
 }
-const seoPages = fixtures.pages.map(pageFromSeed);
-const seoIssues: SeoIssue[] = [
-  { url: "https://kingsyard.com/products/feeder-12", rule: "title_length", severity: "mid", detail: "标题长度偏短", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
-  { url: "https://kingsyard.com/collections/bird-feeders", rule: "img_alt_missing", severity: "low", detail: "有 3 张图片缺少替代文本", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+
+function pageFromSeed(seed: MockFixtures["pages"][number]): SeoPage {
+  const schemaTypes = seed.type === "home" ? ["Organization", "WebSite"] : seed.type === "collection" ? ["CollectionPage", "BreadcrumbList"] : ["WebPage"];
+  return makeSeoPage({
+    url: seed.url, page_type: seed.type as SeoPage["page_type"], status_code: seed.status_code,
+    title: seed.title, meta_description: seed.meta_description, h1: seed.h1,
+    canonical: seed.canonical, indexable: seed.indexable, word_count: seed.word_count,
+    last_crawled: seed.last_crawled, schema_types: schemaTypes,
+    robots_meta: seed.indexable ? null : "noindex, follow",
+    in_sitemap: seed.url.endsWith("/about-us") ? false : true,
+    google_indexed: seed.url.endsWith("/shipping-policy") ? null : seed.indexable,
+  });
+}
+const seoPages = [
+  ...fixtures.pages.map(pageFromSeed),
+  makeSeoPage({
+    url: "http://127.0.0.1:8765/window-feeder.html", page_type: "product",
+    title: "Kingsyard Window Feeder | Outdoor Bird Feeder", meta_description: null, h1: "Window Feeder",
+    schema_types: ["Product", "BreadcrumbList"], images_total: 6, images_missing_alt: 1,
+  }),
+  makeSeoPage({
+    url: "http://127.0.0.1:8765/feeder-12", page_type: "product", title: "Feeder 12 | Kingsyard",
+    meta_description: "Explore our durable feeder.", canonical: "http://127.0.0.1:8765/clearance-feeder",
+    canonical_status: "other", schema_types: ["Product"], google_indexed: false,
+  }),
+  makeSeoPage({
+    url: "http://127.0.0.1:8765/blog/clean-bird-bath", page_type: "blog",
+    title: "How to Clean a Bird Bath | Kingsyard", meta_description: "A practical guide to cleaning a bird bath.",
+    schema_types: [], word_count: 15, links_internal_in: 0,
+  }),
+  makeSeoPage({
+    url: "http://127.0.0.1:8765/blog/missing-post", page_type: "blog", status_code: 404,
+    title: null, meta_description: null, h1: null, h1_count: 0, indexable: false, in_sitemap: true,
+    google_indexed: false, schema_types: [], word_count: 0, images_total: 0, links_internal_out: 0, links_internal_in: 0,
+  }),
+  makeSeoPage({
+    url: "http://127.0.0.1:8765/help/orphan-page", page_type: "page",
+    title: "Bird Feeder Guide | Kingsyard", meta_description: "Help for choosing bird feeders.",
+    schema_types: ["WebPage"], links_internal_in: 0, google_indexed: true,
+  }),
 ];
+const seoIssues: SeoIssue[] = [
+  { url: "http://127.0.0.1:8765/blog/missing-post", rule: "http_4xx", severity: "high", detail: "页面 404，仍出现在 sitemap 中", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+  { url: "http://127.0.0.1:8765/shipping-policy", rule: "canonical_other", severity: "mid", detail: "Canonical 指向 /shipping-policy-old", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+  { url: "http://127.0.0.1:8765/window-feeder.html", rule: "desc_missing", severity: "mid", detail: "Meta description 缺失 · 新上架产品页", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+  { url: "http://127.0.0.1:8765/blog/clean-bird-bath", rule: "schema_missing", severity: "mid", detail: "缺少 Article / BlogPosting schema", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+  { url: "http://127.0.0.1:8765/about-us", rule: "noindex", severity: "low", detail: "noindex · 确认是否有意不收录", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+  { url: "http://127.0.0.1:8765/blog/clean-bird-bath", rule: "thin_content", severity: "low", detail: "内容过短且无站内链接 · 15 词", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+  { url: "http://127.0.0.1:8765/", rule: "title_length", severity: "low", detail: "Title 过短 · 16 字符，建议 30–60", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+];
+const seoLinks: SeoLink[] = [
+  { from: "http://127.0.0.1:8765/", to: "http://127.0.0.1:8765/bird-feeders.html", anchor: "Bird Feeders", to_type: "collection" },
+  { from: "http://127.0.0.1:8765/", to: "http://127.0.0.1:8765/bird-houses.html", anchor: "Bird Houses", to_type: "collection" },
+  { from: "http://127.0.0.1:8765/bird-feeders.html", to: "http://127.0.0.1:8765/window-feeder.html", anchor: "Window Feeder", to_type: "product" },
+  { from: "http://127.0.0.1:8765/bird-feeders.html", to: "http://127.0.0.1:8765/feeder-12", anchor: "Clearance Feeder", to_type: "product" },
+  { from: "http://127.0.0.1:8765/blog/clean-bird-bath", to: "http://127.0.0.1:8765/bird-feeders.html", anchor: "Browse feeders", to_type: "collection" },
+  { from: "http://127.0.0.1:8765/shipping-policy", to: "http://127.0.0.1:8765/", anchor: "Home", to_type: "page" },
+];
+const orphanSeoPages = ["http://127.0.0.1:8765/help/orphan-page"];
 
 function inventorySummary(id: ProjectId, days = 30): InventorySummary {
   const key = projectKey(id);
@@ -564,14 +634,28 @@ export function createMockApi(): SiteIndexApi {
       exportCsv: (id) => reply("mock:/exports/" + id + "-products.csv"),
     },
     seo: {
-      summary: () => reply({
-        kpis: [{ key: "pages", label: "已抓取页面", value: String(seoPages.length) }, { key: "issues", label: "待处理问题", value: String(seoIssues.length), tone: "warn" }],
-        crawled_at: "2026-10-22T10:00:00+08:00", title_range: [30, 60] as [number, number], description_range: [120, 160] as [number, number],
+      summary: () => reply(() => {
+        const indexable = seoPages.filter((page) => page.indexable).length;
+        const indexed = seoPages.filter((page) => page.google_indexed === true).length;
+        const schemaPages = seoPages.filter((page) => page.status_code < 400 && page.schema_types.length > 0).length;
+        const validPages = seoPages.filter((page) => page.status_code < 400).length;
+        const severityCount = (severity: SeoIssue["severity"]) => seoIssues.filter((issue) => issue.severity === severity).length;
+        return {
+          kpis: [
+            { key: "pages", label: "已抓取页面", value: String(seoPages.length) },
+            { key: "indexable", label: "可索引", value: String(indexable), hint: "无 noindex 且 canonical 指向自身" },
+            { key: "indexed", label: "收录", value: indexed + " / " + seoPages.length, hint: "Google site: 检查 · 10-19" },
+            { key: "issues", label: "问题", value: String(seoIssues.length), hint: "高 " + severityCount("high") + " · 中 " + severityCount("mid") + " · 低 " + severityCount("low"), tone: "warn" },
+            { key: "schema", label: "Schema 覆盖", value: schemaPages + " / " + validPages },
+            { key: "orphans", label: "孤立页面", value: String(orphanSeoPages.length), hint: "站内无人链接" },
+          ],
+          crawled_at: "2026-10-22T10:00:00+08:00", title_range: [30, 60] as [number, number], description_range: [120, 160] as [number, number],
+        };
       }),
       listIssues: (_id, query) => reply(() => selectRows(seoIssues, query, (row) => [row.url, row.rule, row.detail].join(" "), (row, filters) => (!filters.severity || row.severity === filters.severity) && (!filters.status || row.status === filters.status))),
       listPages: (_id, query: ListQuery<SeoPageFilters>) => reply(() => selectRows(seoPages, query, (row) => [row.url, row.title, row.meta_description].join(" "), (row, filters) => (!filters.page_type || row.page_type === filters.page_type) && (!filters.indexed || (filters.indexed === "yes" ? row.google_indexed === true : filters.indexed === "no" ? row.google_indexed === false : row.google_indexed == null)))),
-      listLinks: (_id, query) => reply(() => selectRows([] as SeoLink[], query, (row) => [row.from, row.to, row.anchor].join(" "))),
-      orphanPages: () => reply([] as string[]),
+      listLinks: (_id, query) => reply(() => selectRows(seoLinks, query, (row) => [row.from, row.to, row.anchor, row.to_type].join(" "))),
+      orphanPages: () => reply([...orphanSeoPages]),
       getPage: (_id, url) => reply(seoPages.find((page) => page.url === url) ?? null),
       googleSiteUrl: (url) => reply(googleSiteSearchUrl(url)),
       checkIndex: async (id, _urls) => { await delay(); return { runId: beginRun("C:/SiteIndex/Projects/" + id, "index-check") }; },

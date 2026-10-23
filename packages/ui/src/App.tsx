@@ -6,6 +6,7 @@ import { SideNav, WindowChrome } from "./components";
 import { WizardDraftProvider } from "./pages/wizard-state";
 
 const InventoryPage = lazy(() => import("./pages/InventoryPage").then(({ InventoryPage }) => ({ default: InventoryPage })));
+const SeoPage = lazy(() => import("./pages/SeoPage").then(({ SeoPage }) => ({ default: SeoPage })));
 const ProjectCenterPage = lazy(() => import("./pages/ProjectCenterPage").then(({ ProjectCenterPage }) => ({ default: ProjectCenterPage })));
 const OverviewPage = lazy(() => import("./pages/OverviewPage").then(({ OverviewPage }) => ({ default: OverviewPage })));
 const NewProjectWizardPage = lazy(() => import("./pages/NewProjectWizardPage").then(({ NewProjectWizardPage }) => ({ default: NewProjectWizardPage })));
@@ -63,6 +64,7 @@ function AppShell() {
             <Route path="/new/*" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开新建向导…</div>}><NewProjectWizardPage /></Suspense>} />
             <Route path="/p/:id" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开项目概览…</div>}><OverviewPage /></Suspense>} />
             <Route path="/p/:id/inventory" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开库存页…</div>}><InventoryPage /></Suspense>} />
+            <Route path="/p/:id/seo" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开 SEO 页面…</div>}><SeoPage /></Suspense>} />
             <Route path="*" element={<RouteContent />} />
           </Routes>
           </WizardDraftProvider>
