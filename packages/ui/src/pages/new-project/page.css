@@ -26,6 +26,10 @@ display:inline-flex; min-height:36px; align-items:center; gap:7px; padding:0 14p
 background:var(--color-brand); color:#fff; font-weight:600;
 }
 
+.si-wizard-steps li.active>span {
+background:transparent; color:inherit;
+}
+
 .si-wizard-steps li.complete,.si-wizard-steps li.complete a {
 background:var(--color-brand-soft); color:var(--color-brand-strong); font-weight:600;
 }
