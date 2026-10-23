@@ -262,6 +262,44 @@ const folderRows: Record<MockProjectId, FolderRow[]> = {
     { name: "草稿", description: "待审核的内容草稿。", default: true, files: 2, modified_at: null },
   ],
 };
+const mockFileChecks: FileCheck[] = [
+  { path: "index/site.json", kind: "config", status: "ok", size: 3482, modified_at: "2026-10-19T14:02:00+08:00" },
+  { path: "README.md", kind: "doc", status: "ok", records: 6, size: 8090, modified_at: "2026-10-19T05:00:00+08:00" },
+  { path: "_agent/skills/README.md", kind: "doc", status: "ok", records: 7, size: 41984, modified_at: "2026-10-20T09:12:00+08:00" },
+  { path: "index/catalog/skus.jsonl", kind: "sync", status: "ok", records: 19, size: 7270, modified_at: "2026-10-20T02:04:00+08:00" },
+  { path: "index/catalog/skus (Kingsyard-MBP 的冲突副本).jsonl", kind: "sync", status: "conflict_copy", records: 18, size: 6963, modified_at: "2026-10-19T23:40:00+08:00", rule: "conflict_copy", message: "云盘冲突副本；正式文件正常，可删除", repair: "delete_copy" },
+  { path: "index/catalog/product_details.jsonl", kind: "sync", status: "ok", records: 17, size: 12288, modified_at: "2026-10-20T03:01:00+08:00" },
+  { path: "index/catalog/categories.json", kind: "sync", status: "ok", records: 4, size: 1229, modified_at: "2026-10-20T03:01:00+08:00" },
+  { path: "index/inventory/latest.jsonl", kind: "sync", status: "ok", records: 19, size: 2662, modified_at: "2026-10-20T02:04:00+08:00" },
+  { path: "index/inventory/events/2026-10.jsonl", kind: "ledger", status: "missing", size: 0, modified_at: null, rule: "missing", message: "本月库存事件文件缺失", repair: "regenerate:daily" },
+  { path: "index/inventory/daily_summary.csv", kind: "view", status: "ok", records: 8, size: 410, modified_at: "2026-10-20T02:04:00+08:00" },
+  { path: "index/seo/pages.jsonl", kind: "sync", status: "ok", records: 230, size: 93422, modified_at: "2026-10-20T03:01:00+08:00" },
+  { path: "index/seo/issues.jsonl", kind: "sync", status: "error", records: 2, size: 1368, modified_at: "2026-10-20T03:01:00+08:00", rule: "schema", message: "字段 severity 不符合当前 schema", repair: "regenerate:weekly.seo" },
+  { path: "index/seo/links.jsonl", kind: "sync", status: "ok", records: 422, size: 51420, modified_at: "2026-10-20T03:01:00+08:00" },
+  { path: "index/content/blog_index.jsonl", kind: "sync", status: "ok", records: 28, size: 4887, modified_at: "2026-10-20T03:01:00+08:00" },
+  { path: "index/content/keywords.jsonl", kind: "ledger", status: "error", records: 32, size: 2964, modified_at: "2026-10-18T12:00:00+08:00", rule: "sort", message: "记录未按主键排序", repair: "autofix" },
+  { path: "index/content/drafts.json", kind: "view", status: "ok", records: 2, size: 960, modified_at: "2026-10-21T12:00:00+08:00" },
+  { path: "index/views/home.json", kind: "view", status: "ok", records: 1, size: 804, modified_at: "2026-10-20T03:02:00+08:00" },
+  { path: "index/views/category.json", kind: "view", status: "ok", records: 4, size: 1691, modified_at: "2026-10-20T03:02:00+08:00" },
+  { path: "index/views/product.json", kind: "view", status: "ok", records: 3, size: 1190, modified_at: "2026-10-20T03:02:00+08:00" },
+  { path: "index/design/tokens.json", kind: "sync", status: "ok", records: 1, size: 1906, modified_at: "2026-10-01T13:12:00+08:00" },
+  { path: "index/design/screenshots/index.json", kind: "sync", status: "ok", records: 6, size: 422, modified_at: "2026-10-01T13:12:00+08:00" },
+  { path: "index/edm/sku_images.jsonl", kind: "sync", status: "ok", records: 19, size: 3086, modified_at: "2026-10-20T02:04:00+08:00" },
+  { path: "index/archive/2026-09/manifest.json", kind: "config", status: "ok", records: 1, size: 738, modified_at: "2026-10-01T03:00:00+08:00" },
+];
+function summarizeFileChecks(files: FileCheck[]): ValidationReport["summary"] {
+  return {
+    total: files.length,
+    ok: files.filter((file) => file.status === "ok").length,
+    error: files.filter((file) => file.status === "error").length,
+    missing: files.filter((file) => file.status === "missing").length,
+    conflict_copy: files.filter((file) => file.status === "conflict_copy").length,
+  };
+}
+const fileReports: Record<MockProjectId, ValidationReport> = {
+  kingsyard: { checked_at: "2026-10-23T02:30:00+08:00", trigger: "schedule", summary: summarizeFileChecks(mockFileChecks), files: clone(mockFileChecks) },
+  riverstone: { checked_at: "2026-10-23T02:30:00+08:00", trigger: "schedule", summary: summarizeFileChecks(mockFileChecks), files: clone(mockFileChecks) },
+};
 const userReadmeBlocks: Record<MockProjectId, { overview: string; focus: string; rules: string }> = {
   kingsyard: {
     overview: "Wild bird feeding supplies for backyard birders.\n- 网站：https://www.kingsyard.com（magento）\n- 目标市场：US\n- 目标人群：Backyard bird lovers and gift buyers",
@@ -921,17 +959,23 @@ export function createMockApi(): SiteIndexApi {
       open: () => reply(undefined),
     },
     files: {
-      lastReport: () => reply<ValidationReport | null>({
-        checked_at: "2026-10-22T10:00:00+08:00", trigger: "manual",
-        summary: { total: 6, ok: 5, error: 1, missing: 0, conflict_copy: 0 },
-        files: [{ path: "index/catalog/skus.jsonl", kind: "sync", status: "ok", records: 5000 }, { path: "README.md", kind: "doc", status: "error", rule: "readme_markers", message: "用户区块标记缺失", repair: "autofix" }],
+      lastReport: (id) => reply(() => clone(fileReports[projectKey(id)])),
+      validate: (id, path) => reply(() => {
+        const key = projectKey(id);
+        const report = fileReports[key];
+        const files = path ? report.files.filter((file) => file.path === path) : report.files;
+        return { checked_at: new Date().toISOString(), trigger: "manual", summary: summarizeFileChecks(files), files: clone(files) };
       }),
-      validate: () => reply<ValidationReport>({
-        checked_at: new Date().toISOString(), trigger: "manual",
-        summary: { total: 2, ok: 1, error: 1, missing: 0, conflict_copy: 0 },
-        files: [{ path: "index/catalog/skus.jsonl", kind: "sync", status: "ok", records: 5000 }, { path: "README.md", kind: "doc", status: "error", rule: "readme_markers", message: "用户区块标记缺失", repair: "autofix" }],
+      repair: (id, path, action: RepairAction) => reply(() => {
+        const key = projectKey(id);
+        const report = fileReports[key];
+        const current = report.files.find((file) => file.path === path);
+        if (!current) throw new Error("找不到文件记录：" + path);
+        const repaired: FileCheck = { ...current, status: "ok", rule: null, message: "模拟修复完成：" + action, repair: null };
+        const files = action === "delete_copy" ? report.files.filter((file) => file.path !== path) : report.files.map((file) => file.path === path ? repaired : file);
+        fileReports[key] = { ...report, checked_at: new Date().toISOString(), trigger: "manual", summary: summarizeFileChecks(files), files };
+        return repaired;
       }),
-      repair: (_id, path, action: RepairAction) => reply<FileCheck>({ path, kind: "doc", status: "ok", rule: "readme_markers", message: "模拟修复完成：" + action, repair: action }),
     },
     jobs: {
       run: async (request) => { await delay(); return { runId: beginRun(request.projectPath, request.job) }; },
