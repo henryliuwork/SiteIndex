@@ -1,0 +1,51 @@
+.si-project-config-page { gap: 18px; }
+.si-config-subtabs { display: flex; align-items: center; gap: 6px; }
+.si-config-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 14px; border-radius: 6px; color: var(--color-ink-2); font-size: 13px; text-decoration: none; }
+.si-config-subtabs a:hover { background: var(--color-neutral-soft); }
+.si-config-subtabs a.active { background: var(--color-ink); color: #fff; }
+.si-config-layout { display: grid; grid-template-columns: minmax(155px, 180px) minmax(0, 1fr); align-items: start; gap: 18px; }
+.si-config-outline { position: sticky; top: 12px; display: grid; gap: 2px; padding: 10px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-config-outline a { padding: 8px 10px; border-radius: 6px; color: var(--color-ink-2); font-size: 12px; text-decoration: none; }
+.si-config-outline a:hover { background: var(--color-neutral-soft); color: var(--color-ink); }
+.si-config-sections { display: grid; gap: 14px; min-width: 0; }
+.si-config-card { display: grid; gap: 15px; min-width: 0; padding: 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); scroll-margin-top: 16px; }
+.si-config-card h2 { margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 700; }
+.si-config-grid { display: grid; min-width: 0; gap: 14px 16px; }
+.si-config-grid-3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.si-config-grid-2 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.si-config-field { display: grid; min-width: 0; gap: 6px; color: var(--color-ink-2); font-size: 12px; font-weight: 600; }
+.si-config-mono { font-family: var(--font-mono); }
+.si-config-field .si-text-field { height: 38px; font-size: 13px; }
+.si-config-textarea { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink-2); font: 13px/1.5 var(--font-sans); resize: vertical; }
+.si-config-textarea:focus { border-color: var(--color-brand); box-shadow: 0 0 0 2px rgba(30,107,82,.12); }
+.si-config-card-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.si-config-feed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.si-config-feed-result { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 14px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: 12px; }
+.si-config-feed-result strong { color: var(--color-ink); }
+.si-config-card-title p { margin: 0; color: var(--color-ink-2); font-size: 13px; font-weight: 600; }
+.si-config-callout { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-radius: 8px; background: #F2F8F5; }
+.si-config-callout > span { display: grid; gap: 4px; color: var(--color-ink); font-size: 12px; }
+.si-config-callout small { color: var(--color-muted); font-size: 11px; }
+.si-config-inline-link { flex: none; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 6px; background: #fff; color: var(--color-ink-2); font-size: 12px; text-decoration: none; }
+.si-config-check { display: flex; align-items: center; align-self: end; gap: 8px; min-height: 38px; color: var(--color-ink-2); font-size: 12px; }
+.si-config-check input { accent-color: var(--color-brand); }
+.si-config-range { display: grid; gap: 6px; color: var(--color-ink-2); font-size: 12px; font-weight: 600; }
+.si-config-range > div { display: flex; align-items: center; gap: 8px; }
+.si-config-range input { width: 100%; height: 38px; }
+.si-config-reserved-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.si-config-reserved { display: grid; gap: 7px; min-width: 0; padding: 12px; border: 1px dashed #CDD2D8; border-radius: 8px; color: var(--color-ink-2); font-size: 12px; }
+.si-config-reserved span { color: var(--color-muted); font-size: 11px; line-height: 1.5; }
+.si-config-reserved .si-chip { justify-self: start; }
+.si-config-json-overlay { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(20,24,29,.42); }
+.si-config-json-dialog { display: grid; width: min(760px,100%); max-height: min(820px,90vh); gap: 12px; padding: 20px; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); box-shadow: 0 12px 32px rgba(20,24,29,.2); }
+.si-config-json-dialog h2 { margin: 0; font-size: 15px; }
+.si-config-json-dialog p { margin: 0; color: var(--color-muted); font-size: 12px; }
+.si-config-json-editor { min-height: 340px; width: 100%; resize: vertical; padding: 12px; border: 1px solid var(--color-line); border-radius: 6px; color: var(--color-ink); font: 12px/1.5 var(--font-mono); }
+.si-config-json-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 980px) {
+  .si-config-layout { grid-template-columns: 1fr; }
+  .si-config-outline { position: static; display: flex; flex-wrap: wrap; }
+}
+@media (max-width: 760px) {
+  .si-config-grid-3, .si-config-grid-2, .si-config-reserved-grid { grid-template-columns: 1fr; }
+}

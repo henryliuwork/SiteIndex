@@ -1,11 +1,14 @@
-import { app, BrowserWindow, screen, session, shell } from "electron";
+import { app, BrowserWindow, screen, session, shell, utilityProcess } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCoreService, type CoreService } from "@siteindex/core";
-import type { AppSettings } from "@siteindex/shared";
+import { EXIT, type AppSettings, type ProjectId } from "@siteindex/shared";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
+import { createJobManager } from "./job-manager.js";
+import { showJobNotification } from "./notifications.js";
 import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
+import { parseRunJobArguments } from "./run-job-args.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
 
@@ -23,7 +26,9 @@ const fallbackPath = resolve(mainDirectory, "../renderer/fallback.html");
 const devUiUrl = process.env.SITEINDEX_UI_URL ?? "http://localhost:5173";
 let mainWindow: BrowserWindow | null = null;
 let projectCatalog: ProjectCatalog | null = null;
-let closingCatalog = false;
+let isShuttingDown = false;
+
+if (process.platform === "win32") app.setAppUserModelId("com.siteindex.desktop");
 
 if (!hasSingleInstanceLock) {
   app.quit();
@@ -35,13 +40,48 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
+    const jobs = createJobManager({
+      workerPath: join(mainDirectory, "job-worker.js"),
+      getSettings: () => settingsStore.get(),
+      resolveProject: (id: ProjectId) => {
+        if (!projectCatalog) throw { code: "PROJECT_NOT_FOUND", message: "项目目录尚未就绪。", detail: id };
+        return projectCatalog.resolveProject(id);
+      },
+      fork: (modulePath) => utilityProcess.fork(modulePath),
+      emitProgress: (progress) => sendToWindows("si:jobs.onProgress", progress),
+      emitFinished: (result) => sendToWindows("si:jobs.onFinished", result),
+      notify: showJobNotification,
+    });
+    app.on("before-quit", (event) => {
+      if ((jobs.activeCount === 0 && !projectCatalog) || isShuttingDown) return;
+      event.preventDefault();
+      isShuttingDown = true;
+      void Promise.all([jobs.shutdown(), projectCatalog?.close()]).finally(() => {
+        projectCatalog = null;
+        app.quit();
+      });
+    });
+
     if (isRunJob) {
-      // 定时任务在 C6 接入 core；此模式不创建界面，也不抢占界面单实例锁。
-      app.quit();
+      const args = parseRunJobArguments(process.argv);
+      if (!args) {
+        app.exit(EXIT.BAD_ARGS);
+        return;
+      }
+      try {
+        const result = await jobs.runAndWait(
+          { projectPath: resolve(args.projectPath), job: args.job },
+          "schedule",
+        );
+        app.exit(result.exitCode);
+      } catch (error) {
+        process.stderr.write(`SiteIndex Job 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
+        app.exit(EXIT.BAD_ARGS);
+      }
       return;
     }
 
-    const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
     const isFirstRun = !(await settingsStore.exists());
     let currentSettings = await settingsStore.get();
     if (isFirstRun) {
@@ -89,6 +129,7 @@ if (!hasSingleInstanceLock) {
         currentSettings = updated;
         if (projectsChanged) await catalog.refresh(currentSettings);
       },
+      jobs,
     );
 
     registerContentSecurityPolicy();
@@ -110,16 +151,15 @@ if (!hasSingleInstanceLock) {
   });
 }
 
-app.on("before-quit", (event) => {
-  if (!projectCatalog || closingCatalog) return;
-  event.preventDefault();
-  closingCatalog = true;
-  void projectCatalog.close().finally(() => app.quit());
-});
-
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+function sendToWindows(channel: string, payload: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send(channel, payload);
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
