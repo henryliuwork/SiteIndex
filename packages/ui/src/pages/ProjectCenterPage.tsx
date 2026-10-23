@@ -246,3 +246,4 @@ export function ProjectCenterPage() {
     </div>
   );
 }
+import "./project-center/page.css";

@@ -254,3 +254,4 @@ export function NewProjectWizardPage() {
     </div>}
   </div>;
 }
+import "./new-project/page.css";

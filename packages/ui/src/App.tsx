@@ -1,52 +1,10 @@
-import { lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { HashRouter, Route, Routes, useLocation } from "react-router-dom";
+import { HashRouter, Route, Routes, type RouteObject } from "react-router-dom";
 import { api } from "./api";
 import { SideNav, WindowChrome } from "./components";
 import { WizardDraftProvider } from "./pages/wizard-state";
 
-const InventoryPage = lazy(() => import("./pages/InventoryPage").then(({ InventoryPage }) => ({ default: InventoryPage })));
-const SeoPage = lazy(() => import("./pages/SeoPage").then(({ SeoPage }) => ({ default: SeoPage })));
-const ProjectCenterPage = lazy(() => import("./pages/ProjectCenterPage").then(({ ProjectCenterPage }) => ({ default: ProjectCenterPage })));
-const OverviewPage = lazy(() => import("./pages/OverviewPage").then(({ OverviewPage }) => ({ default: OverviewPage })));
-const NewProjectWizardPage = lazy(() => import("./pages/NewProjectWizardPage").then(({ NewProjectWizardPage }) => ({ default: NewProjectWizardPage })));
-
-const routes = [
-  ["/new/url", "新建项目 · 网站"],
-  ["/new/source", "新建项目 · 数据源"],
-  ["/new/brand", "新建项目 · 品牌配置"],
-  ["/new/done", "新建项目 · 完成"],
-  ["/p/:id", "概览"],
-  ["/p/:id/inventory", "库存"],
-  ["/p/:id/products", "产品"],
-  ["/p/:id/seo", "SEO"],
-  ["/p/:id/content", "内容"],
-  ["/p/:id/edm", "EDM"],
-  ["/p/:id/design", "设计规范"],
-  ["/p/:id/readme", "README"],
-  ["/p/:id/runs", "运行与定时任务"],
-  ["/p/:id/settings/config", "项目设置 · 配置"],
-  ["/p/:id/settings/categories", "项目设置 · 分类"],
-  ["/p/:id/settings/folders", "项目设置 · 文件夹"],
-  ["/p/:id/settings/files", "项目设置 · 本地文件"],
-  ["/skills", "Skill 中心"],
-  ["/settings", "软件设置"],
-] as const;
-
-function RouteContent() {
-  const path = useLocation().pathname;
-  const selected = routes.find(([pattern]) => {
-    const matcher = new RegExp("^" + pattern.replace(/:[^/]+/g, "[^/]+") + "$");
-    return matcher.test(path);
-  });
-  const title = path === "/" ? "项目中心" : selected?.[1] ?? "页面";
-  return (
-    <section className="si-placeholder">
-      <h1>{title}</h1>
-      <p>页面框架已就绪，内容将在对应里程碑接入。</p>
-    </section>
-  );
-}
+const pageRoutes = Object.values(import.meta.glob<RouteObject>("./pages/*/route.tsx", { eager: true, import: "route" }));
 
 function AppShell() {
   const platform = useQuery({ queryKey: ["app", "platform"], queryFn: () => api.app.platform() });
@@ -59,14 +17,7 @@ function AppShell() {
         <SideNav projects={navProjects} runnerName={runnerProject?.runner_device} runnerProject={runnerProject?.name} />
         <main className="si-content">
           <WizardDraftProvider>
-          <Routes>
-            <Route path="/" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开项目中心…</div>}><ProjectCenterPage /></Suspense>} />
-            <Route path="/new/*" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开新建向导…</div>}><NewProjectWizardPage /></Suspense>} />
-            <Route path="/p/:id" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开项目概览…</div>}><OverviewPage /></Suspense>} />
-            <Route path="/p/:id/inventory" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开库存页…</div>}><InventoryPage /></Suspense>} />
-            <Route path="/p/:id/seo" element={<Suspense fallback={<div className="si-page-loading" role="status">正在打开 SEO 页面…</div>}><SeoPage /></Suspense>} />
-            <Route path="*" element={<RouteContent />} />
-          </Routes>
+          <Routes>{pageRoutes.map((pageRoute, index) => <Route key={pageRoute.path ?? `page-${index}`} path={pageRoute.path} element={pageRoute.element} />)}</Routes>
           </WizardDraftProvider>
         </main>
       </div>

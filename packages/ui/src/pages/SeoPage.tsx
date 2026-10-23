@@ -292,3 +292,4 @@ export function SeoPage() {
     </DetailPanel>
   </div>;
 }
+import "./seo/page.css";
