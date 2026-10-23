@@ -10,8 +10,48 @@ min-height: 88px; padding: 12px 16px;
 font-size: 14px; line-height: 1.35;
 }
 
+.si-center-kpi-with-retry {
+position: relative; min-width: 0;
+}
+
+.si-center-kpi-with-retry > .si-kpi-card {
+height: 100%;
+}
+
+.si-center-kpi-retry, .si-center-retry {
+border: 0; background: transparent; color: var(--color-brand); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+
+.si-center-kpi-retry {
+position: absolute; right: 12px; bottom: 10px;
+}
+
+.si-center-retry {
+margin-left: 8px; padding: 0;
+}
+
+.si-center-kpi-retry:focus-visible, .si-center-retry:focus-visible {
+border-radius: 3px; outline: 2px solid var(--color-brand); outline-offset: 2px;
+}
+
 .si-project-grid {
 display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 16px;
+}
+
+.si-project-empty {
+display: flex; min-height: 282px; grid-column: 1 / -1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 1px dashed #B8C3CC; border-radius: 10px; background: var(--color-surface); color: var(--color-muted); text-align: center;
+}
+
+.si-project-empty svg {
+color: var(--color-ink-2);
+}
+
+.si-project-empty strong {
+color: var(--color-ink-2); font-size: 15px;
+}
+
+.si-project-empty span {
+font-size: 12px;
 }
 
 .si-project-card {
