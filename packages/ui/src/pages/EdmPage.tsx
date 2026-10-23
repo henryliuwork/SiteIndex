@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { EdmCommandInput, Kpi, ListQuery, ProjectDetail, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
-import { api } from "../api";
+import { api, isMockApi } from "../api";
 import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Tabs, stockTone } from "../components";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
@@ -24,12 +24,11 @@ const viewOptions: { value: ImageView; label: string }[] = [
 
 function ImageThumbnail({ src, label }: { src: string | null; label: string }) {
   const [failed, setFailed] = useState(false);
-  const mock = typeof window !== "undefined" && !window.siteindex;
-  const canLoad = Boolean(src) && (!mock || src?.startsWith("data:image/"));
+  const canLoad = Boolean(src) && (!isMockApi || src?.startsWith("data:image/"));
   useEffect(() => setFailed(false), [src]);
   return canLoad && src && !failed
     ? <img className="si-edm-thumbnail" src={src} alt={label} loading="lazy" onError={() => setFailed(true)} />
-    : <span className="si-edm-thumbnail-empty" aria-label={label}><ImageIcon size={16} /><small>{src ? "图片" : "无图片"}</small></span>;
+    : <span className="si-edm-thumbnail-empty" role="img" aria-label={label}><ImageIcon size={16} /><small>{src ? "图片" : "无图片"}</small></span>;
 }
 
 function ManualImageCell({ projectId, row }: { projectId: string; row: SkuImageRow }) {
