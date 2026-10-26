@@ -26,6 +26,10 @@ display:inline-flex; min-height:36px; align-items:center; gap:7px; padding:0 14p
 background:var(--color-brand); color:#fff; font-weight:600;
 }
 
+.si-wizard-steps li.active>span {
+background:transparent; color:inherit;
+}
+
 .si-wizard-steps li.complete,.si-wizard-steps li.complete a {
 background:var(--color-brand-soft); color:var(--color-brand-strong); font-weight:600;
 }
@@ -126,8 +130,16 @@ display:flex; gap:8px;
 flex:1; min-width:0;
 }
 
+.si-wizard-feed-input input {
+height:40px;
+}
+
+.si-wizard-feed-heading {
+display:flex; min-height:30px; align-items:center; justify-content:space-between; gap:10px;
+}
+
 .si-wizard-feed-actions {
-display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:4px;
+display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:0;
 }
 
 .si-wizard-source-main > .si-wizard-card > .si-feedback {
@@ -139,7 +151,7 @@ color:var(--color-muted); font-size:11px; font-weight:400;
 }
 
 .si-wizard-stats {
-display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-top:16px;
+display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-top:8px;
 }
 
 .si-wizard-stats>div {
@@ -362,6 +374,12 @@ margin:0; overflow:auto; color:var(--color-ink-2); font-size:11px; line-height:1
 
 @media (max-width:1050px) {
 .si-wizard-source-layout,.si-wizard-brand-layout,.si-wizard-done-layout {
+grid-template-columns:minmax(0,1fr);
+}
+}
+
+@media (max-width:1150px) {
+.si-wizard-done-layout {
 grid-template-columns:minmax(0,1fr);
 }
 }
