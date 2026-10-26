@@ -39,5 +39,7 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
         }
         return state;
       }),
+    "schedule.status": () => context.scheduler.getRuntimeStatus(),
+    "schedule.reauthorize": () => context.reconcileSchedules(true),
   };
 }
