@@ -27,13 +27,13 @@ a { color: var(--color-brand); }
 }
 .si-title-bar {
   display: flex; height: 38px; min-height: 38px; flex: none; align-items: center;
-  padding-left: 16px; border-bottom: 1px solid var(--color-line); background: #FFFFFF;
+  padding-left: 16px; background: #FFFFFF;
   -webkit-app-region: drag;
 }
 .si-title-bar-win { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
 .si-title-bar-mac { padding-left: 78px; }
 .si-title { color: var(--color-muted); font-size: 12px; font-weight: 600; }
-.si-layout { display: flex; min-height: 0; flex: 1; overflow: hidden; }
+.si-layout { display: flex; min-height: 0; flex: 1; overflow: hidden; border-top: 1px solid var(--color-line); }
 .si-side-nav {
   display: flex; width: 232px; min-height: 0; flex: none; flex-direction: column; gap: 4px;
   padding: 20px 14px; border-right: 1px solid var(--color-line); background: var(--color-surface);
