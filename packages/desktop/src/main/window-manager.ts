@@ -167,10 +167,10 @@ export function createWindowManager(options: WindowManagerOptions) {
       minHeight: 720,
       show: false,
       title: "SiteIndex",
-      backgroundColor: "#f6f7f5",
+      backgroundColor: "#FFFFFF",
       titleBarStyle: process.platform === "win32" ? "hidden" : "hiddenInset",
       ...(process.platform === "win32"
-        ? { titleBarOverlay: { color: "#f6f7f5", symbolColor: "#24332d", height: 38 } }
+        ? { titleBarOverlay: { color: "#FFFFFF", symbolColor: "#1B1F24", height: 38 } }
         : {}),
       webPreferences: {
         preload: join(options.mainDirectory, "../preload/index.cjs"),
