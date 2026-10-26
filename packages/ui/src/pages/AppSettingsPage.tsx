@@ -20,6 +20,8 @@ export function AppSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testingBrowser, setTestingBrowser] = useState(false);
   const [installingCli, setInstallingCli] = useState(false);
+  const [sendingTestNotification, setSendingTestNotification] = useState(false);
+  const [openingLogs, setOpeningLogs] = useState(false);
   const [feedback, setFeedback] = useState("");
 
   useEffect(() => {
@@ -95,6 +97,36 @@ export function AppSettingsPage() {
     } finally {
       setInstallingCli(false);
       window.setTimeout(() => setFeedback(""), 2600);
+    }
+  };
+
+  const sendTestNotification = async () => {
+    if (!api.settings.sendTestNotification || sendingTestNotification) return;
+    setSendingTestNotification(true);
+    setFeedback("");
+    try {
+      await api.settings.sendTestNotification();
+      setFeedback("测试通知已发送");
+    } catch (error) {
+      setFeedback("发送测试通知失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+    } finally {
+      setSendingTestNotification(false);
+      window.setTimeout(() => setFeedback(""), 3000);
+    }
+  };
+
+  const openLogs = async () => {
+    if (!api.settings.openLogs || openingLogs) return;
+    setOpeningLogs(true);
+    setFeedback("");
+    try {
+      await api.settings.openLogs();
+      setFeedback("已打开日志目录");
+    } catch (error) {
+      setFeedback("打开日志目录失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+    } finally {
+      setOpeningLogs(false);
+      window.setTimeout(() => setFeedback(""), 3000);
     }
   };
 
@@ -183,7 +215,7 @@ export function AppSettingsPage() {
         <div className="si-app-setting-row">
           <label htmlFor="si-dingtalk-webhook">钉钉机器人 Webhook</label>
           <input id="si-dingtalk-webhook" className="si-setting-input si-setting-mono" type="password" autoComplete="new-password" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…" value={draft.notify.dingtalk_webhook ?? ""} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, dingtalk_webhook: event.target.value || null } })} onBlur={() => void saveSettings({ notify: draft.notify })} />
-          <Button disabled title="等待 Desktop 接入通知测试接口">发送测试</Button>
+          <Button disabled={!api.settings.sendTestNotification || sendingTestNotification} title={!api.settings.sendTestNotification ? "当前版本暂不支持通知测试" : undefined} onClick={() => void sendTestNotification()}>{sendingTestNotification ? "发送中…" : "发送测试"}</Button>
         </div>
       </section>
 
@@ -213,7 +245,7 @@ export function AppSettingsPage() {
         <div className="si-app-setting-row">
           <strong>日志</strong>
           <code className="si-setting-hint si-setting-mono">{logsPath}</code>
-          <Button disabled title="等待 Desktop 接入日志目录接口">打开</Button>
+          <Button disabled={!api.settings.openLogs || openingLogs} title={!api.settings.openLogs ? "当前版本暂不支持打开日志目录" : undefined} onClick={() => void openLogs()}>{openingLogs ? "打开中…" : "打开"}</Button>
         </div>
       </section>
       {saving && <span className="si-sr-only" role="status">正在保存软件设置…</span>}
