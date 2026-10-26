@@ -30,7 +30,7 @@ function decodeIpcError(error: unknown): unknown {
       "message" in payload &&
       typeof payload.message === "string"
     ) {
-      return { code: payload.code, message: payload.message };
+      return payload;
     }
     return { code: "UNKNOWN", message: "桌面服务返回了无效错误信息" };
   } catch {

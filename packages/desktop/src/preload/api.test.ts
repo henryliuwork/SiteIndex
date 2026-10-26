@@ -17,7 +17,11 @@ describe("createApiBridge IPC errors", () => {
         sku_field: "id",
         category_depth: 2,
       }),
-    ).rejects.toEqual({ code: "FEED_INVALID", message: "Feed 地址无效" });
+    ).rejects.toMatchObject({
+      code: "FEED_INVALID",
+      message: "Feed 地址无效",
+      detail: "HTTP 403",
+    });
   });
 
   it("preserves unrelated transport errors", async () => {
