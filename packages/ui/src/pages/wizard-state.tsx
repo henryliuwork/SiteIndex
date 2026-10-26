@@ -13,7 +13,7 @@ export interface WizardDraft {
   market: string;
   projectsRoot: string;
   folderName: string;
-  created: { id: string; runId: string } | null;
+  created: { id: string; runId: string; path: string | null } | null;
 }
 
 const initialDraft: WizardDraft = {
