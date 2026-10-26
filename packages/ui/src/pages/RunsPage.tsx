@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import type { JobName, JobProgress, JobResult, ListQuery, RunLog, RunnerState, ScheduleConfig, SchedulableJob, Weekday } from "@siteindex/shared";
+import type { JobName, JobProgress, JobResult, ListQuery, RunLog, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Activity, CalendarClock, CheckCircle2, ClipboardCheck, FileText, Palette, RefreshCw, Square, Wifi } from "lucide-react";
 import { api } from "../api";
@@ -84,6 +84,7 @@ export function RunsPage() {
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
   const scheduleQuery = useQuery({ queryKey: ["schedule", id], queryFn: () => api.schedule.get(id) });
+  const scheduleRuntimeQuery = useQuery({ queryKey: ["schedule-runtime"], queryFn: () => api.schedule.status ? api.schedule.status() : Promise.resolve(null) });
   const runnerQuery = useQuery({ queryKey: ["runner", id], queryFn: () => api.runner.get(id) });
   const historyQuery = useQuery({ queryKey: ["job-history", id], queryFn: () => api.jobs.history(id, 30) });
   const runningQuery = useQuery({ queryKey: ["running-job", id], queryFn: () => api.jobs.running(id), refetchInterval: 1500 });
@@ -95,6 +96,7 @@ export function RunsPage() {
   const [logs, setLogs] = useState<JobProgress[]>([]);
   const [selectedRun, setSelectedRun] = useState<RunLog | null>(null);
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [reauthorizingSchedule, setReauthorizingSchedule] = useState(false);
   const [claimingRunner, setClaimingRunner] = useState(false);
   const [startingJob, setStartingJob] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -188,6 +190,20 @@ export function RunsPage() {
     finally { setSavingSchedule(false); }
   };
 
+  const reauthorizeSchedule = async () => {
+    if (!api.schedule.reauthorize || reauthorizingSchedule) return;
+    setReauthorizingSchedule(true);
+    try {
+      const status = await api.schedule.reauthorize();
+      queryClient.setQueryData<ScheduleRuntimeStatus>(["schedule-runtime"], status);
+      announce(status.authorization_required ? "授权尚未完成，请在系统提示中完成授权后重试" : "已重新授权注册");
+    } catch (error) {
+      announce("重新授权失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+    } finally {
+      setReauthorizingSchedule(false);
+    }
+  };
+
   const claimRunner = async () => {
     if (claimingRunner) return;
     setClaimingRunner(true);
@@ -238,6 +254,11 @@ export function RunsPage() {
         </section>
 
         <section className="si-schedule-card"><div className="si-schedule-heading"><div><h2>定时计划</h2><p>选择每个任务在哪几周几、几点执行；保存后自动更新系统计划任务。</p></div><Chip tone={scheduleState.registered ? "ok" : "warn"}>{scheduleState.registered ? "已注册到任务计划程序" : "尚未注册"}</Chip></div>
+          <div className="si-schedule-runtime" aria-live="polite">
+            <span>当前模式</span>
+            {scheduleRuntimeQuery.isLoading ? <span className="si-schedule-runtime-loading" role="status">正在读取…</span> : scheduleRuntimeQuery.isError ? <span className="si-schedule-runtime-error" role="alert">读取失败</span> : <Chip tone={scheduleRuntimeQuery.data?.mode === "system" ? "ok" : "neutral"}>{scheduleRuntimeQuery.data?.mode === "system" ? "系统计划任务" : scheduleRuntimeQuery.data?.mode === "resident" ? "软件常驻（关闭软件后不执行）" : "运行模式不可用"}</Chip>}
+            {scheduleRuntimeQuery.data?.authorization_required && <><span className="si-schedule-auth-hint">需要授权才能注册系统计划任务</span><Button size="small" disabled={!api.schedule.reauthorize || reauthorizingSchedule} onClick={() => void reauthorizeSchedule()}>{reauthorizingSchedule ? "授权中…" : "重新授权注册"}</Button></>}
+          </div>
           <div className="si-schedule-jobs">{scheduleItems.map((item) => {
             const jobSchedule = draft[item.key];
             const monthly = item.key === "monthly";
