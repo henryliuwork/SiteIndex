@@ -163,6 +163,8 @@ export function ProjectCenterPage() {
   const runsQuery = useQuery({ queryKey: ["runs", primary?.id, "recent"], queryFn: () => api.jobs.history(primary!.id, 3), enabled: Boolean(primary) });
   const [addExistingOpen, setAddExistingOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [rootSetupFeedback, setRootSetupFeedback] = useState("");
+  const [settingRoot, setSettingRoot] = useState(false);
   const [selectedRun, setSelectedRun] = useState<RunLog | null>(null);
   const [runQuery, setRunQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
 
@@ -186,7 +188,30 @@ export function ProjectCenterPage() {
   const nextRun = scheduleQuery.data?.next_runs[0];
   const nextJob = scheduleQuery.isLoading ? "正在读取计划" : scheduleQuery.isError ? "计划读取失败" : nextRun ? (jobNames[nextRun.job] ?? nextRun.job) : "暂无计划";
   const nextTime = nextRun?.at ? new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(nextRun.at)) : "—";
-  const projectRoot = settingsQuery.isLoading ? "正在读取项目根目录…" : settingsQuery.isError ? "项目根目录读取失败" : settingsQuery.data?.projects_root?.replaceAll("/", "\\") ?? "尚未设置";
+  const configuredRoot = settingsQuery.data?.projects_root?.trim();
+  const needsRootSetup = settingsQuery.isError || (!settingsQuery.isLoading && !configuredRoot);
+  const projectRoot = settingsQuery.isLoading ? "正在读取项目根目录…" : settingsQuery.isError ? "项目根目录读取失败" : configuredRoot ? configuredRoot.replaceAll("/", "\\") : "尚未设置";
+
+  const chooseProjectsRoot = async () => {
+    if (settingRoot) return;
+    setSettingRoot(true);
+    setRootSetupFeedback("");
+    try {
+      const selected = await api.settings.chooseDirectory(configuredRoot || undefined);
+      if (!selected) return;
+      const saved = await api.settings.set({ projects_root: selected });
+      queryClient.setQueryData(["settings"], saved);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+      setRootSetupFeedback("项目根目录已保存。");
+    } catch (cause) {
+      setRootSetupFeedback("设置项目根目录失败：" + (cause instanceof Error ? cause.message : "请稍后重试"));
+    } finally {
+      setSettingRoot(false);
+    }
+  };
 
   const openFolder = async (path: string) => {
     try { await api.shell.openPath(path); setFeedback("已打开项目文件夹。"); }
@@ -209,10 +234,12 @@ export function ProjectCenterPage() {
       <header className="si-page-heading si-center-heading">
         <div>
           <h1>项目中心</h1>
-          <p>
-            项目根目录 <code>{projectRoot}</code>
+          <p className="si-project-root-line">
+            <span>项目根目录 <code>{projectRoot}</code></span>
             {settingsQuery.isError && <button className="si-center-retry" type="button" onClick={() => void settingsQuery.refetch()}>重试</button>}
+            {needsRootSetup && <Button size="small" variant="primary" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}
           </p>
+          {rootSetupFeedback && <p className="si-project-root-feedback" role="status">{rootSetupFeedback}</p>}
         </div>
         <div className="si-page-actions">
           <Button icon={<FolderOpen size={15} />} onClick={() => setAddExistingOpen(true)}>添加已有项目</Button>
