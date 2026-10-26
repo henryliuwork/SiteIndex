@@ -36,8 +36,8 @@
 .si-config-reserved { display: grid; gap: 7px; min-width: 0; padding: 12px; border: 1px dashed #CDD2D8; border-radius: 8px; color: var(--color-ink-2); font-size: 12px; }
 .si-config-reserved span { color: var(--color-muted); font-size: 11px; line-height: 1.5; }
 .si-config-reserved .si-chip { justify-self: start; }
-.si-config-json-overlay { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(20,24,29,.42); }
-.si-config-json-dialog { display: grid; width: min(760px,100%); max-height: min(820px,90vh); gap: 12px; padding: 20px; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); box-shadow: 0 12px 32px rgba(20,24,29,.2); }
+.si-config-json-overlay { position: fixed; z-index: 60; inset: 0; background: rgba(20,24,29,.42); }
+.si-config-json-dialog { position: fixed; z-index: 61; top: 50%; left: 50%; display: grid; width: min(760px,calc(100vw - 32px)); max-height: min(820px,90vh); gap: 12px; overflow: auto; padding: 20px; transform: translate(-50%,-50%); border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); box-shadow: 0 12px 32px rgba(20,24,29,.2); }
 .si-config-json-dialog h2 { margin: 0; font-size: 15px; }
 .si-config-json-dialog p { margin: 0; color: var(--color-muted); font-size: 12px; }
 .si-config-json-editor { min-height: 340px; width: 100%; resize: vertical; padding: 12px; border: 1px solid var(--color-line); border-radius: 6px; color: var(--color-ink); font: 12px/1.5 var(--font-mono); }

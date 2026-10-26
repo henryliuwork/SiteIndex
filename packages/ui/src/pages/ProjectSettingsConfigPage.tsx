@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { FeedInspectResult, SeoRule, SiteConfig } from "@siteindex/shared";
@@ -60,6 +61,7 @@ export function ProjectSettingsConfigPage() {
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState("");
+  const jsonEditorRef = useRef<HTMLTextAreaElement>(null);
   const [overrideText, setOverrideText] = useState("");
   const [feedResult, setFeedResult] = useState<FeedInspectResult | null>(null);
   const [inspectingFeed, setInspectingFeed] = useState(false);
@@ -141,10 +143,11 @@ export function ProjectSettingsConfigPage() {
   if (projectQuery.isLoading || !projectQuery.data || !draft) return <div className="si-page-loading" role="status">正在加载项目配置…</div>;
   const project = projectQuery.data.summary;
 
-  return <div className="si-page si-project-config-page">
+  return <DialogPrimitive.Root open={jsonOpen} onOpenChange={(open) => { if (open) openJson(); else setJsonOpen(false); }}>
+  <div className="si-page si-project-config-page">
     <header className="si-project-page-heading">
       <div className="si-project-title-line"><h1>{project.name}</h1><code>index/site.json</code></div>
-      <div className="si-page-actions"><Button onClick={openJson}>以 JSON 编辑</Button><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></div>
+      <div className="si-page-actions"><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></div>
     </header>
     <Tabs value="settings" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(tabHref(id, value))} />
     <SettingsNav id={id} value="config" />
@@ -221,6 +224,16 @@ export function ProjectSettingsConfigPage() {
         ].map(([title, detail]) => <div className="si-config-reserved" key={title}><strong>{title}</strong><span>{detail}</span><Chip tone="neutral">预留 · 未连接</Chip></div>)}</div></ConfigCard>
       </div>
     </div>
-    {jsonOpen && <div className="si-config-json-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setJsonOpen(false); }}><section className="si-config-json-dialog" role="dialog" aria-modal="true" aria-labelledby="si-config-json-title"><div className="si-panel-heading"><h2 id="si-config-json-title">编辑项目 JSON</h2><Button size="small" aria-label="关闭 JSON 编辑器" onClick={() => setJsonOpen(false)}>关闭</Button></div><p>修改完整配置后应用；保存配置时才会写入项目文件。</p><textarea className="si-config-json-editor" value={jsonText} onChange={(event) => setJsonText(event.target.value)} spellCheck={false} />{jsonError && <p className="si-form-error" role="alert">{jsonError}</p>}<div className="si-config-json-actions"><Button onClick={() => setJsonOpen(false)}>取消</Button><Button variant="primary" onClick={applyJson}>应用 JSON</Button></div></section></div>}
-  </div>;
+    <DialogPrimitive.Portal>
+      <DialogPrimitive.Overlay className="si-config-json-overlay" />
+      <DialogPrimitive.Content className="si-config-json-dialog" onOpenAutoFocus={(event) => { event.preventDefault(); jsonEditorRef.current?.focus(); }}>
+        <div className="si-panel-heading"><DialogPrimitive.Title className="si-dialog-title">编辑项目 JSON</DialogPrimitive.Title><DialogPrimitive.Close asChild><Button size="small" type="button" aria-label="关闭 JSON 编辑器">关闭</Button></DialogPrimitive.Close></div>
+        <DialogPrimitive.Description className="si-config-json-description">修改完整配置后应用；保存配置时才会写入项目文件。</DialogPrimitive.Description>
+        <textarea ref={jsonEditorRef} className="si-config-json-editor" aria-label="项目 JSON" value={jsonText} onChange={(event) => setJsonText(event.target.value)} spellCheck={false} />
+        {jsonError && <p className="si-form-error" role="alert">{jsonError}</p>}
+        <div className="si-config-json-actions"><DialogPrimitive.Close asChild><Button type="button">取消</Button></DialogPrimitive.Close><Button variant="primary" onClick={applyJson}>应用 JSON</Button></div>
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Portal>
+  </div>
+  </DialogPrimitive.Root>;
 }
