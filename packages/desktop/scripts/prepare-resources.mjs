@@ -40,8 +40,10 @@ await mkdir(buildResources, { recursive: true });
 await mkdir(join(buildResources, "fonts"), { recursive: true });
 
 const packagedCli = join(repositoryRoot, "packages/cli/dist/cli.js");
-const cliSource = (await exists(packagedCli)) ? packagedCli : join(desktopRoot, "resources/cli-stub.js");
-await cp(cliSource, join(buildResources, "cli.js"));
+if (!(await exists(packagedCli))) {
+  throw new Error("CLI bundle is missing. Run `pnpm --filter @siteindex/cli build` before preparing desktop resources.");
+}
+await cp(packagedCli, join(buildResources, "cli.js"));
 
 for (const directory of ["skills", "templates", "schemas"]) {
   await copyDirectory(join(repositoryRoot, directory), join(buildResources, directory));
