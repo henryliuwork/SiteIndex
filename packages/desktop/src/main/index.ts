@@ -11,6 +11,7 @@ import { parseRunJobArguments } from "./run-job-args.js";
 import { createResidentScheduler, type ResidentScheduler } from "./scheduler/resident-scheduler.js";
 import { createSystemScheduler, type ScheduleRuntimeStatus } from "./scheduler/schedule.js";
 import { createSkillService } from "./skill-service.js";
+import { createDesktopIntegrations } from "./desktop-integrations.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
 import { createWindowManager } from "./window-manager.js";
@@ -65,9 +66,15 @@ if (!hasSingleInstanceLock) {
         else await dialog.showMessageBox(prompt);
       },
     });
+    const desktopIntegrations = createDesktopIntegrations({
+      executablePath: app.getPath("exe"),
+      resourcesDirectory: process.resourcesPath,
+      isPackaged: app.isPackaged,
+    });
     const jobs = createJobManager({
       workerPath: join(mainDirectory, "job-worker.js"),
       getSettings: () => settingsStore.get(),
+      getBrowserExecutablePath: async (settings) => (await desktopIntegrations.detectBrowser(settings.browser)).path,
       resolveProject: (id: ProjectId) => {
         if (!projectCatalog) throw { code: "PROJECT_NOT_FOUND", message: "项目目录尚未就绪。", detail: id };
         return projectCatalog.resolveProject(id);
@@ -204,6 +211,7 @@ if (!hasSingleInstanceLock) {
         await reconcileSchedules(true);
       },
       skills: skillService,
+      desktopIntegrations,
     });
 
     windowManager.registerContentSecurityPolicy();

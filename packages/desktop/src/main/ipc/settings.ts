@@ -24,6 +24,9 @@ export function createSettingsHandlers(context: IpcContext): IpcHandlerImplement
       const error = await shell.openPath(logsDirectory);
       if (error) throw { code: "UNKNOWN", message: "无法打开应用日志目录。" };
     },
+    "settings.detectBrowser": async () => context.desktopIntegrations.detectBrowser((await context.settings.get()).browser),
+    "settings.cliStatus": () => context.desktopIntegrations.cliStatus(),
+    "settings.installCli": () => context.desktopIntegrations.installCli(),
     "settings.chooseDirectory": (defaultPath) =>
       chooseDirectory(typeof defaultPath === "string" ? defaultPath : undefined),
   };

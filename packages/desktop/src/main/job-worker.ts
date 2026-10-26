@@ -49,7 +49,10 @@ function isStartMessage(value: unknown): value is JobWorkerStartMessage {
     (value.request.trigger === "schedule" || value.request.trigger === "manual" || value.request.trigger === "cli") &&
     typeof value.context.deviceId === "string" &&
     typeof value.context.deviceName === "string" &&
-    typeof value.context.cacheDir === "string"
+    typeof value.context.cacheDir === "string" &&
+    (value.context.browserPath === undefined ||
+      value.context.browserPath === null ||
+      typeof value.context.browserPath === "string")
   );
 }
 
@@ -88,6 +91,7 @@ async function run(message: JobWorkerStartMessage): Promise<void> {
     deviceId: message.context.deviceId,
     deviceName: message.context.deviceName,
     cacheDir: message.context.cacheDir,
+    browserExecutablePath: message.context.browserPath ?? null,
   });
   const runId = await runIdFor(request);
   const startedAt = new Date().toISOString();
