@@ -715,6 +715,8 @@ export function createMockApi(): SiteIndexApi {
       cliStatus: () => reply<CliStatus>({ installed: false, path: "C:/SiteIndex/bin/siteindex.cmd" }),
       installCli: () => reply<CliStatus>({ installed: true, path: "C:/SiteIndex/bin/siteindex.cmd" }),
       chooseDirectory: (defaultPath) => reply(defaultPath ?? "C:/SiteIndex/Projects"),
+      sendTestNotification: () => reply(undefined),
+      openLogs: () => reply(undefined),
     },
     projects: {
       list: () => reply(() => projectIds.map((id) => projectSummaries[id])),
