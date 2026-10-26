@@ -81,6 +81,9 @@ import { createProjectFiles } from "../projects/create";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
+import { launchChromium, type BrowserLauncher } from "../browser/automation";
+import { runDesign } from "../jobs/design";
+import { runIndexCheck } from "../jobs/index-check";
 import {
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,
@@ -94,6 +97,10 @@ export interface CoreServiceContext {
   cacheDir: string;
   deviceName?: string;
   templateDir?: string;
+  /** Path to the caller-selected Chrome/Edge executable; core never discovers a system browser. */
+  browserExecutablePath?: string | null;
+  /** Injectable launcher for tests; production uses playwright-core Chromium. */
+  browserLauncher?: BrowserLauncher;
 }
 
 /**
@@ -594,6 +601,7 @@ function thrownExitCode(error: unknown): number {
     if (error.code === "LOCKED") return EXIT.LOCKED;
     if (error.code === "NOT_RUNNER") return EXIT.NOT_RUNNER;
     if (error.code === "FEED_FETCH_FAILED" || error.code === "FEED_EMPTY") return EXIT.SOURCE_FAILED;
+    if (error.code === "BROWSER_UNAVAILABLE") return EXIT.BROWSER_UNAVAILABLE;
     if (error.code === "CONFIG_INVALID" || error.code === "PATH_OUTSIDE_PROJECT") return EXIT.VALIDATION_FAILED;
   }
   return EXIT.VALIDATION_FAILED;
@@ -1018,6 +1026,40 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             summary: weekly.status === "failed" ? "每周同步失败。" : weekly.status === "partial" ? "每周同步完成，部分页面抓取失败。" : "每周同步完成。",
             ...(Object.keys(weekly.counts).length ? { counts: weekly.counts } : {}),
             ...(weekly.errors.length ? { errors: weekly.errors } : {}),
+          };
+        } else if (req.job === "design") {
+          progress(10, "design", "正在采集首页、分类页和产品页的设计信息");
+          if (!ctx.browserExecutablePath?.trim()) {
+            throw siteError("BROWSER_UNAVAILABLE", "请由调用方提供 Chrome 或 Edge 的 executablePath。");
+          }
+          const design = await runDesign({
+            projectPath: executionPath,
+            config,
+            executablePath: ctx.browserExecutablePath,
+            launchBrowser: ctx.browserLauncher ?? launchChromium,
+          });
+          jobResult = {
+            runId, job: req.job, status: "ok", exitCode: EXIT.OK,
+            summary: `设计信息已提取，采集 ${design.targets} 个页面并保存 ${design.screenshots} 张截图。`,
+            counts: { pages: design.targets, screenshots: design.screenshots },
+          };
+        } else if (req.job === "index-check") {
+          progress(10, "index-check", "正在准备 Google 收录检查");
+          if (!ctx.browserExecutablePath?.trim()) {
+            throw siteError("BROWSER_UNAVAILABLE", "请由调用方提供 Chrome 或 Edge 的 executablePath。");
+          }
+          const indexCheck = await runIndexCheck({
+            projectPath: executionPath,
+            pages: await readJsonlAs<SeoPage>(executionPath, PATHS.seoPages),
+            executablePath: ctx.browserExecutablePath,
+            launchBrowser: ctx.browserLauncher ?? launchChromium,
+          });
+          const summary = indexCheck.captcha
+            ? `遇到 Google 验证，已停止检查；已检查 ${indexCheck.checked} 个，${indexCheck.unchecked} 个尚未检查。结果仅供参考，以 Search Console 为准。`
+            : `Google 收录检查完成：已收录 ${indexCheck.indexed} 个，未收录 ${indexCheck.not_indexed} 个，未检查 ${indexCheck.unchecked} 个。结果仅供参考，以 Search Console 为准。`;
+          jobResult = {
+            runId, job: req.job, status: indexCheck.captcha ? "partial" : "ok", exitCode: EXIT.OK, summary,
+            counts: { checked: indexCheck.checked, indexed: indexCheck.indexed, not_indexed: indexCheck.not_indexed, unchecked: indexCheck.unchecked },
           };
         } else if (req.job === "validate") {
           progress(35, "validate", "正在校验项目文件");
