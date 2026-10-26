@@ -4,7 +4,7 @@ import type {
   DesignTokens, DraftRow, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
   JobProgress, JobResult, Keyword, ListQuery, OverviewData, PageResult, ProductFilters,
   ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, ProjectUiState, RepairAction, RunLog,
-  RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage,
+  RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage, SkillInfo, SkillTargetStatus,
   SeoPageFilters, SiteConfig, SiteIndexApi, SkuImageFilters, SkuImageRow, SkuRecord,
   SkuStockFilters, SkuStockView, StockStatus, ValidationReport,
 } from "@siteindex/shared";
@@ -251,6 +251,30 @@ const settingsState: AppSettings = {
   ],
   conflict_patterns: ["*.conflict-*", "*.copy"],
 };
+const mockSkills: SkillInfo[] = [
+  { name: "edm-builder", version: "1.2.0", description: "按主题选品，生成可粘贴到 Mailchimp 的 EDM HTML，登记推品记录", has_update: true, reads: ["index/views/products.jsonl", "index/ledgers/edm_campaigns.jsonl", "index/ledgers/promotions.jsonl"], writes: ["edm/{date}-{slug}/", "index/ledgers/edm_campaigns.jsonl"] },
+  { name: "stock-report", version: "1.0.0", description: "库存日报、周报、趋势分析（只读）", has_update: false, reads: ["index/reports/daily/", "index/inventory/", "index/logs/runs.jsonl"], writes: [] },
+  { name: "blog-writer", version: "1.1.0", description: "选题、蚕食检查、brief、带内链正文、关键词登记", has_update: true, reads: ["index/content/*", "index/seo/pages.jsonl", "index/seo/links.jsonl", "index/views/products.jsonl"], writes: ["内容/drafts/{date}-{slug}/", "index/content/keywords.jsonl"] },
+  { name: "link-prospect", version: "1.0.0", description: "外链搜集 → linkflow + 去重台账", has_update: false, reads: ["index/site.json", "index/ledgers/outreach.jsonl"], writes: ["linkflow（MCP）", "index/ledgers/outreach.jsonl"] },
+  { name: "sku-media-enrich", version: "1.0.0", description: "Mailchimp 图片匹配、标签与优先级", has_update: false, reads: ["index/catalog/skus.jsonl"], writes: ["index/ledgers/sku_media.csv", "index/ledgers/sku_tags.csv"] },
+  { name: "page-design", version: "1.0.0", description: "按网站设计规范做页面、Banner、邮件模板", has_update: false, reads: ["index/design/tokens.json", "index/design/brand.md"], writes: ["设计/"] },
+  { name: "project-readme", version: "1.0.0", description: "补充文件夹 _about.md 与 README 用户区块", has_update: false, reads: ["工作区文件夹", "README.md"], writes: ["{文件夹}/_about.md", "README.md 用户区块"] },
+];
+const mockSkillBodies: Record<string, string> = {
+  "edm-builder": "# edm-builder\n1. 确认主题、产品数、折扣码与 CTA。\n2. siteindex query · products --in-stock --tag {主题} --json\n   硬性条件：有货、未排除、过冷却期、有图片\n   排序：标签 +3 · 标题/分类 +2 · 优先级 / 2 · 参与活动 +1\n3. 写 brief.md、content.json（文案遵循品牌 voice）。\n4. siteindex edm render · edm/{campaign_id}\n5. siteindex ledger upsert · edm_campaigns --rows -",
+  "stock-report": "# stock-report\n先检查 runs.jsonl 最后一次 daily 是否成功。\n日报：结论 → 新到货/新缺货 → 需要行动。\n只读汇报，不修改项目数据。",
+  "blog-writer": "# blog-writer\n1. 检查主关键词是否已有目标页面。\n2. 生成大纲与内链计划，只使用数据文件中的 URL。\n3. 写 draft.md 与 meta.json。\n4. 提供反向内链建议。",
+  "link-prospect": "# link-prospect\n检查外链候选并排除台账重复项。\n联系方式必须来自页面实际内容。\n完成后更新去重台账。",
+  "sku-media-enrich": "# sku-media-enrich\n按 SKU、handle、文件名顺序匹配图片。\n一对多或多对一时先请求确认。\n标签与已有值合并，不覆盖。",
+  "page-design": "# page-design\n颜色只使用设计 token 与 palette。\n字体、字号、按钮、间距、圆角遵照项目设计规范。\n规范超过 60 天时提醒重新提取。",
+  "project-readme": "# project-readme\n不修改自动区块、index/ 或 _agent/。\n为待补充说明的文件夹写 _about.md。\n修改 README 用户区块前先展示对比。",
+};
+const mockSkillTargets: Record<string, SkillTargetStatus[]> = Object.fromEntries(mockSkills.map((skill) => [skill.name, [
+  { target_id: "project:kingsyard", name: "项目 Kingsyard", dir: `D:/云盘/projects/kingsyard/_agent/skills/${skill.name}`, status: skill.has_update ? "outdated" : "latest" },
+  { target_id: "claude-code", name: "Claude Code", dir: `~/.claude/skills/${skill.name}`, status: "latest" },
+  { target_id: "codex", name: "Codex", dir: null, status: "not_installed" },
+  { target_id: "qwenpaw", name: "qwenpaw", dir: `D:/qwenpaw/workspace/ops-agent/skills/${skill.name}`, status: "not_installed" },
+]]));
 const folderRows: Record<MockProjectId, FolderRow[]> = {
   kingsyard: [
     { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 24, modified_at: "2026-10-19T12:00:00+08:00" },
@@ -1022,24 +1046,25 @@ export function createMockApi(): SiteIndexApi {
       }),
     },
     skills: {
-      list: () => reply([
-        { name: "site-index-onboarding", version: "1.0.0", description: "SiteIndex 项目接入指南", has_update: false, reads: ["README.md", "site.json"], writes: [] },
-        { name: "site-index-maintain", version: "1.0.0", description: "SiteIndex 数据维护指南", has_update: false, reads: ["index/"], writes: ["README.md"] },
-      ]),
-      get: (name) => reply({
-        info: { name, version: "1.0.0", description: "SiteIndex 项目技能说明", has_update: false, reads: ["README.md"], writes: [] },
-        body: name === "page-design"
-          ? "# page-design\n\n颜色只用 index/design/tokens.json 中的语义色与 palette。\n字体、字号、按钮、间距、圆角按设计规范实现。\n规范超过 60 天时提醒项目负责人重新提取。"
-          : name === "project-readme"
-            ? "# project-readme\n\n不修改 siteindex:auto 区块、index/、_agent/。\n为待补充说明的文件夹写 _about.md。\n用户区块修改前先展示对比。"
-            : "# SiteIndex Skill\n\n请先阅读项目 README，再根据当前数据完成任务。",
+      list: () => reply(() => clone(mockSkills)),
+      get: (name) => reply(() => {
+        const info = mockSkills.find((skill) => skill.name === name);
+        if (!info) throw new Error("找不到 Skill：" + name);
+        return { info: clone(info), body: mockSkillBodies[name] ?? "# " + name + "\n\n请先阅读项目 README，再根据当前数据完成任务。" };
       }),
-      targets: (name) => reply([
-        { target_id: "project:kingsyard", name: "Kingsyard 项目", dir: "C:/SiteIndex/Projects/Kingsyard/.agent/skills/" + name, status: "latest" },
-        { target_id: "codex", name: "Codex", dir: null, status: "not_installed" },
-      ]),
-      install: (name, targetId) => reply({ target_id: targetId, name: name + " · " + targetId, dir: "C:/SiteIndex/mock-skills/" + name, status: "latest" }),
-      syncAllProjects: () => reply(undefined),
+      targets: (name) => reply(() => clone(mockSkillTargets[name] ?? [])),
+      install: (name, targetId) => reply(() => {
+        const target = mockSkillTargets[name]?.find((item) => item.target_id === targetId);
+        if (!target) throw new Error("找不到 Skill 安装位置：" + targetId);
+        target.status = "latest";
+        target.dir ??= "C:/SiteIndex/mock-skills/" + name;
+        return clone(target);
+      }),
+      syncAllProjects: () => reply(() => {
+        for (const targets of Object.values(mockSkillTargets)) {
+          for (const target of targets) if (target.target_id.startsWith("project:")) target.status = "latest";
+        }
+      }),
     },
     shell: {
       openPath: () => reply(undefined),
