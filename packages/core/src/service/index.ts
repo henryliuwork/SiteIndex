@@ -1140,7 +1140,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       if (exitCode === EXIT.LOCKED || exitCode === EXIT.NOT_RUNNER) {
         return { runId, job: req.job, status: "skipped", exitCode, summary: message, errors: [message] };
       }
-      const failed = jobFailure(req, runId, exitCode, "Job 执行失败。", [message]);
+      const failed = jobFailure(req, runId, exitCode, req.job === "daily" ? `每日同步失败：${message}` : "Job 执行失败。", [message]);
       try {
         await appendRunLog(projectPath, {
           run_id: runId, job: req.job, trigger: req.trigger,
