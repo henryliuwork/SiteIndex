@@ -16,10 +16,23 @@ function decodeIpcError(error: unknown): unknown {
       : typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
         ? error.message
         : null;
-  if (!message?.startsWith(IPC_ERROR_PREFIX)) return error;
+  if (!message) return error;
+  const prefixIndex = message.indexOf(IPC_ERROR_PREFIX);
+  if (prefixIndex < 0) return error;
 
   try {
-    return JSON.parse(message.slice(IPC_ERROR_PREFIX.length)) as unknown;
+    const payload: unknown = JSON.parse(message.slice(prefixIndex + IPC_ERROR_PREFIX.length));
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "code" in payload &&
+      typeof payload.code === "string" &&
+      "message" in payload &&
+      typeof payload.message === "string"
+    ) {
+      return { code: payload.code, message: payload.message };
+    }
+    return { code: "UNKNOWN", message: "桌面服务返回了无效错误信息" };
   } catch {
     return { code: "UNKNOWN", message: "桌面服务返回了无效错误信息" };
   }
