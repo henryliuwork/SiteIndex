@@ -80,6 +80,7 @@ import { assertRunner, readRunner, withLock } from "../io/runner-lock";
 import { createProjectFiles } from "../projects/create";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
+import { runMonthly } from "../jobs/monthly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
 import { launchChromium, type BrowserLauncher } from "../browser/automation";
 import { runDesign } from "../jobs/design";
@@ -1026,6 +1027,30 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             summary: weekly.status === "failed" ? "每周同步失败。" : weekly.status === "partial" ? "每周同步完成，部分页面抓取失败。" : "每周同步完成。",
             ...(Object.keys(weekly.counts).length ? { counts: weekly.counts } : {}),
             ...(weekly.errors.length ? { errors: weekly.errors } : {}),
+          };
+        } else if (req.job === "monthly") {
+          const monthly = await runMonthly({
+            projectPath: executionPath,
+            config,
+            date: requestedDate,
+            executablePath: ctx.browserExecutablePath ?? "",
+            launchBrowser: ctx.browserLauncher ?? launchChromium,
+            onProgress: (step, message) => {
+              const pct = step === "metadata" ? 15 : step === "design" ? 45 : 82;
+              progress(pct, step, message);
+            },
+          });
+          jobResult = {
+            runId, job: req.job, status: "ok", exitCode: EXIT.OK,
+            summary: `每月归档完成：刷新 ${monthly.sitemaps} 个 sitemap，采集 ${monthly.design_pages} 个设计页面，归档 ${monthly.archived_files} 个文件。`,
+            counts: {
+              sitemaps: monthly.sitemaps,
+              total_urls: monthly.total_urls,
+              design_pages: monthly.design_pages,
+              screenshots: monthly.screenshots,
+              archived_files: monthly.archived_files,
+              archived_bytes: monthly.archived_bytes,
+            },
           };
         } else if (req.job === "design") {
           progress(10, "design", "正在采集首页、分类页和产品页的设计信息");
