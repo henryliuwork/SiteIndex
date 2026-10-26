@@ -14,3 +14,4 @@ __pycache__/
 *.pyc
 .vscode/*
 !.vscode/extensions.json
+packages/cli/dist/
