@@ -12,5 +12,6 @@ export default defineConfig({
   dts: false,
   minify: true,
   sourcemap: false,
+  external: ["playwright-core"],
   noExternal: [/^@siteindex\//u],
 });
