@@ -114,7 +114,10 @@ macOS：`~/.local/bin/siteindex` → `/Applications/SiteIndex.app/Contents/MacOS
 - 每天 / 部分周几：`<CalendarTrigger><ScheduleByWeek><DaysOfWeek><Monday/>…</DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>`
 - 每月：`<ScheduleByMonth><DaysOfMonth><Day>1</Day></DaysOfMonth><Months>全部</Months></ScheduleByMonth>`
 - Settings：`StartWhenAvailable`（错过补跑）、`WakeToRun`（唤醒）、`DisallowStartIfOnBatteries=false`、`MultipleInstancesPolicy=IgnoreNew`、`ExecutionTimeLimit=PT2H`
-- Principal：`InteractiveToken`（登录时运行，不存密码）
+- Principal：当前用户（`计算机名\用户名`）+ `InteractiveToken` + `RunLevel=LeastPrivilege`（登录时以普通权限运行，不存密码）
+- **注册权限**：部分 Windows 环境中普通权限注册会返回 `0x80070005`（拒绝访问）。流程为：先以普通权限注册 → 被拒时提示"需要管理员授权一次" → 把本次所有注册/删除操作合成一个临时 `.ps1`，用 `Start-Process -Verb RunAs -Wait` 执行（只弹一次 UAC），结果写回 JSON 供主进程判断。任务本身仍以当前用户、非提权身份运行
+- **兜底**：用户拒绝授权或提权失败时，启用常驻调度器（登录自启、托盘常驻、15 秒轮询，按 `run_if_missed` 补跑）；软件退出或电脑睡眠时不保证执行。运行页显示当前模式（`schedule.status()`）并提供"重新授权注册"（`schedule.reauthorize()`）
+- 软件启动时的自动校正不主动弹 UAC，只在运行页提示"计划已变更，点击授权更新"
 
 ### 9.2 macOS（launchd）
 `~/Library/LaunchAgents/com.siteindex.{projectId}.{job}.plist`，`StartCalendarInterval` 数组（每个周几一项，Weekday 0=周日）；`launchctl bootstrap gui/$(id -u)`。睡眠错过的任务唤醒后执行一次。
