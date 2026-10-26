@@ -35,6 +35,7 @@ export const mockMode = typeof window !== "undefined" ? new URLSearchParams(wind
 export const errorMode = mockMode === "error";
 export const performanceMode = mockMode === "perf";
 export const loadingMode = mockMode === "loading";
+export const slowMode = mockMode === "slow";
 export const projectCenterErrorMode = mockMode === "project-center-error";
 export const projectCenterError = (): Error => new Error("模拟项目中心数据错误：请移除地址中的 ?mock=project-center-error 后重试。");
 export const dateBefore = (days: number): string => {
@@ -83,6 +84,7 @@ export const generatedDrafts: DraftRow[] = [
 ];
 export const delay = async (): Promise<void> => {
   if (loadingMode) await new Promise((resolve) => setTimeout(resolve, 10000));
+  else if (slowMode) await new Promise((resolve) => setTimeout(resolve, 300));
   else if (!performanceMode) await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
   if (errorMode) throw new Error("模拟接口错误：请移除地址中的 ?mock=error 后重试。");
 };
@@ -609,15 +611,21 @@ export function inventorySummary(id: ProjectId, days = 30): InventorySummary {
   };
 }
 
+const searchIndexCache = new WeakMap<readonly unknown[], readonly string[]>();
+
 export function selectRows<T, F = Record<string, unknown>>(
   source: readonly T[], query: ListQuery<F>, searchText: (row: T) => string,
   matches: (row: T, filters: F) => boolean = () => true,
 ): PageResult<T> {
   const search = query.search?.trim().toLocaleLowerCase();
-  const filters = (query.filters ?? {}) as F;
-  let rows = source.filter((row) => {
-    return (!search || searchText(row).toLocaleLowerCase().includes(search)) && matches(row, filters);
-  });
+  let searchIndex = search ? searchIndexCache.get(source) : undefined;
+  if (search && !searchIndex) {
+    searchIndex = source.map((row) => searchText(row).toLocaleLowerCase());
+    searchIndexCache.set(source, searchIndex);
+  }
+  let rows = source.filter((row, index) =>
+    (!search || searchIndex?.[index]?.includes(search)) && matches(row, (query.filters ?? {}) as F),
+  );
   if (query.sort) {
     const field = query.sort.field;
     const factor = query.sort.dir === "asc" ? 1 : -1;

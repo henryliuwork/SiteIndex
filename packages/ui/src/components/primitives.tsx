@@ -209,11 +209,20 @@ export const StatusCells = memo(function StatusCells({ history, label = "近 30 
   };
   const cells = history.slice(-30).padStart(30, "-").split("");
   const summary = cells.map((cell) => statuses[cell]?.label ?? "未知").join("、");
-  return (
-    <span className="si-status-cells" role="img" aria-label={label + "：" + summary}>
-      {cells.map((cell, index) => <span key={index} className={"si-status-cell si-status-" + (statuses[cell]?.tone ?? "unknown")} title={dateLabel(index, cells.length) + " · " + (statuses[cell]?.label ?? "未知")} />)}
-    </span>
-  );
+  const colors: Record<string, string> = {
+    in: "var(--color-stock-in)", out: "var(--color-stock-out)", preorder: "var(--color-stock-preorder)",
+    unknown: "var(--color-stock-unknown)", "not-listed": "#E9EBEE",
+  };
+  const unit = 100 / cells.length;
+  const gradient = cells.map((cell, index) => {
+    const start = unit * index;
+    const end = start + unit;
+    const filledEnd = start + unit * (5 / 6);
+    const tone = statuses[cell]?.tone ?? "unknown";
+    return `${colors[tone] ?? colors.unknown} ${start}% ${filledEnd}%, transparent ${filledEnd}% ${end}%`;
+  }).join(", ");
+  const detail = cells.map((cell, index) => dateLabel(index, cells.length) + " · " + (statuses[cell]?.label ?? "未知")).join("；");
+  return <span className="si-status-cells" role="img" aria-label={label + "：" + summary} title={detail} style={{ backgroundImage: `linear-gradient(to right, ${gradient})` }} />;
 });
 
 function dateLabel(index: number, length: number): string {
@@ -226,7 +235,7 @@ export function SearchInput({ value, onSearch, label = "搜索", placeholder = "
   useEffect(() => setDraft(value), [value]);
   useEffect(() => {
     if (draft === value) return;
-    const timer = window.setTimeout(() => onSearch(draft.trim()), 100);
+    const timer = window.setTimeout(() => onSearch(draft.trim()), 50);
     return () => window.clearTimeout(timer);
   }, [draft, onSearch, value]);
   return (

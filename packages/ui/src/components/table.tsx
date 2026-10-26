@@ -79,7 +79,7 @@ export function DataTable<T, F = Record<string, unknown>>({
     count: rowModel.rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
-    overscan: 8,
+    overscan: 2,
   });
   const virtualRows = virtualizer.getVirtualItems();
   const firstVirtualRow = virtualRows[0];
