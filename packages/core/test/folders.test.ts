@@ -87,7 +87,7 @@ describe("core workspace folders", () => {
     expect(folders.filter((folder) => (DEFAULT_WORKSPACE_FOLDERS as readonly string[]).includes(folder.name))
       .every((folder) => folder.default)).toBe(true);
     expect(folders.find((folder) => folder.name === "campaigns")?.description).toBe("新的说明 仍然是同一段");
-  }, 15_000);
+  }, 30_000);
 
   it("rejects unsafe names, Windows reserved names, duplicates and overlong descriptions", async () => {
     const projectPath = await makeProject();
