@@ -1,4 +1,4 @@
-import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { memo, useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import * as Checkbox from "@radix-ui/react-checkbox";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
@@ -199,7 +199,7 @@ export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChan
   );
 }
 
-export function StatusCells({ history, label = "近 30 日库存" }: { history: string; label?: string }) {
+export const StatusCells = memo(function StatusCells({ history, label = "近 30 日库存" }: { history: string; label?: string }) {
   const statuses: Record<string, { label: string; tone: string }> = {
     i: { label: "有货", tone: "in" },
     o: { label: "缺货", tone: "out" },
@@ -214,7 +214,7 @@ export function StatusCells({ history, label = "近 30 日库存" }: { history: 
       {cells.map((cell, index) => <span key={index} className={"si-status-cell si-status-" + (statuses[cell]?.tone ?? "unknown")} title={dateLabel(index, cells.length) + " · " + (statuses[cell]?.label ?? "未知")} />)}
     </span>
   );
-}
+});
 
 function dateLabel(index: number, length: number): string {
   const daysAgo = length - index - 1;
@@ -226,7 +226,7 @@ export function SearchInput({ value, onSearch, label = "搜索", placeholder = "
   useEffect(() => setDraft(value), [value]);
   useEffect(() => {
     if (draft === value) return;
-    const timer = window.setTimeout(() => onSearch(draft.trim()), 200);
+    const timer = window.setTimeout(() => onSearch(draft.trim()), 100);
     return () => window.clearTimeout(timer);
   }, [draft, onSearch, value]);
   return (

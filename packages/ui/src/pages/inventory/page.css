@@ -86,6 +86,14 @@ color: var(--color-ink); font-family: var(--font-mono); font-size: 10px;
 display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border: 1px solid #B6D4C5; border-radius: 6px; background: var(--color-brand-soft); color: var(--color-brand-strong); font-size: 12px;
 }
 
+.si-inventory-query-state {
+display: flex; min-height: 32px; align-items: center; justify-content: space-between; gap: 12px; margin: 0; color: var(--color-muted); font-size: 12px;
+}
+
+.si-inventory-query-state.is-error {
+padding: 6px 10px; border: 1px solid #E8B8B4; border-radius: 6px; background: var(--color-danger-soft); color: var(--color-danger);
+}
+
 .si-inventory-page .si-table-toolbar {
 align-items: flex-start; padding: 12px 14px 10px;
 }

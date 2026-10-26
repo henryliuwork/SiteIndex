@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -61,7 +61,7 @@ function trendPoints(summary: InventorySummary | undefined) {
   });
 }
 
-function TrendChart({ summary }: { summary: InventorySummary }) {
+const TrendChart = memo(function TrendChart({ summary }: { summary: InventorySummary }) {
   const points = trendPoints(summary);
   return (
     <section className="si-inventory-chart si-panel" aria-label="分类在线率趋势">
@@ -78,16 +78,16 @@ function TrendChart({ summary }: { summary: InventorySummary }) {
             <Tooltip formatter={(value) => [formatRate(typeof value === "number" ? value : null), "在线率"]} labelFormatter={(label) => "日期 " + label} />
             <Legend align="right" verticalAlign="top" height={34} iconType="plainline" wrapperStyle={{ fontSize: 11, color: "#47515B" }} />
             {summary.trend.series.map((series, index) => (
-              <Line key={series.category} type="monotone" dataKey={series.category} name={series.category} stroke={lineColors[index % lineColors.length]} strokeWidth={2.4} dot={false} activeDot={{ r: 3 }} connectNulls={false} />
+              <Line key={series.category} type="monotone" dataKey={series.category} name={series.category} stroke={lineColors[index % lineColors.length]} strokeWidth={2.4} dot={false} activeDot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
             ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
     </section>
   );
-}
+});
 
-function CategoryPanel({ summary, project }: { summary: InventorySummary; project: ProjectSummary | undefined }) {
+const CategoryPanel = memo(function CategoryPanel({ summary, project }: { summary: InventorySummary; project: ProjectSummary | undefined }) {
   return (
     <aside className="si-category-panel si-panel">
       <div className="si-panel-heading">
@@ -117,7 +117,7 @@ function CategoryPanel({ summary, project }: { summary: InventorySummary; projec
       </div>
     </aside>
   );
-}
+});
 
 function StockDetail({ row }: { row: SkuStockView }) {
   return (
@@ -276,6 +276,8 @@ export function InventoryPage() {
       </div>
       {syncMessage && <div className="si-sync-progress" role="status"><span>{syncMessage}</span>{activeRunId && <span>同步任务运行中</span>}</div>}
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
+      {skuQuery.isFetching && <p className="si-inventory-query-state" role="status">正在更新 SKU 列表…</p>}
+      {skuQuery.isError && <div className="si-inventory-query-state is-error" role="alert"><span>SKU 列表更新失败{skuQuery.data ? "，当前保留上次结果。" : "。"}</span><Button size="small" onClick={() => void skuQuery.refetch()}>重试</Button></div>}
       <DataTable
         tableId="inventory.skus"
         scopeId={id}
