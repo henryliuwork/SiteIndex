@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 
 export interface BrowserPage {
   goto(url: string, options?: { waitUntil?: "domcontentloaded" | "load" | "networkidle"; timeout?: number }): Promise<unknown>;
@@ -36,6 +36,7 @@ function pageAdapter(page: Page): BrowserPage {
 }
 
 export const launchChromium: BrowserLauncher = async (executablePath, options) => {
+  const { chromium } = await import(/* @vite-ignore */ "playwright-core");
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   let userDataDir: string | null = null;

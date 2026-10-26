@@ -5,6 +5,7 @@ import path from "node:path";
 import { EXIT, PATHS, type SeoPage, type SiteConfig } from "@siteindex/shared";
 import { createCoreService } from "../src/service";
 import type { BrowserLauncher, BrowserPage, BrowserSession } from "../src/browser/automation";
+import { launchChromium } from "../src/browser/automation";
 import { runDesign } from "../src/jobs/design";
 import { runIndexCheck } from "../src/jobs/index-check";
 
@@ -172,5 +173,10 @@ describe("core browser jobs", () => {
       expect(result.exitCode).toBe(EXIT.BROWSER_UNAVAILABLE);
       expect(result.status).toBe("failed");
     }
+  });
+
+  it("maps an invalid caller browser executable to BROWSER_UNAVAILABLE", async () => {
+    await expect(launchChromium(path.join(os.tmpdir(), "siteindex-missing-browser.exe"), { headless: true }))
+      .rejects.toMatchObject({ code: "BROWSER_UNAVAILABLE" });
   });
 });
