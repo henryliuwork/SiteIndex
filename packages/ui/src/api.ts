@@ -8,7 +8,7 @@ if (!hostApi) {
     const module = await import("./mock");
     mock = module.createMockApi();
   } else {
-    throw new Error("SiteIndex API 不可用：请从桌面应用打开，或使用开发 mock。");
+    throw new Error("SiteIndex API 不可用：请从桌面应用打开本应用。");
   }
 }
 
