@@ -26,6 +26,10 @@ min-height: 88px; padding: 11px 14px;
 display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 9px;
 }
 
+.si-seo-controls.is-issues {
+padding-right: 90px;
+}
+
 .si-seo-controls > .si-search-input {
 width: min(280px, 24vw); margin-left: auto;
 }
@@ -43,11 +47,15 @@ padding-left: 8px; border-left: 1px solid var(--color-line);
 }
 
 .si-seo-table-frame {
-min-width: 0;
+position: relative; min-width: 0; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
 }
 
 .si-seo-table-frame .si-data-table {
-min-height: 460px;
+min-height: 0; overflow: visible; border: 0; border-radius: 0;
+}
+
+.si-seo-table-issues .si-data-table > .si-table-toolbar {
+position: absolute; z-index: 4; top: -50px; right: 0; min-height: 32px; padding: 0; border: 0; background: transparent;
 }
 
 .si-seo-table-frame .si-table-scroll {
@@ -56,6 +64,10 @@ height: 405px; max-height: 405px;
 
 .si-seo-table-frame .si-data-table > .si-table-scroll {
 min-height: 405px;
+}
+
+.si-seo-table-frame .si-table td {
+height: 52px;
 }
 
 .si-seo-url {
@@ -99,7 +111,7 @@ display: inline-flex; align-items: center; gap: 8px;
 }
 
 .si-seo-length-legend {
-display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 10px 2px 0; color: var(--color-muted); font-size: 10px;
+display: flex; min-height: 38px; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0; padding: 0 12px; border-top: 1px solid var(--color-line); color: var(--color-muted); font-size: 10px;
 }
 
 .si-seo-progress {
@@ -189,6 +201,16 @@ color: var(--color-ink-2);
 @media (max-width: 1280px) {
 .si-seo-kpis {
 grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+}
+
+@media (max-width: 1280px) {
+.si-seo-controls.is-issues {
+padding-right: 0;
+}
+
+.si-seo-table-issues .si-data-table > .si-table-toolbar {
+position: static; min-height: 48px; padding: 7px 12px; border-bottom: 1px solid var(--color-line); background: var(--color-surface);
 }
 }
 
