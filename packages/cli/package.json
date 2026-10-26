@@ -4,7 +4,18 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
-  "bin": { "siteindex": "./dist/cli.js" },
-  "scripts": { "typecheck": "tsc -p tsconfig.json" },
-  "dependencies": { "@siteindex/core": "workspace:*", "@siteindex/shared": "workspace:*" }
+  "bin": {
+    "siteindex": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup --config tsup.config.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@siteindex/core": "workspace:*",
+    "@siteindex/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^9.0.0"
+  }
 }
