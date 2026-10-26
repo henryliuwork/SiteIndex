@@ -57,30 +57,30 @@
 - [x] categories preview/apply（返回 `CategoryPreview`）
 - [x] folders：create/describe（写 `_about.md`、`site.json.workspace_folders`，刷新 README folder-map），默认文件夹不可删（删除保护由 Desktop C 实现）
 - [x] EDM 渲染（`edm render`，缺货跳过，`--allow-oos`）
-- [ ] 新建项目：`detect(url)`、`inspectFeed`、`createProject`（复制 `templates/project`、写 site.json、_about.md、首次 daily）
+- [x] 新建项目：`detect(url)`、`inspectFeed`、`createProject`（复制 `templates/project`、写 site.json、_about.md、首次 daily）
 
 ### A8 查询服务 `core/src/service/`
 - [x] `createCoreService(ctx: { resolveProject(id): string; deviceId: string; cacheDir: string })` 覆盖 WORKSTREAMS §2 分配给 core 的项目、概览、库存、产品、SEO、内容、EDM、设计、README、分类、文件夹、文件、计划与执行设备方法；桌面专属方法留给 C
 - [x] 已实现方法使用统一分页/排序/筛选/搜索和内存缓存；暴露 `invalidate(projectPath)` 供 C 在文件变化时调用
 - [x] `projects.detect`、`inspectFeed`、`create`；新建项目复制模板、写配置与工作区、触发首次 daily
-- [x] `runJob(req: JobRequest, report: ProgressReporter): Promise<JobResult>` —— 统一入口、执行前检查、锁、runs.jsonl；daily、views、readme、weekly、validate 已接入
-- [ ] monthly、design、index-check 等 Job 在对应模块完成后接入统一入口
-- **首批验收**：用 `fixtures/expected/project` 覆盖 projects/inventory/products 查询与台账写入；1 万 SKU 合成数据下热缓存列表查询 < 50ms。全部 core 方法和 runJob 完成后再完成 A8 验收
+- [x] `runJob(req: JobRequest, report: ProgressReporter): Promise<JobResult>` —— 统一入口、执行前检查、锁、runs.jsonl；daily、views、readme、weekly、monthly、validate、design、index-check 已接入
+- [x] monthly、design、index-check 等 Job 在对应模块完成后接入统一入口
+- **首批验收已通过**：用 `fixtures/expected/project` 覆盖 projects/inventory/products 查询与台账写入；1 万 SKU 合成数据下热缓存列表查询 < 50ms
 
 ### A9 命令行 `packages/cli/`
-- [ ] ARCHITECTURE §6 全部命令；`--json` 输出 `CliJsonOutput`；退出码用 `EXIT`
-- [ ] `tsup` 打包为单文件 `packages/cli/dist/cli.js`（C 把它放进 `resources/`）
-- [ ] `schedule list` 读 site.json；`schedule install/remove` 在命令行中只更新 site.json 并提示"打开 SiteIndex 软件后自动注册到系统"（系统注册只在 desktop 实现，避免 core 依赖操作系统）
+- [x] ARCHITECTURE §6 全部命令；`--json` 输出 `CliJsonOutput`；退出码用 `EXIT`
+- [x] `tsup` 打包为单文件 `packages/cli/dist/cli.js`（C 把它放进 `resources/`）
+- [x] `schedule list` 读 site.json；`schedule install/remove` 在命令行中只更新 site.json 并提示"打开 SiteIndex 软件后自动注册到系统"（系统注册只在 desktop 实现，避免 core 依赖操作系统）
 - **验收**：每个命令有测试（用 fixtures 项目）；`node dist/cli.js query <p> products --json` 可用
 
 ## M3 · 浏览器相关与性能
 
 ### A10 design 与 index-check
-- [ ] 使用 `playwright-core`，`executablePath` 由调用方传入（C 负责检测系统 Edge/Chrome）；没有浏览器 → 退出码 7
-- [ ] design：首页/分类页/产品页（1440、390 宽）→ `design/tokens.json`、`brand.md`、截图
-- [ ] index-check：ARCHITECTURE §10.1（间隔 20–40 秒随机、单次 ≤ 50、遇验证码停止，剩余标未检查）
+- [x] 使用 `playwright-core`，`executablePath` 由调用方传入（C 负责检测系统 Edge/Chrome）；没有浏览器 → 退出码 7
+- [x] design：首页/分类页/产品页（1440、390 宽）→ `design/tokens.json`、`brand.md`、截图
+- [x] index-check：ARCHITECTURE §10.1（间隔 20–40 秒随机、单次 ≤ 50、遇验证码停止，剩余标未检查）
 ### A11 性能
-- [ ] 合成 1 万 SKU feed：daily（不含下载）< 30 秒；写 benchmark 脚本 `pnpm --filter @siteindex/core bench`
+- [x] 合成 1 万 SKU feed：daily（不含下载）< 30 秒；写 benchmark 脚本 `pnpm --filter @siteindex/core bench`
 
 ## 交付给其他工作流
 - 给 B：无直接依赖（B 用 mock）。但请在 M2 前把 `fixtures/expected/project` 保持最新，B 的 mock 数据从这里生成

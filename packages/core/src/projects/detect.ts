@@ -150,7 +150,7 @@ async function inspectSitemaps(baseUrl: string, robotsText: string): Promise<Det
 }
 
 /** 识别站点平台、robots、sitemap 与 feed 链接候选。 */
-export async function detectSite(input: string): Promise<DetectResult> {
+export async function detectSiteDetailed(input: string): Promise<{ result: DetectResult; robotsText: string }> {
   const inputUrl = normalizeInput(input);
   let home: Awaited<ReturnType<typeof fetchHome>>;
   try {
@@ -181,7 +181,7 @@ export async function detectSite(input: string): Promise<DetectResult> {
     ...[...robotsText.matchAll(/^\s*sitemap\s*:\s*(\S+)/gim)].map((match) => match[1]!),
     ...sitemapRows.map((row) => row.url),
   ])];
-  return {
+  const result: DetectResult = {
     input,
     final_url: finalUrl.href,
     redirect_status: home.redirectStatus,
@@ -195,4 +195,9 @@ export async function detectSite(input: string): Promise<DetectResult> {
     currency: currency?.toUpperCase() ?? null,
     feed_candidates: feedLinks(home.result.text, finalUrl.href),
   };
+  return { result, robotsText };
+}
+
+export async function detectSite(input: string): Promise<DetectResult> {
+  return (await detectSiteDetailed(input)).result;
 }
