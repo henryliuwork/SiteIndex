@@ -69,8 +69,8 @@
 ### C8 执行设备、文件夹、外壳操作
 
 - [ ] `runner.claim`：写 `.runner.json`（core）+ 在本机注册计划任务 + 提示原设备的任务将自动跳过
-- [ ] `folders.remove`：`shell.trashItem`（仅自定义文件夹，core 先校验）；`folders.open`：`shell.openPath`
-- [ ] `shell.openExternal` 只放行 http/https；`shell.copyText` 用 clipboard
+- [x] `folders.remove`：core 校验项目文件夹与自定义属性，使用 `shell.trashItem` 移入回收站并刷新 README；`folders.open`：`shell.openPath`
+- [x] `shell.openExternal` 只放行 http/https；`shell.copyText` 用 clipboard
 
 ### C9 Skill 分发 `skills/` + `src/main/skills/`
 

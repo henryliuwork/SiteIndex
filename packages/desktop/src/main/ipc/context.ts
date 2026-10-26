@@ -15,6 +15,7 @@ export interface IpcDependencies {
   jobs: JobManager;
   scheduler: SystemScheduler;
   reconcileSchedules: (allowElevation: boolean) => Promise<ScheduleRuntimeStatus>;
+  onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>;
 }
 
 export interface IpcContext extends IpcDependencies {
