@@ -10,6 +10,7 @@ import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js"
 import { parseRunJobArguments } from "./run-job-args.js";
 import { createResidentScheduler, type ResidentScheduler } from "./scheduler/resident-scheduler.js";
 import { createSystemScheduler, type ScheduleRuntimeStatus } from "./scheduler/schedule.js";
+import { createSkillService } from "./skill-service.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
 import { createWindowManager } from "./window-manager.js";
@@ -132,6 +133,13 @@ if (!hasSingleInstanceLock) {
         : resolve(mainDirectory, "../../../../templates/project"),
     });
     core = coreService;
+    const skillService = createSkillService({
+      sourceDirectory: app.isPackaged
+        ? join(process.resourcesPath, "skills")
+        : resolve(mainDirectory, "../../../../skills"),
+      listProjects: () => catalog.refresh(currentSettings),
+      getPlatforms: async () => (await settingsStore.get()).skill_platforms,
+    });
     residentScheduler =
       process.platform === "win32"
         ? createResidentScheduler({
@@ -195,6 +203,7 @@ if (!hasSingleInstanceLock) {
       onRunnerClaimed: async () => {
         await reconcileSchedules(true);
       },
+      skills: skillService,
     });
 
     windowManager.registerContentSecurityPolicy();
