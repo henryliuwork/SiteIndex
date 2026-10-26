@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { EdmCommandInput, Kpi, ListQuery, ProjectDetail, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
-import { api, isMockApi } from "../api";
+import { api, apiErrorMessage, isMockApi } from "../api";
 import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Tabs, stockTone } from "../components";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
@@ -50,7 +50,7 @@ function ManualImageCell({ projectId, row }: { projectId: string; row: SkuImageR
     <input type="url" aria-label={row.sku + " 手动首图地址"} value={url} placeholder="粘贴 Mailchimp 等图片地址" onChange={(event) => { setUrl(event.target.value); setSaved(false); }} />
     <Button size="small" disabled={mutation.isPending} onClick={() => void mutation.mutateAsync().catch(() => undefined)}>{mutation.isPending ? "保存中" : "保存"}</Button>
     {saved && <span className="si-edm-save-status" role="status">已保存</span>}
-    {mutation.isError && <span className="si-edm-error" role="alert">{mutation.error instanceof Error ? mutation.error.message : "保存失败"}</span>}
+    {mutation.isError && <span className="si-edm-error" role="alert">{apiErrorMessage(mutation.error, "保存失败")}</span>}
   </div>;
 }
 
@@ -97,7 +97,7 @@ export function EdmPage() {
       const command = await api.edm.buildCommand(id, input);
       await api.shell.copyText(command);
       setFeedback("edm-builder 指令已复制。可以粘贴给内容 agent 使用。");
-    } catch (cause) { setFeedback(cause instanceof Error ? cause.message : "复制指令失败。"); }
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "复制指令失败。")); }
   };
   const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
 

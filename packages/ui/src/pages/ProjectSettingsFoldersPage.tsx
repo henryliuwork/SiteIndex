@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { FolderRow, ListQuery } from "@siteindex/shared";
 import type { ColumnDef } from "@tanstack/react-table";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, ConfirmDialog, DataTable, DetailPanel, Tabs } from "../components";
 import "./project-settings-folders/page.css";
 
@@ -62,7 +62,7 @@ export function ProjectSettingsFoldersPage() {
       updateRows(await api.folders.describe(id, row.name, description));
       report(`已保存「${row.name}」说明`);
     } catch (error) {
-      report("保存失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      report("保存失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally { setSavingFolder(null); }
   };
 
@@ -72,7 +72,7 @@ export function ProjectSettingsFoldersPage() {
       await api.folders.open(id, name);
       report(name ? `已打开「${name}」文件夹` : "已打开项目文件夹");
     } catch (error) {
-      report("打开失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      report("打开失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally { setBusy(false); }
   };
 
@@ -87,7 +87,7 @@ export function ProjectSettingsFoldersPage() {
       setNewName(""); setNewDescription("");
       report(`已创建「${name}」文件夹`);
     } catch (error) {
-      report("创建失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      report("创建失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally { setBusy(false); }
   };
 
@@ -100,7 +100,7 @@ export function ProjectSettingsFoldersPage() {
       if (selected?.name === name) setSelected(null);
       report(`已将「${name}」移入回收站`);
     } catch (error) {
-      report("删除失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      report("删除失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally { setBusy(false); setPendingDelete(null); }
   };
 

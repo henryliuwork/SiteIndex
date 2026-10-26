@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { FileCheck, FileKind, FileStatus, ListQuery, RepairAction, ValidationReport } from "@siteindex/shared";
 import type { ColumnDef } from "@tanstack/react-table";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, ConfirmDialog, DataTable, DetailPanel, Tabs } from "../components";
 import "./project-settings-files/page.css";
 
@@ -117,7 +117,7 @@ export function ProjectSettingsFilesPage() {
       saveReport(await api.files.validate(id));
       showFeedback("全部文件校验完成");
     } catch (error) {
-      showFeedback("校验失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      showFeedback("校验失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally { setValidatingAll(false); }
   };
 
@@ -128,7 +128,7 @@ export function ProjectSettingsFilesPage() {
       saveReport(result, file.path);
       showFeedback(`已校验「${file.path}」`);
     } catch (error) {
-      showFeedback("校验失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      showFeedback("校验失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally { setCheckingPath(null); }
   };
 
@@ -152,13 +152,13 @@ export function ProjectSettingsFilesPage() {
       setPendingRepair(null);
       showFeedback(action === "delete_copy" ? `已将「${file.path}」移入回收站` : `已完成「${file.path}」${repairLabel(action)}`);
     } catch (error) {
-      showFeedback("修复失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      showFeedback("修复失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally { setRepairingPath(null); }
   };
 
   const openProjectFolder = async () => {
     try { await api.folders.open(id); showFeedback("已打开项目文件夹"); }
-    catch (error) { showFeedback("打开失败：" + (error instanceof Error ? error.message : "请稍后重试")); }
+    catch (error) { showFeedback("打开失败：" + (apiErrorMessage(error, "请稍后重试"))); }
   };
 
   const columns: ColumnDef<FileTableRow, unknown>[] = [

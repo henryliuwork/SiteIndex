@@ -1,4 +1,4 @@
-import type { ProjectDetail, SiteIndexApi } from "@siteindex/shared";
+import type { ProjectDetail, SiteIndexApi, SiteIndexError } from "@siteindex/shared";
 import { beginRun, categorySeeds, clone, fixtures, mockMode, notifyProjectChanged, projectConfigs, projectIds, projectKey, projectSummaries, projectsChanged, reply, runners, stockSeeds } from "./context";
 
 export function createProjectsMock(): SiteIndexApi["projects"] {
@@ -32,6 +32,7 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
       };
     }),
     inspectFeed: (_feedUrls, opts) => reply(() => {
+      if (mockMode === "feed-error") throw { code: "FEED_FETCH_FAILED", message: "无法读取 Feed，请检查地址后重试。" } satisfies SiteIndexError;
       if (fixtures.site.domain === "kingsyard.com") return {
         items: 20, usable_skus: 18, products: 16,
         skipped: { duplicate: 1, missing_price_or_link: 1, no_id: 0 },

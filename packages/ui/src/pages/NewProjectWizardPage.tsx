@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CircleAlert, FolderOpen, LoaderCircle, Plus, X } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import type { DetectResult, FeedInspectResult, JobProgress, JobResult, Platform } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip } from "../components";
 import { defaultWorkspaceFolders, useWizardDraft } from "./wizard-state";
 
@@ -86,13 +86,15 @@ export function NewProjectWizardPage() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [feedError, setFeedError] = useState("");
+  const [canRetryFeed, setCanRetryFeed] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [uspDraft, setUspDraft] = useState("");
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [finished, setFinished] = useState<JobResult | null>(null);
   const active = Math.max(0, steps.findIndex((step) => pathname.endsWith(step.path)));
 
-  useEffect(() => { setError(""); setFeedback(""); }, [pathname]);
+  useEffect(() => { setError(""); setFeedError(""); setCanRetryFeed(false); setFeedback(""); }, [pathname]);
   useEffect(() => {
     if (settings.data?.projects_root && !draft.projectsRoot) update({ projectsRoot: settings.data.projects_root });
   }, [settings.data, draft.projectsRoot, update]);
@@ -115,18 +117,18 @@ export function NewProjectWizardPage() {
       const result = await api.projects.detect(draft.url.trim());
       const brandName = draft.brand.name || slugFor(draft.url).replace(/(^|-)([a-z])/g, (_match, _dash, letter: string) => letter.toUpperCase());
       update({ detect: result, feedUrls: result.feed_candidates, feedResult: null, folderName: draft.folderName || slugFor(draft.url), brand: { ...draft.brand, name: brandName } });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "网站检测失败，请重试。"); }
+    } catch (cause) { setError(apiErrorMessage(cause, "网站检测失败，请重试。")); }
     finally { setBusy(false); }
   };
 
   const inspectFeed = async () => {
     const feedUrls = draft.feedUrls.map((url) => url.trim()).filter(Boolean);
-    if (!feedUrls.length) { setError("请输入至少一个 GMC feed 地址。"); return false; }
-    setBusy(true); setError("");
+    if (!feedUrls.length) { setFeedError("请输入至少一个 GMC feed 地址。"); setCanRetryFeed(false); return false; }
+    setBusy(true); setError(""); setFeedError(""); setCanRetryFeed(false);
     try {
       const result = await api.projects.inspectFeed(feedUrls, { sku_field: draft.skuField, category_depth: draft.categoryDepth });
       update({ feedUrls, feedResult: result }); return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Feed 检测失败，请检查地址后重试。"); return false; }
+    } catch (cause) { setFeedError(apiErrorMessage(cause, "Feed 检测失败，请检查地址后重试。")); setCanRetryFeed(true); return false; }
     finally { setBusy(false); }
   };
 
@@ -151,13 +153,13 @@ export function NewProjectWizardPage() {
       update({ projectsRoot: root, created });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       navigate("/new/done");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "创建项目失败，请重试。"); }
+    } catch (cause) { setError(apiErrorMessage(cause, "创建项目失败，请重试。")); }
     finally { setBusy(false); }
   };
 
   const openFolder = async () => {
     try { await api.shell.openPath(pathJoin(draft.projectsRoot || settings.data?.projects_root || "", draft.folderName)); setFeedback("已打开项目文件夹。"); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "打开文件夹失败。"); }
+    catch (cause) { setError(apiErrorMessage(cause, "打开文件夹失败。")); }
   };
 
   if (active === 3 && !draft.created) return <Navigate to="/new/brand" replace />;
@@ -192,7 +194,8 @@ export function NewProjectWizardPage() {
       </dl><p>GMC feed 可能不在网站上公开，请从 Merchant Center 或 Feed 插件中复制地址。</p></section>
       <div className="si-wizard-source-main">
         <section className="si-wizard-card">
-          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null })} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null })}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null })}><Plus size={14} /></Button></>}</div>)}
+          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null }); }} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null }); }}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null })}><Plus size={14} /></Button></>}</div>)}
+            {feedError && <div className="si-wizard-feed-error" role="alert"><span>{feedError}</span>{canRetryFeed && <Button size="small" disabled={busy} onClick={() => void inspectFeed()}>{busy ? "正在重试…" : "重试"}</Button>}</div>}
             <div className="si-wizard-feed-actions"><span>可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。</span></div>
             {draft.feedResult && <FeedStats result={draft.feedResult} />}
           </div>

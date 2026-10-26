@@ -8,7 +8,7 @@ import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import type { InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, StatusCells, Tabs, stockTone } from "../components";
 
 const stockNames: Record<StockStatus, string> = {
@@ -218,11 +218,11 @@ export function InventoryPage() {
       const path = await api.inventory.exportCsv(id, query);
       await api.shell.openPath(path);
       setFeedback("CSV 已导出。");
-    } catch (cause) { setFeedback(cause instanceof Error ? cause.message : "导出失败。"); }
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "导出失败。")); }
   };
   const openReport = async () => {
     try { setReport(await api.inventory.dailyReport(id, summary?.as_of ?? new Date().toISOString().slice(0, 10))); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "今日日报读取失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "今日日报读取失败。")); }
   };
   const runSync = async () => {
     if (!project) return;
@@ -230,7 +230,7 @@ export function InventoryPage() {
       setFeedback(""); setSyncMessage("正在启动库存同步…");
       const run = await api.jobs.run({ projectPath: project.path, job: "daily" });
       setActiveRunId(run.runId);
-    } catch (cause) { setSyncMessage(""); setFeedback(cause instanceof Error ? cause.message : "同步任务启动失败。"); }
+    } catch (cause) { setSyncMessage(""); setFeedback(apiErrorMessage(cause, "同步任务启动失败。")); }
   };
 
   const tableToolbar = (

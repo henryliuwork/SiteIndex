@@ -5,7 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { ExternalLink, Image as ImageIcon, Plus, RefreshCw, Tag, Trash2, X } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { ListQuery, ProductFilters, ProductFull, ProductView, ProjectDetail, StockStatus } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, Tabs, stockTone } from "../components";
 
 const tabOptions = [
@@ -163,13 +163,13 @@ export function ProductsPage() {
   const exportCsv = async () => {
     setFeedback("");
     try { const path = await api.products.exportCsv(id, query); await api.shell.openPath(path); setFeedback("产品 CSV 已导出。"); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "产品 CSV 导出失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "产品 CSV 导出失败。")); }
   };
   const runSync = async () => {
     if (!project || activeRunId) return;
     setFeedback(""); setSyncMessage("正在启动每日同步…");
     try { const run = await api.jobs.run({ projectPath: project.path, job: "daily" }); setActiveRunId(run.runId); }
-    catch (cause) { setSyncMessage(""); setFeedback(cause instanceof Error ? cause.message : "同步任务启动失败。"); }
+    catch (cause) { setSyncMessage(""); setFeedback(apiErrorMessage(cause, "同步任务启动失败。")); }
   };
   const updateTags = async (tags: string[]) => {
     if (!selectedHandle) return;
@@ -179,7 +179,7 @@ export function ProductsPage() {
       queryClient.setQueryData<ProductFull>(["product", id, selectedHandle], (current) => current ? { ...current, product: { ...current.product, tags: saved } } : current);
       await Promise.all([queryClient.invalidateQueries({ queryKey: ["products", id] }), queryClient.invalidateQueries({ queryKey: ["product-tags", id] })]);
       setDetailFeedback("标签已保存。");
-    } catch (cause) { setDetailFeedback(cause instanceof Error ? cause.message : "标签保存失败。"); }
+    } catch (cause) { setDetailFeedback(apiErrorMessage(cause, "标签保存失败。")); }
     finally { setIsSavingTags(false); }
   };
   const createAndAddTag = async (name: string) => {
@@ -191,7 +191,7 @@ export function ProductsPage() {
       queryClient.setQueryData<ProductFull>(["product", id, selectedHandle], (current) => current ? { ...current, product: { ...current.product, tags: saved } } : current);
       await Promise.all([queryClient.invalidateQueries({ queryKey: ["products", id] }), queryClient.invalidateQueries({ queryKey: ["product-tags", id] })]);
       setDetailFeedback("标签已创建并添加。");
-    } catch (cause) { setDetailFeedback(cause instanceof Error ? cause.message : "标签创建失败。"); }
+    } catch (cause) { setDetailFeedback(apiErrorMessage(cause, "标签创建失败。")); }
     finally { setIsSavingTags(false); }
   };
   const createManagedTag = async () => {
@@ -199,12 +199,12 @@ export function ProductsPage() {
     if (!name) return;
     setFeedback("");
     try { await api.products.createTag(id, name); await queryClient.invalidateQueries({ queryKey: ["product-tags", id] }); setNewTag(""); setFeedback("标签已创建。"); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "标签创建失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "标签创建失败。")); }
   };
   const removeManagedTag = async () => {
     if (!deleteTag) return;
     try { await api.products.deleteTag(id, deleteTag); await Promise.all([queryClient.invalidateQueries({ queryKey: ["product-tags", id] }), queryClient.invalidateQueries({ queryKey: ["products", id] })]); setFeedback("标签已删除。"); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "标签删除失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "标签删除失败。")); }
   };
 
   if (projectQuery.isLoading || listQuery.isLoading) return <div className="si-page-loading" role="status">正在加载产品…</div>;

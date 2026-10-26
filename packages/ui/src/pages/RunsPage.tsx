@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { JobName, JobProgress, JobResult, ListQuery, RunLog, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Activity, CalendarClock, CheckCircle2, ClipboardCheck, FileText, Palette, RefreshCw, Square, Wifi } from "lucide-react";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, DataTable, DetailPanel, Tabs } from "../components";
 import "./runs/page.css";
 
@@ -156,14 +156,14 @@ export function RunsPage() {
       void queryClient.invalidateQueries({ queryKey: ["running-job", id] });
     } catch (error) {
       setStartingJob(false);
-      announce("启动失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      announce("启动失败：" + (apiErrorMessage(error, "请稍后重试")));
     }
   };
 
   const stopJob = async () => {
     if (!activeRun) return;
     try { await api.jobs.cancel(activeRun.runId); announce("已发送停止请求"); }
-    catch (error) { announce("停止失败：" + (error instanceof Error ? error.message : "请稍后重试")); }
+    catch (error) { announce("停止失败：" + (apiErrorMessage(error, "请稍后重试"))); }
   };
 
   const updateScheduleJob = (key: SchedulableJob, patch: Partial<ScheduleConfig[SchedulableJob]>) => {
@@ -186,7 +186,7 @@ export function RunsPage() {
       queryClient.setQueryData(["schedule", id], saved);
       setDraft(cloneSchedule(saved.config));
       announce("计划已保存，系统任务计划已更新");
-    } catch (error) { announce("保存失败：" + (error instanceof Error ? error.message : "请稍后重试")); }
+    } catch (error) { announce("保存失败：" + (apiErrorMessage(error, "请稍后重试"))); }
     finally { setSavingSchedule(false); }
   };
 
@@ -198,7 +198,7 @@ export function RunsPage() {
       queryClient.setQueryData<ScheduleRuntimeStatus>(["schedule-runtime"], status);
       announce(status.authorization_required ? "授权尚未完成，请在系统提示中完成授权后重试" : "已重新授权注册");
     } catch (error) {
-      announce("重新授权失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      announce("重新授权失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setReauthorizingSchedule(false);
     }
@@ -210,7 +210,7 @@ export function RunsPage() {
     try {
       queryClient.setQueryData(["runner", id], await api.runner.claim(id));
       announce("本机已设为此项目的执行设备");
-    } catch (error) { announce("设置执行设备失败：" + (error instanceof Error ? error.message : "请稍后重试")); }
+    } catch (error) { announce("设置执行设备失败：" + (apiErrorMessage(error, "请稍后重试"))); }
     finally { setClaimingRunner(false); }
   };
 

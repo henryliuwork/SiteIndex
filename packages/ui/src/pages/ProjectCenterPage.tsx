@@ -5,7 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { FolderOpen, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Kpi, ListQuery, ProjectSummary, RunLog } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, DataTable, DetailPanel, KpiCard } from "../components";
 
 const jobNames: Record<string, string> = {
@@ -123,7 +123,7 @@ function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onO
       const project = await api.projects.addExisting(path.trim());
       onAdded(project); onOpenChange(false); setPath("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "添加项目失败，请重试。");
+      setError(apiErrorMessage(cause, "添加项目失败，请重试。"));
     } finally { setSaving(false); }
   };
   return (
@@ -190,7 +190,7 @@ export function ProjectCenterPage() {
 
   const openFolder = async (path: string) => {
     try { await api.shell.openPath(path); setFeedback("已打开项目文件夹。"); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "打开文件夹失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "打开文件夹失败。")); }
   };
   const handleAdded = async (project: ProjectSummary) => {
     await queryClient.invalidateQueries({ queryKey: ["projects"] });
