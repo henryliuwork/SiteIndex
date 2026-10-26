@@ -326,6 +326,11 @@ export interface ScheduleState {
   next_runs: { job: string; at: ISODateTime | null }[];
 }
 
+export interface ScheduleRuntimeStatus {
+  mode: "system" | "resident";
+  authorization_required: boolean;
+}
+
 export interface RunnerState {
   runner: RunnerInfo | null;
   this_device: { device_id: string; device_name: string };
@@ -459,6 +464,8 @@ export interface SiteIndexApi {
   schedule: {
     get(id: ProjectId): Promise<ScheduleState>;
     save(id: ProjectId, config: ScheduleConfig): Promise<ScheduleState>;
+    status?(): Promise<ScheduleRuntimeStatus>;
+    reauthorize?(): Promise<ScheduleRuntimeStatus>;
   };
   runner: {
     get(id: ProjectId): Promise<RunnerState>;
