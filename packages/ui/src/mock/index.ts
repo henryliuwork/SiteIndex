@@ -34,6 +34,9 @@ const clone = <T,>(value: T): T => value === undefined ? value : JSON.parse(JSON
 const mockMode = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("mock") : null;
 const errorMode = mockMode === "error";
 const performanceMode = mockMode === "perf";
+const loadingMode = mockMode === "loading";
+const projectCenterErrorMode = mockMode === "project-center-error";
+const projectCenterError = (): Error => new Error("模拟项目中心数据错误：请移除地址中的 ?mock=project-center-error 后重试。");
 const dateBefore = (days: number): string => {
   const date = new Date(FIXED_TODAY + "T12:00:00Z");
   date.setUTCDate(date.getUTCDate() - days);
@@ -79,7 +82,8 @@ const generatedDrafts: DraftRow[] = [
   { date: "2026-10-18", slug: "choose-a-squirrel-proof-feeder", folder: "内容/drafts", files: ["brief.md"], status: "brief" },
 ];
 const delay = async (): Promise<void> => {
-  if (!performanceMode) await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
+  if (loadingMode) await new Promise((resolve) => setTimeout(resolve, 10000));
+  else if (!performanceMode) await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
   if (errorMode) throw new Error("模拟接口错误：请移除地址中的 ?mock=error 后重试。");
 };
 const reply = async <T,>(value: T | (() => T)): Promise<T> => {
@@ -704,7 +708,7 @@ export function createMockApi(): SiteIndexApi {
       }),
     },
     settings: {
-      get: () => reply(settingsState),
+      get: () => projectCenterErrorMode ? Promise.reject(projectCenterError()) : reply(settingsState),
       set: (patch) => reply(() => {
         Object.assign(settingsState, clone(patch));
         if (patch.browser) settingsState.browser = { ...settingsState.browser, ...patch.browser };
@@ -717,7 +721,7 @@ export function createMockApi(): SiteIndexApi {
       chooseDirectory: (defaultPath) => reply(defaultPath ?? "C:/SiteIndex/Projects"),
     },
     projects: {
-      list: () => reply(() => projectIds.map((id) => projectSummaries[id])),
+      list: () => reply(() => mockMode === "empty" ? [] : projectIds.map((id) => projectSummaries[id])),
       get: (id) => reply<ProjectDetail>(() => ({
         summary: projectSummaries[projectKey(id)],
         config: projectConfigs[projectKey(id)],
@@ -1025,7 +1029,7 @@ export function createMockApi(): SiteIndexApi {
     jobs: {
       run: async (request) => { await delay(); return { runId: beginRun(request.projectPath, request.job) }; },
       cancel: (runId) => reply(() => finishRun(runId, "skipped")),
-      history: (_id, limit = 20) => reply(() => runHistory.slice(0, limit)),
+      history: (_id, limit = 20) => projectCenterErrorMode ? Promise.reject(projectCenterError()) : reply(() => runHistory.slice(0, limit)),
       running: () => reply(() => {
         const active = [...activeRuns.entries()][0];
         return active ? { runId: active[0], job: active[1].job } : null;
@@ -1034,7 +1038,7 @@ export function createMockApi(): SiteIndexApi {
       onFinished: (callback) => { finishedListeners.add(callback); return () => finishedListeners.delete(callback); },
     },
     schedule: {
-      get: (id) => reply(scheduleStates[projectKey(id)]),
+      get: (id) => projectCenterErrorMode ? Promise.reject(projectCenterError()) : reply(scheduleStates[projectKey(id)]),
       save: (id, config) => reply(() => {
         const key = projectKey(id);
         scheduleStates[key] = { ...scheduleStates[key], config: clone(config), registered: true };
