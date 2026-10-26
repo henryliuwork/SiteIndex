@@ -151,9 +151,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-table-empty strong { color: var(--color-ink-2); font-size: 14px; }
 .si-table-empty span { font-size: 12px; }
 
-.si-chrome-reserve { display: block; height: 38px; flex: none; }
-.si-chrome-reserve-win { width: 138px; }
-.si-chrome-reserve-mac { width: 78px; }
 .si-collapse-toggle { display: none; min-height: 32px; align-items: center; gap: 8px; margin: -8px 0 8px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--color-muted); font-size: 12px; text-align: left; }
 .si-collapse-toggle:hover { background: var(--color-neutral-soft); color: var(--color-ink); }
 .si-project-indicator { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #56A77D; }

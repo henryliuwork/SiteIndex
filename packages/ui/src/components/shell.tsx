@@ -16,10 +16,8 @@ interface WindowChromeProps {
 export function WindowChrome({ platform, children }: WindowChromeProps) {
   return (
     <div className="si-window">
-      <header className="si-title-bar">
-        {platform === "darwin" && <span className="si-chrome-reserve si-chrome-reserve-mac" aria-hidden="true" />}
+      <header className={"si-title-bar si-title-bar-" + (platform === "darwin" ? "mac" : "win")}>
         <span className="si-title">SiteIndex</span>
-        <span className={platform === "win32" ? "si-chrome-reserve si-chrome-reserve-win" : "si-chrome-reserve"} aria-hidden="true" />
       </header>
       {children}
     </div>

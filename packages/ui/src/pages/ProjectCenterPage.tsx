@@ -239,7 +239,16 @@ export function ProjectCenterPage() {
         </section>
         {feedback && <p className="si-feedback" role="status">{feedback}</p>}
         <section className="si-recent-runs" aria-label="最近运行">
-          <DataTable
+          {runsQuery.isLoading ? <>
+            <div className="si-recent-heading"><h2>最近运行</h2><span className="si-muted" role="status">正在读取…</span></div>
+            <p className="si-recent-state" role="status">正在加载运行记录…</p>
+          </> : runsQuery.isError ? <>
+            <div className="si-recent-heading"><h2>最近运行</h2><button className="si-center-retry" type="button" onClick={() => void runsQuery.refetch()}>重试</button></div>
+            <p className="si-recent-state" role="alert">运行记录加载失败。重试后即可查看最近执行情况。</p>
+          </> : runs.length === 0 ? <>
+            <div className="si-recent-heading"><h2>最近运行</h2></div>
+            <p className="si-recent-state" role="status">暂无运行记录。项目执行同步或校验后，最近运行会显示在这里。</p>
+          </> : <DataTable
             tableId="project-center.runs"
             rows={runs}
             total={runsQuery.data?.length ?? 0}
@@ -251,14 +260,10 @@ export function ProjectCenterPage() {
             maxHeight={138}
             showHeader={false}
             showPagination={false}
-            emptyTitle={runsQuery.isLoading ? "正在加载运行记录…" : runsQuery.isError ? "运行记录加载失败" : "暂无运行记录"}
-            emptyDescription={runsQuery.isLoading ? "请稍候。" : runsQuery.isError ? "重试后即可查看最近执行情况。" : "项目执行同步或校验后，最近运行会显示在这里。"}
             toolbar={<div className="si-recent-heading">
               <h2>最近运行</h2>
-              {runsQuery.isLoading && <span className="si-muted" role="status">正在读取…</span>}
-              {runsQuery.isError && <button className="si-center-retry" type="button" onClick={() => void runsQuery.refetch()}>重试</button>}
             </div>}
-          />
+          />}
         </section>
       </>}
       <AddExistingDialog open={addExistingOpen} onOpenChange={setAddExistingOpen} onAdded={(project) => void handleAdded(project)} />
