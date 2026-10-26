@@ -250,7 +250,7 @@ export const projectsChanged = new Set<(id: ProjectId) => void>();
 export const notifyProjectChanged = (id: ProjectId): void => projectsChanged.forEach((callback) => callback(id));
 
 export const settingsState: AppSettings = {
-  device_id: "mock-device", device_name: "Henry-PC", projects_root: "D:/云盘/projects",
+  device_id: "mock-device", device_name: "Henry-PC", projects_root: mockMode === "empty-root" ? "" : "D:/云盘/projects",
   extra_projects: [], cache_dir: "C:/SiteIndex/Cache", browser: { channel: "msedge", executable_path: null },
   notify: { on_failure: true, on_success: false, oos_threshold: 0.12, dingtalk_webhook: null },
   skill_platforms: [
