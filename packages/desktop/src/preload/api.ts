@@ -50,6 +50,9 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       installCli: () => invoke<SiteIndexApi["settings"]["installCli"]>("settings.installCli"),
       chooseDirectory: (...args) =>
         invoke<SiteIndexApi["settings"]["chooseDirectory"]>("settings.chooseDirectory", ...args),
+      sendTestNotification: () =>
+        invoke<NonNullable<SiteIndexApi["settings"]["sendTestNotification"]>>("settings.sendTestNotification"),
+      openLogs: () => invoke<NonNullable<SiteIndexApi["settings"]["openLogs"]>>("settings.openLogs"),
     },
     uiState: {
       get: (...args) => invoke<UiStateApi["get"]>("uiState.get", ...args),
@@ -141,6 +144,8 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
     schedule: {
       get: (...args) => invoke<SiteIndexApi["schedule"]["get"]>("schedule.get", ...args),
       save: (...args) => invoke<SiteIndexApi["schedule"]["save"]>("schedule.save", ...args),
+      status: () => invoke<NonNullable<SiteIndexApi["schedule"]["status"]>>("schedule.status"),
+      reauthorize: () => invoke<NonNullable<SiteIndexApi["schedule"]["reauthorize"]>>("schedule.reauthorize"),
     },
     runner: {
       get: (...args) => invoke<SiteIndexApi["runner"]["get"]>("runner.get", ...args),
