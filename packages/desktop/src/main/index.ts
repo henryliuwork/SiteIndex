@@ -111,9 +111,8 @@ if (!hasSingleInstanceLock) {
       return;
     }
 
-    const isFirstRun = !(await settingsStore.exists());
     let currentSettings = await settingsStore.get();
-    if (isFirstRun && !launchHidden) {
+    if (!launchHidden && !currentSettings.projects_root.trim()) {
       const projectsRoot = await chooseDirectory();
       if (projectsRoot) currentSettings = await settingsStore.set({ projects_root: projectsRoot });
     }
