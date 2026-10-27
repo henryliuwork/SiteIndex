@@ -13,7 +13,7 @@ const projectTabs = [
   { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
 ] as const;
 const settingsTabs = [
-  { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "folders", label: "文件夹" }, { value: "files", label: "本地文件" },
+  { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
 ] as const;
 const tabHref = (id: string, value: string) => value === "settings" ? `/p/${id}/settings/config` : `/p/${id}${value === "overview" ? "" : "/" + value}`;
 const kindLabels: Record<FileKind, string> = { config: "配置", doc: "说明", sync: "自动", ledger: "台账", view: "视图" };
@@ -157,7 +157,7 @@ export function ProjectSettingsFilesPage() {
   };
 
   const openProjectFolder = async () => {
-    try { await api.folders.open(id); showFeedback("已打开项目文件夹"); }
+    try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); showFeedback("已打开项目文件夹"); }
     catch (error) { showFeedback("打开失败：" + (apiErrorMessage(error, "请稍后重试"))); }
   };
 
@@ -181,7 +181,7 @@ export function ProjectSettingsFilesPage() {
   const summary = report?.summary ?? { total: 0, ok: 0, error: 0, missing: 0, conflict_copy: 0 };
 
   return <div className="si-page si-files-page">
-    <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.path}</code></div><div className="si-page-actions"><Button onClick={() => void openProjectFolder()}>打开文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></div></header>
+    <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.path}</code></div><div className="si-page-actions"><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></div></header>
     <Tabs value="settings" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(tabHref(id, value))} />
     <SettingsNav id={id} />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}

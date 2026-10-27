@@ -13,7 +13,7 @@ const projectTabs = [
   { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
 ] as const;
 const settingsTabs = [
-  { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "folders", label: "文件夹" }, { value: "files", label: "本地文件" },
+  { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
 ] as const;
 const sectionLinks = [
   ["basic", "基本信息"], ["brand", "品牌"], ["source", "数据源"], ["crawl", "抓取"], ["seo", "SEO"], ["edm", "EDM"], ["integrations", "集成与预留数据源"],

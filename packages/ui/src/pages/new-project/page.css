@@ -242,7 +242,7 @@ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:14
 display:flex; align-items:center; gap:8px; color:var(--color-ink-2); font-size:12px; font-weight:400;
 }
 
-.si-radio-row input,.si-wizard-folders input {
+.si-radio-row input {
 accent-color:var(--color-brand);
 }
 
@@ -292,22 +292,6 @@ display:grid; gap:4px; padding:10px 12px; border-radius:8px; background:var(--co
 
 .si-wizard-path code {
 overflow-wrap:anywhere; font-size:12px;
-}
-
-.si-wizard-folders {
-display:grid; gap:0; min-width:0; margin:0; padding:0; border:0;
-}
-
-.si-wizard-folders legend {
-margin-bottom:6px; color:var(--color-ink); font-size:12px; font-weight:600;
-}
-
-.si-wizard-folders label {
-display:grid; grid-template-columns:18px 72px minmax(0,1fr) auto; align-items:center; gap:9px; padding:10px 0; border-top:1px solid var(--color-line-soft); font-size:11px;
-}
-
-.si-wizard-folders label>span:not(.si-chip) {
-color:var(--color-muted);
 }
 
 .si-wizard-done-layout {
@@ -427,17 +411,5 @@ grid-column:auto;
 @media (max-width:680px) {
 .si-wizard-steps li,.si-wizard-steps a,.si-wizard-steps li>span {
 padding:0 10px; font-size:11px;
-}
-}
-
-@media (max-width:680px) {
-.si-wizard-folders label {
-grid-template-columns:18px 62px minmax(0,1fr);
-}
-}
-
-@media (max-width:680px) {
-.si-wizard-folders .si-chip {
-display:none;
 }
 }

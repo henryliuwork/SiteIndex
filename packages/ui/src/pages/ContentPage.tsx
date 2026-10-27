@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, FileDown, FolderOpen } from "lucide-react";
+import { ExternalLink, FileDown } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, DraftRow, Keyword, KeywordFilters, ListQuery, ProjectDetail } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
@@ -143,9 +143,9 @@ export function ContentPage() {
       setFeedback("当前列表已导出 CSV。");
     } catch (cause) { setFeedback(apiErrorMessage(cause, "导出失败。")); }
   };
-  const openContentFolder = async () => {
-    try { await api.folders.open(id, "内容"); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开内容文件夹。")); }
+  const openProjectFolder = async () => {
+    try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开项目文件夹。")); }
   };
   const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
 
@@ -155,7 +155,7 @@ export function ContentPage() {
   return <div className="si-page si-content-page">
     <header className="si-project-page-heading">
       <div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {platformNames[project.platform]}</code><Chip tone="info">示例数据</Chip></div>
-      <div className="si-page-actions"><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openContentFolder()}><FolderOpen size={14} />打开内容/文件夹</Button></div>
+      <div className="si-page-actions"><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></div>
     </header>
     <Tabs value="content" options={projectTabs} ariaLabel="项目页面" onChange={onTabChange} />
     <div className="si-content-kpis">{summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
@@ -179,7 +179,7 @@ export function ContentPage() {
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected && "title" in selected ? selected.title : selected && "keyword" in selected ? selected.keyword : selected?.slug ?? "内容详情"}>
       {selected && "title" in selected && <div className="si-content-detail"><div><span>Slug</span><code>{selected.slug}</code></div><div><span>发布日期</span><code>{selected.published_at}</code></div><div><span>类别</span>{selected.category || "—"}</div><div><span>字数</span>{selected.word_count ?? "未统计"}</div><div><span>主关键词</span>{selected.primary_keyword || "未登记"}</div><div><span>内链</span>{selected.links_internal.length} 出 / {selected.links_in ?? 0} 入</div><div><span>链接产品</span>{selected.links_products.join("、") || "无"}</div><div><span>缺货产品</span>{selected.linked_out_of_stock?.join("、") || "无"}</div><div><span>Schema</span>{selected.has_faq ? "BlogPosting / FAQ" : "缺失"}</div><div className="full"><span>Meta description</span>{selected.meta_description || "缺失"}</div><Button size="small" onClick={() => void api.shell.openExternal(selected.url)}><ExternalLink size={13} />打开文章</Button></div>}
       {selected && "keyword" in selected && <div className="si-content-detail"><div><span>类型</span>{selected.role === "primary" ? "主词" : "次词"}</div><div><span>搜索意图</span>{intentLabels[selected.intent]}</div><div><span>主题簇</span>{selected.cluster}</div><div><span>状态</span>{keywordStatusLabels[selected.status]}</div><div><span>目标页面</span><code>{selected.target_url || "未分配"}</code></div><div><span>搜索量</span>{selected.search_volume ?? "预留"}</div><div><span>当前排名</span>{selected.current_rank ?? "预留"}</div><div className="full"><span>备注</span>{selected.note || "—"}</div>{selected.target_url && <Button size="small" onClick={() => void api.shell.openExternal(selected.target_url!)}><ExternalLink size={13} />打开目标页面</Button>}</div>}
-      {selected && "date" in selected && <div className="si-content-detail"><div><span>日期</span><code>{selected.date}</code></div><div><span>文件夹</span>{selected.folder}</div><div><span>状态</span>{draftStatusLabels[selected.status]}</div><div className="full"><span>文件</span>{selected.files.join("、") || "无"}</div><Button size="small" onClick={() => void api.folders.open(id, "内容")}><FolderOpen size={13} />打开内容文件夹</Button></div>}
+      {selected && "date" in selected && <div className="si-content-detail"><div><span>日期</span><code>{selected.date}</code></div><div><span>文件夹</span>{selected.folder}</div><div><span>状态</span>{draftStatusLabels[selected.status]}</div><div className="full"><span>文件</span>{selected.files.join("、") || "无"}</div></div>}
     </DetailPanel>
   </div>;
 }

@@ -5,7 +5,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import type { DetectResult, FeedInspectResult, JobProgress, JobResult, Platform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { Button, Chip } from "../components";
-import { defaultWorkspaceFolders, useWizardDraft } from "./wizard-state";
+import { useWizardDraft } from "./wizard-state";
 
 const steps = [
   { path: "/new/url", label: "网址" },
@@ -15,7 +15,7 @@ const steps = [
 ];
 const platformNames: Record<Platform, string> = { magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台" };
 const progressSteps = [
-  ["创建文件夹结构", "index/、_agent/ 与工作区文件夹"],
+  ["创建项目数据结构", "README.md、index/、_agent/skills/"],
   ["写入配置", "index/site.json"],
   ["生成 README", "README.md、AGENTS.md、CLAUDE.md"],
   ["分发 skill", "_agent/skills/"],
@@ -148,7 +148,7 @@ export function NewProjectWizardPage() {
         markets: draft.market.split(/[，,]/).map((item) => item.trim()).filter(Boolean),
         projects_root: root.trim(),
         folder_name: draft.folderName.trim(),
-        workspace_folders: draft.workspaceFolders,
+        workspace_folders: [],
       });
       update({ projectsRoot: root, created });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -232,8 +232,6 @@ export function NewProjectWizardPage() {
           <label className="si-wizard-field">项目根目录<div className="si-wizard-directory"><input className="si-text-field si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /><Button onClick={async () => { const selected = await api.settings.chooseDirectory(draft.projectsRoot || settings.data?.projects_root); if (selected) update({ projectsRoot: selected }); }}>更改</Button></div><small>默认取自软件设置</small></label>
           <label className="si-wizard-field">项目文件夹名<input className="si-text-field si-mono" value={draft.folderName} onChange={(event) => update({ folderName: event.target.value })} /></label>
           <div className="si-wizard-path"><span>将创建</span><code>{path}</code></div>
-          <fieldset className="si-wizard-folders"><legend>工作区文件夹</legend>{defaultWorkspaceFolders.map((folder) => <label key={folder.name}><input type="checkbox" checked={draft.workspaceFolders.includes(folder.name)} onChange={(event) => update({ workspaceFolders: event.target.checked ? [...draft.workspaceFolders, folder.name] : draft.workspaceFolders.filter((name) => name !== folder.name) })} /><code>{folder.name}/</code><span>{folder.description}</span><Chip>默认</Chip></label>)}</fieldset>
-          <p className="si-wizard-note">创建后可在 项目设置 › 文件夹 中修改说明、新建或删除自定义文件夹。</p>
         </section>
       </div>
       {error && <p className="si-form-error" role="alert">{error}</p>}
@@ -252,7 +250,7 @@ export function NewProjectWizardPage() {
         {finished?.status === "failed" && <p className="si-form-error" role="alert">{finished.errors?.join("；") || finished.summary}</p>}
         <div className="si-wizard-done-actions"><Link className="si-button si-button-primary" to={"/p/" + draft.created.id}>打开项目</Link><Button onClick={() => void openFolder()} icon={<FolderOpen size={15} />}>打开文件夹</Button><Link className="si-button" to="/skills">把 skill 安装到 Agent 平台</Link></div>
       </section>
-      <section className="si-wizard-card si-wizard-tree-card"><h2>已生成的工作区</h2><code className="si-mono">{path}</code><pre>{draft.folderName + "/\n├── README.md        项目说明\n├── AGENTS.md / CLAUDE.md\n├── _agent/skills/   内置 skill\n├── index/           网站数据（SiteIndex 维护）\n│   ├── site.json\n│   ├── catalog/  inventory/  seo/\n│   ├── content/  ledgers/  design/\n│   └── views/ reports/ logs/\n" + draft.workspaceFolders.map((folder, index) => (index === draft.workspaceFolders.length - 1 ? "└── " : "├── ") + folder + "/").join("\n")}</pre></section>
+      <section className="si-wizard-card si-wizard-tree-card"><h2>已生成的项目文件</h2><code className="si-mono">{path}</code><pre>{draft.folderName + "/\n├── README.md        项目说明\n├── AGENTS.md / CLAUDE.md\n├── _agent/skills/   内置 skill\n└── index/           网站数据（SiteIndex 维护）\n    ├── site.json\n    ├── catalog/  inventory/  seo/\n    ├── content/  ledgers/  design/\n    └── views/ reports/ logs/"}</pre></section>
     </div>}
   </div>;
 }

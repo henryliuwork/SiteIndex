@@ -1,15 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { DetectResult, FeedInspectResult, SiteConfig } from "@siteindex/shared";
 
-export const defaultWorkspaceFolders = [
-  { name: "seo", description: "关键词研究、排名记录、站内优化" },
-  { name: "edm", description: "每次邮件一个子文件夹" },
-  { name: "产品", description: "产品图、上新资料、利润测算" },
-  { name: "内容", description: "博客 brief 与草稿" },
-  { name: "设计", description: "页面、Banner、邮件模板设计稿" },
-  { name: "报告", description: "月度汇报、复盘" },
-];
-
 export interface WizardDraft {
   url: string;
   detect: DetectResult | null;
@@ -22,7 +13,6 @@ export interface WizardDraft {
   market: string;
   projectsRoot: string;
   folderName: string;
-  workspaceFolders: string[];
   created: { id: string; runId: string } | null;
 }
 
@@ -38,7 +28,6 @@ const initialDraft: WizardDraft = {
   market: "US",
   projectsRoot: "",
   folderName: "",
-  workspaceFolders: defaultWorkspaceFolders.map((folder) => folder.name),
   created: null,
 };
 
@@ -53,7 +42,7 @@ const WizardDraftContext = createContext<WizardDraftContextValue | null>(null);
 export function WizardDraftProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState(initialDraft);
   const update = useCallback((patch: Partial<WizardDraft>) => setDraft((current) => ({ ...current, ...patch })), []);
-  const reset = useCallback(() => setDraft({ ...initialDraft, brand: { ...initialDraft.brand, usp: [] }, workspaceFolders: initialDraft.workspaceFolders.slice() }), []);
+  const reset = useCallback(() => setDraft({ ...initialDraft, brand: { ...initialDraft.brand, usp: [] } }), []);
   const value = useMemo(() => ({ draft, update, reset }), [draft, update, reset]);
   return <WizardDraftContext.Provider value={value}>{children}</WizardDraftContext.Provider>;
 }

@@ -17,7 +17,6 @@ const routes = [
   ["/p/:id/runs", "运行与定时任务"],
   ["/p/:id/settings/config", "项目设置 · 配置"],
   ["/p/:id/settings/categories", "项目设置 · 分类"],
-  ["/p/:id/settings/folders", "项目设置 · 文件夹"],
   ["/p/:id/settings/files", "项目设置 · 本地文件"],
   ["/skills", "Skill 中心"],
   ["/settings", "软件设置"],
