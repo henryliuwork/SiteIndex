@@ -6,6 +6,8 @@ import type { ScheduleConfig } from "@siteindex/shared";
 import {
   buildWindowsTaskXml,
   createWindowsTaskRegistrar,
+  decodeConsoleOutput,
+  parseCodePage,
   windowsTaskXmlBytes,
   type WindowsTaskDefinition,
 } from "./windows-tasks.js";
@@ -350,5 +352,26 @@ describe("Windows schedule registration", () => {
     });
     expect(beforeElevation).not.toHaveBeenCalled();
     expect(elevated).not.toHaveBeenCalled();
+  });
+});
+
+describe("Windows 控制台输出解码", () => {
+  const gbkMissingTask = Uint8Array.from([
+    180, 237, 206, 243, 58, 32, 207, 181, 205, 179, 213, 210, 178, 187, 181, 189, 214, 184, 182, 168, 181, 196, 206, 196,
+    188, 254, 161, 163,
+  ]);
+
+  it("按 OEM 代码页 936 解码中文 schtasks 错误，避免误判为拒绝访问", () => {
+    expect(decodeConsoleOutput(gbkMissingTask, 936)).toBe("错误: 系统找不到指定的文件。");
+  });
+
+  it("合法 UTF-8 输出保持不变", () => {
+    expect(decodeConsoleOutput(new TextEncoder().encode("SUCCESS: 已删除"), 936)).toBe("SUCCESS: 已删除");
+  });
+
+  it("从 chcp 输出解析代码页（本地化前缀可能是乱码）", () => {
+    expect(parseCodePage("Active code page: 936\r\n")).toBe(936);
+    expect(parseCodePage("\u00bb\u00ee\u00b6\u00af\u00b4\u00fa\u00c2\u00eb\u00d2\u00b3: 65001")).toBe(65001);
+    expect(parseCodePage("")).toBeNull();
   });
 });

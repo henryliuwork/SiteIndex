@@ -84,16 +84,69 @@ const WINDOWS_MONTHS = [
   "December",
 ] as const;
 
-function runCommand(file: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFileAsync(file, args, { windowsHide: true, maxBuffer: 2 * 1024 * 1024, encoding: "utf8" })
-      .then(({ stdout }) => resolve(stdout))
-      .catch((error: unknown) => {
-        const commandError = error as CommandError & { stderr?: string };
-        const detail = [commandError.stdout, commandError.stderr].filter(Boolean).join("\n");
-        reject(Object.assign(new Error(`${file} 执行失败。`), { code: commandError.code, detail, cause: error }));
-      });
+// Windows 控制台程序（schtasks、whoami、chcp）按 OEM 代码页输出，中文系统为 936（GBK）。
+// 直接按 UTF-8 解码会得到乱码，导致“任务不存在”被误判为“拒绝访问”并反复触发提权注册。
+const OEM_CODE_PAGE_ENCODINGS: Record<number, string> = {
+  65001: "utf-8",
+  936: "gbk",
+  54936: "gb18030",
+  950: "big5",
+  932: "shift_jis",
+  949: "euc-kr",
+  866: "ibm866",
+  1252: "windows-1252",
+};
+
+export function decodeConsoleOutput(bytes: Uint8Array, codePage: number | null): string {
+  if (bytes.length === 0) return "";
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    const encoding = (codePage != null && OEM_CODE_PAGE_ENCODINGS[codePage]) || "gbk";
+    try {
+      return new TextDecoder(encoding).decode(bytes);
+    } catch {
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+  }
+}
+
+export function parseCodePage(output: string): number | null {
+  const match = /(\d{3,5})\s*$/.exec(output.trim());
+  return match ? Number(match[1]) : null;
+}
+
+let oemCodePage: Promise<number | null> | null = null;
+function currentCodePage(): Promise<number | null> {
+  oemCodePage ??= new Promise((resolve) => {
+    if (process.platform !== "win32") {
+      resolve(null);
+      return;
+    }
+    execFile("cmd.exe", ["/d", "/c", "chcp"], { windowsHide: true, encoding: "buffer" }, (error, stdout) => {
+      resolve(error ? null : parseCodePage(new TextDecoder("latin1").decode(stdout)));
+    });
   });
+  return oemCodePage;
+}
+
+function toBytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  return typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array();
+}
+
+async function runCommand(file: string, args: string[]): Promise<string> {
+  const codePage = await currentCodePage();
+  try {
+    const { stdout } = await execFileAsync(file, args, { windowsHide: true, maxBuffer: 2 * 1024 * 1024, encoding: "buffer" });
+    return decodeConsoleOutput(toBytes(stdout), codePage);
+  } catch (error: unknown) {
+    const commandError = error as { code?: number | string; stdout?: unknown; stderr?: unknown };
+    const stdout = decodeConsoleOutput(toBytes(commandError.stdout), codePage);
+    const stderr = decodeConsoleOutput(toBytes(commandError.stderr), codePage);
+    const detail = [stdout, stderr].filter(Boolean).join("\n");
+    throw Object.assign(new Error(`${file} 执行失败。`), { code: commandError.code, detail, stdout, stderr, cause: error });
+  }
 }
 
 function escapeXml(value: string): string {

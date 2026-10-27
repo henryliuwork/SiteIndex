@@ -1,4 +1,3 @@
-import { dialog } from "electron";
 import type { ScheduleState } from "@siteindex/shared";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import type { IpcContext } from "./context.js";
@@ -26,17 +25,9 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
           context.projects.resolveProject(projectId),
           saved.config,
         );
-        if (!runner.is_this_device) {
-          await dialog.showMessageBox({
-            type: "info",
-            title: "计划已保存",
-            message: "计划已写入项目配置，但本机不是此项目的执行设备。",
-            detail: runner.runner
-              ? `请在执行设备“${runner.runner.device_name}”上同步计划，任务将由该设备运行。`
-              : "请先在要运行任务的设备上认领此项目。",
-          });
-          return { ...state, registered: false } satisfies ScheduleState;
-        }
+        // 非执行设备只保存配置，不注册系统任务；提示由界面根据执行设备状态显示，
+        // 不再弹出阻塞 IPC 的原生对话框。
+        if (!runner.is_this_device) return { ...state, registered: false } satisfies ScheduleState;
         return state;
       }),
     "schedule.status": () => context.scheduler.getRuntimeStatus(),

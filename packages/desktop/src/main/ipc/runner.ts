@@ -1,8 +1,5 @@
-import { unlink } from "node:fs/promises";
-import path from "node:path";
-import { dialog } from "electron";
 import { writeRunner } from "@siteindex/core";
-import { PATHS, type ProjectId, type SiteIndexError } from "@siteindex/shared";
+import type { SiteIndexError } from "@siteindex/shared";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import type { IpcContext } from "./context.js";
 
@@ -17,7 +14,6 @@ export function createRunnerHandlers(context: IpcContext): IpcHandlerImplementat
       context.withProject(id, async (projectId) => {
         const projectPath = context.projects.resolveProject(projectId);
         const current = await context.settings.get();
-        const previous = await context.core.runner.get(projectId);
         const nextRunner = {
           device_id: current.device_id,
           device_name: current.device_name,
@@ -25,23 +21,18 @@ export function createRunnerHandlers(context: IpcContext): IpcHandlerImplementat
         };
         await writeRunner(projectPath, nextRunner);
         context.core.invalidate(projectPath);
+        // 认领执行设备只是写入 .runner.json；注册系统计划任务失败（例如未授权）不应回滚认领，
+        // 否则界面会出现“认领报错，但计划状态又已变化”的不一致。注册状态由运行页的计划模式展示，
+        // 用户可点“重新授权注册”重试。
         try {
           await context.onRunnerClaimed?.(projectId, projectPath);
         } catch (error) {
-          if (previous.runner) await writeRunner(projectPath, previous.runner).catch(() => undefined);
-          else await unlink(path.join(projectPath, PATHS.runner)).catch(() => undefined);
-          context.core.invalidate(projectPath);
-          throw desktopError("WRITE_FAILED", "本机计划任务注册失败，已恢复原执行设备。", String(error));
+          throw desktopError(
+            "WRITE_FAILED",
+            "本机已设为执行设备，但系统计划任务注册失败。可在定时计划中点击“重新授权注册”重试。",
+            error instanceof Error ? `${error.message}${"detail" in error && error.detail ? `\n${String(error.detail)}` : ""}` : String(error),
+          );
         }
-        await dialog.showMessageBox({
-          type: "info",
-          title: "执行设备已更新",
-          message: "本机已认领为此项目的执行设备。",
-          detail:
-            previous.runner && previous.runner.device_id !== current.device_id
-              ? `原执行设备“${previous.runner.device_name}”上的计划任务在同步到新认领状态后会自动跳过。`
-              : "项目计划任务将在本机同步并执行。",
-        });
         return context.core.runner.get(projectId);
       }),
   };

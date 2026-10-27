@@ -13,6 +13,10 @@
     "dist:win": "pnpm --filter @siteindex/cli build && pnpm build && node scripts/prepare-resources.mjs && electron-builder --win nsis --publish never",
     "dist:mac": "pnpm --filter @siteindex/cli build && pnpm build && node scripts/prepare-resources.mjs && electron-builder --mac dmg --universal --publish never"
   },
+  "dependencies": {
+    "chokidar": "^6.0.0",
+    "playwright-core": "^1.64.1"
+  },
   "devDependencies": {
     "@siteindex/core": "workspace:*",
     "@siteindex/shared": "workspace:*",
@@ -96,9 +100,9 @@
     },
     "dmg": {
       "title": "${productName} ${version}"
-    }
-  },
-  "dependencies": {
-    "chokidar": "^6.0.0"
+    },
+    "asarUnpack": [
+      "node_modules/playwright-core/**"
+    ]
   }
 }
