@@ -1,9 +1,10 @@
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PATHS, type CreateProjectInput } from "@siteindex/shared";
+import { PATHS, type CreateProjectInput, type DetectResult } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
+import { createProjectFiles } from "../src/projects/create";
 import { readJsonl } from "../src/io/jsonl";
 
 const FEED_PATH = path.resolve(process.cwd(), "fixtures/feeds/day1.xml");
@@ -62,6 +63,32 @@ afterEach(async () => {
 });
 
 describe("project service", () => {
+  it.skipIf(process.platform !== "win32")("creates exactly projects_root\\folder_name on Windows", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-win-project-root-"));
+    TEMP_DIRS.push(root);
+    const detected: DetectResult = {
+      input: "https://example.com",
+      final_url: "https://example.com/",
+      redirect_status: null,
+      robots: { found: true, disallow_count: 0, sitemaps: ["https://example.com/sitemap.xml"] },
+      sitemaps: [],
+      total_urls: 0,
+      platform: "other",
+      platform_evidence: "test",
+      frontend: null,
+      locale: null,
+      currency: null,
+      feed_candidates: [],
+    };
+
+    const created = await createProjectFiles({ ...createInput(root), folder_name: "kingsyard" }, detected);
+
+    expect(created.path).toBe(path.resolve(root, "kingsyard"));
+    expect(await readdir(root)).toEqual(["kingsyard"]);
+    expect(await readdir(created.path)).toContain(PATHS.index.split(path.sep)[0] ?? "index");
+    expect(await readdir(created.path)).not.toContain("siteindex");
+  });
+
   it("detects platform, locale, currency, robots and nested sitemaps", async () => {
     mockWebsite();
     const result = await makeService().projects.detect("example.com");
