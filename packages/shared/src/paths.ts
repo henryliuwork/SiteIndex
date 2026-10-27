@@ -7,6 +7,7 @@ export const PATHS = {
   readme: "README.md",
   agentsMd: "AGENTS.md",
   claudeMd: "CLAUDE.md",
+  /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
   aboutFile: "_about.md",
   skillsDir: "_agent/skills",
   skillsManifest: "_agent/skills/manifest.json",

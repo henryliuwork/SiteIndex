@@ -93,6 +93,7 @@ export interface SiteConfig {
     utm?: { source?: string; medium?: string };
     image_priority?: ("feed" | "manual")[];
   };
+  /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
   workspace_folders: WorkspaceFolder[];
   schedule: ScheduleConfig;
   integrations?: {

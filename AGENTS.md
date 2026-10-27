@@ -7,7 +7,7 @@
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
-SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载安装包即可使用）。它把每个独立站变成云盘里的标准化项目文件夹（README + index/ 数据 + _agent/skills + 工作区文件夹），由软件负责确定性的数据工作（feed/sitemap 抓取、库存、SEO、校验、README、定时任务），由 Claude Code / Codex 等 agent 读取这些文件完成内容工作。
+SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载安装包即可使用）。它把每个独立站变成云盘里的标准化项目文件夹（README + index/ 数据 + _agent/skills；其他目录归用户自己管理，见 docs/decisions/2026-10-27-data-index-focus.md），由软件负责确定性的数据工作（feed/sitemap 抓取、库存、SEO、校验、README、定时任务），由 Claude Code / Codex 等 agent 读取这些文件完成内容工作。
 
 ## 硬性规则
 - 只改自己工作流的目录；`packages/shared/` 的修改走 WORKSTREAMS §4 契约流程（单独 `contract/*` 分支与 PR）

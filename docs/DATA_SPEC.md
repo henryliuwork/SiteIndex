@@ -5,6 +5,8 @@
 
 ## 1. 项目文件夹
 
+> 2026-10-27 起：软件不再管理工作区文件夹，聚焦网站数据索引，见 `docs/decisions/2026-10-27-data-index-focus.md`。
+
 ```
 {projects_root}/kingsyard/
 ├── README.md                     项目说明（用户区块 + 自动区块）
@@ -26,7 +28,7 @@
 │   ├── reports/     daily/YYYY-MM-DD.md · weekly/YYYY-Www.md
 │   ├── archive/     YYYY-MM/*.gz
 │   └── logs/        runs.jsonl · validation.json · jobs/{runId}.log
-└── seo/ edm/ 产品/ 内容/ 设计/ 报告/ …   ← 工作区文件夹（各含 _about.md）
+└── …                              ← 用户自己的工作目录（软件不创建、不读写）
 ```
 本机缓存（不进云盘）：`{cache_dir}/{projectId}/index.db`、`{cache_dir}/{projectId}/ui-state.json`
 
@@ -37,9 +39,9 @@
 | `index/`（下列台账除外） | 仅 SiteIndex（执行设备的定时任务，或用户手动触发） |
 | `index/site.json` | SiteIndex 设置界面 / 用户手改 |
 | `index/content/keywords.jsonl`、`index/ledgers/*` | agent 与用户，经 `siteindex ledger` 或软件界面；手写须严格遵守格式与排序 |
-| `README.md` 用户区块、工作区 `*/_about.md` | 用户、agent、软件（文件夹页、README 页） |
+| `README.md` 用户区块 | 用户、agent、软件（README 页） |
 | `README.md` 自动区块、`_agent/`、`AGENTS.md`、`CLAUDE.md` | 仅 SiteIndex |
-| 工作区文件夹内容 | 用户与 agent 自由使用 |
+| `index/`、`_agent/` 以外的其他目录与文件 | 用户与 agent 自由使用，软件不读写、不校验 |
 
 ## 3. 通用格式
 
@@ -90,7 +92,7 @@
 | `edm.max_products` / `edm.cooldown_days` | int | | 6 / 21 |
 | `edm.utm` | object | | `{source, medium}` |
 | `edm.image_priority` | string[] | | 默认 `["feed", "manual"]` |
-| `workspace_folders` | `[{name, default}]` | ✓ | 默认文件夹 `default: true` 不可删除 |
+| ~~`workspace_folders`~~ | — | | 已废弃：读取时忽略，写回时去掉 |
 | `schedule` | object | ✓ | 见 4.2 |
 | `integrations.linkflow` | object | | `{mcp_server, create_tool, project}` |
 | `integrations.sales` / `gsc` / `mailchimp` | object | | 预留，MVP 不使用 |
@@ -250,12 +252,10 @@
 
 ## 7. README 区块
 标记：`<!-- siteindex:auto:start id="…" -->` … `<!-- siteindex:auto:end id="…" -->`；软件只替换标记之间内容，标记外逐字节保留；缺失区块追加到末尾，`readme.disabled_blocks` 中的不追加。
-区块：`index-summary` `folder-map`（来自各文件夹 `_about.md` 第一段，无则"待补充说明"）`task-routing` `data-guide` `design-summary` `changelog`。模板见 `templates/project/README.md`，目标样例见 `templates/examples/README.generated.md`。
+区块：`index-summary` `task-routing` `data-guide` `design-summary` `changelog`。模板见 `templates/project/README.md`，目标样例见 `templates/examples/README.generated.md`。
 
-## 8. 文件夹与 `_about.md`
-- 默认文件夹：`seo` `edm` `产品` `内容` `设计` `报告`（新建向导可取消勾选）
-- `_about.md` 第一段 = 一句话说明（≤ 80 字），软件写入时只替换第一段，保留其余内容
-- 删除自定义文件夹 → 移到系统回收站（Windows `shell.trashItem`），并从 `workspace_folders` 移除
+## 8. 工作目录（已取消管理）
+软件不再创建默认工作区文件夹，也不再读写 `_about.md`。已有项目中的这些文件夹与文件原样保留；README 中残留的 `folder-map` 标记保留但不再填充，`readme_markers` 校验不因此报错。
 
 ## 9. 与参考实现（1.0）的路径对照
 

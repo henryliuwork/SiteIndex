@@ -167,6 +167,7 @@ export interface CreateProjectInput {
   markets: string[];
   projects_root: string;
   folder_name: string;
+  /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
   workspace_folders: string[];
 }
 
@@ -294,6 +295,7 @@ export interface EdmCommandInput {
 export interface ReadmeData {
   user_blocks: { overview: string; focus: string; rules: string };
   auto_blocks: { id: string; title: string; updated_at: ISODateTime | null; schedule: string }[];
+  /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
   folder_map: FolderRow[];
 }
 
@@ -441,6 +443,7 @@ export interface SiteIndexApi {
     preview(id: ProjectId, config: CategoriesConfig): Promise<CategoryPreview>;
     save(id: ProjectId, config: CategoriesConfig): Promise<CategoryPreview>; // 保存并重新归类
   };
+  /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
   folders: {
     list(id: ProjectId): Promise<FolderRow[]>;
     create(id: ProjectId, name: string, description: string): Promise<FolderRow[]>;
