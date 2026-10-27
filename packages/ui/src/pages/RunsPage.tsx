@@ -14,8 +14,8 @@ const projectTabs = [
   { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
 ] as const;
 
-const jobLabels: Record<JobName, string> = {
-  daily: "每日同步", weekly: "每周同步", monthly: "每月同步", validate: "数据校验", readme: "刷新 README", design: "提取设计规范", "index-check": "检查 Google 索引", views: "重建视图",
+const jobLabels: Record<string, string> = {
+  daily: "每日同步", weekly: "每周同步", monthly: "每月同步", validate: "数据校验", readme: "刷新 README", design: "提取设计规范", "index-check": "检查 Google 索引", views: "重建视图", init: "项目初始化",
 };
 const jobCards: { job: JobName; title: string; description: string; icon: typeof RefreshCw }[] = [
   { job: "daily", title: "每日同步", description: "Feed → SKU、库存、日报、视图", icon: RefreshCw },
