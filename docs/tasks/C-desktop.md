@@ -69,15 +69,16 @@
 ### C8 执行设备、文件夹、外壳操作
 
 - [ ] `runner.claim`：写 `.runner.json`（core）+ 在本机注册计划任务 + 提示原设备的任务将自动跳过
-- [x] `folders.remove`：core 校验项目文件夹与自定义属性，使用 `shell.trashItem` 移入回收站并刷新 README；`folders.open`：`shell.openPath`
+- [x] 工作目录管理已取消：`folders.list/create/describe/remove` 仅为兼容契约返回空数组；`folders.open` 只打开项目根目录，既有目录与 `_about.md` 不变
 - [x] `shell.openExternal` 只放行 http/https；`shell.copyText` 用 clipboard
 
 ### C9 Skill 分发 `skills/` + `src/main/skills/`
 
-- [ ] 更新 7 个 skill：命令统一为 `siteindex …`；EDM 取图规则为"feed 首图优先 → 手动首图 → 不进入 EDM"；每个 skill 写明命令不可用时按 DATA_SPEC 直接读写文件
-- [ ] frontmatter 含 `version`；`skills.list/get/targets/install/syncAllProjects`
+- [x] 新增 `siteindex-data` 基础 skill，并将 7 个场景 skill 改为数据读取、筛选判断和台账写入流程；所有 skill 版本为 `1.1.0`，不再指定固定成果目录
+- [x] 所有 skill frontmatter 含 `version: 1.1.0` 与数据读写范围
+- [ ] `skills.list/get/targets/install/syncAllProjects`
 - [ ] 安装目标：项目 `_agent/skills/` + `manifest.json`、Claude Code（`%USERPROFILE%\.claude\skills`）、Codex、自定义目录
-- [ ] `templates/project/` 与 DATA_SPEC §1 一致（README 区块标记 `siteindex:auto`）
+- [x] 删除 `templates/project/_about.md`；README 模板和生成样例移除 `folder-map` 与固定工作区目录规则
 
 ### C10 命令行安装与浏览器检测
 
