@@ -33,7 +33,7 @@ writes:
 - index/views/：按 SKU 或产品聚合的只读视图。
 - index/reports/：daily 与 weekly 报告。
 - index/archive/、index/logs/：归档、运行记录、校验报告和 Job 日志。
-- index/ 以外的项目文件和目录由用户管理；不要扫描、创建、移动、改名或删除它们。
+- index/ 以外的项目文件和目录由用户管理：只在 README「工作规则与偏好」约定或用户当次指定的位置创建或修改文件；不要主动扫描、移动、改名或删除其他文件。
 
 ## 表、主键与关键字段
 

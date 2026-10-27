@@ -1,7 +1,7 @@
 # {{brand_name}} · 项目说明
 
 > 本文件是 {{domain}} 项目的总入口。任何 agent 接入时先完整阅读本文件。
-> 「项目概况 / 当前重点 / 工作规则与偏好」由用户维护；带 siteindex:auto 标记的区块由 SiteIndex 自动生成，不要手动修改。
+> 「项目概况 / 当前重点 / 工作规则与偏好」由用户维护；带 `siteindex:auto` 标记的区块由 SiteIndex 自动生成，不要手动修改。
 
 ## 项目概况
 {{brand_tagline}}
