@@ -1,6 +1,6 @@
 # SiteIndex
 
-独立站运营数据工作区 —— 本地桌面软件（Windows 为主，兼容 macOS）。
+独立站数据索引 —— 本地桌面软件（Windows 为主，兼容 macOS）。抓取并维护网站数据，告诉 agent 如何使用这些数据。
 
 每个独立站 = 云盘中的一个标准化项目文件夹：
 
@@ -8,8 +8,8 @@
 kingsyard/
 ├── README.md            给 agent 的项目说明（自动区块由软件维护）
 ├── index/               站点数据：SKU、库存、SEO、博客、台账、视图、日志
-├── _agent/skills/       标准化 skill（EDM、博客、库存报告…）
-└── seo/ edm/ 产品/ 内容/ 设计/ 报告/   工作区文件夹（每个带 _about.md 说明）
+├── _agent/skills/       标准化 skill：各场景如何读取与使用 index/ 数据
+└── …                    你自己的工作目录（软件不管理）
 ```
 
 软件负责确定性的数据工作：GMC feed 与 sitemap 抓取、库存变化与在线率、SEO 页面与问题、Google 收录检查、数据校验与修复、README 维护、系统定时任务。Claude Code / Codex / qwenpaw / Qoder 等 agent 打开项目文件夹，读 README 后完成内容工作（EDM、博客、内链、页面设计）。

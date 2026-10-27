@@ -41,7 +41,7 @@ SiteIndex/
 
 ```
 ┌─────────────── Electron main（desktop） ───────────────┐
-│ 窗口 · IPC 路由 · 设置 · 通知 · 计划任务注册 · 文件夹操作 │
+│ 窗口 · IPC 路由 · 设置 · 通知 · 计划任务注册 · 打开文件夹 │
 │      │ utilityProcess（每个 Job 一个）                  │
 │      ▼                                                  │
 │  JobHost → @siteindex/core.jobs.*  ──► 项目文件夹（云盘）│
@@ -92,7 +92,6 @@ macOS：`~/.local/bin/siteindex` → `/Applications/SiteIndex.app/Contents/MacOS
 | `ledger delete <p> <ledger> <key…>` | 台账删除 |
 | `edm render <p> <campaignDir> [--allow-oos]` | 渲染 EDM |
 | `categories preview <p>` / `categories apply <p>` | 分类匹配预览 / 重新归类 |
-| `folders list\|create\|describe\|delete <p> …` | 工作区文件夹 |
 | `schedule install\|remove\|list <p>` | 系统计划任务 |
 | `runner show\|claim <p>` | 执行设备 |
 | `skills list\|sync <p>\|install <name> --platform <id>` | skill |
@@ -142,14 +141,11 @@ macOS：`~/.local/bin/siteindex` → `/Applications/SiteIndex.app/Contents/MacOS
 - 批量：用 playwright + 系统浏览器（有界面、使用独立用户目录），逐个访问 site: 查询，每次间隔随机 20–40 秒，单次最多 50 个 URL；判断结果页是否包含该 URL；遇到验证码立即停止，剩余标为未检查并通知用户；结果写 `seo/pages.jsonl` 的 `google_indexed` 与 `index_checked_at`
 - 这是尽力而为的检查，界面文案需说明"结果仅供参考，以 Search Console 为准"
 
-## 11. 文件夹操作
-- 新建：`mkdir` + 写 `_about.md` + 更新 `site.json.workspace_folders`
-- 说明：只替换 `_about.md` 第一段
-- 删除：仅自定义文件夹；`shell.trashItem()` 移到回收站
-- 完成后标记 README `folder-map` 需要刷新（立即刷新该区块）
+## 11. 文件夹操作（已取消）
+软件不再创建/说明/删除工作区文件夹（见 `docs/decisions/2026-10-27-data-index-focus.md`）；只保留“打开项目文件夹”。
 
 ## 12. Skill 分发
-内置 `skills/{name}/SKILL.md`（frontmatter 含 version）→ 项目 `_agent/skills/` + `manifest.json`；安装到平台目录（Claude Code `%USERPROFILE%\.claude\skills`，其他由用户配置）。skill 中命令统一写 `siteindex …`，并写明命令不可用时按 DATA_SPEC 直接读写文件。
+内置 `skills/{name}/SKILL.md`（frontmatter 含 version；内容聚焦“如何读取与使用 index/ 数据、如何写台账”，不规定成果目录）→ 项目 `_agent/skills/` + `manifest.json`；安装到平台目录（Claude Code `%USERPROFILE%\.claude\skills`，其他由用户配置）。skill 中命令统一写 `siteindex …`，并写明命令不可用时按 DATA_SPEC 直接读写文件。
 
 ## 13. 设置与本机状态
 `%APPDATA%\SiteIndex\settings.json`（macOS `~/Library/Application Support/SiteIndex/`）：device_id、device_name、projects_root、extra_projects、cache_dir、browser、notify、skill_platforms、conflict_patterns。界面状态（列设置、每页条数、窗口）存 `{cache_dir}/{projectId}/ui-state.json`，不进云盘。

@@ -28,7 +28,7 @@
 | settings | — | 全部（含浏览器检测、命令行安装、选目录） |
 | projects | detect、inspectFeed、create（写文件夹）、读取项目摘要/详情、updateConfig | list（扫描 projects_root + extra_projects）、addExisting、onChanged（chokidar） |
 | overview / inventory / products / seo / content / edm / design / readme / categories | 全部查询与写台账 | exportCsv 的保存对话框；seo.checkIndex 的浏览器调度（调用 core 的 index-check Job） |
-| folders | list、create、describe（写 `_about.md`、site.json、README 区块） | remove（`shell.trashItem`）、open |
+| folders | 已废弃（2026-10-27），仅保留 open 打开项目文件夹 | open |
 | files | validate、repair、lastReport | — |
 | jobs | 每个 Job 的实现 `runJob(req, report)` | run（utilityProcess）、cancel、running、history 读取、事件转发 |
 | schedule | 读写 `site.json.schedule` | 注册/删除系统计划任务、next_runs |
