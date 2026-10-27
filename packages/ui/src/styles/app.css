@@ -4,6 +4,8 @@
 @import "./common.css";
 
 :root {
+  /* 自定义标题栏高度：浮层与详情面板从标题栏下方开始，避免压住系统窗口按钮 */
+  --si-title-bar-height: 38px;
   font-family: var(--font-sans);
   color: var(--color-ink);
   background: var(--color-surface);
@@ -26,7 +28,7 @@ a { color: var(--color-brand); }
   background: var(--color-canvas);
 }
 .si-title-bar {
-  display: flex; height: 38px; min-height: 38px; flex: none; align-items: center;
+  display: flex; height: var(--si-title-bar-height); min-height: var(--si-title-bar-height); flex: none; align-items: center;
   padding-left: 16px; background: #FFFFFF;
   -webkit-app-region: drag;
 }
