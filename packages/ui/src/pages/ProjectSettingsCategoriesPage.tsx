@@ -13,7 +13,7 @@ const projectTabs = [
   { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
 ] as const;
 const settingsTabs = [
-  { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "folders", label: "文件夹" }, { value: "files", label: "本地文件" },
+  { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
 ] as const;
 const tabHref = (id: string, value: string) => value === "settings" ? `/p/${id}/settings/config` : `/p/${id}${value === "overview" ? "" : "/" + value}`;
 const matchTypeOptions: { value: CategoryMatchType; label: string }[] = [

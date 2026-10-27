@@ -21,7 +21,6 @@ export function createOverviewMock(): SiteIndexApi["overview"] {
         { severity: "mid", text: groupName + " 新增 2 个缺货 SKU，有货率降至 73%", link: "/p/" + id + "/inventory", link_label: "查看" },
         { severity: "mid", text: "1 个 SKU 库存状态无法识别（feed 值为 \"limited\"）", link: "/p/" + id + "/inventory", link_label: "查看" },
         { severity: "low", text: "1 个 SKU 没有首图（feed 未抓取到，也未手动填写），不会进入 EDM", link: "/p/" + id + "/edm", link_label: "补图" },
-        { severity: "low", text: "文件夹 设计/ 缺少 _about.md 说明", link: "/p/" + id + "/settings/folders", link_label: "查看" },
       ];
       return {
         kpis,

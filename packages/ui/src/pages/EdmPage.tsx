@@ -99,6 +99,10 @@ export function EdmPage() {
       setFeedback("edm-builder 指令已复制。可以粘贴给内容 agent 使用。");
     } catch (cause) { setFeedback(apiErrorMessage(cause, "复制指令失败。")); }
   };
+  const openProjectFolder = async () => {
+    try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开项目文件夹。")); }
+  };
   const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
 
   if (projectQuery.isLoading || summaryQuery.isLoading || listQuery.isLoading) return <div className="si-page-loading" role="status">正在加载 EDM 图片…</div>;
@@ -107,7 +111,7 @@ export function EdmPage() {
   return <div className="si-page si-edm-page">
     <header className="si-project-page-heading">
       <div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {platformNames[project.platform]}</code></div>
-      <div className="si-page-actions"><Button onClick={() => void api.folders.open(id, "EDM")}>打开 edm/文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></div>
+      <div className="si-page-actions"><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></div>
     </header>
     <Tabs value="edm" options={projectTabs} ariaLabel="项目页面" onChange={onTabChange} />
     <div className="si-edm-kpis">{metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>

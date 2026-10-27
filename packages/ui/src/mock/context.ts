@@ -219,7 +219,7 @@ export function defaultConfig(id: ProjectId): SiteConfig {
     sitemaps: ["https://" + domain + "/sitemap.xml"],
     crawl: { adapter: "gmc_feed", feed_url: kingsyard ? "https://" + domain + "/feed.xml" : "", sku_field: "id", category_depth: 2, missing_as: "out_of_stock", rate_limit_ms: 200 },
     categories: { mode: kingsyard ? "manual" : "url_rule" },
-    workspace_folders: [{ name: "产品素材", default: true }, { name: "营销活动", default: true }, { name: "草稿", default: true }],
+    workspace_folders: [],
     schedule: defaultSchedule(),
   };
 }
@@ -267,7 +267,7 @@ export const mockSkills: SkillInfo[] = [
   { name: "link-prospect", version: "1.0.0", description: "外链搜集 → linkflow + 去重台账", has_update: false, reads: ["index/site.json", "index/ledgers/outreach.jsonl"], writes: ["linkflow（MCP）", "index/ledgers/outreach.jsonl"] },
   { name: "sku-media-enrich", version: "1.0.0", description: "Mailchimp 图片匹配、标签与优先级", has_update: false, reads: ["index/catalog/skus.jsonl"], writes: ["index/ledgers/sku_media.csv", "index/ledgers/sku_tags.csv"] },
   { name: "page-design", version: "1.0.0", description: "按网站设计规范做页面、Banner、邮件模板", has_update: false, reads: ["index/design/tokens.json", "index/design/brand.md"], writes: ["设计/"] },
-  { name: "project-readme", version: "1.0.0", description: "补充文件夹 _about.md 与 README 用户区块", has_update: false, reads: ["工作区文件夹", "README.md"], writes: ["{文件夹}/_about.md", "README.md 用户区块"] },
+  { name: "project-readme", version: "1.0.0", description: "更新 README 用户区块并保留自动区块", has_update: false, reads: ["README.md"], writes: ["README.md 用户区块"] },
 ];
 export const mockSkillBodies: Record<string, string> = {
   "edm-builder": "# edm-builder\n1. 确认主题、产品数、折扣码与 CTA。\n2. siteindex query · products --in-stock --tag {主题} --json\n   硬性条件：有货、未排除、过冷却期、有图片\n   排序：标签 +3 · 标题/分类 +2 · 优先级 / 2 · 参与活动 +1\n3. 写 brief.md、content.json（文案遵循品牌 voice）。\n4. siteindex edm render · edm/{campaign_id}\n5. siteindex ledger upsert · edm_campaigns --rows -",
@@ -276,7 +276,7 @@ export const mockSkillBodies: Record<string, string> = {
   "link-prospect": "# link-prospect\n检查外链候选并排除台账重复项。\n联系方式必须来自页面实际内容。\n完成后更新去重台账。",
   "sku-media-enrich": "# sku-media-enrich\n按 SKU、handle、文件名顺序匹配图片。\n一对多或多对一时先请求确认。\n标签与已有值合并，不覆盖。",
   "page-design": "# page-design\n颜色只使用设计 token 与 palette。\n字体、字号、按钮、间距、圆角遵照项目设计规范。\n规范超过 60 天时提醒重新提取。",
-  "project-readme": "# project-readme\n不修改自动区块、index/ 或 _agent/。\n为待补充说明的文件夹写 _about.md。\n修改 README 用户区块前先展示对比。",
+  "project-readme": "# project-readme\n只编辑 README 用户区块，不修改自动区块、index/ 或 _agent/。\n编辑前先展示对比，保存后确认用户区块内容。",
 };
 export const mockSkillTargets: Record<string, SkillTargetStatus[]> = Object.fromEntries(mockSkills.map((skill) => [skill.name, [
   { target_id: "project:kingsyard", name: "项目 Kingsyard", dir: `D:/云盘/projects/kingsyard/_agent/skills/${skill.name}`, status: skill.has_update ? "outdated" : "latest" },
@@ -341,7 +341,7 @@ export const userReadmeBlocks: Record<MockProjectId, { overview: string; focus: 
   kingsyard: {
     overview: "Wild bird feeding supplies for backyard birders.\n- 网站：https://www.kingsyard.com（magento）\n- 目标市场：US\n- 目标人群：Backyard bird lovers and gift buyers",
     focus: "- 10 月：Halloween / 秋季喂鸟季 EDM\n- 补齐吸鸟指南类博客",
-    rules: "- 工作成果放入对应工作区文件夹，不要写入 index/（台账除外）\n- 数据缺失或冲突时停下来询问，不要编造 SKU、价格、库存、图片 URL\n- EDM 文案用英文，subject ≤ 50 字符",
+    rules: "- 工作成果放入用户指定的位置，不要写入 index/（台账除外）\n- 数据缺失或冲突时停下来询问，不要编造 SKU、价格、库存、图片 URL\n- EDM 文案用英文，subject ≤ 50 字符",
   },
   riverstone: { overview: "为庭院和户外生活提供耐用装备。", focus: "维护商品资料与季节性内容。", rules: "说明要简洁、具体。" },
 };
@@ -390,24 +390,6 @@ export const designScreenshots = (id: ProjectId): { name: string; path: string }
     name,
     path: root + "/" + PATHS.designScreenshots + "/" + ["home-desktop", "category-desktop", "product-desktop", "home-mobile", "category-mobile", "product-mobile"][index] + ".png",
   }));
-};
-export const readmeFolderMaps: Record<MockProjectId, FolderRow[]> = {
-  kingsyard: [
-    { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 24, modified_at: "2026-10-19T12:00:00+08:00" },
-    { name: "edm", description: "每次 campaign 一个子文件夹", default: true, files: 31, modified_at: "2026-10-20T12:00:00+08:00" },
-    { name: "产品", description: "产品图、上新资料、利润测算", default: true, files: 112, modified_at: "2026-10-18T12:00:00+08:00" },
-    { name: "内容", description: "博客 brief 与草稿（drafts/）", default: true, files: 40, modified_at: "2026-10-15T12:00:00+08:00" },
-    { name: "设计", description: "", default: true, files: 8, modified_at: "2026-09-30T12:00:00+08:00" },
-    { name: "报告", description: "月度钉钉汇报、复盘", default: true, files: 9, modified_at: "2026-10-01T12:00:00+08:00" },
-  ],
-  riverstone: [
-    { name: "seo", description: "关键词研究、排名周报、站内优化记录", default: true, files: 18, modified_at: "2026-10-19T12:00:00+08:00" },
-    { name: "edm", description: "每次 campaign 一个子文件夹", default: true, files: 12, modified_at: "2026-10-20T12:00:00+08:00" },
-    { name: "产品", description: "产品图、上新资料、利润测算", default: true, files: 45, modified_at: "2026-10-18T12:00:00+08:00" },
-    { name: "内容", description: "博客 brief 与草稿（drafts/）", default: true, files: 16, modified_at: "2026-10-15T12:00:00+08:00" },
-    { name: "设计", description: "", default: true, files: 3, modified_at: "2026-09-30T12:00:00+08:00" },
-    { name: "报告", description: "月度汇报与复盘", default: true, files: 5, modified_at: "2026-10-01T12:00:00+08:00" },
-  ],
 };
 export const initialManualCategories: NonNullable<CategoriesConfig["manual"]> = [
   { slug: "bird-feeders", name: "Bird Feeders", url: "/bird-feeders.html", match: [{ type: "product_type_contains", value: "Bird Feeders" }] },

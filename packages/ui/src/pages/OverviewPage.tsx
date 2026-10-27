@@ -88,7 +88,7 @@ export function OverviewPage() {
     } catch (cause) { setFeedback(apiErrorMessage(cause, "本地数据校验失败。")); }
   };
   const openReadme = () => project && withFeedback(() => api.shell.openPath(projectPath(project.summary.path, "README.md")), "已打开 README。");
-  const openWorkspace = () => project && withFeedback(() => api.shell.openPath(project.summary.path), "已打开工作区文件夹。");
+  const openProjectFolder = () => project && withFeedback(() => api.shell.openPath(project.summary.path), "已打开项目文件夹。");
 
   const runSync = async () => {
     if (!project || running) return;
@@ -115,7 +115,7 @@ export function OverviewPage() {
         <Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>
       </div>
       <div className="si-page-actions">
-        <Button icon={<FolderOpen size={15} />} onClick={() => void openWorkspace()}>打开文件夹</Button>
+        <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={running} onClick={() => void runSync()}>{running ? "同步中…" : "立即同步"}</Button>
       </div>
     </header>
@@ -152,7 +152,7 @@ export function OverviewPage() {
           {overview.agent_instruction && <p className="si-overview-instruction">{overview.agent_instruction}</p>}
           <Button icon={<FileCheck2 size={15} />} onClick={() => void validateFiles()}>校验本地数据文件</Button>
           <Button icon={<FileText size={15} />} onClick={() => void openReadme()}>打开 README</Button>
-          <Button icon={<FolderOpen size={15} />} onClick={() => void openWorkspace()}>打开工作区文件夹</Button>
+          <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
           {(feedback || syncMessage) && <p className="si-overview-feedback" role="status">{syncMessage || feedback}</p>}
         </section>
         <section className="si-overview-changelog si-panel">

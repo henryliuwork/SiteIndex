@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
@@ -22,16 +22,12 @@ const autoDescriptions: Record<string, string> = {
 };
 const blockTitles: Record<string, string> = {
   "index-summary": "网站数据速览",
-  "folder-map": "目录地图",
   "task-routing": "任务路由",
   "data-guide": "数据指南",
   "design-summary": "设计规范速览",
   changelog: "变更记录",
 };
 
-function dateLabel(value: string | null): string {
-  return value ? value.slice(5, 10) : "—";
-}
 function latestUpdate(data: ReadmeData | undefined): string {
   const value = data?.auto_blocks.find((block) => block.id === "index-summary")?.updated_at;
   if (!value) return "暂无自动区块更新时间";
@@ -87,32 +83,10 @@ function UserBlocksCard({ blocks, onChange, onReset, onSave, saving }: {
   </section>;
 }
 
-function FolderMap({ data, projectId }: { data: ReadmeData; projectId: string }) {
-  return <div className="si-readme-block si-readme-folder-block">
-    <div className="si-readme-block-heading">
-      <div><strong>目录地图</strong><code>folder-map</code><span>· 每周日</span></div>
-      <Link className="si-button" to={`/p/${projectId}/settings/folders`}>管理文件夹与说明</Link>
-    </div>
-    <div className="si-readme-folder-table" role="table" aria-label="工作区目录地图">
-      <div className="si-readme-folder-row is-heading" role="row"><span role="columnheader">文件夹</span><span role="columnheader">用途（来自 _about.md）</span><span role="columnheader">文件</span><span role="columnheader">最近修改</span></div>
-      {data.folder_map.map((folder) => <div className="si-readme-folder-row" role="row" key={folder.name}>
-        <code role="cell">{folder.name.replace(/\/$/, "")}/</code>
-        {folder.description
-          ? <span role="cell">{folder.description}</span>
-          : <Link role="cell" to={`/p/${projectId}/settings/folders`}>待补充说明 · 去填写</Link>}
-        <span role="cell">{folder.files.toLocaleString("zh-CN")}</span>
-        <code role="cell">{dateLabel(folder.modified_at)}</code>
-      </div>)}
-    </div>
-  </div>;
-}
-
-function AutoBlocksCard({ data, projectId }: { data: ReadmeData; projectId: string }) {
+function AutoBlocksCard({ data }: { data: ReadmeData }) {
   return <section className="si-readme-card si-readme-auto-card">
     <div className="si-readme-card-heading"><h2>自动区块</h2><Chip tone="ok">SiteIndex 生成 · 只读</Chip></div>
-    {data.auto_blocks.map((block) => block.id === "folder-map"
-      ? <FolderMap key={block.id} data={data} projectId={projectId} />
-      : <div className="si-readme-auto-row" key={block.id}>
+    {data.auto_blocks.map((block) => <div className="si-readme-auto-row" key={block.id}>
         <div className="si-readme-auto-label"><strong>{block.title || blockTitles[block.id] || block.id}</strong><code>{block.id}</code>{autoDescriptions[block.id] && <span>· {autoDescriptions[block.id]}</span>}</div>
         <span>{block.schedule}</span>
       </div>)}
@@ -190,7 +164,7 @@ export function ReadmePage() {
     {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
     <div className="si-readme-layout">
       <UserBlocksCard blocks={draft} onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))} onReset={() => setDraft(data.user_blocks)} onSave={() => void onSave()} saving={saving} />
-      <AutoBlocksCard data={data} projectId={id} />
+      <AutoBlocksCard data={data} />
     </div>
   </div>;
 }
