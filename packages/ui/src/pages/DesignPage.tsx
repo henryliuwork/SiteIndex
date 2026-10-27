@@ -4,7 +4,7 @@ import { Copy } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { DesignTokens } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, Tabs } from "../components";
 
 const tabOptions = [
@@ -197,14 +197,14 @@ export function DesignPage() {
   const openTokens = async () => {
     if (!project) return;
     try { await api.shell.openPath(project.path.replace(/[\\/]+$/, "") + "/" + PATHS.designTokens); setFeedback("已打开 tokens.json。"); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "打开 tokens.json 失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "打开 tokens.json 失败。")); }
   };
   const copyInstruction = async () => {
     try {
       const { body } = await api.skills.get("page-design");
       await api.shell.copyText(body);
       setFeedback("page-design 指令已复制。");
-    } catch (cause) { setFeedback(cause instanceof Error ? cause.message : "复制 page-design 指令失败。"); }
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "复制 page-design 指令失败。")); }
   };
   const refresh = async () => {
     if (!project) return;
@@ -212,15 +212,15 @@ export function DesignPage() {
       setFeedback(""); setRunMessage("正在启动设计规范提取…");
       const run = await api.jobs.run({ projectPath: project.path, job: "design" });
       setActiveRunId(run.runId);
-    } catch (cause) { setRunMessage(""); setFeedback(cause instanceof Error ? cause.message : "启动设计规范提取失败。"); }
+    } catch (cause) { setRunMessage(""); setFeedback(apiErrorMessage(cause, "启动设计规范提取失败。")); }
   };
   const copyColor = async (value: string) => {
     try { await api.shell.copyText(value); setCopiedColor(value); setFeedback(`${value} 已复制。`); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "复制色值失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "复制色值失败。")); }
   };
   const openScreenshot = async (path: string) => {
     try { await api.shell.openPath(path); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "打开截图失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "打开截图失败。")); }
   };
 
   if (projectQuery.isLoading || designQuery.isLoading) return <div className="si-page-loading" role="status">正在加载设计规范…</div>;

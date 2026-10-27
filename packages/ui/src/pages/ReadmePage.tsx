@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, Tabs } from "../components";
 
 const tabOptions = [
@@ -155,21 +155,21 @@ export function ReadmePage() {
   const onOpen = async () => {
     if (!project) return;
     try { await api.shell.openPath(project.path.replace(/[\\/]+$/, "") + "/" + PATHS.readme); setFeedback("已在编辑器中打开 README.md。"); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "打开 README.md 失败。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "打开 README.md 失败。")); }
   };
   const onCopy = async () => {
     try {
       const { body } = await api.skills.get("project-readme");
       await api.shell.copyText(body);
       setFeedback("project-readme 指令已复制。");
-    } catch (cause) { setFeedback(cause instanceof Error ? cause.message : "复制 project-readme 指令失败。"); }
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "复制 project-readme 指令失败。")); }
   };
   const onRefresh = async () => {
     try {
       setFeedback(""); setRunMessage("正在启动 README 刷新…");
       const run = await api.readme.refresh(id);
       setActiveRunId(run.runId);
-    } catch (cause) { setRunMessage(""); setFeedback(cause instanceof Error ? cause.message : "启动 README 刷新失败。"); }
+    } catch (cause) { setRunMessage(""); setFeedback(apiErrorMessage(cause, "启动 README 刷新失败。")); }
   };
   const onSave = async () => {
     setSaving(true); setFeedback("");
@@ -177,7 +177,7 @@ export function ReadmePage() {
       await api.readme.saveUserBlocks(id, draft);
       await queryClient.invalidateQueries({ queryKey: ["readme", id] });
       setFeedback("README 用户区块已保存。");
-    } catch (cause) { setFeedback(cause instanceof Error ? cause.message : "保存用户区块失败。"); }
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "保存用户区块失败。")); }
     finally { setSaving(false); }
   };
 

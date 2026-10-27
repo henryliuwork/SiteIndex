@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Check, Copy, RefreshCw } from "lucide-react";
 import type { SkillInfo, SkillTargetStatus } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip } from "../components";
 import "./skills/page.css";
 
@@ -57,7 +57,7 @@ export function SkillsPage() {
       await queryClient.invalidateQueries({ queryKey: ["skills"] });
       setFeedback("已同步到所有项目");
     } catch (error) {
-      setFeedback("同步失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("同步失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setSyncing(false);
       window.setTimeout(() => setFeedback(""), 2600);
@@ -69,7 +69,7 @@ export function SkillsPage() {
       await api.shell.copyText(text);
       setFeedback(success);
     } catch (error) {
-      setFeedback("复制失败：" + (error instanceof Error ? error.message : "请检查剪贴板权限"));
+      setFeedback("复制失败：" + (apiErrorMessage(error, "请检查剪贴板权限")));
     }
     window.setTimeout(() => setFeedback(""), 2600);
   };
@@ -87,7 +87,7 @@ export function SkillsPage() {
       await queryClient.invalidateQueries({ queryKey: ["skills", "targets", activeName] });
       setFeedback(`${target.name} 已更新`);
     } catch (error) {
-      setFeedback("安装失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("安装失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setBusyTarget(null);
       window.setTimeout(() => setFeedback(""), 2600);

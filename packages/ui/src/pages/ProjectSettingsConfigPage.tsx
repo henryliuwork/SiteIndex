@@ -3,7 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { FeedInspectResult, SeoRule, SiteConfig } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, Tabs } from "../components";
 import "./project-settings-config/page.css";
 
@@ -86,7 +86,7 @@ export function ProjectSettingsConfigPage() {
       if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) throw new Error("数据修正必须是 JSON 对象");
       config = { ...next, crawl: { ...next.crawl, overrides: overrides as SiteConfig["crawl"]["overrides"] } };
     } catch (error) {
-      setFeedback("保存失败：" + (error instanceof Error ? error.message : "数据修正 JSON 格式无效"));
+      setFeedback("保存失败：" + (apiErrorMessage(error, "数据修正 JSON 格式无效")));
       return;
     }
     setSaving(true);
@@ -98,7 +98,7 @@ export function ProjectSettingsConfigPage() {
       await queryClient.invalidateQueries({ queryKey: ["projects", id] });
       setFeedback("已保存配置");
     } catch (error) {
-      setFeedback("保存失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("保存失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setSaving(false);
       window.setTimeout(() => setFeedback(""), 2400);
@@ -118,7 +118,7 @@ export function ProjectSettingsConfigPage() {
       setFeedResult(await api.projects.inspectFeed(feedUrls, { sku_field: draft.crawl.sku_field ?? "id", category_depth: draft.crawl.category_depth ?? 2 }));
       setFeedback("Feed 检测完成");
     } catch (error) {
-      setFeedback("Feed 检测失败：" + (error instanceof Error ? error.message : "请检查地址后重试"));
+      setFeedback("Feed 检测失败：" + (apiErrorMessage(error, "请检查地址后重试")));
     } finally {
       setInspectingFeed(false);
     }
@@ -135,7 +135,7 @@ export function ProjectSettingsConfigPage() {
       setJsonOpen(false);
       setJsonError("");
     } catch (error) {
-      setJsonError(error instanceof Error ? error.message : "JSON 格式无效");
+      setJsonError(apiErrorMessage(error, "JSON 格式无效"));
     }
   };
 

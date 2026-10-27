@@ -1,4 +1,4 @@
-import type { SiteIndexApi } from "@siteindex/shared";
+import { isSiteIndexError, type SiteIndexApi } from "@siteindex/shared";
 
 let mock: SiteIndexApi | undefined;
 const hostApi = typeof window === "undefined" ? undefined : window.siteindex;
@@ -14,4 +14,6 @@ if (!hostApi) {
 
 export const api: SiteIndexApi = hostApi ?? mock!;
 export const isMockApi = Boolean(mock);
+export const apiErrorMessage = (error: unknown, fallback: string): string =>
+  isSiteIndexError(error) ? error.message : fallback;
 if (typeof window !== "undefined" && !window.siteindex && mock) window.siteindex = mock;

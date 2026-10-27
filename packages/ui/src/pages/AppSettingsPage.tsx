@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip } from "../components";
 import "./app-settings/page.css";
 
@@ -38,7 +38,7 @@ export function AppSettingsPage() {
       setDraft(saved);
       setFeedback(message);
     } catch (error) {
-      setFeedback("保存失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("保存失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setSaving(false);
       window.setTimeout(() => setFeedback(""), 2600);
@@ -62,7 +62,7 @@ export function AppSettingsPage() {
       const selected = await api.settings.chooseDirectory(draft.projects_root);
       if (selected) await saveSettings({ projects_root: selected });
     } catch (error) {
-      setFeedback("选择目录失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("选择目录失败：" + (apiErrorMessage(error, "请稍后重试")));
     }
   };
 
@@ -77,7 +77,7 @@ export function AppSettingsPage() {
       const result = await browserQuery.refetch();
       setFeedback(result.data?.available ? `检测到 ${result.data.name ?? "可用浏览器"}` : "未检测到可用浏览器，请检查自定义路径");
     } catch (error) {
-      setFeedback("浏览器检测失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("浏览器检测失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setTestingBrowser(false);
       window.setTimeout(() => setFeedback(""), 3000);
@@ -93,7 +93,7 @@ export function AppSettingsPage() {
       queryClient.setQueryData(["settings", "cli"], status);
       setFeedback(status.installed ? "siteindex 命令已安装" : "安装未完成");
     } catch (error) {
-      setFeedback("安装失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("安装失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setInstallingCli(false);
       window.setTimeout(() => setFeedback(""), 2600);
@@ -108,7 +108,7 @@ export function AppSettingsPage() {
       await api.settings.sendTestNotification();
       setFeedback("测试通知已发送");
     } catch (error) {
-      setFeedback("发送测试通知失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("发送测试通知失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setSendingTestNotification(false);
       window.setTimeout(() => setFeedback(""), 3000);
@@ -123,7 +123,7 @@ export function AppSettingsPage() {
       await api.settings.openLogs();
       setFeedback("已打开日志目录");
     } catch (error) {
-      setFeedback("打开日志目录失败：" + (error instanceof Error ? error.message : "请稍后重试"));
+      setFeedback("打开日志目录失败：" + (apiErrorMessage(error, "请稍后重试")));
     } finally {
       setOpeningLogs(false);
       window.setTimeout(() => setFeedback(""), 3000);

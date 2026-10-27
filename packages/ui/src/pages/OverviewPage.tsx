@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, FolderOpen, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, ProjectDetail, SyncState } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, KpiCard, Tabs } from "../components";
 
 const tabOptions = [
@@ -75,7 +75,7 @@ export function OverviewPage() {
   const withFeedback = async (action: () => Promise<void>, success: string) => {
     setFeedback("");
     try { await action(); setFeedback(success); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "操作失败，请重试。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "操作失败，请重试。")); }
   };
 
   const copyInstruction = () => withFeedback(() => api.shell.copyText(overview?.agent_instruction ?? ""), "已复制 agent 接入指令。");
@@ -85,7 +85,7 @@ export function OverviewPage() {
       const report = await api.files.validate(id);
       const { ok, error, missing } = report.summary;
       setFeedback("校验完成：" + ok + " 个文件通过，" + error + " 个错误，" + missing + " 个缺失。");
-    } catch (cause) { setFeedback(cause instanceof Error ? cause.message : "本地数据校验失败。"); }
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "本地数据校验失败。")); }
   };
   const openReadme = () => project && withFeedback(() => api.shell.openPath(projectPath(project.summary.path, "README.md")), "已打开 README。");
   const openWorkspace = () => project && withFeedback(() => api.shell.openPath(project.summary.path), "已打开工作区文件夹。");
@@ -98,7 +98,7 @@ export function OverviewPage() {
       setRunId(run.runId);
     } catch (cause) {
       setRunning(false); setSyncMessage("");
-      setFeedback(cause instanceof Error ? cause.message : "每日同步启动失败。");
+      setFeedback(apiErrorMessage(cause, "每日同步启动失败。"));
     }
   };
 

@@ -8,7 +8,7 @@ import type {
   JobProgress, JobResult, ListQuery, PageType, ProjectDetail, SeoIssue, SeoIssueFilters, SeoLink,
   SeoPage as SeoRecord, SeoPageFilters, SeoRule, Severity,
 } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, SearchInput, Segmented, Tabs } from "../components";
 
 type SeoView = "issues" | "pages" | "links";
@@ -217,23 +217,23 @@ export function SeoPage() {
 
   const openPage = async (url: string) => {
     try { await api.shell.openExternal(url); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "无法打开页面。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开页面。")); }
   };
   const checkSingleIndex = async (url: string) => {
     try { const searchUrl = await api.seo.googleSiteUrl(url); await api.shell.openExternal(searchUrl); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "无法打开 Google 收录检查。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开 Google 收录检查。")); }
   };
   const checkAllIndex = async () => {
     if (busy) return;
     setFeedback(""); setProgressText("正在准备收录检查…"); setRunKind("index");
     try { const run = await api.seo.checkIndex(id); setActiveRunId(run.runId); }
-    catch (cause) { setRunKind(null); setProgressText(""); setFeedback(cause instanceof Error ? cause.message : "收录检查启动失败。"); }
+    catch (cause) { setRunKind(null); setProgressText(""); setFeedback(apiErrorMessage(cause, "收录检查启动失败。")); }
   };
   const recrawl = async () => {
     if (!project || busy) return;
     setFeedback(""); setProgressText("正在启动 SEO 页面抓取…"); setRunKind("crawl");
     try { const run = await api.jobs.run({ projectPath: project.path, job: "weekly" }); setActiveRunId(run.runId); }
-    catch (cause) { setRunKind(null); setProgressText(""); setFeedback(cause instanceof Error ? cause.message : "重新抓取启动失败。"); }
+    catch (cause) { setRunKind(null); setProgressText(""); setFeedback(apiErrorMessage(cause, "重新抓取启动失败。")); }
   };
   const exportIssues = async () => {
     setFeedback("");
@@ -248,7 +248,7 @@ export function SeoPage() {
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = id + "-seo-issues.csv"; anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       setFeedback("问题清单已导出。");
-    } catch (cause) { setFeedback(cause instanceof Error ? cause.message : "问题清单导出失败。"); }
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "问题清单导出失败。")); }
   };
   const showPageDetail = (url: string, link: SeoLink | null = null) => { setSelectedUrl(url); setSelectedLink(link); };
 

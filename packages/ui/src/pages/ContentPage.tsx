@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, FileDown, FolderOpen } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, DraftRow, Keyword, KeywordFilters, ListQuery, ProjectDetail } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Segmented, Tabs } from "../components";
 
 type ContentView = "blog" | "keywords" | "drafts";
@@ -141,11 +141,11 @@ export function ContentPage() {
         downloadCsv(id + "-content-keywords.csv", ["关键词", "类型", "意图", "主题簇", "目标页面", "状态", "搜索量", "当前排名"], result.rows.map((row) => [row.keyword, row.role, row.intent, row.cluster, row.target_url, row.status, row.search_volume, row.current_rank]));
       } else downloadCsv(id + "-content-drafts.csv", ["日期", "Slug", "文件夹", "文件", "状态"], filteredDrafts.map((row) => [row.date, row.slug, row.folder, row.files.join("; "), row.status]));
       setFeedback("当前列表已导出 CSV。");
-    } catch (cause) { setFeedback(cause instanceof Error ? cause.message : "导出失败。"); }
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "导出失败。")); }
   };
   const openContentFolder = async () => {
     try { await api.folders.open(id, "内容"); }
-    catch (cause) { setFeedback(cause instanceof Error ? cause.message : "无法打开内容文件夹。"); }
+    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开内容文件夹。")); }
   };
   const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { Button, Chip, DataTable, DetailPanel, Tabs } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./project-settings-categories/page.css";
@@ -69,7 +69,7 @@ export function ProjectSettingsCategoriesPage() {
     void api.categories.preview(id, initial).then((result) => {
       if (current) setPreview(result);
     }).catch((error: unknown) => {
-      if (current) setFeedback({ message: "预览失败：" + (error instanceof Error ? error.message : "请稍后重试"), type: "error" });
+      if (current) setFeedback({ message: "预览失败：" + (apiErrorMessage(error, "请稍后重试")), type: "error" });
     }).finally(() => {
       if (current) setPreviewing(false);
     });
@@ -112,7 +112,7 @@ export function ProjectSettingsCategoriesPage() {
       setPreview(await api.categories.preview(id, draft));
       setFeedback({ message: "预览结果已更新", type: "status" });
     } catch (error) {
-      setFeedback({ message: "预览失败：" + (error instanceof Error ? error.message : "请稍后重试"), type: "error" });
+      setFeedback({ message: "预览失败：" + (apiErrorMessage(error, "请稍后重试")), type: "error" });
     } finally {
       setPreviewing(false);
       window.setTimeout(() => setFeedback(null), 2400);
@@ -138,7 +138,7 @@ export function ProjectSettingsCategoriesPage() {
       ]);
       setFeedback({ message: "已保存并重新归类", type: "status" });
     } catch (error) {
-      setFeedback({ message: "保存失败：" + (error instanceof Error ? error.message : "请稍后重试"), type: "error" });
+      setFeedback({ message: "保存失败：" + (apiErrorMessage(error, "请稍后重试")), type: "error" });
     } finally {
       setSaving(false);
       window.setTimeout(() => setFeedback(null), 2400);
