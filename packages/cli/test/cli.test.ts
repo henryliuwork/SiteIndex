@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CoreService } from "@siteindex/core";
-import { DEFAULT_WORKSPACE_FOLDERS, EXIT, PATHS, type CliJsonOutput, type CreateProjectInput, type SiteConfig, type ScheduleConfig, type SkillInfo, type ValidationReport } from "@siteindex/shared";
+import { EXIT, PATHS, type CliJsonOutput, type CreateProjectInput, type SiteConfig, type ScheduleConfig, type SkillInfo, type ValidationReport } from "@siteindex/shared";
 import { main, type CliIO } from "../src";
 
 const projectFixture = fileURLToPath(new URL("../../../fixtures/expected/project/", import.meta.url));
@@ -107,6 +107,7 @@ describe("siteindex CLI", () => {
     const help = collect();
     expect(await main([], help.io)).toBe(EXIT.OK);
     expect(help.stdout[0]).toContain("siteindex");
+    expect(help.stdout[0]).not.toContain("folders");
 
     const invalid = collect();
     expect(await main(["init", "project", "--json"], invalid.io)).toBe(EXIT.BAD_ARGS);
@@ -119,10 +120,11 @@ describe("siteindex CLI", () => {
     expect(await main(["detect", "https://example.test", "--json"], t.io)).toBe(EXIT.OK);
     expect(methods.projects.detect).toHaveBeenCalledWith("https://example.test");
 
-    expect(await main(["init", "new-shop", "--url", "https://example.test", "--feed", "https://example.test/feed.xml", "--name", "Example", "--folders", "seo,edm", "--json"], t.io)).toBe(EXIT.OK);
+    expect(await main(["init", "new-shop", "--url", "https://example.test", "--feed", "https://example.test/feed.xml", "--name", "Example", "--json"], t.io)).toBe(EXIT.OK);
     const input = methods.projects.create.mock.calls[0]?.[0] as CreateProjectInput;
     expect(input.folder_name).toBe("new-shop");
-    expect(input.workspace_folders).toEqual(["seo", "edm"]);
+    expect(input.workspace_folders).toEqual([]);
+    expect(await main(["init", "new-shop", "--url", "https://example.test", "--feed", "https://example.test/feed.xml", "--folders", "seo", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
 
     expect(await main(["feed", "inspect", "kingsyard", "--json"], t.io)).toBe(EXIT.OK);
     expect(methods.projects.inspectFeed).toHaveBeenCalledWith([fixtureConfig.crawl.feed_url], { sku_field: "id", category_depth: 2 });
@@ -130,6 +132,19 @@ describe("siteindex CLI", () => {
     expect(await main(["run", "kingsyard", "weekly", "--date", "2026-10-25", "--force", "--only", "links", "--json"], t.io)).toBe(EXIT.OK);
     expect(methods.runJob).toHaveBeenLastCalledWith(expect.objectContaining({ job: "weekly", trigger: "cli", date: "2026-10-25", force: true, only: "links" }), expect.any(Function));
   });
+
+  it("passes a caller-selected browser path to design and index-check jobs", async () => {
+    await copyFixtureProject();
+    const seoPagesPath = path.join(projectPath, PATHS.seoPages);
+    await mkdir(path.dirname(seoPagesPath), { recursive: true });
+    await writeFile(seoPagesPath, JSON.stringify({ url: "https://example.test/page" }) + "\n");
+    const t = collect();
+    for (const job of ["design", "index-check"]) {
+      const exit = await main(["run", projectPath, job, "--browser", path.join(tempRoot, "missing-browser"), "--json"], t.io);
+      expect(exit).toBe(EXIT.BROWSER_UNAVAILABLE);
+      expect(parseEnvelope(t.stdout.at(-1)!).error?.message).toContain("无法启动调用方提供的浏览器");
+    }
+  }, 30_000);
 
   it("supports validate repair, views and all query targets", async () => {
     const { service, methods } = mockService();
@@ -195,36 +210,28 @@ describe("siteindex CLI", () => {
     expect(output.data?.included).toBeGreaterThan(defaultIncluded);
   }, 30_000);
 
-  it("supports categories, folders, schedule and runner operations", async () => {
+  it("supports categories, schedule and runner operations while leaving legacy folders alone", async () => {
     const { service, methods } = mockService();
     await mkdir(path.join(projectPath, PATHS.index), { recursive: true });
-    const customFolder = { name: "cli-campaigns", default: false };
     const config: SiteConfig = {
       ...fixtureConfig,
       schedule: testSchedule,
-      workspace_folders: [
-        ...DEFAULT_WORKSPACE_FOLDERS.map((name) => ({ name, default: true })),
-        customFolder,
-      ],
+      workspace_folders: [{ name: "cli-campaigns", default: false }],
     };
     await writeFile(path.join(projectPath, PATHS.site), JSON.stringify(config, null, 2) + "\n", "utf8");
-    await mkdir(path.join(projectPath, customFolder.name));
-    const trash = vi.fn(async () => undefined);
-    const t = collect(service, { trash });
+    await mkdir(path.join(projectPath, "cli-campaigns"));
+    await writeFile(path.join(projectPath, "cli-campaigns", PATHS.aboutFile), "用户说明\n");
+    const t = collect(service);
     expect(await main(["categories", "preview", projectPath, "--json"], t.io)).toBe(EXIT.OK);
     expect(await main(["categories", "apply", projectPath, "--json"], t.io)).toBe(EXIT.OK);
     expect(methods.categories.preview).toHaveBeenCalled();
     expect(methods.categories.save).toHaveBeenCalled();
 
-    expect(await main(["folders", "list", projectPath, "--json"], t.io)).toBe(EXIT.OK);
-    expect(await main(["folders", "delete", projectPath, "seo", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
-    expect(await main(["folders", "create", projectPath, "cli-campaigns", "--description", "CLI campaigns", "--json"], t.io)).toBe(EXIT.OK);
-    expect(await main(["folders", "describe", projectPath, "cli-campaigns", "--description", "Updated description", "--json"], t.io)).toBe(EXIT.OK);
-    expect(await main(["folders", "delete", projectPath, "cli-campaigns", "--json"], t.io)).toBe(EXIT.OK);
-    expect(methods.folders.list).toHaveBeenCalled();
-    expect(methods.folders.create).toHaveBeenCalledWith(projectPath, "cli-campaigns", "CLI campaigns");
-    expect(methods.folders.describe).toHaveBeenCalledWith(projectPath, "cli-campaigns", "Updated description");
-    expect(trash).toHaveBeenCalledWith(path.join(projectPath, customFolder.name));
+    expect(await main(["folders", "delete", projectPath, "cli-campaigns", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+    expect(await readFile(path.join(projectPath, "cli-campaigns", PATHS.aboutFile), "utf8")).toBe("用户说明\n");
+    expect(methods.folders.list).not.toHaveBeenCalled();
+    expect(methods.folders.create).not.toHaveBeenCalled();
+    expect(methods.folders.describe).not.toHaveBeenCalled();
 
     expect(await main(["schedule", "install", projectPath, "--json"], t.io)).toBe(EXIT.OK);
     expect(await main(["schedule", "remove", projectPath, "--json"], t.io)).toBe(EXIT.OK);

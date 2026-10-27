@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PATHS, type CreateProjectInput, type DetectResult } from "@siteindex/shared";
@@ -120,24 +120,43 @@ describe("project service", () => {
     expect(result.samples.length).toBeGreaterThan(0);
   });
 
-  it("creates a configured project and runs the initial daily sync", async () => {
+  it("creates a data-only project and runs the initial daily sync", async () => {
     mockWebsite();
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-create-"));
     TEMP_DIRS.push(root);
     const result = await makeService().projects.create(createInput(root));
     const projectPath = path.join(root, "example-shop");
     const config = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as {
-      domain: string; platform: string; currency: string; workspace_folders: { name: string; default: boolean }[];
+      domain: string; platform: string; currency: string; workspace_folders?: unknown;
     };
 
     expect(result).toEqual({ id: "example-shop", runId: expect.stringMatching(/^\d{4}-\d{2}-\d{2}-daily$/) });
     expect(config).toMatchObject({ domain: "example.com", platform: "shopify", currency: "CAD" });
-    expect(config.workspace_folders).toEqual([
-      { name: "seo", default: true }, { name: "产品", default: true }, { name: "custom", default: false },
-    ]);
+    expect(config).not.toHaveProperty("workspace_folders");
     expect((await readJsonl(path.join(projectPath, PATHS.skus))).length).toBeGreaterThan(0);
     expect((await readJsonl(path.join(projectPath, PATHS.productsView))).length).toBeGreaterThan(0);
     expect((await readJsonl(path.join(projectPath, PATHS.runs))).map((row) => row.job)).toContain("daily");
-    expect(await readdir(path.join(projectPath, "seo"))).toContain(PATHS.aboutFile);
+    expect(await readdir(projectPath)).not.toContain("seo");
+    expect(await readdir(projectPath)).not.toContain("产品");
+    expect(await readdir(projectPath)).not.toContain("custom");
+    expect(await readdir(projectPath)).not.toContain(PATHS.aboutFile);
+    expect(await readFile(path.join(projectPath, PATHS.readme), "utf8")).not.toContain('id="folder-map"');
+  }, 60_000);
+
+  it("preserves existing user folders, _about.md and README in the chosen project directory", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-existing-workspace-"));
+    TEMP_DIRS.push(root);
+    const projectPath = path.join(root, "example-shop");
+    await mkdir(path.join(projectPath, "custom"), { recursive: true });
+    await writeFile(path.join(projectPath, PATHS.aboutFile), "根目录旧说明\n");
+    await writeFile(path.join(projectPath, "custom", PATHS.aboutFile), "自定义目录旧说明\n");
+    const originalReadme = '# 用户 README\n\n<!-- siteindex:auto:start id="folder-map" -->\n旧内容\n<!-- siteindex:auto:end id="folder-map" -->\n';
+    await writeFile(path.join(projectPath, PATHS.readme), originalReadme);
+
+    await makeService().projects.create(createInput(root));
+    expect(await readFile(path.join(projectPath, PATHS.aboutFile), "utf8")).toBe("根目录旧说明\n");
+    expect(await readFile(path.join(projectPath, "custom", PATHS.aboutFile), "utf8")).toBe("自定义目录旧说明\n");
+    expect(await readFile(path.join(projectPath, PATHS.readme), "utf8")).toBe(originalReadme);
   }, 60_000);
 });

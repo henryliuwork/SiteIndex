@@ -89,7 +89,7 @@
         "image_priority": { "type": "array", "items": { "enum": ["feed", "manual"] } }
       }
     },
-    "workspace_folders": { "type": "array", "items": { "type": "object", "required": ["name", "default"], "properties": { "name": { "type": "string" }, "default": { "type": "boolean" } } } },
+    "workspace_folders": { "deprecated": true, "type": "array", "items": { "type": "object", "required": ["name", "default"], "properties": { "name": { "type": "string" }, "default": { "type": "boolean" } } } },
     "schedule": {
       "type": "object",
       "properties": {

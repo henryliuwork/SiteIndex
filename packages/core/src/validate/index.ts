@@ -129,6 +129,7 @@ async function checkData(spec: FileSpec, absolute: string): Promise<{ rows: Reco
       return { rows, count: rows.length, ...(schemaError ? { schemaError } : {}) };
     }
     const rows = value && typeof value === "object" && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
+    if (spec.path === PATHS.site && rows[0]) delete rows[0].workspace_folders;
     const schemaError = spec.schema ? await validateRows(spec.schema, rows) : null;
     return { rows, count: rows.length, ...(schemaError ? { schemaError } : {}) };
   }
@@ -248,8 +249,10 @@ export async function validateProjectFiles(projectPath: string, options: Validat
   const readme = checks.find((check) => check.path === PATHS.readme);
   if (readme?.status === "ok") {
     const contents = await readFile(path.join(project, PATHS.readme), "utf8");
-    const starts = (contents.match(/<!-- siteindex:auto:start id="[^"]+" -->/g) ?? []).length;
-    const ends = (contents.match(/<!-- siteindex:auto:end id="[^"]+" -->/g) ?? []).length;
+    const markers = [...contents.matchAll(/<!-- siteindex:auto:(start|end) id="([^"]+)" -->/g)]
+      .filter((match) => match[2] !== "folder-map");
+    const starts = markers.filter((match) => match[1] === "start").length;
+    const ends = markers.length - starts;
     if (starts !== ends) firstRule(checks, PATHS.readme, "readme_markers", "README 自动区块标记未成对。");
   }
   const runs = validRows.get(PATHS.runs) ?? [];
@@ -316,7 +319,8 @@ async function autofix(projectPath: string, relative: string, absolute: string):
     return;
   }
   if (spec.format === "json") {
-    const value = JSON.parse(await readFile(absolute, "utf8"));
+    const value = JSON.parse(await readFile(absolute, "utf8")) as Record<string, unknown>;
+    if (relative === PATHS.site && value && typeof value === "object") delete value.workspace_folders;
     await atomicWrite(absolute, JSON.stringify(value, null, 2) + "\n");
     return;
   }

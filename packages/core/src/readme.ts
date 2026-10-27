@@ -3,7 +3,6 @@ import {
   dailyReportFile,
   type DailySummaryRow,
   type DesignTokens,
-  type FolderRow,
   type InventoryEvent,
   type RunLog,
   type SiteConfig,
@@ -11,7 +10,6 @@ import {
 
 export const README_AUTO_BLOCK_TITLES = {
   "index-summary": "数据概况",
-  "folder-map": "工作区目录",
   "task-routing": "任务路由",
   "data-guide": "数据指南",
   "design-summary": "设计摘要",
@@ -36,7 +34,6 @@ export interface ReadmeAutoContentInput {
   blogPosts: number;
   dailySummary: readonly DailySummaryRow[];
   events: readonly InventoryEvent[];
-  folders: readonly FolderRow[];
   designTokens: DesignTokens | null;
   runs: readonly RunLog[];
 }
@@ -47,14 +44,16 @@ function markerError(): Error & { code: "CONFIG_INVALID" } {
 
 function locateAutoBlocks(markdown: string): AutoBlockRange[] {
   const markerPattern = /<!-- siteindex:auto:(start|end) id="([^"]+)" -->/g;
-  const markerCount = [...markdown.matchAll(/<!--\s*siteindex:auto:/g)].length;
+  const markerCount = [...markdown.matchAll(/<!--\s*siteindex:auto:/g)].length
+    - [...markdown.matchAll(/<!--\s*siteindex:auto:[^>]*id=(?:"folder-map"|folder-map)[^>]*-->/g)].length;
   const blocks: AutoBlockRange[] = [];
   let open: { id: string; bodyStart: number } | null = null;
   let parsedMarkers = 0;
   for (const marker of markdown.matchAll(markerPattern)) {
-    parsedMarkers += 1;
     const kind = marker[1];
     const id = marker[2]!;
+    if (id === "folder-map") continue;
+    parsedMarkers += 1;
     const start = marker.index!;
     if (kind === "start") {
       if (open) throw markerError();
@@ -144,21 +143,6 @@ function cell(value: string | number): string {
   return String(value).replaceAll("|", "\\|").replace(/\r?\n/g, "<br>");
 }
 
-function folderMap(folders: readonly FolderRow[]): string {
-  const rows = folders.map((folder) =>
-    `| \`${cell(folder.name)}/\` | ${cell(folder.description)} | ${folder.files} | ${folder.modified_at?.slice(0, 10) ?? "—"} |`,
-  );
-  return [
-    "## 目录地图",
-    "",
-    "| 文件夹 | 用途 | 文件数 | 最近修改 |",
-    "|---|---|---:|---|",
-    ...rows,
-    "",
-    "> 说明来自各工作区文件夹的 `_about.md` 第一段；标注“待补充说明”的文件夹请补充说明。",
-  ].join("\n");
-}
-
 function taskRouting(): string {
   const skill = (name: string) => `\`${PATHS.skillsDir}/${name}/SKILL.md\``;
   return [
@@ -166,13 +150,13 @@ function taskRouting(): string {
     "",
     "| 任务 | Skill | 读取 | 产出 |",
     "|---|---|---|---|",
-    `| 写 EDM | ${skill("edm-builder")} | \`${PATHS.productsView}\`、\`${PATHS.edmCampaigns}\` | \`edm/{date}-{slug}/\` |`,
+    `| 写 EDM | ${skill("edm-builder")} | \`${PATHS.productsView}\`、\`${PATHS.edmCampaigns}\` | 用户指定的目录 |`,
     `| 录入图片 / 打标签 | ${skill("sku-media-enrich")} | \`${PATHS.skus}\` | \`${PATHS.skuMedia}\`、\`${PATHS.skuTags}\` |`,
-    `| 库存汇报 | ${skill("stock-report")} | \`${PATHS.dailyReportsDir}/\`、\`${PATHS.inventoryLatest}\` | 回复 / \`报告/\` |`,
-    `| 写博客 | ${skill("blog-writer")} | \`${PATHS.blogIndex}\`、\`${PATHS.productsView}\` | \`内容/drafts/\` |`,
+    `| 库存汇报 | ${skill("stock-report")} | \`${PATHS.dailyReportsDir}/\`、\`${PATHS.inventoryLatest}\` | 回复或用户指定的目录 |`,
+    `| 写博客 | ${skill("blog-writer")} | \`${PATHS.blogIndex}\`、\`${PATHS.productsView}\` | 用户指定的目录 |`,
     `| 外链搜集 | ${skill("link-prospect")} | \`${PATHS.outreach}\` | LinkFlow + \`${PATHS.outreach}\` |`,
-    `| 页面 / 视觉设计 | ${skill("page-design")} | \`${PATHS.designTokens}\` | \`设计/\` |`,
-    `| 补充项目说明 | ${skill("project-readme")} | 工作区文件夹 | \`${PATHS.aboutFile}\`、README 用户区块 |`,
+    `| 页面 / 视觉设计 | ${skill("page-design")} | \`${PATHS.designTokens}\` | 用户指定的目录 |`,
+    `| 补充项目说明 | ${skill("project-readme")} | README 用户区块 | README 用户区块 |`,
   ].join("\n");
 }
 
@@ -288,7 +272,6 @@ export function buildReadmeAutoContent(input: ReadmeAutoContentInput): ReadmeAut
 
   return {
     "index-summary": indexSummary,
-    "folder-map": folderMap(input.folders),
     "task-routing": taskRouting(),
     "data-guide": dataGuide(),
     "design-summary": designSummary(input.designTokens),

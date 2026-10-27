@@ -1,6 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 
 export interface BrowserPage {
@@ -24,6 +26,27 @@ export interface BrowserLaunchOptions {
 
 export type BrowserLauncher = (executablePath: string, options: BrowserLaunchOptions) => Promise<BrowserSession>;
 
+/** cli.js 位于 resources/，依赖由 Electron 解包到 app.asar.unpacked/node_modules/。 */
+export function loadPackagedPlaywright(resourcesDirectory: string): typeof import("playwright-core") {
+  const requireFromUnpacked = createRequire(path.join(resourcesDirectory, "app.asar.unpacked", "package.json"));
+  return requireFromUnpacked("playwright-core") as typeof import("playwright-core");
+}
+
+async function loadPlaywright(): Promise<typeof import("playwright-core")> {
+  try {
+    return await import(/* @vite-ignore */ "playwright-core");
+  } catch (originalError) {
+    // 打包后的独立 CLI 位于 resources/cli.js，Node 不会从相邻的 app.asar.unpacked 查找依赖。
+    const roots = [path.dirname(fileURLToPath(import.meta.url)), process.argv[1] ? path.dirname(path.resolve(process.argv[1])) : undefined];
+    for (const root of roots) {
+      if (!root) continue;
+      try { return loadPackagedPlaywright(root); }
+      catch { /* 继续检查另一打包路径 */ }
+    }
+    throw originalError;
+  }
+}
+
 function pageAdapter(page: Page): BrowserPage {
   return {
     goto: (url, options) => page.goto(url, options),
@@ -36,11 +59,11 @@ function pageAdapter(page: Page): BrowserPage {
 }
 
 export const launchChromium: BrowserLauncher = async (executablePath, options) => {
-  const { chromium } = await import(/* @vite-ignore */ "playwright-core");
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   let userDataDir: string | null = null;
   try {
+    const { chromium } = await loadPlaywright();
     if (options.persistent) {
       userDataDir = await mkdtemp(path.join(os.tmpdir(), "siteindex-google-check-"));
       context = await chromium.launchPersistentContext(userDataDir, { executablePath, headless: options.headless });
