@@ -82,6 +82,12 @@
 ### A11 性能
 - [x] 合成 1 万 SKU feed：daily（不含下载）< 30 秒；写 benchmark 脚本 `pnpm --filter @siteindex/core bench`
 
+### 2026-10-27 · 数据索引聚焦（#113）
+- [x] 新建项目不创建工作区文件夹、`_about.md` 或 `site.json.workspace_folders`；旧项目的文件和说明原样保留
+- [x] README 停止生成 `folder-map`；旧标记内容保留，校验忽略该废弃区块
+- [x] core 停止读取工作区文件夹；旧配置字段读取忽略、配置写回去掉；CLI 移除 folders 命令
+- [x] 安装包中的 CLI 可从 `resources/app.asar.unpacked/node_modules` 载入 `playwright-core`
+
 ## 交付给其他工作流
 - 给 B：无直接依赖（B 用 mock）。但请在 M2 前把 `fixtures/expected/project` 保持最新，B 的 mock 数据从这里生成
 - 给 C：`createCoreService`、`runJob`、`dist/cli.js`；每次改动签名先走契约流程

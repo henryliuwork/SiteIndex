@@ -1,9 +1,8 @@
-import { access, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   CSV_HEADERS,
-  DEFAULT_WORKSPACE_FOLDERS,
   EXIT,
   JOB_NAMES,
   PATHS,
@@ -19,13 +18,11 @@ import {
   type CategoryPreview,
   type ContentSummary,
   type DesignTokens,
-  type DraftRow,
   type DailySummaryRow,
   type DetectResult,
   type EdmCampaign,
   type EdmCommandInput,
   type FeedInspectResult,
-  type FolderRow,
   type InventoryEvent,
   type InventoryLatest,
   type InventorySummary,
@@ -261,7 +258,7 @@ async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
     return {
       ...parsed,
       categories: parsed.categories ?? { mode: "feed" },
-      workspace_folders: parsed.workspace_folders ?? DEFAULT_WORKSPACE_FOLDERS.map((name) => ({ name, default: true })),
+      workspace_folders: [], // 旧字段只为兼容 shared 类型；不读取其内容。
       schedule: {
         ...defaultSchedule,
         ...schedule,
@@ -276,6 +273,10 @@ async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
   } catch (error) {
     throw siteError("CONFIG_INVALID", "项目配置文件不是有效 JSON", String(error));
   }
+}
+
+function serializeSiteConfig(config: SiteConfig): string {
+  return `${JSON.stringify(config, (key, value) => key === "workspace_folders" ? undefined : value, 2)}\n`;
 }
 
 async function loadSnapshot(projectPath: string): Promise<ProjectSnapshot> {
@@ -643,42 +644,6 @@ function replaceReadmeSection(markdown: string, title: string, content: string):
   return `${lines.join("\n").replace(/\n*$/, "\n")}`;
 }
 
-async function describeFolder(projectPath: string, name: string, isDefault: boolean): Promise<FolderRow> {
-  const folderPath = path.join(projectPath, name);
-  let description = "待补充说明";
-  let modifiedAt: string | null = null;
-  let files = 0;
-  try {
-    const info = await lstat(folderPath);
-    if (info.isSymbolicLink() || !info.isDirectory()) return { name, description, default: isDefault, files, modified_at: modifiedAt };
-    modifiedAt = info.mtime.toISOString();
-    const aboutPath = path.join(folderPath, PATHS.aboutFile);
-    try {
-      const aboutInfo = await lstat(aboutPath);
-      if (aboutInfo.isSymbolicLink() || !aboutInfo.isFile()) throw new Error("_about.md is not a regular file");
-      const about = (await readFile(aboutPath, "utf8")).replace(/<!--[\s\S]*?-->/g, "");
-      const paragraph = about.trim().split(/\r?\n\s*\r?\n/, 1)[0]?.trim();
-      if (paragraph) description = paragraph.replace(/\r?\n/g, " ").trim();
-    } catch { /* 缺少 _about.md 时显示待补充说明 */ }
-    const count = async (directory: string): Promise<number> => {
-      const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
-      let total = 0;
-      for (const entry of entries) {
-        if (entry.isSymbolicLink()) continue;
-        if (entry.isDirectory()) total += await count(path.join(directory, entry.name));
-        else if (entry.name !== PATHS.aboutFile) total += 1;
-      }
-      return total;
-    };
-    files = await count(folderPath);
-  } catch { /* 文件夹尚未创建 */ }
-  return { name, description, default: isDefault, files, modified_at: modifiedAt };
-}
-
-async function listProjectFolders(projectPath: string, config: SiteConfig): Promise<FolderRow[]> {
-  return await Promise.all(config.workspace_folders.map((folder) => describeFolder(projectPath, folder.name, folder.default)));
-}
-
 function categorySlug(value: string): string {
   return value.toLowerCase().replaceAll("&", " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "uncategorized";
 }
@@ -833,17 +798,7 @@ function applyCategoryConfig(skus: SkuRecord[], config: CategoriesConfig): SkuRe
   });
 }
 
-async function readmeAutoContent(snapshot: ProjectSnapshot, folders: readonly FolderRow[]) {
-  const knownFolders = new Set(folders.map((folder) => folder.name.toLowerCase()));
-  const agentFolder = PATHS.skillsDir.split("/")[0]!;
-  const systemFolders = [
-    { name: PATHS.index, description: "网站数据库（SiteIndex 维护，见下方数据指南）" },
-    { name: agentFolder, description: "agent skills（SiteIndex 分发）" },
-  ].filter((folder) => !knownFolders.has(folder.name.toLowerCase()));
-  const systemFolderRows = await Promise.all(systemFolders.map(async (folder) => ({
-    ...await describeFolder(snapshot.projectPath, folder.name, true),
-    description: folder.description,
-  })));
+async function readmeAutoContent(snapshot: ProjectSnapshot) {
   const designTokens = await readJsonAs<DesignTokens | null>(snapshot.projectPath, PATHS.designTokens, null);
   return buildReadmeAutoContent({
     site: snapshot.config,
@@ -854,7 +809,6 @@ async function readmeAutoContent(snapshot: ProjectSnapshot, folders: readonly Fo
     blogPosts: snapshot.blogIndex.length,
     dailySummary: snapshot.dailySummary,
     events: snapshot.events,
-    folders: [...folders, ...systemFolderRows],
     designTokens,
     runs: snapshot.runs,
   });
@@ -867,54 +821,10 @@ async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot)
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     markdown = "# 项目说明\n";
   }
-  const folders = await listProjectFolders(projectPath, snapshot.config);
-  const blocks = await readmeAutoContent(snapshot, folders);
+  const blocks = await readmeAutoContent(snapshot);
   const disabled = new Set<string>(snapshot.config.readme?.disabled_blocks ?? []);
   markdown = replaceReadmeAutoBlocks(markdown, blocks, disabled);
   await atomicWrite(path.join(projectPath, PATHS.readme), markdown);
-}
-
-function setFirstParagraph(markdown: string, description: string): string {
-  const lines = markdown.split(/\r?\n/);
-  let start = 0;
-  while (start < lines.length && (!lines[start]!.trim() || lines[start]!.trim().startsWith("<!--"))) start += 1;
-  let end = start;
-  while (end < lines.length && lines[end]!.trim()) end += 1;
-  const replacement = description.trim() || "待补充说明";
-  if (start === lines.length) return `${markdown.trimEnd()}\n${replacement}\n`;
-  lines.splice(start, end - start, replacement);
-  return `${lines.join("\n").replace(/\n*$/, "\n")}`;
-}
-
-function folderNameKey(name: string): string {
-  return name.toLowerCase();
-}
-
-function normalizeFolderName(name: string): string {
-  const folderName = name.trim();
-  const windowsDeviceName = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?$/i;
-  if (!folderName || folderName === "." || folderName === ".." ||
-    /[\\/<>:"|?*\u0000-\u001f\u007f]/u.test(folderName) || folderName.endsWith(".") ||
-    windowsDeviceName.test(folderName) || path.isAbsolute(folderName)) {
-    throw siteError("UNKNOWN", "文件夹名称无效。", name);
-  }
-  return folderName;
-}
-
-function normalizeFolderDescription(description: string): string {
-  const normalized = description.trim().replace(/\s+/gu, " ") || "待补充说明";
-  if ([...normalized].length > 80) throw siteError("UNKNOWN", "文件夹说明不能超过 80 个字符。", description);
-  return normalized;
-}
-
-function folderPathWithinProject(projectPath: string, folderName: string): string {
-  const root = path.resolve(projectPath);
-  const folderPath = path.resolve(root, folderName);
-  const relative = path.relative(root, folderPath);
-  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw siteError("PATH_OUTSIDE_PROJECT", "文件夹路径必须位于项目目录内。", folderName);
-  }
-  return folderPath;
 }
 
 export function createCoreService(ctx: CoreServiceContext): CoreService {
@@ -922,13 +832,6 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   const createdTags = new Map<string, Set<string>>();
   const resolve = (id: ProjectId) => path.resolve(ctx.resolveProject(id));
   const invalidate = (projectPath: string) => { cache.delete(path.resolve(projectPath)); };
-  const refreshReadmeAfterFolderChange = async (projectPath: string) => {
-    const result = await runJob({ projectPath, job: "readme", trigger: "manual" }, () => undefined);
-    if (result.status !== "ok") {
-      throw siteError("WRITE_FAILED", "文件夹已保存，但 README 目录地图刷新失败。", result.errors?.join("\n") || result.summary);
-    }
-  };
-
   const load = (projectPath: string): Promise<ProjectSnapshot> => {
     const key = path.resolve(projectPath);
     const existing = cache.get(key);
@@ -1167,9 +1070,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     updateConfig: async (id, patch) => {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
-      const config: SiteConfig = { ...snapshot.config, ...patch };
+      const config: SiteConfig = { ...snapshot.config, ...patch, workspace_folders: [] };
       try {
-        await atomicWrite(path.join(projectPath, PATHS.site), `${JSON.stringify(config, null, 2)}\n`);
+        await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(config));
       } catch (error) {
         throw setError(error);
       }
@@ -1456,29 +1359,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         && (!query.filters?.status || row.status === query.filters.status));
       return paginate(rows, query, (row) => [row.keyword, row.target_url, row.cluster, row.intent, row.note], "keyword", (row) => row.keyword);
     },
-    listDrafts: async (id): Promise<DraftRow[]> => {
-      const projectPath = resolve(id);
-      const snapshot = await load(projectPath);
-      const folder = snapshot.config.workspace_folders.find((row) => row.name === "内容");
-      if (!folder) return [];
-      const root = path.join(projectPath, folder.name);
-      const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-      const drafts: DraftRow[] = [];
-      for (const entry of entries) {
-        if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-        const draftPath = path.join(root, entry.name);
-        const children = await readdir(draftPath, { withFileTypes: true }).catch(() => []);
-        const files = children.filter((child) => child.isFile()).map((child) => child.name).sort(codeUnitCompare);
-        const dateMatch = /^(\d{4}-\d{2}-\d{2})[-_ ]?(.+)?$/.exec(entry.name);
-        const modified = await stat(draftPath).catch(() => null);
-        const date = dateMatch?.[1] ?? modified?.mtime.toISOString().slice(0, 10) ?? snapshot.asOf;
-        const slug = dateMatch?.[2] || entry.name;
-        const status: DraftRow["status"] = files.some((name) => /published/i.test(name)) ? "published"
-          : files.some((name) => /draft/i.test(name)) ? "draft" : "brief";
-        drafts.push({ date, slug, folder: folder.name, files: files.map((name) => `${folder.name}/${entry.name}/${name}`), status });
-      }
-      return drafts.sort((a, b) => codeUnitCompare(b.date, a.date) || codeUnitCompare(a.slug, b.slug));
-    },
+    listDrafts: async () => [], // 旧接口保留；工作文件归用户管理。
   };
 
   const edm: CoreService["edm"] = {
@@ -1550,13 +1431,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       };
     },
     buildCommand: async (id, input: EdmCommandInput) => {
-      const projectPath = resolve(id);
-      const snapshot = await load(projectPath);
-      const folder = snapshot.config.workspace_folders.find((row) => row.name === "edm")?.name ?? "edm";
-      const slug = categorySlug(input.theme);
-      const campaignPath = path.join(projectPath, folder, `${localDate(snapshot.config.timezone)}-${slug}`);
       const quote = (value: string) => `"${value.replace(/"/g, '\\"')}"`;
-      const command = `siteindex edm render ${quote(id)} ${quote(campaignPath)}`;
+      const command = `siteindex edm render ${quote(id)} ${quote("<用户指定的活动目录>")}`;
       return input.promo_code ? `${command} --promo-code ${quote(input.promo_code)}` : command;
     },
   };
@@ -1586,7 +1462,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             .map(([job, value]) => `${job} ${(value as { time: string }).time}`)
             .join("、"),
         }));
-      return { user_blocks: readmeUserBlocks(markdown), auto_blocks, folder_map: await listProjectFolders(projectPath, snapshot.config) };
+      return { user_blocks: readmeUserBlocks(markdown), auto_blocks, folder_map: [] };
     },
     saveUserBlocks: async (id, blocks) => {
       const projectPath = resolve(id);
@@ -1607,65 +1483,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   };
 
   const folders: CoreService["folders"] = {
-    list: async (id) => {
-      const snapshot = await load(resolve(id));
-      return await listProjectFolders(snapshot.projectPath, snapshot.config);
-    },
-    create: async (id, name, description) => {
-      const projectPath = resolve(id);
-      const snapshot = await load(projectPath);
-      const folderName = normalizeFolderName(name);
-      const folderKey = folderNameKey(folderName);
-      const folderDescription = normalizeFolderDescription(description);
-      if (snapshot.config.workspace_folders.some((folder) => folderNameKey(folder.name) === folderKey)) {
-        throw siteError("FOLDER_EXISTS", "工作区文件夹已存在。", folderName);
-      }
-      const folderPath = folderPathWithinProject(projectPath, folderName);
-      if ((await readdir(projectPath)).some((entry) => folderNameKey(entry) === folderKey)) {
-        throw siteError("FOLDER_EXISTS", "项目目录中已存在同名文件或文件夹。", folderName);
-      }
-      let folderCreated = false;
-      let configWritten = false;
-      try {
-        await mkdir(folderPath, { recursive: false });
-        folderCreated = true;
-        await atomicWrite(path.join(folderPath, PATHS.aboutFile), `${folderDescription}\n`);
-        const config: SiteConfig = { ...snapshot.config, workspace_folders: [...snapshot.config.workspace_folders, { name: folderName, default: false }] };
-        await atomicWrite(path.join(projectPath, PATHS.site), `${JSON.stringify(config, null, 2)}\n`);
-        configWritten = true;
-      } catch (error) {
-        if (folderCreated && !configWritten) await rm(folderPath, { recursive: true, force: true }).catch(() => undefined);
-        if ((error as NodeJS.ErrnoException).code === "EEXIST") throw siteError("FOLDER_EXISTS", "目标文件夹已存在。", folderName);
-        throw setError(error);
-      }
-      invalidate(projectPath);
-      await refreshReadmeAfterFolderChange(projectPath);
-      return await listProjectFolders(projectPath, (await load(projectPath)).config);
-    },
-    describe: async (id, name, description) => {
-      const projectPath = resolve(id);
-      const snapshot = await load(projectPath);
-      const folderName = normalizeFolderName(name);
-      const folder = snapshot.config.workspace_folders.find((row) => folderNameKey(row.name) === folderNameKey(folderName));
-      if (!folder) throw siteError("PROJECT_NOT_FOUND", "找不到工作区文件夹。", name);
-      const folderDescription = normalizeFolderDescription(description);
-      const folderPath = folderPathWithinProject(projectPath, folder.name);
-      try {
-        let folderInfo: Awaited<ReturnType<typeof lstat>> | undefined;
-        try { folderInfo = await lstat(folderPath); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-        if (folderInfo?.isSymbolicLink()) throw siteError("PATH_OUTSIDE_PROJECT", "不能修改指向项目外部的文件夹。", folder.name);
-        if (folderInfo && !folderInfo.isDirectory()) throw siteError("FOLDER_EXISTS", "工作区路径已存在，但不是文件夹。", folder.name);
-        await mkdir(folderPath, { recursive: true });
-        let current = "";
-        try { current = await readFile(path.join(folderPath, PATHS.aboutFile), "utf8"); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-        await atomicWrite(path.join(folderPath, PATHS.aboutFile), setFirstParagraph(current, folderDescription));
-      } catch (error) { throw setError(error); }
-      invalidate(projectPath);
-      await refreshReadmeAfterFolderChange(projectPath);
-      return await listProjectFolders(projectPath, (await load(projectPath)).config);
-    },
+    list: async () => [],
+    create: async () => [],
+    describe: async () => [],
   };
 
   const categories: CoreService["categories"] = {
@@ -1678,7 +1498,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const nextConfig: SiteConfig = { ...snapshot.config, categories: config };
       const skus = applyCategoryConfig(snapshot.skus, config);
       try {
-        await atomicWrite(path.join(projectPath, PATHS.site), `${JSON.stringify(nextConfig, null, 2)}\n`);
+        await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
         await writeJsonl(path.join(projectPath, PATHS.skus), skus as unknown as JsonRecord[], "sku");
         const latest = new Map(snapshot.latest.map((row) => [row.sku, row.stock_status]));
         const categoryRows: Category[] = preview.categories.map((category) => {
@@ -1717,7 +1537,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
       const next: SiteConfig = { ...snapshot.config, schedule: config };
-      try { await atomicWrite(path.join(projectPath, PATHS.site), `${JSON.stringify(next, null, 2)}\n`); }
+      try { await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(next)); }
       catch (error) { throw setError(error); }
       invalidate(projectPath);
       return { config, registered: false, next_runs: (["daily", "validate", "weekly", "readme", "monthly"] as const).map((job) => ({ job, at: null })) };

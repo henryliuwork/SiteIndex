@@ -5,7 +5,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { access, cp, lstat, mkdir, readFile, readdir } from "node:fs/promises";
+import { access, cp, mkdir, readFile, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -23,7 +23,6 @@ import {
 import {
   CLI_BIN,
   CLI_COMMANDS,
-  DEFAULT_WORKSPACE_FOLDERS,
   EXIT,
   PATHS,
   QUERY_TARGETS,
@@ -38,7 +37,6 @@ import {
   type ProjectId,
   type RepairAction,
   type ScheduleConfig,
-  type SiteConfig,
   type SkillInfo,
   type ProductFilters,
   type SkuStockFilters,
@@ -48,7 +46,6 @@ import {
   type KeywordFilters,
   type SkuImageFilters,
 } from "@siteindex/shared";
-import { moveToTrash } from "./trash";
 
 export interface CliIO {
   out: (text: string) => void;
@@ -60,7 +57,6 @@ export interface CliIO {
   settings?: Partial<CliRuntimeSettings>;
   skillsDir?: string;
   templateDir?: string;
-  trash?: (folderPath: string) => Promise<void>;
 }
 
 export interface CliRuntimeSettings {
@@ -289,7 +285,7 @@ async function firstExisting(candidates: readonly string[]): Promise<string> {
   return candidates[0] ?? process.cwd();
 }
 
-async function createRuntime(io: CliIO): Promise<Runtime> {
+async function createRuntime(io: CliIO, browserExecutablePath?: string): Promise<Runtime> {
   const env = io.env ?? process.env;
   const cwd = path.resolve(io.cwd ?? process.cwd());
   const settings = io.settings ? { ...await readRuntimeSettings(env), ...io.settings } : await readRuntimeSettings(env);
@@ -306,13 +302,14 @@ async function createRuntime(io: CliIO): Promise<Runtime> {
   ]);
   const service = io.service ?? createCoreService({
     resolveProject: (id) => resolveProjectPath(String(id), cwd, settings),
-    deviceId, deviceName, cacheDir, templateDir,
+    deviceId, deviceName, cacheDir, templateDir, browserExecutablePath,
   });
   return { io, settings, cwd, env, cacheDir, deviceId, deviceName, skillsDir, service };
 }
 
 function outputHelp(): string {
-  return "用法: " + CLI_BIN + " <命令> [参数]\n命令: " + CLI_COMMANDS.join(", ");
+  return "用法: " + CLI_BIN + " <命令> [参数]\n命令: " + CLI_COMMANDS.filter((command) => command !== "folders").join(", ")
+    + "\n运行 design / index-check 时使用 --browser <Chrome/Edge 可执行文件路径>。";
 }
 
 function success(data: unknown, message?: string): Outcome {
@@ -469,41 +466,6 @@ function skillTarget(platform: string, runtime: Runtime): string {
   throw new CliError("BAD_ARGS", "未知 platform: " + platform + "；请先在 SiteIndex 设置中配置该 skill 目录。");
 }
 
-async function deleteFolder(runtime: Runtime, project: string, name: string): Promise<unknown> {
-  const projectPath = resolveProjectPath(project, runtime.cwd, runtime.settings);
-  const configPath = path.join(projectPath, PATHS.site);
-  const source = await readFile(configPath, "utf8");
-  const config = JSON.parse(source) as SiteConfig;
-  const folder = config.workspace_folders?.find((row) => row.name.toLowerCase() === name.toLowerCase());
-  if (!folder) throw new CliError("PROJECT_NOT_FOUND", "找不到工作区文件夹: " + name, EXIT.SOURCE_FAILED);
-  const defaultName = DEFAULT_WORKSPACE_FOLDERS.some((item) => item.toLowerCase() === folder.name.toLowerCase());
-  if (folder.default || defaultName) throw new CliError("FOLDER_PROTECTED", "默认工作区文件夹不可删除。");
-
-  const folderPath = path.resolve(projectPath, folder.name);
-  const relative = path.relative(path.resolve(projectPath), folderPath);
-  if (!relative || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
-    throw new CliError("PATH_OUTSIDE_PROJECT", "文件夹路径必须位于项目目录内。");
-  }
-  let exists = false;
-  try {
-    const info = await lstat(folderPath);
-    if (info.isSymbolicLink() || !info.isDirectory()) throw new CliError("PATH_OUTSIDE_PROJECT", "不能删除指向项目外部或非文件夹的路径。");
-    exists = true;
-  } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-
-  const nextConfig: SiteConfig = { ...config, workspace_folders: config.workspace_folders.filter((row) => row.name !== folder.name) };
-  await atomicWrite(configPath, JSON.stringify(nextConfig, null, 2) + "\n");
-  try { if (exists) await (runtime.io.trash ?? moveToTrash)(folderPath); }
-  catch (error) {
-    await atomicWrite(configPath, source);
-    throw new CliError("WRITE_FAILED", "无法将文件夹移到系统回收站: " + errorMessage(error), EXIT.SOURCE_FAILED);
-  }
-  runtime.service.invalidate(projectPath);
-  const readmeJob = await runtime.service.runJob({ projectPath, job: "readme", trigger: "cli" }, () => undefined);
-  if (readmeJob.exitCode !== EXIT.OK) throw new CliError("WRITE_FAILED", "文件夹已删除，但 README 目录地图刷新失败。", EXIT.SOURCE_FAILED);
-  return { removed: folder.name, moved_to_trash: exists, readme_run_id: readmeJob.runId };
-}
-
 async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
   const args = parsed.positionals;
   const command = requiredArg(args, 0, "<命令>");
@@ -532,11 +494,10 @@ async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
       markets: [],
       projects_root: simpleName ? runtime.settings.projects_root || runtime.cwd : path.dirname(targetPath),
       folder_name: folderName,
-      workspace_folders: option(parsed.options, "folders") === undefined
-        ? [...DEFAULT_WORKSPACE_FOLDERS]
-        : option(parsed.options, "folders")!.split(",").map((item) => item.trim()).filter(Boolean),
+      workspace_folders: [], // shared 的旧字段仍必填，core 不再使用。
     };
-    return success(await runtime.service.projects.create(input), "项目已创建并开始首次同步。");
+    if (option(parsed.options, "folders") !== undefined) throw new CliError("BAD_ARGS", "--folders 已停用，请自行管理工作文件夹。");
+    return success(await runtime.service.projects.create(input), "项目已创建。");
   }
 
   if (command === "feed") {
@@ -635,23 +596,6 @@ async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
     throw new CliError("BAD_ARGS", "categories 只支持 preview 或 apply。");
   }
 
-  if (command === "folders") {
-    const operation = requiredArg(rest, 0, "folders list|create|describe|delete <p> …");
-    const project = requiredArg(rest, 1, "folders " + operation + " <p> …");
-    const id = projectId(project);
-    if (operation === "list") return success(await runtime.service.folders.list(id));
-    if (operation === "create" || operation === "describe") {
-      const name = requiredArg(rest, 2, "folders " + operation + " <p> <name> [--description <text>]");
-      const description = option(parsed.options, "description") || "待补充说明";
-      const result = operation === "create"
-        ? await runtime.service.folders.create(id, name, description)
-        : await runtime.service.folders.describe(id, name, description);
-      return success(result, operation === "create" ? "工作区文件夹已创建。" : "文件夹说明已更新。");
-    }
-    if (operation === "delete") return success(await deleteFolder(runtime, project, requiredArg(rest, 2, "folders delete <p> <name>")), "工作区文件夹已移到回收站。");
-    throw new CliError("BAD_ARGS", "folders 只支持 list、create、describe 或 delete。");
-  }
-
   if (command === "schedule") {
     const operation = requiredArg(rest, 0, "schedule install|remove|list <p>");
     const id = projectId(requiredArg(rest, 1, "schedule " + operation + " <p>"));
@@ -723,7 +667,7 @@ export async function main(argv: string[], io: CliIO): Promise<number> {
       emitOutcome(io, json, success(help, help));
       return EXIT.OK;
     }
-    const runtime = await createRuntime(io);
+    const runtime = await createRuntime(io, option(parsed.options, "browser"));
     const outcome = await execute(runtime, parsed);
     emitOutcome(io, json, outcome);
     return outcome.exitCode;

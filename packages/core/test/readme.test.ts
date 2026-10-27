@@ -33,7 +33,6 @@ afterEach(async () => {
 
 const emptyContents: ReadmeAutoContent = {
   "index-summary": "## 网站数据速览",
-  "folder-map": "## 目录地图",
   "task-routing": "## 任务路由",
   "data-guide": "## 数据指南",
   "design-summary": "## 设计规范速览",
@@ -54,7 +53,7 @@ describe("README automatic blocks", () => {
     const updated = replaceReadmeAutoBlocks(
       source,
       { ...emptyContents, changelog: "新内容含有 $&" },
-      new Set(["index-summary", "folder-map", "task-routing", "data-guide", "design-summary"]),
+      new Set(["index-summary", "task-routing", "data-guide", "design-summary"]),
     );
     expect(updated).toBe(
       '用户区块含有 $& 和 CRLF\r\n<!-- siteindex:auto:start id="changelog" -->\n新内容含有 $&\n<!-- siteindex:auto:end id="changelog" -->\r\n尾部用户内容\r\n',
@@ -62,18 +61,17 @@ describe("README automatic blocks", () => {
   });
 
   it("appends missing blocks in canonical order, respects disabled blocks and rejects malformed markers", () => {
-    const output = replaceReadmeAutoBlocks("用户维护的 README。\n", emptyContents, new Set(["folder-map"]));
+    const output = replaceReadmeAutoBlocks("用户维护的 README。\n", emptyContents);
     expect(parseReadmeAutoBlocks(output).map(({ id }) => id)).toEqual([
       "index-summary", "task-routing", "data-guide", "design-summary", "changelog",
     ]);
     expect(output).toContain("用户维护的 README。\n\n<!-- siteindex:auto:start id=\"index-summary\" -->");
     expect(() => parseReadmeAutoBlocks('<!-- siteindex:auto:start id="folder-map" -->\n内容\n<!-- siteindex:auto:end id="task-routing" -->'))
       .toThrow("README 自动区块标记未成对或存在嵌套。");
-    expect(() => parseReadmeAutoBlocks('<!-- siteindex:auto:start id=folder-map -->'))
-      .toThrow("README 自动区块标记未成对或存在嵌套。");
+    expect(parseReadmeAutoBlocks('<!-- siteindex:auto:start id=folder-map -->')).toEqual([]);
   });
 
-  it("builds all six data-driven blocks from site, inventory, folders, design and run records", () => {
+  it("builds the five data-driven blocks from site, inventory, design and run records", () => {
     const tokens: DesignTokens = {
       extracted_at: "2026-10-21T09:00:00Z", source_pages: [], css_variables: {},
       color: { primary: "#123456", text: "#222222", background: "#ffffff", palette: [] },
@@ -93,7 +91,6 @@ describe("README automatic blocks", () => {
         { date: "2026-10-21", sku: "C", type: "price_change", from: 20, to: 15, category: "feeders", title: "Bath" },
         { date: "2026-10-21", sku: "D", type: "new_sku", from: null, to: 10, category: "feeders", title: "New" },
       ],
-      folders: [{ name: "edm", description: "Campaign work", default: true, files: 2, modified_at: "2026-10-20T12:00:00Z" }],
       designTokens: tokens,
       runs: [{ run_id: "run-1", job: "daily", started_at: "2026-10-21T02:04:00-07:00", finished_at: null, status: "ok" }],
     };
@@ -102,7 +99,6 @@ describe("README automatic blocks", () => {
     expect(blocks["index-summary"]).toContain("在售 SKU / 产品 | 8 / 4");
     expect(blocks["index-summary"]).toContain("85.0%（较 7 天前 +5.0pt）");
     expect(blocks["index-summary"]).toContain("新到货 1 · 新缺货 1 · 调价 1 · 上新 1");
-    expect(blocks["folder-map"]).toContain("`edm/` | Campaign work | 2 | 2026-10-20");
     expect(blocks["task-routing"]).toContain(`${PATHS.skillsDir}/edm-builder/SKILL.md`);
     expect(blocks["data-guide"]).toContain(`| \`${PATHS.keywords}\` |`);
     expect(blocks["design-summary"]).toContain("#123456");
@@ -121,7 +117,7 @@ describe("README automatic blocks", () => {
     const blocks = parseReadmeAutoBlocks(generated);
     expect(blocks.map(({ id }) => id)).toEqual(Object.keys(emptyContents));
     expect(generated.startsWith(userContent)).toBe(true);
-    expect(generated).toContain("| 文件夹 | 用途 | 文件数 | 最近修改 |");
+    expect(generated).not.toContain('id="folder-map"');
     expect(generated).toContain("## 任务路由");
     expect(generated).toContain("## 数据指南（index/）");
     expect(generated).toContain("## 设计规范速览");

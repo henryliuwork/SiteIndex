@@ -3,7 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CSV_HEADERS,
-  DEFAULT_WORKSPACE_FOLDERS,
   PATHS,
   SCHEMA_VERSION,
   type CreateProjectInput,
@@ -46,7 +45,16 @@ async function templateDirectory(override?: string): Promise<string> {
 }
 
 async function copyTemplate(templatePath: string, projectPath: string, input: CreateProjectInput, detected: DetectResult): Promise<void> {
-  await cp(templatePath, projectPath, { recursive: true, force: false, errorOnExist: false });
+  const templateFiles = [PATHS.readme, PATHS.agentsMd, PATHS.claudeMd];
+  const existing = new Set<string>();
+  for (const name of templateFiles) {
+    try { await access(path.join(projectPath, name)); existing.add(name); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
+  await cp(templatePath, projectPath, {
+    recursive: true, force: false, errorOnExist: false,
+    filter: (source) => path.relative(templatePath, source) !== PATHS.aboutFile,
+  });
   const replacements: Record<string, string> = {
     "{{brand_name}}": input.brand.name || detected.final_url,
     "{{domain}}": new URL(detected.final_url).hostname,
@@ -57,11 +65,17 @@ async function copyTemplate(templatePath: string, projectPath: string, input: Cr
     "{{brand_audience}}": input.brand.audience ?? "",
     "{{brand_voice}}": input.brand.voice ?? "",
   };
-  for (const name of [PATHS.readme, PATHS.agentsMd, PATHS.claudeMd, PATHS.aboutFile]) {
+  for (const name of templateFiles) {
+    if (existing.has(name)) continue;
     const filePath = path.join(projectPath, name);
     try {
       let content = await readFile(filePath, "utf8");
       for (const [placeholder, value] of Object.entries(replacements)) content = content.replaceAll(placeholder, value);
+      if (name === PATHS.readme) {
+        content = content.replace(/\n?<!-- siteindex:auto:start id="folder-map" -->[\s\S]*?<!-- siteindex:auto:end id="folder-map" -->\n?/u, "\n");
+        content = content.replace(/^- 工作成果放入对应工作区文件夹，不要写入 `index\/`（台账除外，见下方数据指南）\r?\n/mu,
+          "- 工作成果的存放位置由用户在此说明；不要写入 `index/`（台账除外，见下方数据指南）\n");
+      }
       await atomicWrite(filePath, content);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -72,11 +86,6 @@ async function copyTemplate(templatePath: string, projectPath: string, input: Cr
 function createConfig(input: CreateProjectInput, detected: DetectResult): SiteConfig {
   const finalUrl = new URL(detected.final_url);
   const domain = finalUrl.hostname.toLowerCase().replace(/^www\./, "");
-  const workspaceNames = [...new Set(input.workspace_folders.map((name) => name.trim()).filter(Boolean))];
-  const workspace_folders = workspaceNames.map((name) => ({
-    name,
-    default: (DEFAULT_WORKSPACE_FOLDERS as readonly string[]).includes(name),
-  }));
   return {
     schema_version: SCHEMA_VERSION,
     domain,
@@ -111,7 +120,7 @@ function createConfig(input: CreateProjectInput, detected: DetectResult): SiteCo
       },
     } as SiteConfig["crawl"] & { stock_rules: { in_stock: string[]; out_of_stock: string[]; preorder: string[] } },
     categories: { mode: "feed" },
-    workspace_folders,
+    workspace_folders: [], // shared 契约暂未删除；写入 site.json 时剔除。
     schedule: {
       daily: { enabled: true, days: [1, 2, 3, 4, 5, 6, 7], time: "02:00" },
       validate: { enabled: true, days: [1, 2, 3, 4, 5, 6, 7], time: "02:30" },
@@ -150,7 +159,7 @@ async function initializeProjectData(projectPath: string, config: SiteConfig): P
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   await Promise.all([
-    atomicWrite(sitePath, `${JSON.stringify(config, null, 2)}\n`),
+    atomicWrite(sitePath, `${JSON.stringify(config, (key, value) => key === "workspace_folders" ? undefined : value, 2)}\n`),
     ...jsonlFiles.map((relative) => atomicWrite(path.join(projectPath, relative), "")),
     writeCsv(path.join(projectPath, PATHS.dailySummary), [], CSV_HEADERS.dailySummary, ["date", "category"]),
     writeCsv(path.join(projectPath, PATHS.skuMedia), [], CSV_HEADERS.skuMedia, ["sku", "image_role"]),
@@ -158,16 +167,6 @@ async function initializeProjectData(projectPath: string, config: SiteConfig): P
     atomicWrite(path.join(projectPath, PATHS.categories), "[]\n"),
     atomicWrite(path.join(projectPath, PATHS.sitemapsSummary), `${JSON.stringify({ sitemaps: config.sitemaps }, null, 2)}\n`),
     atomicWrite(path.join(projectPath, PATHS.tech), `${JSON.stringify({ platform: config.platform, frontend: null }, null, 2)}\n`),
-    ...config.workspace_folders.map(async (folder) => {
-      const folderPath = path.join(projectPath, folder.name);
-      await mkdir(folderPath, { recursive: true });
-      const about = path.join(folderPath, PATHS.aboutFile);
-      try { await access(about); }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        await atomicWrite(about, "待补充说明\n");
-      }
-    }),
   ]);
 }
 
