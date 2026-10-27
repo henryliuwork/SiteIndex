@@ -452,7 +452,7 @@ export interface SkuStockView {
 
 // ---------- 日志与校验 ----------
 
-export type JobName = "daily" | "weekly" | "monthly" | "validate" | "readme" | "design" | "index-check" | "views";
+export type JobName = "daily" | "weekly" | "monthly" | "validate" | "readme" | "design" | "index-check" | "views" | "init";
 
 export interface RunLog {
   run_id: string;
