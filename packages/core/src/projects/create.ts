@@ -83,6 +83,26 @@ async function copyTemplate(templatePath: string, projectPath: string, input: Cr
   }
 }
 
+async function copySkills(templatePath: string, projectPath: string): Promise<void> {
+  // 桌面安装包与源码仓库都把 skills/ 放在 templates/ 的同级目录。
+  const sourceRoot = path.resolve(templatePath, "../../skills");
+  let entries;
+  try { entries = await readdir(sourceRoot, { withFileTypes: true }); }
+  catch { throw createError("PROJECT_NOT_FOUND", "找不到软件内置 skills 目录。", sourceRoot); }
+  const skills: { name: string; version: string }[] = [];
+  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
+    const source = path.join(sourceRoot, entry.name);
+    let markdown: string;
+    try { markdown = await readFile(path.join(source, "SKILL.md"), "utf8"); }
+    catch { continue; }
+    const version = /^version:\s*["']?([^\r\n"']+)/mu.exec(markdown)?.[1]?.trim() || "0.0.0";
+    await cp(source, path.join(projectPath, PATHS.skillsDir, entry.name), { recursive: true, force: true });
+    skills.push({ name: entry.name, version });
+  }
+  if (!skills.length) throw createError("PROJECT_NOT_FOUND", "软件内置 skills 目录为空。", sourceRoot);
+  await atomicWrite(path.join(projectPath, PATHS.skillsManifest), `${JSON.stringify({ schema_version: "1.0", skills }, null, 2)}\n`);
+}
+
 function createConfig(input: CreateProjectInput, detected: DetectResult): SiteConfig {
   const finalUrl = new URL(detected.final_url);
   const domain = finalUrl.hostname.toLowerCase().replace(/^www\./, "");
@@ -204,6 +224,7 @@ export async function createProjectFiles(
     await copyTemplate(template, projectPath, input, detected);
     const config = createConfig(input, detected);
     await initializeProjectData(projectPath, config);
+    await copySkills(template, projectPath);
     return { id: folderName, path: projectPath, config };
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error) throw error;

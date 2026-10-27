@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   CSV_HEADERS,
   EXIT,
+  INIT_STEPS,
   JOB_NAMES,
   PATHS,
   dailyReportFile,
@@ -888,7 +889,83 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         }
 
         let jobResult: JobResult;
-        if (req.job === "daily") {
+        if (req.job === "init") {
+          const steps: NonNullable<JobResult["steps"]> = [];
+          const errors: string[] = [];
+          const counts: Record<string, number> = {};
+          const record = (key: (typeof INIT_STEPS)[number], status: "ok" | "failed" | "skipped", message: string, pct: number) => {
+            steps.push({ key, status, message });
+            if (status === "failed") errors.push(message);
+            progress(pct, key, message, status === "failed" ? "error" : "info");
+          };
+          for (const [key, relative, label, pct] of [
+            ["folders", PATHS.index, "数据目录已创建", 5],
+            ["config", PATHS.site, "项目配置已创建", 10],
+            ["readme", PATHS.readme, "项目说明已创建", 15],
+            ["skills", PATHS.skillsManifest, "项目 skills 已安装", 20],
+          ] as const) {
+            try { await access(path.join(executionPath, relative)); record(key, "ok", label, pct); }
+            catch { record(key, "failed", `${label.replace("已", "未")}：${relative} 不存在。`, pct); }
+          }
+          progress(25, "daily", "正在读取商品 feed 并同步库存");
+          try {
+            const items = await readFeeds(config as FeedSiteConfig);
+            const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
+            const daily = await runDaily(executionPath, snapshot, { date: requestedDate, force: req.force });
+            Object.assign(counts, daily.counts);
+            const message = daily.status === "failed"
+              ? `每日同步失败：${daily.errors.join("；") || "数据源未生成有效数据。"}`
+              : daily.status === "partial" ? `每日同步部分完成：${daily.errors.join("；") || "部分库存状态未知。"}` : "每日同步完成。";
+            record("daily", daily.status === "ok" ? "ok" : "failed", message, 45);
+          } catch (error) {
+            record("daily", "failed", `每日同步失败：${isSiteIndexError(error) ? error.message : error instanceof Error ? error.message : String(error)}`, 45);
+          }
+          progress(50, "weekly", "正在同步 SEO 页面与内容");
+          try {
+            const weekly = await runWeekly(executionPath, config, { date: requestedDate,
+              onProgress: (_step, message) => progress(55, "weekly", message) });
+            Object.assign(counts, weekly.counts);
+            const message = weekly.status === "failed" ? `每周同步失败：${weekly.errors.join("；") || "抓取结果为空。"}`
+              : weekly.status === "partial" ? `每周同步部分完成：${weekly.errors.join("；")}` : "每周同步完成。";
+            record("weekly", weekly.status === "ok" ? "ok" : "failed", message, 65);
+          } catch (error) {
+            record("weekly", "failed", `每周同步失败：${error instanceof Error ? error.message : String(error)}`, 65);
+          }
+          const viewErrors: string[] = [];
+          progress(70, "views", "正在生成视图并校验项目文件");
+          try {
+            const built = await buildViews(executionPath, { date: requestedDate });
+            counts.products = built.products;
+            counts.sku_stock = built.skuStock;
+          } catch (error) { viewErrors.push(`视图生成失败：${error instanceof Error ? error.message : String(error)}`); }
+          try {
+            const validation = await validateProjectFiles(executionPath, { trigger: req.trigger });
+            if (validation.summary.error || validation.summary.missing || validation.summary.conflict_copy) {
+              const files = validation.files.filter((file) => ["error", "missing", "conflict_copy"].includes(file.status));
+              viewErrors.push(`文件校验失败：${files.slice(0, 5).map((file) => `${file.path}：${file.message ?? file.rule ?? "校验错误"}`).join("；")}`);
+            }
+          } catch (error) { viewErrors.push(`文件校验失败：${error instanceof Error ? error.message : String(error)}`); }
+          record("views", viewErrors.length ? "failed" : "ok", viewErrors.join("；") || "数据视图与文件校验完成。", 85);
+          progress(90, "readme", "正在刷新 README 自动区块");
+          try {
+            invalidate(executionPath);
+            await refreshReadmeFile(executionPath, await load(executionPath));
+            const readme = steps.find((step) => step.key === "readme");
+            if (readme?.status === "ok") readme.message = "README 自动区块已刷新。";
+            progress(95, "readme", "README 自动区块已刷新。");
+          } catch (error) {
+            const message = `README 刷新失败：${error instanceof Error ? error.message : String(error)}`;
+            const readme = steps.find((step) => step.key === "readme");
+            if (readme) { readme.status = "failed"; readme.message = message; errors.push(message); }
+            progress(95, "readme", message, "error");
+          }
+          record("schedule", "skipped", "定时任务由桌面端注册。", 99);
+          const completed = steps.filter((step) => step.status === "ok").length;
+          const status = errors.length ? completed ? "partial" : "failed" : "ok";
+          jobResult = { runId, job: req.job, status, exitCode: errors.length ? EXIT.SOURCE_FAILED : EXIT.OK,
+            summary: status === "ok" ? "项目初始化完成。" : status === "partial" ? "项目初始化部分完成，请查看失败步骤。" : "项目初始化失败。",
+            counts, ...(errors.length ? { errors } : {}), steps };
+        } else if (req.job === "daily") {
           progress(5, "feed", "正在读取商品 feed");
           const items = await readFeeds(config as FeedSiteConfig);
           const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
@@ -1034,8 +1111,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         }
         return jobResult;
       }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: req.job });
-      if (result.status === "ok" || result.status === "partial") progress(100, "done", result.summary);
-      else progress(null, "done", result.summary, "error");
+      const finalStep = req.job === "init" ? "schedule" : "done";
+      if (result.status === "ok" || result.status === "partial") progress(100, finalStep, result.summary);
+      else progress(null, finalStep, result.summary, "error");
       return result;
     } catch (error) {
       const exitCode = thrownExitCode(error);
@@ -1051,7 +1129,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           finished_at: zonedTimestamp(config.timezone), status: "failed", errors: [message],
         });
       } catch { /* 项目不可写时保留可返回的 JobResult */ }
-      progress(null, "failed", message, "error");
+      progress(null, req.job === "init" ? "config" : "failed", message, "error");
       return failed;
     } finally {
       invalidate(projectPath);
@@ -1085,8 +1163,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const detected = await detectSite(input.url);
       const created = await createProjectFiles(input, detected, ctx.templateDir);
       invalidate(created.path);
-      const job = await runJob({ projectPath: created.path, job: "daily", trigger: "manual" }, () => undefined);
-      return { id: created.id, runId: job.runId };
+      return { id: created.id, runId: `${localDate(created.config.timezone)}-init` };
     },
   };
 
