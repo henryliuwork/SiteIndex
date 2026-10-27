@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { PATHS, type SkuStockView, type StockStatus } from "@siteindex/shared";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
 import { readCsv } from "../src/io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../src/io/jsonl";
@@ -51,6 +51,7 @@ function service(projectPath: string) {
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(TEMP_DIRS.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
@@ -78,6 +79,27 @@ describe("createCoreService initial namespaces", () => {
     expect(inventory.category_source).toBe(detail.config.categories?.mode ?? "feed");
     expect(await api.inventory.dailyReport("fixture", "2026-10-21")).toContain("库存日报");
     expect(await api.inventory.dailyReport("fixture", "2026-10-18")).toBeNull();
+  }, 30_000);
+
+  it("preserves a readable Chinese feed failure reason in daily results and run logs", async () => {
+    const { projectPath } = await makeProject();
+    const configPath = path.join(projectPath, PATHS.site);
+    const config = JSON.parse(await readFile(configPath, "utf8")) as { crawl: { feed_url?: string | string[] } };
+    config.crawl.feed_url = "https://shop.example/private-feed";
+    await writeFile(configPath, JSON.stringify(config));
+    const message = "这个地址返回的是网页而不是商品 feed（可能需要登录，或是 Google 表格/后台页面的链接）。请填写 Merchant Center 数据源中的'抓取网址'。";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html><body>login required</body></html>", {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    })));
+
+    const result = await service(projectPath).runJob(
+      { projectPath, job: "daily", trigger: "manual", date: "2026-10-22" },
+      () => undefined,
+    );
+    const run = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.run_id === "2026-10-22-daily");
+
+    expect(result).toMatchObject({ status: "failed", summary: `每日同步失败：${message}`, errors: [message] });
+    expect(run).toMatchObject({ status: "failed", errors: [message] });
   }, 30_000);
 
   it("paginates, sorts and filters SKU and product lists", async () => {

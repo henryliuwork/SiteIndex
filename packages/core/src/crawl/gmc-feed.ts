@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { EXIT, type SiteIndexErrorCode, type StockStatus } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 
@@ -57,83 +58,101 @@ const STOCK_MAP: Record<string, StockStatus> = {
 const VARIANT_ATTRIBUTES = ["color", "size", "material", "pattern"] as const;
 const TRACKING_QUERY = /^(utm_|gclid$|gbraid$|wbraid$|srsltid$|fbclid$|mc_|_ga$)/i;
 
-interface XmlNode {
-  name: string;
-  localName: string;
-  attrs: Record<string, string>;
-  text: string;
-  children: XmlNode[];
+const XML = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  removeNSPrefix: true,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: true,
+  processEntities: true,
+  htmlEntities: true,
+  ignoreDeclaration: true,
+  transformTagName: (name) => name.toLowerCase(),
+  isArray: (name) => name === "item" || name === "entry",
+});
+
+const HTML_FEED_MESSAGE = "这个地址返回的是网页而不是商品 feed（可能需要登录，或是 Google 表格/后台页面的链接）。请填写 Merchant Center 数据源中的'抓取网址'。";
+
+function xmlSnippet(source: string, line: number): string {
+  const nearby = source.replace(/^\uFEFF/, "").split(/\r?\n/)[Math.max(0, line - 1)]?.trim() ?? "";
+  return nearby.slice(0, 160);
 }
 
-function decodeXml(text: string): string {
-  return text.replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (whole, entity: string) => {
-    const lower = entity.toLowerCase();
-    if (lower === "amp") return "&";
-    if (lower === "lt") return "<";
-    if (lower === "gt") return ">";
-    if (lower === "quot") return '"';
-    if (lower === "apos") return "'";
-    const code = lower.startsWith("#x") ? Number.parseInt(lower.slice(2), 16) : Number.parseInt(lower.slice(1), 10);
-    try { return String.fromCodePoint(code); } catch { return whole; }
-  });
+function parseErrorMessage(source: string, line: number, column: number, reason: string): string {
+  const snippet = xmlSnippet(source, line);
+  return `Feed XML 第 ${line} 行第 ${column} 列解析失败：${reason}${snippet ? `；附近内容：${snippet}` : ""}`;
 }
 
-function localName(name: string): string {
-  const colon = name.lastIndexOf(":");
-  return name.slice(colon + 1).toLowerCase();
+function nodeText(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return String(value).trim();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const text = (value as Record<string, unknown>)["#text"];
+  return typeof text === "string" || typeof text === "number" ? String(text).trim() : "";
 }
 
-function parseAttributes(source: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  const attrPattern = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-  for (const match of source.matchAll(attrPattern)) attrs[match[1]!] = decodeXml(match[2] ?? match[3] ?? "");
-  return attrs;
+function linkValue(value: unknown): string {
+  const links = Array.isArray(value) ? value : [value];
+  const entries = links.filter((link): link is Record<string, unknown> => typeof link === "object" && link !== null && !Array.isArray(link));
+  const alternate = entries.find((link) => String(link["@_rel"] ?? "").toLowerCase() === "alternate");
+  const selected = alternate ?? entries[0];
+  if (selected) return String(selected["@_href"] ?? nodeText(selected));
+  return nodeText(links[0]);
+}
+
+function xmlRecord(value: unknown): FeedItem {
+  const row: FeedItem = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return row;
+  for (const [name, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (name.startsWith("@_")) continue;
+    const key = name.toLowerCase();
+    if (key === "link") {
+      const link = linkValue(raw);
+      if (link) row.link = link;
+      continue;
+    }
+    const values = Array.isArray(raw) ? raw.map(nodeText) : [nodeText(raw)];
+    if (key === "additional_image_link" || key === "product_type") {
+      const nonempty = values.filter(Boolean);
+      if (!nonempty.length) continue;
+      row[key] = nonempty[0];
+      if (nonempty.length > 1) row[`${key}_all`] = nonempty;
+    } else if (!Object.hasOwn(row, key)) {
+      row[key] = values[0] ?? "";
+    }
+  }
+  return row;
 }
 
 function parseXmlItems(source: string): FeedItem[] {
-  const items: FeedItem[] = [];
-  const stack: XmlNode[] = [];
-  const tokens = source.match(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<![^>]*>|<(?:[^>"']|"[^"]*"|'[^']*')+>|[^<]+/g) ?? [];
-  for (const token of tokens) {
-    if (token.startsWith("<!--") || token.startsWith("<?") || token.startsWith("<!")) {
-      if (token.startsWith("<![CDATA[")) stack.at(-1)!.text += token.slice(9, -3);
-      continue;
-    }
-    if (token.startsWith("</")) {
-      const closing = /^<\/\s*([^\s>]+)\s*>$/.exec(token)?.[1];
-      const node = stack.pop();
-      if (!node || node.name !== closing) throw new FeedError("FEED_FETCH_FAILED", "Feed XML 标签不匹配。");
-      if (node.localName === "item" || node.localName === "entry") {
-        const row: FeedItem = {};
-        for (const child of node.children) {
-          if (child.children.length) continue;
-          let value = child.text.trim();
-          if (child.localName === "link" && !value) value = child.attrs.href ?? "";
-          if ((child.localName === "additional_image_link" || child.localName === "product_type") && Object.hasOwn(row, child.localName)) {
-            const allKey = `${child.localName}_all`;
-            if (!Array.isArray(row[allKey])) row[allKey] = [String(row[child.localName] ?? "")];
-            (row[allKey] as string[]).push(value);
-          } else if (!Object.hasOwn(row, child.localName)) row[child.localName] = value;
-        }
-        items.push(row);
-      }
-      stack.at(-1)?.children.push(node);
-      continue;
-    }
-    if (token.startsWith("<")) {
-      const name = /^<\s*([^\s/>]+)/.exec(token)?.[1];
-      if (!name) continue;
-      const attrText = token.slice(name.length + 1, token.length - (token.endsWith("/> ") ? 3 : 1));
-      const selfClosing = /\/\s*>$/.test(token);
-      const node: XmlNode = { name, localName: localName(name), attrs: parseAttributes(attrText), text: "", children: [] };
-      if (selfClosing) {
-        stack.at(-1)?.children.push(node);
-      } else stack.push(node);
-      continue;
-    }
-    if (stack.length) stack.at(-1)!.text += decodeXml(token);
+  const validation = XMLValidator.validate(source);
+  if (validation !== true) {
+    const { line, col, msg } = validation.err;
+    throw new FeedError("FEED_FETCH_FAILED", parseErrorMessage(source, line, col, msg));
   }
-  if (stack.length) throw new FeedError("FEED_FETCH_FAILED", "Feed XML 未闭合。");
+
+  let document: unknown;
+  try {
+    document = XML.parse(source);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new FeedError("FEED_FETCH_FAILED", parseErrorMessage(source, 1, 1, reason));
+  }
+
+  const items: FeedItem[] = [];
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    for (const [name, value] of Object.entries(node as Record<string, unknown>)) {
+      if (name === "item" || name === "entry") {
+        for (const record of Array.isArray(value) ? value : [value]) items.push(xmlRecord(record));
+      } else visit(value);
+    }
+  };
+  visit(document);
   return items;
 }
 
@@ -176,7 +195,7 @@ function parseTabularItems(source: string): FeedItem[] {
 
 /** 解析 Google Merchant Center RSS、Atom 或带空格表头的 CSV/TSV。 */
 export function parseFeed(data: string | Uint8Array): FeedItem[] {
-  const source = typeof data === "string" ? data : new TextDecoder().decode(data);
+  const source = (typeof data === "string" ? data : new TextDecoder().decode(data)).replace(/^\uFEFF/, "");
   if (source.trimStart().startsWith("<")) return parseXmlItems(source);
   return parseTabularItems(source);
 }
@@ -376,14 +395,40 @@ function pythonJson(value: unknown): string {
   return serialize(value);
 }
 
-async function loadSource(source: string, userAgent: string): Promise<Uint8Array> {
-  if (/^https?:\/\//i.test(source)) {
-    const response = await fetch(source, { headers: { "user-agent": userAgent } });
-    if (!response.ok) throw new FeedError("FEED_FETCH_FAILED", `Feed 返回 HTTP ${response.status}: ${source}`);
-    return new Uint8Array(await response.arrayBuffer());
+function isGzip(data: Uint8Array): boolean {
+  return data[0] === 0x1f && data[1] === 0x8b;
+}
+
+function maybeGunzip(data: Uint8Array): Uint8Array {
+  if (!isGzip(data)) return data;
+  try { return new Uint8Array(gunzipSync(data)); }
+  catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new FeedError("FEED_FETCH_FAILED", `商品 feed 的 gzip 文件无法解压：${reason}`);
   }
-  const data = await readFile(path.resolve(source));
-  return data[0] === 0x1f && data[1] === 0x8b ? gunzipSync(data) : data;
+}
+
+function looksLikeHtml(data: Uint8Array): boolean {
+  const prefix = new TextDecoder().decode(data.subarray(0, 4096)).replace(/^\uFEFF/, "").trimStart();
+  return /^(?:<!doctype\s+html\b|<html\b)/i.test(prefix);
+}
+
+async function loadSource(source: string, userAgent: string): Promise<Uint8Array> {
+  let data: Uint8Array;
+  let contentType = "";
+  let response: Response | null = null;
+  if (/^https?:\/\//i.test(source)) {
+    response = await fetch(source, { headers: { "user-agent": userAgent } });
+    contentType = response.headers.get("content-type") ?? "";
+    data = new Uint8Array(await response.arrayBuffer());
+    if (/^text\/html(?:\s*;|$)/i.test(contentType.trim())) throw new FeedError("FEED_FETCH_FAILED", HTML_FEED_MESSAGE);
+  } else {
+    data = await readFile(path.resolve(source));
+  }
+  data = maybeGunzip(data);
+  if (looksLikeHtml(data)) throw new FeedError("FEED_FETCH_FAILED", HTML_FEED_MESSAGE);
+  if (response && !response.ok) throw new FeedError("FEED_FETCH_FAILED", `Feed 返回 HTTP ${response.status}: ${source}`);
+  return data;
 }
 
 /** 根据 site.json 中的 feed_url 顺序载入多份 feed；同 ID 首条优先由 toSnapshot 处理。 */
