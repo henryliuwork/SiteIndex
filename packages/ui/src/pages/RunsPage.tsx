@@ -220,7 +220,13 @@ export function RunsPage() {
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
       ]);
       announce("本机已设为此项目的执行设备");
-    } catch (error) { announce("设置执行设备失败：" + (apiErrorMessage(error, "请稍后重试"))); }
+    } catch (error) {
+      // 认领可能已写入、只是系统计划任务注册失败，刷新状态以显示真实结果
+      void queryClient.invalidateQueries({ queryKey: ["runner", id] });
+      void queryClient.invalidateQueries({ queryKey: ["schedule", id] });
+      void queryClient.invalidateQueries({ queryKey: ["schedule-runtime"] });
+      announce(apiErrorMessage(error, "设置执行设备失败，请稍后重试"));
+    }
     finally { setClaimingRunner(false); }
   };
 
