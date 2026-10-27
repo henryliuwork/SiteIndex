@@ -3,15 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, FileDown } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { BlogFilters, BlogPost, DraftRow, Keyword, KeywordFilters, ListQuery, ProjectDetail } from "@siteindex/shared";
+import type { BlogFilters, BlogPost, Keyword, KeywordFilters, ListQuery, ProjectDetail } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Segmented, Tabs } from "../components";
 
-type ContentView = "blog" | "keywords" | "drafts";
+type ContentView = "blog" | "keywords";
 type IssueFilter = BlogFilters["issue"] | "all";
 type RoleFilter = KeywordFilters["role"] | "all";
 type StatusFilter = KeywordFilters["status"] | "all";
-type DraftFilter = DraftRow["status"] | "all";
 const projectTabs = [
   { value: "overview", label: "概览" }, { value: "inventory", label: "库存" }, { value: "products", label: "产品" },
   { value: "seo", label: "SEO" }, { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
@@ -32,12 +31,8 @@ const roleOptions: { value: RoleFilter; label: string }[] = [
 const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "全部状态" }, { value: "live", label: "已上线" }, { value: "planned", label: "计划" }, { value: "drafting", label: "撰写中" },
 ];
-const draftOptions: { value: DraftFilter; label: string }[] = [
-  { value: "all", label: "全部草稿" }, { value: "brief", label: "Brief" }, { value: "draft", label: "草稿" }, { value: "published", label: "已发布" },
-];
 const intentLabels: Record<Keyword["intent"], string> = { informational: "信息型", commercial: "商业调研", transactional: "交易型", navigational: "导航型" };
 const keywordStatusLabels: Record<Keyword["status"], string> = { planned: "计划", drafting: "撰写中", live: "已上线" };
-const draftStatusLabels: Record<DraftRow["status"], string> = { brief: "Brief", draft: "草稿", published: "已发布" };
 
 function displayPath(url: string | null): string { if (!url) return "未分配"; try { return new URL(url).pathname; } catch { return url; } }
 function csvCell(value: unknown): string { return '"' + String(value ?? "").replaceAll('"', '""') + '"'; }
@@ -74,36 +69,22 @@ function keywordColumns(): ColumnDef<Keyword, unknown>[] {
   ];
 }
 
-function draftColumns(): ColumnDef<DraftRow, unknown>[] {
-  return [
-    { id: "date", accessorKey: "date", header: "日期", cell: ({ row }) => <code className="si-content-date">{row.original.date}</code>, enableSorting: true },
-    { id: "slug", accessorKey: "slug", header: "Slug", cell: ({ row }) => <code className="si-content-url">{row.original.slug}</code>, enableSorting: true },
-    { id: "folder", accessorKey: "folder", header: "文件夹", enableSorting: true },
-    { id: "files", accessorKey: "files", header: "文件", cell: ({ row }) => row.original.files.length + " 个", enableSorting: true },
-    { id: "status", accessorKey: "status", header: "状态", cell: ({ row }) => <Chip tone={row.original.status === "published" ? "ok" : row.original.status === "draft" ? "info" : "neutral"}>{draftStatusLabels[row.original.status]}</Chip>, enableSorting: true },
-  ];
-}
-
 export function ContentPage() {
   const { id = "kingsyard" } = useParams();
   const navigate = useNavigate();
   const [view, setView] = useState<ContentView>("blog");
   const [blogQuery, setBlogQuery] = useState(initialBlogQuery);
   const [keywordQuery, setKeywordQuery] = useState(initialKeywordQuery);
-  const [draftQuery, setDraftQuery] = useState<ListQuery>({ page: 1, pageSize: 20, filters: {} });
-  const [draftStatus, setDraftStatus] = useState<DraftFilter>("all");
-  const [selected, setSelected] = useState<BlogPost | Keyword | DraftRow | null>(null);
+  const [selected, setSelected] = useState<BlogPost | Keyword | null>(null);
   const [feedback, setFeedback] = useState("");
   const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["content", "summary", id], queryFn: () => api.content.summary(id) });
   const blogListQuery = useQuery({ queryKey: ["content", "blogs", id, blogQuery], queryFn: () => api.content.listBlog(id, blogQuery) });
   const keywordListQuery = useQuery({ queryKey: ["content", "keywords", id, keywordQuery], queryFn: () => api.content.listKeywords(id, keywordQuery) });
-  const draftListQuery = useQuery({ queryKey: ["content", "drafts", id], queryFn: () => api.content.listDrafts(id) });
   const project = projectQuery.data?.summary;
   const summary = summaryQuery.data;
   const blogs = blogListQuery.data;
   const keywords = keywordListQuery.data;
-  const drafts = draftListQuery.data ?? [];
   const issueCounts = useMemo(() => ({
     noLinks: summary?.kpis.find((item) => item.key === "no_links")?.value ?? "0",
     noSchema: summary?.kpis.find((item) => item.key === "no_schema")?.value ?? "0",
@@ -112,24 +93,14 @@ export function ContentPage() {
   const viewOptions = [
     { value: "blog" as const, label: "博客文章 " + (blogs?.total ?? 0) },
     { value: "keywords" as const, label: "关键词映射 " + (keywords?.total ?? 0) },
-    { value: "drafts" as const, label: "草稿 " + drafts.length },
   ];
-  const activeQuery = view === "blog" ? blogListQuery : view === "keywords" ? keywordListQuery : draftListQuery;
-  const filteredDrafts = useMemo(() => drafts.filter((row) => (draftStatus === "all" || row.status === draftStatus) && (!draftQuery.search || [row.slug, row.folder, row.files.join(" ")].join(" ").toLowerCase().includes(draftQuery.search.toLowerCase()))), [drafts, draftStatus, draftQuery.search]);
-  const sortedDrafts = useMemo(() => {
-    const rows = [...filteredDrafts];
-    if (draftQuery.sort) rows.sort((a, b) => String(a[draftQuery.sort!.field as keyof DraftRow] ?? "").localeCompare(String(b[draftQuery.sort!.field as keyof DraftRow] ?? "")) * (draftQuery.sort!.dir === "asc" ? 1 : -1));
-    return rows;
-  }, [filteredDrafts, draftQuery.sort]);
-  const pagedDrafts = sortedDrafts.slice((draftQuery.page - 1) * draftQuery.pageSize, draftQuery.page * draftQuery.pageSize);
+  const activeQuery = view === "blog" ? blogListQuery : keywordListQuery;
   const blogColumnDefs = useMemo(blogColumns, []);
   const keywordColumnDefs = useMemo(keywordColumns, []);
-  const draftColumnDefs = useMemo(draftColumns, []);
 
   const setSearch = (search: string) => {
     if (view === "blog") setBlogQuery((current) => ({ ...current, page: 1, search: search || undefined }));
-    else if (view === "keywords") setKeywordQuery((current) => ({ ...current, page: 1, search: search || undefined }));
-    else setDraftQuery((current) => ({ ...current, page: 1, search: search || undefined }));
+    else setKeywordQuery((current) => ({ ...current, page: 1, search: search || undefined }));
   };
   const exportRows = async () => {
     try {
@@ -139,7 +110,7 @@ export function ContentPage() {
       } else if (view === "keywords") {
         const result = await api.content.listKeywords(id, { ...keywordQuery, page: 1, pageSize: 0 });
         downloadCsv(id + "-content-keywords.csv", ["关键词", "类型", "意图", "主题簇", "目标页面", "状态", "搜索量", "当前排名"], result.rows.map((row) => [row.keyword, row.role, row.intent, row.cluster, row.target_url, row.status, row.search_volume, row.current_rank]));
-      } else downloadCsv(id + "-content-drafts.csv", ["日期", "Slug", "文件夹", "文件", "状态"], filteredDrafts.map((row) => [row.date, row.slug, row.folder, row.files.join("; "), row.status]));
+      }
       setFeedback("当前列表已导出 CSV。");
     } catch (cause) { setFeedback(apiErrorMessage(cause, "导出失败。")); }
   };
@@ -161,25 +132,21 @@ export function ContentPage() {
     <div className="si-content-kpis">{summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className="si-content-toolbar si-content-toolbar-table">
       <Segmented value={view} options={viewOptions} onChange={setView} ariaLabel="内容视图" />
-      <SearchInput value={(view === "blog" ? blogQuery : view === "keywords" ? keywordQuery : draftQuery).search ?? ""} onSearch={setSearch} label="搜索内容" placeholder={view === "keywords" ? "搜索关键词或主题簇" : "搜索标题或关键词"} />
+      <SearchInput value={(view === "blog" ? blogQuery : keywordQuery).search ?? ""} onSearch={setSearch} label="搜索内容" placeholder={view === "keywords" ? "搜索关键词或主题簇" : "搜索标题或关键词"} />
       {view === "blog" && <div className="si-content-filter-row">{blogIssues.map((item) => <FilterPill key={item.value} currentValue={blogQuery.filters?.issue ?? "all"} value={item.value} onValueChange={(value) => setBlogQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, issue: !value || value === "all" ? undefined : value } }))}>{item.label}{item.value === "no_links" ? " " + issueCounts.noLinks : item.value === "no_schema" ? " " + issueCounts.noSchema : item.value === "links_oos" ? " " + issueCounts.oos : ""}</FilterPill>)}</div>}
       {view === "keywords" && <div className="si-content-filter-row">{roleOptions.map((item) => <FilterPill key={item.value} currentValue={keywordQuery.filters?.role ?? "all"} value={item.value} onValueChange={(value) => setKeywordQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, role: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}{statusOptions.map((item) => <FilterPill key={item.value} currentValue={keywordQuery.filters?.status ?? "all"} value={item.value} onValueChange={(value) => setKeywordQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}</div>}
-      {view === "drafts" && <div className="si-content-filter-row">{draftOptions.map((item) => <FilterPill key={item.value} currentValue={draftStatus} value={item.value} onValueChange={(value) => { setDraftStatus(value ?? "all"); setDraftQuery((current) => ({ ...current, page: 1 })); }}>{item.label}</FilterPill>)}</div>}
       {view === "blog" && <span className="si-content-total">共 {blogs?.total ?? 0} 篇</span>}
       {view === "keywords" && <span className="si-content-total">共 {keywords?.total ?? 0} 个</span>}
-      {view === "drafts" && <span className="si-content-total">共 {filteredDrafts.length} 篇</span>}
     </div>
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-content-table-frame">
       {view === "blog" && <DataTable tableId="content.blog" rows={blogs?.rows ?? []} total={blogs?.total ?? 0} columns={blogColumnDefs} query={blogQuery} onQueryChange={setBlogQuery} onRowClick={setSelected} getRowId={(row) => row.slug} maxHeight={520} showPagination emptyTitle="没有博客文章" emptyDescription="调整筛选条件或检查内容目录。" />}
       {view === "keywords" && <DataTable tableId="content.keywords" rows={keywords?.rows ?? []} total={keywords?.total ?? 0} columns={keywordColumnDefs} query={keywordQuery} onQueryChange={setKeywordQuery} onRowClick={setSelected} getRowId={(row) => row.keyword} maxHeight={520} showPagination emptyTitle="没有关键词" emptyDescription="在关键词台账中添加目标关键词。" />}
-      {view === "drafts" && <DataTable tableId="content.drafts" rows={pagedDrafts} total={filteredDrafts.length} columns={draftColumnDefs} query={draftQuery} onQueryChange={setDraftQuery} onRowClick={setSelected} getRowId={(row) => row.slug} maxHeight={520} showPagination emptyTitle="没有草稿" emptyDescription="检查内容文件夹中的 brief 和草稿文件。" />}
     </div>
     <p className="si-content-data-note">数据：<code>index/content/blog_index.jsonl</code> · <code>index/content/keywords.jsonl</code> · 灰色列为 GSC / 关键词工具预留位</p>
-    <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected && "title" in selected ? selected.title : selected && "keyword" in selected ? selected.keyword : selected?.slug ?? "内容详情"}>
+    <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected && "title" in selected ? selected.title : selected && "keyword" in selected ? selected.keyword : "内容详情"}>
       {selected && "title" in selected && <div className="si-content-detail"><div><span>Slug</span><code>{selected.slug}</code></div><div><span>发布日期</span><code>{selected.published_at}</code></div><div><span>类别</span>{selected.category || "—"}</div><div><span>字数</span>{selected.word_count ?? "未统计"}</div><div><span>主关键词</span>{selected.primary_keyword || "未登记"}</div><div><span>内链</span>{selected.links_internal.length} 出 / {selected.links_in ?? 0} 入</div><div><span>链接产品</span>{selected.links_products.join("、") || "无"}</div><div><span>缺货产品</span>{selected.linked_out_of_stock?.join("、") || "无"}</div><div><span>Schema</span>{selected.has_faq ? "BlogPosting / FAQ" : "缺失"}</div><div className="full"><span>Meta description</span>{selected.meta_description || "缺失"}</div><Button size="small" onClick={() => void api.shell.openExternal(selected.url)}><ExternalLink size={13} />打开文章</Button></div>}
       {selected && "keyword" in selected && <div className="si-content-detail"><div><span>类型</span>{selected.role === "primary" ? "主词" : "次词"}</div><div><span>搜索意图</span>{intentLabels[selected.intent]}</div><div><span>主题簇</span>{selected.cluster}</div><div><span>状态</span>{keywordStatusLabels[selected.status]}</div><div><span>目标页面</span><code>{selected.target_url || "未分配"}</code></div><div><span>搜索量</span>{selected.search_volume ?? "预留"}</div><div><span>当前排名</span>{selected.current_rank ?? "预留"}</div><div className="full"><span>备注</span>{selected.note || "—"}</div>{selected.target_url && <Button size="small" onClick={() => void api.shell.openExternal(selected.target_url!)}><ExternalLink size={13} />打开目标页面</Button>}</div>}
-      {selected && "date" in selected && <div className="si-content-detail"><div><span>日期</span><code>{selected.date}</code></div><div><span>文件夹</span>{selected.folder}</div><div><span>状态</span>{draftStatusLabels[selected.status]}</div><div className="full"><span>文件</span>{selected.files.join("、") || "无"}</div></div>}
     </DetailPanel>
   </div>;
 }

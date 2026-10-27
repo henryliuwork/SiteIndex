@@ -1,7 +1,7 @@
 import { googleSiteSearchUrl, PATHS } from "@siteindex/shared";
 import type {
   AppSettings, BlogPost, BrowserStatus, CategoriesConfig, Category, CategoryPreview, CliStatus,
-  DesignTokens, DraftRow, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
+  DesignTokens, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
   JobProgress, JobResult, Keyword, ListQuery, OverviewData, PageResult, ProductFilters,
   ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, ProjectUiState, RepairAction, RunLog,
   RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage, SkillInfo, SkillTargetStatus,
@@ -78,10 +78,6 @@ export const generatedKeywords: Keyword[] = Array.from({ length: 50 }, (_, index
     rank_checked_at: dateBefore(index % 12), updated_at: dateBefore(index % 30),
   };
 });
-export const generatedDrafts: DraftRow[] = [
-  { date: "2026-10-21", slug: "winter-bird-feeding-checklist", folder: "内容/drafts", files: ["brief.md", "draft.md"], status: "draft" },
-  { date: "2026-10-18", slug: "choose-a-squirrel-proof-feeder", folder: "内容/drafts", files: ["brief.md"], status: "brief" },
-];
 export const delay = async (): Promise<void> => {
   if (loadingMode) await new Promise((resolve) => setTimeout(resolve, 10000));
   else if (slowMode) await new Promise((resolve) => setTimeout(resolve, 300));
