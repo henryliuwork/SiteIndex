@@ -185,7 +185,11 @@ export function RunsPage() {
       const saved = await api.schedule.save(id, draft);
       queryClient.setQueryData(["schedule", id], saved);
       setDraft(cloneSchedule(saved.config));
-      announce("计划已保存，系统任务计划已更新");
+      const runner = queryClient.getQueryData<RunnerState>(["runner", id]);
+      void queryClient.invalidateQueries({ queryKey: ["schedule-runtime"] });
+      announce(runner && !runner.is_this_device
+        ? runner.runner ? `计划已保存，将在执行设备“${runner.runner.device_name}”上运行` : "计划已保存。尚未指定执行设备，点击“改为本机”后才会注册系统计划任务"
+        : saved.registered ? "计划已保存，系统计划任务已更新" : "计划已保存，系统计划任务尚未注册，请查看上方运行模式");
     } catch (error) { announce("保存失败：" + (apiErrorMessage(error, "请稍后重试"))); }
     finally { setSavingSchedule(false); }
   };
@@ -209,6 +213,12 @@ export function RunsPage() {
     setClaimingRunner(true);
     try {
       queryClient.setQueryData(["runner", id], await api.runner.claim(id));
+      // 认领后系统计划任务会重新注册，刷新注册状态与运行模式，避免显示旧状态
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["schedule", id] }),
+        queryClient.invalidateQueries({ queryKey: ["schedule-runtime"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
       announce("本机已设为此项目的执行设备");
     } catch (error) { announce("设置执行设备失败：" + (apiErrorMessage(error, "请稍后重试"))); }
     finally { setClaimingRunner(false); }
