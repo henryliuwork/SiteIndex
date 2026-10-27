@@ -357,9 +357,25 @@ export interface SkillTargetStatus {
   status: "latest" | "outdated" | "not_installed" | "unknown_path";
 }
 
+export interface UpdateStatus {
+  state: "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "unsupported";
+  current: string;
+  latest?: string;
+  percent?: number;
+  notes?: string;
+  error?: string;
+  manual_url?: string;
+}
+
 // ---------- 主接口 ----------
 
 export interface SiteIndexApi {
+  updates?: {
+    check(): Promise<UpdateStatus>;
+    download(): Promise<void>;
+    install(): Promise<void>;
+    onStatus(cb: (s: UpdateStatus) => void): Unsubscribe;
+  };
   app: {
     version(): Promise<string>;
     platform(): Promise<"win32" | "darwin">;
