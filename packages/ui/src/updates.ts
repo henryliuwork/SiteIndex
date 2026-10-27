@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
 export type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "unsupported";
@@ -54,47 +54,33 @@ export function updateStatusLabel(status: UpdateStatus | undefined, loading = fa
 
 export function useUpdatesController() {
   const updates = getUpdatesApi();
-  const [status, setStatus] = useState<UpdateStatus>();
+  const queryClient = useQueryClient();
   const [busy, setBusy] = useState<UpdateAction | null>(null);
+  const query = useQuery({
+    queryKey: ["updates", "status"],
+    queryFn: () => updates!.check(),
+    enabled: Boolean(updates),
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     if (!updates) return;
-    let active = true;
-    const reportError = () => setStatus((previous) => ({
-      state: "error",
-      current: previous?.current ?? "",
-      latest: previous?.latest,
-      notes: previous?.notes,
-      manual_url: previous?.manual_url,
-    }));
-    const unsubscribe = updates.onStatus((next) => {
-      if (active) setStatus(next);
-    });
-    setBusy("check");
-    void updates.check().then((next) => {
-      if (active) setStatus(next);
-    }).catch(() => {
-      if (active) reportError();
-    }).finally(() => {
-      if (active) setBusy(null);
-    });
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [updates]);
+    return updates.onStatus((next) => queryClient.setQueryData(["updates", "status"], next));
+  }, [updates, queryClient]);
+
+  const status = query.data ?? (query.isError ? { state: "error" as const, current: "" } : undefined);
 
   const run = async (action: UpdateAction) => {
     if (!updates || busy) return;
     setBusy(action);
-    if (action === "check") {
-      setStatus({ state: "checking", current: status?.current ?? "" });
-    }
     try {
-      if (action === "check") setStatus(await updates.check());
+      if (action === "check") {
+        const result = await query.refetch();
+        if (result.isError) throw result.error;
+      }
       else await updates[action]();
     } catch {
-      setStatus((previous) => ({
+      queryClient.setQueryData<UpdateStatus>(["updates", "status"], (previous) => ({
         state: "error",
         current: previous?.current ?? "",
         latest: previous?.latest,
@@ -106,7 +92,7 @@ export function useUpdatesController() {
     }
   };
 
-  return { updates, status, busy, run };
+  return { updates, status, busy, run, query };
 }
 
 export function useAnyRunningJob(enabled: boolean) {

@@ -258,12 +258,12 @@ export function AppSettingsPage() {
         <div className="si-app-setting-row">
           <strong>版本</strong>
           <span>SiteIndex {displayVersion(versionQuery.data)} · 数据规范 1.1 · 内置 Skill {skillsQuery.data?.length ?? "…"} 个</span>
-          <Button disabled={versionQuery.isLoading || updates.busy === "check"} onClick={() => void checkUpdates()}>{updates.busy === "check" ? "检查中…" : "检查更新"}</Button>
+          <Button disabled={versionQuery.isLoading || updates.query.isFetching || updates.busy === "check"} onClick={() => void checkUpdates()}>{updates.query.isFetching || updates.busy === "check" ? "检查中…" : "检查更新"}</Button>
         </div>
         {updates.updates && <div className="si-app-setting-row si-update-settings-row">
           <strong>更新状态</strong>
           <div className="si-update-settings-detail" aria-live="polite">
-            <span>{updateStatusLabel(updates.status, updates.busy === "check")}</span>
+            <span>{updateStatusLabel(updates.status, updates.query.isFetching || updates.busy === "check")}</span>
             {updates.status?.state === "ready" && runningJobsQuery.data && <small>将在当前任务完成后安装</small>}
             {updates.status?.state === "downloading" && <div className="si-update-progress" role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, updates.status.percent ?? 0))}><span style={{ width: `${Math.max(0, Math.min(100, updates.status.percent ?? 0))}%` }} /></div>}
             {updates.status?.notes?.trim() && <details className="si-update-notes"><summary>查看更新说明</summary><pre>{updates.status.notes}</pre></details>}
