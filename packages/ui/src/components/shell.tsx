@@ -26,11 +26,11 @@ export function WindowChrome({ platform, children }: WindowChromeProps) {
 
 interface SideNavProps {
   projects?: SideNavProject[];
-  runnerName?: string | null;
+  deviceName?: string | null;
   runnerProject?: string | null;
 }
 
-export function SideNav({ projects = [], runnerName, runnerProject }: SideNavProps) {
+export function SideNav({ projects = [], deviceName, runnerProject }: SideNavProps) {
   const [collapsed, setCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth <= 1100);
   const { pathname } = useLocation();
   const navClass = ({ isActive }: { isActive: boolean }): string => "si-nav-link" + (isActive ? " active" : "");
@@ -81,9 +81,8 @@ export function SideNav({ projects = [], runnerName, runnerProject }: SideNavPro
         ))}
       </div>
       <div className="si-runner">
-        <span>本机</span>
-        <strong>{runnerName ?? "本地开发"}</strong>
-        <span>{runnerProject ? runnerProject + " 的执行设备" : "浏览器 mock 模式"}</span>
+        <strong>{deviceName ? `本机 · ${deviceName}` : "本机"}</strong>
+        {runnerProject && <span>{runnerProject} 的执行设备</span>}
       </div>
     </aside>
   );
