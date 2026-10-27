@@ -49,12 +49,16 @@ describe("desktop skill service", () => {
       [],
     );
     const skills = await service.list();
-    expect(skills).toHaveLength(7);
-    expect(skills.every((skill) => skill.version === "1.0.0" && skill.reads.length > 0)).toBe(true);
+    expect(skills).toHaveLength(8);
+    expect(skills.every((skill) => skill.version === "1.1.0" && skill.reads.length > 0)).toBe(true);
+    expect(skills.find((skill) => skill.name === "siteindex-data")?.version).toBe("1.1.0");
     expect(skills.find((skill) => skill.name === "stock-report")?.writes).toEqual([]);
     const edm = await service.get("edm-builder");
-    expect(edm.body).toContain("CLI 不可用时");
-    expect(edm.body).toContain("feed 首图优先 → 手动首图 → 都没有则不进入 EDM");
+    expect(edm.body).toContain("写哪些台账");
+    expect(edm.body).toContain("默认 feed 首图优先，其次手动首图");
+    const data = await service.get("siteindex-data");
+    expect(data.body).toContain("UTF-8 无 BOM、LF 换行");
+    expect(data.body).toContain("不得编造 SKU、价格、库存状态或数量、图片 URL");
   });
 
   it("installs a project skill, updates its manifest, and reports stale versions", async () => {
