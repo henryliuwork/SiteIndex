@@ -1,41 +1,29 @@
 ---
 name: page-design
-version: 1.0.0
-description: 按当前网站项目提取的设计规范制作落地页、专题页、Banner、邮件模板等视觉产出，确保颜色、字体、按钮、间距与网站一致。用户要求做页面、设计稿、Banner、活动页时使用。
+version: 1.1.0
+description: 根据当前项目的设计规范制作页面、专题页、Banner 或邮件模板视觉产出。
 reads:
   - index/design/tokens.json
   - index/design/brand.md
   - index/design/screenshots/
   - index/views/products.jsonl
-writes:
-  - 设计/
+writes: []
 ---
 
 # page-design
 
-工作目录为项目根目录。产出放入 README「目录地图」中的设计类文件夹（默认 `设计/`）。
+先遵循 siteindex-data 的数据格式与不编造规则。视觉产物保存位置由 README 工作规则或用户当次指定；不要创建默认设计文件夹，也不写 index 数据。
 
-## 读取
+## 读哪些数据
 
-- `index/design/tokens.json`：颜色（语义色 + palette）、字体与字号阶梯、间距、圆角、阴影、按钮与输入框样式、Logo
-- `index/design/brand.md`：视觉风格说明
-- `index/design/screenshots/`：参考现有页面风格
-- 涉及产品时：`index/views/products.jsonl`（只用有货产品；图片、价格、链接取自数据）
-- `extracted_at` 早于 60 天时提醒用户规范可能过期
+读取 index/design/tokens.json 中颜色、字体、字号、间距、圆角、阴影与组件规范；读取 index/design/brand.md 和 index/design/screenshots/ 了解已有视觉风格。涉及产品时读取 index/views/products.jsonl，图像、价格、链接只引用对应数据字段。检查 extracted_at；超过 60 天时提醒用户规范可能过期。
 
-## 规则
+## 如何筛选判断
 
-- 颜色只用 tokens 中的语义色与 palette；新增颜色需说明理由
-- 字体用 `typography.font_families`；字号用 `typography.scale` 中的级别
-- 按钮、输入框照搬 `components` 样式
-- 间距、圆角取 `spacing`、`radius` 中的值
-- HTML 产出：CSS 变量集中定义在 `:root`，变量名与 tokens 对应
-- 邮件模板：600px 单栏、表格布局、内联样式、Web 安全字体回退
+- 使用已定义的语义色和 palette、typography、spacing、radius 与 components；新增设计 token 时说明理由并先与用户确认。
+- 产品相关视觉只选择数据实际存在且符合用户要求的商品；不从截图推测库存、SKU、价格或图片 URL。
+- HTML 邮件使用单栏、表格布局、内联样式和 Web 安全字体回退；CSS 变量应与 tokens 对应。
 
-## 交付
+## 写哪些台账
 
-文件路径、所用 tokens 清单、与规范不一致之处（如有）及原因。
-
-## CLI 不可用时
-
-直接读取 `index/design/tokens.json`、`brand.md`、截图和所需的 `index/views/products.jsonl`；用户可见的设计产物写入 README「目录地图」中的设计工作区。此 skill 不生成或修改 index 数据，不能从网站截图推测未记录的价格或库存。
+无。设计产物不是 SiteIndex 台账；如用户要求保存文件，按其指定位置交付。除非用户明确要求更新项目数据并确认具体值，否则不要修改 index/design 或任何其他 index 文件。

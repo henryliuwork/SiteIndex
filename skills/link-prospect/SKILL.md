@@ -1,45 +1,29 @@
 ---
 name: link-prospect
-version: 1.0.0
-description: 按用户给定方向搜集可合作的外链网站与联系方式，去重后通过 MCP 录入 linkflow，并更新项目外链去重台账。用户要求找外链、合作网站、博主、媒体时使用。
+version: 1.1.0
+description: 按用户给定方向寻找潜在外链合作网站，核实证据并通过 LinkFlow 去重录入。
 reads:
   - index/site.json
   - index/ledgers/outreach.jsonl
 writes:
   - index/ledgers/outreach.jsonl
-  - .tmp/prospects.csv
 ---
 
 # link-prospect
 
-工作目录为项目根目录。真相源是 linkflow；`index/ledgers/outreach.jsonl` 只用于去重。
+先遵循 siteindex-data 的数据格式与不编造规则。
 
-## 准备
+## 读哪些数据
 
-读 `index/site.json`：domain、brand、markets、seo.core_keywords、seo.competitors、integrations.linkflow；读 outreach.jsonl 已有域名。未提供时确认：方向、数量（默认 20）、类型、市场/语言。
+读取 index/site.json 的 domain、brand、markets、seo.core_keywords、seo.competitors、integrations.linkflow；读取 index/ledgers/outreach.jsonl 中已有 domain 以去重。方向、数量、网站类型和目标市场未提供时先询问用户。
 
-## 搜集
+## 如何筛选判断
 
-每个候选：domain（小写去 www）、site_name、url、type（blog/media/resource/directory/forum/podcast）、relevance（一句话）、contact（页面上实际存在的邮箱/联系页/社媒）、evidence_url（write for us、resources 等）、last_active。
+- 为每个候选核实 domain、名称、网站类型、相关性、实际存在的联系方式、证据 URL 和最近活动迹象。
+- 排除本站、竞品、已在 outreach 台账的域名、明显链接农场，以及无法找到相关证据的站点。
+- 联系方式只能来自页面实际内容；没有公开联系方式时标记缺失，不推断邮箱或个人资料。
+- LinkFlow 连接不可用时在对话中交付候选和证据，不声称已录入。候选或临时结果的位置由用户指定，不创建固定文件。
 
-排除：已在台账；竞品与本站；12 个月无更新；PBN/链接农场；无任何联系方式。不得编造联系方式。
+## 写哪些台账
 
-## 录入
-
-用 `integrations.linkflow.mcp_server` 的 `create_tool` 录入；未配置时输出 `.tmp/prospects.csv` 交给用户。单条失败记录原因继续。
-
-成功录入的域名：
-
-```bash
-siteindex ledger upsert . outreach --rows .tmp/outreach.jsonl
-```
-
-每行：`{"domain","status":"pushed","linkflow_id","topic","note"}`
-
-## 交付
-
-录入数、类型分布、无联系方式清单、排除原因统计、失败条目。
-
-## CLI 不可用时
-
-直接读取 `index/site.json` 和 `index/ledgers/outreach.jsonl` 去重。LinkFlow 未配置或录入工具不可用时，把候选交付到 `.tmp/prospects.csv`，不要声称已录入；成功录入后按 DATA_SPEC §5.15 以小写 domain 为键合并 outreach.jsonl，按 domain 升序写 UTF-8 无 BOM、LF 的 JSONL，并保留 schema 字段顺序。
+仅将已成功录入 LinkFlow 的域名合并写入 index/ledgers/outreach.jsonl，主键为小写 domain；记录真实 added_at、status、linkflow_id、topic、note、target_url 与 live_link。按 DATA_SPEC §5.15 排序并保留字段顺序。逐项说明录入成功、失败及原因。

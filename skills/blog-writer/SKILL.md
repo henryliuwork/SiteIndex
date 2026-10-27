@@ -1,52 +1,34 @@
 ---
 name: blog-writer
-version: 1.0.0
-description: 基于当前网站项目的品牌、关键词映射、博客索引与在售产品，规划并撰写 SEO 博客（brief、带内链正文、meta），并登记关键词防止蚕食。用户要求写博客、规划选题、加内链时使用；可配合平台上的 SEO 写作 skill。
+version: 1.1.0
+description: 基于项目品牌、关键词映射、博客索引与产品数据规划或撰写 SEO 博客，并在需要时登记关键词映射。
 reads:
   - README.md
   - index/site.json
   - index/content/keywords.jsonl
   - index/content/blog_index.jsonl
-  - index/catalog/categories.json
+  - index/seo/pages.jsonl
   - index/views/products.jsonl
 writes:
-  - 内容/drafts/
   - index/content/keywords.jsonl
 ---
 
 # blog-writer
 
-工作目录为项目根目录。读取：README.md（调性与规则）、`index/site.json`（brand、seo.core_keywords、locale）、`index/content/keywords.jsonl`、`index/content/blog_index.jsonl`、`index/catalog/pages.jsonl`（type=collection）、`index/views/products.jsonl`。草稿目录以 README「任务路由」为准（默认 `内容/drafts/`）。
+先遵循 siteindex-data 的数据格式与不编造规则。
 
-## 1. 选题与蚕食检查
+## 读哪些数据
 
-- 主关键词已在 keywords.jsonl 且 `target_url` 非空 → 停止，建议更新该页面或换角度
-- blog_index 中标题/slug 相近的文章 → 列出请用户确认
-- 用户要求选题时：从 core_keywords、分类页、在售主力产品出发，排除已占用关键词，给 5 个候选（关键词 · 意图 · 目标分类 · 理由）
+读取 README 的品牌语气与工作规则；index/site.json 的 brand、locale、seo.core_keywords；index/content/keywords.jsonl、index/content/blog_index.jsonl、index/seo/pages.jsonl、index/views/products.jsonl。只在选题涉及分类或产品时读取 index/catalog/categories.json 或相应产品数据。
 
-登记：
+## 如何筛选判断
 
-```bash
-echo '{"keyword":"…","target_url":null,"role":"primary","intent":"informational","cluster":"…","status":"drafting","source":"blog-writer"}' | siteindex ledger upsert . keywords --rows -
-```
+- 检查主关键词是否已映射 target_url；已映射时指出现有目标，先询问用户是否要更新该页面或换角度，避免关键词蚕食。
+- 对照博客标题、slug、primary_keyword 与 SEO 页面，排除重复主题。用明确的匹配数据说明候选理由。
+- 用户要求选题时，提供 5 个候选及关键词、搜索意图、相关页面和理由；不编造搜索量、难度、排名或市场数据。
+- 草稿按 locale 写作；主关键词自然出现在标题、首段和至少一个小标题。只有数据或用户资料能支持的链接、产品、品牌信息才可写入；不捏造价格、库存、产品效果或评测。
+- 文章内容与 brief 交付给用户；保存位置由 README 工作规则或用户当次指定。没有用户指定时不要创建固定草稿目录。
 
-## 2. Brief（`{drafts}/{YYYY-MM-DD}-{slug}/brief.md`）
+## 写哪些台账
 
-关键词、意图、读者、文章类型、H2/H3 大纲；**内链计划**（URL 必须来自数据文件）：相关博客 3–5、分类页 1–2、有货产品 2–4，写明锚文本与位置；反向内链建议 2–3 篇。
-
-## 3. 正文与 meta
-
-`draft.md`：语言同 `locale`；主关键词出现在标题、首段、至少一个 H2、结尾；不编造数据与评测结论；不写价格或注明以页面为准。
-`meta.json`：`{"title":"≤60字符","meta_description":"≤155字符","slug":"…","target_keyword":"…","status":"draft"}`
-
-## 4. 发布后
-
-用户提供 URL → 关键词 `target_url` 设为该 URL、`status=live`。blog_index 由每周同步自动更新。
-
-## 交付
-
-标题、meta、字数、内链清单（锚文本 → URL）、反向内链建议。
-
-## CLI 不可用时
-
-直接读取本文件列出的 README 与 index 数据。登记关键词时，按 DATA_SPEC §5.11 以 keyword 为键合并 `index/content/keywords.jsonl`，不要重复已有主键；按 keyword 升序写 UTF-8 无 BOM、LF 的 JSONL，保留 schema 字段顺序，并为新行填写 `updated_at`。草稿仍写入 README「任务路由」指定的工作区目录，不写入 index。
+仅在用户确认登记关键词映射时，按 keyword（小写）合并更新 index/content/keywords.jsonl。target_url 只使用用户给出的真实 URL；新选题未发布时可按 schema 使用 null。role、intent、cluster、status 必须反映用户确认的计划。按 DATA_SPEC §5.11 保留 schema 字段顺序、keyword 升序及 UTF-8 无 BOM、LF，并填写真实 updated_at；没有确认的主题不要先占用台账。
