@@ -19,9 +19,10 @@ import { createScheduleMock } from "./schedule";
 import { createRunnerMock } from "./runner";
 import { createSkillsMock } from "./skills";
 import { createShellMock } from "./shell";
+import { createUpdatesMock } from "./updates";
 
 export function createMockApi(): SiteIndexApi {
-  return {
+  return Object.assign({
     app: createAppMock(),
     uiState: createUiStateMock(),
     settings: createSettingsMock(),
@@ -42,5 +43,5 @@ export function createMockApi(): SiteIndexApi {
     runner: createRunnerMock(),
     skills: createSkillsMock(),
     shell: createShellMock(),
-  };
+  }, { updates: createUpdatesMock() });
 }
