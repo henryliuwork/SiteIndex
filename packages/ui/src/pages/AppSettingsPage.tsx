@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { Button, Chip } from "../components";
+import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
 import "./app-settings/page.css";
 
 const RELEASES_URL = "https://github.com/henryliuwork/SiteIndex/releases/latest";
@@ -16,6 +17,8 @@ export function AppSettingsPage() {
   const platformQuery = useQuery({ queryKey: ["app", "platform"], queryFn: () => api.app.platform() });
   const versionQuery = useQuery({ queryKey: ["app", "version"], queryFn: () => api.app.version() });
   const skillsQuery = useQuery({ queryKey: ["skills"], queryFn: () => api.skills.list() });
+  const updates = useUpdatesController();
+  const runningJobsQuery = useAnyRunningJob(updates.status?.state === "ready");
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [testingBrowser, setTestingBrowser] = useState(false);
@@ -130,6 +133,20 @@ export function AppSettingsPage() {
     }
   };
 
+  const checkUpdates = async () => {
+    if (updates.updates) {
+      await updates.run("check");
+      return;
+    }
+    try { await api.shell.openExternal(RELEASES_URL); }
+    catch (error) { setFeedback("无法打开下载页面：" + apiErrorMessage(error, "请稍后重试")); }
+  };
+
+  const openManualUpdate = async (url: string) => {
+    try { await api.shell.openExternal(url); }
+    catch (error) { setFeedback("无法打开下载页面：" + apiErrorMessage(error, "请稍后重试")); }
+  };
+
   const savePlatforms = (skillPlatforms: SkillPlatform[]) => {
     if (!draft) return;
     setDraft({ ...draft, skill_platforms: skillPlatforms });
@@ -147,6 +164,7 @@ export function AppSettingsPage() {
   const logsPath = platformQuery.data === "darwin" ? "~/Library/Logs/SiteIndex" : "%APPDATA%\\SiteIndex\\logs";
   const browserStatus = browserQuery.data;
   const cliStatus = cliQuery.data;
+  const manualUpdateUrl = updates.status?.state === "unsupported" ? updates.status.manual_url : undefined;
 
   return (
     <div className="si-page si-app-settings-page">
@@ -239,9 +257,24 @@ export function AppSettingsPage() {
         <h2>关于</h2>
         <div className="si-app-setting-row">
           <strong>版本</strong>
-          <span>SiteIndex {versionQuery.data ?? "…"} · 数据规范 1.1 · 内置 Skill {skillsQuery.data?.length ?? "…"} 个</span>
-          <Button disabled={versionQuery.isLoading} onClick={() => void api.shell.openExternal(RELEASES_URL)}>检查更新</Button>
+          <span>SiteIndex {displayVersion(versionQuery.data)} · 数据规范 1.1 · 内置 Skill {skillsQuery.data?.length ?? "…"} 个</span>
+          <Button disabled={versionQuery.isLoading || updates.query.isFetching || updates.busy === "check"} onClick={() => void checkUpdates()}>{updates.query.isFetching || updates.busy === "check" ? "检查中…" : "检查更新"}</Button>
         </div>
+        {updates.updates && <div className="si-app-setting-row si-update-settings-row">
+          <strong>更新状态</strong>
+          <div className="si-update-settings-detail" aria-live="polite">
+            <span>{updateStatusLabel(updates.status, updates.query.isFetching || updates.busy === "check")}</span>
+            {updates.status?.state === "ready" && runningJobsQuery.data && <small>将在当前任务完成后安装</small>}
+            {updates.status?.state === "downloading" && <div className="si-update-progress" role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, updates.status.percent ?? 0))}><span style={{ width: `${Math.max(0, Math.min(100, updates.status.percent ?? 0))}%` }} /></div>}
+            {updates.status?.notes?.trim() && <details className="si-update-notes"><summary>查看更新说明</summary><pre>{updates.status.notes}</pre></details>}
+          </div>
+          <div className="si-update-settings-actions">
+            {updates.status?.state === "available" && <Button size="small" disabled={Boolean(updates.busy)} onClick={() => void updates.run("download")}>{updates.busy === "download" ? "开始下载…" : "下载更新"}</Button>}
+            {updates.status?.state === "ready" && <Button size="small" variant="primary" disabled={Boolean(updates.busy)} onClick={() => void updates.run("install")}>{updates.busy === "install" ? "正在重启…" : "重启并安装"}</Button>}
+            {manualUpdateUrl && <Button size="small" onClick={() => void openManualUpdate(manualUpdateUrl)}>前往下载</Button>}
+            {updates.status?.state === "error" && <Button size="small" disabled={Boolean(updates.busy)} onClick={() => void updates.run("check")}>{updates.busy === "check" ? "检查中…" : "重试"}</Button>}
+          </div>
+        </div>}
         <div className="si-app-setting-row">
           <strong>日志</strong>
           <code className="si-setting-hint si-setting-mono">{logsPath}</code>

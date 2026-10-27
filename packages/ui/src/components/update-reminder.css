@@ -1,0 +1,22 @@
+.si-update-reminder { display: grid; gap: 7px; margin-top: auto; padding: 10px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface); }
+.si-update-reminder + .si-runner { margin-top: 0; }
+.si-update-reminder-heading { display: grid; gap: 3px; min-width: 0; }
+.si-update-reminder-heading strong { color: var(--color-ink); font-size: 12px; font-weight: 650; }
+.si-update-reminder-heading small { color: var(--color-muted); font-size: 11px; }
+.si-update-reminder-heading > span, .si-update-deferred { color: var(--color-muted); font-size: 10px; line-height: 1.4; }
+.si-update-reminder .si-button { justify-self: start; min-height: 28px; padding: 0 9px; font-size: 11px; }
+.si-update-reminder .si-button-primary { color: #fff; }
+.si-update-progress { height: 5px; overflow: hidden; border-radius: 999px; background: var(--color-neutral-soft); }
+.si-update-progress span { display: block; height: 100%; border-radius: inherit; background: var(--color-brand); transition: width 180ms ease; }
+.si-update-collapsed-wrap { position: relative; display: flex; justify-content: center; margin-top: auto; }
+.si-update-reminder + .si-update-collapsed-wrap { margin-top: auto; }
+.si-update-collapsed { position: relative; display: grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--color-ink-2); }
+.si-update-collapsed:hover:not(:disabled) { background: var(--color-neutral-soft); color: var(--color-brand); }
+.si-update-collapsed:disabled { cursor: default; }
+.si-update-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border: 1.5px solid var(--color-surface); border-radius: 50%; background: var(--color-brand); }
+.si-update-dot-downloading { background: var(--color-info); }
+.si-update-dot-error { background: var(--color-danger); }
+.si-side-nav.is-collapsed .si-update-reminder { width: 48px; height: 48px; place-items: center; padding: 3px; border: 0; background: transparent; }
+.si-side-nav.is-collapsed .si-update-reminder-heading, .si-side-nav.is-collapsed .si-update-deferred, .si-side-nav.is-collapsed .si-update-reminder > .si-button, .si-side-nav.is-collapsed .si-update-progress { display: none; }
+.si-side-nav.is-collapsed .si-update-collapsed-wrap { margin-top: auto; }
+.si-side-nav.is-collapsed .si-update-reminder + .si-runner { margin-top: 0; }

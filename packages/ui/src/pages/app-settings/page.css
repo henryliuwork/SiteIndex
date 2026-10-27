@@ -24,5 +24,13 @@
 .si-platform-actions { display: flex; align-items: center; gap: 10px; }
 .si-platform-add-row { display: flex; justify-content: flex-start; padding: 12px 0 4px; border-top: 1px solid var(--color-line-soft); }
 .si-app-settings-card .si-button:disabled { opacity: .5; }
+.si-update-settings-row { align-items: start; }
+.si-update-settings-detail { display: grid; min-width: 0; align-content: center; gap: 7px; color: var(--color-ink-2); font-size: 12px; }
+.si-update-settings-detail small { color: var(--color-muted); font-size: 11px; }
+.si-update-settings-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.si-update-settings-row .si-update-progress { width: min(100%, 360px); }
+.si-update-notes { color: var(--color-ink-2); font-size: 12px; }
+.si-update-notes summary { width: fit-content; color: var(--color-brand-strong); cursor: pointer; }
+.si-update-notes pre { max-height: 180px; margin: 8px 0 0; overflow: auto; color: var(--color-muted); font: 11px/1.6 var(--font-sans); white-space: pre-wrap; }
 @media (max-width: 900px) { .si-app-setting-row { grid-template-columns: 160px minmax(0,1fr) auto; gap: 10px; } .si-notify-row { grid-template-columns: 160px minmax(0,1fr); } .si-notify-row > span { display: none; } }
-@media (max-width: 640px) { .si-app-settings-card { padding-right: 16px; padding-left: 16px; } .si-app-setting-row { grid-template-columns: 1fr; align-items: start; gap: 8px; } .si-app-setting-row > .si-button, .si-app-setting-row > .si-chip, .si-app-setting-row > .si-platform-actions { justify-self: start; } .si-browser-detected > span:nth-child(2) { display: grid; } .si-setting-path { margin-left: 0; } }
+@media (max-width: 640px) { .si-app-settings-card { padding-right: 16px; padding-left: 16px; } .si-app-setting-row { grid-template-columns: 1fr; align-items: start; gap: 8px; } .si-app-setting-row > .si-button, .si-app-setting-row > .si-chip, .si-app-setting-row > .si-platform-actions, .si-update-settings-actions { justify-self: start; } .si-browser-detected > span:nth-child(2) { display: grid; } .si-setting-path { margin-left: 0; } }

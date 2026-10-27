@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Activity, Boxes, FolderKanban, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
 import { Link, NavLink, useLocation } from "react-router-dom";
+import { UpdateReminder } from "./update-reminder";
 
 export interface SideNavProject {
   id: string;
@@ -80,6 +81,7 @@ export function SideNav({ projects = [], deviceName, runnerProject }: SideNavPro
           </NavLink>
         ))}
       </div>
+      <UpdateReminder collapsed={collapsed} />
       <div className="si-runner">
         <strong>{deviceName ? `本机 · ${deviceName}` : "本机"}</strong>
         {runnerProject && <span>{runnerProject} 的执行设备</span>}
