@@ -8,6 +8,7 @@ export interface IpcTransport {
 
 const IPC_ERROR_PREFIX = "__SITEINDEX_IPC_ERROR__:";
 type UiStateApi = NonNullable<SiteIndexApi["uiState"]>;
+type UpdatesApi = NonNullable<SiteIndexApi["updates"]>;
 
 function decodeIpcError(error: unknown): unknown {
   const message =
@@ -51,6 +52,12 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
     transport.listen(ipcChannel(method), (payload) => callback(payload as Payload));
 
   const api = {
+    updates: {
+      check: () => invoke<UpdatesApi["check"]>("updates.check"),
+      download: () => invoke<UpdatesApi["download"]>("updates.download"),
+      install: () => invoke<UpdatesApi["install"]>("updates.install"),
+      onStatus: (callback: Parameters<UpdatesApi["onStatus"]>[0]) => listen("updates.onStatus", callback),
+    },
     app: {
       version: () => invoke<SiteIndexApi["app"]["version"]>("app.version"),
       platform: () => invoke<SiteIndexApi["app"]["platform"]>("app.platform"),

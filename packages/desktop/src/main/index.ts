@@ -1,4 +1,5 @@
 import { app, dialog, utilityProcess, type Tray } from "electron";
+import electronUpdater from "electron-updater";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCoreService, type CoreService } from "@siteindex/core";
@@ -14,6 +15,7 @@ import { createSkillService } from "./skill-service.js";
 import { createDesktopIntegrations } from "./desktop-integrations.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createUiStateStore } from "./ui-state-store.js";
+import { createUpdateService } from "./update-service.js";
 import { createWindowManager } from "./window-manager.js";
 import { backgroundSchedulerArgument, createWindowsTray, updateWindowsAutostart } from "./windows-background.js";
 
@@ -190,7 +192,28 @@ if (!hasSingleInstanceLock) {
       app.quit();
       return;
     }
+    const updates = createUpdateService({
+      updater: electronUpdater.autoUpdater,
+      currentVersion: app.getVersion(),
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      waitForJobs: () => jobs.pauseAndWaitForIdle(),
+      resumeJobs: () => jobs.resumeJobs(),
+      beforeInstall: () => {
+        isShuttingDown = true;
+        residentScheduler?.stop();
+        updates.stop();
+      },
+      installFailed: () => {
+        isShuttingDown = false;
+        if (scheduleMode === "resident") residentScheduler?.start();
+        updates.start();
+      },
+      emitStatus: (status) => windowManager.sendToWindows("si:updates.onStatus", status),
+    });
+    app.on("before-quit", () => updates.stop());
     registerIpcHandlers({
+      updates,
       settings: settingsStore,
       uiState: createUiStateStore(async () => (await settingsStore.get()).cache_dir),
       core: coreService,
@@ -217,6 +240,8 @@ if (!hasSingleInstanceLock) {
     if (!launchHidden) {
       await windowManager.createMainWindow();
     }
+
+    updates.start();
 
     app.on("activate", () => {
       windowManager.showMainWindow();

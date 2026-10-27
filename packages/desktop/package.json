@@ -10,11 +10,15 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dist:win": "pnpm --filter @siteindex/cli build && pnpm build && node scripts/prepare-resources.mjs && electron-builder --win nsis --publish never",
-    "dist:mac": "pnpm --filter @siteindex/cli build && pnpm build && node scripts/prepare-resources.mjs && electron-builder --mac dmg --universal --publish never"
+    "prepare:dist": "pnpm --filter @siteindex/cli build && pnpm build && node scripts/prepare-resources.mjs",
+    "dist:win": "pnpm prepare:dist && electron-builder --win nsis --publish never",
+    "dist:mac": "pnpm prepare:dist && electron-builder --mac dmg zip --universal --publish never",
+    "dist:win:release": "pnpm prepare:dist && electron-builder --win nsis --publish always",
+    "dist:mac:release": "pnpm prepare:dist && electron-builder --mac dmg zip --universal --publish always"
   },
   "dependencies": {
     "chokidar": "^6.0.0",
+    "electron-updater": "^6.8.11",
     "playwright-core": "^1.64.1"
   },
   "devDependencies": {
@@ -29,6 +33,12 @@
     "appId": "com.siteindex.desktop",
     "productName": "SiteIndex",
     "asar": true,
+    "publish": {
+      "provider": "github",
+      "owner": "henryliuwork",
+      "repo": "SiteIndex",
+      "releaseType": "draft"
+    },
     "directories": {
       "output": "../../release"
     },
@@ -71,7 +81,7 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -93,10 +103,16 @@
           "arch": [
             "universal"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "category": "public.app-category.productivity",
-      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "dmg": {
       "title": "${productName} ${version}"

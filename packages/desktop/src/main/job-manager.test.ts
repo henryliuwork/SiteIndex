@@ -158,4 +158,60 @@ describe("desktop job manager", () => {
     expect(finished).toHaveLength(1);
     expect(finished[0]).toMatchObject({ runId, status: "failed", exitCode: 3 });
   });
+  it("drains active Jobs and blocks new starts while an update installs", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    await manager.run({ projectPath, job: "daily" });
+    let drained = false;
+    const draining = manager.pauseAndWaitForIdle().then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    await expect(manager.run({ projectPath, job: "weekly" })).rejects.toMatchObject({ code: "LOCKED" });
+
+    child.emit("message", {
+      type: "finished",
+      result: { runId: "2026-10-23-daily", job: "daily", status: "ok", exitCode: 0, summary: "完成" },
+    });
+    await draining;
+    expect(manager.activeCount).toBe(0);
+    expect(drained).toBe(true);
+    manager.resumeJobs();
+  });
+  it("does not start a Job that was still resolving settings when installation began", async () => {
+    let provideSettings!: (value: AppSettings) => void;
+    const pendingSettings = new Promise<AppSettings>((resolve) => {
+      provideSettings = resolve;
+    });
+    const fork = vi.fn(() => new FakeUtilityProcess());
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: () => pendingSettings,
+      resolveProject: async () => "unused",
+      fork,
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const starting = manager.run({ projectPath: "pending-project", job: "daily" });
+    await manager.pauseAndWaitForIdle();
+    provideSettings(settings());
+    await expect(starting).rejects.toMatchObject({ code: "LOCKED" });
+    expect(fork).not.toHaveBeenCalled();
+  });
 });

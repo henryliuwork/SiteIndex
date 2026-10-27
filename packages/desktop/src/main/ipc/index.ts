@@ -19,11 +19,13 @@ import { createSettingsHandlers } from "./settings.js";
 import { createShellHandlers } from "./shell.js";
 import { createSkillsHandlers } from "./skills.js";
 import { createUiStateHandlers } from "./ui-state.js";
+import { createUpdatesHandlers } from "./updates.js";
 
 export function registerIpcHandlers(dependencies: IpcDependencies): void {
   const context = createIpcContext(dependencies);
   const handlers = createHandlerRegistry({
     ...createAppHandlers(),
+    ...createUpdatesHandlers(context),
     ...createSettingsHandlers(context),
     ...createUiStateHandlers(context),
     ...createProjectsHandlers(context),

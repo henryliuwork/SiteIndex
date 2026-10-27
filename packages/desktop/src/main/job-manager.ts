@@ -121,11 +121,17 @@ function normalizeLimit(limit: number | undefined): number {
 export function createJobManager(options: JobManagerOptions) {
   const entriesByProject = new Map<string, JobEntry>();
   const entriesByRunId = new Map<string, JobEntry>();
+  const idleWaiters = new Set<() => void>();
+  let acceptingJobs = true;
 
   function removeEntry(entry: JobEntry): void {
     if (entriesByProject.get(entry.key) === entry) entriesByProject.delete(entry.key);
     if (entry.runId && entriesByRunId.get(entry.runId) === entry) entriesByRunId.delete(entry.runId);
     clearTimeout(entry.startupTimer);
+    if (entriesByProject.size === 0) {
+      for (const resolve of idleWaiters) resolve();
+      idleWaiters.clear();
+    }
   }
 
   async function releaseOwnedLock(entry: JobEntry): Promise<void> {
@@ -271,6 +277,7 @@ export function createJobManager(options: JobManagerOptions) {
   }
 
   async function start(request: Omit<JobRequest, "trigger">, trigger: JobTrigger) {
+    if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
     if (!request || typeof request.projectPath !== "string" || !request.projectPath.trim() || !isJobName(request.job)) {
       throw jobError("CONFIG_INVALID", "Job 请求无效。");
     }
@@ -281,6 +288,7 @@ export function createJobManager(options: JobManagerOptions) {
     const browserPath = options.getBrowserExecutablePath
       ? await options.getBrowserExecutablePath(settings)
       : settings.browser.executable_path;
+    if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
     const child = options.fork(options.workerPath);
 
     let resolveStarted!: (runId: string) => void;
@@ -339,6 +347,14 @@ export function createJobManager(options: JobManagerOptions) {
   }
 
   return {
+    async pauseAndWaitForIdle(): Promise<void> {
+      acceptingJobs = false;
+      if (entriesByProject.size === 0) return;
+      await new Promise<void>((resolve) => idleWaiters.add(resolve));
+    },
+    resumeJobs(): void {
+      acceptingJobs = true;
+    },
     async run(request: Omit<JobRequest, "trigger">) {
       const started = await start(request, "manual");
       return { runId: started.runId };

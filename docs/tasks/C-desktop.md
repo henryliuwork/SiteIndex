@@ -89,7 +89,18 @@
 
 - [ ] macOS dmg 实测（arm64 + x64）
 - [ ] 根 `README.md` 补充下载安装说明（SmartScreen"仍要运行"、mac 右键"打开"）、截图
-- [ ] 打 tag `v0.1.0` 发布 Release
+- [x] 自动更新：Electron 主进程经 `electron-updater` 检查 GitHub Releases，用户确认后下载；Job 完成后退出安装；macOS 未签名时提供手动 Release 地址
+- [x] 发布构建：GitHub publish 元数据、Windows `latest.yml`、macOS `latest-mac.yml` 与 zip、blockmap；tag 与 desktop version 一致才允许发布
+- [ ] A/B/C 的 init、新建完成页和自动更新全部合并后，打 `v0.1.1` 正式 Release
+
+### 发版步骤
+
+1. 在 `packages/desktop/package.json` 将 `version` 改为目标版本（如 `0.1.1`），单独提交 PR 并等待合并，确保三系统 CI 全绿。
+2. 从合并后的 `main` 打对应 tag（如 `v0.1.1`）并推送；Release workflow 会校验 tag 与 Desktop 版本相同。
+3. 等 Release workflow 完成并将草稿发布为正式 Release。
+4. 检查 Release 资产至少包含 `SiteIndex-Setup-{version}.exe`、`SiteIndex-{version}-universal.dmg`、`SiteIndex-{version}-universal.zip`、`latest.yml`、`latest-mac.yml` 和 `.blockmap`。
+5. 发布 `v0.1.1` 后，将 Desktop 版本改为 `0.1.2` 并经 PR 合并，再发布 `v0.1.2` 测试版本；在 Windows 安装 `v0.1.1`，验证提示更新、手动下载、重启安装以及版本号变为 `0.1.2`。macOS 未签名版本仅验证手动下载入口。
+
 - [ ] 组织 PRD §8 的 8 个场景验收，记录在 issue `Milestone M3 集成`
 
 ## 交付给其他工作流

@@ -1,6 +1,9 @@
 export const IPC_PREFIX = "si:";
 
 export const API_INVOKE_METHODS = [
+  "updates.check",
+  "updates.download",
+  "updates.install",
   "app.version",
   "app.platform",
   "settings.get",
@@ -83,7 +86,12 @@ export const API_INVOKE_METHODS = [
   "shell.copyText",
 ] as const;
 
-export const API_EVENT_METHODS = ["projects.onChanged", "jobs.onProgress", "jobs.onFinished"] as const;
+export const API_EVENT_METHODS = [
+  "projects.onChanged",
+  "jobs.onProgress",
+  "jobs.onFinished",
+  "updates.onStatus",
+] as const;
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 
