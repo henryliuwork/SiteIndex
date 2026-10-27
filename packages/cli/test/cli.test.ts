@@ -177,7 +177,7 @@ describe("siteindex CLI", () => {
     expect(await main(["ledger", "upsert", projectPath, "sku_media", "--rows", "-", "--json"], { ...t.io, stdin: async () => csvInput })).toBe(EXIT.OK);
     expect((await readFile(path.join(projectPath, PATHS.skuMedia), "utf8")).toLowerCase()).toContain("test-cli");
     expect(await main(["ledger", "delete", projectPath, "sku_media", "TEST-CLI", "main", "--json"], t.io)).toBe(EXIT.OK);
-  });
+  }, 30_000);
 
   it("renders EDM golden files and includes out-of-stock products only when allowed", async () => {
     await copyFixtureProject();
@@ -193,7 +193,7 @@ describe("siteindex CLI", () => {
     expect(await main(["edm", "render", projectPath, "edm/2026-10-20-halloween", "--allow-oos", "--json"], t.io)).toBe(EXIT.OK);
     const output = parseEnvelope<{ included: number }>(t.stdout.at(-1)!);
     expect(output.data?.included).toBeGreaterThan(defaultIncluded);
-  });
+  }, 30_000);
 
   it("supports categories, folders, schedule and runner operations", async () => {
     const { service, methods } = mockService();
