@@ -455,6 +455,12 @@ export interface SkuStockView {
 
 export type JobName = "daily" | "weekly" | "monthly" | "validate" | "readme" | "design" | "index-check" | "views" | "init";
 
+export interface RunLogStep {
+  key: string;
+  status: "ok" | "failed" | "skipped";
+  message?: string;
+}
+
 export interface RunLog {
   run_id: string;
   job: JobName;
@@ -465,6 +471,7 @@ export interface RunLog {
   status: "ok" | "partial" | "failed" | "skipped";
   counts?: Record<string, number>;
   errors?: string[];
+  steps?: RunLogStep[];
 }
 
 export type FileKind = "sync" | "ledger" | "config" | "view" | "doc";
