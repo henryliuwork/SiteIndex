@@ -96,3 +96,9 @@
 ## 交付给其他工作流
 - 给 B：无直接依赖（B 用 mock）。但请在 M2 前把 `fixtures/expected/project` 保持最新，B 的 mock 数据从这里生成
 - 给 C：`createCoreService`、`runJob`、`dist/cli.js`；每次改动签名先走契约流程
+
+### Issue #127 · Magento weekly 与运行记录回归
+- [x] Magento 产品页通过 Schema.org / 页面结构识别，并从评分、评论数、面包屑与图集 HTML 提取详情
+- [x] Magento BlogPosting / Amasty 风格页面与 /blog、/news URL 规则进入 blog_index；测试 fixture 仅包含虚构结构片段
+- [x] Core 锁在 partial 与异常时释放，Windows EPERM/EBUSY 短暂占用重试；旧心跳锁回收
+- [x] init 的各步骤状态与中文原因写入 logs/runs.jsonl

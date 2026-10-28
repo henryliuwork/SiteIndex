@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import {
   assertRunner, atomicWrite, findConflictCopies, readCsv, readJsonl, readRunner,
   withLock, writeCsv, writeJsonl, writeRunner,
 } from "../src";
+import { unlinkOwnedLock } from "../src/io/runner-lock";
 
 const roots: string[] = [];
 async function tempDir() {
@@ -91,6 +92,37 @@ describe("core io", () => {
     await expect(withLock(root, () => "recovered", {
       now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
     })).resolves.toBe("recovered");
+    await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("removes locks for partial results and rejected callbacks", async () => {
+    const root = await tempDir();
+    await expect(withLock(root, () => ({ status: "partial" }), { heartbeatMs: 60_000 })).resolves.toEqual({ status: "partial" });
+    await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(withLock(root, () => { throw new Error("callback failed"); }, { heartbeatMs: 60_000 }))
+      .rejects.toThrow("callback failed");
+    await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("retries an owned lock unlink after a transient Windows sharing error", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const record = { device_id: "device-1", device_name: "test", pid: process.pid, job: "weekly", started_at: "2026-10-28T00:00:00.000Z", heartbeat: "2026-10-28T00:00:00.000Z" };
+    await writeFile(lockPath, JSON.stringify(record));
+    const identity = await lstat(lockPath);
+    let attempts = 0;
+    await unlinkOwnedLock(lockPath, identity, { pid: record.pid, started_at: record.started_at }, {
+      unlinkFile: async (filePath) => {
+        attempts += 1;
+        if (attempts === 1) throw Object.assign(new Error("sharing violation"), { code: "EPERM" });
+        await unlink(filePath);
+      },
+      wait: async () => undefined,
+    });
+    expect(attempts).toBe(2);
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("recognizes configured cloud conflict-copy names", async () => {

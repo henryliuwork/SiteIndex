@@ -112,15 +112,64 @@ function dateDiff(newer: string, older: string): number { return Math.floor((Dat
 interface Parsed { page: SeoPage; doc: HtmlNode; links: { url: string; anchor: string; nofollow: boolean }[]; lastmod?: string }
 interface FetchData { status: number; body: string; url: string; redirects: string[]; ms: number; xRobotsTag: string | null }
 
-function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), categoryPattern?: string, categorySlugs: ReadonlySet<string> = new Set(), blogPatterns: string[] = []): SeoPage["page_type"] {
+function schemaTypeName(value: unknown): string {
+  return typeof value === "string" ? value.toLowerCase().split(/[\/#:]/).filter(Boolean).at(-1) ?? "" : "";
+}
+function hasSchemaType(item: JsonObject, expected: string): boolean {
+  return asList(item["@type"]).some((value) => schemaTypeName(value) === expected.toLowerCase());
+}
+function hasAnySchemaType(items: JsonObject[], expected: readonly string[]): boolean {
+  return items.some((item) => expected.some((type) => hasSchemaType(item, type)));
+}
+function classTokens(node: HtmlNode): string[] { return (attr(node, "class") ?? "").toLowerCase().split(/\s+/).filter(Boolean); }
+function hasClass(root: HtmlNode, expected: RegExp): boolean {
+  return walk(root, (node) => classTokens(node).some((token) => expected.test(token)), OMIT).length > 0;
+}
+function hasProductDocument(root: HtmlNode): boolean {
+  const ld = jsonLd(root).filter((item) => hasSchemaType(item, "product"));
+  const headings = [...walk(root, (node) => node.name === "h1" || node.name === "title", OMIT).map((node) => text(node).toLowerCase().trim())];
+  const schemaNamesMatch = ld.some((item) => typeof item.name === "string" && headings.includes(item.name.toLowerCase().trim()));
+  const productMain = hasClass(root, /^(product-info-main|product-view)$/);
+  const productMedia = hasClass(root, /^(gallery-placeholder|fotorama|product-gallery)$/)
+    || walk(root, (node) => classTokens(node).includes("product") && classTokens(node).includes("media"), OMIT).length > 0;
+  const productPrice = hasClass(root, /^(price-box|product-info-price)$/)
+    || walk(root, (node) => !!attr(node, "data-role")?.toLowerCase().includes("pricebox"), OMIT).length > 0;
+  const productItem = walk(root, (node) => schemaTypeName(attr(node, "itemtype")) === "product", OMIT)
+    .some((node) => walk(node, (child) => child.name === "h1", OMIT).length > 0);
+  return (productMain && walk(root, (node) => node.name === "h1", OMIT).length > 0)
+    || (productMedia && productPrice && walk(root, (node) => node.name === "h1", OMIT).length > 0)
+    || schemaNamesMatch || productItem;
+}
+function hasBlogDocument(root: HtmlNode): boolean {
+  const articles = jsonLd(root).filter((item) => ["article", "blogposting", "newsarticle"].some((type) => hasSchemaType(item, type)));
+  const headings = [...walk(root, (node) => node.name === "h1" || node.name === "title", OMIT).map((node) => text(node).toLowerCase().trim())];
+  if (articles.some((item) => typeof item.headline === "string" && headings.includes(item.headline.toLowerCase().trim()))) return true;
+  const hasPostClass = hasClass(root, /^(amblog-post|post-view|blog-post|post-content)$/);
+  if (hasPostClass && walk(root, (node) => node.name === "h1", OMIT).length > 0) return true;
+  return walk(root, (node) => node.name === "article", OMIT).length > 0
+    && (meta(root, "article:published_time") !== null || articles.length > 0);
+}
+function isBlogPostPath(pathname: string): boolean {
+  if (/\/\d{4}\/\d{2}\//.test(pathname)) return true;
+  const segments = pathname.split("/").filter(Boolean).map((segment) => segment.toLowerCase());
+  const rootIndex = segments.findIndex((segment) => /^(blogs?|news)$/.test(segment.replace(/\.html?$/, "")));
+  if (rootIndex < 0) return false;
+  const slug = segments[rootIndex + 1]?.replace(/\.html?$/, "");
+  return !!slug && !["category", "categories", "tag", "tags", "author", "page", "archive"].includes(slug);
+}
+function urlSlug(url: string): string {
+  return new URL(url).pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(?:html?|php)$/i, "") ?? "";
+}
+function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), categoryPattern?: string, categorySlugs: ReadonlySet<string> = new Set(), blogPatterns: string[] = [], doc?: HtmlNode): SeoPage["page_type"] {
   const pathname = new URL(url).pathname;
   const clean = cleanUrl(url);
   if (clean && productUrls.has(clean)) return "product";
+  if (doc && hasProductDocument(doc)) return "product";
   if (pathname === "/") return "home";
-  if (/\/products\//i.test(pathname)) return "product";
-  const leaf = pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(html?|php)$/i, "").toLowerCase() ?? "";
-  if (/\/collections\//i.test(pathname) || /collection|category|catalog/i.test(pathname) || categorySlugs.has(leaf) || (categoryPattern ? pattern(url, categoryPattern.split(/\s*,\s*/)) : false)) return "collection";
-  if (/\/blogs?\//i.test(pathname) || /\/news\//i.test(pathname) || /\/\d{4}\/\d{2}\//.test(pathname) || pattern(url, blogPatterns)) return "blog";
+  if (/\/products?\//i.test(pathname)) return "product";
+  const leaf = pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(?:html?|php)$/i, "").toLowerCase() ?? "";
+  if (/\/collections?\//i.test(pathname) || /collection|category|catalog/i.test(pathname) || categorySlugs.has(leaf) || (categoryPattern ? pattern(url, categoryPattern.split(/\s*,\s*/)) : false)) return "collection";
+  if ((doc && hasBlogDocument(doc)) || isBlogPostPath(pathname) || pattern(url, blogPatterns)) return "blog";
   if (/\/pages?\//i.test(pathname) || pathname.split("/").filter(Boolean).length === 1) return "page";
   return "other";
 }
@@ -208,15 +257,14 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
       const types = typesOf(ld);
       const schemaErrors: string[] = [];
       for (const item of ld) {
-        const type = asList(item["@type"]).map((value) => String(value).toLowerCase());
-        if (type.includes("product") && !item.name) schemaErrors.push("Product.name missing");
-        if ((type.includes("article") || type.includes("blogposting")) && !item.headline) schemaErrors.push("Article.headline missing");
-        if (type.includes("breadcrumblist") && !item.itemListElement) schemaErrors.push("BreadcrumbList.itemListElement missing");
+        if (hasSchemaType(item, "product") && !item.name) schemaErrors.push("Product.name missing");
+        if ((hasSchemaType(item, "article") || hasSchemaType(item, "blogposting")) && !item.headline) schemaErrors.push("Article.headline missing");
+        if (hasSchemaType(item, "breadcrumblist") && !item.itemListElement) schemaErrors.push("BreadcrumbList.itemListElement missing");
       }
       const images = walk(area(doc), (n) => n.name === "img", OMIT);
       const links = contentLinks(doc, response.url, origin);
       const page: SeoPage = {
-        url, page_type: pageType(url, productUrls, config.categories.url_pattern, categorySlugs, config.crawl.blog_url_patterns), status_code: response.status, ...(response.url !== url ? { final_url: response.url } : {}),
+        url, page_type: pageType(url, productUrls, config.categories.url_pattern, categorySlugs, config.crawl.blog_url_patterns, doc), status_code: response.status, ...(response.url !== url ? { final_url: response.url } : {}),
         ...(response.redirects.length ? { redirect_chain: response.redirects } : {}), response_ms: response.ms,
         title, title_length: title ? [...title].length : 0, meta_description: description, description_length: description ? [...description].length : 0,
         meta_keywords: meta(doc, "keywords"), h1: headings[0] ?? null, h1_count: headings.length,
@@ -261,9 +309,9 @@ function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, d
     else if (gradeDescriptionLength(page.description_length, config.seo?.description_range) === "poor") add(page.url, "desc_length", "low", "Description length is " + page.description_length);
     if (!page.h1_count) add(page.url, "h1_missing", "low", "H1 is missing");
     if (page.h1_count > 1) add(page.url, "h1_multiple", "low", "Multiple H1 elements");
-    const types = page.schema_types.map((type) => type.toLowerCase());
+    const types = page.schema_types.map(schemaTypeName);
     if (page.page_type === "product" && !types.includes("product")) add(page.url, "schema_missing", "mid", "Product schema is missing");
-    if (page.page_type === "blog" && !types.some((type) => type === "article" || type === "blogposting")) add(page.url, "schema_missing", "mid", "Article schema is missing");
+    if (page.page_type === "blog" && !types.some((type) => ["article", "blogposting", "newsarticle"].includes(type))) add(page.url, "schema_missing", "mid", "Article schema is missing");
     if (page.schema_errors?.length) add(page.url, "schema_error", "mid", page.schema_errors.join("; "));
     if ((page.images_missing_alt ?? 0) > 0) add(page.url, "img_alt_missing", "low", "Images missing alt: " + page.images_missing_alt);
     if ((page.page_type === "blog" && (page.word_count ?? 0) < 300) || (page.page_type === "collection" && (page.word_count ?? 0) < 50)) {
@@ -311,7 +359,7 @@ function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, s
     const publishedDay = isoDay(published, date);
     const wordCount = page.word_count;
     return [{
-      url: page.url, slug: new URL(page.url).pathname.split("/").filter(Boolean).at(-1) ?? "",
+      url: page.url, slug: urlSlug(page.url),
       title: page.h1 ?? page.title ?? "", published_at: publishedDay,
       updated_at: (typeof article.dateModified === "string" ? article.dateModified : undefined) || meta(doc, "article:modified_time") || lastmod
         ? isoDay((typeof article.dateModified === "string" ? article.dateModified : undefined) ?? meta(doc, "article:modified_time") ?? lastmod, publishedDay) : null,
@@ -320,7 +368,7 @@ function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, s
       outline, has_faq: ld.some((item) => asList(item["@type"]).some((type) => /faqpage/i.test(String(type)))),
       featured_image: cleanUrl(meta(doc, "og:image") ?? "", page.url), primary_keyword: meta(doc, "keywords"),
       links_internal: [...new Set(internal)].sort(compareKeys),
-      links_products: [...new Set(productLinks.map((url) => productHandles.get(cleanUrl(url) ?? "") ?? (new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "").replace(/\.(html?|php)$/i, "")))].sort(compareKeys),
+      links_products: [...new Set(productLinks.map((url) => productHandles.get(cleanUrl(url) ?? "") ?? urlSlug(url)))].sort(compareKeys),
       links_in: rows.filter((row) => row.links.some((link) => link.url === page.url)).length, last_crawled: date,
     }];
   });
@@ -329,15 +377,29 @@ function productDetails(rows: Parsed[], date: string): ProductDetails[] {
   const result = rows.flatMap(({ page, doc, links }) => {
     if (page.page_type !== "product") return [];
     const ld = jsonLd(doc);
-    const product = ld.find((item) => asList(item["@type"]).some((type) => String(type).toLowerCase() === "product")) ?? {};
+    const product = ld.find((item) => hasSchemaType(item, "product")) ?? {};
     const rating = product.aggregateRating && typeof product.aggregateRating === "object" ? product.aggregateRating as JsonObject : {};
-    const breadcrumb = ld.find((item) => asList(item["@type"]).some((type) => String(type).toLowerCase() === "breadcrumblist"));
-    const crumbs = breadcrumb ? asObjects(breadcrumb.itemListElement).flatMap((item) => {
+    const breadcrumb = ld.find((item) => hasSchemaType(item, "breadcrumblist"));
+    const jsonCrumbs = breadcrumb ? asObjects(breadcrumb.itemListElement).flatMap((item) => {
       const nested = item.item && typeof item.item === "object" ? item.item as JsonObject : {};
       return typeof (item.name ?? nested.name) === "string" ? [String(item.name ?? nested.name)] : [];
     }) : [];
+    const breadcrumbRoot = walk(doc, (node) => classTokens(node).includes("breadcrumbs")
+      || (node.name === "nav" && /breadcrumb/i.test(attr(node, "aria-label") ?? "")), OMIT)[0];
+    const htmlCrumbs = breadcrumbRoot ? walk(breadcrumbRoot, (node) => node.name === "li").map((node) => text(node)).filter(Boolean) : [];
+    const crumbs = jsonCrumbs.length ? jsonCrumbs : htmlCrumbs;
+    const galleryRoot = walk(doc, (node) => {
+      const classes = classTokens(node);
+      return classes.some((name) => /^(gallery-placeholder|fotorama|product-gallery)$/.test(name))
+        || (classes.includes("product") && classes.includes("media"));
+    }, OMIT)[0] ?? doc;
+    const htmlImages = walk(galleryRoot, (node) => node.name === "img", OMIT).flatMap((node) => {
+      const source = attr(node, "data-zoom-image") ?? attr(node, "data-large-image") ?? attr(node, "data-src")
+        ?? attr(node, "data-original") ?? attr(node, "src") ?? attr(node, "srcset")?.split(/\s|,/)[0] ?? null;
+      return source ? [source] : [];
+    });
     const imageValues = [
-      ...walk(doc, (n) => n.name === "img" && !!attr(n, "src"), OMIT).map((n) => attr(n, "src")!),
+      ...htmlImages,
       ...asList(product.image).flatMap((value) => {
         if (typeof value === "string") return [value];
         if (value && typeof value === "object") {
@@ -347,20 +409,36 @@ function productDetails(rows: Parsed[], date: string): ProductDetails[] {
         return [];
       }),
     ];
-    const images = imageValues.map((url) => cleanUrl(url, page.url)).filter((url): url is string => !!url);
+    const images = [...new Set(imageValues.map((url) => cleanUrl(url, page.url)).filter((url): url is string => !!url))];
     const related = links.filter((link) => rows.find((row) => row.page.url === link.url)?.page.page_type === "product")
-      .map((link) => new URL(link.url).pathname.split("/").filter(Boolean).at(-1) ?? "");
+      .map((link) => urlSlug(link.url));
     const body = text(area(doc));
     const shipping = body.match(/[^.!?。！？]*(?:free\s+shipping|shipping[^.!?。！？]{0,60}|配送[^。！？]{0,60})[^.!?。！？]*/i)?.[0]?.trim() ?? null;
-    const badges = walk(area(doc), (n) => /badge|label/i.test(attr(n, "class") ?? ""), OMIT).map((n) => text(n)).filter(Boolean);
-    const ratingValue = finiteNumber(rating.ratingValue);
-    const reviewCount = finiteNumber(rating.reviewCount ?? rating.ratingCount);
+    const badges = walk(area(doc), (node) => /badge|label/i.test(attr(node, "class") ?? ""), OMIT).map((node) => text(node)).filter(Boolean);
+    let ratingValue = finiteNumber(rating.ratingValue);
+    if (ratingValue === null) {
+      const valueNode = walk(doc, (node) => attr(node, "itemprop")?.toLowerCase() === "ratingvalue", OMIT)[0];
+      ratingValue = finiteNumber(attr(valueNode, "content") ?? (valueNode ? text(valueNode) : null));
+    }
+    if (ratingValue === null) {
+      const ratingNode = walk(doc, (node) => classTokens(node).includes("rating-result") && !!attr(node, "title"), OMIT)[0];
+      const title = attr(ratingNode, "title") ?? "";
+      const match = title.replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+      if (match) {
+        const parsed = Number(match[0]);
+        ratingValue = title.includes("%") ? parsed * 5 / 100 : parsed;
+      }
+    }
+    const reviewNode = walk(doc, (node) => ["reviewcount", "ratingcount"].includes((attr(node, "itemprop") ?? "").toLowerCase()), OMIT)[0];
+    const reviewText = reviewNode ? attr(reviewNode, "content") ?? text(reviewNode) : "";
+    const reviewMatch = body.match(/([\d,]+)\s*(?:reviews?|ratings?)/i) ?? body.match(/(?:reviews?|ratings?)\s*\(([\d,]+)\)/i);
+    const reviewCount = finiteNumber(rating.reviewCount ?? rating.ratingCount) ?? finiteNumber(reviewText) ?? (reviewMatch ? finiteNumber(reviewMatch[1]?.replace(/,/g, "")) : null);
     return [{
-      handle: new URL(page.url).pathname.split("/").filter(Boolean).at(-1) ?? "",
+      handle: urlSlug(page.url),
       short_description: page.meta_description ?? (typeof product.description === "string" ? product.description : null),
       rating: ratingValue,
       review_count: reviewCount !== null && Number.isInteger(reviewCount) ? reviewCount : null,
-      breadcrumbs: crumbs, gallery: [...new Set(images)], related_handles: [...new Set(related)], badges: [...new Set(badges)], shipping_note: shipping, last_crawled: date,
+      breadcrumbs: crumbs, gallery: images, related_handles: [...new Set(related)], badges: [...new Set(badges)], shipping_note: shipping, last_crawled: date,
     }];
   });
   return [...new Map(result.map((item) => [item.handle, item])).values()];

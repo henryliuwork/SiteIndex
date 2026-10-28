@@ -116,6 +116,45 @@ async function writeLock(handle: Awaited<ReturnType<typeof open>>, record: LockR
   await handle.sync();
 }
 
+type LockIdentity = { ino: number; dev: number };
+type LockUnlinkOptions = { unlinkFile?: (filePath: string) => Promise<void>; wait?: (ms: number) => Promise<void> };
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** 只移除仍属于本次任务的锁；Windows 上遇到短暂占用时按原子写策略重试。 */
+export async function unlinkOwnedLock(
+  lockPath: string,
+  identity: LockIdentity,
+  expected?: Pick<LockRecord, "pid" | "started_at">,
+  options: LockUnlinkOptions = {},
+): Promise<void> {
+  const remove = options.unlinkFile ?? unlink;
+  const pause = options.wait ?? wait;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const current = await lstat(lockPath);
+      if (current.ino !== identity.ino || current.dev !== identity.dev) return;
+      if (expected) {
+        let currentRecord: Partial<LockRecord> | null = null;
+        try { currentRecord = JSON.parse(await readFile(lockPath, "utf8")) as Partial<LockRecord>; }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+        if (currentRecord && (currentRecord.pid !== expected.pid || currentRecord.started_at !== expected.started_at)) return;
+      }
+      const latest = await lstat(lockPath);
+      if (latest.ino !== identity.ino || latest.dev !== identity.dev) return;
+      await remove(lockPath);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return;
+      if ((code !== "EPERM" && code !== "EBUSY") || attempt >= 10) throw error;
+      await pause(200 * (attempt + 1));
+    }
+  }
+}
+
 export async function withLock<T>(project: string, fn: () => Promise<T> | T, options: LockOptions = {}): Promise<T> {
   const lockPath = path.join(project, PATHS.lock);
   const now = options.now ?? (() => new Date());
@@ -155,22 +194,13 @@ export async function withLock<T>(project: string, fn: () => Promise<T> | T, opt
       await heartbeatTask;
       await handle.close();
       handle = undefined;
-      try {
-        const current = await lstat(lockPath);
-        const currentRecord = JSON.parse(await readFile(lockPath, "utf8")) as Partial<LockRecord>;
-        if (current.ino === identity.ino && current.dev === identity.dev && currentRecord.pid === record.pid && currentRecord.started_at === record.started_at) {
-          await unlink(lockPath);
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
-      }
+      await unlinkOwnedLock(lockPath, identity, { pid: record.pid, started_at: record.started_at });
     }
   } catch (error) {
     if (handle) {
       const identity = await handle.stat().catch(() => undefined);
       await handle.close().catch(() => undefined);
-      const current = await lstat(lockPath).catch(() => undefined);
-      if (identity && current?.ino === identity.ino && current.dev === identity.dev) await unlink(lockPath).catch(() => undefined);
+      if (identity) await unlinkOwnedLock(lockPath, identity).catch(() => undefined);
     }
     throw error;
   }
