@@ -15,7 +15,7 @@ export interface IpcDependencies {
   updates: UpdateService;
   core: CoreService;
   projects: ProjectCatalog;
-  settingsChanged: (value: AppSettings) => Promise<void>;
+  settingsChanged: (value: AppSettings, reconcile?: boolean) => Promise<void>;
   jobs: JobManager;
   scheduler: SystemScheduler;
   reconcileSchedules: (allowElevation: boolean) => Promise<ScheduleRuntimeStatus>;

@@ -54,6 +54,13 @@
 - [x] **无界面模式** `SiteIndex.exe --run-job "<projectPath>" <job>`：不创建窗口，直接执行，完成后按设置发系统通知，退出码同 `EXIT`
 - [x] 系统通知（失败通知 / 成功通知 / 缺货阈值）
 
+### v0.1.1 · 新建项目初始化
+
+- [x] `projects.create` 建档后认领本机执行设备，并由 utilityProcess 启动 `jobs.run({ job: "init" })`；返回实际 IPC runId
+- [x] Core init 结束后执行 `schedule`：沿用系统计划任务与 UAC 流程，向界面推送进度，替换 `JobResult.steps` 的占位结果，再触发 `onFinished`
+- [x] 检查向导选定的项目根目录；与默认根目录不同的项目写入 `extra_projects`，init 前不提前注册计划任务
+- [ ] 安装 v0.1.1 后在 Windows 完整验收新建项目流程与向导 8 步结果
+
 ### C7 系统计划任务 `src/main/scheduler/`
 
 - [x] Windows：按 ARCHITECTURE §9.1 生成 UTF-16LE XML（完整 whoami 用户、InteractiveToken、LeastPrivilege、每周几 / 每月几号、StartWhenAvailable、WakeToRun、IgnoreNew、PT2H）；先以普通权限运行 `schtasks /Create` / `/Delete`。遇到 `0x80070005` 时将全部项目任务变更合并到一个临时 PowerShell 脚本，提示一次 UAC 并以 `Start-Process -Verb RunAs -Wait` 执行，读取 JSON 并逐项核验结果

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { writeRunner } from "@siteindex/core";
 import type { AppSettings, SiteIndexError } from "@siteindex/shared";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import { isProjectInsideRoot } from "../project-catalog.js";
@@ -15,12 +16,27 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
     "projects.inspectFeed": (...args) =>
       context.core.projects.inspectFeed(args[0] as string[], args[1] as { sku_field: string; category_depth: number }),
     "projects.create": async (...args) => {
-      const result = await context.core.projects.create(
-        args[0] as Parameters<typeof context.core.projects.create>[0],
-      );
-      await context.projects.refresh(await context.settings.get());
-      await context.reconcileSchedules(true);
-      return result;
+      const input = args[0] as Parameters<typeof context.core.projects.create>[0];
+      const created = await context.core.projects.create(input);
+      const projectPath = path.resolve(input.projects_root, created.id);
+      const current = await context.settings.get();
+      let updated = current;
+      if (!isProjectInsideRoot(current.projects_root, projectPath)) {
+        const paths = new Set(current.extra_projects.map((entry) => path.resolve(entry)));
+        paths.add(projectPath);
+        updated = await context.settings.set({ extra_projects: [...paths] });
+        await context.settingsChanged(updated, false);
+      }
+      await context.projects.refresh(updated);
+      const registeredPath = context.projects.resolveProject(created.id);
+      await writeRunner(registeredPath, {
+        device_id: updated.device_id,
+        device_name: updated.device_name,
+        claimed_at: new Date().toISOString(),
+      });
+      context.core.invalidate(registeredPath);
+      const { runId } = await context.jobs.run({ projectPath: registeredPath, job: "init" });
+      return { id: created.id, runId };
     },
     "projects.addExisting": async (value) => {
       if (typeof value !== "string") {
@@ -44,10 +60,7 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
     },
     "projects.updateConfig": (...args) =>
       context.withProject(args[0], (id) =>
-        context.core.projects.updateConfig(
-          id,
-          args[1] as Parameters<typeof context.core.projects.updateConfig>[1],
-        ),
+        context.core.projects.updateConfig(id, args[1] as Parameters<typeof context.core.projects.updateConfig>[1]),
       ),
   };
 }

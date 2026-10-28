@@ -42,6 +42,11 @@ export interface JobManagerOptions {
   fork(modulePath: string): UtilityProcessLike;
   emitProgress(progress: JobProgress): void;
   emitFinished(result: JobResult): void;
+  finalizeInit?(
+    result: JobResult,
+    projectPath: string,
+    emitProgress: (progress: JobProgress) => void,
+  ): Promise<JobResult>;
   notify(result: JobResult, settings: AppSettings, oosRate: number | null): void;
 }
 
@@ -212,6 +217,41 @@ export function createJobManager(options: JobManagerOptions) {
     }
 
     if (result.runId !== entry.runId) result = { ...result, runId: entry.runId };
+    if (entry.request.job === "init" && entry.cancelled) {
+      result = {
+        ...result,
+        steps: [
+          ...(result.steps ?? []).filter((step) => step.key !== "schedule"),
+          { key: "schedule", status: "skipped", message: "初始化已取消，未注册定时任务。" },
+        ],
+      };
+    } else if (entry.request.job === "init" && options.finalizeInit) {
+      try {
+        result = await options.finalizeInit(result, entry.projectPath, options.emitProgress);
+      } catch (error) {
+        const message = `定时任务注册失败：${error instanceof Error ? error.message : String(error)}`;
+        result = {
+          ...result,
+          status: result.status === "ok" ? "partial" : result.status,
+          exitCode: result.exitCode === EXIT.OK ? EXIT.SOURCE_FAILED : result.exitCode,
+          errors: [...(result.errors ?? []), message],
+          steps: [
+            ...(result.steps ?? []).filter((step) => step.key !== "schedule"),
+            { key: "schedule", status: "failed", message },
+          ],
+        };
+        options.emitProgress({
+          runId: result.runId,
+          projectPath: entry.projectPath,
+          job: "init",
+          pct: 100,
+          step: "schedule",
+          level: "error",
+          message,
+          at: new Date().toISOString(),
+        });
+      }
+    }
     options.emitFinished(result);
     if (!entry.cancelled) {
       try {
@@ -258,6 +298,7 @@ export function createJobManager(options: JobManagerOptions) {
     }
     if (message.type === "progress") {
       if (isJobProgress(message.progress)) {
+        if (entry.request.job === "init" && message.progress.step === "schedule") return;
         options.emitProgress({ ...message.progress, runId: entry.runId ?? message.progress.runId });
       }
       return;

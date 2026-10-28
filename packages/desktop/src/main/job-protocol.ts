@@ -35,7 +35,8 @@ export function isJobName(value: unknown): value is JobName {
     value === "readme" ||
     value === "design" ||
     value === "index-check" ||
-    value === "views"
+    value === "views" ||
+    value === "init"
   );
 }
 

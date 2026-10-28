@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PATHS, type AppSettings, type JobResult, type ProjectId } from "@siteindex/shared";
+import { PATHS, type AppSettings, type JobProgress, type JobResult, type ProjectId } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createJobManager, type UtilityProcessLike } from "./job-manager.js";
 
@@ -157,6 +157,105 @@ describe("desktop job manager", () => {
     ]);
     expect(finished).toHaveLength(1);
     expect(finished[0]).toMatchObject({ runId, status: "failed", exitCode: 3 });
+  });
+  it("delays init onFinished until Desktop schedule finalization and hides Core's schedule placeholder", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    const progress = vi.fn();
+    const finished = vi.fn();
+    let resolveSchedule!: (value: JobResult) => void;
+    const scheduleDone = new Promise<JobResult>((resolve) => {
+      resolveSchedule = resolve;
+    });
+    const finalizeInit = vi.fn(async (result: JobResult, currentPath: string, emit: (event: JobProgress) => void) => {
+      emit({
+        runId: result.runId,
+        projectPath: currentPath,
+        job: "init",
+        pct: 96,
+        step: "schedule",
+        level: "info",
+        message: "正在注册",
+        at: new Date().toISOString(),
+      });
+      return scheduleDone;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: progress,
+      emitFinished: finished,
+      finalizeInit,
+      notify: vi.fn(),
+    });
+    const { runId } = await manager.run({ projectPath, job: "init" });
+    child.emit("message", {
+      type: "progress",
+      progress: {
+        runId: "2026-10-23-daily",
+        projectPath,
+        job: "init",
+        pct: 100,
+        step: "schedule",
+        level: "info",
+        message: "由桌面端注册",
+        at: new Date().toISOString(),
+      },
+    });
+    expect(progress).not.toHaveBeenCalled();
+    child.emit("message", {
+      type: "finished",
+      result: { runId: "2026-10-23-daily", job: "init", status: "ok", exitCode: 0, summary: "核心步骤完成" },
+    });
+    await vi.waitFor(() => expect(finalizeInit).toHaveBeenCalledOnce());
+    expect(finished).not.toHaveBeenCalled();
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ runId, step: "schedule", pct: 96 }));
+    resolveSchedule({
+      runId,
+      job: "init",
+      status: "ok",
+      exitCode: 0,
+      summary: "完成",
+      steps: [{ key: "schedule", status: "ok" }],
+    });
+    await vi.waitFor(() =>
+      expect(finished).toHaveBeenCalledWith(
+        expect.objectContaining({ runId, steps: [{ key: "schedule", status: "ok" }] }),
+      ),
+    );
+  });
+  it("does not request schedule authorization after init is cancelled", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    const finished = vi.fn();
+    const finalizeInit = vi.fn();
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: finished,
+      finalizeInit,
+      notify: vi.fn(),
+    });
+    const { runId } = await manager.run({ projectPath, job: "init" });
+    await manager.cancel(runId);
+    expect(finalizeInit).not.toHaveBeenCalled();
+    expect(finished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId,
+        steps: [{ key: "schedule", status: "skipped", message: "初始化已取消，未注册定时任务。" }],
+      }),
+    );
   });
   it("drains active Jobs and blocks new starts while an update installs", async () => {
     const projectPath = await projectDirectory();
