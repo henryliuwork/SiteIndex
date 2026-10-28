@@ -186,6 +186,64 @@ function numberValue(value: string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as UnknownRecord
+    : undefined;
+}
+
+function normalizedFeedValue(value: unknown): string | string[] | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
+  return undefined;
+}
+
+function feedValueHasUrl(value: string | string[]): boolean {
+  return (Array.isArray(value) ? value : [value]).some((url) => url.trim() && url.trim().toLowerCase() !== "todo");
+}
+
+function configuredFeedValue(config: unknown): string | string[] | undefined {
+  const root = asRecord(config);
+  const crawl = asRecord(root?.crawl);
+  const nestedFeed = asRecord(crawl?.feed);
+  const candidates = [
+    crawl?.feed_url,
+    crawl?.feed_urls,
+    crawl?.feed,
+    nestedFeed?.feed_url,
+    nestedFeed?.url,
+    nestedFeed?.urls,
+    root?.feed_url,
+    root?.feed_urls,
+  ].map(normalizedFeedValue).filter((value): value is string | string[] => value !== undefined);
+  return candidates.find(feedValueHasUrl) ?? candidates[0];
+}
+
+function feedUrlsFromConfig(config: SiteConfig): string[] {
+  const value = configuredFeedValue(config);
+  return (Array.isArray(value) ? value : value === undefined ? [] : [value])
+    .filter((url) => url.trim() && url.trim().toLowerCase() !== "todo");
+}
+
+function normalizeSiteFeedConfig(config: SiteConfig): SiteConfig {
+  const root = asRecord(config);
+  const crawl = asRecord(root?.crawl);
+  if (!root || !crawl) return config;
+
+  const feedValue = configuredFeedValue(config);
+  const normalizedCrawl = { ...crawl };
+  delete normalizedCrawl.feed_urls;
+  delete normalizedCrawl.feed;
+  if (feedValue !== undefined) normalizedCrawl.feed_url = feedValue;
+
+  const normalized: UnknownRecord = { ...root, crawl: normalizedCrawl };
+  delete normalized.feed_url;
+  delete normalized.feed_urls;
+  return normalized as unknown as SiteConfig;
+}
+
 function parseDailySummary(rows: CsvRow[]): DailySummaryRow[] {
   return rows.flatMap((row) => {
     if (!row.date || !row.category) return [];
@@ -256,7 +314,7 @@ async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
       options: { wake_to_run: true, run_if_missed: true, notify_on_failure: true, validate_after_sync: true },
     };
     const schedule = parsed.schedule;
-    return {
+    const config = {
       ...parsed,
       categories: parsed.categories ?? { mode: "feed" },
       workspace_folders: [], // 旧字段只为兼容 shared 类型；不读取其内容。
@@ -271,6 +329,7 @@ async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
         options: { ...defaultSchedule.options, ...schedule?.options },
       },
     } as SiteConfig;
+    return normalizeSiteFeedConfig(config);
   } catch (error) {
     throw siteError("CONFIG_INVALID", "项目配置文件不是有效 JSON", String(error));
   }
@@ -405,8 +464,7 @@ function projectSummary(snapshot: ProjectSnapshot, id: ProjectId, deviceId: stri
     ? activeSkus.filter((row) => latestBySku.get(row.sku)?.stock_status === "in_stock").length / activeSkus.length
     : null;
   const latestRun = [...snapshot.runs].sort((a, b) => codeUnitCompare(b.started_at, a.started_at))[0];
-  const feeds = Array.isArray(snapshot.config.crawl.feed_url) ? snapshot.config.crawl.feed_url : [snapshot.config.crawl.feed_url];
-  const warnings = feeds.some((feed) => typeof feed === "string" && feed.trim()) ? [] : ["尚未填写 GMC feed"];
+  const warnings = feedUrlsFromConfig(snapshot.config).length ? [] : ["尚未填写 GMC feed"];
   const runner = snapshot.runner;
   return {
     id,
@@ -1158,7 +1216,18 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     updateConfig: async (id, patch) => {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
-      const config: SiteConfig = { ...snapshot.config, ...patch, workspace_folders: [] };
+      const patchCrawl = asRecord((patch as UnknownRecord).crawl);
+      const crawl: UnknownRecord = { ...snapshot.config.crawl, ...patchCrawl };
+      if (patchCrawl && ["feed_url", "feed_urls", "feed"].some((key) => Object.prototype.hasOwnProperty.call(patchCrawl, key))) {
+        const patchFeed = configuredFeedValue({ crawl: patchCrawl });
+        crawl.feed_url = patchFeed ?? [];
+      }
+      const config = normalizeSiteFeedConfig({
+        ...snapshot.config,
+        ...patch,
+        crawl: crawl as unknown as SiteConfig["crawl"],
+        workspace_folders: [],
+      } as SiteConfig);
       try {
         await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(config));
       } catch (error) {
@@ -1342,8 +1411,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const attention: AttentionItem[] = openIssues.slice(0, 6).map((issue) => ({
         severity: issue.severity, text: `${issue.rule}：${issue.detail}`, link: issue.url, link_label: "查看 SEO 问题",
       }));
-      const feeds = Array.isArray(snapshot.config.crawl.feed_url) ? snapshot.config.crawl.feed_url : [snapshot.config.crawl.feed_url];
-      if (!feeds.some((feed) => typeof feed === "string" && feed.trim())) {
+      if (!feedUrlsFromConfig(snapshot.config).length) {
         attention.unshift({ severity: "mid", text: "尚未填写 GMC feed", link: `/p/${id}/settings`, link_label: "配置 feed" });
       }
       const changelog = [...snapshot.runs].sort((a, b) => codeUnitCompare(b.started_at, a.started_at)).slice(0, 8)
