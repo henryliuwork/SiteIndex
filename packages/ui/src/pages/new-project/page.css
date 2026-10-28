@@ -311,12 +311,15 @@ margin:14px 0 8px;
 }
 
 .si-wizard-progress-row {
-display:grid; min-height:48px; grid-template-columns:20px minmax(0,1fr) auto; align-items:center; gap:10px; border-top:1px solid var(--color-line-soft);
+display:grid; min-height:48px; grid-template-columns:20px minmax(0,1fr) auto; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--color-line-soft);
 }
 
 .si-wizard-progress-row>svg {
 color:var(--color-brand);
 }
+
+.si-wizard-progress-row.is-running>svg { color:var(--color-info); }
+.si-wizard-progress-row.is-failed>svg { color:var(--color-danger); }
 
 .si-wizard-progress-row>span:nth-child(2) {
 display:grid; gap:2px;
@@ -326,9 +329,14 @@ display:grid; gap:2px;
 color:var(--color-ink); font-size:12px;
 }
 
-.si-wizard-progress-row small,.si-wizard-progress-row time {
+.si-wizard-progress-row small,.si-wizard-step-actions>span {
 color:var(--color-muted); font-size:11px;
 }
+
+.si-wizard-progress-row .si-wizard-step-reason { color:var(--color-danger); }
+.si-wizard-step-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; }
+.si-wizard-progress-row.is-failed .si-wizard-step-actions>span { color:var(--color-danger); }
+.si-wizard-step-actions .si-button { min-height:28px; padding:0 9px; font-size:11px; }
 
 .si-wizard-progress-dot {
 width:8px; height:8px; justify-self:center; border:1px solid var(--color-faint); border-radius:50%;
