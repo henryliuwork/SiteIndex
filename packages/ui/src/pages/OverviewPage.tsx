@@ -4,19 +4,7 @@ import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, Fo
 import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, ProjectDetail, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, KpiCard, Tabs } from "../components";
-
-const tabOptions = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
-  { value: "products", label: "产品" }, { value: "seo", label: "SEO" },
-  { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" },
-  { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
-
-const platformNames: Record<ProjectDetail["summary"]["platform"], string> = {
-  magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台",
-};
+import { ApiErrorNotice, Button, Chip, KpiCard, ProjectHeader } from "../components";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
 };
@@ -106,20 +94,13 @@ export function OverviewPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目概览加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   const summary = project.summary;
-  const onTabChange = (tab: typeof tabOptions[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
-
   return <div className="si-page si-overview-page">
-    <header className="si-project-page-heading">
-      <div className="si-project-title-line">
-        <h1>{summary.name}</h1><code>{summary.domain} · {platformNames[summary.platform]}</code>
-        <Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>
-      </div>
-      <div className="si-page-actions">
+    <ProjectHeader project={summary} activeTab="overview" status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>} actions={
+      <>
         <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={running} onClick={() => void runSync()}>{running ? "同步中…" : "立即同步"}</Button>
-      </div>
-    </header>
-    <Tabs value="overview" options={tabOptions} ariaLabel="项目页面" onChange={onTabChange} />
+      </>
+    } />
 
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
     <section className="si-overview-kpis" aria-label="项目指标">

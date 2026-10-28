@@ -3,13 +3,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Download, FileText, RefreshCw } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import type { InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, StatusCells, Tabs, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, StatusCells, stockTone } from "../components";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",
@@ -20,13 +20,6 @@ const stockOptions = [
   { value: "unknown", label: "未知" }, { value: "today", label: "今日有变化" },
 ] as const;
 const lineColors = ["#1E6B52", "#E57920", "#78AEEB", "#8C68C5", "#4BA6A1"];
-const tabOptions = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
-  { value: "products", label: "产品" }, { value: "seo", label: "SEO" },
-  { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" },
-  { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
 const INITIAL_QUERY: ListQuery<SkuStockFilters> = { page: 1, pageSize: 20, filters: {} };
 
 function platformName(project: ProjectSummary | undefined): string {
@@ -172,7 +165,6 @@ function inventoryColumns(): ColumnDef<SkuStockView, unknown>[] {
 
 export function InventoryPage() {
   const { id = "kingsyard" } = useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<ListQuery<SkuStockFilters>>(INITIAL_QUERY);
   const [selectedRow, setSelectedRow] = useState<SkuStockView | null>(null);
@@ -256,19 +248,18 @@ export function InventoryPage() {
 
   return (
     <div className="si-page si-inventory-page">
-      <header className="si-project-page-heading">
-        <div className="si-project-title-line">
-          <h1>{project.name}</h1><code>{project.domain} · {platformName(project)}</code>
-          {project.sync.state === "ok" && <Chip tone="ok">{dateTime(project.sync.at)} 同步成功</Chip>}
-          {project.sync.state !== "ok" && <Chip tone={project.sync.state === "failed" ? "danger" : "warn"}>{project.sync.state === "failed" ? "同步失败" : project.sync.state === "running" ? "同步中" : "待处理"}</Chip>}
-        </div>
-        <div className="si-page-actions">
+      <ProjectHeader
+        project={project}
+        activeTab="inventory"
+        status={project.sync.state === "ok" ? <Chip tone="ok">{dateTime(project.sync.at)} 同步成功</Chip> : <Chip tone={project.sync.state === "failed" ? "danger" : "warn"}>{project.sync.state === "failed" ? "同步失败" : project.sync.state === "running" ? "同步中" : "待处理"}</Chip>}
+        actions={
+          <>
           <Button icon={<Download size={15} />} onClick={() => void exportCsv()}>导出 CSV</Button>
           <Button icon={<FileText size={15} />} onClick={() => void openReport()}>查看今日日报</Button>
           <Button variant="primary" icon={<RefreshCw size={15} />} disabled={Boolean(activeRunId)} onClick={() => void runSync()}>{activeRunId ? "同步中…" : "立即同步"}</Button>
-        </div>
-      </header>
-      <Tabs value="inventory" options={tabOptions} ariaLabel="项目页面" onChange={(tab) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab))} />
+          </>
+        }
+      />
       {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <>
         <div className="si-inventory-kpis">{kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
         <div className="si-inventory-overview-grid">

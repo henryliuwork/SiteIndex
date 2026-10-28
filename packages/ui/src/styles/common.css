@@ -6,7 +6,7 @@ display: grid; gap: 24px; min-width: 0;
 display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 20px;
 }
 
-.si-page-heading h1, .si-project-page-heading h1 {
+.si-page-heading h1 {
 margin: 0; color: var(--color-ink); font-size: 23px; font-weight: 700; letter-spacing: -0.025em;
 }
 
@@ -14,7 +14,7 @@ margin: 0; color: var(--color-ink); font-size: 23px; font-weight: 700; letter-sp
 margin: 7px 0 0; color: var(--color-muted); font-size: 12px;
 }
 
-.si-page-heading code, .si-project-title-line code {
+.si-page-heading code {
 color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px;
 }
 
@@ -90,22 +90,6 @@ color: var(--color-muted); font-size: 12px;
 margin: 0; color: var(--color-ink-2); font-size: 12px; overflow-wrap: anywhere;
 }
 
-.si-project-page-heading {
-display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px;
-}
-
-.si-project-title-line {
-display: flex; min-width: 0; align-items: center; gap: 12px;
-}
-
-.si-project-title-line h1 {
-flex: none; font-size: 23px;
-}
-
-.si-project-title-line code {
-overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
 .si-panel {
 min-width: 0; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
 }
@@ -131,12 +115,6 @@ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); w
 }
 
 @media (max-width: 980px) {
-.si-project-page-heading {
-align-items: flex-start; flex-direction: column;
-}
-}
-
-@media (max-width: 980px) {
 .si-trend-chart {
 height: 272px;
 }
@@ -151,11 +129,5 @@ align-items: flex-start; flex-direction: column;
 @media (max-width: 760px) {
 .si-page-actions {
 flex-wrap: wrap;
-}
-}
-
-@media (max-width: 760px) {
-.si-project-title-line {
-align-items: flex-start; flex-direction: column; gap: 6px;
 }
 }

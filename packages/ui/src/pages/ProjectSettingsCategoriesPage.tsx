@@ -1,21 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./project-settings-categories/page.css";
 
-const projectTabs = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" }, { value: "products", label: "产品" },
-  { value: "seo", label: "SEO" }, { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
 const settingsTabs = [
   { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
 ] as const;
-const tabHref = (id: string, value: string) => value === "settings" ? `/p/${id}/settings/config` : `/p/${id}${value === "overview" ? "" : "/" + value}`;
 const matchTypeOptions: { value: CategoryMatchType; label: string }[] = [
   { value: "product_type_contains", label: "product_type 包含" }, { value: "sku_prefix", label: "SKU 前缀" },
   { value: "url_contains", label: "URL 包含" }, { value: "skus", label: "指定 SKU" },
@@ -48,7 +42,6 @@ function categorySlug(url: string): string {
 
 export function ProjectSettingsCategoriesPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
   const configQuery = useQuery({ queryKey: ["categories", id], queryFn: () => api.categories.get(id) });
@@ -184,16 +177,14 @@ export function ProjectSettingsCategoriesPage() {
   if (projectQuery.isError || !projectQuery.data) return <ApiErrorNotice page label="项目分类设置页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data.summary;
   if (configQuery.isError) return <div className="si-page si-category-page">
-    <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain}</code></div></header>
-    <Tabs value="settings" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(tabHref(id, value))} />
+    <ProjectHeader project={project} activeTab="settings" />
     <SettingsNav id={id} />
     <ApiErrorNotice label="分类配置加载失败。" error={configQuery.error} onRetry={() => void configQuery.refetch()} />
   </div>;
   if (configQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载分类设置…</div>;
 
   return <div className="si-page si-category-page">
-    <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {modeDescription(draft.mode)}</code></div><div className="si-page-actions"><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></div></header>
-    <Tabs value="settings" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(tabHref(id, value))} />
+    <ProjectHeader project={project} activeTab="settings" subtitle={`${project.domain} · ${modeDescription(draft.mode)}`} actions={<><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></>} />
     <SettingsNav id={id} />
     {feedback && <p className={feedback.type === "error" ? "si-form-error" : "si-feedback"} role={feedback.type === "error" ? "alert" : "status"}>{feedback.message}</p>}
     <section className="si-category-mode-section"><h2>分类识别方式</h2><div className="si-category-mode-grid">{matchingModes.map((mode) => <button type="button" key={mode.value} className={`si-category-mode-card${draft.mode === mode.value ? " active" : ""}`} aria-pressed={draft.mode === mode.value} onClick={() => setDraft((current) => current ? { ...current, mode: mode.value } : current)}><span className="si-category-mode-title"><strong>{mode.title}</strong><Chip tone={draft.mode === mode.value ? "ok" : "neutral"}>{draft.mode === mode.value ? "当前" : mode.hint}</Chip></span><span>{mode.detail}</span></button>)}</div></section>

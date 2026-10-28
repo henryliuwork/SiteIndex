@@ -2,23 +2,15 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, FileDown } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
-import type { BlogFilters, BlogPost, Keyword, KeywordFilters, ListQuery, ProjectDetail } from "@siteindex/shared";
+import { useParams } from "react-router-dom";
+import type { BlogFilters, BlogPost, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Segmented, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, Segmented } from "../components";
 
 type ContentView = "blog" | "keywords";
 type IssueFilter = BlogFilters["issue"] | "all";
 type RoleFilter = KeywordFilters["role"] | "all";
 type StatusFilter = KeywordFilters["status"] | "all";
-const projectTabs = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" }, { value: "products", label: "产品" },
-  { value: "seo", label: "SEO" }, { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
-const platformNames: Record<ProjectDetail["summary"]["platform"], string> = {
-  magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台",
-};
 const initialBlogQuery: ListQuery<BlogFilters> = { page: 1, pageSize: 20, filters: {} };
 const initialKeywordQuery: ListQuery<KeywordFilters> = { page: 1, pageSize: 20, filters: {} };
 const blogIssues: { value: IssueFilter; label: string }[] = [
@@ -71,7 +63,6 @@ function keywordColumns(): ColumnDef<Keyword, unknown>[] {
 
 export function ContentPage() {
   const { id = "kingsyard" } = useParams();
-  const navigate = useNavigate();
   const [view, setView] = useState<ContentView>("blog");
   const [blogQuery, setBlogQuery] = useState(initialBlogQuery);
   const [keywordQuery, setKeywordQuery] = useState(initialKeywordQuery);
@@ -118,17 +109,11 @@ export function ContentPage() {
     try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); }
     catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开项目文件夹。")); }
   };
-  const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
-
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目内容加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-content-page">
-    <header className="si-project-page-heading">
-      <div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {platformNames[project.platform]}</code><Chip tone="info">示例数据</Chip></div>
-      <div className="si-page-actions"><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></div>
-    </header>
-    <Tabs value="content" options={projectTabs} ariaLabel="项目页面" onChange={onTabChange} />
+    <ProjectHeader project={project} activeTab="content" status={<Chip tone="info">示例数据</Chip>} actions={<><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></>} />
     <div className="si-content-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载内容概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="内容概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className="si-content-toolbar si-content-toolbar-table">
       <Segmented value={view} options={viewOptions} onChange={setView} ariaLabel="内容视图" />

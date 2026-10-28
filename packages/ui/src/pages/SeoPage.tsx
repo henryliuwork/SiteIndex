@@ -2,23 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, ExternalLink, FileDown, Globe2, RefreshCw } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { gradeDescriptionLength, gradeTitleLength } from "@siteindex/shared";
 import type {
-  JobProgress, JobResult, ListQuery, PageType, ProjectDetail, SeoIssue, SeoIssueFilters, SeoLink,
+  JobProgress, JobResult, ListQuery, PageType, SeoIssue, SeoIssueFilters, SeoLink,
   SeoPage as SeoRecord, SeoPageFilters, SeoRule, Severity,
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, SearchInput, Segmented, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, ProjectHeader, SearchInput, Segmented } from "../components";
 
 type SeoView = "issues" | "pages" | "links";
-const projectTabs = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
-  { value: "products", label: "产品" }, { value: "seo", label: "SEO" },
-  { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" },
-  { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
 const pageTypes: { value: PageType | "all"; label: string }[] = [
   { value: "all", label: "全部" }, { value: "home", label: "首页" }, { value: "collection", label: "分类" },
   { value: "product", label: "产品" }, { value: "blog", label: "博客" }, { value: "page", label: "页面" }, { value: "other", label: "其他" },
@@ -40,9 +33,6 @@ const severityTones: Record<Severity, "danger" | "warn" | "neutral"> = { high: "
 const initialIssueQuery: ListQuery<SeoIssueFilters> = { page: 1, pageSize: 100, filters: {} };
 const initialPageQuery: ListQuery<SeoPageFilters> = { page: 1, pageSize: 100, filters: {} };
 const initialLinkQuery: ListQuery = { page: 1, pageSize: 100, filters: {} };
-const platformNames: Record<ProjectDetail["summary"]["platform"], string> = {
-  magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台",
-};
 
 function displayPath(url: string): string {
   try { const parsed = new URL(url); return parsed.pathname + parsed.search; }
@@ -141,7 +131,6 @@ function SeoDetail({
 
 export function SeoPage() {
   const { id = "kingsyard" } = useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [view, setView] = useState<SeoView>("issues");
   const [issueQuery, setIssueQuery] = useState(initialIssueQuery);
@@ -205,7 +194,6 @@ export function SeoPage() {
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
   }, [activeRunId, id, queryClient]);
 
-  const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
   const setSearch = (search: string) => {
     if (view === "issues") setIssueQuery((current) => ({ ...current, page: 1, search: search || undefined }));
     else if (view === "pages") setPageQuery((current) => ({ ...current, page: 1, search: search || undefined }));
@@ -256,14 +244,12 @@ export function SeoPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 SEO 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-seo-page">
-    <header className="si-project-page-heading">
-      <div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {platformNames[project.platform]}</code><Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip></div>
-      <div className="si-page-actions">
+    <ProjectHeader project={project} activeTab="seo" status={<Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip>} actions={
+      <>
         <Button onClick={() => void exportIssues()}><FileDown size={14} />导出问题清单</Button>
         <Button variant="primary" icon={<RefreshCw size={14} />} disabled={busy || !project.path} onClick={() => void recrawl()}>{runKind === "crawl" ? "抓取中…" : "重新抓取"}</Button>
-      </div>
-    </header>
-    <Tabs value="seo" options={projectTabs} ariaLabel="项目页面" onChange={onTabChange} />
+      </>
+    } />
     <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className={`si-seo-controls${view === "issues" ? " is-issues" : ""}`}>
       <Segmented value={view} options={views} onChange={setView} ariaLabel="SEO 视图" />

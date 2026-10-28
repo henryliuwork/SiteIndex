@@ -1,5 +1,4 @@
 .si-runs-page { gap: 18px; }
-.si-runs-page .si-project-title-line code { color: var(--color-muted); font-family: var(--font-mono); }
 .si-runs-layout { display: grid; grid-template-columns: minmax(0,1fr) 340px; align-items: start; gap: 20px; }
 .si-runs-main, .si-runs-side { display: grid; min-width: 0; align-content: start; gap: 18px; }
 .si-runs-job-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
