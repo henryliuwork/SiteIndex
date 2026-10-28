@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { FeedInspectResult, SeoRule, SiteConfig } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, Tabs } from "../components";
 import "./project-settings-config/page.css";
 
 const projectTabs = [
@@ -139,7 +139,7 @@ export function ProjectSettingsConfigPage() {
     }
   };
 
-  if (projectQuery.isError) return <div className="si-page-error" role="alert">项目配置加载失败。<button type="button" onClick={() => void projectQuery.refetch()}>重试</button></div>;
+  if (projectQuery.isError) return <ApiErrorNotice page label="项目配置加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   if (projectQuery.isLoading || !projectQuery.data || !draft) return <div className="si-page-loading" role="status">正在加载项目配置…</div>;
   const project = projectQuery.data.summary;
 

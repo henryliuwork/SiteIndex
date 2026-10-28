@@ -6,7 +6,7 @@ import { FolderOpen, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Kpi, ListQuery, ProjectSummary, RunLog } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, DataTable, DetailPanel, KpiCard } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, KpiCard } from "../components";
 
 const jobNames: Record<string, string> = {
   daily: "每日同步", weekly: "每周同步", monthly: "每月归档", validate: "数据校验",
@@ -236,9 +236,9 @@ export function ProjectCenterPage() {
           <h1>项目中心</h1>
           <p className="si-project-root-line">
             <span>项目根目录 <code>{projectRoot}</code></span>
-            {settingsQuery.isError && <button className="si-center-retry" type="button" onClick={() => void settingsQuery.refetch()}>重试</button>}
             {needsRootSetup && <Button size="small" variant="primary" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}
           </p>
+          {settingsQuery.isError && <ApiErrorNotice className="si-center-query-error" label="项目根目录读取失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
           {rootSetupFeedback && <p className="si-project-root-feedback" role="status">{rootSetupFeedback}</p>}
         </div>
         <div className="si-page-actions">
@@ -246,12 +246,12 @@ export function ProjectCenterPage() {
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
         </div>
       </header>
-      {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <div className="si-page-error" role="alert">项目列表加载失败。<button type="button" onClick={() => void projectsQuery.refetch()}>重试</button></div> : <>
+      {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : <>
         <div className="si-center-kpis">
           {metrics.slice(0, 3).map((metric) => <KpiCard key={metric.key} metric={metric} />)}
           <div className="si-center-kpi-with-retry">
             <KpiCard metric={metrics[3]!} />
-            {scheduleQuery.isError && <button className="si-center-kpi-retry" type="button" onClick={() => void scheduleQuery.refetch()}>重试</button>}
+            {scheduleQuery.isError && <ApiErrorNotice className="si-center-query-error" label="定时计划加载失败。" error={scheduleQuery.error} onRetry={() => void scheduleQuery.refetch()} />}
           </div>
         </div>
         <section className="si-project-grid" aria-label="项目列表">
@@ -270,8 +270,8 @@ export function ProjectCenterPage() {
             <div className="si-recent-heading"><h2>最近运行</h2><span className="si-muted" role="status">正在读取…</span></div>
             <p className="si-recent-state" role="status">正在加载运行记录…</p>
           </> : runsQuery.isError ? <>
-            <div className="si-recent-heading"><h2>最近运行</h2><button className="si-center-retry" type="button" onClick={() => void runsQuery.refetch()}>重试</button></div>
-            <p className="si-recent-state" role="alert">运行记录加载失败。重试后即可查看最近执行情况。</p>
+            <div className="si-recent-heading"><h2>最近运行</h2></div>
+            <ApiErrorNotice className="si-recent-state" label="运行记录加载失败。" error={runsQuery.error} onRetry={() => void runsQuery.refetch()} />
           </> : runs.length === 0 ? <>
             <div className="si-recent-heading"><h2>最近运行</h2></div>
             <p className="si-recent-state" role="status">暂无运行记录。项目执行同步或校验后，最近运行会显示在这里。</p>

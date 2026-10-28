@@ -5,7 +5,7 @@ import type { JobName, JobProgress, JobResult, ListQuery, RunLog, RunnerState, S
 import type { ColumnDef } from "@tanstack/react-table";
 import { Activity, CalendarClock, CheckCircle2, ClipboardCheck, FileText, Palette, RefreshCw, Square, Wifi } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, DataTable, DetailPanel, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Tabs } from "../components";
 import "./runs/page.css";
 
 const projectTabs = [
@@ -230,12 +230,12 @@ export function RunsPage() {
     finally { setClaimingRunner(false); }
   };
 
-  if (projectQuery.isError || scheduleQuery.isError || runnerQuery.isError || historyQuery.isError || !projectQuery.data || !scheduleQuery.data || !runnerQuery.data) return <div className="si-page-error" role="alert">运行与计划加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void scheduleQuery.refetch(); void runnerQuery.refetch(); void historyQuery.refetch(); }}>重试</button></div>;
-  if (projectQuery.isLoading || scheduleQuery.isLoading || runnerQuery.isLoading || historyQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载运行与计划…</div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !projectQuery.data) return <ApiErrorNotice page label="项目运行页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data.summary;
   const scheduleState = scheduleQuery.data;
-  const runnerState: RunnerState = runnerQuery.data;
-  const currentDevice = runnerState.this_device.device_name;
+  const runnerState: RunnerState | undefined = runnerQuery.data;
+  const currentDevice = runnerState?.this_device.device_name ?? "本机";
 
   return <div className="si-page si-runs-page">
     <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {project.platform}</code></div></header>
@@ -252,27 +252,33 @@ export function RunsPage() {
         })}</section>
 
         <section className="si-run-console" aria-live="polite">
+          {runningQuery.isError && <ApiErrorNotice className="si-runs-inline-error" label="当前运行状态读取失败。" error={runningQuery.error} onRetry={() => void runningQuery.refetch()} />}
           <header><div><strong>{activeRun ? jobLabels[activeRun.job] : runResult ? jobLabels[runResult.job] : "运行日志"}</strong>{activeRun ? <Chip tone="info">运行中{progress?.pct == null ? "" : ` · ${progress.pct}%`}</Chip> : runResult ? <Chip tone={runResult.status === "ok" ? "ok" : runResult.status === "failed" ? "danger" : "warn"}>{statusLabel(runResult.status)}</Chip> : <Chip>空闲</Chip>}</div>{activeRun && <Button size="small" onClick={() => void stopJob()} icon={<Square size={12} />}>停止</Button>}</header>
           {activeRun && progress?.pct != null && <div className="si-run-progress"><span style={{ width: `${progress.pct}%` }} /></div>}
           <div className="si-run-log-list">{logs.length ? logs.map((event, index) => <div key={`${event.runId}-${index}`} className={`si-run-log si-run-log-${event.level}`}><code>{new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(event.at))}</code><span>{event.message}</span>{event.step && <small>{event.step}</small>}</div>) : <p>{runResult?.summary ?? "暂无运行中的任务。选择上方任务卡片，查看实时进度与日志。"}</p>}</div>
         </section>
 
         <section className="si-runs-history"><div className="si-runs-section-heading"><div><h2>运行历史</h2><p>最近 30 次任务执行记录</p></div><Button size="small" onClick={() => void historyQuery.refetch()}>刷新</Button></div>
-          <DataTable<RunLog> tableId="runs.history" scopeId={id} rows={history} total={history.length} columns={rowColumns} query={tableQuery} onQueryChange={setTableQuery} onRowClick={setSelectedRun} getRowId={(row) => row.run_id} maxHeight={306} rowHeight={48} showPagination={false} emptyTitle="还没有运行记录" emptyDescription="手动执行或等待定时任务后，记录会显示在这里。" />
+          {historyQuery.isLoading ? <div className="si-query-loading" role="status">正在加载运行历史…</div> : historyQuery.isError ? <ApiErrorNotice label="运行历史加载失败。" error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /> : <DataTable<RunLog> tableId="runs.history" scopeId={id} rows={history} total={history.length} columns={rowColumns} query={tableQuery} onQueryChange={setTableQuery} onRowClick={setSelectedRun} getRowId={(row) => row.run_id} maxHeight={306} rowHeight={48} showPagination={false} emptyTitle="还没有运行记录" emptyDescription="手动执行或等待定时任务后，记录会显示在这里。" />}
         </section>
       </main>
 
       <aside className="si-runs-side">
-        <section className="si-runner-card"><div className="si-runs-section-heading"><h2>执行设备</h2><Chip tone={runnerState.is_this_device ? "ok" : runnerState.runner ? "warn" : "neutral"}>{runnerState.is_this_device ? "本机执行" : runnerState.runner ? "其他设备" : "未指定"}</Chip></div>
-          <div className={`si-runner-device${runnerState.is_this_device ? " is-current" : ""}`}><Activity size={17} aria-hidden="true" /><div><strong>{runnerState.runner?.device_name ?? "尚未指定执行设备"}{runnerState.is_this_device ? "（本机）" : ""}</strong><span>{runnerState.runner ? `计划任务只在这台设备上执行 · 设备 ID ${runnerState.runner.device_id}` : "计划任务需要指定一台持续运行的设备"}</span></div></div>
-          <p>{runnerState.is_this_device ? "本机正在负责此项目的定时任务。" : runnerState.runner ? "其他设备可通过 SiteIndex 设置改为本机。" : "设置为本机后，此设备会负责执行计划任务。"}</p>
-          {!runnerState.is_this_device && <Button size="small" onClick={() => void claimRunner()} disabled={claimingRunner}>{claimingRunner ? "设置中…" : "改为本机"}</Button>}
+        <section className="si-runner-card">
+          {runnerQuery.isLoading ? <div className="si-query-loading" role="status">正在读取执行设备…</div> : runnerQuery.isError || !runnerState ? <ApiErrorNotice label="执行设备信息加载失败。" error={runnerQuery.error} onRetry={() => void runnerQuery.refetch()} /> : <>
+            <div className="si-runs-section-heading"><h2>执行设备</h2><Chip tone={runnerState.is_this_device ? "ok" : runnerState.runner ? "warn" : "neutral"}>{runnerState.is_this_device ? "本机执行" : runnerState.runner ? "其他设备" : "未指定"}</Chip></div>
+            <div className={`si-runner-device${runnerState.is_this_device ? " is-current" : ""}`}><Activity size={17} aria-hidden="true" /><div><strong>{runnerState.runner?.device_name ?? "尚未指定执行设备"}{runnerState.is_this_device ? "（本机）" : ""}</strong><span>{runnerState.runner ? `计划任务只在这台设备上执行 · 设备 ID ${runnerState.runner.device_id}` : "计划任务需要指定一台持续运行的设备"}</span></div></div>
+            <p>{runnerState.is_this_device ? "本机正在负责此项目的定时任务。" : runnerState.runner ? "其他设备可通过 SiteIndex 设置改为本机。" : "设置为本机后，此设备会负责执行计划任务。"}</p>
+            {!runnerState.is_this_device && <Button size="small" onClick={() => void claimRunner()} disabled={claimingRunner}>{claimingRunner ? "设置中…" : "改为本机"}</Button>}
+          </>}
         </section>
 
-        <section className="si-schedule-card"><div className="si-schedule-heading"><div><h2>定时计划</h2><p>选择每个任务在哪几周几、几点执行；保存后自动更新系统计划任务。</p></div><Chip tone={scheduleState.registered ? "ok" : "warn"}>{scheduleState.registered ? "已注册到任务计划程序" : "尚未注册"}</Chip></div>
+        <section className="si-schedule-card">
+          {scheduleQuery.isLoading || (!scheduleQuery.isError && !draft) ? <div className="si-query-loading" role="status">正在加载定时计划…</div> : scheduleQuery.isError || !scheduleState || !draft ? <ApiErrorNotice label="定时计划加载失败。" error={scheduleQuery.error} onRetry={() => void scheduleQuery.refetch()} /> : <>
+          <div className="si-schedule-heading"><div><h2>定时计划</h2><p>选择每个任务在哪几周几、几点执行；保存后自动更新系统计划任务。</p></div><Chip tone={scheduleState.registered ? "ok" : "warn"}>{scheduleState.registered ? "已注册到任务计划程序" : "尚未注册"}</Chip></div>
           <div className="si-schedule-runtime" aria-live="polite">
             <span>当前模式</span>
-            {scheduleRuntimeQuery.isLoading ? <span className="si-schedule-runtime-loading" role="status">正在读取…</span> : scheduleRuntimeQuery.isError ? <span className="si-schedule-runtime-error" role="alert">读取失败</span> : <Chip tone={scheduleRuntimeQuery.data?.mode === "system" ? "ok" : "neutral"}>{scheduleRuntimeQuery.data?.mode === "system" ? "系统计划任务" : scheduleRuntimeQuery.data?.mode === "resident" ? "软件常驻（关闭软件后不执行）" : "运行模式不可用"}</Chip>}
+            {scheduleRuntimeQuery.isLoading ? <span className="si-schedule-runtime-loading" role="status">正在读取…</span> : scheduleRuntimeQuery.isError ? <ApiErrorNotice className="si-schedule-runtime-error" label="运行模式读取失败。" error={scheduleRuntimeQuery.error} onRetry={() => void scheduleRuntimeQuery.refetch()} /> : <Chip tone={scheduleRuntimeQuery.data?.mode === "system" ? "ok" : "neutral"}>{scheduleRuntimeQuery.data?.mode === "system" ? "系统计划任务" : scheduleRuntimeQuery.data?.mode === "resident" ? "软件常驻（关闭软件后不执行）" : "运行模式不可用"}</Chip>}
             {scheduleRuntimeQuery.data?.authorization_required && <><span className="si-schedule-auth-hint">需要授权才能注册系统计划任务</span><Button size="small" disabled={!api.schedule.reauthorize || reauthorizingSchedule} onClick={() => void reauthorizeSchedule()}>{reauthorizingSchedule ? "授权中…" : "重新授权注册"}</Button></>}
           </div>
           <div className="si-schedule-jobs">{scheduleItems.map((item) => {
@@ -282,11 +288,12 @@ export function RunsPage() {
               <div className="si-schedule-job-heading"><div><strong>{item.title}</strong><small>{item.hint}</small></div><label className="si-schedule-enabled"><input type="checkbox" checked={jobSchedule.enabled} onChange={(event) => updateScheduleJob(item.key, { enabled: event.target.checked })} /><span>启用</span></label></div>
               {!monthly && <div className="si-weekday-picker" role="group" aria-label={`${item.title} 执行星期`}>{weekdays.map((day) => <button type="button" key={day.value} aria-pressed={jobSchedule.days?.includes(day.value) ?? false} className={jobSchedule.days?.includes(day.value) ? "active" : ""} onClick={() => toggleWeekday(item.key, day.value)}>{day.label}</button>)}</div>}
               <div className="si-schedule-time-row">{monthly && <label>每月 <input aria-label="每月几号" type="number" min={1} max={31} value={jobSchedule.day_of_month ?? 1} onChange={(event) => updateScheduleJob(item.key, { day_of_month: Number(event.target.value) })} /> 日</label>}<input aria-label={`${item.title} 执行时间`} type="time" value={jobSchedule.time} onChange={(event) => updateScheduleJob(item.key, { time: event.target.value })} /></div>
-              <p>{monthly ? `每月 ${jobSchedule.day_of_month ?? 1} 日 ${jobSchedule.time}` : `${weekdaySummary(jobSchedule.days)} · ${jobSchedule.time}`} · 只在执行设备 {runnerState.runner?.device_name ?? currentDevice} 上运行</p>
+              <p>{monthly ? `每月 ${jobSchedule.day_of_month ?? 1} 日 ${jobSchedule.time}` : `${weekdaySummary(jobSchedule.days)} · ${jobSchedule.time}`} · 只在执行设备 {runnerState?.runner?.device_name ?? currentDevice} 上运行</p>
             </section>;
           })}</div>
           <div className="si-schedule-options">{optionLabels.map((option) => <label key={option.key}><input type="checkbox" checked={draft.options[option.key]} onChange={(event) => setDraft((current) => current ? { ...current, options: { ...current.options, [option.key]: event.target.checked } } : current)} /><span>{option.label}</span></label>)}</div>
           <div className="si-schedule-actions"><Button variant="primary" disabled={savingSchedule} onClick={() => void saveSchedule()}>{savingSchedule ? "保存中…" : "保存计划"}</Button><span>{scheduleState.next_runs[0]?.at ? `下次：${formatDateTime(scheduleState.next_runs[0].at)}` : "保存后计算下次执行时间"}</span></div>
+          </>}
         </section>
       </aside>
     </div>

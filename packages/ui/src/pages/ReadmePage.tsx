@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, Tabs } from "../components";
 
 const tabOptions = [
   { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
@@ -155,17 +155,17 @@ export function ReadmePage() {
     finally { setSaving(false); }
   };
 
-  if (projectQuery.isLoading || readmeQuery.isLoading) return <div className="si-page-loading" role="status">正在加载 README…</div>;
-  if (projectQuery.isError || readmeQuery.isError || !project || !data) return <div className="si-page-error" role="alert">README 页面加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void readmeQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 README 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-readme-page">
-    <ProjectHeading name={project.name} updated={latestUpdate(data)} onOpen={() => void onOpen()} onCopy={() => void onCopy()} onRefresh={() => void onRefresh()} refreshing={Boolean(activeRunId)} onNavigate={(value) => navigate(projectTabsHref(id, value))} />
+    <ProjectHeading name={project.name} updated={data ? latestUpdate(data) : "—"} onOpen={() => void onOpen()} onCopy={() => void onCopy()} onRefresh={() => void onRefresh()} refreshing={Boolean(activeRunId)} onNavigate={(value) => navigate(projectTabsHref(id, value))} />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
-    <div className="si-readme-layout">
+    {readmeQuery.isLoading ? <div className="si-page-loading" role="status">正在加载 README…</div> : readmeQuery.isError || !data ? <ApiErrorNotice label="README 内容加载失败。" error={readmeQuery.error} onRetry={() => void readmeQuery.refetch()} /> : <div className="si-readme-layout">
       <UserBlocksCard blocks={draft} onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))} onReset={() => setDraft(data.user_blocks)} onSave={() => void onSave()} saving={saving} />
       <AutoBlocksCard data={data} />
-    </div>
+    </div>}
   </div>;
 }
 import "./readme/page.css";

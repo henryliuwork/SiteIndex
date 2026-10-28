@@ -14,6 +14,19 @@ if (!hostApi) {
 
 export const api: SiteIndexApi = hostApi ?? mock!;
 export const isMockApi = Boolean(mock);
+export interface ApiErrorDetails {
+  message: string;
+  code?: string;
+}
+
+export const apiErrorDetails = (error: unknown): ApiErrorDetails | null => {
+  if (!isSiteIndexError(error) || typeof error.message !== "string") return null;
+  return {
+    message: error.message,
+    ...(typeof error.code === "string" ? { code: error.code } : {}),
+  };
+};
+
 export const apiErrorMessage = (error: unknown, fallback: string): string =>
-  isSiteIndexError(error) ? error.message : fallback;
+  apiErrorDetails(error)?.message ?? fallback;
 if (typeof window !== "undefined" && !window.siteindex && mock) window.siteindex = mock;

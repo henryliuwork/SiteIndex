@@ -4,7 +4,7 @@ import { Check, CircleAlert, FolderOpen, LoaderCircle, Plus, X } from "lucide-re
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobProgress, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip } from "../components";
+import { ApiErrorNotice, Button, Chip } from "../components";
 import { useWizardDraft } from "./wizard-state";
 
 const steps = [
@@ -348,6 +348,7 @@ export function NewProjectWizardPage() {
         <section className="si-wizard-card si-wizard-location-card">
           <h2>项目位置</h2>
           <label className="si-wizard-field">项目根目录<div className="si-wizard-directory"><input className="si-text-field si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /><Button onClick={async () => { const selected = await api.settings.chooseDirectory(draft.projectsRoot || settings.data?.projects_root); if (selected) update({ projectsRoot: selected }); }}>更改</Button></div><small>默认取自软件设置</small></label>
+          {settings.isError && <ApiErrorNotice label="项目根目录设置读取失败。" error={settings.error} onRetry={() => void settings.refetch()} />}
           <label className="si-wizard-field">项目文件夹名<input className="si-text-field si-mono" value={draft.folderName} onChange={(event) => update({ folderName: event.target.value })} /></label>
           <div className="si-wizard-path"><span>将创建</span><code>{previewPath}</code></div>
         </section>

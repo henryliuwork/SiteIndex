@@ -1,5 +1,6 @@
 import { CheckCircle2, Download, RefreshCw } from "lucide-react";
 import { api } from "../api";
+import { ApiErrorNotice } from "./ApiErrorNotice";
 import { Button } from "./primitives";
 import { displayVersion, useAnyRunningJob, useUpdatesController, type UpdateAction, type UpdateStatus } from "../updates";
 import "./update-reminder.css";
@@ -51,14 +52,17 @@ export function UpdateReminder({ collapsed }: { collapsed: boolean }) {
 
   return <section className={`si-update-reminder si-update-${status.state}`} aria-label="软件更新" aria-live="polite">
     <div className="si-update-reminder-heading">
-      {status.state === "error" ? <small>{label}</small> : <strong>{label}</strong>}
+      {status.state === "error" ? <ApiErrorNotice className="si-update-error-notice" label={label} error={controller.query.error} detail={status.error} /> : <strong>{label}</strong>}
       {status.state === "available" && <span>SiteIndex {displayVersion(status.current)}</span>}
     </div>
     {status.state === "downloading" && <div className="si-update-progress" role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, status.percent ?? 0))}>
       <span style={{ width: `${Math.max(0, Math.min(100, status.percent ?? 0))}%` }} />
     </div>}
     {status.state === "ready" && runningQuery.data && <span className="si-update-deferred">将在当前任务完成后安装</span>}
-    {action && <Button size="small" variant={status.state === "ready" ? "primary" : "default"} disabled={Boolean(controller.busy)} onClick={() => void runAction()}>
+    {status.state === "ready" && runningQuery.isLoading && <small className="si-update-deferred" role="status">正在读取当前任务状态…</small>}
+    {status.state === "ready" && runningQuery.projectsQuery.isError && <ApiErrorNotice className="si-update-error-notice" label="项目列表读取失败，暂时无法确认当前是否有任务运行。" error={runningQuery.projectsQuery.error} onRetry={() => void runningQuery.projectsQuery.refetch()} />}
+    {status.state === "ready" && runningQuery.isError && <ApiErrorNotice className="si-update-error-notice" label="当前任务状态读取失败。" error={runningQuery.error} onRetry={() => void runningQuery.refetch()} />}
+    {action && <Button size="small" variant={status.state === "ready" ? "primary" : "default"} disabled={Boolean(controller.busy) || (status.state === "ready" && (runningQuery.isLoading || runningQuery.projectsQuery.isError || runningQuery.isError))} onClick={() => void runAction()}>
       {controller.busy === "check" ? "检查中…" : controller.busy === "download" ? "开始下载…" : controller.busy === "install" ? "正在重启…" : buttonLabel(status)}
     </Button>}
   </section>;

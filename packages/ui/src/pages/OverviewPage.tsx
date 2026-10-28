@@ -4,7 +4,7 @@ import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, Fo
 import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, ProjectDetail, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, KpiCard, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, KpiCard, Tabs } from "../components";
 
 const tabOptions = [
   { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
@@ -102,8 +102,8 @@ export function OverviewPage() {
     }
   };
 
-  if (projectQuery.isLoading || overviewQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目概览…</div>;
-  if (projectQuery.isError || overviewQuery.isError || !project || !overview) return <div className="si-page-error" role="alert">项目概览加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void overviewQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目概览加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   const summary = project.summary;
   const onTabChange = (tab: typeof tabOptions[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
@@ -121,6 +121,7 @@ export function OverviewPage() {
     </header>
     <Tabs value="overview" options={tabOptions} ariaLabel="项目页面" onChange={onTabChange} />
 
+    {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
     <section className="si-overview-kpis" aria-label="项目指标">
       {overview.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}
     </section>
@@ -161,6 +162,7 @@ export function OverviewPage() {
         </section>
       </aside>
     </div>
+    </>}
   </div>;
 }
 import "./overview/page.css";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, apiErrorMessage } from "./api";
 
 export type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "unsupported";
 
@@ -79,13 +79,14 @@ export function useUpdatesController() {
         if (result.isError) throw result.error;
       }
       else await updates[action]();
-    } catch {
+    } catch (cause) {
       queryClient.setQueryData<UpdateStatus>(["updates", "status"], (previous) => ({
         state: "error",
         current: previous?.current ?? "",
         latest: previous?.latest,
         notes: previous?.notes,
         manual_url: previous?.manual_url,
+        error: apiErrorMessage(cause, "请稍后重试。"),
       }));
     } finally {
       setBusy(null);
@@ -97,7 +98,7 @@ export function useUpdatesController() {
 
 export function useAnyRunningJob(enabled: boolean) {
   const projectsQuery = useQuery({ queryKey: ["projects"], queryFn: () => api.projects.list() });
-  return useQuery({
+  const runningQuery = useQuery({
     queryKey: ["updates", "running-jobs", projectsQuery.data?.map(({ id }) => id)],
     enabled: enabled && projectsQuery.isSuccess,
     queryFn: async () => {
@@ -107,4 +108,5 @@ export function useAnyRunningJob(enabled: boolean) {
     },
     refetchInterval: enabled ? 1000 : false,
   });
+  return { ...runningQuery, projectsQuery };
 }

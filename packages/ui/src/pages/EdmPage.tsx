@@ -5,7 +5,7 @@ import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { EdmCommandInput, Kpi, ListQuery, ProjectDetail, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
-import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Tabs, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Tabs, stockTone } from "../components";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
 const projectTabs = [
@@ -105,8 +105,8 @@ export function EdmPage() {
   };
   const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
 
-  if (projectQuery.isLoading || summaryQuery.isLoading || listQuery.isLoading) return <div className="si-page-loading" role="status">正在加载 EDM 图片…</div>;
-  if (projectQuery.isError || summaryQuery.isError || listQuery.isError || !project || !summary) return <div className="si-page-error" role="alert">EDM 数据加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void summaryQuery.refetch(); void listQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-edm-page">
     <header className="si-project-page-heading">
@@ -114,9 +114,9 @@ export function EdmPage() {
       <div className="si-page-actions"><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></div>
     </header>
     <Tabs value="edm" options={projectTabs} ariaLabel="项目页面" onChange={onTabChange} />
-    <div className="si-edm-kpis">{metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+    <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
-    <DataTable
+    {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} maxHeight={520}
       showPagination={false} emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
@@ -126,7 +126,7 @@ export function EdmPage() {
           <span className="si-content-total">显示 {listQuery.data?.total ?? 0} 个</span>
         </div>
       </div>}
-    />
+    />}
     <p className="si-edm-rule-note"><strong>规则：</strong><span>agent 默认使用抓取到的首图；没有抓取到时使用手动输入的首图；两者都没有则该 SKU 不进入 EDM。手动首图写入 <code>index/ledgers/sku_media.csv</code>，每日同步不会覆盖。</span></p>
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.title ?? "SKU 图片详情"}>
       {selected && <div className="si-edm-detail">

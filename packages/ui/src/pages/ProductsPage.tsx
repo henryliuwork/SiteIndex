@@ -6,7 +6,7 @@ import { ExternalLink, Image as ImageIcon, Plus, RefreshCw, Tag, Trash2, X } fro
 import { useNavigate, useParams } from "react-router-dom";
 import type { ListQuery, ProductFilters, ProductFull, ProductView, ProjectDetail, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, Tabs, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, Tabs, stockTone } from "../components";
 
 const tabOptions = [
   { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
@@ -207,8 +207,8 @@ export function ProductsPage() {
     catch (cause) { setFeedback(apiErrorMessage(cause, "标签删除失败。")); }
   };
 
-  if (projectQuery.isLoading || listQuery.isLoading) return <div className="si-page-loading" role="status">正在加载产品…</div>;
-  if (projectQuery.isError || listQuery.isError || !project || !listQuery.data) return <div className="si-page-error" role="alert">产品页面加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void listQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目产品页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-products-page">
     <header className="si-project-page-heading">
@@ -224,28 +224,29 @@ export function ProductsPage() {
       <span>库存</span>{stockOptions.map((option) => <FilterPill key={option.value} currentValue={stock} value={option.value} onValueChange={onStockChange}>{option.label}</FilterPill>)}
       <span>标签</span><FilterPill currentValue={tag} value="all" onValueChange={onTagChange}>全部</FilterPill>
       {(tagsQuery.data ?? []).map((item) => <FilterPill key={item.tag} currentValue={tag} value={item.tag} onValueChange={onTagChange}>{item.tag}</FilterPill>)}
-      <span className="si-products-result-count">显示 {listQuery.data.total} 个产品</span>
+      {tagsQuery.isError && <ApiErrorNotice label="标签筛选加载失败。" error={tagsQuery.error} onRetry={() => void tagsQuery.refetch()} />}
+      <span className="si-products-result-count">显示 {listQuery.data?.total ?? 0} 个产品</span>
     </div>
     {syncMessage && <div className="si-sync-progress" role="status">{syncMessage}</div>}
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-products-table-frame">
-      <DataTable
+      {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载产品列表…</div> : listQuery.isError ? <ApiErrorNotice label="产品列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
         tableId="products.list" scopeId={id}
-        rows={listQuery.data.rows} total={listQuery.data.total} columns={columns}
+        rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
         query={query} onQueryChange={setQuery} onRowClick={(row) => { setSelectedHandle(row.handle); setDetailFeedback(""); }}
         getRowId={(row) => row.handle} maxHeight={560} rowHeight={52} showPagination={false}
         emptyTitle="没有匹配的产品" emptyDescription="请修改搜索文字或库存、标签筛选条件。"
-      />
+      />}
       <p className="si-products-table-note">数据：index/views/products.jsonl · 点击产品查看详情 · 评分为示例值 · 灰色列为销量预留</p>
     </div>
 
     <DetailPanel open={Boolean(selectedHandle)} onClose={() => setSelectedHandle(null)} title={detail?.product.title ?? "产品详情"}>
-      {detailQuery.isLoading ? <div className="si-page-loading" role="status">正在加载产品详情…</div> : detailQuery.isError || !detail ? <div className="si-page-error" role="alert">产品详情加载失败。<button type="button" onClick={() => void detailQuery.refetch()}>重试</button></div> : <ProductDetailContent
+      {detailQuery.isLoading ? <div className="si-query-loading" role="status">正在加载产品详情…</div> : detailQuery.isError ? <ApiErrorNotice label="产品详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : detail ? <ProductDetailContent
         detail={detail} tags={(tagsQuery.data ?? []).map((item) => item.tag)} isSaving={isSavingTags} feedback={detailFeedback}
         onAddTag={(name) => void updateTags([...detail.product.tags, name])}
         onCreateAndAddTag={(name) => void createAndAddTag(name)}
         onRemoveTag={(name) => void updateTags(detail.product.tags.filter((tagName) => tagName !== name))}
-      />}
+      /> : <div className="si-empty-state">没有找到该产品的详情。</div>}
     </DetailPanel>
 
     <Dialog.Root open={tagDialogOpen} onOpenChange={setTagDialogOpen}>
@@ -256,8 +257,10 @@ export function ProductsPage() {
           <Dialog.Description className="si-dialog-description">为产品整理标签。删除标签前会再次确认。</Dialog.Description>
           <div className="si-tag-manager-create"><input aria-label="新标签名称" value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="输入新标签名称" onKeyDown={(event) => { if (event.key === "Enter") void createManagedTag(); }} /><Button variant="primary" disabled={!newTag.trim()} onClick={() => void createManagedTag()}><Plus size={14} />创建标签</Button></div>
           {feedback && <p className="si-feedback" role="status">{feedback}</p>}
-          <ul className="si-tag-manager-list">{(tagsQuery.data ?? []).map((item) => <li key={item.tag}><span className="si-product-tag">{item.tag}</span><small>{item.products} 个产品</small><Button size="small" variant="quiet" icon={<Trash2 size={14} />} onClick={() => setDeleteTag(item.tag)}>删除</Button></li>)}</ul>
-          {!tagsQuery.data?.length && <div className="si-empty-state">暂无标签。</div>}
+          {tagsQuery.isLoading ? <p className="si-muted" role="status">正在加载标签…</p> : tagsQuery.isError ? <ApiErrorNotice label="标签列表加载失败。" error={tagsQuery.error} onRetry={() => void tagsQuery.refetch()} /> : <>
+            <ul className="si-tag-manager-list">{(tagsQuery.data ?? []).map((item) => <li key={item.tag}><span className="si-product-tag">{item.tag}</span><small>{item.products} 个产品</small><Button size="small" variant="quiet" icon={<Trash2 size={14} />} onClick={() => setDeleteTag(item.tag)}>删除</Button></li>)}</ul>
+            {!tagsQuery.data?.length && <div className="si-empty-state">暂无标签。</div>}
+          </>}
           <div className="si-dialog-actions"><Button onClick={() => setTagDialogOpen(false)}>完成</Button></div>
         </Dialog.Content>
       </Dialog.Portal>
