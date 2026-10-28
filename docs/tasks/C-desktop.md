@@ -49,7 +49,7 @@
 
 ### C6 Job 执行
 
-- [x] 每个 Job 一个 `utilityProcess`（入口打包 core 的 `runJob`）；进度转发到 `jobs.onProgress`；`cancel` 结束进程并释放锁
+- [x] 每个 Job 一个 `utilityProcess`（入口打包 core 的 `runJob`）；进度转发到 `jobs.onProgress`；cancel、正常完成或进程崩溃后，Desktop 在确认 utilityProcess 退出时仅清理其自有锁；`--run-job` 等待清理完成再退出
 - [x] 同一项目同一时间一个 Job；`jobs.running`
 - [x] **无界面模式** `SiteIndex.exe --run-job "<projectPath>" <job>`：不创建窗口，直接执行，完成后按设置发系统通知，退出码同 `EXIT`
 - [x] 系统通知（失败通知 / 成功通知 / 缺货阈值）

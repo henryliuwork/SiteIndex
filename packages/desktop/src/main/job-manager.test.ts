@@ -27,8 +27,13 @@ class FakeUtilityProcess extends EventEmitter implements UtilityProcessLike {
   readonly messages: unknown[] = [];
   killed = false;
 
+  constructor(private readonly reportStarted = true) {
+    super();
+  }
+
   postMessage(message: unknown): void {
     this.messages.push(message);
+    if (!this.reportStarted) return;
     queueMicrotask(() => {
       this.emit("message", { type: "started", runId: "2026-10-23-daily", startedAt: "2026-10-23T01:00:00.000Z" });
     });
@@ -51,6 +56,23 @@ async function projectDirectory(): Promise<string> {
   await mkdir(path.join(root, PATHS.index), { recursive: true });
   await writeFile(path.join(root, PATHS.site), JSON.stringify({ timezone: "UTC" }), "utf8");
   return root;
+}
+
+async function writeOwnedLock(projectPath: string, child: FakeUtilityProcess, job: string): Promise<string> {
+  const lockPath = path.join(projectPath, PATHS.lock);
+  await writeFile(
+    lockPath,
+    JSON.stringify({
+      device_id: settings().device_id,
+      device_name: settings().device_name,
+      pid: child.pid,
+      job,
+      started_at: "2026-10-23T01:00:00.000Z",
+      heartbeat: "2026-10-23T01:00:00.000Z",
+    }),
+    "utf8",
+  );
+  return lockPath;
 }
 
 afterEach(async () => {
@@ -85,6 +107,7 @@ describe("desktop job manager", () => {
     await expect(manager.run({ projectPath, job: "weekly" })).rejects.toMatchObject({ code: "LOCKED" });
     expect(runId).not.toBe("2026-10-23-daily");
     expect(manager.running(path.basename(projectPath) as ProjectId)).toEqual({ runId, job: "daily" });
+    const lockPath = await writeOwnedLock(projectPath, child, "daily");
 
     child.emit("message", {
       type: "progress",
@@ -115,6 +138,7 @@ describe("desktop job manager", () => {
     await expect(finished).resolves.toMatchObject({ runId, status: "ok" });
     expect(child.killed).toBe(true);
     expect(manager.activeCount).toBe(0);
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("cancels a process, releases its owned lock and records the cancellation", async () => {
@@ -136,18 +160,7 @@ describe("desktop job manager", () => {
 
     const { runId } = await manager.run({ projectPath, job: "daily" });
     const lockPath = path.join(projectPath, PATHS.lock);
-    await writeFile(
-      lockPath,
-      JSON.stringify({
-        device_id: settings().device_id,
-        device_name: settings().device_name,
-        pid: child.pid,
-        job: "daily",
-        started_at: "2026-10-23T01:00:00.000Z",
-        heartbeat: "2026-10-23T01:00:00.000Z",
-      }),
-      "utf8",
-    );
+    await writeOwnedLock(projectPath, child, "daily");
 
     await manager.cancel(runId);
 
@@ -157,6 +170,88 @@ describe("desktop job manager", () => {
     ]);
     expect(finished).toHaveLength(1);
     expect(finished[0]).toMatchObject({ runId, status: "failed", exitCode: 3 });
+  });
+
+  it("releases its owned lock when the utility process crashes after starting", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+
+    await manager.run({ projectPath, job: "weekly" });
+    const lockPath = await writeOwnedLock(projectPath, child, "weekly");
+    child.emit("exit", 1);
+
+    await expect(finished).resolves.toMatchObject({ job: "weekly", status: "failed" });
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("waits for lock cleanup before --run-job returns from runAndWait", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const running = manager.runAndWait({ projectPath, job: "weekly" }, "schedule");
+    await vi.waitFor(() => expect(child.messages).toHaveLength(1));
+    const lockPath = await writeOwnedLock(projectPath, child, "weekly");
+    child.emit("message", {
+      type: "finished",
+      result: { runId: "2026-10-23-daily", job: "weekly", status: "ok", exitCode: 0, summary: "每周同步完成。" },
+    });
+
+    await expect(running).resolves.toMatchObject({ job: "weekly", status: "ok" });
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("releases a worker lock even if the utility process exits before reporting its run id", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess(false);
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const starting = manager.run({ projectPath, job: "daily" });
+    await vi.waitFor(() => expect(child.messages).toHaveLength(1));
+    const lockPath = await writeOwnedLock(projectPath, child, "daily");
+    child.emit("exit", 1);
+
+    await expect(starting).rejects.toMatchObject({ code: "UNKNOWN" });
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(manager.activeCount).toBe(0);
   });
   it("delays init onFinished until Desktop schedule finalization and hides Core's schedule placeholder", async () => {
     const projectPath = await projectDirectory();

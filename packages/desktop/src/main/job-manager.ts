@@ -188,6 +188,7 @@ export function createJobManager(options: JobManagerOptions) {
     if (entry.finalizing) return;
     entry.finalizing = true;
     clearTimeout(entry.startupTimer);
+    await releaseOwnedLock(entry);
 
     if (!entry.runId) {
       entry.rejectStarted(jobError("UNKNOWN", "Job utilityProcess 未能启动。", `exit code: ${exitCode}`));
@@ -200,7 +201,6 @@ export function createJobManager(options: JobManagerOptions) {
     let result = entry.result;
     if (!result) {
       result = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
-      await releaseOwnedLock(entry);
       await appendSyntheticRunLog(entry, result);
       if (entry.cancelled) {
         options.emitProgress({
@@ -361,7 +361,7 @@ export function createJobManager(options: JobManagerOptions) {
       startedAt: null,
       result: null,
       oosRate: null,
-      workerPid: null,
+      workerPid: child.pid ?? null,
       readySent: false,
       cancelled: false,
       finalizing: false,
