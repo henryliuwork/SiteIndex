@@ -36,6 +36,35 @@ async function fixtureServer(): Promise<string> {
   pages["/blog/story"] = { type: "text/html", body: "<html><head><title>Bird care story</title><meta name=\"description\" content=\"Read our guide to feeding backyard birds.\"><meta property=\"article:published_time\" content=\"2026-05-09T10:00:00Z\"><meta property=\"article:section\" content=\"Guides\"><script type=\"application/ld+json\">{\"@type\":\"BlogPosting\",\"author\":{\"name\":\"Ada\"},\"dateModified\":\"2026-06-01\"}</script></head><body><main><article><h1>Bird care story</h1><time datetime=\"2026-04-01\">April</time><p>Useful guide text.</p><a href=\"/products/feeder\">our feeder</a></article></main></body></html>" };
   return base;
 }
+async function magentoFixtureServer(): Promise<string> {
+  const root = path.join(process.cwd(), "fixtures/www");
+  const product = await readFile(path.join(root, "magento-product-structure.html"), "utf8");
+  const blog = await readFile(path.join(root, "magento-blog-structure.html"), "utf8");
+  let base = "";
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (pathname === "/sitemap.xml") {
+      response.writeHead(200, { "content-type": "application/xml" });
+      response.end("<urlset><url><loc>" + base + "/sample-item.html</loc></url><url><loc>" + base + "/news/sample-guide.html</loc></url></urlset>");
+      return;
+    }
+    const source = pathname === "/sample-item.html" ? product : pathname === "/news/sample-guide.html" ? blog : null;
+    if (source) {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(source);
+      return;
+    }
+    response.writeHead(404, { "content-type": "text/html" });
+    response.end("<h1>Missing fixture</h1>");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  servers.push(server);
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("server did not bind");
+  base = "http://127.0.0.1:" + address.port;
+  return base;
+}
+
 async function wwwFixtureServer(): Promise<string> {
   const www = path.join(process.cwd(), "fixtures/www");
   const server = createServer(async (request, response) => {
@@ -95,6 +124,37 @@ describe("weekly sync", () => {
     const categories = JSON.parse(await readFile(path.join(root, PATHS.categories), "utf8")) as Array<Record<string, unknown>>;
     expect(categories).toContainEqual(expect.objectContaining({ slug: "feeders", source: "url_rule", name: "Bird Feeders" }));
   }, 30_000);
+
+  it("recognizes Magento product and blog structure without relying on feed product URLs", async () => {
+    const base = await magentoFixtureServer();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-weekly-magento-"));
+    roots.push(root);
+    for (const relative of [PATHS.seoPages, PATHS.seoIssues, PATHS.seoLinks, PATHS.blogIndex, PATHS.productDetails, PATHS.skus, PATHS.categories]) {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    }
+    await writeJsonl(path.join(root, PATHS.skus), [], "sku");
+    const source = JSON.parse(await readFile(path.join(process.cwd(), "fixtures/inputs/site.json"), "utf8")) as SiteConfig;
+    const config = { ...source, base_url: base, sitemaps: [base + "/sitemap.xml"],
+      crawl: { ...source.crawl, rate_limit_ms: 0, max_pages: 10 },
+      categories: { mode: "manual", manual: [{ slug: "sample", name: "Sample", url: base + "/sample" }] } } as SiteConfig;
+    const result = await runWeekly(root, config, { date: "2026-10-28" });
+    expect(result.status).toBe("ok");
+    const pages = await readJsonl(path.join(root, PATHS.seoPages));
+    expect(pages.find((row) => row.url === base + "/sample-item.html")).toMatchObject({ page_type: "product" });
+    expect(pages.find((row) => row.url === base + "/news/sample-guide.html")).toMatchObject({ page_type: "blog" });
+    const details = await readJsonl(path.join(root, PATHS.productDetails));
+    expect(details).toHaveLength(1);
+    expect(details[0]).toMatchObject({
+      handle: "sample-item", rating: 4.5, review_count: 2,
+      breadcrumbs: ["Home", "Outdoor", "Sample item"],
+      gallery: [base + "/media/sample-front.jpg", base + "/media/sample-side.jpg"],
+    });
+    const blog = await readJsonl(path.join(root, PATHS.blogIndex));
+    expect(blog).toHaveLength(1);
+    expect(blog[0]).toMatchObject({ slug: "sample-guide", title: "Sample garden guide", author: "Sample Editor", published_at: "2026-01-02" });
+    const issues = await readJsonl(path.join(root, PATHS.seoIssues));
+    expect(issues.some((row) => row.rule === "schema_missing" && [base + "/sample-item.html", base + "/news/sample-guide.html"].includes(String(row.url)))).toBe(false);
+  }, 20_000);
 
   it("matches the legacy fixture page and blog fields while emitting the 1.1 tables", async () => {
     const base = await wwwFixtureServer();

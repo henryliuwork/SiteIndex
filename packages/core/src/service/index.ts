@@ -875,6 +875,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
 
     const startedAt = zonedTimestamp(config.timezone);
     let tempRoot: string | null = null;
+    const initSteps: NonNullable<JobResult["steps"]> = [];
     const progress = (pct: number | null, step: string, message: string, level: "info" | "warn" | "error" = "info") => {
       report({ pct, step, level, message });
     };
@@ -890,7 +891,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
 
         let jobResult: JobResult;
         if (req.job === "init") {
-          const steps: NonNullable<JobResult["steps"]> = [];
+          const steps = initSteps;
           const errors: string[] = [];
           const counts: Record<string, number> = {};
           const record = (key: (typeof INIT_STEPS)[number], status: "ok" | "failed" | "skipped", message: string, pct: number) => {
@@ -1096,16 +1097,17 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
 
         if (!req.dryRun) {
           const existing = (await readJsonl(path.join(executionPath, PATHS.runs))).find((row) => row.run_id === runId);
-          const record: RunLog = {
+          const record = {
             run_id: runId,
             job: req.job,
             trigger: req.trigger,
             device_name: ctx.deviceName ?? (await readRunner(projectPath))?.device_name ?? "SiteIndex",
             started_at: typeof existing?.started_at === "string" ? existing.started_at : startedAt,
             finished_at: zonedTimestamp(config.timezone),
-            status: jobResult.status === "skipped" ? "failed" : jobResult.status,
+            status: jobResult.status === "skipped" ? "failed" as const : jobResult.status,
             ...(jobResult.counts ? { counts: jobResult.counts } : {}),
             ...(jobResult.errors ? { errors: jobResult.errors } : {}),
+            ...(req.job === "init" ? { steps: jobResult.steps ?? initSteps } : {}),
           };
           await appendRunLog(projectPath, record);
         }
@@ -1121,13 +1123,21 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       if (exitCode === EXIT.LOCKED || exitCode === EXIT.NOT_RUNNER) {
         return { runId, job: req.job, status: "skipped", exitCode, summary: message, errors: [message] };
       }
-      const failed = jobFailure(req, runId, exitCode, req.job === "daily" ? `每日同步失败：${message}` : "Job 执行失败。", [message]);
+      const failedResult = jobFailure(req, runId, exitCode, req.job === "daily" ? `每日同步失败：${message}` : "Job 执行失败。", [message]);
+      const failureSteps = req.job === "init" ? INIT_STEPS.map((key) => initSteps.find((step) => step.key === key) ?? {
+        key,
+        status: key === "schedule" ? "skipped" as const : "failed" as const,
+        message: key === "schedule" ? "定时任务由桌面端注册。" : `初始化中断，未执行此步骤：${message}`,
+      }) : undefined;
+      const failed = failureSteps ? { ...failedResult, steps: failureSteps } : failedResult;
       try {
-        await appendRunLog(projectPath, {
+        const failureRecord = {
           run_id: runId, job: req.job, trigger: req.trigger,
           device_name: ctx.deviceName ?? "SiteIndex", started_at: startedAt,
-          finished_at: zonedTimestamp(config.timezone), status: "failed", errors: [message],
-        });
+          finished_at: zonedTimestamp(config.timezone), status: "failed" as const, errors: [message],
+          ...(failureSteps ? { steps: failureSteps } : {}),
+        };
+        await appendRunLog(projectPath, failureRecord);
       } catch { /* 项目不可写时保留可返回的 JobResult */ }
       progress(null, req.job === "init" ? "config" : "failed", message, "error");
       return failed;

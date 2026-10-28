@@ -165,7 +165,8 @@ describe("project service", () => {
     expect(progress.every((event) => !event.step || INIT_STEPS.includes(event.step as typeof INIT_STEPS[number]))).toBe(true);
     expect((await readJsonl(path.join(projectPath, PATHS.skus))).length).toBeGreaterThan(0);
     expect((await readJsonl(path.join(projectPath, PATHS.productsView))).length).toBeGreaterThan(0);
-    expect((await readJsonl(path.join(projectPath, PATHS.runs))).map((row) => row.job)).toContain("init");
+    const initRun = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.run_id === init.runId);
+    expect(initRun).toMatchObject({ job: "init", status: "ok", steps: init.steps });
   }, 60_000);
 
   it("continues weekly when the feed is a webpage and reports a Chinese daily failure", async () => {
@@ -185,6 +186,8 @@ describe("project service", () => {
     expect(result.steps?.find((step) => step.key === "weekly")?.status, JSON.stringify(result.steps)).toBe("ok");
     expect((await readJsonl(path.join(projectPath, PATHS.seoPages))).length).toBeGreaterThan(0);
     expect(result.errors?.join(" ")).toContain("网页而不是商品 feed");
+    const initRun = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.run_id === result.runId);
+    expect(initRun).toMatchObject({ job: "init", status: "partial", steps: result.steps });
   }, 60_000);
 
   it("preserves existing user folders, _about.md and README in the chosen project directory", async () => {

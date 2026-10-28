@@ -102,6 +102,47 @@ describe("createCoreService initial namespaces", () => {
     expect(run).toMatchObject({ status: "failed", errors: [message] });
   }, 30_000);
 
+  it("releases the Core lock after a partial weekly result", async () => {
+    const { projectPath } = await makeProject();
+    const configPath = path.join(projectPath, PATHS.site);
+    const config = JSON.parse(await readFile(configPath, "utf8")) as import("@siteindex/shared").SiteConfig;
+    config.base_url = "https://shop.example";
+    config.sitemaps = ["https://shop.example/sitemap.xml"];
+    config.crawl.rate_limit_ms = 0;
+    await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.pathname === "/sitemap.xml") {
+        return new Response("<urlset><url><loc>https://shop.example/</loc></url></urlset>", { headers: { "content-type": "application/xml" } });
+      }
+      return new Response("<html><head><title>Sample home page</title><meta name=\"description\" content=\"A synthetic home page description.\"></head><body><main><h1>Sample home</h1><p>Sample content for lock cleanup coverage.</p></main></body></html>", {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }));
+
+    const result = await service(projectPath).runJob(
+      { projectPath, job: "weekly", trigger: "manual", date: "2026-10-28" },
+      () => undefined,
+    );
+    const lockPath = path.join(projectPath, PATHS.lock);
+    expect(result.status).toBe("partial");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.run_id === result.runId))
+      .toMatchObject({ status: "partial" });
+  }, 20_000);
+
+  it("releases the Core lock and records a failure when a job throws", async () => {
+    const { projectPath } = await makeProject();
+    const result = await service(projectPath).runJob(
+      { projectPath, job: "design", trigger: "manual", date: "2026-10-28" },
+      () => undefined,
+    );
+    expect(result.status).toBe("failed");
+    await expect(readFile(path.join(projectPath, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.job === "design"))
+      .toMatchObject({ status: "failed", errors: [expect.stringContaining("executablePath")] });
+  }, 20_000);
+
   it("paginates, sorts and filters SKU and product lists", async () => {
     const { projectPath } = await makeProject();
     await writeJsonl(path.join(projectPath, PATHS.skuStockView), [
