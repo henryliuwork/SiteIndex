@@ -5,12 +5,14 @@ import type { ProjectCatalog } from "../project-catalog.js";
 import type { ScheduleRuntimeStatus, SystemScheduler } from "../scheduler/schedule.js";
 import type { SettingsStore } from "../settings-store.js";
 import type { UiStateStore } from "../ui-state-store.js";
+import type { UpdateService } from "../update-service.js";
 import type { SkillService } from "../skill-service.js";
 import type { DesktopIntegrations } from "../desktop-integrations.js";
 
 export interface IpcDependencies {
   settings: SettingsStore;
   uiState: UiStateStore;
+  updates: UpdateService;
   core: CoreService;
   projects: ProjectCatalog;
   settingsChanged: (value: AppSettings) => Promise<void>;
