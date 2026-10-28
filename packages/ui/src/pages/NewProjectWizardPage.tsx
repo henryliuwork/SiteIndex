@@ -35,6 +35,18 @@ function pathJoin(root: string, folder: string): string {
   return cleanRoot + (root.includes("\\") ? "\\" : "/") + folder;
 }
 
+function pathFromCreateResponse(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || !("path" in value)) return null;
+  const path = value.path;
+  return typeof path === "string" && path.trim() ? path : null;
+}
+
+async function readCreatedProjectPath(id: string): Promise<string | null> {
+  const project = await api.projects.get(id);
+  const path = project.summary.path;
+  return typeof path === "string" && path.trim() ? path : null;
+}
+
 function WizardSteps({ active }: { active: number }) {
   return <ol className="si-wizard-steps" aria-label="新建项目步骤">{steps.map((step, index) => <li key={step.path} className={index === active ? "active" : index < active ? "complete" : ""}>
     {index < active ? <Link to={step.path}><Check size={13} aria-hidden="true" />{index + 1} {step.label}</Link> : <span>{index + 1} {step.label}</span>}
@@ -150,7 +162,12 @@ export function NewProjectWizardPage() {
         folder_name: draft.folderName.trim(),
         workspace_folders: [],
       });
-      update({ projectsRoot: root, created });
+      let actualPath = pathFromCreateResponse(created);
+      if (!actualPath) {
+        try { actualPath = await readCreatedProjectPath(created.id); }
+        catch { actualPath = null; }
+      }
+      update({ projectsRoot: root, created: { ...created, path: actualPath } });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       navigate("/new/done");
     } catch (cause) { setError(apiErrorMessage(cause, "创建项目失败，请重试。")); }
@@ -158,13 +175,27 @@ export function NewProjectWizardPage() {
   };
 
   const openFolder = async () => {
-    try { await api.shell.openPath(pathJoin(draft.projectsRoot || settings.data?.projects_root || "", draft.folderName)); setFeedback("已打开项目文件夹。"); }
+    const path = draft.created?.path;
+    if (!path) { setError("尚未读取到项目的实际路径，请先重试读取路径。"); return; }
+    try { await api.shell.openPath(path); setFeedback("已打开项目文件夹。"); }
     catch (cause) { setError(apiErrorMessage(cause, "打开文件夹失败。")); }
+  };
+
+  const retryReadCreatedPath = async () => {
+    if (!draft.created) return;
+    setBusy(true); setError(""); setFeedback("");
+    try {
+      const path = await readCreatedProjectPath(draft.created.id);
+      if (!path) { setError("项目详情没有返回实际路径，请稍后重试。"); return; }
+      update({ created: { ...draft.created, path } });
+      setFeedback("已读取项目实际路径。");
+    } catch (cause) { setError(apiErrorMessage(cause, "读取项目实际路径失败，请重试。")); }
+    finally { setBusy(false); }
   };
 
   if (active === 3 && !draft.created) return <Navigate to="/new/brand" replace />;
   const detection = draft.detect;
-  const path = pathJoin(draft.projectsRoot || settings.data?.projects_root || "D:/SiteIndex/projects", draft.folderName || "[文件夹名]");
+  const previewPath = pathJoin(draft.projectsRoot || settings.data?.projects_root || "D:/SiteIndex/projects", draft.folderName || "[文件夹名]");
   const pct = finished?.status === "ok" ? 100 : progress?.pct ?? 0;
   const completedCount = Math.floor(pct / 100 * progressSteps.length);
 
@@ -231,7 +262,7 @@ export function NewProjectWizardPage() {
           <h2>项目位置</h2>
           <label className="si-wizard-field">项目根目录<div className="si-wizard-directory"><input className="si-text-field si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /><Button onClick={async () => { const selected = await api.settings.chooseDirectory(draft.projectsRoot || settings.data?.projects_root); if (selected) update({ projectsRoot: selected }); }}>更改</Button></div><small>默认取自软件设置</small></label>
           <label className="si-wizard-field">项目文件夹名<input className="si-text-field si-mono" value={draft.folderName} onChange={(event) => update({ folderName: event.target.value })} /></label>
-          <div className="si-wizard-path"><span>将创建</span><code>{path}</code></div>
+          <div className="si-wizard-path"><span>将创建</span><code>{previewPath}</code></div>
         </section>
       </div>
       {error && <p className="si-form-error" role="alert">{error}</p>}
@@ -239,6 +270,7 @@ export function NewProjectWizardPage() {
     </>}
 
     {active === 3 && draft.created && <div className="si-wizard-done-layout">
+      {draft.created.path ? null : <p className="si-form-error" role="alert">项目已创建，但暂时无法读取实际路径。请重试读取，路径读取成功后即可打开文件夹。</p>}
       <section className="si-wizard-card si-wizard-progress-card">
         <header className="si-wizard-progress-heading"><h1>{finished?.status === "failed" ? "创建过程中遇到问题" : finished ? "项目创建完成" : "正在创建 " + draft.brand.name}</h1><Chip tone={finished?.status === "failed" ? "danger" : finished ? "ok" : "info"}>{finished?.status === "failed" ? "需处理" : finished ? "完成" : completedCount + " / " + progressSteps.length}</Chip></header>
         <div className="si-wizard-progress-track"><span style={{ width: pct + "%" }} /></div>
@@ -248,9 +280,9 @@ export function NewProjectWizardPage() {
           return <div key={name} className="si-wizard-progress-row">{done ? <Check size={17} /> : running ? <LoaderCircle size={17} className="si-spin" /> : <span className="si-wizard-progress-dot" />}<span><strong>{name}</strong><small>{detail}</small></span><time>{done ? "完成" : running ? progress?.step ?? "进行中" : "等待中"}</time></div>;
         })}</div>
         {finished?.status === "failed" && <p className="si-form-error" role="alert">{finished.errors?.join("；") || finished.summary}</p>}
-        <div className="si-wizard-done-actions"><Link className="si-button si-button-primary" to={"/p/" + draft.created.id}>打开项目</Link><Button onClick={() => void openFolder()} icon={<FolderOpen size={15} />}>打开文件夹</Button><Link className="si-button" to="/skills">把 skill 安装到 Agent 平台</Link></div>
+        <div className="si-wizard-done-actions"><Link className="si-button si-button-primary" to={"/p/" + draft.created.id}>打开项目</Link>{!draft.created.path && <Button disabled={busy} onClick={() => void retryReadCreatedPath()}>{busy ? "正在读取…" : "重试读取路径"}</Button>}<Button disabled={!draft.created.path} onClick={() => void openFolder()} icon={<FolderOpen size={15} />}>打开文件夹</Button><Link className="si-button" to="/skills">把 skill 安装到 Agent 平台</Link></div>
       </section>
-      <section className="si-wizard-card si-wizard-tree-card"><h2>已生成的项目文件</h2><code className="si-mono">{path}</code><pre>{draft.folderName + "/\n├── README.md        项目说明\n├── AGENTS.md / CLAUDE.md\n├── _agent/skills/   内置 skill\n└── index/           网站数据（SiteIndex 维护）\n    ├── site.json\n    ├── catalog/  inventory/  seo/\n    ├── content/  ledgers/  design/\n    └── views/ reports/ logs/"}</pre></section>
+      <section className="si-wizard-card si-wizard-tree-card"><h2>已生成的项目文件</h2><code className="si-mono">{draft.created.path ?? "实际项目路径暂不可用"}</code><pre>{draft.folderName + "/\n├── README.md        项目说明\n├── AGENTS.md / CLAUDE.md\n├── _agent/skills/   内置 skill\n└── index/           网站数据（SiteIndex 维护）\n    ├── site.json\n    ├── catalog/  inventory/  seo/\n    ├── content/  ledgers/  design/\n    └── views/ reports/ logs/"}</pre></section>
     </div>}
   </div>;
 }

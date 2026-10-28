@@ -2,13 +2,23 @@ import type { ProjectDetail, SiteIndexApi, SiteIndexError } from "@siteindex/sha
 import { beginRun, categorySeeds, clone, fixtures, mockMode, notifyProjectChanged, projectConfigs, projectIds, projectKey, projectSummaries, projectsChanged, reply, runners, stockSeeds } from "./context";
 
 export function createProjectsMock(): SiteIndexApi["projects"] {
+  const createdPaths = new Map<string, string>();
+  const joinPath = (root: string, folder: string) => {
+    const cleanRoot = root.replace(/[\\/]+$/, "");
+    return cleanRoot + (root.includes("\\") ? "\\" : "/") + folder;
+  };
+
   return {
     list: () => reply(() => mockMode === "empty" ? [] : projectIds.map((id) => projectSummaries[id])),
-    get: (id) => reply<ProjectDetail>(() => ({
-      summary: projectSummaries[projectKey(id)],
-      config: projectConfigs[projectKey(id)],
-      runner: runners[projectKey(id)],
-    })),
+    get: (id) => reply<ProjectDetail>(() => {
+      const summary = projectSummaries[projectKey(id)];
+      const path = createdPaths.get(id);
+      return {
+        summary: path ? { ...summary, id, path } : summary,
+        config: projectConfigs[projectKey(id)],
+        runner: runners[projectKey(id)],
+      };
+    }),
     detect: (url) => reply(() => {
       const normalized = /^https?:\/\//i.test(url) ? url : "https://" + url;
       const baseUrl = normalized.replace(/\/$/, "");
@@ -62,7 +72,12 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
         })),
       };
     }),
-    create: (input) => reply(() => ({ id: input.folder_name || "new-project", runId: beginRun(input.projects_root + "/" + input.folder_name, "daily") })),
+    create: (input) => reply(() => {
+      const id = input.folder_name || "new-project";
+      const path = joinPath(input.projects_root, input.folder_name);
+      createdPaths.set(id, path);
+      return { id, runId: beginRun(path, "daily") };
+    }),
     addExisting: () => reply(projectSummaries.riverstone),
     updateConfig: (id, patch) => reply(() => {
       const key = projectKey(id);
