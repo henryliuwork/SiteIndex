@@ -88,6 +88,11 @@
 - [x] core 停止读取工作区文件夹；旧配置字段读取忽略、配置写回去掉；CLI 移除 folders 命令
 - [x] 安装包中的 CLI 可从 `resources/app.asar.unpacked/node_modules` 载入 `playwright-core`
 
+### v0.1.1 · 新建项目初始化
+- [x] `projects.create` 只创建 `index/`、配置、README 与内置 skills，立即返回 init runId，不执行 daily
+- [x] `runJob(init)` 按 daily → weekly → views + validate → README 执行；每步按 `INIT_STEPS` 报进度与中文结果，失败后继续独立步骤，schedule 由桌面端处理
+- [x] 测试完整成功流程及 HTML feed 导致 daily 失败时 weekly 继续执行
+
 ## 交付给其他工作流
 - 给 B：无直接依赖（B 用 mock）。但请在 M2 前把 `fixtures/expected/project` 保持最新，B 的 mock 数据从这里生成
 - 给 C：`createCoreService`、`runJob`、`dist/cli.js`；每次改动签名先走契约流程

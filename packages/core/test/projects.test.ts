@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PATHS, type CreateProjectInput, type DetectResult } from "@siteindex/shared";
+import { INIT_STEPS, PATHS, type CreateProjectInput, type DetectResult, type JobProgress, type SiteConfig } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
 import { createProjectFiles } from "../src/projects/create";
@@ -10,7 +10,7 @@ import { readJsonl } from "../src/io/jsonl";
 const FEED_PATH = path.resolve(process.cwd(), "fixtures/feeds/day1.xml");
 const TEMP_DIRS: string[] = [];
 
-function mockWebsite(): void {
+function mockWebsite(initPages = false): void {
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     if (url.pathname === "/") {
@@ -27,7 +27,14 @@ function mockWebsite(): void {
       return new Response(`<sitemapindex><sitemap><loc>https://example.com/child.xml</loc></sitemap></sitemapindex>`, { status: 200 });
     }
     if (url.pathname === "/child.xml") {
-      return new Response(`<urlset><url><loc>https://example.com/a</loc></url><url><loc>https://example.com/b</loc></url></urlset>`, { status: 200 });
+      const paths = initPages ? ["/", "/products/feeder", "/blog/story", "/category/feeders"] : ["/a", "/b"];
+      return new Response(`<urlset>${paths.map((item) => `<url><loc>https://example.com${item}</loc></url>`).join("")}</urlset>`, { status: 200 });
+    }
+    if (url.pathname === "/feed.html") return new Response("<!doctype html><html>login</html>", { status: 200, headers: { "content-type": "text/html" } });
+    if (initPages && ["/products/feeder", "/blog/story", "/category/feeders"].includes(url.pathname)) {
+      const tag = url.pathname === "/blog/story" ? "article" : "section";
+      const links = '<a href="/products/feeder">Feeder</a><a href="/blog/story">Story</a>';
+      return new Response(`<html><head><title>Test ${url.pathname}</title><meta name="description" content="A test page description."></head><body><main><${tag}><h1>Test page</h1><p>Useful content for this page.</p>${links}</${tag}></main></body></html>`, { status: 200, headers: { "content-type": "text/html" } });
     }
     return new Response("not found", { status: 404 });
   }));
@@ -120,27 +127,64 @@ describe("project service", () => {
     expect(result.samples.length).toBeGreaterThan(0);
   });
 
-  it("creates a data-only project and runs the initial daily sync", async () => {
-    mockWebsite();
+  it("creates files immediately, then completes the init job with progress for every step", async () => {
+    mockWebsite(true);
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-create-"));
     TEMP_DIRS.push(root);
-    const result = await makeService().projects.create(createInput(root));
+    const feedPath = path.join(root, "feed.xml");
+    await writeFile(feedPath, '<?xml version="1.0"?><rss xmlns:g="http://base.google.com/ns/1.0"><channel><item><g:id>F-1</g:id><g:title>Feeder</g:title><g:link>https://example.com/products/feeder</g:link><g:price>10 USD</g:price><g:availability>in stock</g:availability><g:product_type>Feeders</g:product_type></item></channel></rss>');
+    const result = await makeService().projects.create({ ...createInput(root), feed_urls: [feedPath] });
     const projectPath = path.join(root, "example-shop");
     const config = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as {
       domain: string; platform: string; currency: string; workspace_folders?: unknown;
     };
 
-    expect(result).toEqual({ id: "example-shop", runId: expect.stringMatching(/^\d{4}-\d{2}-\d{2}-daily$/) });
+    expect(result).toEqual({ id: "example-shop", runId: expect.stringMatching(/^\d{4}-\d{2}-\d{2}-init$/) });
     expect(config).toMatchObject({ domain: "example.com", platform: "shopify", currency: "CAD" });
     expect(config).not.toHaveProperty("workspace_folders");
-    expect((await readJsonl(path.join(projectPath, PATHS.skus))).length).toBeGreaterThan(0);
-    expect((await readJsonl(path.join(projectPath, PATHS.productsView))).length).toBeGreaterThan(0);
-    expect((await readJsonl(path.join(projectPath, PATHS.runs))).map((row) => row.job)).toContain("daily");
+    expect(await readJsonl(path.join(projectPath, PATHS.skus))).toEqual([]);
+    expect(await readJsonl(path.join(projectPath, PATHS.runs))).toEqual([]);
+    const manifest = JSON.parse(await readFile(path.join(projectPath, PATHS.skillsManifest), "utf8")) as { skills: { name: string }[] };
+    expect(manifest.skills.length).toBeGreaterThan(0);
+    expect(await readFile(path.join(projectPath, PATHS.skillsDir, manifest.skills[0]!.name, "SKILL.md"), "utf8")).toContain("version:");
     expect(await readdir(projectPath)).not.toContain("seo");
     expect(await readdir(projectPath)).not.toContain("产品");
     expect(await readdir(projectPath)).not.toContain("custom");
     expect(await readdir(projectPath)).not.toContain(PATHS.aboutFile);
     expect(await readFile(path.join(projectPath, PATHS.readme), "utf8")).not.toContain('id="folder-map"');
+    const sitePath = path.join(projectPath, PATHS.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
+    site.crawl.rate_limit_ms = 200;
+    await writeFile(sitePath, JSON.stringify(site, null, 2) + "\n");
+    const progress: Pick<JobProgress, "step" | "pct">[] = [];
+    const init = await makeService().runJob({ projectPath, job: "init", trigger: "manual", date: "2026-10-22" }, (event) => progress.push(event));
+    expect(init.status, JSON.stringify(init.steps)).toBe("ok");
+    expect(init.steps?.map((step) => step.key)).toEqual([...INIT_STEPS]);
+    expect(init.steps?.filter((step) => step.status === "failed")).toEqual([]);
+    expect(init.steps?.at(-1)).toMatchObject({ key: "schedule", status: "skipped" });
+    expect(progress.every((event) => !event.step || INIT_STEPS.includes(event.step as typeof INIT_STEPS[number]))).toBe(true);
+    expect((await readJsonl(path.join(projectPath, PATHS.skus))).length).toBeGreaterThan(0);
+    expect((await readJsonl(path.join(projectPath, PATHS.productsView))).length).toBeGreaterThan(0);
+    expect((await readJsonl(path.join(projectPath, PATHS.runs))).map((row) => row.job)).toContain("init");
+  }, 60_000);
+
+  it("continues weekly when the feed is a webpage and reports a Chinese daily failure", async () => {
+    mockWebsite(true);
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-init-html-feed-"));
+    TEMP_DIRS.push(root);
+    await makeService().projects.create({ ...createInput(root), feed_urls: ["https://example.com/feed.html"] });
+    const projectPath = path.join(root, "example-shop");
+    const sitePath = path.join(projectPath, PATHS.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
+    site.crawl.rate_limit_ms = 200;
+    site.categories = { mode: "url_rule", url_pattern: "/category/" };
+    await writeFile(sitePath, JSON.stringify(site, null, 2) + "\n");
+    const result = await makeService().runJob({ projectPath, job: "init", trigger: "manual", date: "2026-10-22" }, () => undefined);
+    expect(result.status).toBe("partial");
+    expect(result.steps?.find((step) => step.key === "daily")).toMatchObject({ status: "failed", message: expect.stringContaining("网页而不是商品 feed") });
+    expect(result.steps?.find((step) => step.key === "weekly")?.status, JSON.stringify(result.steps)).toBe("ok");
+    expect((await readJsonl(path.join(projectPath, PATHS.seoPages))).length).toBeGreaterThan(0);
+    expect(result.errors?.join(" ")).toContain("网页而不是商品 feed");
   }, 60_000);
 
   it("preserves existing user folders, _about.md and README in the chosen project directory", async () => {
