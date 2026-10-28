@@ -1,21 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import type { FileCheck, FileKind, FileStatus, ListQuery, RepairAction, ValidationReport } from "@siteindex/shared";
 import type { ColumnDef } from "@tanstack/react-table";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, ProjectHeader } from "../components";
 import "./project-settings-files/page.css";
 
-const projectTabs = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" }, { value: "products", label: "产品" },
-  { value: "seo", label: "SEO" }, { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
 const settingsTabs = [
   { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
 ] as const;
-const tabHref = (id: string, value: string) => value === "settings" ? `/p/${id}/settings/config` : `/p/${id}${value === "overview" ? "" : "/" + value}`;
 const kindLabels: Record<FileKind, string> = { config: "配置", doc: "说明", sync: "自动", ledger: "台账", view: "视图" };
 const statusLabels: Record<FileStatus, string> = { ok: "正常", error: "错误", missing: "缺失", conflict_copy: "冲突副本" };
 const statusTones: Record<FileStatus, "ok" | "danger" | "warn" | "info"> = { ok: "ok", error: "danger", missing: "warn", conflict_copy: "warn" };
@@ -79,7 +73,6 @@ function repairLabel(action: RepairAction): string {
 
 export function ProjectSettingsFilesPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
   const reportQuery = useQuery({ queryKey: ["files", id], queryFn: () => api.files.lastReport(id) });
@@ -181,8 +174,7 @@ export function ProjectSettingsFilesPage() {
   const summary = report?.summary ?? { total: 0, ok: 0, error: 0, missing: 0, conflict_copy: 0 };
 
   return <div className="si-page si-files-page">
-    <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.path}</code></div><div className="si-page-actions"><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></div></header>
-    <Tabs value="settings" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(tabHref(id, value))} />
+    <ProjectHeader project={project} activeTab="settings" subtitle={project.path} actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></>} />
     <SettingsNav id={id} />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {reportQuery.isLoading ? <div className="si-query-loading" role="status">正在读取本地文件校验报告…</div> : reportQuery.isError ? <ApiErrorNotice label="本地文件校验报告加载失败。" error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : <>

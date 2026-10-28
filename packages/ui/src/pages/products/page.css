@@ -2,10 +2,6 @@
 gap: 16px;
 }
 
-.si-products-page > .si-tabs {
-flex: none; gap: 24px;
-}
-
 .si-products-filterbar {
 display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 7px; color: var(--color-muted); font-size: 11px;
 }

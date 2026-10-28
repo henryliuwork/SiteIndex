@@ -1,5 +1,5 @@
 .si-files-page { gap: 16px; }
-.si-files-page .si-project-title-line code { max-width: 560px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-files-page .si-project-header-identity code { max-width: 560px; }
 .si-files-subtabs { display: flex; align-items: center; gap: 6px; }
 .si-files-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 14px; border-radius: 6px; color: var(--color-ink-2); font-size: 13px; text-decoration: none; }
 .si-files-subtabs a:hover { background: var(--color-neutral-soft); }

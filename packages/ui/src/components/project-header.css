@@ -1,0 +1,27 @@
+.si-project-header { display: grid; min-width: 0; gap: 0; }
+.si-project-header-row {
+  display: grid; width: 100%; height: 64px; min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 420px; align-items: center; gap: 16px;
+}
+.si-project-header-identity { display: flex; min-width: 0; align-items: center; gap: 12px; overflow: hidden; white-space: nowrap; }
+.si-project-header-identity h1 {
+  flex: 0 1 auto; min-width: 72px; max-width: 220px; margin: 0; overflow: hidden;
+  color: var(--color-ink); font-size: 23px; font-weight: 700; letter-spacing: -0.025em; text-overflow: ellipsis;
+}
+.si-project-header-identity code {
+  min-width: 0; overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis;
+}
+.si-project-header-status { display: flex; min-width: 0; flex: none; align-items: center; overflow: hidden; }
+.si-project-header-actions {
+  display: flex; width: 420px; min-width: 420px; min-height: 36px; align-items: center; justify-content: flex-end;
+  gap: 8px; overflow: hidden; white-space: nowrap;
+}
+.si-project-header-actions > * { flex: 0 0 auto; }
+.si-project-header .si-tabs { flex: none; gap: 24px; }
+
+@media (max-width: 900px) {
+  .si-project-header-row { grid-template-columns: minmax(0, 1fr) 340px; }
+  .si-project-header-actions { width: 340px; min-width: 340px; gap: 5px; }
+  .si-project-header-identity { gap: 8px; }
+  .si-project-header-identity h1 { max-width: 150px; font-size: 20px; }
+}

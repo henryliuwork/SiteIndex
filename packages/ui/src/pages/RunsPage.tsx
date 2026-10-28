@@ -1,18 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import type { JobName, JobProgress, JobResult, ListQuery, RunLog, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Activity, CalendarClock, CheckCircle2, ClipboardCheck, FileText, Palette, RefreshCw, Square, Wifi } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader } from "../components";
 import "./runs/page.css";
-
-const projectTabs = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" }, { value: "products", label: "产品" },
-  { value: "seo", label: "SEO" }, { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
 
 const jobLabels: Record<string, string> = {
   daily: "每日同步", weekly: "每周同步", monthly: "每月同步", validate: "数据校验", readme: "刷新 README", design: "提取设计规范", "index-check": "检查 Google 索引", views: "重建视图", init: "项目初始化",
@@ -80,7 +74,6 @@ function weekdaySummary(days: Weekday[] | undefined): string {
 
 export function RunsPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
   const scheduleQuery = useQuery({ queryKey: ["schedule", id], queryFn: () => api.schedule.get(id) });
@@ -238,8 +231,7 @@ export function RunsPage() {
   const currentDevice = runnerState?.this_device.device_name ?? "本机";
 
   return <div className="si-page si-runs-page">
-    <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {project.platform}</code></div></header>
-    <Tabs value="runs" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(value === "settings" ? `/p/${id}/settings/config` : `/p/${id}${value === "overview" ? "" : "/" + value}`)} />
+    <ProjectHeader project={project} activeTab="runs" />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-runs-layout">
       <main className="si-runs-main">

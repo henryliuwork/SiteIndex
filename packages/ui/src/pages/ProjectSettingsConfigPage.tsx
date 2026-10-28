@@ -1,24 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import type { FeedInspectResult, SeoRule, SiteConfig } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
 import "./project-settings-config/page.css";
 
-const projectTabs = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" }, { value: "products", label: "产品" },
-  { value: "seo", label: "SEO" }, { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
 const settingsTabs = [
   { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
 ] as const;
 const sectionLinks = [
   ["basic", "基本信息"], ["brand", "品牌"], ["source", "数据源"], ["crawl", "抓取"], ["seo", "SEO"], ["edm", "EDM"], ["integrations", "集成与预留数据源"],
 ] as const;
-const tabHref = (id: string, value: string) => value === "settings" ? `/p/${id}/settings/config` : `/p/${id}${value === "overview" ? "" : "/" + value}`;
 
 function TextField({ label, value, onChange, mono = false, placeholder, type = "text" }: {
   label: string; value: string; onChange: (value: string) => void; mono?: boolean; placeholder?: string; type?: string;
@@ -52,7 +46,6 @@ function asFeeds(value: SiteConfig["crawl"]["feed_url"]): string { return (Array
 
 export function ProjectSettingsConfigPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
   const [draft, setDraft] = useState<SiteConfig | null>(null);
@@ -145,11 +138,7 @@ export function ProjectSettingsConfigPage() {
 
   return <DialogPrimitive.Root open={jsonOpen} onOpenChange={(open) => { if (open) openJson(); else setJsonOpen(false); }}>
   <div className="si-page si-project-config-page">
-    <header className="si-project-page-heading">
-      <div className="si-project-title-line"><h1>{project.name}</h1><code>index/site.json</code></div>
-      <div className="si-page-actions"><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></div>
-    </header>
-    <Tabs value="settings" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(tabHref(id, value))} />
+    <ProjectHeader project={project} activeTab="settings" subtitle="index/site.json" actions={<><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></>} />
     <SettingsNav id={id} value="config" />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-config-layout">

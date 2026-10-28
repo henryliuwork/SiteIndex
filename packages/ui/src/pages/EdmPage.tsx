@@ -2,20 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
-import type { EdmCommandInput, Kpi, ListQuery, ProjectDetail, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
+import { useParams } from "react-router-dom";
+import type { EdmCommandInput, Kpi, ListQuery, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Tabs, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, stockTone } from "../components";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
-const projectTabs = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" }, { value: "products", label: "产品" },
-  { value: "seo", label: "SEO" }, { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" }, { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
-const platformNames: Record<ProjectDetail["summary"]["platform"], string> = {
-  magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台",
-};
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
 const viewOptions: { value: ImageView; label: string }[] = [
   { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "no_feed", label: "未抓取到首图" },
@@ -72,7 +64,6 @@ function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
 
 export function EdmPage() {
   const { id = "kingsyard" } = useParams();
-  const navigate = useNavigate();
   const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 20, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -103,17 +94,11 @@ export function EdmPage() {
     try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); }
     catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开项目文件夹。")); }
   };
-  const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
-
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-edm-page">
-    <header className="si-project-page-heading">
-      <div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {platformNames[project.platform]}</code></div>
-      <div className="si-page-actions"><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></div>
-    </header>
-    <Tabs value="edm" options={projectTabs} ariaLabel="项目页面" onChange={onTabChange} />
+    <ProjectHeader project={project} activeTab="edm" actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></>} />
     <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable

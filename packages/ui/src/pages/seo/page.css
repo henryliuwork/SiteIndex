@@ -2,18 +2,6 @@
 gap: 14px;
 }
 
-.si-seo-page .si-project-title-line {
-flex-wrap: wrap;
-}
-
-.si-seo-page .si-project-title-line > .si-chip {
-flex: none;
-}
-
-.si-seo-page .si-tabs {
-flex: none; gap: 24px;
-}
-
 .si-seo-kpis {
 display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px;
 }

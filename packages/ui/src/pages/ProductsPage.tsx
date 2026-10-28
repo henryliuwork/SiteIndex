@@ -3,18 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ExternalLink, Image as ImageIcon, Plus, RefreshCw, Tag, Trash2, X } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
-import type { ListQuery, ProductFilters, ProductFull, ProductView, ProjectDetail, StockStatus } from "@siteindex/shared";
+import { useParams } from "react-router-dom";
+import type { ListQuery, ProductFilters, ProductFull, ProductView, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, Tabs, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, ProjectHeader, stockTone } from "../components";
 
-const tabOptions = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
-  { value: "products", label: "产品" }, { value: "seo", label: "SEO" },
-  { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" },
-  { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
 const initialQuery: ListQuery<ProductFilters> = { page: 1, pageSize: 100, filters: {} };
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
 const stockOptions = [
@@ -22,9 +15,6 @@ const stockOptions = [
   { value: "out", label: "缺货" }, { value: "other", label: "预售 / 未知" },
 ] as const;
 
-const platformNames: Record<ProjectDetail["summary"]["platform"], string> = {
-  magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台",
-};
 
 function priceLabel(product: ProductView): string {
   if (product.price_min === null) return "—";
@@ -118,7 +108,6 @@ function ProductDetailContent({
 
 export function ProductsPage() {
   const { id = "kingsyard" } = useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<ListQuery<ProductFilters>>(initialQuery);
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
@@ -156,7 +145,6 @@ export function ProductsPage() {
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
   }, [activeRunId, id, queryClient]);
 
-  const onTabChange = (tab: typeof tabOptions[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
   const onStockChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, stock: !value || value === "all" ? undefined : value as ProductFilters["stock"] } }));
   const onTagChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, tag: !value || value === "all" ? undefined : value } }));
 
@@ -211,15 +199,13 @@ export function ProductsPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目产品页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-products-page">
-    <header className="si-project-page-heading">
-      <div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {platformNames[project.platform]}</code></div>
-      <div className="si-page-actions">
+    <ProjectHeader project={project} activeTab="products" actions={
+      <>
         <Button icon={<Tag size={15} />} onClick={() => setTagDialogOpen(true)}>标签管理</Button>
         <Button onClick={() => void exportCsv()}>导出 CSV</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={Boolean(activeRunId)} onClick={() => void runSync()}>{activeRunId ? "同步中…" : "立即同步"}</Button>
-      </div>
-    </header>
-    <Tabs value="products" options={tabOptions} ariaLabel="项目页面" onChange={onTabChange} />
+      </>
+    } />
     <div className="si-products-filterbar">
       <span>库存</span>{stockOptions.map((option) => <FilterPill key={option.value} currentValue={stock} value={option.value} onValueChange={onStockChange}>{option.label}</FilterPill>)}
       <span>标签</span><FilterPill currentValue={tag} value="all" onValueChange={onTagChange}>全部</FilterPill>

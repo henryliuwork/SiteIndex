@@ -1,19 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import type { DesignTokens } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, Tabs } from "../components";
-
-const tabOptions = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
-  { value: "products", label: "产品" }, { value: "seo", label: "SEO" },
-  { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" },
-  { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
+import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
 
 type ColorKey = "primary" | "text" | "text_muted" | "background" | "surface" | "border" | "sale";
 const colorItems: { key: ColorKey; label: string }[] = [
@@ -32,38 +24,6 @@ const formatExtracted = (value: string): string => {
   const [year, month, day] = value.slice(0, 10).split("-");
   return year && month && day ? `${month}-${day}` : value;
 };
-const projectTabsHref = (id: string, value: string): string => value === "settings" ? `/p/${id}/settings/config` : `/p/${id}${value === "overview" ? "" : "/" + value}`;
-
-function ProjectHeading({ project, tokens, onOpenTokens, onCopyInstruction, onRefresh, onNavigate, refreshing }: {
-  project: { name: string; domain: string; platform: string; path: string };
-  tokens: DesignTokens | null;
-  onOpenTokens: () => void;
-  onCopyInstruction: () => void;
-  onRefresh: () => void;
-  onNavigate: (value: string) => void;
-  refreshing: boolean;
-}) {
-  const platformNames: Record<string, string> = { magento: "Magento", shopify: "Shopify", wordpress: "WordPress", woocommerce: "WooCommerce", other: "其他平台" };
-  return (
-    <>
-      <header className="si-project-page-heading">
-        <div className="si-project-title-line si-design-title-line">
-          <h1>{project.name}</h1><code>{project.domain} · {platformNames[project.platform] ?? project.platform}</code>
-          {tokens
-            ? <Chip tone="neutral">提取于 {formatExtracted(tokens.extracted_at)} · {tokens.source_pages.length} 个页面{import.meta.env.DEV ? " · 示例数据" : ""}</Chip>
-            : <Chip tone="warn">尚未提取设计规范</Chip>}
-        </div>
-        <div className="si-page-actions">
-          <Button onClick={onOpenTokens}>打开 tokens.json</Button>
-          <Button onClick={onCopyInstruction}>复制 page-design 指令</Button>
-          <Button variant="primary" disabled={refreshing} onClick={onRefresh}>{refreshing ? "提取中…" : "重新提取"}</Button>
-        </div>
-      </header>
-      <Tabs value="design" options={tabOptions} ariaLabel="项目页面" onChange={onNavigate} />
-    </>
-  );
-}
-
 function ColorCard({ tokens, onCopy, copied }: { tokens: DesignTokens | null; onCopy: (value: string) => void; copied: string }) {
   const colors = tokens?.color;
   const palette = colors?.palette ?? [];
@@ -167,7 +127,6 @@ function ScreenshotsCard({ screenshots, onOpen }: { screenshots: { name: string;
 
 export function DesignPage() {
   const { id = "kingsyard" } = useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState("");
   const [copiedColor, setCopiedColor] = useState("");
@@ -228,7 +187,15 @@ export function DesignPage() {
 
   return (
     <div className="si-page si-design-page">
-      <ProjectHeading project={project} tokens={tokens} onOpenTokens={() => void openTokens()} onCopyInstruction={() => void copyInstruction()} onRefresh={() => void refresh()} onNavigate={(value) => navigate(projectTabsHref(id, value))} refreshing={Boolean(activeRunId)} />
+      <ProjectHeader project={project} activeTab="design" status={tokens
+        ? <Chip tone="neutral">提取于 {formatExtracted(tokens.extracted_at)} · {tokens.source_pages.length} 个页面{import.meta.env.DEV ? " · 示例数据" : ""}</Chip>
+        : <Chip tone="warn">尚未提取设计规范</Chip>} actions={
+          <>
+            <Button onClick={() => void openTokens()}>打开 tokens.json</Button>
+            <Button onClick={() => void copyInstruction()}>复制 page-design 指令</Button>
+            <Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void refresh()}>{activeRunId ? "提取中…" : "重新提取"}</Button>
+          </>
+        } />
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
       {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
       {designQuery.isLoading ? <div className="si-page-loading" role="status">正在加载设计规范…</div> : designQuery.isError ? <ApiErrorNotice label="设计规范加载失败。" error={designQuery.error} onRetry={() => void designQuery.refetch()} /> : <div className="si-design-layout">

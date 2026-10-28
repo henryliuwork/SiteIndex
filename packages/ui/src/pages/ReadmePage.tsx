@@ -1,19 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, Tabs } from "../components";
-
-const tabOptions = [
-  { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
-  { value: "products", label: "产品" }, { value: "seo", label: "SEO" },
-  { value: "content", label: "内容" }, { value: "edm", label: "EDM" },
-  { value: "design", label: "设计" }, { value: "readme", label: "README" },
-  { value: "runs", label: "运行" }, { value: "settings", label: "设置" },
-] as const;
-const projectTabsHref = (id: string, value: string): string => value === "settings" ? `/p/${id}/settings/config` : `/p/${id}${value === "overview" ? "" : "/" + value}`;
+import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
 const autoDescriptions: Record<string, string> = {
   "task-routing": "7 个任务 → _agent/skills/",
   "data-guide": "index/ 各表说明与写入规则",
@@ -34,28 +25,6 @@ function latestUpdate(data: ReadmeData | undefined): string {
   const date = value.slice(5, 10);
   const time = value.match(/[T ](\d{2}:\d{2})/)?.[1];
   return `自动区块更新于 ${date}${time ? " " + time : ""}`;
-}
-
-function ProjectHeading({ name, updated, onOpen, onCopy, onRefresh, refreshing, onNavigate }: {
-  name: string;
-  updated: string;
-  onOpen: () => void;
-  onCopy: () => void;
-  onRefresh: () => void;
-  refreshing: boolean;
-  onNavigate: (value: string) => void;
-}) {
-  return <>
-    <header className="si-project-page-heading">
-      <div className="si-project-title-line si-readme-title-line"><h1>{name}</h1><code>README.md · {updated}</code></div>
-      <div className="si-page-actions">
-        <Button onClick={onOpen}>在编辑器中打开</Button>
-        <Button onClick={onCopy}>复制 project-readme 指令</Button>
-        <Button variant="primary" disabled={refreshing} onClick={onRefresh}>{refreshing ? "刷新中…" : "刷新自动区块"}</Button>
-      </div>
-    </header>
-    <Tabs value="readme" options={tabOptions} ariaLabel="项目页面" onChange={onNavigate} />
-  </>;
 }
 
 function UserBlocksCard({ blocks, onChange, onReset, onSave, saving }: {
@@ -96,7 +65,6 @@ function AutoBlocksCard({ data }: { data: ReadmeData }) {
 
 export function ReadmePage() {
   const { id = "kingsyard" } = useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<ReadmeData["user_blocks"]>({ overview: "", focus: "", rules: "" });
   const [feedback, setFeedback] = useState("");
@@ -159,7 +127,7 @@ export function ReadmePage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 README 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-readme-page">
-    <ProjectHeading name={project.name} updated={data ? latestUpdate(data) : "—"} onOpen={() => void onOpen()} onCopy={() => void onCopy()} onRefresh={() => void onRefresh()} refreshing={Boolean(activeRunId)} onNavigate={(value) => navigate(projectTabsHref(id, value))} />
+    <ProjectHeader project={project} activeTab="readme" subtitle={`README.md · ${data ? latestUpdate(data) : "—"}`} actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
     {readmeQuery.isLoading ? <div className="si-page-loading" role="status">正在加载 README…</div> : readmeQuery.isError || !data ? <ApiErrorNotice label="README 内容加载失败。" error={readmeQuery.error} onRetry={() => void readmeQuery.refetch()} /> : <div className="si-readme-layout">

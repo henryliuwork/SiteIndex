@@ -2,10 +2,6 @@
 gap: 18px;
 }
 
-.si-overview-page > .si-tabs {
-flex: none; gap: 24px;
-}
-
 .si-overview-kpis {
 display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px;
 }
