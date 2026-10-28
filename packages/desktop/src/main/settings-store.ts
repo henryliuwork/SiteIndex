@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, open, readFile, rename } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 
@@ -77,6 +77,44 @@ function normalizeSettings(value: unknown, defaults: AppSettings): AppSettings {
   };
 }
 
+function cloneSettings(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    extra_projects: [...settings.extra_projects],
+    browser: { ...settings.browser },
+    notify: { ...settings.notify },
+    skill_platforms: settings.skill_platforms.map((platform) => ({ ...platform })),
+    conflict_patterns: [...settings.conflict_patterns],
+  };
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) &&
+      left.length === right.length && left.every((item, index) => sameJsonValue(item, right[index]));
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => Object.hasOwn(right, key) && sameJsonValue(left[key], right[key]));
+}
+
+const writes = new Map<string, Promise<unknown>>();
+
+function serializeByFile<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
+  const target = resolve(filePath);
+  const previous = writes.get(target);
+  const current = (previous?.catch(() => undefined) ?? Promise.resolve()).then(operation);
+  writes.set(target, current);
+  const cleanup = () => {
+    if (writes.get(target) === current) writes.delete(target);
+  };
+  void current.then(cleanup, cleanup);
+  return current;
+}
+
 function validatePatch(patch: unknown): asserts patch is Partial<AppSettings> {
   if (!isRecord(patch)) invalidSettings("settings.set 需要一个设置对象。");
 
@@ -140,24 +178,29 @@ function validatePatch(patch: unknown): asserts patch is Partial<AppSettings> {
 
 async function writeAtomically(filePath: string, settings: AppSettings): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.tmp-${process.pid}`;
-  const handle = await open(temporaryPath, "w");
+  const temporaryPath = `${filePath}.tmp-${process.pid}-${randomUUID()}`;
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
+    handle = await open(temporaryPath, "wx");
     await handle.writeFile(`${JSON.stringify(settings, null, 2)}\n`, "utf8");
     await handle.sync();
-  } finally {
     await handle.close();
-  }
+    handle = undefined;
 
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await rename(temporaryPath, filePath);
-      return;
-    } catch (error) {
-      const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
-      if (attempt >= 9 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await rename(temporaryPath, filePath);
+        return;
+      } catch (error) {
+        const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
+        if (attempt >= 9 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+      }
     }
+  } catch (error) {
+    if (handle) await handle.close().catch(() => undefined);
+    await unlink(temporaryPath).catch(() => undefined);
+    throw error;
   }
 }
 
@@ -172,20 +215,18 @@ export function createSettingsStore(settingsDirectory: string, deviceName = host
   const filePath = join(settingsDirectory, "settings.json");
   const defaults = createDefaults(settingsDirectory, deviceName || "SiteIndex");
 
-  async function load(): Promise<AppSettings> {
+  async function readSettings(): Promise<{ settings: AppSettings; needsRepair: boolean }> {
     let parsed: unknown;
     try {
       parsed = JSON.parse(await readFile(filePath, "utf8")) as unknown;
     } catch (error) {
       const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
       if (code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
-      await writeAtomically(filePath, defaults);
-      return { ...defaults, browser: { ...defaults.browser }, notify: { ...defaults.notify } };
+      return { settings: cloneSettings(defaults), needsRepair: true };
     }
 
     const settings = normalizeSettings(parsed, defaults);
-    await writeAtomically(filePath, settings);
-    return settings;
+    return { settings: cloneSettings(settings), needsRepair: !sameJsonValue(parsed, settings) };
   }
 
   return {
@@ -199,19 +240,25 @@ export function createSettingsStore(settingsDirectory: string, deviceName = host
       }
     },
     async get() {
-      return load();
+      return serializeByFile(filePath, async () => {
+        const { settings, needsRepair } = await readSettings();
+        if (needsRepair) await writeAtomically(filePath, settings);
+        return settings;
+      });
     },
     async set(patch) {
       validatePatch(patch);
-      const current = await load();
-      const next = {
-        ...current,
-        ...patch,
-        browser: patch.browser ? { ...current.browser, ...patch.browser } : current.browser,
-        notify: patch.notify ? { ...current.notify, ...patch.notify } : current.notify,
-      };
-      await writeAtomically(filePath, next);
-      return next;
+      return serializeByFile(filePath, async () => {
+        const { settings: current } = await readSettings();
+        const next = {
+          ...current,
+          ...patch,
+          browser: patch.browser ? { ...current.browser, ...patch.browser } : current.browser,
+          notify: patch.notify ? { ...current.notify, ...patch.notify } : current.notify,
+        };
+        await writeAtomically(filePath, next);
+        return next;
+      });
     },
   };
 }

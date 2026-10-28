@@ -40,6 +40,7 @@
 - [x] `%APPDATA%\SiteIndex\settings.json`（mac `~/Library/Application Support/SiteIndex/`）；首次启动生成 device_id、默认 device_name（计算机名）
 - [x] 首次启动引导选择项目根目录（`settings.chooseDirectory`）
 - [x] `ui-state.json`：列设置、每页条数（与 B 约定 `useColumnPrefs` 的存储适配，通过一个额外的 `uiState` IPC，走契约流程添加）
+- [x] 设置读改写按文件路径串行化；原子写入使用唯一临时文件名；读取只在设置缺失、损坏或需要规范化时修复写回
 
 ### C5 接 core
 
