@@ -5,6 +5,7 @@ import { useParams } from "react-router-dom";
 import type { DesignTokens } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
 
 type ColorKey = "primary" | "text" | "text_muted" | "background" | "surface" | "border" | "sale";
@@ -132,7 +133,7 @@ export function DesignPage() {
   const [copiedColor, setCopiedColor] = useState("");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState("");
-  const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const designQuery = useQuery({ queryKey: ["design", id], queryFn: () => api.design.get(id) });
   const project = projectQuery.data?.summary;
   const tokens = designQuery.data?.tokens ?? null;

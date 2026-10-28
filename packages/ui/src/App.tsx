@@ -1,14 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HashRouter, Route, Routes, type RouteObject } from "react-router-dom";
 import { api } from "./api";
+import { projectQueryKeys, subscribeToProjectChanges, subscribeToProjectJobCompletion } from "./project-queries";
 import { SideNav, WindowChrome } from "./components";
 import { WizardDraftProvider } from "./pages/wizard-state";
 
 const pageRoutes = Object.values(import.meta.glob<RouteObject>("./pages/*/route.tsx", { eager: true, import: "route" }));
 
 function AppShell() {
+  const queryClient = useQueryClient();
+  useEffect(() => subscribeToProjectChanges(api.projects, queryClient), [queryClient]);
+  useEffect(() => subscribeToProjectJobCompletion(api.jobs, queryClient), [queryClient]);
   const platform = useQuery({ queryKey: ["app", "platform"], queryFn: () => api.app.platform() });
-  const projects = useQuery({ queryKey: ["projects"], queryFn: () => api.projects.list() });
+  const projects = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
   const navProjects = projects.data?.map(({ id, name, sync }) => ({ id, name, state: sync.state })) ?? [{ id: "kingsyard", name: "Kingsyard", state: "partial" as const }];
   const runnerProject = projects.data?.find((project) => project.is_runner);

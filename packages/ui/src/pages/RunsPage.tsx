@@ -5,6 +5,7 @@ import type { JobName, JobProgress, JobResult, ListQuery, RunLog, RunnerState, S
 import type { ColumnDef } from "@tanstack/react-table";
 import { Activity, CalendarClock, CheckCircle2, ClipboardCheck, FileText, Palette, RefreshCw, Square, Wifi } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
+import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader } from "../components";
 import "./runs/page.css";
 
@@ -75,7 +76,7 @@ function weekdaySummary(days: Weekday[] | undefined): string {
 export function RunsPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
-  const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const scheduleQuery = useQuery({ queryKey: ["schedule", id], queryFn: () => api.schedule.get(id) });
   const scheduleRuntimeQuery = useQuery({ queryKey: ["schedule-runtime"], queryFn: () => api.schedule.status ? api.schedule.status() : Promise.resolve(null) });
   const runnerQuery = useQuery({ queryKey: ["runner", id], queryFn: () => api.runner.get(id) });
@@ -210,7 +211,7 @@ export function RunsPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["schedule", id] }),
         queryClient.invalidateQueries({ queryKey: ["schedule-runtime"] }),
-        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        invalidateProjectSummary(queryClient, id),
       ]);
       announce("本机已设为此项目的执行设备");
     } catch (error) {
@@ -218,6 +219,7 @@ export function RunsPage() {
       void queryClient.invalidateQueries({ queryKey: ["runner", id] });
       void queryClient.invalidateQueries({ queryKey: ["schedule", id] });
       void queryClient.invalidateQueries({ queryKey: ["schedule-runtime"] });
+      void invalidateProjectSummary(queryClient, id);
       announce(apiErrorMessage(error, "设置执行设备失败，请稍后重试"));
     }
     finally { setClaimingRunner(false); }

@@ -6,6 +6,7 @@ import { FolderOpen, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Kpi, ListQuery, ProjectSummary, RunLog } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, KpiCard } from "../components";
 
 const jobNames: Record<string, string> = {
@@ -30,7 +31,6 @@ function projectWarning(project: ProjectSummary): { tone: "warn" | "danger"; lin
   const stale = project.sync.at !== null && Date.now() - new Date(project.sync.at).getTime() > 36 * 60 * 60 * 1000;
   if (stale) lines.unshift("超过 36 小时未同步");
   if (project.sync.state === "failed") lines.unshift("最近一次同步失败");
-  if (project.sync.state === "never" && !lines.some((line) => /feed/i.test(line))) lines.unshift("尚未配置 feed");
   if (lines.length === 0 && project.attention === 0 && project.sync.state !== "partial") return null;
   if (lines.length === 0) lines.push("有数据待处理");
   return { tone: project.sync.state === "failed" ? "danger" : "warn", lines };
@@ -155,7 +155,7 @@ function CenterStatus({ status }: { status: ProjectSummary["sync"]["state"] }) {
 
 export function ProjectCenterPage() {
   const queryClient = useQueryClient();
-  const projectsQuery = useQuery({ queryKey: ["projects"], queryFn: () => api.projects.list() });
+  const projectsQuery = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
   const projects = projectsQuery.data ?? [];
   const primary = projects[0];
@@ -203,7 +203,7 @@ export function ProjectCenterPage() {
       queryClient.setQueryData(["settings"], saved);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["settings"] }),
-        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: projectQueryKeys.list, exact: true }),
       ]);
       setRootSetupFeedback("项目根目录已保存。");
     } catch (cause) {
@@ -218,7 +218,7 @@ export function ProjectCenterPage() {
     catch (cause) { setFeedback(apiErrorMessage(cause, "打开文件夹失败。")); }
   };
   const handleAdded = async (project: ProjectSummary) => {
-    await queryClient.invalidateQueries({ queryKey: ["projects"] });
+    await invalidateProjectSummary(queryClient, project.id);
     setFeedback("已添加项目：" + project.name);
   };
 

@@ -4,6 +4,7 @@ import { Check, CircleAlert, FolderOpen, LoaderCircle, Plus, X } from "lucide-re
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobProgress, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { invalidateProjectSummary } from "../project-queries";
 import { ApiErrorNotice, Button, Chip } from "../components";
 import { useWizardDraft } from "./wizard-state";
 
@@ -228,7 +229,7 @@ export function NewProjectWizardPage() {
         catch { actualPath = null; }
       }
       update({ projectsRoot: root, created: { ...created, path: actualPath } });
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      await invalidateProjectSummary(queryClient, created.id);
       navigate("/new/done");
     } catch (cause) { setError(apiErrorMessage(cause, "创建项目失败，请重试。")); }
     finally { setBusy(false); }

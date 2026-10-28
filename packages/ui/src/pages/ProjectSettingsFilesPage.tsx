@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import type { FileCheck, FileKind, FileStatus, ListQuery, RepairAction, ValidationReport } from "@siteindex/shared";
 import type { ColumnDef } from "@tanstack/react-table";
 import { api, apiErrorMessage } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, ProjectHeader } from "../components";
 import "./project-settings-files/page.css";
 
@@ -74,7 +75,7 @@ function repairLabel(action: RepairAction): string {
 export function ProjectSettingsFilesPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
-  const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const reportQuery = useQuery({ queryKey: ["files", id], queryFn: () => api.files.lastReport(id) });
   const [tableQuery, setTableQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
   const [selected, setSelected] = useState<FileCheck | null>(null);

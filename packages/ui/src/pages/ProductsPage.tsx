@@ -6,6 +6,7 @@ import { ExternalLink, Image as ImageIcon, Plus, RefreshCw, Tag, Trash2, X } fro
 import { useParams } from "react-router-dom";
 import type { ListQuery, ProductFilters, ProductFull, ProductView, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, ProjectHeader, stockTone } from "../components";
 
 const initialQuery: ListQuery<ProductFilters> = { page: 1, pageSize: 100, filters: {} };
@@ -119,7 +120,7 @@ export function ProductsPage() {
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
-  const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const listQuery = useQuery({ queryKey: ["products", id, query], queryFn: () => api.products.list(id, query), placeholderData: (previous) => previous });
   const tagsQuery = useQuery({ queryKey: ["product-tags", id], queryFn: () => api.products.listTags(id) });
   const detailQuery = useQuery({ queryKey: ["product", id, selectedHandle], queryFn: () => api.products.get(id, selectedHandle ?? ""), enabled: Boolean(selectedHandle) });
@@ -140,7 +141,6 @@ export function ProductsPage() {
       if (result.runId !== activeRunId) return;
       setActiveRunId(null); setSyncMessage(""); setFeedback(result.status === "ok" ? "每日同步已完成。" : result.summary);
       void queryClient.invalidateQueries({ queryKey: ["products", id] });
-      void queryClient.invalidateQueries({ queryKey: ["project", id] });
     });
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
   }, [activeRunId, id, queryClient]);

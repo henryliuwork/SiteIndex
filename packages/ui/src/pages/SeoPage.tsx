@@ -9,6 +9,7 @@ import type {
   SeoPage as SeoRecord, SeoPageFilters, SeoRule, Severity,
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, ProjectHeader, SearchInput, Segmented } from "../components";
 
 type SeoView = "issues" | "pages" | "links";
@@ -143,7 +144,7 @@ export function SeoPage() {
   const [progressText, setProgressText] = useState("");
   const [progressPct, setProgressPct] = useState<number | null>(null);
   const [feedback, setFeedback] = useState("");
-  const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["seo", "summary", id], queryFn: () => api.seo.summary(id) });
   const issuesQuery = useQuery({ queryKey: ["seo", "issues", id, issueQuery], queryFn: () => api.seo.listIssues(id, issueQuery) });
   const pagesQuery = useQuery({ queryKey: ["seo", "pages", id, pageQuery], queryFn: () => api.seo.listPages(id, pageQuery) });

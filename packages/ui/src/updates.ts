@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiErrorMessage } from "./api";
+import { projectQueryKeys } from "./project-queries";
 
 export type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "unsupported";
 
@@ -97,7 +98,7 @@ export function useUpdatesController() {
 }
 
 export function useAnyRunningJob(enabled: boolean) {
-  const projectsQuery = useQuery({ queryKey: ["projects"], queryFn: () => api.projects.list() });
+  const projectsQuery = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const runningQuery = useQuery({
     queryKey: ["updates", "running-jobs", projectsQuery.data?.map(({ id }) => id)],
     enabled: enabled && projectsQuery.isSuccess,

@@ -5,6 +5,7 @@ import { ExternalLink, FileDown } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, Segmented } from "../components";
 
 type ContentView = "blog" | "keywords";
@@ -68,7 +69,7 @@ export function ContentPage() {
   const [keywordQuery, setKeywordQuery] = useState(initialKeywordQuery);
   const [selected, setSelected] = useState<BlogPost | Keyword | null>(null);
   const [feedback, setFeedback] = useState("");
-  const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["content", "summary", id], queryFn: () => api.content.summary(id) });
   const blogListQuery = useQuery({ queryKey: ["content", "blogs", id, blogQuery], queryFn: () => api.content.listBlog(id, blogQuery) });
   const keywordListQuery = useQuery({ queryKey: ["content", "keywords", id, keywordQuery], queryFn: () => api.content.listKeywords(id, keywordQuery) });
