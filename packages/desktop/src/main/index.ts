@@ -1,11 +1,12 @@
 import { app, dialog, utilityProcess, type Tray } from "electron";
 import electronUpdater from "electron-updater";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCoreService, type CoreService } from "@siteindex/core";
-import { EXIT, type AppSettings, type ProjectId } from "@siteindex/shared";
+import { EXIT, SCHEDULABLE_JOBS, type AppSettings, type ProjectId } from "@siteindex/shared";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
-import { createJobManager } from "./job-manager.js";
+import { createJobManager, type JobManagerOptions } from "./job-manager.js";
+import { completeInitSchedule } from "./init-schedule.js";
 import { showJobNotification } from "./notifications.js";
 import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
 import { parseRunJobArguments } from "./run-job-args.js";
@@ -73,6 +74,7 @@ if (!hasSingleInstanceLock) {
       resourcesDirectory: process.resourcesPath,
       isPackaged: app.isPackaged,
     });
+    let finalizeInit: NonNullable<JobManagerOptions["finalizeInit"]> = async (result) => result;
     const jobs = createJobManager({
       workerPath: join(mainDirectory, "job-worker.js"),
       getSettings: () => settingsStore.get(),
@@ -84,6 +86,7 @@ if (!hasSingleInstanceLock) {
       fork: (modulePath) => utilityProcess.fork(modulePath),
       emitProgress: (progress) => windowManager.sendToWindows("si:jobs.onProgress", progress),
       emitFinished: (result) => windowManager.sendToWindows("si:jobs.onFinished", result),
+      finalizeInit: (result, projectPath, emitProgress) => finalizeInit(result, projectPath, emitProgress),
       notify: showJobNotification,
     });
     app.on("before-quit", (event) => {
@@ -187,6 +190,24 @@ if (!hasSingleInstanceLock) {
       await applyScheduleMode(status);
       return status;
     };
+    finalizeInit = (result, projectPath, emitProgress) =>
+      completeInitSchedule(result, projectPath, {
+        emitProgress,
+        register: async () => {
+          const projectId = basename(projectPath) as ProjectId;
+          const config = (await coreService.schedule.get(projectId)).config;
+          const enabled = SCHEDULABLE_JOBS.some((job) => config[job].enabled);
+          if (!enabled) return { enabled: false, registered: false, mode: "system", authorizationRequired: false };
+          const runtime = await reconcileSchedules(true);
+          const state = await scheduler.getState(projectId, projectPath, config);
+          return {
+            enabled: true,
+            registered: state.registered,
+            mode: runtime.mode,
+            authorizationRequired: runtime.authorization_required,
+          };
+        },
+      });
     await reconcileSchedules(false);
     if (launchHidden && scheduleMode === "system") {
       app.quit();
@@ -218,13 +239,13 @@ if (!hasSingleInstanceLock) {
       uiState: createUiStateStore(async () => (await settingsStore.get()).cache_dir),
       core: coreService,
       projects: catalog,
-      settingsChanged: async (updated) => {
+      settingsChanged: async (updated, reconcile = true) => {
         const projectsChanged =
           currentSettings.projects_root !== updated.projects_root ||
           currentSettings.extra_projects.length !== updated.extra_projects.length ||
           currentSettings.extra_projects.some((entry, index) => entry !== updated.extra_projects[index]);
         currentSettings = updated;
-        if (projectsChanged) await reconcileSchedules(true);
+        if (projectsChanged && reconcile) await reconcileSchedules(true);
       },
       jobs,
       scheduler,
