@@ -198,6 +198,52 @@ describe("createCoreService initial namespaces", () => {
     expect((await api.projects.get("fixture")).config.locale).toBe("en-GB");
   }, 30_000);
 
+  it("writes a feed and refreshes the project summary without a missing-feed warning", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const first = await api.projects.get("fixture");
+    const feedUrl = "https://shop.example.test/products.xml";
+
+    const updated = await api.projects.updateConfig("fixture", {
+      crawl: { ...first.config.crawl, feed_url: [feedUrl] },
+    });
+    expect(updated.crawl.feed_url).toEqual([feedUrl]);
+    expect((await api.projects.get("fixture")).summary.warnings).toEqual([]);
+    expect((await api.overview.get("fixture")).attention.some((item) => item.text === "尚未填写 GMC feed")).toBe(false);
+
+    const written = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as {
+      crawl: { feed_url?: string | string[]; feed_urls?: unknown };
+    };
+    expect(written.crawl.feed_url).toEqual([feedUrl]);
+    expect(written.crawl.feed_urls).toBeUndefined();
+  }, 30_000);
+
+  it("reads the legacy plural feed field and writes it back canonically", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const sitePath = path.join(projectPath, PATHS.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as {
+      crawl: Record<string, unknown>;
+    };
+    const feedUrl = "https://shop.example.test/legacy-products.xml";
+    delete site.crawl.feed_url;
+    site.crawl.feed_urls = [feedUrl];
+    await writeFile(sitePath, JSON.stringify(site, null, 2) + "\n", "utf8");
+    api.invalidate(projectPath);
+
+    const loaded = await api.projects.get("fixture");
+    expect(loaded.config.crawl.feed_url).toEqual([feedUrl]);
+    expect(loaded.summary.warnings).toEqual([]);
+
+    await api.projects.updateConfig("fixture", { brand: loaded.config.brand });
+    const written = JSON.parse(await readFile(sitePath, "utf8")) as {
+      crawl: { feed_url?: string | string[]; feed_urls?: unknown };
+    };
+    expect(written.crawl.feed_url).toEqual([feedUrl]);
+    expect(written.crawl.feed_urls).toBeUndefined();
+    expect((await api.projects.get("fixture")).summary.warnings).toEqual([]);
+  }, 30_000);
+
   it("serves the remaining core query namespaces and runs a dry-run views Job", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);
