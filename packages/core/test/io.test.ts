@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -28,6 +29,49 @@ describe("core io", () => {
     await Promise.all(values.map((value) => atomicWrite(file, value)));
     expect(await readFile(file, "utf8")).toBe(values.at(-1));
     expect(await readdir(path.dirname(file))).toEqual(["output.txt"]);
+  }, 20_000);
+
+  it("uses independent exclusive temp files for concurrent process writes", async () => {
+    const root = await tempDir();
+    const file = path.join(root, "nested", "output.txt");
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const values = Array.from({ length: 8 }, (_, i) => String(i) + ":" + String(i).repeat(32_768));
+    const childSource = [
+      'import { atomicWrite } from "./src/io/atomic-write.ts";',
+      'const target = process.env.SITEINDEX_ATOMIC_WRITE_TARGET;',
+      'const value = process.env.SITEINDEX_ATOMIC_WRITE_VALUE;',
+      'if (!target || value === undefined) throw new Error("Missing test parameters");',
+      'await atomicWrite(target, value);',
+    ].join("\n");
+
+    const writeInChild = (value: string) => new Promise<void>((resolve, reject) => {
+      const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", childSource], {
+        cwd: coreDirectory,
+        env: {
+          ...process.env,
+          SITEINDEX_ATOMIC_WRITE_TARGET: file,
+          SITEINDEX_ATOMIC_WRITE_VALUE: value,
+        },
+        stdio: "ignore",
+      });
+      child.once("error", reject);
+      child.once("close", (code, signal) => {
+        if (code === 0) resolve();
+        else reject(new Error("atomicWrite child exited with code " + String(code) + " and signal " + String(signal)));
+      });
+    });
+
+    await Promise.all(values.map(writeInChild));
+    expect(values).toContain(await readFile(file, "utf8"));
+    expect(await readdir(path.dirname(file))).toEqual(["output.txt"]);
+  }, 30_000);
+
+  it("cleans up its temporary file when a write fails", async () => {
+    const root = await tempDir();
+    const file = path.join(root, "nested", "output.txt");
+
+    await expect(atomicWrite(file, null as unknown as string)).rejects.toBeDefined();
+    expect(await readdir(path.dirname(file))).toEqual([]);
   }, 20_000);
 
   it("writes JSONL in schema field and primary-key order, with a final LF", async () => {

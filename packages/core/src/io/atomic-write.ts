@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { open, mkdir, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 
@@ -7,10 +8,12 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 async function writeAtomic(target: string, data: string | Uint8Array): Promise<void> {
   const dir = path.dirname(target);
   await mkdir(dir, { recursive: true });
-  const temp = path.join(dir, `.${path.basename(target)}.tmp-${process.pid}`);
+  const temp = path.join(dir, `.${path.basename(target)}.tmp-${process.pid}-${randomUUID()}`);
   let handle;
+  let created = false;
   try {
-    handle = await open(temp, "w");
+    handle = await open(temp, "wx");
+    created = true;
     await handle.writeFile(data);
     await handle.sync();
     await handle.close();
@@ -28,7 +31,7 @@ async function writeAtomic(target: string, data: string | Uint8Array): Promise<v
     }
   } catch (error) {
     if (handle) await handle.close().catch(() => undefined);
-    await unlink(temp).catch(() => undefined);
+    if (created) await unlink(temp).catch(() => undefined);
     throw error;
   }
 }
