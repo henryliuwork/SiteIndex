@@ -1,3 +1,5 @@
+import type { SiteIndexApi, Unsubscribe } from "@siteindex/shared";
+
 export const IPC_PREFIX = "si:";
 
 export const API_INVOKE_METHODS = [
@@ -94,6 +96,44 @@ export const API_EVENT_METHODS = [
 ] as const;
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
+
+type ApiMethodPaths<Api> = {
+  [Namespace in keyof Api]-?: {
+    [Method in keyof NonNullable<Api[Namespace]>]-?: NonNullable<NonNullable<Api[Namespace]>[Method]> extends (
+      ...args: infer _Args
+    ) => unknown
+      ? `${Extract<Namespace, string>}.${Extract<Method, string>}`
+      : never;
+  }[keyof NonNullable<Api[Namespace]>];
+}[keyof Api];
+
+type ApiEventPaths<Api> = {
+  [Namespace in keyof Api]-?: {
+    [Method in keyof NonNullable<Api[Namespace]>]-?: NonNullable<NonNullable<Api[Namespace]>[Method]> extends (
+      ...args: infer _Args
+    ) => infer Result
+      ? Result extends Unsubscribe
+        ? `${Extract<Namespace, string>}.${Extract<Method, string>}`
+        : never
+      : never;
+  }[keyof NonNullable<Api[Namespace]>];
+}[keyof Api];
+
+type Assert<T extends true> = T;
+type IsExact<Left, Right> = [Left] extends [Right] ? ([Right] extends [Left] ? true : false) : false;
+
+// SiteIndexApi 中的每个可调用方法必须且只能归入 invoke 或事件契约清单。
+type ApiInvokeMethodsAreComplete = Assert<
+  IsExact<Exclude<ApiMethodPaths<SiteIndexApi>, ApiEventPaths<SiteIndexApi>>, ApiInvokeMethod>
+>;
+type ApiEventMethodsAreComplete = Assert<IsExact<ApiEventPaths<SiteIndexApi>, ApiEventMethod>>;
+type ApiMethodListsAreDisjoint = Assert<Extract<ApiInvokeMethod, ApiEventMethod> extends never ? true : false>;
+export type ApiContractCoverage =
+  | ApiInvokeMethodsAreComplete
+  | ApiEventMethodsAreComplete
+  | ApiMethodListsAreDisjoint;
+
+export type ApiEventMethod = (typeof API_EVENT_METHODS)[number];
 
 export function ipcChannel(method: string): string {
   return `${IPC_PREFIX}${method}`;
