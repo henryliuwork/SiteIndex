@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CircleAlert, FolderOpen, LoaderCircle, Plus, X } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import type { DetectResult, FeedInspectResult, JobProgress, JobResult, Platform } from "@siteindex/shared";
+import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobProgress, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { Button, Chip } from "../components";
 import { useWizardDraft } from "./wizard-state";
@@ -14,16 +14,56 @@ const steps = [
   { path: "/new/done", label: "完成" },
 ];
 const platformNames: Record<Platform, string> = { magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台" };
-const progressSteps = [
-  ["创建项目数据结构", "README.md、index/、_agent/skills/"],
-  ["写入配置", "index/site.json"],
-  ["生成 README", "README.md、AGENTS.md、CLAUDE.md"],
-  ["分发 skill", "_agent/skills/"],
-  ["首次每日同步", "Feed → SKU 与库存基线"],
-  ["首次每周同步", "Sitemap → 页面与 SEO 数据"],
-  ["生成视图并校验", "检查生成的数据文件"],
-  ["注册定时任务", "为项目启用计划任务"],
-];
+const progressSteps: Record<InitStepKey, { name: string; detail: string }> = {
+  folders: { name: "创建数据目录", detail: "index/ 网站数据索引" },
+  config: { name: "写入配置", detail: "index/site.json" },
+  readme: { name: "生成 README", detail: "README.md、AGENTS.md、CLAUDE.md" },
+  skills: { name: "分发 skill", detail: "_agent/skills/" },
+  daily: { name: "首次每日同步", detail: "Feed → SKU 与库存基线" },
+  weekly: { name: "首次每周同步", detail: "Sitemap → 页面与 SEO 数据" },
+  views: { name: "生成视图并校验", detail: "检查生成的数据文件" },
+  schedule: { name: "注册定时任务", detail: "为项目启用计划任务" },
+};
+
+type StepStatus = "waiting" | "running" | "ok" | "failed";
+type StepState = { status: StepStatus; reason?: string };
+type StepStates = Partial<Record<InitStepKey, StepState>>;
+type RetryableStep = Extract<InitStepKey, "daily" | "weekly" | "views" | "schedule">;
+
+function initStepKey(value?: string): InitStepKey | undefined {
+  return INIT_STEPS.find((key) => key === value);
+}
+
+function isRetryableStep(key: InitStepKey): key is RetryableStep {
+  return key === "daily" || key === "weekly" || key === "views" || key === "schedule";
+}
+
+function applyInitProgress(current: StepStates, event: JobProgress): StepStates {
+  const key = initStepKey(event.step);
+  if (!key) return current;
+  const next = { ...current };
+  for (const previous of INIT_STEPS) {
+    if (previous === key) break;
+    if (next[previous]?.status === "running") next[previous] = { status: "ok" };
+  }
+  next[key] = event.level === "error" ? { status: "failed", reason: event.message } : { status: "running" };
+  return next;
+}
+
+function applyInitResult(current: StepStates, result: JobResult): StepStates {
+  const next = { ...current };
+  for (const step of result.steps ?? []) {
+    const key = initStepKey(step.key);
+    if (!key) continue;
+    next[key] = step.status === "ok" ? { status: "ok" }
+      : step.status === "failed" ? { status: "failed", reason: step.message || result.errors?.join("；") || result.summary }
+        : { status: "waiting", reason: step.message || "本次已跳过" };
+  }
+  for (const key of INIT_STEPS) {
+    if (next[key]?.status === "running") next[key] = result.status === "ok" ? { status: "ok" } : { status: "waiting", reason: "未返回步骤结果" };
+  }
+  return next;
+}
 
 function slugFor(url: string): string {
   try { return new URL(/^https?:\/\//i.test(url) ? url : "https://" + url).hostname.replace(/^www\./, "").split(".")[0]?.toLowerCase().replace(/[^a-z0-9-]+/g, "-") ?? "new-project"; }
@@ -102,9 +142,12 @@ export function NewProjectWizardPage() {
   const [canRetryFeed, setCanRetryFeed] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [uspDraft, setUspDraft] = useState("");
-  const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [stepStates, setStepStates] = useState<StepStates>({});
+  const [retryStates, setRetryStates] = useState<StepStates>({});
   const [finished, setFinished] = useState<JobResult | null>(null);
+  const retryRunIds = useRef(new Map<string, RetryableStep>());
   const active = Math.max(0, steps.findIndex((step) => pathname.endsWith(step.path)));
+  const createdRunId = draft.created?.runId;
 
   useEffect(() => { setError(""); setFeedError(""); setCanRetryFeed(false); setFeedback(""); }, [pathname]);
   useEffect(() => {
@@ -117,11 +160,28 @@ export function NewProjectWizardPage() {
     if (active === 0 && draft.created) reset();
   }, [active, draft.created, reset]);
   useEffect(() => {
-    if (active !== 3 || !draft.created) return;
-    const onProgress = api.jobs.onProgress((event) => { if (event.runId === draft.created?.runId) setProgress(event); });
-    const onFinished = api.jobs.onFinished((result) => { if (result.runId === draft.created?.runId) setFinished(result); });
+    setStepStates({}); setRetryStates({}); setFinished(null); retryRunIds.current.clear();
+  }, [createdRunId]);
+  useEffect(() => {
+    if (active !== 3 || !createdRunId) return;
+    const onProgress = api.jobs.onProgress((event) => {
+      if (event.runId === createdRunId && event.job === "init") setStepStates((current) => applyInitProgress(current, event));
+    });
+    const onFinished = api.jobs.onFinished((result) => {
+      if (result.runId === createdRunId) {
+        setFinished(result);
+        setStepStates((current) => applyInitResult(current, result));
+      }
+      const retryKey = retryRunIds.current.get(result.runId);
+      if (retryKey) {
+        retryRunIds.current.delete(result.runId);
+        setRetryStates((current) => ({ ...current, [retryKey]: result.status === "ok"
+          ? { status: "ok" }
+          : { status: "failed", reason: result.errors?.join("；") || result.summary || "重试失败" } }));
+      }
+    });
     return () => { onProgress(); onFinished(); };
-  }, [active, draft.created]);
+  }, [active, createdRunId]);
 
   const detectSite = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(""); setFeedback("");
@@ -193,11 +253,38 @@ export function NewProjectWizardPage() {
     finally { setBusy(false); }
   };
 
+  const retryStep = async (key: RetryableStep) => {
+    if (!draft.created) return;
+    const projectId = draft.created.id;
+    setRetryStates((current) => ({ ...current, [key]: { status: "running" } }));
+    try {
+      if (key === "schedule") {
+        const schedule = await api.schedule.get(projectId);
+        await api.schedule.save(projectId, schedule.config);
+        setRetryStates((current) => ({ ...current, schedule: { status: "ok" } }));
+      } else {
+        const project = await api.projects.get(projectId);
+        const run = await api.jobs.run({ projectPath: project.summary.path, job: key });
+        retryRunIds.current.set(run.runId, key);
+      }
+    } catch (cause) {
+      setRetryStates((current) => ({ ...current, [key]: { status: "failed", reason: apiErrorMessage(cause, "重试失败，请稍后再试。") } }));
+    }
+  };
+
   if (active === 3 && !draft.created) return <Navigate to="/new/brand" replace />;
   const detection = draft.detect;
   const previewPath = pathJoin(draft.projectsRoot || settings.data?.projects_root || "D:/SiteIndex/projects", draft.folderName || "[文件夹名]");
-  const pct = finished?.status === "ok" ? 100 : progress?.pct ?? 0;
-  const completedCount = Math.floor(pct / 100 * progressSteps.length);
+  const stateFor = (key: InitStepKey): StepState => retryStates[key] ?? stepStates[key] ?? { status: "waiting" };
+  const completedCount = INIT_STEPS.filter((key) => stateFor(key).status === "ok").length;
+  const allSucceeded = Boolean(finished) && completedCount === INIT_STEPS.length;
+  const hasFinishedFailures = Boolean(finished) && !allSucceeded;
+  const progressWidth = Math.round(completedCount / INIT_STEPS.length * 100);
+  const stepReasons = INIT_STEPS.map((key) => stateFor(key).reason).filter(Boolean);
+  const remainingErrors = finished?.errors?.filter((message) => !stepReasons.includes(message)) ?? [];
+  const globalFailure = hasFinishedFailures && (remainingErrors.length > 0 || stepReasons.length === 0)
+    ? remainingErrors.join("；") || finished?.summary || "未收到全部步骤的完成结果。"
+    : "";
 
   return <div className="si-page si-wizard-page">
     <div className="si-wizard-breadcrumb"><Link to="/">项目中心</Link><span>/</span><strong>新建项目</strong></div>
@@ -272,14 +359,19 @@ export function NewProjectWizardPage() {
     {active === 3 && draft.created && <div className="si-wizard-done-layout">
       {draft.created.path ? null : <p className="si-form-error" role="alert">项目已创建，但暂时无法读取实际路径。请重试读取，路径读取成功后即可打开文件夹。</p>}
       <section className="si-wizard-card si-wizard-progress-card">
-        <header className="si-wizard-progress-heading"><h1>{finished?.status === "failed" ? "创建过程中遇到问题" : finished ? "项目创建完成" : "正在创建 " + draft.brand.name}</h1><Chip tone={finished?.status === "failed" ? "danger" : finished ? "ok" : "info"}>{finished?.status === "failed" ? "需处理" : finished ? "完成" : completedCount + " / " + progressSteps.length}</Chip></header>
-        <div className="si-wizard-progress-track"><span style={{ width: pct + "%" }} /></div>
-        <div className="si-wizard-progress-list">{progressSteps.map(([name, detail], index) => {
-          const done = index < completedCount || finished?.status === "ok";
-          const running = !finished && index === completedCount;
-          return <div key={name} className="si-wizard-progress-row">{done ? <Check size={17} /> : running ? <LoaderCircle size={17} className="si-spin" /> : <span className="si-wizard-progress-dot" />}<span><strong>{name}</strong><small>{detail}</small></span><time>{done ? "完成" : running ? progress?.step ?? "进行中" : "等待中"}</time></div>;
+        <header className="si-wizard-progress-heading"><h1>{allSucceeded ? "项目创建完成" : hasFinishedFailures ? "创建完成，但有步骤失败" : "正在创建 " + draft.brand.name}</h1><Chip tone={hasFinishedFailures ? "danger" : allSucceeded ? "ok" : "info"}>{hasFinishedFailures ? "需处理" : allSucceeded ? "完成" : completedCount + " / " + INIT_STEPS.length}</Chip></header>
+        <div className="si-wizard-progress-track"><span style={{ width: progressWidth + "%" }} /></div>
+        <div className="si-wizard-progress-list">{INIT_STEPS.map((key) => {
+          const { name, detail } = progressSteps[key];
+          const step = stateFor(key);
+          const label = step.status === "ok" ? "完成" : step.status === "running" ? "进行中" : step.status === "failed" ? "失败" : "等待中";
+          return <div key={key} className={`si-wizard-progress-row is-${step.status}`}>
+            {step.status === "ok" ? <Check size={17} aria-hidden="true" /> : step.status === "running" ? <LoaderCircle size={17} className="si-spin" aria-hidden="true" /> : step.status === "failed" ? <CircleAlert size={17} aria-hidden="true" /> : <span className="si-wizard-progress-dot" />}
+            <span><strong>{name}</strong><small>{detail}</small>{step.reason && <small className="si-wizard-step-reason" role={step.status === "failed" ? "alert" : undefined}>{step.reason}</small>}</span>
+            <div className="si-wizard-step-actions"><span aria-live="polite">{label}</span>{step.status === "failed" && isRetryableStep(key) && <Button size="small" aria-label={`${name}重试`} onClick={() => void retryStep(key)}>重试</Button>}</div>
+          </div>;
         })}</div>
-        {finished?.status === "failed" && <p className="si-form-error" role="alert">{finished.errors?.join("；") || finished.summary}</p>}
+        {globalFailure && <p className="si-form-error" role="alert">{globalFailure}</p>}
         <div className="si-wizard-done-actions"><Link className="si-button si-button-primary" to={"/p/" + draft.created.id}>打开项目</Link>{!draft.created.path && <Button disabled={busy} onClick={() => void retryReadCreatedPath()}>{busy ? "正在读取…" : "重试读取路径"}</Button>}<Button disabled={!draft.created.path} onClick={() => void openFolder()} icon={<FolderOpen size={15} />}>打开文件夹</Button><Link className="si-button" to="/skills">把 skill 安装到 Agent 平台</Link></div>
       </section>
       <section className="si-wizard-card si-wizard-tree-card"><h2>已生成的项目文件</h2><code className="si-mono">{draft.created.path ?? "实际项目路径暂不可用"}</code><pre>{draft.folderName + "/\n├── README.md        项目说明\n├── AGENTS.md / CLAUDE.md\n├── _agent/skills/   内置 skill\n└── index/           网站数据（SiteIndex 维护）\n    ├── site.json\n    ├── catalog/  inventory/  seo/\n    ├── content/  ledgers/  design/\n    └── views/ reports/ logs/"}</pre></section>

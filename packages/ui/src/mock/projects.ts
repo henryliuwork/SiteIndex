@@ -76,7 +76,7 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
       const id = input.folder_name || "new-project";
       const path = joinPath(input.projects_root, input.folder_name);
       createdPaths.set(id, path);
-      return { id, runId: beginRun(path, "daily") };
+      return { id, runId: beginRun(path, "init") };
     }),
     addExisting: () => reply(projectSummaries.riverstone),
     updateConfig: (id, patch) => reply(() => {

@@ -1,4 +1,4 @@
-import { googleSiteSearchUrl, PATHS } from "@siteindex/shared";
+import { googleSiteSearchUrl, INIT_STEPS, PATHS } from "@siteindex/shared";
 import type {
   AppSettings, BlogPost, BrowserStatus, CategoriesConfig, Category, CategoryPreview, CliStatus,
   DesignTokens, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
@@ -659,6 +659,36 @@ export function beginRun(projectPath: string, job: JobName): string {
   runCounter += 1;
   const runId = "mock-run-" + String(runCounter).padStart(3, "0");
   const active = { projectPath, job, pct: 0, timer: 0 as unknown as ReturnType<typeof setInterval> };
+  if (job === "init") {
+    const dailyFails = mockMode === "init-daily-fail";
+    const dailyError = "首次每日同步失败：模拟 Feed 请求超时。";
+    let index = 0;
+    active.timer = setInterval(() => {
+      const key = INIT_STEPS[index];
+      if (!key) return;
+      index += 1;
+      active.pct = Math.round(index / INIT_STEPS.length * 100);
+      progressListeners.forEach((callback) => callback({
+        runId, projectPath, job, pct: active.pct, step: key,
+        level: dailyFails && key === "daily" ? "error" : "info",
+        message: dailyFails && key === "daily" ? dailyError : `正在执行 ${key} 步骤`,
+        at: new Date().toISOString(),
+      }));
+      if (index < INIT_STEPS.length) return;
+      clearInterval(active.timer);
+      activeRuns.delete(runId);
+      const result: JobResult = {
+        runId, job, status: dailyFails ? "partial" : "ok", exitCode: dailyFails ? 1 : 0,
+        summary: dailyFails ? "创建完成，但有步骤失败" : "项目创建完成",
+        errors: dailyFails ? [dailyError] : [],
+        steps: INIT_STEPS.map((step) => ({ key: step, status: dailyFails && step === "daily" ? "failed" as const : "ok" as const, ...(dailyFails && step === "daily" ? { message: dailyError } : {}) })),
+      };
+      runHistory.unshift({ run_id: runId, job, trigger: "manual", device_name: "本地开发工作站", started_at: "2026-10-22T10:00:00+08:00", finished_at: "2026-10-22T10:00:03+08:00", status: result.status, errors: result.errors });
+      finishedListeners.forEach((callback) => callback(clone(result)));
+    }, 300);
+    activeRuns.set(runId, active);
+    return runId;
+  }
   active.timer = setInterval(() => {
     active.pct = Math.min(100, active.pct + 25);
     progressListeners.forEach((callback) => callback({
