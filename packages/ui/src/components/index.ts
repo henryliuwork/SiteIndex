@@ -1,3 +1,4 @@
+export * from "./ApiErrorNotice";
 export * from "./primitives";
 export * from "./shell";
 export * from "./table";

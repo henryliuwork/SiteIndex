@@ -9,7 +9,7 @@ import {
 } from "recharts";
 import type { InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, StatusCells, Tabs, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, StatusCells, Tabs, stockTone } from "../components";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",
@@ -251,8 +251,8 @@ export function InventoryPage() {
     </div>
   );
 
-  if (projectQuery.isLoading || summaryQuery.isLoading) return <div className="si-page-loading" role="status">正在加载库存数据…</div>;
-  if (projectQuery.isError || summaryQuery.isError || !summary || !project) return <div className="si-page-error" role="alert">库存页面加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void summaryQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目库存页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return (
     <div className="si-page si-inventory-page">
@@ -269,15 +269,17 @@ export function InventoryPage() {
         </div>
       </header>
       <Tabs value="inventory" options={tabOptions} ariaLabel="项目页面" onChange={(tab) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab))} />
-      <div className="si-inventory-kpis">{kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-      <div className="si-inventory-overview-grid">
-        <TrendChart summary={summary} />
-        <CategoryPanel summary={summary} project={project} />
-      </div>
+      {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <>
+        <div className="si-inventory-kpis">{kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+        <div className="si-inventory-overview-grid">
+          <TrendChart summary={summary} />
+          <CategoryPanel summary={summary} project={project} />
+        </div>
+      </>}
       {syncMessage && <div className="si-sync-progress" role="status"><span>{syncMessage}</span>{activeRunId && <span>同步任务运行中</span>}</div>}
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
       {skuQuery.isFetching && <p className="si-inventory-query-state" role="status">正在更新 SKU 列表…</p>}
-      {skuQuery.isError && <div className="si-inventory-query-state is-error" role="alert"><span>SKU 列表更新失败{skuQuery.data ? "，当前保留上次结果。" : "。"}</span><Button size="small" onClick={() => void skuQuery.refetch()}>重试</Button></div>}
+      {skuQuery.isError && <ApiErrorNotice className="si-inventory-query-state is-error" label={`SKU 列表更新失败${skuQuery.data ? "，当前保留上次结果。" : "。"}`} error={skuQuery.error} onRetry={() => void skuQuery.refetch()} />}
       <DataTable
         tableId="inventory.skus"
         scopeId={id}

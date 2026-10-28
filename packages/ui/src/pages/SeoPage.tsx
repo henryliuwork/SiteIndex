@@ -9,7 +9,7 @@ import type {
   SeoPage as SeoRecord, SeoPageFilters, SeoRule, Severity,
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, SearchInput, Segmented, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, SearchInput, Segmented, Tabs } from "../components";
 
 type SeoView = "issues" | "pages" | "links";
 const projectTabs = [
@@ -252,8 +252,8 @@ export function SeoPage() {
   };
   const showPageDetail = (url: string, link: SeoLink | null = null) => { setSelectedUrl(url); setSelectedLink(link); };
 
-  if (projectQuery.isLoading || summaryQuery.isLoading || activeListQuery.isLoading) return <div className="si-page-loading" role="status">正在加载 SEO 数据…</div>;
-  if (projectQuery.isError || summaryQuery.isError || activeListQuery.isError || !project || !summary) return <div className="si-page-error" role="alert">SEO 数据加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void summaryQuery.refetch(); void activeListQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 SEO 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-seo-page">
     <header className="si-project-page-heading">
@@ -264,7 +264,7 @@ export function SeoPage() {
       </div>
     </header>
     <Tabs value="seo" options={projectTabs} ariaLabel="项目页面" onChange={onTabChange} />
-    <div className="si-seo-kpis">{summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+    <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className={`si-seo-controls${view === "issues" ? " is-issues" : ""}`}>
       <Segmented value={view} options={views} onChange={setView} ariaLabel="SEO 视图" />
       {view === "issues" && <div className="si-seo-filter-group" aria-label="按严重级别筛选">{severityOptions.map((item) => <FilterPill key={item.value} currentValue={issueQuery.filters?.severity ?? "all"} value={item.value} onValueChange={setSeverity}>{item.label}</FilterPill>)}</div>}
@@ -276,17 +276,19 @@ export function SeoPage() {
     {progressText && <div className="si-seo-progress" role="status"><span>{progressText}</span>{progressPct != null && <strong>{progressPct}%</strong>}</div>}
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className={`si-seo-table-frame si-seo-table-${view}`}>
-      {view === "issues" && <DataTable tableId="seo.issues" rows={issueList?.rows ?? []} total={issueList?.total ?? 0} columns={issueColumnDefs} query={issueQuery} onQueryChange={setIssueQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url + ":" + row.rule} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。" />}
-      {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" />}
-      {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" />}
-      {view === "issues" && <div className="si-seo-length-legend"><span>长度：</span><LengthBadge length={50} kind="title" range={titleRange} /><span>最佳</span><LengthBadge length={25} kind="title" range={titleRange} /><span>可接受</span><LengthBadge length={10} kind="title" range={titleRange} /><span>需修改</span><span>· Title {titleRange[0]}–{titleRange[1]} · Description {descriptionRange[0]}–{descriptionRange[1]}</span></div>}
-      {view === "links" && <div className="si-seo-orphans"><strong><AlertTriangle size={14} />孤立页面</strong>{orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}</div>}
+      {activeListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "issues" ? "问题清单" : view === "pages" ? "页面列表" : "内链列表"}…</div> : activeListQuery.isError ? <ApiErrorNotice label={`${view === "issues" ? "SEO 问题清单" : view === "pages" ? "SEO 页面列表" : "SEO 内链列表"}加载失败。`} error={activeListQuery.error} onRetry={() => void activeListQuery.refetch()} /> : <>
+        {view === "issues" && <DataTable tableId="seo.issues" rows={issueList?.rows ?? []} total={issueList?.total ?? 0} columns={issueColumnDefs} query={issueQuery} onQueryChange={setIssueQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url + ":" + row.rule} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。" />}
+        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" />}
+        {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" />}
+        {view === "issues" && <div className="si-seo-length-legend"><span>长度：</span><LengthBadge length={50} kind="title" range={titleRange} /><span>最佳</span><LengthBadge length={25} kind="title" range={titleRange} /><span>可接受</span><LengthBadge length={10} kind="title" range={titleRange} /><span>需修改</span><span>· Title {titleRange[0]}–{titleRange[1]} · Description {descriptionRange[0]}–{descriptionRange[1]}</span></div>}
+      </>}
+      {view === "links" && <div className="si-seo-orphans"><strong><AlertTriangle size={14} />孤立页面</strong>{orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}</div>}
     </div>
-    <p className="si-seo-disclaimer">Google site: 检查结果仅供参考，以 Search Console 为准。收录数据最后检查：{summary.crawled_at?.slice(5, 10) ?? "未检查"}。</p>
+    <p className="si-seo-disclaimer">Google site: 检查结果仅供参考，以 Search Console 为准。收录数据最后检查：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}。</p>
     <DetailPanel open={Boolean(selectedUrl)} onClose={() => { setSelectedUrl(null); setSelectedLink(null); }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
       {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}
-      {detailQuery.isLoading ? <div className="si-page-loading" role="status">正在加载页面详情…</div> : detailQuery.data ? <SeoDetail
-        page={detailQuery.data} titleRange={summary.title_range} descriptionRange={summary.description_range}
+      {detailQuery.isLoading ? <div className="si-query-loading" role="status">正在加载页面详情…</div> : detailQuery.isError ? <ApiErrorNotice label="页面详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : detailQuery.data ? <SeoDetail
+        page={detailQuery.data} titleRange={titleRange} descriptionRange={descriptionRange}
         onOpen={() => void openPage(detailQuery.data!.url)} onCheckIndex={() => void checkSingleIndex(detailQuery.data!.url)}
       /> : <div className="si-empty-state">没有找到该页面的 SEO 数据。</div>}
     </DetailPanel>

@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Check, Copy, RefreshCw } from "lucide-react";
 import type { SkillInfo, SkillTargetStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip } from "../components";
+import { ApiErrorNotice, Button, Chip } from "../components";
 import "./skills/page.css";
 
 function statusLabel(status: SkillTargetStatus["status"]): string {
@@ -95,8 +95,8 @@ export function SkillsPage() {
   };
 
   if (skillsQuery.isLoading) return <div className="si-page-loading" role="status">正在加载 Skill…</div>;
-  if (skillsQuery.isError) return <div className="si-page-error" role="alert">Skill 列表加载失败。<button type="button" onClick={() => void skillsQuery.refetch()}>重试</button></div>;
-  if (!skillsQuery.data?.length) return <div className="si-page-loading"><strong>还没有可用的 Skill</strong><span>内置 Skill 将在软件更新后显示在这里。</span></div>;
+  if (skillsQuery.isError) return <ApiErrorNotice page label="Skill 列表加载失败。" error={skillsQuery.error} onRetry={() => void skillsQuery.refetch()} />;
+  if (!skillsQuery.data?.length) return <div className="si-page-loading"><strong>当前没有可用的 Skill</strong><span>检查软件 Skill 清单或安装目录后重试。</span><button type="button" onClick={() => void skillsQuery.refetch()}>重新检查</button></div>;
 
   const detail = detailQuery.data;
   const installText = detail
@@ -128,7 +128,7 @@ export function SkillsPage() {
 
         <div className="si-skills-detail-column">
           {detailQuery.isLoading && <div className="si-page-loading" role="status">正在加载 Skill 详情…</div>}
-          {detailQuery.isError && <div className="si-page-error" role="alert">Skill 详情加载失败。<button type="button" onClick={() => void detailQuery.refetch()}>重试</button></div>}
+          {detailQuery.isError && <ApiErrorNotice label="Skill 详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} />}
           {detail && activeSkill && <section className="si-skill-detail si-skills-card" aria-label={`${detail.info.name} 详情`}>
             <header className="si-skill-detail-heading">
               <div>
@@ -150,7 +150,7 @@ export function SkillsPage() {
           <section className="si-skills-targets si-skills-card" aria-label="Skill 安装位置">
             <header><strong>安装位置 · {detail?.info.name ?? activeName}</strong></header>
             {targetsQuery.isLoading && <p className="si-skills-inline-state" role="status">正在检查安装位置…</p>}
-            {targetsQuery.isError && <p className="si-skills-inline-error" role="alert">安装位置加载失败。<button type="button" onClick={() => void targetsQuery.refetch()}>重试</button></p>}
+            {targetsQuery.isError && <ApiErrorNotice className="si-skills-inline-error" label="安装位置加载失败。" error={targetsQuery.error} onRetry={() => void targetsQuery.refetch()} />}
             {targetsQuery.data?.length ? <div className="si-skill-target-list">
               {targetsQuery.data.map((target) => {
                 const isProject = target.target_id.startsWith("project:");

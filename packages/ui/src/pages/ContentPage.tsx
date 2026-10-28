@@ -5,7 +5,7 @@ import { ExternalLink, FileDown } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, Keyword, KeywordFilters, ListQuery, ProjectDetail } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Segmented, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, SearchInput, Segmented, Tabs } from "../components";
 
 type ContentView = "blog" | "keywords";
 type IssueFilter = BlogFilters["issue"] | "all";
@@ -120,8 +120,8 @@ export function ContentPage() {
   };
   const onTabChange = (tab: typeof projectTabs[number]["value"]) => navigate(tab === "settings" ? "/p/" + id + "/settings/config" : "/p/" + id + (tab === "overview" ? "" : "/" + tab));
 
-  if (projectQuery.isLoading || summaryQuery.isLoading || activeQuery.isLoading) return <div className="si-page-loading" role="status">正在加载内容数据…</div>;
-  if (projectQuery.isError || summaryQuery.isError || activeQuery.isError || !project || !summary) return <div className="si-page-error" role="alert">内容数据加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void summaryQuery.refetch(); void activeQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目内容加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-content-page">
     <header className="si-project-page-heading">
@@ -129,7 +129,7 @@ export function ContentPage() {
       <div className="si-page-actions"><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></div>
     </header>
     <Tabs value="content" options={projectTabs} ariaLabel="项目页面" onChange={onTabChange} />
-    <div className="si-content-kpis">{summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+    <div className="si-content-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载内容概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="内容概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className="si-content-toolbar si-content-toolbar-table">
       <Segmented value={view} options={viewOptions} onChange={setView} ariaLabel="内容视图" />
       <SearchInput value={(view === "blog" ? blogQuery : keywordQuery).search ?? ""} onSearch={setSearch} label="搜索内容" placeholder={view === "keywords" ? "搜索关键词或主题簇" : "搜索标题或关键词"} />
@@ -140,8 +140,10 @@ export function ContentPage() {
     </div>
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-content-table-frame">
-      {view === "blog" && <DataTable tableId="content.blog" rows={blogs?.rows ?? []} total={blogs?.total ?? 0} columns={blogColumnDefs} query={blogQuery} onQueryChange={setBlogQuery} onRowClick={setSelected} getRowId={(row) => row.slug} maxHeight={520} showPagination emptyTitle="没有博客文章" emptyDescription="调整筛选条件或检查内容目录。" />}
-      {view === "keywords" && <DataTable tableId="content.keywords" rows={keywords?.rows ?? []} total={keywords?.total ?? 0} columns={keywordColumnDefs} query={keywordQuery} onQueryChange={setKeywordQuery} onRowClick={setSelected} getRowId={(row) => row.keyword} maxHeight={520} showPagination emptyTitle="没有关键词" emptyDescription="在关键词台账中添加目标关键词。" />}
+      {activeQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "blog" ? "博客文章" : "关键词映射"}…</div> : activeQuery.isError ? <ApiErrorNotice label={`${view === "blog" ? "博客文章" : "关键词映射"}加载失败。`} error={activeQuery.error} onRetry={() => void activeQuery.refetch()} /> : <>
+        {view === "blog" && <DataTable tableId="content.blog" rows={blogs?.rows ?? []} total={blogs?.total ?? 0} columns={blogColumnDefs} query={blogQuery} onQueryChange={setBlogQuery} onRowClick={setSelected} getRowId={(row) => row.slug} maxHeight={520} showPagination emptyTitle="没有博客文章" emptyDescription="调整筛选条件或检查内容目录。" />}
+        {view === "keywords" && <DataTable tableId="content.keywords" rows={keywords?.rows ?? []} total={keywords?.total ?? 0} columns={keywordColumnDefs} query={keywordQuery} onQueryChange={setKeywordQuery} onRowClick={setSelected} getRowId={(row) => row.keyword} maxHeight={520} showPagination emptyTitle="没有关键词" emptyDescription="在关键词台账中添加目标关键词。" />}
+      </>}
     </div>
     <p className="si-content-data-note">数据：<code>index/content/blog_index.jsonl</code> · <code>index/content/keywords.jsonl</code> · 灰色列为 GSC / 关键词工具预留位</p>
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected && "title" in selected ? selected.title : selected && "keyword" in selected ? selected.keyword : "内容详情"}>

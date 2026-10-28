@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { DesignTokens } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, Tabs } from "../components";
 
 const tabOptions = [
   { value: "overview", label: "概览" }, { value: "inventory", label: "库存" },
@@ -223,15 +223,15 @@ export function DesignPage() {
     catch (cause) { setFeedback(apiErrorMessage(cause, "打开截图失败。")); }
   };
 
-  if (projectQuery.isLoading || designQuery.isLoading) return <div className="si-page-loading" role="status">正在加载设计规范…</div>;
-  if (projectQuery.isError || designQuery.isError || !project) return <div className="si-page-error" role="alert">设计规范加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void designQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目设计规范页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return (
     <div className="si-page si-design-page">
       <ProjectHeading project={project} tokens={tokens} onOpenTokens={() => void openTokens()} onCopyInstruction={() => void copyInstruction()} onRefresh={() => void refresh()} onNavigate={(value) => navigate(projectTabsHref(id, value))} refreshing={Boolean(activeRunId)} />
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
       {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
-      <div className="si-design-layout">
+      {designQuery.isLoading ? <div className="si-page-loading" role="status">正在加载设计规范…</div> : designQuery.isError ? <ApiErrorNotice label="设计规范加载失败。" error={designQuery.error} onRetry={() => void designQuery.refetch()} /> : <div className="si-design-layout">
         <div className="si-design-main-column">
           <ColorCard tokens={tokens} onCopy={(value) => void copyColor(value)} copied={copiedColor} />
           <TypographyCard tokens={tokens} />
@@ -241,7 +241,7 @@ export function DesignPage() {
           <SpacingCard tokens={tokens} />
           <ScreenshotsCard screenshots={screenshots} onOpen={(path) => void openScreenshot(path)} />
         </aside>
-      </div>
+      </div>}
     </div>
   );
 }

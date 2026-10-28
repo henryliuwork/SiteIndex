@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip } from "../components";
+import { ApiErrorNotice, Button, Chip } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
 import "./app-settings/page.css";
 
@@ -157,7 +157,7 @@ export function AppSettingsPage() {
     if (draft) void saveSettings({ skill_platforms: draft.skill_platforms });
   };
 
-  if (settingsQuery.isError) return <div className="si-page-error" role="alert">软件设置加载失败。<button type="button" onClick={() => void settingsQuery.refetch()}>重试</button></div>;
+  if (settingsQuery.isError) return <ApiErrorNotice page label="软件设置加载失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />;
   if (settingsQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载软件设置…</div>;
 
   const settingsPath = platformQuery.data === "darwin" ? "~/Library/Application Support/SiteIndex/settings.json" : "%APPDATA%\\SiteIndex\\settings.json";
@@ -169,6 +169,7 @@ export function AppSettingsPage() {
   return (
     <div className="si-page si-app-settings-page">
       <header className="si-app-settings-heading"><h1>设置</h1><code>{settingsPath} · 只对本机生效</code></header>
+      {platformQuery.isError && <ApiErrorNotice label="系统平台信息读取失败。" error={platformQuery.error} onRetry={() => void platformQuery.refetch()} />}
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
 
       <section className="si-app-settings-card">
@@ -194,7 +195,7 @@ export function AppSettingsPage() {
         <h2>浏览器（设计规范提取）</h2>
         <div className="si-app-setting-row si-browser-detected">
           <strong>检测到的浏览器</strong>
-          {browserQuery.isLoading ? <span className="si-setting-hint" role="status">正在检测…</span> : browserQuery.isError ? <span className="si-setting-error" role="alert">检测失败</span> : <span><code>{browserStatus?.name ?? "未检测到浏览器"}</code>{browserStatus?.path && <code className="si-setting-hint si-setting-path">{browserStatus.path}</code>}</span>}
+          {browserQuery.isLoading ? <span className="si-setting-hint" role="status">正在检测…</span> : browserQuery.isError ? <ApiErrorNotice className="si-setting-error" label="浏览器检测失败" error={browserQuery.error} onRetry={() => void browserQuery.refetch()} /> : <span><code>{browserStatus?.name ?? "未检测到浏览器"}</code>{browserStatus?.path && <code className="si-setting-hint si-setting-path">{browserStatus.path}</code>}</span>}
           <Chip tone={browserStatus?.available ? "ok" : "warn"}>{browserStatus?.available ? "可用" : "不可用"}</Chip>
         </div>
         <div className="si-app-setting-row">
@@ -213,7 +214,7 @@ export function AppSettingsPage() {
         </div>
         <div className="si-app-setting-row">
           <strong>状态</strong>
-          {cliQuery.isLoading ? <span className="si-setting-hint" role="status">正在检查…</span> : cliQuery.isError ? <span className="si-setting-error" role="alert">状态读取失败</span> : <code className="si-setting-hint si-setting-mono">{cliStatus?.path ?? "尚未安装"}</code>}
+          {cliQuery.isLoading ? <span className="si-setting-hint" role="status">正在检查…</span> : cliQuery.isError ? <ApiErrorNotice className="si-setting-error" label="命令行状态读取失败" error={cliQuery.error} onRetry={() => void cliQuery.refetch()} /> : <code className="si-setting-hint si-setting-mono">{cliStatus?.path ?? "尚未安装"}</code>}
           <Chip tone={cliStatus?.installed ? "ok" : "warn"}>{cliStatus?.installed ? "已安装" : "未安装"}</Chip>
         </div>
       </section>
@@ -233,7 +234,7 @@ export function AppSettingsPage() {
         <div className="si-app-setting-row">
           <label htmlFor="si-dingtalk-webhook">钉钉机器人 Webhook</label>
           <input id="si-dingtalk-webhook" className="si-setting-input si-setting-mono" type="password" autoComplete="new-password" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…" value={draft.notify.dingtalk_webhook ?? ""} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, dingtalk_webhook: event.target.value || null } })} onBlur={() => void saveSettings({ notify: draft.notify })} />
-          <Button disabled={!api.settings.sendTestNotification || sendingTestNotification} title={!api.settings.sendTestNotification ? "当前版本暂不支持通知测试" : undefined} onClick={() => void sendTestNotification()}>{sendingTestNotification ? "发送中…" : "发送测试"}</Button>
+          {api.settings.sendTestNotification && <Button disabled={sendingTestNotification} onClick={() => void sendTestNotification()}>{sendingTestNotification ? "发送中…" : "发送测试"}</Button>}
         </div>
       </section>
 
@@ -257,20 +258,25 @@ export function AppSettingsPage() {
         <h2>关于</h2>
         <div className="si-app-setting-row">
           <strong>版本</strong>
-          <span>SiteIndex {displayVersion(versionQuery.data)} · 数据规范 1.1 · 内置 Skill {skillsQuery.data?.length ?? "…"} 个</span>
+          <span>SiteIndex {versionQuery.isError ? "版本读取失败" : displayVersion(versionQuery.data)} · 数据规范 1.1 · 内置 Skill {skillsQuery.isError ? "清单读取失败" : skillsQuery.data?.length ?? "…"} 个</span>
           <Button disabled={versionQuery.isLoading || updates.query.isFetching || updates.busy === "check"} onClick={() => void checkUpdates()}>{updates.query.isFetching || updates.busy === "check" ? "检查中…" : "检查更新"}</Button>
         </div>
+        {versionQuery.isError && <ApiErrorNotice label="版本信息读取失败。" error={versionQuery.error} onRetry={() => void versionQuery.refetch()} />}
+        {skillsQuery.isError && <ApiErrorNotice label="Skill 清单读取失败。" error={skillsQuery.error} onRetry={() => void skillsQuery.refetch()} />}
         {updates.updates && <div className="si-app-setting-row si-update-settings-row">
           <strong>更新状态</strong>
           <div className="si-update-settings-detail" aria-live="polite">
-            <span>{updateStatusLabel(updates.status, updates.query.isFetching || updates.busy === "check")}</span>
+            {updates.status?.state === "error" ? <ApiErrorNotice className="si-update-error" label="检查更新失败。" error={updates.query.error} detail={updates.status.error} /> : <span>{updateStatusLabel(updates.status, updates.query.isFetching || updates.busy === "check")}</span>}
             {updates.status?.state === "ready" && runningJobsQuery.data && <small>将在当前任务完成后安装</small>}
+            {updates.status?.state === "ready" && runningJobsQuery.isLoading && <small role="status">正在读取当前任务状态…</small>}
+            {updates.status?.state === "ready" && runningJobsQuery.projectsQuery.isError && <ApiErrorNotice label="项目列表读取失败，暂时无法确认当前是否有任务运行。" error={runningJobsQuery.projectsQuery.error} onRetry={() => void runningJobsQuery.projectsQuery.refetch()} />}
+            {updates.status?.state === "ready" && runningJobsQuery.isError && <ApiErrorNotice label="当前任务状态读取失败。" error={runningJobsQuery.error} onRetry={() => void runningJobsQuery.refetch()} />}
             {updates.status?.state === "downloading" && <div className="si-update-progress" role="progressbar" aria-label="更新下载进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, updates.status.percent ?? 0))}><span style={{ width: `${Math.max(0, Math.min(100, updates.status.percent ?? 0))}%` }} /></div>}
             {updates.status?.notes?.trim() && <details className="si-update-notes"><summary>查看更新说明</summary><pre>{updates.status.notes}</pre></details>}
           </div>
           <div className="si-update-settings-actions">
             {updates.status?.state === "available" && <Button size="small" disabled={Boolean(updates.busy)} onClick={() => void updates.run("download")}>{updates.busy === "download" ? "开始下载…" : "下载更新"}</Button>}
-            {updates.status?.state === "ready" && <Button size="small" variant="primary" disabled={Boolean(updates.busy)} onClick={() => void updates.run("install")}>{updates.busy === "install" ? "正在重启…" : "重启并安装"}</Button>}
+            {updates.status?.state === "ready" && <Button size="small" variant="primary" disabled={Boolean(updates.busy) || runningJobsQuery.isLoading || runningJobsQuery.projectsQuery.isError || runningJobsQuery.isError} onClick={() => void updates.run("install")}>{updates.busy === "install" ? "正在重启…" : "重启并安装"}</Button>}
             {manualUpdateUrl && <Button size="small" onClick={() => void openManualUpdate(manualUpdateUrl)}>前往下载</Button>}
             {updates.status?.state === "error" && <Button size="small" disabled={Boolean(updates.busy)} onClick={() => void updates.run("check")}>{updates.busy === "check" ? "检查中…" : "重试"}</Button>}
           </div>
@@ -278,7 +284,7 @@ export function AppSettingsPage() {
         <div className="si-app-setting-row">
           <strong>日志</strong>
           <code className="si-setting-hint si-setting-mono">{logsPath}</code>
-          <Button disabled={!api.settings.openLogs || openingLogs} title={!api.settings.openLogs ? "当前版本暂不支持打开日志目录" : undefined} onClick={() => void openLogs()}>{openingLogs ? "打开中…" : "打开"}</Button>
+          {api.settings.openLogs && <Button disabled={openingLogs} onClick={() => void openLogs()}>{openingLogs ? "打开中…" : "打开"}</Button>}
         </div>
       </section>
       {saving && <span className="si-sr-only" role="status">正在保存软件设置…</span>}

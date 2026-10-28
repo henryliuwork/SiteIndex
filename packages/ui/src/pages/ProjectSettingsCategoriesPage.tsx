@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, DataTable, DetailPanel, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Tabs } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./project-settings-categories/page.css";
 
@@ -180,9 +180,16 @@ export function ProjectSettingsCategoriesPage() {
     setSelectedIndex(null);
   };
 
-  if (projectQuery.isError || configQuery.isError) return <div className="si-page-error" role="alert">分类设置加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void configQuery.refetch(); }}>重试</button></div>;
-  if (projectQuery.isLoading || configQuery.isLoading || !projectQuery.data || !draft) return <div className="si-page-loading" role="status">正在加载分类设置…</div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !projectQuery.data) return <ApiErrorNotice page label="项目分类设置页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data.summary;
+  if (configQuery.isError) return <div className="si-page si-category-page">
+    <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain}</code></div></header>
+    <Tabs value="settings" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(tabHref(id, value))} />
+    <SettingsNav id={id} />
+    <ApiErrorNotice label="分类配置加载失败。" error={configQuery.error} onRetry={() => void configQuery.refetch()} />
+  </div>;
+  if (configQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载分类设置…</div>;
 
   return <div className="si-page si-category-page">
     <header className="si-project-page-heading"><div className="si-project-title-line"><h1>{project.name}</h1><code>{project.domain} · {modeDescription(draft.mode)}</code></div><div className="si-page-actions"><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></div></header>

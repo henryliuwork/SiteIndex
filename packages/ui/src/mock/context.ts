@@ -4,7 +4,7 @@ import type {
   DesignTokens, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
   JobProgress, JobResult, Keyword, ListQuery, OverviewData, PageResult, ProductFilters,
   ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, ProjectUiState, RepairAction, RunLog,
-  RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage, SkillInfo, SkillTargetStatus,
+  RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage, SiteIndexError, SkillInfo, SkillTargetStatus,
   SeoPageFilters, SiteConfig, SiteIndexApi, SkuImageFilters, SkuImageRow, SkuRecord,
   SkuStockFilters, SkuStockView, StockStatus, ValidationReport,
 } from "@siteindex/shared";
@@ -37,7 +37,14 @@ export const performanceMode = mockMode === "perf";
 export const loadingMode = mockMode === "loading";
 export const slowMode = mockMode === "slow";
 export const projectCenterErrorMode = mockMode === "project-center-error";
-export const projectCenterError = (): Error => new Error("模拟项目中心数据错误：请移除地址中的 ?mock=project-center-error 后重试。");
+export const mockApiError: SiteIndexError = {
+  code: "UNKNOWN",
+  message: "模拟接口错误：请移除地址中的 ?mock=error 后重试。",
+};
+export const projectCenterError = (): SiteIndexError => ({
+  code: "PROJECT_UNREADABLE",
+  message: "模拟项目中心数据错误：请移除地址中的 ?mock=project-center-error 后重试。",
+});
 export const dateBefore = (days: number): string => {
   const date = new Date(FIXED_TODAY + "T12:00:00Z");
   date.setUTCDate(date.getUTCDate() - days);
@@ -82,7 +89,7 @@ export const delay = async (): Promise<void> => {
   if (loadingMode) await new Promise((resolve) => setTimeout(resolve, 10000));
   else if (slowMode) await new Promise((resolve) => setTimeout(resolve, 300));
   else if (!performanceMode) await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
-  if (errorMode) throw new Error("模拟接口错误：请移除地址中的 ?mock=error 后重试。");
+  if (errorMode) throw mockApiError;
 };
 export const reply = async <T,>(value: T | (() => T)): Promise<T> => {
   await delay();

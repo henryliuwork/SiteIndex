@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { FileCheck, FileKind, FileStatus, ListQuery, RepairAction, ValidationReport } from "@siteindex/shared";
 import type { ColumnDef } from "@tanstack/react-table";
 import { api, apiErrorMessage } from "../api";
-import { Button, Chip, ConfirmDialog, DataTable, DetailPanel, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Tabs } from "../components";
 import "./project-settings-files/page.css";
 
 const projectTabs = [
@@ -175,8 +175,8 @@ export function ProjectSettingsFilesPage() {
     } },
   ];
 
-  if (projectQuery.isLoading || reportQuery.isLoading) return <div className="si-page-loading" role="status">正在读取本地文件校验报告…</div>;
-  if (projectQuery.isError || reportQuery.isError || !projectQuery.data) return <div className="si-page-error" role="alert">本地文件加载失败。<button type="button" onClick={() => { void projectQuery.refetch(); void reportQuery.refetch(); }}>重试</button></div>;
+  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !projectQuery.data) return <ApiErrorNotice page label="项目本地文件页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data.summary;
   const summary = report?.summary ?? { total: 0, ok: 0, error: 0, missing: 0, conflict_copy: 0 };
 
@@ -185,9 +185,11 @@ export function ProjectSettingsFilesPage() {
     <Tabs value="settings" options={projectTabs} ariaLabel="项目页面" onChange={(value) => navigate(tabHref(id, value))} />
     <SettingsNav id={id} />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
-    <section className="si-files-summary" aria-label="文件校验统计"><div><span>文件</span><strong>{summary.total}</strong></div><div><span>正常</span><strong className="is-ok">{summary.ok}</strong></div><div><span>错误</span><strong className="is-error">{summary.error}</strong></div><div><span>缺失</span><strong className="is-warn">{summary.missing}</strong></div><div><span>冲突副本</span><strong className="is-warn">{summary.conflict_copy}</strong></div><small>{report ? `上次全部校验：${formatCheckedAt(report.checked_at, report.trigger)}` : "尚无校验记录"}</small></section>
-    <section className="si-files-table-card"><DataTable<FileTableRow> tableId="settings.files" scopeId={id} rows={rows} total={rows.length} columns={columns} query={tableQuery} onQueryChange={setTableQuery} onRowClick={(row) => { if (row.rowType === "file") setSelected(row.file); }} getRowId={(row) => row.rowId} maxHeight={610} rowHeight={52} showPagination={false} emptyTitle="还没有本地文件记录" emptyDescription="点击「一键校验全部」读取项目中的文件与数据状态。" /></section>
-    <p className="si-files-note">“重新生成”会执行对应的数据任务，只重建该文件；台账（agent / 用户写的数据）无法从网站重新生成，可从归档恢复或自动修复（排序、格式）。定时任务会执行同样的全部检查。</p>
+    {reportQuery.isLoading ? <div className="si-query-loading" role="status">正在读取本地文件校验报告…</div> : reportQuery.isError ? <ApiErrorNotice label="本地文件校验报告加载失败。" error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : <>
+      <section className="si-files-summary" aria-label="文件校验统计"><div><span>文件</span><strong>{summary.total}</strong></div><div><span>正常</span><strong className="is-ok">{summary.ok}</strong></div><div><span>错误</span><strong className="is-error">{summary.error}</strong></div><div><span>缺失</span><strong className="is-warn">{summary.missing}</strong></div><div><span>冲突副本</span><strong className="is-warn">{summary.conflict_copy}</strong></div><small>{report ? `上次全部校验：${formatCheckedAt(report.checked_at, report.trigger)}` : "尚无校验记录"}</small></section>
+      <section className="si-files-table-card"><DataTable<FileTableRow> tableId="settings.files" scopeId={id} rows={rows} total={rows.length} columns={columns} query={tableQuery} onQueryChange={setTableQuery} onRowClick={(row) => { if (row.rowType === "file") setSelected(row.file); }} getRowId={(row) => row.rowId} maxHeight={610} rowHeight={52} showPagination={false} emptyTitle="还没有本地文件记录" emptyDescription="点击「一键校验全部」读取项目中的文件与数据状态。" /></section>
+      <p className="si-files-note">“重新生成”会执行对应的数据任务，只重建该文件；台账（agent / 用户写的数据）无法从网站重新生成，可从归档恢复或自动修复（排序、格式）。定时任务会执行同样的全部检查。</p>
+    </>}
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.path ?? "文件详情"}>{selected && <dl className="si-detail-list"><div><dt>类型</dt><dd>{kindLabels[selected.kind]}</dd></div><div><dt>记录数</dt><dd>{selected.records == null ? "—" : selected.records.toLocaleString("zh-CN")}</dd></div><div><dt>大小</dt><dd>{formatSize(selected.size)}</dd></div><div><dt>最近修改</dt><dd>{formatModified(selected.modified_at)}</dd></div><div><dt>状态</dt><dd><Chip tone={statusTones[selected.status]}>{statusLabels[selected.status]}</Chip></dd></div>{selected.rule && <div><dt>校验规则</dt><dd>{selected.rule}</dd></div>}{selected.message && <div><dt>原因</dt><dd>{selected.message}</dd></div>}{selected.line != null && <div><dt>行号</dt><dd>{selected.line.toLocaleString("zh-CN")}</dd></div>}{selected.repair && <div><dt>可用操作</dt><dd>{repairLabel(selected.repair)}</dd></div>}</dl>}</DetailPanel>
     <ConfirmDialog open={Boolean(pendingRepair)} onOpenChange={(open) => { if (!open) setPendingRepair(null); }} title="删除冲突副本？" description={`「${pendingRepair?.path ?? ""}」将移入系统回收站，可以恢复。`} confirmLabel={repairingPath ? "处理中…" : "移入回收站"} onConfirm={() => pendingRepair?.repair ? runRepair(pendingRepair, pendingRepair.repair) : undefined} />
   </div>;
