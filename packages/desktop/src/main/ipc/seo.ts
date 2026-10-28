@@ -19,5 +19,9 @@ export function createSeoHandlers(context: IpcContext): IpcHandlerImplementation
     "seo.orphanPages": (id) => context.withProject(id, (projectId) => context.core.seo.orphanPages(projectId)),
     "seo.getPage": (...args) => context.withProject(args[0], (id) => context.core.seo.getPage(id, args[1] as string)),
     "seo.googleSiteUrl": (url) => context.core.seo.googleSiteUrl(url as string),
+    "seo.checkIndex": (id) =>
+      context.withProject(id, (projectId) =>
+        context.jobs.run({ projectPath: context.projects.resolveProject(projectId), job: "index-check" }),
+      ),
   };
 }

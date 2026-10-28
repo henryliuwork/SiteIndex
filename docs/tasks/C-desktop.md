@@ -43,7 +43,7 @@
 
 ### C5 接 core
 
-- [x] `createCoreService({ resolveProject, deviceId, cacheDir })` 接到 IPC；`projects.list` 扫描 projects_root 与 extra_projects（有 `index/site.json` 的文件夹）；接通 projects、overview、inventory、products、seo、content、edm、readme、files core 方法
+- [x] `createCoreService({ resolveProject, deviceId, cacheDir })` 接到 IPC；`projects.list` 扫描 projects_root 与 extra_projects（有 `index/site.json` 的文件夹）；接通 projects、overview、inventory、products、seo、content、edm、design、categories、readme、files core 方法；`seo.checkIndex` 通过 JobManager 在 utilityProcess 执行 `index-check`
 - [x] chokidar 监听各项目 `index/`、`README.md`（防抖 1 秒）→ `core.invalidate(path)` + `projects.onChanged`
 - [x] 导出 CSV：保存对话框 → 写文件 → 返回路径
 
