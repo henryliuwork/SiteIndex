@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import type { InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, StatusCells, stockTone } from "../components";
 
 const stockNames: Record<StockStatus, string> = {
@@ -190,7 +191,7 @@ export function InventoryPage() {
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
   }, [activeRunId, id, queryClient]);
 
-  const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["inventory-summary", id], queryFn: () => api.inventory.summary(id, 30) });
   const skuQuery = useQuery({ queryKey: ["inventory-skus", id, query], queryFn: () => api.inventory.listSkus(id, query), placeholderData: (previous) => previous });
   const columns = useMemo(inventoryColumns, []);

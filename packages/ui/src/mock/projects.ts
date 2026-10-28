@@ -83,7 +83,20 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
       const key = projectKey(id);
       const current = projectConfigs[key];
       projectConfigs[key] = { ...current, ...clone(patch) };
-      if (patch.domain) projectSummaries[key] = { ...projectSummaries[key], domain: patch.domain };
+      const summary = projectSummaries[key];
+      const feedUrl = projectConfigs[key].crawl.feed_url;
+      const hasFeed = (Array.isArray(feedUrl) ? feedUrl : [feedUrl]).some((url) => url.trim().length > 0);
+      const feedWarning = "尚未填写 GMC feed 地址，每日库存同步未启用。";
+      const hadFeedWarning = summary.warnings.some((warning) => /gmc feed/i.test(warning));
+      const warnings = summary.warnings.filter((warning) => !/gmc feed/i.test(warning));
+      const attention = hasFeed && hadFeedWarning ? Math.max(0, summary.attention - 1)
+        : !hasFeed && !hadFeedWarning ? summary.attention + 1 : summary.attention;
+      projectSummaries[key] = {
+        ...summary,
+        domain: patch.domain ?? summary.domain,
+        attention,
+        warnings: hasFeed ? warnings : [...warnings, feedWarning],
+      };
       notifyProjectChanged(id);
       return projectConfigs[key];
     }),

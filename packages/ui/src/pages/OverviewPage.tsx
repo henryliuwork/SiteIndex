@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, Fo
 import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, ProjectDetail, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, KpiCard, ProjectHeader } from "../components";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
@@ -31,7 +32,7 @@ export function OverviewPage() {
   const { id = "kingsyard" } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const overviewQuery = useQuery({ queryKey: ["overview", id], queryFn: () => api.overview.get(id) });
   const [feedback, setFeedback] = useState("");
   const [running, setRunning] = useState(false);
@@ -51,7 +52,6 @@ export function OverviewPage() {
       if (result.runId !== runId) return;
       setRunId(null); setRunning(false); setSyncMessage("");
       setFeedback(result.status === "ok" ? "每日同步已完成。" : result.summary);
-      void queryClient.invalidateQueries({ queryKey: ["project", id] });
       void queryClient.invalidateQueries({ queryKey: ["overview", id] });
     });
     return () => { unsubscribeProgress(); unsubscribeFinished(); };

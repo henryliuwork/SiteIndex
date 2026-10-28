@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
 const autoDescriptions: Record<string, string> = {
   "task-routing": "7 个任务 → _agent/skills/",
@@ -71,7 +72,7 @@ export function ReadmePage() {
   const [saving, setSaving] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState("");
-  const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const readmeQuery = useQuery({ queryKey: ["readme", id], queryFn: () => api.readme.get(id) });
   const project = projectQuery.data?.summary;
   const data = readmeQuery.data;

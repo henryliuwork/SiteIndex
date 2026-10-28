@@ -5,6 +5,7 @@ import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type { EdmCommandInput, Kpi, ListQuery, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
+import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, stockTone } from "../components";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
@@ -67,7 +68,7 @@ export function EdmPage() {
   const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 20, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
   const [feedback, setFeedback] = useState("");
-  const projectQuery = useQuery({ queryKey: ["project", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["edm", "summary", id], queryFn: () => api.edm.summary(id) });
   const listQuery = useQuery({ queryKey: ["edm", "images", id, query], queryFn: () => api.edm.listImages(id, query) });
   const project = projectQuery.data?.summary;

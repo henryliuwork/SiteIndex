@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import type { FeedInspectResult, SeoRule, SiteConfig } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
 import "./project-settings-config/page.css";
 
@@ -47,7 +48,7 @@ function asFeeds(value: SiteConfig["crawl"]["feed_url"]): string { return (Array
 export function ProjectSettingsConfigPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
-  const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const [draft, setDraft] = useState<SiteConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -88,7 +89,7 @@ export function ProjectSettingsConfigPage() {
       const saved = await api.projects.updateConfig(id, config);
       setDraft(saved);
       setOverrideText(JSON.stringify(saved.crawl.overrides ?? {}, null, 2));
-      await queryClient.invalidateQueries({ queryKey: ["projects", id] });
+      await invalidateProjectSummary(queryClient, id);
       setFeedback("已保存配置");
     } catch (error) {
       setFeedback("保存失败：" + (apiErrorMessage(error, "请稍后重试")));

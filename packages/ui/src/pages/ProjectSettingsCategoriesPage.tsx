@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
+import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./project-settings-categories/page.css";
@@ -43,7 +44,7 @@ function categorySlug(url: string): string {
 export function ProjectSettingsCategoriesPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
-  const projectQuery = useQuery({ queryKey: ["projects", id], queryFn: () => api.projects.get(id) });
+  const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const configQuery = useQuery({ queryKey: ["categories", id], queryFn: () => api.categories.get(id) });
   const [draft, setDraft] = useState<CategoriesConfig | null>(null);
   const [preview, setPreview] = useState<CategoryPreview | null>(null);
@@ -128,6 +129,7 @@ export function ProjectSettingsCategoriesPage() {
         queryClient.invalidateQueries({ queryKey: ["categories", id] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["products", id] }),
+        invalidateProjectSummary(queryClient, id),
       ]);
       setFeedback({ message: "已保存并重新归类", type: "status" });
     } catch (error) {
