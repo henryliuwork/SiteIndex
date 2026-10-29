@@ -159,6 +159,7 @@ export function DataTable<T, F = Record<string, unknown>>({
                       tabIndex={onRowClick ? 0 : undefined}
                       onClick={(event) => {
                         if ((event.target as HTMLElement).closest("button,a,input")) return;
+                        event.currentTarget.focus();
                         setSelectedRowId(row.id);
                         onRowClick?.(row.original);
                       }}

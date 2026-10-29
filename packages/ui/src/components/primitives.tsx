@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import * as Checkbox from "@radix-ui/react-checkbox";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
@@ -72,9 +72,62 @@ export function SubTabs<T extends string>(props: ChoiceControlProps<T>) {
 }
 
 export function Tabs<T extends string>({ value, options, onChange, ariaLabel = "页面标签" }: ChoiceControlProps<T>) {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    const enabledOptions = options.flatMap((option, index) => option.disabled ? [] : [{ option, index }]);
+    if (enabledOptions.length === 0) return;
+
+    const currentEnabledIndex = enabledOptions.findIndex(({ index }) => index === currentIndex);
+    let targetIndex: number;
+    switch (event.key) {
+      case "ArrowRight":
+        targetIndex = (currentEnabledIndex + 1 + enabledOptions.length) % enabledOptions.length;
+        break;
+      case "ArrowLeft":
+        targetIndex = (currentEnabledIndex - 1 + enabledOptions.length) % enabledOptions.length;
+        break;
+      case "Home":
+        targetIndex = 0;
+        break;
+      case "End":
+        targetIndex = enabledOptions.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    const target = enabledOptions[targetIndex];
+    if (!target) return;
+    const nextValue = target.option.value;
+    onChange(nextValue);
+    const focusSelectedTab = (attempt = 0) => {
+      const tablist = Array.from(document.querySelectorAll<HTMLElement>('[role="tablist"]'))
+        .find((element) => element.getAttribute("aria-label") === ariaLabel);
+      const nextTab = Array.from(tablist?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])
+        .find((element) => element.dataset.tabValue === nextValue && element.getAttribute("aria-selected") === "true");
+      if (nextTab) {
+        nextTab.focus();
+      } else if (attempt < 30) {
+        window.requestAnimationFrame(() => focusSelectedTab(attempt + 1));
+      }
+    };
+    window.requestAnimationFrame(() => focusSelectedTab());
+  };
+
   return (
     <div className="si-tabs" role="tablist" aria-label={ariaLabel}>
-      {options.map((option) => <button key={option.value} type="button" role="tab" aria-selected={value === option.value} disabled={option.disabled} className={value === option.value ? "active" : ""} onClick={() => onChange(option.value)}>{option.label}</button>)}
+      {options.map((option, index) => <button
+        key={option.value}
+        type="button"
+        role="tab"
+        aria-selected={value === option.value}
+        tabIndex={value === option.value ? 0 : -1}
+        disabled={option.disabled}
+        data-tab-value={option.value}
+        className={value === option.value ? "active" : ""}
+        onClick={() => onChange(option.value)}
+        onKeyDown={(event) => handleKeyDown(event, index)}
+      >{option.label}</button>)}
     </div>
   );
 }
@@ -139,12 +192,24 @@ export function ConfirmDialog({
   tone?: "primary" | "danger";
   onConfirm: () => void | Promise<void>;
 }) {
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const confirm = async () => { await onConfirm(); onOpenChange(false); };
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="si-dialog-overlay" />
-        <DialogPrimitive.Content className="si-confirm-dialog">
+        <DialogPrimitive.Content
+          className="si-confirm-dialog"
+          onOpenAutoFocus={() => {
+            returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const target = returnFocusRef.current;
+            returnFocusRef.current = null;
+            if (target?.isConnected) target.focus();
+          }}
+        >
           <DialogPrimitive.Title className="si-dialog-title">{title}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="si-dialog-description">{description}</DialogPrimitive.Description>
           <div className="si-dialog-actions">
@@ -158,11 +223,24 @@ export function ConfirmDialog({
 }
 
 export function DetailPanel({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="si-detail-overlay" />
-        <DialogPrimitive.Content className="si-detail-panel" aria-describedby={undefined}>
+        <DialogPrimitive.Content
+          className="si-detail-panel"
+          aria-describedby={undefined}
+          onOpenAutoFocus={() => {
+            returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const target = returnFocusRef.current;
+            returnFocusRef.current = null;
+            if (target?.isConnected) target.focus();
+          }}
+        >
           <div className="si-detail-heading">
             <DialogPrimitive.Title className="si-dialog-title">{title}</DialogPrimitive.Title>
             <DialogPrimitive.Close asChild><button className="si-icon-button" type="button" aria-label="关闭详情"><X size={16} aria-hidden="true" /></button></DialogPrimitive.Close>
