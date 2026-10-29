@@ -15,7 +15,7 @@ font-size: 20px;
 }
 
 .si-overview-kpis .si-kpi-card:last-child .si-kpi-hint {
-width: fit-content; padding: 3px 9px; border-radius: 12px; background: var(--color-neutral-soft); color: var(--color-ink-2); font-size: 10px; font-weight: 600;
+width: fit-content; padding: 3px 9px; border-radius: 12px; background: var(--color-neutral-soft); color: var(--color-ink-2); font-size: 12px; font-weight: 600;
 }
 
 .si-overview-grid {
@@ -35,7 +35,7 @@ margin-bottom: 8px;
 }
 
 .si-overview-attention .si-panel-heading span {
-color: var(--color-muted); font-size: 11px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-overview-attention ul, .si-overview-changelog ul {
@@ -51,11 +51,11 @@ min-width: 21px; justify-content: center; padding: 0 4px;
 }
 
 .si-overview-attention-text {
-color: var(--color-ink-2); font-size: 11px; line-height: 1.45;
+color: var(--color-ink-2); font-size: 12px; line-height: 1.45;
 }
 
 .si-overview-attention li a {
-display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; color: var(--color-brand-strong); font-size: 11px; text-decoration: none; white-space: nowrap;
+display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; color: var(--color-brand-strong); font-size: 12px; text-decoration: none; white-space: nowrap;
 }
 
 .si-overview-attention li a:hover, .si-overview-readme .si-panel-heading a:hover {
@@ -67,7 +67,7 @@ margin-bottom: 8px;
 }
 
 .si-overview-readme .si-panel-heading a {
-color: var(--color-brand-strong); font-size: 11px; text-decoration: none;
+color: var(--color-brand-strong); font-size: 12px; text-decoration: none;
 }
 
 .si-overview-readme > p {
@@ -79,11 +79,11 @@ display: grid; gap: 4px; margin-top: 14px; padding: 12px 14px; border-radius: 7p
 }
 
 .si-overview-focus span {
-color: var(--color-muted); font-size: 10px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-overview-focus p {
-margin: 0; color: var(--color-ink-2); font-size: 11px; line-height: 1.5;
+margin: 0; color: var(--color-ink-2); font-size: 12px; line-height: 1.5;
 }
 
 .si-overview-actions {
@@ -99,11 +99,11 @@ width: 100%; min-height: 42px; justify-content: flex-start;
 }
 
 .si-overview-instruction {
-margin: -2px 0 1px; padding: 10px 11px; border-radius: 6px; background: var(--color-subtle); color: var(--color-muted); font-family: var(--font-mono); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere;
+margin: -2px 0 1px; padding: 10px 11px; border-radius: 6px; background: var(--color-subtle); color: var(--color-muted); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere;
 }
 
 .si-overview-feedback {
-margin: 1px 0 0; color: var(--color-brand-strong); font-size: 11px; line-height: 1.45;
+margin: 1px 0 0; color: var(--color-brand-strong); font-size: 12px; line-height: 1.45;
 }
 
 .si-overview-changelog ul {
@@ -111,11 +111,11 @@ margin-top: 9px;
 }
 
 .si-overview-changelog li {
-display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: 11px; line-height: 1.45;
+display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: 12px; line-height: 1.45;
 }
 
 .si-overview-changelog time {
-color: var(--color-muted); font-family: var(--font-mono); font-size: 10px;
+color: var(--color-muted); font-family: var(--font-mono); font-size: 12px;
 }
 
 @media (max-width: 1280px) {

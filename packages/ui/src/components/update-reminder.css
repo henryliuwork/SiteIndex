@@ -2,9 +2,9 @@
 .si-update-reminder + .si-runner { margin-top: 0; }
 .si-update-reminder-heading { display: grid; gap: 3px; min-width: 0; }
 .si-update-reminder-heading strong { color: var(--color-ink); font-size: 12px; font-weight: 650; }
-.si-update-reminder-heading small { color: var(--color-muted); font-size: 11px; }
-.si-update-reminder-heading > span, .si-update-deferred { color: var(--color-muted); font-size: 10px; line-height: 1.4; }
-.si-update-reminder .si-button { justify-self: start; min-height: 28px; padding: 0 9px; font-size: 11px; }
+.si-update-reminder-heading small { color: var(--color-muted); font-size: 12px; }
+.si-update-reminder-heading > span, .si-update-deferred { color: var(--color-muted); font-size: 12px; line-height: 1.4; }
+.si-update-reminder .si-button { justify-self: start; min-height: 28px; padding: 0 9px; font-size: 12px; }
 .si-update-reminder .si-button-primary { color: #fff; }
 .si-update-progress { height: 5px; overflow: hidden; border-radius: 999px; background: var(--color-neutral-soft); }
 .si-update-progress span { display: block; height: 100%; border-radius: inherit; background: var(--color-brand); transition: width 180ms ease; }

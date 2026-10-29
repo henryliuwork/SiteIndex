@@ -3,7 +3,7 @@ gap: 16px;
 }
 
 .si-products-filterbar {
-display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 7px; color: var(--color-muted); font-size: 11px;
+display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 7px; color: var(--color-muted); font-size: 12px;
 }
 
 .si-products-filterbar > span:not(.si-products-result-count) {
@@ -39,7 +39,7 @@ height: 52px;
 }
 
 .si-products-table-note {
-margin: 0; padding: 10px 14px; border-top: 1px solid var(--color-line-soft); color: var(--color-muted); font-size: 10px;
+margin: 0; padding: 10px 14px; border-top: 1px solid var(--color-line-soft); color: var(--color-muted); font-size: 12px;
 }
 
 .si-product-main-cell {
@@ -55,11 +55,11 @@ display: grid; min-width: 0; gap: 2px;
 }
 
 .si-product-main-copy > strong {
-overflow: hidden; color: var(--color-ink-2); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap;
+overflow: hidden; color: var(--color-ink-2); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .si-product-main-copy > span {
-display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--color-muted); font-size: 10px;
+display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--color-muted); font-size: 12px;
 }
 
 .si-product-main-copy code {
@@ -67,7 +67,7 @@ overflow: hidden; max-width: 150px; text-overflow: ellipsis; white-space: nowrap
 }
 
 .si-product-main-copy .si-chip {
-min-height: 16px; padding: 0 5px; font-size: 9px;
+min-height: 16px; padding: 0 5px; font-size: 12px;
 }
 
 .si-product-price {
@@ -75,11 +75,11 @@ display: inline-flex; flex-direction: column; gap: 2px; font-variant-numeric: ta
 }
 
 .si-product-price del {
-color: var(--color-muted); font-size: 10px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-product-price strong {
-color: var(--color-ink-2); font-size: 11px; font-weight: 500;
+color: var(--color-ink-2); font-size: 12px; font-weight: 500;
 }
 
 .si-product-tags-cell {
@@ -87,7 +87,7 @@ display: flex; min-width: 90px; flex-wrap: wrap; align-items: center; gap: 4px;
 }
 
 .si-product-tag {
-display: inline-flex; min-height: 19px; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 10px; background: #E7EFFA; color: #315D91; font-size: 10px; white-space: nowrap;
+display: inline-flex; min-height: 19px; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 10px; background: #E7EFFA; color: #315D91; font-size: 12px; white-space: nowrap;
 }
 
 .si-product-tag-warn {
@@ -107,7 +107,7 @@ width: 100%; height: 100%; object-fit: cover;
 }
 
 .si-product-detail-title {
-display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--color-muted); font-size: 11px;
+display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--color-muted); font-size: 12px;
 }
 
 .si-product-detail-title a {
@@ -119,7 +119,7 @@ margin: -7px 0 0; color: var(--color-ink); font-size: 16px; line-height: 1.4;
 }
 
 .si-product-detail-handle {
-margin: -8px 0 0; color: var(--color-muted); font-size: 11px;
+margin: -8px 0 0; color: var(--color-muted); font-size: 12px;
 }
 
 .si-product-detail-facts {
@@ -131,11 +131,11 @@ display: grid; min-width: 0; align-content: start; gap: 6px;
 }
 
 .si-product-detail-facts > div > span:first-child {
-color: var(--color-muted); font-size: 10px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-product-detail-facts strong {
-color: var(--color-ink); font-size: 11px;
+color: var(--color-ink); font-size: 12px;
 }
 
 .si-product-detail section {
@@ -147,7 +147,7 @@ margin: 0; color: var(--color-ink); font-size: 12px;
 }
 
 .si-product-detail section p {
-margin: 0; color: var(--color-ink-2); font-size: 11px; line-height: 1.5;
+margin: 0; color: var(--color-ink-2); font-size: 12px; line-height: 1.5;
 }
 
 .si-product-detail-tags {
@@ -167,15 +167,15 @@ display: flex; gap: 7px;
 }
 
 .si-product-tag-editor select, .si-product-tag-editor input, .si-tag-manager-create input {
-min-width: 0; height: 32px; flex: 1; padding: 0 9px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); font-size: 11px;
+min-width: 0; height: 32px; flex: 1; padding: 0 9px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); font-size: 12px;
 }
 
 .si-product-tag-editor .si-button {
-min-height: 32px; gap: 5px; padding: 0 8px; font-size: 10px;
+min-height: 32px; gap: 5px; padding: 0 8px; font-size: 12px;
 }
 
 .si-product-feedback {
-margin: 0; color: var(--color-brand-strong); font-size: 10px;
+margin: 0; color: var(--color-brand-strong); font-size: 12px;
 }
 
 .si-product-seo-detail {
@@ -187,7 +187,7 @@ display: grid; gap: 4px;
 }
 
 .si-product-seo-detail > div > span {
-color: var(--color-muted); font-size: 10px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-product-schema-list {
@@ -195,7 +195,7 @@ display: flex; flex-wrap: wrap; gap: 5px;
 }
 
 .si-product-schema-pill {
-padding: 3px 8px; border: 1px solid #C6DCCE; border-radius: 11px; background: var(--color-brand-soft); color: var(--color-brand-strong); font-family: var(--font-mono); font-size: 9px;
+padding: 3px 8px; border: 1px solid #C6DCCE; border-radius: 11px; background: var(--color-brand-soft); color: var(--color-brand-strong); font-family: var(--font-mono); font-size: 12px;
 }
 
 .si-product-sku-list {
@@ -203,7 +203,7 @@ display: grid; gap: 7px; margin: 0; padding: 0; list-style: none;
 }
 
 .si-product-sku-list li {
-display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--color-ink-2); font-size: 10px;
+display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--color-ink-2); font-size: 12px;
 }
 
 .si-product-sku-list code {
@@ -239,7 +239,7 @@ display: grid; grid-template-columns: minmax(0, 1fr) 80px 64px; align-items: cen
 }
 
 .si-tag-manager-list small {
-color: var(--color-muted); font-size: 10px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-tag-manager-list .si-button {

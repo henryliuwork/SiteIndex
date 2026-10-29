@@ -19,7 +19,7 @@ height: 100%;
 }
 
 .si-center-kpi-retry, .si-center-retry {
-border: 0; background: transparent; color: var(--color-brand); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+border: 0; background: transparent; color: var(--color-brand); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
 }
 
 .si-center-kpi-retry {
@@ -39,7 +39,7 @@ margin-left: 0;
 }
 
 .si-project-root-feedback {
-margin-top: 4px !important; color: var(--color-brand) !important; font-size: 11px !important;
+margin-top: 4px !important; color: var(--color-brand) !important; font-size: 12px !important;
 }
 
 .si-center-kpi-retry:focus-visible, .si-center-retry:focus-visible {
@@ -95,7 +95,7 @@ color: var(--color-brand);
 }
 
 .si-project-domain {
-overflow: hidden; color: var(--color-muted); font-family: var(--font-mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap;
+overflow: hidden; color: var(--color-muted); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .si-project-stats {
@@ -107,7 +107,7 @@ display: grid; min-width: 0; gap: 4px;
 }
 
 .si-project-stats span {
-color: var(--color-muted); font-size: 11px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-project-stats strong {
@@ -119,7 +119,7 @@ display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px;
 }
 
 .si-project-card-footer {
-display: flex; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--color-line-soft); color: var(--color-muted); font-size: 11px;
+display: flex; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--color-line-soft); color: var(--color-muted); font-size: 12px;
 }
 
 .si-project-card-footer span {
@@ -147,7 +147,7 @@ display: flex; gap: 8px;
 }
 
 .si-project-warning-actions a, .si-project-warning-actions button {
-min-height: 30px; padding: 0 10px; border: 1px solid rgba(117, 83, 35, .22); border-radius: 5px; background: rgba(255,255,255,.72); color: inherit; font-size: 11px; text-decoration: none;
+min-height: 30px; padding: 0 10px; border: 1px solid rgba(117, 83, 35, .22); border-radius: 5px; background: rgba(255,255,255,.72); color: inherit; font-size: 12px; text-decoration: none;
 }
 
 .si-project-warning-actions a {

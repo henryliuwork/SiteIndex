@@ -25,7 +25,7 @@
 .si-config-card-title p { margin: 0; color: var(--color-ink-2); font-size: 13px; font-weight: 600; }
 .si-config-callout { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-radius: 8px; background: #F2F8F5; }
 .si-config-callout > span { display: grid; gap: 4px; color: var(--color-ink); font-size: 12px; }
-.si-config-callout small { color: var(--color-muted); font-size: 11px; }
+.si-config-callout small { color: var(--color-muted); font-size: 12px; }
 .si-config-inline-link { flex: none; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 6px; background: #fff; color: var(--color-ink-2); font-size: 12px; text-decoration: none; }
 .si-config-check { display: flex; align-items: center; align-self: end; gap: 8px; min-height: 38px; color: var(--color-ink-2); font-size: 12px; }
 .si-config-check input { accent-color: var(--color-brand); }
@@ -34,7 +34,7 @@
 .si-config-range input { width: 100%; height: 38px; }
 .si-config-reserved-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
 .si-config-reserved { display: grid; gap: 7px; min-width: 0; padding: 12px; border: 1px dashed #CDD2D8; border-radius: 8px; color: var(--color-ink-2); font-size: 12px; }
-.si-config-reserved span { color: var(--color-muted); font-size: 11px; line-height: 1.5; }
+.si-config-reserved span { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .si-config-reserved .si-chip { justify-self: start; }
 .si-config-json-overlay { position: fixed; z-index: 60; inset: 0; background: rgba(20,24,29,.42); }
 .si-config-json-dialog { position: fixed; z-index: 61; top: 50%; left: 50%; display: grid; width: min(760px,calc(100vw - 32px)); max-height: min(820px,90vh); gap: 12px; overflow: auto; padding: 20px; transform: translate(-50%,-50%); border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); box-shadow: 0 12px 32px rgba(20,24,29,.2); }

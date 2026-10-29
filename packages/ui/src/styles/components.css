@@ -68,7 +68,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-chip-danger { background: var(--color-danger-soft); color: var(--color-danger); }
 .si-chip-info { background: var(--color-info-soft); color: var(--color-info); }
 .si-chip-neutral { background: var(--color-neutral-soft); color: var(--color-ink-2); }
-.si-length-badge { display: inline-grid; min-width: 30px; height: 21px; place-items: center; padding: 0 5px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+.si-length-badge { display: inline-grid; min-width: 30px; height: 21px; place-items: center; padding: 0 5px; border-radius: 4px; font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
 .si-length-good { background: var(--color-brand-soft); color: var(--color-brand-strong); }
 .si-length-fair { background: var(--color-warn-soft); color: var(--color-warn); }
 .si-length-poor { background: var(--color-danger-soft); color: var(--color-danger); }

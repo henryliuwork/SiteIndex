@@ -99,7 +99,7 @@ display:grid; gap:3px;
 }
 
 .si-wizard-site-summary dt,.si-wizard-path>span {
-color:var(--color-muted); font-size:11px;
+color:var(--color-muted); font-size: 12px;
 }
 
 .si-wizard-site-summary dd {
@@ -107,7 +107,7 @@ margin:0; color:var(--color-ink-2); font-size:13px;
 }
 
 .si-wizard-site-summary>p,.si-wizard-note {
-margin:0; padding:10px 12px; border-radius:6px; background:var(--color-subtle); color:var(--color-muted); font-size:11px; line-height:1.55;
+margin:0; padding:10px 12px; border-radius:6px; background:var(--color-subtle); color:var(--color-muted); font-size: 12px; line-height:1.55;
 }
 
 .si-wizard-source-main {
@@ -119,7 +119,7 @@ display:grid; min-width:0; gap:7px; color:var(--color-ink); font-size:12px; font
 }
 
 .si-wizard-field small {
-color:var(--color-muted); font-size:11px; font-weight:400;
+color:var(--color-muted); font-size: 12px; font-weight:400;
 }
 
 .si-wizard-feed-input,.si-wizard-directory {
@@ -151,7 +151,7 @@ margin:0;
 }
 
 .si-wizard-feed-actions>span {
-color:var(--color-muted); font-size:11px; font-weight:400;
+color:var(--color-muted); font-size: 12px; font-weight:400;
 }
 
 .si-wizard-stats {
@@ -167,7 +167,7 @@ background:#FFF8EC;
 }
 
 .si-wizard-stats span,.si-wizard-stats small {
-color:var(--color-muted); font-size:11px;
+color:var(--color-muted); font-size: 12px;
 }
 
 .si-wizard-stats strong {
@@ -191,7 +191,7 @@ margin:0; font-size:14px;
 }
 
 .si-wizard-coverage {
-display:grid; grid-template-columns:105px minmax(40px,1fr) 36px; align-items:center; gap:9px; font-size:11px;
+display:grid; grid-template-columns:105px minmax(40px,1fr) 36px; align-items:center; gap:9px; font-size: 12px;
 }
 
 .si-wizard-coverage>span,.si-wizard-progress-track {
@@ -207,7 +207,7 @@ color:var(--color-muted); text-align:right;
 }
 
 .si-wizard-category {
-display:flex; justify-content:space-between; align-items:center; font-size:11px;
+display:flex; justify-content:space-between; align-items:center; font-size: 12px;
 }
 
 .si-wizard-samples {
@@ -223,7 +223,7 @@ overflow:auto;
 }
 
 .si-wizard-table-scroll table {
-width:100%; border-collapse:collapse; font-size:11px;
+width:100%; border-collapse:collapse; font-size: 12px;
 }
 
 .si-wizard-table-scroll th {
@@ -330,13 +330,13 @@ color:var(--color-ink); font-size:12px;
 }
 
 .si-wizard-progress-row small,.si-wizard-step-actions>span {
-color:var(--color-muted); font-size:11px;
+color:var(--color-muted); font-size: 12px;
 }
 
 .si-wizard-progress-row .si-wizard-step-reason { color:var(--color-danger); }
 .si-wizard-step-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; }
 .si-wizard-progress-row.is-failed .si-wizard-step-actions>span { color:var(--color-danger); }
-.si-wizard-step-actions .si-button { min-height:28px; padding:0 9px; font-size:11px; }
+.si-wizard-step-actions .si-button { min-height:28px; padding:0 9px; font-size: 12px; }
 
 .si-wizard-progress-dot {
 width:8px; height:8px; justify-self:center; border:1px solid var(--color-faint); border-radius:50%;
@@ -361,11 +361,11 @@ display:grid; gap:10px;
 }
 
 .si-wizard-tree-card>code {
-color:var(--color-muted); font-size:11px; overflow-wrap:anywhere;
+color:var(--color-muted); font-size: 12px; overflow-wrap:anywhere;
 }
 
 .si-wizard-tree-card pre {
-margin:0; overflow:auto; color:var(--color-ink-2); font-size:11px; line-height:1.8; white-space:pre;
+margin:0; overflow:auto; color:var(--color-ink-2); font-size: 12px; line-height:1.8; white-space:pre;
 }
 
 @media (max-width:1050px) {
@@ -418,6 +418,6 @@ grid-column:auto;
 
 @media (max-width:680px) {
 .si-wizard-steps li,.si-wizard-steps a,.si-wizard-steps li>span {
-padding:0 10px; font-size:11px;
+padding:0 10px; font-size: 12px;
 }
 }

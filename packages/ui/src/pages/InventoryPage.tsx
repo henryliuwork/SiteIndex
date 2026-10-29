@@ -67,10 +67,10 @@ const TrendChart = memo(function TrendChart({ summary }: { summary: InventorySum
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points} margin={{ top: 10, right: 12, bottom: 4, left: 0 }}>
             <CartesianGrid stroke="#E8EBEF" vertical={false} />
-            <XAxis dataKey="day" tick={{ fill: "#68737E", fontSize: 11 }} tickLine={false} axisLine={false} interval={Math.max(0, Math.floor(points.length / 5) - 1)} />
-            <YAxis domain={[0, 1]} ticks={[0, 0.25, 0.5, 0.75, 1]} tickFormatter={(value: number) => Math.round(value * 100) + "%"} tick={{ fill: "#68737E", fontSize: 11 }} tickLine={false} axisLine={false} width={40} />
+            <XAxis dataKey="day" tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} interval={Math.max(0, Math.floor(points.length / 5) - 1)} />
+            <YAxis domain={[0, 1]} ticks={[0, 0.25, 0.5, 0.75, 1]} tickFormatter={(value: number) => Math.round(value * 100) + "%"} tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} width={40} />
             <Tooltip formatter={(value) => [formatRate(typeof value === "number" ? value : null), "在线率"]} labelFormatter={(label) => "日期 " + label} />
-            <Legend align="right" verticalAlign="top" height={34} iconType="plainline" wrapperStyle={{ fontSize: 11, color: "#47515B" }} />
+            <Legend align="right" verticalAlign="top" height={34} iconType="plainline" wrapperStyle={{ fontSize: 12, color: "#47515B" }} />
             {summary.trend.series.map((series, index) => (
               <Line key={series.category} type="monotone" dataKey={series.category} name={series.category} stroke={lineColors[index % lineColors.length]} strokeWidth={2.4} dot={false} activeDot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
             ))}
