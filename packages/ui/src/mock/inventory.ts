@@ -1,7 +1,11 @@
-import type { HistoryRange, ListQuery, SkuStockFilters, SiteIndexApi, SkuStockView } from "@siteindex/shared";
+import type { HistoryRange, InventorySummary, ListQuery, ProjectId, SkuStockFilters, SiteIndexApi, SkuStockView } from "@siteindex/shared";
 import { FIXED_TODAY, fixtures, inventorySummary, projectConfigs, projectKey, projectSummaries, reply, rowsByProject, selectRows, todaySkus } from "./context";
 
 type MockSkuRow = SkuStockView & { is_parent?: boolean; children_count?: number; in_stock_children_count?: number };
+type MockHistoryRange = 14 | HistoryRange;
+type MockInventoryApi = Omit<SiteIndexApi["inventory"], "summary"> & {
+  summary(id: ProjectId, range?: MockHistoryRange): Promise<InventorySummary>;
+};
 
 function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
   const groups = new Map<string, SkuStockView[]>();
@@ -40,9 +44,9 @@ function priceChangedWithin(row: SkuStockView, range: HistoryRange): boolean {
     && Date.parse(event.date) >= cutoff);
 }
 
-export function createInventoryMock(): SiteIndexApi["inventory"] {
+export function createInventoryMock(): MockInventoryApi {
   return {
-    summary: (id, days = 30) => reply(() => inventorySummary(id, days)),
+    summary: (id, range = 30) => reply(() => inventorySummary(id, range)),
     listSkus: (id, query: ListQuery<SkuStockFilters>) => reply(() => {
       const key = projectKey(id);
       const filters = query.filters ?? {};

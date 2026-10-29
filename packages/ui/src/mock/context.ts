@@ -540,7 +540,7 @@ export const seoLinks: SeoLink[] = [
 ];
 export const orphanSeoPages = ["http://127.0.0.1:8765/help/orphan-page"];
 
-export function inventorySummary(id: ProjectId, range: HistoryRange | 14 = 30): InventorySummary {
+export function inventorySummary(id: ProjectId, range: 14 | HistoryRange = 30): InventorySummary {
   const key = projectKey(id);
   const rows = rowsByProject[key];
   const counts = { in_stock: 0, out_of_stock: 0, preorder: 0, unknown: 0 };
@@ -555,25 +555,22 @@ export function inventorySummary(id: ProjectId, range: HistoryRange | 14 = 30): 
   const total = rows.length;
   const categoryPriority = (name: string) => /bird-feeders/i.test(name) ? 0 : /bird-houses/i.test(name) ? 1 : /bird-baths/i.test(name) ? 2 : 3;
   const names = [...categories.keys()].sort((left, right) => categoryPriority(left) - categoryPriority(right));
-  const days = typeof range === "number" ? range : 90;
-  const availableDays = Math.min(days, 1);
-  const dates = Array.from({ length: availableDays }, (_, index) => dateBefore(availableDays - index - 1));
+  const rangeStart = typeof range === "number"
+    ? Date.parse(FIXED_TODAY) - (range - 1) * 86_400_000
+    : Number.NEGATIVE_INFINITY;
+  const dates = [FIXED_TODAY].filter((date) => Date.parse(date) >= rangeStart);
   const trendNames = names.slice(0, 3).sort((left, right) => {
     const priority = (name: string) => /bird-feeders/i.test(name) ? 0 : /bird-baths/i.test(name) ? 1 : /bird-houses/i.test(name) ? 2 : 3;
     return priority(left) - priority(right);
   });
-  const trendSeries = trendNames.map((name) => ({
-    category: name,
-    rates: dates.map((_, day) => {
-      if (/bath/i.test(name)) return day < 8 ? 0.75 : day < 13 ? 0.5 : day < 19 ? 0.62 : 0.5;
-      if (/house/i.test(name)) return day < 8 ? 1 : 0.98;
-      const rate = 0.91 + Math.sin(day / 4) * 0.025 - (day > 25 ? (day - 25) * 0.04 : 0);
-      return Math.max(0.72, Math.min(0.98, rate));
-    }),
-  }));
+  const trendSeries = trendNames.map((name) => {
+    const group = categories.get(name);
+    const rate = group?.total ? group.inStock / group.total : null;
+    return { category: name, rates: dates.map(() => rate) };
+  });
   const categoryRates = names.map((name) => {
     const group = categories.get(name) ?? { total: 0, inStock: 0 };
-    const rate = /bath/i.test(name) ? 0.5 : /house/i.test(name) ? 1 : 0.73;
+    const rate = group.total ? group.inStock / group.total : 0;
     return { category: name, rate, total: group.total };
   }).sort((left, right) => categoryPriority(left.category) - categoryPriority(right.category));
   const todayRows = rows.filter((row) => todaySkus[key].has(row.sku)).slice(0, 4);
@@ -581,7 +578,8 @@ export function inventorySummary(id: ProjectId, range: HistoryRange | 14 = 30): 
     type: (["restock", "oos", "price", "new", "removed"] as const)[index % 5]!,
     sku: row.sku, title: row.title, detail: row.last_change ?? statusNames[row.stock_status],
   }));
-  const averageRate = trendSeries.flatMap((series) => series.rates).filter((rate): rate is number => rate !== null).reduce((sum, rate, _, all) => sum + rate / all.length, 0);
+  const trendRates = trendSeries.flatMap((series) => series.rates).filter((rate): rate is number => rate !== null);
+  const averageRate = trendRates.reduce((sum, rate) => sum + rate / (trendRates.length || 1), 0);
   const sampleRows = key === "kingsyard" ? rows.slice(0, fixtures.skus.length) : rows;
   const longOut = sampleRows.filter((row) => row.stock_status === "out_of_stock" && row.days_in_status >= 14).sort((left, right) => right.days_in_status - left.days_in_status);
   const volatile = sampleRows.filter((row) => row.changes_30d >= 3).length;
@@ -596,7 +594,7 @@ export function inventorySummary(id: ProjectId, range: HistoryRange | 14 = 30): 
     as_of: FIXED_TODAY,
     kpis: [
       { key: "current-rate", label: "当前在线率（SKU）", value: total ? ((counts.in_stock / total) * 100).toFixed(1) + "%" : "—", hint: counts.in_stock.toLocaleString("zh-CN") + " / " + total.toLocaleString("zh-CN") + " 有货", tone: "ok" },
-      { key: "average-rate", label: "近 30 天平均在线率", value: (averageRate * 100).toFixed(1) + "%", hint: "较前 30 天 −3.2pt" },
+      { key: "average-rate", label: "可用历史平均在线率", value: (averageRate * 100).toFixed(1) + "%", hint: `基于 ${dates.length} 天数据` },
       { key: "today-changes", label: "今日变化", value: todayCounts.restock + " −" + todayCounts.oos, hint: todayHint, tone: todayCounts.oos ? "danger" : "default" },
       { key: "long-out", label: "长期缺货（≥ 14 天）", value: longOut.length.toLocaleString("zh-CN"), hint: longOut[0] ? longOut[0].sku + " · " + longOut[0].days_in_status + " 天" : "暂无长期缺货" , tone: longOut.length ? "warn" : "default" },
       { key: "volatility", label: "状态波动（30 天 ≥ 3 次）", value: volatile.toLocaleString("zh-CN"), hint: "供货不稳定的 SKU" },
