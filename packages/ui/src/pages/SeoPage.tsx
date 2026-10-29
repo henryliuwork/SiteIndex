@@ -10,7 +10,7 @@ import type {
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, ProjectHeader, SearchInput, Segmented } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
 
 type SeoView = "issues" | "pages" | "links";
 const pageTypes: { value: PageType | "all"; label: string }[] = [
@@ -272,12 +272,13 @@ export function SeoPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 SEO 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-seo-page">
-    <ProjectHeader project={project} activeTab="seo" status={<Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip>} actions={
+    <ProjectHeader project={project} activeTab="seo" hasTabPanel status={<Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip>} actions={
       <>
         <Button onClick={() => void exportIssues()}><FileDown size={14} />导出问题清单</Button>
         <Button variant="primary" icon={<RefreshCw size={14} />} disabled={busy || !project.path} onClick={() => void recrawl()}>{runKind === "crawl" ? "抓取中…" : "重新抓取"}</Button>
       </>
     } />
+    <ProjectTabPanel projectId={project.id} tab="seo">
     <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className={`si-seo-controls${view === "issues" ? " is-issues" : ""}`}>
       <Segmented value={view} options={views} onChange={setView} ariaLabel="SEO 视图" />
@@ -314,6 +315,7 @@ export function SeoPage() {
         onOpen={() => void openPage(detailQuery.data!.url)} onCheckIndex={() => void checkSingleIndex(detailQuery.data!.url)}
       /> : <div className="si-empty-state">没有找到该页面的 SEO 数据。</div>}
     </DetailPanel>
+    </ProjectTabPanel>
   </div>;
 }
 import "./seo/page.css";

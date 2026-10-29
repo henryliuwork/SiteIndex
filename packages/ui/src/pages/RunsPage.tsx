@@ -6,7 +6,7 @@ import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, 
 import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
+import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
 import "./runs/page.css";
 
 const jobLabels: Record<string, string> = {
@@ -263,7 +263,8 @@ export function RunsPage() {
 
   return <DialogPrimitive.Root open={Boolean(editingScheduleJob)} onOpenChange={(open) => { if (!open) { setEditingScheduleJob(null); setScheduleDialogDraft(null); } }}>
     <div className="si-page si-runs-page si-runs-page-v2">
-      <ProjectHeader project={project} activeTab="runs" />
+      <ProjectHeader project={project} activeTab="runs" hasTabPanel />
+      <ProjectTabPanel projectId={project.id} tab="runs">
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
 
       <section className="si-runs-block si-runs-execution">
@@ -330,6 +331,7 @@ export function RunsPage() {
           </details>)}
         </div> : <div className="si-run-history-empty-state"><strong>还没有运行记录</strong><span>手动执行或等待定时任务后，记录会显示在这里。</span></div>}
       </section>
+      </ProjectTabPanel>
 
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="si-runs-dialog-overlay" />

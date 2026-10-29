@@ -5,7 +5,7 @@ import type { FileCheck, FileKind, FileStatus, ListQuery, RepairAction, Validati
 import type { ColumnDef } from "@tanstack/react-table";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, ProjectHeader } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel } from "../components";
 import "./project-settings-files/page.css";
 
 const settingsTabs = [
@@ -175,7 +175,8 @@ export function ProjectSettingsFilesPage() {
   const summary = report?.summary ?? { total: 0, ok: 0, error: 0, missing: 0, conflict_copy: 0 };
 
   return <div className="si-page si-files-page">
-    <ProjectHeader project={project} activeTab="settings" subtitle={project.path} actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></>} />
+    <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle={project.path} actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></>} />
+    <ProjectTabPanel projectId={project.id} tab="settings">
     <SettingsNav id={id} />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {reportQuery.isLoading ? <div className="si-query-loading" role="status">正在读取本地文件校验报告…</div> : reportQuery.isError ? <ApiErrorNotice label="本地文件校验报告加载失败。" error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : <>
@@ -185,5 +186,6 @@ export function ProjectSettingsFilesPage() {
     </>}
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.path ?? "文件详情"}>{selected && <dl className="si-detail-list"><div><dt>类型</dt><dd>{kindLabels[selected.kind]}</dd></div><div><dt>记录数</dt><dd>{selected.records == null ? "—" : selected.records.toLocaleString("zh-CN")}</dd></div><div><dt>大小</dt><dd>{formatSize(selected.size)}</dd></div><div><dt>最近修改</dt><dd>{formatModified(selected.modified_at)}</dd></div><div><dt>状态</dt><dd><Chip tone={statusTones[selected.status]}>{statusLabels[selected.status]}</Chip></dd></div>{selected.rule && <div><dt>校验规则</dt><dd>{selected.rule}</dd></div>}{selected.message && <div><dt>原因</dt><dd>{selected.message}</dd></div>}{selected.line != null && <div><dt>行号</dt><dd>{selected.line.toLocaleString("zh-CN")}</dd></div>}{selected.repair && <div><dt>可用操作</dt><dd>{repairLabel(selected.repair)}</dd></div>}</dl>}</DetailPanel>
     <ConfirmDialog open={Boolean(pendingRepair)} onOpenChange={(open) => { if (!open) setPendingRepair(null); }} title="删除冲突副本？" description={`「${pendingRepair?.path ?? ""}」将移入系统回收站，可以恢复。`} confirmLabel={repairingPath ? "处理中…" : "移入回收站"} onConfirm={() => pendingRepair?.repair ? runRepair(pendingRepair, pendingRepair.repair) : undefined} />
+    </ProjectTabPanel>
   </div>;
 }
