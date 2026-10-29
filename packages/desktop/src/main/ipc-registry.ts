@@ -1,5 +1,5 @@
-import { isSiteIndexError, type SiteIndexError } from "@siteindex/shared";
-import { API_INVOKE_METHODS, IPC_PREFIX, type ApiInvokeMethod, ipcChannel } from "../shared/ipc-contract.js";
+import { API_INVOKE_METHODS, isSiteIndexError, type ApiInvokeMethod, type SiteIndexError } from "@siteindex/shared";
+import { IPC_PREFIX, ipcChannel } from "../shared/ipc-contract.js";
 
 const IPC_ERROR_PREFIX = "__SITEINDEX_IPC_ERROR__:";
 

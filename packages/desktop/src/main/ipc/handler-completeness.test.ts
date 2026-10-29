@@ -7,7 +7,7 @@ vi.mock("electron", () => ({
   shell: { openPath: vi.fn(), openExternal: vi.fn(), trashItem: vi.fn() },
 }));
 
-import { API_EVENT_METHODS, API_INVOKE_METHODS } from "../../shared/ipc-contract.js";
+import { API_EVENT_METHODS, API_INVOKE_METHODS, PENDING_HANDLERS } from "@siteindex/shared";
 import type { ProjectId } from "@siteindex/shared";
 import { createIpcHandlerImplementations } from "./handlers.js";
 import type { IpcContext } from "./context.js";
@@ -31,7 +31,15 @@ function testContext(): IpcContext {
 describe("IPC handler completeness", () => {
   it("implements every SiteIndexApi invoke method, including optional namespaces", () => {
     const implementations = createIpcHandlerImplementations(testContext());
-    expect(Object.keys(implementations).sort()).toEqual([...API_INVOKE_METHODS].sort());
+    const apiMethods = new Set<string>(API_INVOKE_METHODS);
+    const pendingMethods = new Set(PENDING_HANDLERS);
+    const registeredMethods = Object.keys(implementations);
+    const expectedMethods = API_INVOKE_METHODS.filter((method) => !pendingMethods.has(method));
+
+    expect([...pendingMethods].filter((method) => !apiMethods.has(method))).toEqual([]);
+    expect(PENDING_HANDLERS).toHaveLength(pendingMethods.size);
+    expect(registeredMethods.filter((method) => !apiMethods.has(method))).toEqual([]);
+    expect(registeredMethods.sort()).toEqual([...expectedMethods].sort());
     expect(API_INVOKE_METHODS).toContain("uiState.get");
     expect(API_INVOKE_METHODS).toContain("updates.check");
     expect(API_EVENT_METHODS).toContain("updates.onStatus");

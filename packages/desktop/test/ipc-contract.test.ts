@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SiteIndexApi } from "@siteindex/shared";
 import { createHandlerRegistry, getIpcHandlerPaths, serializeIpcError } from "../src/main/ipc-registry.js";
 import { createApiBridge } from "../src/preload/api.js";
-import { API_EVENT_METHODS, API_INVOKE_METHODS } from "../src/shared/ipc-contract.js";
+import { API_EVENT_METHODS, API_INVOKE_METHODS } from "@siteindex/shared";
 
 function getApiMethodPaths(api: SiteIndexApi): string[] {
   return Object.entries(api)
