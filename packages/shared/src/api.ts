@@ -11,6 +11,7 @@ import type {
   CategoryMode,
   DesignTokens,
   FileCheck,
+  HistoryRange,
   ISODate,
   ISODateTime,
   Keyword,
@@ -196,6 +197,7 @@ export interface InventorySummary {
   trend: { dates: ISODate[]; series: { category: string; rates: (number | null)[] }[] };
   category_rates: { category: string; rate: number; total: number }[];
   category_source: CategoryMode;
+  timezone?: string;
   uncategorized: number;
   today: { type: "restock" | "oos" | "price" | "new" | "removed"; sku: string; title: string; detail?: string }[];
 }
@@ -203,6 +205,9 @@ export interface InventorySummary {
 export interface SkuStockFilters {
   status?: StockStatus | "today";
   category?: string;
+  parent_only?: boolean;
+  watched_only?: boolean;
+  price_changed_within?: HistoryRange;
 }
 
 // ---------- 产品 ----------
@@ -232,11 +237,13 @@ export interface SeoSummary {
   crawled_at: ISODateTime | null;
   title_range: [number, number];
   description_range: [number, number];
+  issue_counts?: { rule: string; label: string; severity: Severity; count: number }[];
 }
 
 export interface SeoIssueFilters {
   severity?: Severity;
   status?: SeoIssue["status"];
+  rules?: string[];
 }
 
 export interface SeoPageFilters {
