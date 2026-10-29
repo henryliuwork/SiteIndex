@@ -154,3 +154,47 @@
 - Windows/macOS/Ubuntu CI 通过；Windows 候选安装包 CLI 与 GUI 核心路径一致；E 完成并记录 PRD §8 全流程。
 - `#163–#174` 每项明确指向候选版实测结论；阻断项处理完毕。Release 前更新过时的 README（“三个工作流”）、PRD/ARCHITECTURE 中批量收录方案、任务清单与 AGENTS 链接。
 - v0.2.0 的版本/tag/发布由审核者在 G4 后单独执行，本文的创建不构成发版授权。
+
+## 11. 第一轮回报与第二轮执行补充（2026-10-29）
+
+> 此节记录第一轮 Agent 回报后的**新关卡**，优先于本文第 8 节中相同任务的旧排队描述。状态来自 GitHub PR 与 CI；仍以审核者合并时的最新状态为准。
+
+### 11.1 已交付但未合并
+
+| 工作流 | PR | 当前结论 | 下一动作 |
+|---|---|---|---|
+| D | [#159](https://github.com/henryliuwork/SiteIndex/pull/159) | 已修正 mock 不伪造历史价格/父 SKU；三系统 CI 通过，open、mergeable | 审核者复核后合并；D 后续才修改这些页面 |
+| C | [#178](https://github.com/henryliuwork/SiteIndex/pull/178) | 安装版 CLI schema 路径修复；三系统 CI 通过，安装版合成 fixture 无 schema ENOENT | 审核者合并，E 仍需候选包复测 #163 |
+| B | [#179](https://github.com/henryliuwork/SiteIndex/pull/179) | 共享组件键盘、焦点与对比度修复；三系统 CI 通过 | 审核者复核后合并；高 DPI 真机仍待 E |
+| A | [#176](https://github.com/henryliuwork/SiteIndex/pull/176) | 可选 `sku.previewGrouping` + pending 契约；全套测试因 Desktop 旧断言失败，三系统 CI 红 | **不得合并**；先执行 C-IPC-TEST，再由 A rebase、重跑 CI |
+
+### 11.2 新增阻断关卡 C-IPC-TEST（优先于 C2）
+
+`packages/desktop/test/ipc-contract.test.ts` 的第一个用例将 preload bridge 暴露的 invoke 方法与 `API_INVOKE_METHODS` 直接做全量相等比较。#176 合理地把新方法列进 `PENDING_HANDLERS`，但 bridge 尚未实现可选 `sku`，导致该测试失败；`packages/desktop/src/main/ipc/handler-completeness.test.ts` 已经支持 pending，不必重复改动。
+
+**C 的下一项小 PR**：从最新 `main` 新建 `c/ipc-pending-contract-test`，只调整 Desktop IPC 合约测试，新增 `PENDING_HANDLERS` 感知：
+
+1. bridge 不得暴露 `API_INVOKE_METHODS` 之外的方法；所有**非 pending** invoke 必须暴露；pending 可暂时缺席，也允许后续 C 提前实现，避免第二次迁移再卡住。
+2. `PENDING_HANDLERS` 必须是 invoke 清单的子集且不能重复；事件清单仍要求全量一致。
+3. 不特殊判断字符串 `sku.previewGrouping`，也不在本 PR 偷做 handler 或修改 shared。旧 `main` 上 pending 为空时，原严格完整性测试仍应通过。
+4. `pnpm typecheck`、`pnpm test`、三系统 CI 通过后提交 PR，等待审核者先合并。
+
+**A 的后续动作**：确认 C-IPC-TEST 合并后，将 #176 rebase 到最新 `main`，重跑三系统 CI；三系统全绿后再交审核者合并。A-2 在 #176 合并前只能做只读设计/测试方案，不提交依赖未合并契约的 Core PR。
+
+**PR #178 的自动关闭风险**：当前描述包含 `Closes #163`，合并会自动关闭 Issue，但 E 尚未用 G3 候选 Release 复测。审核者合并前由 C 将其改为 `Refs #163`（普通关联），保留 Issue 的验收状态；若已自动关闭，由 E 依据验收制度重新打开并说明。
+
+### 11.3 第二轮可并行任务
+
+- **A**：先等待 C-IPC-TEST 的合并、修复 #176 CI 并完成契约；随后 A-2 确定性分组引擎与 Core 服务单独 PR。暂不开始 A0b；D 的 mock 需先能兼容 `"all"`。
+- **B**：#179 合并后进行 [#88](https://github.com/henryliuwork/SiteIndex/issues/88) / [#93](https://github.com/henryliuwork/SiteIndex/issues/93) 的 10k SKU 共享 UI 性能基准，分别记录 mock/真实 IPC，不跨 D 页面。真实 Windows 高 DPI 交给 E。
+- **C**：先合并 #178，再做 C-IPC-TEST；只有 #176 与 A-2 合并后才实现 `sku.previewGrouping` 的 preload/handler，最后单独契约 PR 清除 pending。避免同时改两条分支中的 Desktop 测试。
+- **D**：#159 合并后处理 [#177](https://github.com/henryliuwork/SiteIndex/issues/177) 的项目页面 `tab`/`tabpanel` 语义关联；另外先准备库存 mock 接受 14/30/60/90/全部的参数，保持真实 IPC 仅请求已支持的范围，交接 A0b。父 SKU 预览必须在 A/C 就绪后改为 Core 结果。
+- **E**：更新 #163–#174 验收矩阵：#178 是“修复 PR 已完成 + 合成安装版验证，但未合并/未候选版复测”，不再写“无修复 PR”；#159/#179 同理标记 PR 状态，纳入 #177。候选包发布前不关闭 Release Issues，亦不将 CI 通过当作实测。
+
+### 11.4 审核者的合并队列
+
+1. 审核并合并彼此独立且 CI 全绿的 #159、#178、#179（顺序可根据 main 冲突与最新 CI 调整）；检查 #178 的自动关闭关键字。
+2. 审核并合并 C-IPC-TEST 新 PR。
+3. A rebase #176，确认三个系统 CI 全绿后才合并。
+4. 进入 A-2 → C IPC → D 真数据预览的能力链；A0b 需等待 D mock 兼容性前置。
+5. E 从 G3 候选包重新验收；未有候选包时不得宣告 v0.2.0 完成。
