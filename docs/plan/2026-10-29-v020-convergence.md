@@ -28,7 +28,7 @@
 | 关卡 | 前置条件 | 放行后可启动 | 不通过时的处理 |
 |---|---|---|---|
 | G0 · 当前 PR 收尾 | 审核者确认 #159 最新 diff、冲突已处理、三系统 CI 绿并合并 | D 的后续项目页面联调 | D 保持只读审查或做不重叠页面，不再改 Inventory/Seo |
-| G1 · 契约新增 | A 的独立 `contract/*` PR 定义 `sku.previewGrouping`、库存历史范围签名及必要方法清单，标记暂未实现 IPC 为 `PENDING_HANDLERS`；CI 全绿并合并 | A-2/A-5、C IPC、D 真实预览对接 | 不要绕过类型检查，或直接改 Desktop 清单 |
+| G1 · 兼容契约新增 | A 先用独立 `contract/*` PR 以可选方法/命名空间引入 `sku.previewGrouping`、方法清单与 `PENDING_HANDLERS`；待消费者支持后再单独扩大库存历史范围参数；每次三系统 CI 全绿 | A-2、C IPC、D 预览对接；A-5 的新范围需第二次契约关卡 | 不得一次引入必需命名空间导致 UI mock / Desktop bridge 失配 |
 | G2 · Core 能力 | A-2/4/5/6/7 分批实现，schema、fixtures、单测/黄金测试一致；三系统 CI 绿 | D 从 mock/兼容 fallback 转真实行为，C 完成所有新 handler | 若 Core 返回不完整，不在 UI 伪造库存、价格与父 SKU 指标 |
 | G3 · Desktop/页面联调 | C IPC 完整性测试通过、`PENDING_HANDLERS` 清零；D 所有新增操作有真实数据路径 | E 候选包完整验收 | 缺接口/不确定数据，开归属 Issue，保持发布阻断 |
 | G4 · 发版 | E 的 Windows 真实项目、CLI 与 PRD §8 场景通过；三系统 CI/打包通过；阻断 Issue 已关闭或明确延期并获批准 | 协调者创建版本 PR、tag 与 Release | 未通过则继续候选版本，不急于打 `v0.2.0` |
@@ -37,9 +37,10 @@
 
 ## 3. A · Core / CLI（执行顺序）
 
-**A0 契约 PR（最先发）**
-- 检查已有 types，避免重复声明。仅补齐 `sku.previewGrouping(id, rule)` 返回的父/子数量、样例、未匹配数；`inventory.summary` 接受 30/60/90/全部，保留旧调用 `14` 的兼容；必要时新增 SEO 规则枚举字段。
-- 新方法同步维护 `API_INVOKE_METHODS` 与 `PENDING_HANDLERS`，按 `docs/plan/2026-10-29-feedback-v2.md` §8.2 流程；本 PR 不混入 Core/UI/Desktop 实现。不得在契约 PR 中提前删除 `checkIndex`。
+**A0 契约 PR（最先发，分两次兼容迁移）**
+- A0a：检查已有 types，避免重复声明。先定义 `sku.previewGrouping(id, rule)` 的父/子数量、样例与未匹配数；新 `sku` 命名空间或方法必须先设为**可选**，以保证尚未实现的 UI `createMockApi()` 与 Desktop `createApiBridge()` 仍能满足 `SiteIndexApi`。新方法同步维护 `API_INVOKE_METHODS` 与 `PENDING_HANDLERS`，按反馈计划 §8.2 流程；本 PR 不混入 Core/UI/Desktop 实现。
+- A0b（A-5 能力与 D 的 mock 参数适配就绪后）：单独将 `inventory.summary` 范围扩大为 `14 | 30 | 60 | 90 | "all"`（旧 `14`/`30` 仍合法）。当前 `packages/ui/src/mock/context.ts` 的 `inventorySummary` 参数按 number 推断，直接扩大为含 `"all"` 的共享类型可能造成 CI 失败；先由 D 在其目录把 mock 改为兼容新参数，再提交契约 PR。若 Core/其他调用方未准备好，先保留旧签名，不绕过类型检查。
+- 必要时另开契约 PR 扩充 SEO 规则。不得在新增契约 PR 中提前删除 `checkIndex`；C 实现后再按单独契约 PR 去除 pending。**同一时刻只有一个未合并契约 PR。**
 
 **A1 数据与视图（拆为小 PR）**
 - A-2：仅从 feed 子 SKU 按 suffix/separator/regex 规则推导父 SKU；提供预览、未匹配数、稳定排序。生成的父 SKU 不作为库存明细实体，也不单独计算在线率；规则关闭时保留现有子 SKU 行为。用 ≥3 种虚构规则与边界用例测：空值、异常 regex、同名冲突、单子项。
@@ -122,11 +123,11 @@
 | 优先级 | 负责人 | PR 范围 | 依赖 |
 |---|---|---|---|
 | P0 | 审核者 / D | #159 最终审核合并 | G0 |
-| P0 | A | `contract/sku-preview-history-range` 新增接口与兼容范围 | 无，等待其他 contract PR 关闭 |
+| P0 | A | `contract/sku-preview` 可选接口 + `PENDING_HANDLERS`；历史范围另走 `contract/inventory-history-range` | 无，等待其他 contract PR 关闭 |
 | P0 | C | Windows CLI schema 资源路径与安装版回归 #163 | 无 |
 | P0 | E | v0.1.4 Issue 证据对照表 | 无，只读 |
 | P1 | A | A-2 父子 SKU Core + A-4 关注分类（必要时拆分） | G1 |
-| P1 | A | A-5 历史范围 + A-6 价格历史（分 PR） | G1 |
+| P1 | A | A-5 历史范围 + A-6 价格历史（分 PR）；A-5 UI API 参数放行需 A0b | G1 + 兼容 mock 适配 |
 | P1 | B | 共享层可访问性/10k 性能测量 | 无 |
 | P1 | C | `sku.previewGrouping` handler、契约待实现清单清零 | G1 / A 能力就绪 |
 | P1 | D | 项目设置/库存/SEO 真实数据联调 | G0 + G2 |
