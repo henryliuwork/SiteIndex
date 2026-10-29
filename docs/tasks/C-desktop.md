@@ -115,6 +115,7 @@
 ## v0.2.0 · 收敛开发
 
 - [x] C1 / #163：Windows 安装包的 CLI bundle 将 Core schema URL 指向同级 `resources/schemas/`；缺少预期路径模式或 schema 资源时让资源准备失败；覆盖路径重写单测并完成 Windows 安装版 CLI 与 `--run-job` fixture 验收。
+- [x] C-IPC-TEST：preload invoke 覆盖测试按 `PENDING_HANDLERS` 校验；pending 方法可缺席或提前实现，契约外方法仍失败，事件方法保持完整性检查。
 
 ## 交付给其他工作流
 
