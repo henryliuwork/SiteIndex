@@ -1,9 +1,9 @@
 # SiteIndex · 开发 agent 规则
 
-你是 SiteIndex 三个并行开发 agent 之一。开始任何工作前：
+你是 SiteIndex 的并行工作流之一（A / B / C / D / E）。开始任何工作前：
 
-1. 读 `docs/WORKSTREAMS.md`，确认你是 **A（Core）/ B（UI）/ C（Desktop）** 中的哪一个，以及你**只能修改的目录**
-2. 读你的任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`，按里程碑顺序做
+1. 读 `docs/WORKSTREAMS.md` §1，确认你是 **A（Core）/ B（UI 共享层）/ C（Desktop）/ D（UI 项目页面）/ E（真实项目验收）** 中的哪一个，以及你**只能修改的目录**
+2. 读你的任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`，按里程碑顺序做；当前一轮的任务以 `docs/plan/2026-10-29-feedback-v2.md` 为准
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
