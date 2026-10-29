@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import type { FeedInspectResult, SeoRule, SiteConfig } from "@siteindex/shared";
+import type { FeedInspectResult, SeoRule, SiteConfig, SkuGroupingRule, SkuStockView, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
@@ -12,7 +12,7 @@ const settingsTabs = [
   { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
 ] as const;
 const sectionLinks = [
-  ["basic", "基本信息"], ["brand", "品牌"], ["source", "数据源"], ["crawl", "抓取"], ["seo", "SEO"], ["edm", "EDM"], ["integrations", "集成与预留数据源"],
+  ["basic", "基本信息"], ["brand", "品牌"], ["source", "数据源"], ["crawl", "抓取"], ["blog-recognition", "博客识别"], ["sku-grouping", "父子 SKU"], ["watched-categories", "关注分类"], ["seo", "SEO"], ["edm", "EDM"], ["integrations", "集成与预留数据源"],
 ] as const;
 
 function TextField({ label, value, onChange, mono = false, placeholder, type = "text" }: {
@@ -45,10 +45,65 @@ function asLines(values: readonly string[] | undefined): string { return values?
 function fromLines(value: string): string[] { return value.split("\n").map((item) => item.trim()).filter(Boolean); }
 function asFeeds(value: SiteConfig["crawl"]["feed_url"]): string { return (Array.isArray(value) ? value : [value]).join("\n"); }
 
+function parentSkuForRule(sku: string, rule: SkuGroupingRule): string | null {
+  if (!rule.value) return null;
+  if (rule.type === "suffix") return sku.endsWith(rule.value) && sku.length > rule.value.length ? sku.slice(0, -rule.value.length) : null;
+  if (rule.type === "separator") {
+    const index = sku.lastIndexOf(rule.value);
+    return index > 0 ? sku.slice(0, index) : null;
+  }
+  try {
+    return sku.match(new RegExp(rule.value))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function skuRuleError(rule: SkuGroupingRule): string | null {
+  if (!rule.value.trim()) return "规则值不能为空。";
+  if (rule.type !== "regex") return null;
+  try { new RegExp(rule.value); return null; }
+  catch { return "正则表达式语法无效。"; }
+}
+
+function previewSkuGroups(rows: readonly SkuStockView[], rule: SkuGroupingRule) {
+  const groups = new Map<string, string[]>();
+  let unmatched = 0;
+  for (const row of rows) {
+    const parent = parentSkuForRule(row.sku, rule);
+    if (!parent) { unmatched += 1; continue; }
+    const children = groups.get(parent) ?? [];
+    children.push(row.sku);
+    groups.set(parent, children);
+  }
+  return { groups: [...groups].map(([parent, children]) => ({ parent, children })), unmatched };
+}
+
+function categoryKey(category: Pick<WatchedCategory, "name" | "slug">): string {
+  return category.slug?.trim() || category.name.trim().toLocaleLowerCase("zh-CN");
+}
+
+function sameCategory(left: WatchedCategory, right: WatchedCategory): boolean {
+  if (left.slug && right.slug) return left.slug.trim() === right.slug.trim();
+  return left.name.trim().toLocaleLowerCase("zh-CN") === right.name.trim().toLocaleLowerCase("zh-CN");
+}
+
 export function ProjectSettingsConfigPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
+  const categoryPreviewQuery = useQuery({
+    queryKey: ["category-preview", id],
+    queryFn: () => api.categories.preview(id, projectQuery.data!.config.categories),
+    enabled: Boolean(projectQuery.data),
+    staleTime: 60_000,
+  });
+  const skuPreviewQuery = useQuery({
+    queryKey: ["sku-grouping-preview", id],
+    queryFn: () => api.inventory.listSkus(id, { page: 1, pageSize: 100, filters: {} }),
+    enabled: Boolean(projectQuery.data),
+    staleTime: 60_000,
+  });
   const [draft, setDraft] = useState<SiteConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -59,6 +114,10 @@ export function ProjectSettingsConfigPage() {
   const [overrideText, setOverrideText] = useState("");
   const [feedResult, setFeedResult] = useState<FeedInspectResult | null>(null);
   const [inspectingFeed, setInspectingFeed] = useState(false);
+  const [watchedName, setWatchedName] = useState("");
+  const [watchedSlug, setWatchedSlug] = useState("");
+  const [watchedUrl, setWatchedUrl] = useState("");
+  const didScrollToAnchor = useRef(false);
 
   useEffect(() => {
     if (!projectQuery.data) return;
@@ -66,11 +125,41 @@ export function ProjectSettingsConfigPage() {
     setOverrideText(JSON.stringify(projectQuery.data.config.crawl.overrides ?? {}, null, 2));
   }, [projectQuery.data]);
 
+  useEffect(() => {
+    if (!draft || didScrollToAnchor.current) return;
+    didScrollToAnchor.current = true;
+    const target = window.location.hash.split("#").at(-1);
+    if (target && target !== "/p/" + id + "/settings/config") {
+      requestAnimationFrame(() => document.getElementById(target)?.scrollIntoView({ block: "start" }));
+    }
+  }, [draft, id]);
+
   const patch = <K extends keyof SiteConfig>(key: K, value: SiteConfig[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
   const patchBrand = <K extends keyof SiteConfig["brand"]>(key: K, value: SiteConfig["brand"][K]) => setDraft((current) => current ? { ...current, brand: { ...current.brand, [key]: value } } : current);
   const patchCrawl = <K extends keyof SiteConfig["crawl"]>(key: K, value: SiteConfig["crawl"][K]) => setDraft((current) => current ? { ...current, crawl: { ...current.crawl, [key]: value } } : current);
   const patchSeo = <K extends keyof NonNullable<SiteConfig["seo"]>>(key: K, value: NonNullable<SiteConfig["seo"]>[K]) => setDraft((current) => current ? { ...current, seo: { ...current.seo, [key]: value } } : current);
   const patchEdm = <K extends keyof NonNullable<SiteConfig["edm"]>>(key: K, value: NonNullable<SiteConfig["edm"]>[K]) => setDraft((current) => current ? { ...current, edm: { ...current.edm, [key]: value } } : current);
+
+  const toggleWatchedCategory = (category: Pick<WatchedCategory, "name" | "slug" | "url">) => {
+    if (!draft) return;
+    const watched = draft.categories.watched ?? [];
+    const exists = watched.some((item) => sameCategory(item, category));
+    patch("categories", { ...draft.categories, watched: exists ? watched.filter((item) => !sameCategory(item, category)) : [...watched, { ...category, manual: false }] });
+  };
+
+  const addManualWatchedCategory = () => {
+    if (!draft) return;
+    const item = { name: watchedName.trim(), slug: watchedSlug.trim(), url: watchedUrl.trim(), manual: true };
+    if (!item.name || !item.slug || !item.url) { setFeedback("请填写分类名称、slug 和 URL"); return; }
+    if ((draft.categories.watched ?? []).some((current) => sameCategory(current, item))) { setFeedback("该分类已在关注列表中"); return; }
+    patch("categories", { ...draft.categories, watched: [...(draft.categories.watched ?? []), item] });
+    setWatchedName(""); setWatchedSlug(""); setWatchedUrl(""); setFeedback("");
+  };
+
+  const removeWatchedCategory = (category: WatchedCategory) => {
+    if (!draft) return;
+    patch("categories", { ...draft.categories, watched: (draft.categories.watched ?? []).filter((item) => !sameCategory(item, category)) });
+  };
 
   const save = async (next: SiteConfig = draft!) => {
     if (!next || saving) return;
@@ -133,6 +222,14 @@ export function ProjectSettingsConfigPage() {
     }
   };
 
+  const grouping = draft?.sku_grouping ?? { enabled: false, rule: { type: "separator", value: "-" } as SkuGroupingRule };
+  const groupingError = skuRuleError(grouping.rule);
+  const skuPreviewRows = skuPreviewQuery.data?.rows ?? [];
+  const groupingPreview = useMemo(() => previewSkuGroups(skuPreviewRows, grouping.rule), [skuPreviewRows, grouping.rule]);
+  const groupedChildCount = groupingPreview.groups.reduce((total, item) => total + item.children.length, 0);
+  const watchedCategories = draft?.categories.watched ?? [];
+  const availableCategories = categoryPreviewQuery.data?.categories ?? [];
+
   if (projectQuery.isError) return <ApiErrorNotice page label="项目配置加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   if (projectQuery.isLoading || !projectQuery.data || !draft) return <div className="si-page-loading" role="status">正在加载项目配置…</div>;
   const project = projectQuery.data.summary;
@@ -182,9 +279,66 @@ export function ProjectSettingsConfigPage() {
           <TextField label="每周最多页面" type="number" value={String(draft.crawl.max_pages ?? 2000)} onChange={(value) => patchCrawl("max_pages", value === "" ? undefined : Number(value))} />
           <label className="si-config-check"><input type="checkbox" checked={draft.crawl.crawl_product_pages ?? true} onChange={(event) => patchCrawl("crawl_product_pages", event.target.checked)} /><span>每周抓取产品页 SEO</span></label>
         </div><div className="si-config-grid si-config-grid-2">
-          <TextAreaField label="博客 URL 规则（每行一条）" value={asLines(draft.crawl.blog_url_patterns)} onChange={(value) => patchCrawl("blog_url_patterns", fromLines(value))} mono rows={2} />
           <TextAreaField label="排除 URL 规则（每行一条）" value={asLines(draft.crawl.exclude_url_patterns)} onChange={(value) => patchCrawl("exclude_url_patterns", fromLines(value))} mono rows={2} />
         </div></ConfigCard>
+
+        <ConfigCard id="blog-recognition" title="博客识别">
+          <p className="si-config-help">使用博客专用 Sitemap 或文章 URL 前缀识别博客内容；这些规则只调整内容分类，不改变抓取范围。</p>
+          <div className="si-config-grid si-config-grid-2">
+            <TextAreaField label="博客 Sitemap（每行一个地址）" value={asLines(draft.content?.blog_sitemaps)} onChange={(value) => patch("content", { ...draft.content, blog_sitemaps: fromLines(value) })} mono rows={3} />
+            <TextAreaField label="博客 URL 前缀或规则（每行一条）" value={asLines(draft.content?.blog_url_patterns)} onChange={(value) => patch("content", { ...draft.content, blog_url_patterns: fromLines(value) })} mono rows={3} />
+          </div>
+        </ConfigCard>
+
+        <ConfigCard id="sku-grouping" title="父子 SKU">
+          <p className="si-config-help">Feed 只提供子 SKU 时，可按规则推导父 SKU。库存状态仍按子 SKU 计算。</p>
+          <label className="si-config-check si-config-grouping-switch"><input type="checkbox" checked={grouping.enabled} onChange={(event) => patch("sku_grouping", { ...grouping, enabled: event.target.checked })} /><span>启用父子 SKU 分组</span></label>
+          <div className="si-config-grouping-rule">
+            <SelectField label="分组规则类型" value={grouping.rule.type} options={[{ value: "suffix", label: "移除固定后缀" }, { value: "separator", label: "按分隔符归组" }, { value: "regex", label: "正则捕获父 SKU" }]} onChange={(value) => {
+              const rule: SkuGroupingRule = value === "suffix" ? { type: "suffix", value: "-G" } : value === "regex" ? { type: "regex", value: "^(.+?)-[A-Z]$" } : { type: "separator", value: "-" };
+              patch("sku_grouping", { ...grouping, rule });
+            }} />
+            <TextField label="规则值" mono value={grouping.rule.value} placeholder={grouping.rule.type === "regex" ? "^(.+?)-[A-Z]$" : grouping.rule.type === "suffix" ? "-G" : "-"} onChange={(value) => patch("sku_grouping", { ...grouping, rule: { ...grouping.rule, value } as SkuGroupingRule })} />
+          </div>
+          <p className="si-config-help">{grouping.rule.type === "regex" ? "正则的第一个捕获组作为父 SKU，例如 ^(.+?)-[A-Z]$。" : grouping.rule.type === "suffix" ? "只匹配并移除 SKU 末尾的完整后缀，例如 -G。" : "按最后一个分隔符拆分，分隔符左侧作为父 SKU，例如 -。"}</p>
+          <div className="si-config-grouping-preview" aria-live="polite">
+            <div className="si-config-grouping-preview-heading"><strong>实时分组预览</strong><span>当前 SKU 列表样本 · {skuPreviewRows.length} 条</span></div>
+            {!grouping.enabled ? <p>启用分组后查看当前样本的匹配结果。</p> : groupingError ? <p className="si-form-error" role="alert">{groupingError}</p> : skuPreviewQuery.isLoading ? <p>正在读取 SKU 样本…</p> : skuPreviewQuery.isError ? <p>SKU 样本读取失败。保存规则后仍可继续配置。</p> : <>
+              <div className="si-config-grouping-stats"><span><strong>{groupingPreview.groups.length}</strong> 个父 SKU</span><span><strong>{groupedChildCount}</strong> 个匹配子 SKU</span><span><strong>{groupingPreview.unmatched}</strong> 个未匹配 SKU</span></div>
+              {groupingPreview.groups.length > 0 ? <ul>{groupingPreview.groups.slice(0, 6).map((item) => <li key={item.parent}><code>{item.parent}</code><span>{item.children.length} 个：{item.children.slice(0, 4).join("、")}{item.children.length > 4 ? " …" : ""}</span></li>)}</ul> : <p>当前样本中没有匹配到父子 SKU 分组。</p>}
+              <small>预览只运行在当前列表前 100 个 SKU；保存后核心任务会按完整 Feed 重新计算。</small>
+            </>}
+          </div>
+        </ConfigCard>
+
+        <ConfigCard id="watched-categories" title="关注的分类">
+          <p className="si-config-help">关注分类只影响库存页默认展示；勾选抓取结果，或手动添加分类名称、slug 和 URL。</p>
+          <div className="si-config-watched-heading"><strong>抓取到的分类</strong><span>{availableCategories.length} 个</span></div>
+          {categoryPreviewQuery.isLoading ? <p className="si-muted">正在读取抓取分类…</p> : categoryPreviewQuery.isError ? <div className="si-config-inline-error"><span>抓取分类读取失败。</span><Button size="small" onClick={() => void categoryPreviewQuery.refetch()}>重试</Button></div> : availableCategories.length > 0 ? <div className="si-config-watched-options">
+            {availableCategories.map((category) => <label className="si-config-watched-option" key={category.slug}>
+              <input type="checkbox" checked={watchedCategories.some((item) => sameCategory(item, category))} onChange={() => toggleWatchedCategory(category)} />
+              <span><strong>{category.name}</strong><small><code>{category.slug}</code> · {category.url}</small></span>
+              <small>{category.sku_count.toLocaleString("zh-CN")} 个 SKU</small>
+            </label>)}
+          </div> : <p className="si-config-empty">暂未发现抓取分类，可在下方手动添加。</p>}
+          <div className="si-config-manual-watched">
+            <strong>手动添加分类</strong>
+            <div className="si-config-grid si-config-grid-3">
+              <TextField label="分类名称" value={watchedName} onChange={setWatchedName} placeholder="例如：户外灯具" />
+              <TextField label="Slug" value={watchedSlug} onChange={setWatchedSlug} mono placeholder="例如：outdoor-lights" />
+              <TextField label="分类 URL" value={watchedUrl} onChange={setWatchedUrl} mono type="url" placeholder="https://example.com/collections/lights" />
+            </div>
+            <Button size="small" onClick={addManualWatchedCategory}>添加关注分类</Button>
+          </div>
+          <div className="si-config-watched-list">
+            <div className="si-config-watched-heading"><strong>当前关注</strong><span>{watchedCategories.length} 个</span></div>
+            {watchedCategories.length > 0 ? watchedCategories.map((category) => <div className="si-config-watched-item" key={categoryKey(category)}>
+              <span><strong>{category.name}</strong><small><code>{category.slug ?? "未设置 slug"}</code>{category.url ? " · " + category.url : ""}</small></span>
+              <Chip tone={category.manual ? "info" : "neutral"}>{category.manual ? "手动" : "抓取"}</Chip>
+              <Button size="small" variant="quiet" onClick={() => removeWatchedCategory(category)}>移除</Button>
+            </div>) : <p className="si-config-empty">尚未关注分类。库存页会显示默认分类。</p>}
+          </div>
+        </ConfigCard>
 
         <ConfigCard id="seo" title="SEO"><div className="si-config-grid si-config-grid-2">
           <TextAreaField label="核心关键词（每行一项）" value={asLines(draft.seo?.core_keywords)} onChange={(value) => patchSeo("core_keywords", fromLines(value))} rows={3} />
