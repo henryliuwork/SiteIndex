@@ -7,8 +7,10 @@
 | 工作流 | 负责目录（只改这些） | 一句话 |
 |---|---|---|
 | **A · Core** | `packages/core/`、`packages/cli/`、`schemas/`、`fixtures/`、`reference/` | 所有数据逻辑：抓取、库存、视图、SEO、校验、README、台账、分类、Job；以及命令行 |
-| **B · UI** | `packages/ui/` | 全部 21 个画板对应的 React 界面；浏览器里用 mock 独立开发 |
+| **B · UI 共享层** | `packages/ui/src/components/**`、`src/styles/{app,components,tokens}.css`、`src/App.tsx`；页面 `ReadmePage`、`AppSettingsPage` 及其 `pages/{readme,app-settings}/**` | 共享组件、全局样式、路由骨架 |
 | **C · Desktop** | `packages/desktop/`、`.github/workflows/`、`skills/`、`templates/` | Electron 外壳、IPC 接线、系统计划任务、执行设备/锁、文件夹/回收站、skill 分发、浏览器检测、打包发布 |
+| **D · UI 项目页面** | `packages/ui/src/pages/` 下：`SeoPage`、`InventoryPage`、`ContentPage`、`RunsPage`、`ProjectSettings*Page` 及对应 `pages/<page>/**`（含各页 `page.css`） | 项目内各数据页面 |
+| **E · 验收** | 只读代码；可改 `fixtures/`；产出 issue | 在用户本机对真实项目验收，不写产品代码 |
 | 共有 · 契约 | `packages/shared/` | 类型与接口。改动走第 4 节流程 |
 
 `docs/` 下：各工作流只改自己的任务清单（勾选进度、补充说明）。PRD / ARCHITECTURE / DATA_SPEC / DESIGN 的修改按契约流程处理。根目录配置（`package.json`、`pnpm-workspace.yaml`、`tsconfig.base.json`、`vitest.config.ts`）归 C；其他工作流需要改时在 PR 里说明。
@@ -65,6 +67,20 @@
 | **M3 MVP 验收**（第 4 周） | design、index-check（playwright-core + 系统浏览器）、性能（1 万 SKU < 30 秒） | 细节对照画板、空状态/错误状态/加载态、大数据分页性能 | mac dmg、通知、打 tag 发布 Release、README 安装说明 | PRD §8 的 8 个端到端场景在干净的 Windows 11 上全部通过 |
 
 每个里程碑结束时由 C 负责合并后跑一次完整构建，在 issue `Milestone Mx 集成` 里记录结果与遗留问题。
+
+## 5.1 B 与 D 的边界
+
+- 只有 **B** 能改共享组件与全局样式（`components/**`、`app.css`、`components.css`、`tokens.css`、`App.tsx`）。D 需要共享组件调整时，开 issue 标 `ws:B`，不要自己改。
+- D 的页面级样式写在各自的 `pages/<page>/page.css`。
+- `src/mock/**` 按命名空间分文件，各改各页面用到的那个；都要改同一个文件时，先合并先提的那个。
+- B 的共享层改动优先合并，D 随后 rebase。
+
+## 5.2 E · 验收工作流
+
+- **不写产品代码**：只读 `packages/**`，只能修改 `fixtures/` 下的测试数据，主要产出是 issue。
+- 每个 Release 后在用户本机对真实项目跑一遍 Job，逐条核对当轮规划的验收项，用命令行交叉验证界面数字。
+- 开 issue 时写清复现步骤、实际 `code` 与 `message`、相关数据文件片段；**仓库公开，片段必须去掉真实商品名、价格、URL 等内容，只保留结构**。按归属打 `ws:A` / `ws:B` / `ws:C` / `ws:D`。
+- 不修 bug、不合并 PR。截图工具不可用时用文字描述，不要卡在截图上。
 
 ## 6. 共用约定
 
