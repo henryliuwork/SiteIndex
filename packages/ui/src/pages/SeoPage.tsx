@@ -140,7 +140,7 @@ export function SeoPage() {
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [selectedLink, setSelectedLink] = useState<SeoLink | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [runKind, setRunKind] = useState<"crawl" | "index" | null>(null);
+  const [runKind, setRunKind] = useState<"crawl" | null>(null);
   const [progressText, setProgressText] = useState("");
   const [progressPct, setProgressPct] = useState<number | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -183,7 +183,7 @@ export function SeoPage() {
     const unsubscribeFinished = api.jobs.onFinished((result: JobResult) => {
       if (result.runId !== activeRunId) return;
       setActiveRunId(null); setRunKind(null); setProgressPct(null); setProgressText("");
-      setFeedback(result.status === "ok" ? (result.job === "index-check" ? "收录检查已完成。结果仅供参考，以 Search Console 为准。" : "SEO 页面已重新抓取。") : result.summary);
+      setFeedback(result.status === "ok" ? "SEO 页面已重新抓取。" : result.summary);
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
@@ -211,12 +211,6 @@ export function SeoPage() {
   const checkSingleIndex = async (url: string) => {
     try { const searchUrl = await api.seo.googleSiteUrl(url); await api.shell.openExternal(searchUrl); }
     catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开 Google 收录检查。")); }
-  };
-  const checkAllIndex = async () => {
-    if (busy) return;
-    setFeedback(""); setProgressText("正在准备收录检查…"); setRunKind("index");
-    try { const run = await api.seo.checkIndex(id); setActiveRunId(run.runId); }
-    catch (cause) { setRunKind(null); setProgressText(""); setFeedback(apiErrorMessage(cause, "收录检查启动失败。")); }
   };
   const recrawl = async () => {
     if (!project || busy) return;
@@ -258,7 +252,6 @@ export function SeoPage() {
       {view === "pages" && <div className="si-seo-page-filters"><div>{pageTypes.map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.page_type ?? "all"} value={item.value} onValueChange={setPageType}>{item.label}</FilterPill>)}</div><div>{[{ value: "all" as const, label: "全部收录" }, { value: "yes" as const, label: "已收录" }, { value: "no" as const, label: "未收录" }, { value: "unchecked" as const, label: "未检查" }].map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.indexed ?? "all"} value={item.value} onValueChange={setIndexed}>{item.label}</FilterPill>)}</div></div>}
       {view === "links" && <Chip tone="warn">孤立页面 {orphansQuery.data?.length ?? 0}</Chip>}
       <SearchInput value={(view === "issues" ? issueQuery : view === "pages" ? pageQuery : linkQuery).search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" />
-      <Button disabled={busy} onClick={() => void checkAllIndex()}><Globe2 size={14} />{runKind === "index" ? "检查中…" : "检查全部收录"}</Button>
     </div>
     {progressText && <div className="si-seo-progress" role="status"><span>{progressText}</span>{progressPct != null && <strong>{progressPct}%</strong>}</div>}
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
