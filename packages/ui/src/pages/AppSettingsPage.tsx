@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, Tabs } from "../components";
+import { ApiErrorNotice, Button, Chip, TabPanel, Tabs } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
 import "./app-settings/page.css";
 
@@ -178,10 +178,11 @@ export function AppSettingsPage() {
   return (
     <div className="si-page si-app-settings-page">
       <header className="si-app-settings-heading"><h1>设置</h1><code>{settingsPath} · 只对本机生效</code></header>
-      <Tabs value={activeTab} options={settingsTabs} onChange={setActiveTab} ariaLabel="软件设置分区" />
+      <Tabs value={activeTab} options={settingsTabs} onChange={setActiveTab} ariaLabel="软件设置分区" tabIdPrefix="app-settings-tab" panelIdPrefix="app-settings-panel" />
       {platformQuery.isError && <ApiErrorNotice label="系统平台信息读取失败。" error={platformQuery.error} onRetry={() => void platformQuery.refetch()} />}
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
 
+      <TabPanel id={`app-settings-panel-${activeTab}`} labelledBy={`app-settings-tab-${activeTab}`}>
       {activeTab === "basic" && <section className="si-app-settings-card">
         <h2>常规</h2>
         <div className="si-app-setting-row">
@@ -299,6 +300,7 @@ export function AppSettingsPage() {
           {api.settings.openLogs && <Button disabled={openingLogs} onClick={() => void openLogs()}>{openingLogs ? "打开中…" : "打开"}</Button>}
         </div>
       </section>}
+      </TabPanel>
       {saving && <span className="si-sr-only" role="status">正在保存软件设置…</span>}
     </div>
   );

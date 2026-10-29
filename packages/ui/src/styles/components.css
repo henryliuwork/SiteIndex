@@ -62,6 +62,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-tabs button { position: relative; padding: 0 2px; border: 0; background: transparent; color: var(--color-muted); font-size: 13px; font-weight: 600; }
 .si-tabs button.active { color: var(--color-brand-strong); }
 .si-tabs button.active::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--color-brand); content: ""; }
+.si-tab-panel { min-width: 0; }
+.si-tab-panel:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 
 .si-chip { display: inline-flex; min-height: 22px; align-items: center; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.2; white-space: nowrap; }
 .si-chip-ok { background: var(--color-brand-soft); color: var(--color-brand-strong); }
