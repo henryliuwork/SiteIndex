@@ -35,6 +35,7 @@ export const API_INVOKE_METHODS = [
   "products.createTag",
   "products.deleteTag",
   "products.exportCsv",
+  "sku.previewGrouping",
   "seo.summary",
   "seo.listIssues",
   "seo.listPages",
@@ -93,7 +94,7 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = [];
+export const PENDING_HANDLERS: readonly string[] = ["sku.previewGrouping"];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 

@@ -112,3 +112,7 @@
 - [ ] A-7 SEO 问题分类扩充
 - [x] A-8 趋势图日期已核实，详见规划 §8.1
 - [ ] A-9 去掉批量 index-check Job
+
+### v0.2.0 收敛计划
+- [x] A0a：以可选 `sku` 命名空间声明 `previewGrouping`，并登记 IPC invoke 与 pending handler 清单
+- [ ] A0b：等待 mock 参数兼容后单独扩大 `inventory.summary` 的范围参数
