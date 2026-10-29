@@ -28,12 +28,16 @@ function latestUpdate(data: ReadmeData | undefined): string {
   return `自动区块更新于 ${date}${time ? " " + time : ""}`;
 }
 
-function UserBlocksCard({ blocks, onChange, onReset, onSave, saving }: {
+function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving, editingRules, onEditRules, onCancelRules }: {
   blocks: ReadmeData["user_blocks"];
+  savedBlocks: ReadmeData["user_blocks"];
   onChange: (key: keyof ReadmeData["user_blocks"], value: string) => void;
   onReset: () => void;
   onSave: () => void;
   saving: boolean;
+  editingRules: boolean;
+  onEditRules: () => void;
+  onCancelRules: () => void;
 }) {
   const fields: { key: keyof ReadmeData["user_blocks"]; label: string; rows: number }[] = [
     { key: "overview", label: "项目概况", rows: 5 },
@@ -42,7 +46,16 @@ function UserBlocksCard({ blocks, onChange, onReset, onSave, saving }: {
   ];
   return <section className="si-readme-card si-readme-user-card">
     <div className="si-readme-card-heading"><h2>用户区块</h2><Chip tone="info">你和 agent 编辑</Chip></div>
-    {fields.map(({ key, label, rows }) => <label className="si-readme-field" key={key}>
+    {fields.map(({ key, label, rows }) => key === "rules" ? <div className="si-readme-field" key={key}>
+      <span>{label}</span>
+      {editingRules ? <>
+        <textarea className="si-readme-textarea" rows={rows} value={blocks[key]} onChange={(event) => onChange(key, event.target.value)} aria-label={label} />
+        <div className="si-readme-rules-actions"><Button size="small" disabled={saving} onClick={onCancelRules}>取消编辑</Button></div>
+      </> : <div className="si-readme-rules-display">
+        <p>{savedBlocks.rules || "暂无工作规则与偏好。"}</p>
+        <Button size="small" onClick={onEditRules}>编辑</Button>
+      </div>}
+    </div> : <label className="si-readme-field" key={key}>
       <span>{label}</span>
       <textarea className="si-readme-textarea" rows={rows} value={blocks[key]} onChange={(event) => onChange(key, event.target.value)} aria-label={label} />
     </label>)}
@@ -70,6 +83,7 @@ export function ReadmePage() {
   const [draft, setDraft] = useState<ReadmeData["user_blocks"]>({ overview: "", focus: "", rules: "" });
   const [feedback, setFeedback] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editingRules, setEditingRules] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState("");
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
@@ -119,6 +133,7 @@ export function ReadmePage() {
     try {
       await api.readme.saveUserBlocks(id, draft);
       await queryClient.invalidateQueries({ queryKey: ["readme", id] });
+      setEditingRules(false);
       setFeedback("README 用户区块已保存。");
     } catch (cause) { setFeedback(apiErrorMessage(cause, "保存用户区块失败。")); }
     finally { setSaving(false); }
@@ -132,7 +147,7 @@ export function ReadmePage() {
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
     {readmeQuery.isLoading ? <div className="si-page-loading" role="status">正在加载 README…</div> : readmeQuery.isError || !data ? <ApiErrorNotice label="README 内容加载失败。" error={readmeQuery.error} onRetry={() => void readmeQuery.refetch()} /> : <div className="si-readme-layout">
-      <UserBlocksCard blocks={draft} onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))} onReset={() => setDraft(data.user_blocks)} onSave={() => void onSave()} saving={saving} />
+      <UserBlocksCard blocks={draft} savedBlocks={data.user_blocks} onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))} onReset={() => { setDraft(data.user_blocks); setEditingRules(false); }} onSave={() => void onSave()} saving={saving} editingRules={editingRules} onEditRules={() => setEditingRules(true)} onCancelRules={() => { setDraft((current) => ({ ...current, rules: data.user_blocks.rules })); setEditingRules(false); }} />
       <AutoBlocksCard data={data} />
     </div>}
   </div>;
