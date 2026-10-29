@@ -195,7 +195,7 @@ export interface InventorySummary {
   as_of: ISODate;
   kpis: Kpi[];
   trend: { dates: ISODate[]; series: { category: string; rates: (number | null)[] }[] };
-  category_rates: { category: string; rate: number; total: number }[];
+  category_rates: { category: string; rate: number; total: number; watched?: boolean; manual?: boolean }[];
   category_source: CategoryMode;
   timezone?: string;
   uncategorized: number;
