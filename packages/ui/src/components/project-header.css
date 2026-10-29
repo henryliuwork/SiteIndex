@@ -1,4 +1,4 @@
-.si-project-header { display: grid; min-width: 0; gap: 0; }
+.si-project-header { position: sticky; top: calc(0px - var(--si-content-top-padding, 0px)); z-index: 20; display: grid; min-width: 0; gap: 0; background: var(--color-canvas); }
 .si-project-header-row {
   display: grid; width: 100%; height: 64px; min-width: 0;
   grid-template-columns: minmax(0, 1fr) 420px; align-items: center; gap: 16px;
