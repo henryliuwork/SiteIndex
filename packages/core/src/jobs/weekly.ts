@@ -107,6 +107,40 @@ function finiteNumber(value: unknown): number | null {
 function pattern(url: string, patterns: string[] = []): boolean {
   return patterns.some((value) => { try { return new RegExp(value, "i").test(url); } catch { return false; } });
 }
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function matchesBlogUrlPattern(url: string, patterns: readonly string[]): boolean {
+  return patterns.some((value) => {
+    const configured = value.trim();
+    if (!configured) return false;
+    let candidate = url;
+    let prefix = configured;
+    if (configured.startsWith("/")) {
+      try { candidate = new URL(url).pathname; } catch { return false; }
+    } else {
+      prefix = cleanUrl(configured) ?? configured;
+    }
+    if (!prefix.includes("*")) {
+      const normalizedPrefix = prefix.replace(/\/$/, "");
+      return candidate.toLowerCase() === normalizedPrefix.toLowerCase()
+        || candidate.toLowerCase().startsWith(normalizedPrefix.toLowerCase() + "/");
+    }
+    const expression = prefix.split("*").map(escapeRegExp).join(".*");
+    try { return new RegExp("^" + expression + "$", "i").test(candidate); } catch { return false; }
+  });
+}
+interface BlogRecognition {
+  sitemapUrls: ReadonlySet<string>;
+  urlPatterns: readonly string[];
+  legacyUrlPatterns: readonly string[];
+}
+function isConfiguredBlogUrl(url: string, recognition: BlogRecognition): boolean {
+  const clean = cleanUrl(url) ?? url;
+  return recognition.sitemapUrls.has(clean)
+    || matchesBlogUrlPattern(clean, recognition.urlPatterns)
+    || pattern(clean, [...recognition.legacyUrlPatterns]);
+}
 function dateDiff(newer: string, older: string): number { return Math.floor((Date.parse(newer + "T00:00:00Z") - Date.parse(older + "T00:00:00Z")) / 86400000); }
 
 interface Parsed { page: SeoPage; doc: HtmlNode; links: { url: string; anchor: string; nofollow: boolean }[]; lastmod?: string }
@@ -160,7 +194,7 @@ function isBlogPostPath(pathname: string): boolean {
 function urlSlug(url: string): string {
   return new URL(url).pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(?:html?|php)$/i, "") ?? "";
 }
-function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), categoryPattern?: string, categorySlugs: ReadonlySet<string> = new Set(), blogPatterns: string[] = [], doc?: HtmlNode): SeoPage["page_type"] {
+function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), categoryPattern?: string, categorySlugs: ReadonlySet<string> = new Set(), doc?: HtmlNode, blog: BlogRecognition = { sitemapUrls: new Set(), urlPatterns: [], legacyUrlPatterns: [] }): SeoPage["page_type"] {
   const pathname = new URL(url).pathname;
   const clean = cleanUrl(url);
   if (clean && productUrls.has(clean)) return "product";
@@ -169,14 +203,16 @@ function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), cat
   if (/\/products?\//i.test(pathname)) return "product";
   const leaf = pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(?:html?|php)$/i, "").toLowerCase() ?? "";
   if (/\/collections?\//i.test(pathname) || /collection|category|catalog/i.test(pathname) || categorySlugs.has(leaf) || (categoryPattern ? pattern(url, categoryPattern.split(/\s*,\s*/)) : false)) return "collection";
-  if ((doc && hasBlogDocument(doc)) || isBlogPostPath(pathname) || pattern(url, blogPatterns)) return "blog";
+  if (isConfiguredBlogUrl(url, blog) || (doc && hasBlogDocument(doc)) || isBlogPostPath(pathname)) return "blog";
   if (/\/pages?\//i.test(pathname) || pathname.split("/").filter(Boolean).length === 1) return "page";
   return "other";
 }
 
-async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<string>, categorySlugs: ReadonlySet<string>): Promise<{ rows: Parsed[]; errors: string[]; attempts: number }> {
+async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<string>, categorySlugs: ReadonlySet<string>): Promise<{ rows: Parsed[]; errors: string[]; attempts: number; blogUrls: Set<string> }> {
   const urls = new Map<string, string>();
+  const blogUrls = new Set<string>();
   const seen = new Set<string>();
+  const seenBlog = new Set<string>();
   const errors: string[] = [];
   let nextAt = 0;
   let attempts = 0;
@@ -222,22 +258,32 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     if (!response) throw new Error("fetch returned no response");
     return { status: response.status, body: await response.text(), url: target, redirects, ms: Date.now() - started, xRobotsTag: response.headers.get("x-robots-tag") };
   };
-  const sitemap = async (input: string, depth = 0): Promise<void> => {
+  const sitemap = async (input: string, depth = 0, isBlogSitemap = false): Promise<void> => {
     const url = cleanUrl(input);
-    if (!url || seen.has(url) || depth > 5) return;
-    seen.add(url);
+    const visited = isBlogSitemap ? seenBlog : seen;
+    if (!url || visited.has(url) || depth > 5) return;
+    visited.add(url);
     try {
       const result = await request(url);
       if (result.status < 200 || result.status >= 400) throw new Error("HTTP " + result.status);
       const tree = XML.parse(result.body);
       const nested = locs(tree, "sitemap");
-      if (nested.length) for (const row of nested) await sitemap(row.loc, depth + 1);
+      if (nested.length) for (const row of nested) await sitemap(row.loc, depth + 1, isBlogSitemap);
       else for (const row of locs(tree, "url")) {
         const page = cleanUrl(row.loc);
-        if (page && !pattern(page, config.crawl.exclude_url_patterns)) urls.set(page, row.lastmod ?? "");
+        if (page && !pattern(page, config.crawl.exclude_url_patterns)) {
+          urls.set(page, row.lastmod ?? urls.get(page) ?? "");
+          if (isBlogSitemap) blogUrls.add(page);
+        }
       }
     } catch (error) { errors.push(url + ": " + (error instanceof Error ? error.message : String(error))); }
   };
+  const blog = {
+    sitemapUrls: blogUrls,
+    urlPatterns: config.content?.blog_url_patterns ?? [],
+    legacyUrlPatterns: config.crawl.blog_url_patterns ?? [],
+  };
+  for (const url of config.content?.blog_sitemaps ?? []) await sitemap(url, 0, true);
   for (const url of config.sitemaps ?? []) await sitemap(url);
   const maximum = Math.max(1, Number(config.crawl.max_pages ?? 2000));
   const origin = new URL(config.base_url).origin;
@@ -264,7 +310,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
       const images = walk(area(doc), (n) => n.name === "img", OMIT);
       const links = contentLinks(doc, response.url, origin);
       const page: SeoPage = {
-        url, page_type: pageType(url, productUrls, config.categories.url_pattern, categorySlugs, config.crawl.blog_url_patterns, doc), status_code: response.status, ...(response.url !== url ? { final_url: response.url } : {}),
+        url, page_type: pageType(url, productUrls, config.categories.url_pattern, categorySlugs, doc, blog), status_code: response.status, ...(response.url !== url ? { final_url: response.url } : {}),
         ...(response.redirects.length ? { redirect_chain: response.redirects } : {}), response_ms: response.ms,
         title, title_length: title ? [...title].length : 0, meta_description: description, description_length: description ? [...description].length : 0,
         meta_keywords: meta(doc, "keywords"), h1: headings[0] ?? null, h1_count: headings.length,
@@ -287,7 +333,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     } catch (error) { errors.push(url + ": " + (error instanceof Error ? error.message : String(error))); }
   }
   if (!urls.size) errors.push("sitemap has no crawlable URLs");
-  return { rows, errors, attempts };
+  return { rows, errors, attempts, blogUrls };
 }
 
 function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, date: string): SeoIssue[] {
@@ -467,11 +513,11 @@ function categories(config: SiteConfig, rows: Parsed[], skus: JsonObject[], date
   }
   return [...result.values()].sort((a, b) => compareKeys(a.slug, b.slug));
 }
-function linkRows(rows: Parsed[], productUrls: ReadonlySet<string>, blogPatterns: string[] = []): SeoLink[] {
+function linkRows(rows: Parsed[], productUrls: ReadonlySet<string>, blog: BlogRecognition): SeoLink[] {
   const pageTypes = new Map(rows.map((row) => [row.page.url, row.page.page_type]));
   const result = new Map<string, SeoLink>();
   for (const row of rows) for (const link of row.links) {
-    const type = pageTypes.get(link.url) ?? (productUrls.has(cleanUrl(link.url) ?? link.url) ? "product" : pageType(link.url, productUrls, undefined, new Set(), blogPatterns));
+    const type = pageTypes.get(link.url) ?? (productUrls.has(cleanUrl(link.url) ?? link.url) ? "product" : pageType(link.url, productUrls, undefined, new Set(), undefined, blog));
     const value: SeoLink = { from: row.page.url, to: link.url, anchor: link.anchor, to_type: type === "product" ? "product" : type === "collection" ? "collection" : type === "blog" ? "blog" : "page", ...(link.nofollow ? { nofollow: true } : {}) };
     result.set(value.from + "\n" + value.to + "\n" + value.anchor, value);
   }
@@ -487,6 +533,11 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
   const categorySlugs = new Set(skuRows.flatMap((row) => [row.category, ...(Array.isArray(row.categories) ? row.categories : [])]).map(String));
   const crawlResult = await crawl(config, date, productUrls, categorySlugs);
   const rows = crawlResult.rows;
+  const blog: BlogRecognition = {
+    sitemapUrls: crawlResult.blogUrls,
+    urlPatterns: config.content?.blog_url_patterns ?? [],
+    legacyUrlPatterns: config.crawl.blog_url_patterns ?? [],
+  };
   const errors = [...crawlResult.errors];
   const denominator = rows.length + errors.length;
   if (!rows.length || (denominator > 0 && errors.length / denominator > 0.2)) return { status: "failed", counts: {}, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
@@ -502,7 +553,7 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
   const counts: Record<string, number> = {};
   await output("pages", PATHS.seoPages, rows.map((row) => ({ ...row.page, links_internal_in: rows.reduce((n, candidate) => n + candidate.links.filter((link) => link.url === row.page.url).length, 0) })), "seo_page", counts);
   await output("issues", PATHS.seoIssues, issues, "seo_issue", counts);
-  await output("links", PATHS.seoLinks, linkRows(rows, productUrls, config.crawl.blog_url_patterns), "seo_link", counts);
+  await output("links", PATHS.seoLinks, linkRows(rows, productUrls, blog), "seo_link", counts);
   await output("blog", PATHS.blogIndex, blogs(rows, date, productUrls, skuRows), "blog_post", counts);
   await output("product_details", PATHS.productDetails, productDetails(rows, date), "product_details", counts);
   if (selected.includes("categories")) {

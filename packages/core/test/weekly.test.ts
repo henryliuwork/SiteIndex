@@ -36,6 +36,27 @@ async function fixtureServer(): Promise<string> {
   pages["/blog/story"] = { type: "text/html", body: "<html><head><title>Bird care story</title><meta name=\"description\" content=\"Read our guide to feeding backyard birds.\"><meta property=\"article:published_time\" content=\"2026-05-09T10:00:00Z\"><meta property=\"article:section\" content=\"Guides\"><script type=\"application/ld+json\">{\"@type\":\"BlogPosting\",\"author\":{\"name\":\"Ada\"},\"dateModified\":\"2026-06-01\"}</script></head><body><main><article><h1>Bird care story</h1><time datetime=\"2026-04-01\">April</time><p>Useful guide text.</p><a href=\"/products/feeder\">our feeder</a></article></main></body></html>" };
   return base;
 }
+async function blogRecognitionFixtureServer(): Promise<string> {
+  const pages: Record<string, { type: string; body: string }> = {};
+  let base = "";
+  const server = createServer((request, response) => {
+    const current = pages[new URL(request.url ?? "/", "http://localhost").pathname];
+    if (!current) { response.writeHead(404, { "content-type": "text/html" }); response.end("<h1>Not found</h1>"); return; }
+    response.writeHead(200, { "content-type": current.type });
+    response.end(current.body);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  servers.push(server);
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("server did not bind");
+  base = "http://127.0.0.1:" + address.port;
+  pages["/sitemap.xml"] = { type: "application/xml", body: "<urlset><url><loc>" + base + "/editorial/sitemap-story</loc></url><url><loc>" + base + "/guides/pattern-story</loc></url></urlset>" };
+  pages["/blog-sitemap.xml"] = { type: "application/xml", body: "<urlset><url><loc>" + base + "/editorial/dedicated-sitemap-story</loc></url></urlset>" };
+  for (const route of ["/editorial/sitemap-story", "/guides/pattern-story", "/editorial/dedicated-sitemap-story"]) {
+    pages[route] = { type: "text/html", body: "<html><head><title>Sample editorial page</title></head><body><main><h1>Sample editorial page</h1><p>Fixture content used to test configured blog recognition.</p></main></body></html>" };
+  }
+  return base;
+}
 async function magentoFixtureServer(): Promise<string> {
   const root = path.join(process.cwd(), "fixtures/www");
   const product = await readFile(path.join(root, "magento-product-structure.html"), "utf8");
@@ -97,6 +118,37 @@ function sku(url: string): SkuRecord {
 }
 
 describe("weekly sync", () => {
+  it("recognizes configured blog sitemap URLs and URL prefixes", async () => {
+    const base = await blogRecognitionFixtureServer();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-weekly-blog-config-"));
+    roots.push(root);
+    for (const relative of [PATHS.seoPages, PATHS.seoIssues, PATHS.seoLinks, PATHS.blogIndex, PATHS.productDetails, PATHS.skus, PATHS.categories]) {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    }
+    await writeJsonl(path.join(root, PATHS.skus), [], "sku");
+    const source = JSON.parse(await readFile(path.join(process.cwd(), "fixtures/inputs/site.json"), "utf8")) as SiteConfig;
+    const baseConfig = { ...source, base_url: base, sitemaps: [base + "/sitemap.xml"],
+      crawl: { ...source.crawl, rate_limit_ms: 0, max_pages: 10 },
+      categories: { mode: "manual", manual: [{ slug: "fixture", name: "Fixture", url: base + "/fixture", match: [] }] } } as SiteConfig;
+
+    const withoutConfig = await runWeekly(root, baseConfig, { date: "2026-10-29" });
+    expect(withoutConfig.counts.pages).toBe(2);
+    const pagesWithoutConfig = await readJsonl(path.join(root, PATHS.seoPages));
+    expect(pagesWithoutConfig.filter((row) => row.page_type === "blog")).toHaveLength(0);
+
+    const configured = { ...baseConfig, content: {
+      blog_sitemaps: [base + "/blog-sitemap.xml"],
+      blog_url_patterns: ["/guides/"],
+    } } as SiteConfig;
+    const withConfig = await runWeekly(root, configured, { date: "2026-10-29" });
+    expect(withConfig.counts.blog).toBe(2);
+    const pagesWithConfig = await readJsonl(path.join(root, PATHS.seoPages));
+    expect(pagesWithConfig.filter((row) => row.page_type === "blog").map((row) => row.url)).toEqual([
+      base + "/editorial/dedicated-sitemap-story", base + "/guides/pattern-story",
+    ]);
+    expect(await readJsonl(path.join(root, PATHS.blogIndex))).toHaveLength(2);
+  }, 20_000);
+
   it("expands sitemaps and writes SEO, links, blog, product details and categories", async () => {
     const base = await fixtureServer();
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-weekly-"));
