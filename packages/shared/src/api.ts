@@ -439,8 +439,7 @@ export interface SiteIndexApi {
     orphanPages(id: ProjectId): Promise<string[]>;
     getPage(id: ProjectId, url: string): Promise<SeoPage | null>;
     googleSiteUrl(url: string): Promise<string>; // 返回 https://www.google.com/search?q=site:…
-    /** @deprecated 批量检查收录将在 UI 与 Desktop 清除调用后移除；保留单页 googleSiteUrl。 */
-    checkIndex(id: ProjectId, urls?: string[]): Promise<{ runId: string }>;
+    checkIndex(id: ProjectId, urls?: string[]): Promise<{ runId: string }>; // 批量，后台 Job
   };
   content: {
     summary(id: ProjectId): Promise<ContentSummary>;
