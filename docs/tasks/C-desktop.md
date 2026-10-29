@@ -112,6 +112,10 @@
 
 - [ ] 组织 PRD §8 的 8 个场景验收，记录在 issue `Milestone M3 集成`
 
+## v0.2.0 · 收敛开发
+
+- [x] C1 / #163：Windows 安装包的 CLI bundle 将 Core schema URL 指向同级 `resources/schemas/`；缺少预期路径模式或 schema 资源时让资源准备失败；覆盖路径重写单测并完成 Windows 安装版 CLI 与 `--run-job` fixture 验收。
+
 ## 交付给其他工作流
 
 - 给 B：Electron 里的真实 `window.siteindex`；`uiState` 存储
