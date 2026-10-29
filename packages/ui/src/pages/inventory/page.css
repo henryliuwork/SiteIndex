@@ -18,6 +18,14 @@ display: grid; grid-template-columns: minmax(0, 2.16fr) minmax(300px, 1fr); gap:
 min-height: 376px; padding: 16px 18px 12px;
 }
 
+.si-inventory-chart-heading .si-text-field {
+width: auto; min-width: 108px; height: 31px; padding: 4px 8px; font-size: 12px;
+}
+
+.si-trend-meta {
+margin: -5px 0 4px; color: var(--color-muted); font-size: 12px;
+}
+
 .si-category-panel {
 min-height: 376px; padding: 16px 18px;
 }
@@ -31,7 +39,31 @@ display: grid; gap: 14px;
 }
 
 .si-category-rate {
-display: grid; grid-template-columns: minmax(86px, 1fr) minmax(56px, 1.2fr) 42px; align-items: center; gap: 10px;
+display: grid; width: 100%; grid-template-columns: minmax(86px, 1fr) minmax(56px, 1.2fr) 42px; align-items: center; gap: 10px; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left;
+}
+
+.si-category-rate:hover .si-category-name {
+color: var(--color-brand-strong); text-decoration: underline;
+}
+
+.si-category-name small {
+margin-left: 6px; padding: 1px 4px; border-radius: 3px; background: var(--color-brand-soft); color: var(--color-brand-strong); font-family: var(--font-sans); font-size: 11px;
+}
+
+.si-category-default-toggle {
+display: inline-flex; align-items: center; gap: 7px; margin: 9px 0 0; color: var(--color-ink-2); font-size: 12px;
+}
+
+.si-category-default-toggle input, .si-inventory-parent-toggle input {
+accent-color: var(--color-brand);
+}
+
+.si-category-expand {
+justify-self: start; margin-top: 3px; padding: 0; border: 0; background: transparent; color: var(--color-brand-strong); cursor: pointer; font: inherit; font-size: 12px;
+}
+
+.si-category-panel .si-panel-heading > button {
+padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 5px; background: var(--color-surface); color: var(--color-brand-strong); cursor: pointer; font: inherit; font-size: 12px;
 }
 
 .si-category-name {
@@ -122,6 +154,18 @@ margin-left: auto; color: var(--color-muted); font-size: 12px; white-space: nowr
 display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
 }
 
+.si-inventory-parent-toggle {
+display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--color-ink-2); font-size: 12px; white-space: nowrap;
+}
+
+.si-inventory-sku-cell {
+display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px;
+}
+
+.si-inventory-sku-cell small {
+padding: 1px 4px; border-radius: 3px; background: var(--color-brand-soft); color: var(--color-brand-strong); font-size: 11px;
+}
+
 .si-filter-label {
 margin-right: 1px; color: var(--color-muted); font-size: 12px;
 }
@@ -194,6 +238,26 @@ display: grid; gap: 12px; margin-top: 20px;
 margin: 0; color: var(--color-ink); font-size: 13px;
 }
 
+.si-stock-price-chart {
+display: grid; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-line-soft);
+}
+
+.si-stock-chart-heading {
+display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+
+.si-stock-chart-heading h3 {
+margin: 0; color: var(--color-ink); font-size: 13px;
+}
+
+.si-stock-chart-heading .si-text-field {
+width: auto; min-width: 105px; height: 30px; padding: 4px 7px; font-size: 12px;
+}
+
+.si-stock-price-plot {
+height: 180px;
+}
+
 .si-stock-detail-history .si-status-cells {
 width:239px; height:18px;
 }
@@ -256,6 +320,12 @@ width: min(100%, 360px);
 
 @media (max-width: 760px) {
 .si-table-total {
+margin-left: 0;
+}
+}
+
+@media (max-width: 760px) {
+.si-inventory-parent-toggle {
 margin-left: 0;
 }
 }

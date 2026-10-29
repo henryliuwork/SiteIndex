@@ -3,11 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Download, FileText, RefreshCw } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import type { InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus } from "@siteindex/shared";
+import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, StatusCells, stockTone } from "../components";
@@ -22,6 +22,20 @@ const stockOptions = [
 ] as const;
 const lineColors = ["#1E6B52", "#E57920", "#78AEEB", "#8C68C5", "#4BA6A1"];
 const INITIAL_QUERY: ListQuery<SkuStockFilters> = { page: 1, pageSize: 20, filters: {} };
+const historyRanges: { value: HistoryRange; label: string }[] = [
+  { value: 30, label: "30 天" }, { value: 60, label: "60 天" }, { value: 90, label: "90 天" }, { value: "all", label: "全部" },
+];
+type InventoryTableRow = SkuStockView & { is_parent?: boolean; children_count?: number; in_stock_children_count?: number };
+
+function rangeLabel(range: HistoryRange): string { return range === "all" ? "全部" : `近 ${range} 天`; }
+function businessDateLabel(value: string): string {
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(new Date(value + "T00:00:00Z"));
+}
+
+function requestInventorySummary(id: string, range: HistoryRange): Promise<InventorySummary> {
+  const summary = api.inventory.summary as unknown as (projectId: string, historyRange: HistoryRange) => Promise<InventorySummary>;
+  return summary(id, range);
+}
 
 function platformName(project: ProjectSummary | undefined): string {
   const names: Record<ProjectSummary["platform"], string> = {
@@ -55,13 +69,15 @@ function trendPoints(summary: InventorySummary | undefined) {
   });
 }
 
-const TrendChart = memo(function TrendChart({ summary }: { summary: InventorySummary }) {
+const TrendChart = memo(function TrendChart({ summary, range, onRangeChange }: { summary: InventorySummary; range: HistoryRange; onRangeChange: (range: HistoryRange) => void }) {
   const points = trendPoints(summary);
   return (
     <section className="si-inventory-chart si-panel" aria-label="分类在线率趋势">
-      <div className="si-panel-heading">
-        <h2>分类在线率趋势 · 近 30 天</h2>
+      <div className="si-panel-heading si-inventory-chart-heading">
+        <h2>分类在线率趋势 · {rangeLabel(range)}</h2>
+        <select className="si-text-field" aria-label="在线率趋势范围" value={String(range)} onChange={(event) => onRangeChange(event.target.value === "all" ? "all" : Number(event.target.value) as 30 | 60 | 90)}>{historyRanges.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
       </div>
+      <p className="si-trend-meta">{summary.trend.dates[0] ? `数据自 ${businessDateLabel(summary.trend.dates[0])} 起` : "暂无历史日期"} · 站点时区 {summary.timezone || "未配置"}</p>
       <div className="si-trend-chart">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points} margin={{ top: 10, right: 12, bottom: 4, left: 0 }}>
@@ -71,7 +87,7 @@ const TrendChart = memo(function TrendChart({ summary }: { summary: InventorySum
             <Tooltip formatter={(value) => [formatRate(typeof value === "number" ? value : null), "在线率"]} labelFormatter={(label) => "日期 " + label} />
             <Legend align="right" verticalAlign="top" height={34} iconType="plainline" wrapperStyle={{ fontSize: 12, color: "#47515B" }} />
             {summary.trend.series.map((series, index) => (
-              <Line key={series.category} type="monotone" dataKey={series.category} name={series.category} stroke={lineColors[index % lineColors.length]} strokeWidth={2.4} dot={false} activeDot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
+              <Line key={series.category} type="monotone" dataKey={series.category} name={series.category} stroke={lineColors[index % lineColors.length]} strokeWidth={2.4} dot={points.length === 1 ? { r: 3 } : false} activeDot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -80,26 +96,47 @@ const TrendChart = memo(function TrendChart({ summary }: { summary: InventorySum
   );
 });
 
-const CategoryPanel = memo(function CategoryPanel({ summary, project }: { summary: InventorySummary; project: ProjectSummary | undefined }) {
+const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCategories, showDefaultCategories, onShowDefaultCategories, expanded, onToggleExpanded, onManage, onSelectCategory }: {
+  summary: InventorySummary;
+  project: ProjectSummary | undefined;
+  watchedCategories: WatchedCategory[];
+  showDefaultCategories: boolean;
+  onShowDefaultCategories: (show: boolean) => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  onManage: () => void;
+  onSelectCategory: (slug: string) => void;
+}) {
+  const watched = new Map(watchedCategories.map((item) => [item.slug ?? item.name, item]));
+  const categoryMap = new Map(summary.category_rates.map((item) => [item.category, item]));
+  for (const category of watchedCategories) {
+    const slug = category.slug ?? category.name;
+    if (!categoryMap.has(slug)) categoryMap.set(slug, { category: slug, rate: 0, total: 0 });
+  }
+  const allCategories = [...categoryMap.values()].map((item) => ({ ...item, watched: watched.has(item.category), label: watched.get(item.category)?.name ?? item.category }));
+  const categories = watched.size > 0 && !showDefaultCategories ? allCategories.filter((item) => item.watched) : allCategories;
+  const rows = expanded ? categories : categories.slice(0, 8);
   return (
     <aside className="si-category-panel si-panel">
       <div className="si-panel-heading">
         <h2>分类在线率</h2>
-        <a href={"#/p/" + project?.id + "/settings/categories"}>管理分类</a>
+        <button type="button" onClick={onManage}>设置关注分类</button>
       </div>
+      <label className="si-category-default-toggle"><input type="checkbox" checked={showDefaultCategories} onChange={(event) => onShowDefaultCategories(event.target.checked)} /><span>展示默认分类</span></label>
       <p className="si-category-source">分类来源：{categorySourceLabel(summary, project)} · 未归类 {summary.uncategorized.toLocaleString("zh-CN")}</p>
       <div className="si-category-rates">
-        {summary.category_rates.map((item) => (
-          <div className="si-category-rate" key={item.category}>
-            <span className="si-category-name">{item.category}</span>
+        {rows.map((item) => (
+          <button type="button" className="si-category-rate" key={item.category} onClick={() => onSelectCategory(item.category)}>
+            <span className="si-category-name">{item.label}{item.watched && <small>关注</small>}</span>
             <span className="si-category-track" role="progressbar" aria-label={item.category + "在线率"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(item.rate * 100)}>
               <span className={item.rate < 0.6 ? "is-low" : ""} style={{ width: Math.max(0, Math.min(100, item.rate * 100)) + "%" }} />
             </span>
-            <span className="si-category-percent">{formatRate(item.rate)}</span>
-          </div>
+            <span className="si-category-percent">{item.total ? formatRate(item.rate) : "—"}</span>
+          </button>
         ))}
-        {summary.category_rates.length === 0 && <p className="si-empty-note">暂无分类数据</p>}
+        {categories.length === 0 && <p className="si-empty-note">暂无分类数据。可设置关注分类。</p>}
       </div>
+      {categories.length > 8 && <button type="button" className="si-category-expand" onClick={onToggleExpanded}>{expanded ? "收起分类" : `展开全部 ${categories.length} 个分类`}</button>}
       <div className="si-today-changes">
         <h3>今日变化</h3>
         {summary.today.length > 0 ? summary.today.slice(0, 4).map((item, index) => {
@@ -112,23 +149,35 @@ const CategoryPanel = memo(function CategoryPanel({ summary, project }: { summar
   );
 });
 
-function StockDetail({ row }: { row: SkuStockView }) {
+function StockDetail({ row }: { row: InventoryTableRow }) {
+  const [range, setRange] = useState<HistoryRange>(30);
+  const pricePoints = row.price_history ?? [];
+  const latestPriceDate = pricePoints.at(-1)?.date;
+  const cutoff = range === "all" || !latestPriceDate ? null : Date.parse(latestPriceDate) - range * 86_400_000;
+  const visiblePrices = pricePoints.filter((point) => cutoff === null || Date.parse(point.date) >= cutoff).map((point) => ({ date: point.date.slice(5), price: point.price }));
   return (
     <div className="si-stock-detail">
-      <div className="si-stock-detail-title"><Chip tone={stockTone[row.stock_status]}>{stockNames[row.stock_status]}</Chip><span>{row.category}</span></div>
+      <div className="si-stock-detail-title">{row.is_parent ? <Chip tone="info">父 SKU</Chip> : <Chip tone={stockTone[row.stock_status]}>{stockNames[row.stock_status]}</Chip>}<span>{row.category}</span></div>
       <dl className="si-detail-list">
         <div><dt>SKU</dt><dd className="si-mono">{row.sku}</dd></div>
         <div><dt>产品</dt><dd>{row.title}</dd></div>
+        {row.is_parent && <div><dt>子 SKU</dt><dd>{row.children_count ?? 0} 个 · 有货 {row.in_stock_children_count ?? 0} 个</dd></div>}
         <div><dt>变体</dt><dd>{row.variant_title ?? "—"}</dd></div>
         <div><dt>价格</dt><dd className="si-mono">{row.price.toFixed(2)}</dd></div>
         <div><dt>当前状态持续</dt><dd>{row.days_in_status} 天</dd></div>
-        <div><dt>7 天在线率</dt><dd>{formatRate(row.online_rate_7d)}</dd></div>
-        <div><dt>30 天在线率</dt><dd>{formatRate(row.online_rate_30d)}</dd></div>
+        {!row.is_parent && <div><dt>7 天在线率</dt><dd>{formatRate(row.online_rate_7d)}</dd></div>}
+        {!row.is_parent && <div><dt>30 天在线率</dt><dd>{formatRate(row.online_rate_30d)}</dd></div>}
         <div><dt>30 天状态变化</dt><dd>{row.changes_30d} 次</dd></div>
         <div><dt>最近变化</dt><dd>{row.last_change ?? "无变化"}</dd></div>
         <div><dt>最近变化日期</dt><dd>{row.last_change_at ?? "—"}</dd></div>
       </dl>
-      <section className="si-stock-detail-history"><h3>近 30 天库存状态</h3><StatusCells history={row.history_30d} /></section>
+      {!row.is_parent && <>
+        <section className="si-stock-price-chart">
+          <div className="si-stock-chart-heading"><h3>价格趋势</h3><select className="si-text-field" aria-label="价格趋势范围" value={String(range)} onChange={(event) => setRange(event.target.value === "all" ? "all" : Number(event.target.value) as 30 | 60 | 90)}>{historyRanges.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+          {visiblePrices.length > 0 ? <div className="si-stock-price-plot"><ResponsiveContainer width="100%" height="100%"><LineChart data={visiblePrices} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}><CartesianGrid stroke="#E8EBEF" vertical={false} /><XAxis dataKey="date" tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} /><YAxis width={48} tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [typeof value === "number" ? value.toFixed(2) : "—", "价格"]} /><Line type="monotone" dataKey="price" name="价格" stroke="#1E6B52" strokeWidth={2} dot={visiblePrices.length === 1 ? { r: 3 } : false} activeDot={{ r: 3 }} isAnimationActive={false} /></LineChart></ResponsiveContainer></div> : <p className="si-muted">暂无价格历史。</p>}
+        </section>
+        <section className="si-stock-detail-history"><h3>近 30 天库存状态</h3><StatusCells history={row.history_30d} /></section>
+      </>}
     </div>
   );
 }
@@ -149,15 +198,15 @@ function DailyReportDialog({ report, onOpenChange }: { report: string | null | u
   );
 }
 
-function inventoryColumns(): ColumnDef<SkuStockView, unknown>[] {
+function inventoryColumns(): ColumnDef<InventoryTableRow, unknown>[] {
   return [
-    { id: "sku", accessorKey: "sku", header: "SKU", cell: ({ row }) => <span className="si-mono">{row.original.sku}</span>, enableSorting: true },
-    { id: "title", accessorKey: "title", header: "产品 / 变体", cell: ({ row }) => <span className="si-product-cell"><strong>{row.original.title}</strong>{row.original.variant_title && <small>{row.original.variant_title}</small>}</span>, enableSorting: true },
+    { id: "sku", accessorKey: "sku", header: "SKU", cell: ({ row }) => <span className="si-inventory-sku-cell"><span className="si-mono">{row.original.sku}</span>{row.original.is_parent && <small>父 SKU</small>}</span>, enableSorting: true },
+    { id: "title", accessorKey: "title", header: "产品 / 变体", cell: ({ row }) => <span className="si-product-cell"><strong>{row.original.title}</strong>{row.original.is_parent && <small>子 SKU {row.original.children_count ?? 0} 个 · 有货 {row.original.in_stock_children_count ?? 0} 个</small>}{!row.original.is_parent && row.original.variant_title && <small>{row.original.variant_title}</small>}</span>, enableSorting: true },
     { id: "category", accessorKey: "category", header: "分类", cell: ({ row }) => <span className="si-mono">{row.original.category}</span>, enableSorting: true },
     { id: "price", accessorKey: "price", header: "价格", cell: ({ row }) => <span className="si-mono">{row.original.price.toFixed(2)}</span>, enableSorting: true },
     { id: "stock_status", accessorKey: "stock_status", header: "当前状态", cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockNames[row.original.stock_status]}</Chip>, enableSorting: true },
     { id: "days_in_status", accessorKey: "days_in_status", header: "持续", cell: ({ row }) => row.original.days_in_status >= 60 ? "60 天+" : row.original.days_in_status <= 1 ? "今天" : row.original.days_in_status + " 天", enableSorting: true },
-    { id: "online_rate_30d", accessorKey: "online_rate_30d", header: "30 天在线率", cell: ({ row }) => <span className="si-rate-cell"><span className="si-rate-track"><span className={row.original.online_rate_30d !== null && row.original.online_rate_30d < 0.6 ? "is-low" : ""} style={{ width: (row.original.online_rate_30d ?? 0) * 100 + "%" }} /></span><span>{formatRate(row.original.online_rate_30d)}</span></span>, enableSorting: true },
+    { id: "online_rate_30d", accessorKey: "online_rate_30d", header: "30 天在线率", cell: ({ row }) => row.original.is_parent ? <span className="si-muted">—</span> : <span className="si-rate-cell"><span className="si-rate-track"><span className={row.original.online_rate_30d !== null && row.original.online_rate_30d < 0.6 ? "is-low" : ""} style={{ width: (row.original.online_rate_30d ?? 0) * 100 + "%" }} /></span><span>{formatRate(row.original.online_rate_30d)}</span></span>, enableSorting: true },
     { id: "history_30d", accessorKey: "history_30d", header: "近 30 天（左旧右新）", cell: ({ row }) => <StatusCells history={row.original.history_30d} />, enableSorting: false },
     { id: "last_change", accessorKey: "last_change", header: "最近变化", cell: ({ row }) => row.original.last_change ? <span className="si-last-change"><strong>{row.original.last_change_at ?? "近期"}</strong><small>{row.original.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
   ];
@@ -165,15 +214,19 @@ function inventoryColumns(): ColumnDef<SkuStockView, unknown>[] {
 
 export function InventoryPage() {
   const { id = "kingsyard" } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<ListQuery<SkuStockFilters>>(INITIAL_QUERY);
-  const [selectedRow, setSelectedRow] = useState<SkuStockView | null>(null);
+  const [selectedRow, setSelectedRow] = useState<InventoryTableRow | null>(null);
+  const [historyRange, setHistoryRange] = useState<HistoryRange>(30);
+  const [showDefaultCategories, setShowDefaultCategories] = useState<boolean | null>(null);
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const [report, setReport] = useState<string | null | undefined>(undefined);
   const [feedback, setFeedback] = useState("");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
 
-  useEffect(() => { setQuery(INITIAL_QUERY); setSelectedRow(null); }, [id]);
+  useEffect(() => { setQuery(INITIAL_QUERY); setSelectedRow(null); setShowDefaultCategories(null); setCategoriesExpanded(false); setHistoryRange(30); }, [id]);
   useEffect(() => {
     if (!activeRunId) return;
     const unsubscribeProgress = api.jobs.onProgress((progress) => {
@@ -191,11 +244,16 @@ export function InventoryPage() {
   }, [activeRunId, id, queryClient]);
 
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
-  const summaryQuery = useQuery({ queryKey: ["inventory-summary", id], queryFn: () => api.inventory.summary(id, 30) });
+  const summaryQuery = useQuery({ queryKey: ["inventory-summary", id, historyRange], queryFn: () => requestInventorySummary(id, historyRange) });
   const skuQuery = useQuery({ queryKey: ["inventory-skus", id, query], queryFn: () => api.inventory.listSkus(id, query), placeholderData: (previous) => previous });
   const columns = useMemo(inventoryColumns, []);
   const summary = summaryQuery.data;
   const project = projectQuery.data?.summary;
+  const watchedCategories = projectQuery.data?.config.categories.watched ?? [];
+  const displayDefaultCategories = showDefaultCategories ?? watchedCategories.length === 0;
+  const skuRows = (skuQuery.data?.rows ?? []) as InventoryTableRow[];
+  const hasParentGroupingData = skuRows.some((row) => row.parent_sku != null || row.is_parent === true);
+  const groupingEnabled = Boolean(projectQuery.data?.config.sku_grouping?.enabled) && hasParentGroupingData;
   const kpis: Kpi[] = summary?.kpis ?? [];
   const statusFilter = query.filters?.status ?? "all";
   const categoryFilter = query.filters?.category ?? "all";
@@ -203,6 +261,8 @@ export function InventoryPage() {
   const onSearch = useCallback((search: string) => setQuery((current) => ({ ...current, page: 1, search: search || undefined })), []);
   const onStatusChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: !value || value === "all" ? undefined : value as SkuStockFilters["status"] } }));
   const onCategoryChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, category: !value || value === "all" ? undefined : value } }));
+  const onPriceChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, price_changed_within: !value || value === "none" ? undefined : value === "all" ? "all" : Number(value) as 30 | 60 | 90 } }));
+  const onParentOnlyChange = (checked: boolean) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: checked || undefined } }));
   const sortByRate = () => setQuery((current) => ({ ...current, page: 1, sort: { field: "online_rate_30d", dir: current.sort?.field === "online_rate_30d" && current.sort.dir === "asc" ? "desc" : "asc" } }));
 
   const exportCsv = async () => {
@@ -231,7 +291,7 @@ export function InventoryPage() {
         <h2>SKU 库存明细</h2>
         <SearchInput value={query.search ?? ""} onSearch={onSearch} label="搜索 SKU 库存" placeholder="搜索 SKU、标题、变体" />
         <Button size="small" onClick={sortByRate}>按在线率排序</Button>
-        <span className="si-table-total">显示 {skuQuery.data?.rows.length ?? 0} / {skuQuery.data?.total.toLocaleString("zh-CN") ?? "—"} 个 SKU</span>
+        <span className="si-table-total">显示 {skuRows.length} / {skuQuery.data?.total.toLocaleString("zh-CN") ?? "—"} 个{query.filters?.parent_only ? "父 SKU" : " SKU"}</span>
       </div>
       <div className="si-inventory-filters">
         <span className="si-filter-label">状态</span>
@@ -239,6 +299,12 @@ export function InventoryPage() {
         <span className="si-filter-label si-filter-category-label">分类</span>
         <FilterPill currentValue={categoryFilter} value="all" onValueChange={onCategoryChange}>全部</FilterPill>
         {(summary?.category_rates ?? []).map((category) => <FilterPill key={category.category} currentValue={categoryFilter} value={category.category} onValueChange={onCategoryChange}>{category.category}</FilterPill>)}
+        <span className="si-filter-label si-filter-category-label">价格变动</span>
+        {[
+          { value: "none", label: "全部价格" }, { value: "30", label: "近 30 天" },
+          { value: "60", label: "近 60 天" }, { value: "90", label: "近 90 天" }, { value: "all", label: "有历史变动" },
+        ].map((option) => <FilterPill key={option.value} currentValue={query.filters?.price_changed_within?.toString() ?? "none"} value={option.value} onValueChange={onPriceChange}>{option.label}</FilterPill>)}
+        {groupingEnabled && <label className="si-inventory-parent-toggle"><input type="checkbox" checked={Boolean(query.filters?.parent_only)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>}
       </div>
     </div>
   );
@@ -263,8 +329,18 @@ export function InventoryPage() {
       {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <>
         <div className="si-inventory-kpis">{kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
         <div className="si-inventory-overview-grid">
-          <TrendChart summary={summary} />
-          <CategoryPanel summary={summary} project={project} />
+          <TrendChart summary={summary} range={historyRange} onRangeChange={setHistoryRange} />
+          <CategoryPanel
+            summary={summary}
+            project={project}
+            watchedCategories={watchedCategories}
+            showDefaultCategories={displayDefaultCategories}
+            onShowDefaultCategories={setShowDefaultCategories}
+            expanded={categoriesExpanded}
+            onToggleExpanded={() => setCategoriesExpanded((value) => !value)}
+            onManage={() => navigate(`/p/${id}/settings/config#watched-categories`)}
+            onSelectCategory={(category) => onCategoryChange(category)}
+          />
         </div>
       </>}
       {syncMessage && <div className="si-sync-progress" role="status"><span>{syncMessage}</span>{activeRunId && <span>同步任务运行中</span>}</div>}
@@ -274,7 +350,7 @@ export function InventoryPage() {
       <DataTable
         tableId="inventory.skus"
         scopeId={id}
-        rows={skuQuery.data?.rows ?? []}
+        rows={skuRows}
         total={skuQuery.data?.total ?? 0}
         columns={columns}
         query={query}
