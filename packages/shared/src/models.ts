@@ -7,6 +7,11 @@
 export type ISODate = string; // YYYY-MM-DD
 export type ISODateTime = string; // ISO 8601 带时区
 export type Url = string;
+export type HistoryRange = 30 | 60 | 90 | "all";
+export type SkuGroupingRule =
+  | { type: "suffix"; value: string }
+  | { type: "separator"; value: string }
+  | { type: "regex"; value: string };
 
 export const SCHEMA_VERSION = "1.1" as const;
 
@@ -22,6 +27,13 @@ export interface ManualCategory {
   name: string;
   url: string;
   match: { type: CategoryMatchType; value: string }[];
+}
+
+export interface WatchedCategory {
+  name: string;
+  slug?: string;
+  url?: Url;
+  manual?: boolean;
 }
 
 export interface JobSchedule {
@@ -61,6 +73,14 @@ export interface SiteConfig {
   markets?: string[];
   brand: { name: string; tagline?: string; voice?: string; audience?: string; usp?: string[] };
   sitemaps: Url[];
+  content?: {
+    blog_sitemaps?: Url[];
+    blog_url_patterns?: string[];
+  };
+  sku_grouping?: {
+    enabled: boolean;
+    rule: SkuGroupingRule;
+  };
   crawl: {
     adapter: "gmc_feed";
     feed_url: Url | Url[];
@@ -78,7 +98,12 @@ export interface SiteConfig {
     user_agent?: string;
     overrides?: Record<string, Record<string, unknown>>;
   };
-  categories: { mode: CategoryMode; url_pattern?: string; manual?: ManualCategory[] };
+  categories: {
+    mode: CategoryMode;
+    url_pattern?: string;
+    manual?: ManualCategory[];
+    watched?: WatchedCategory[];
+  };
   seo?: {
     core_keywords?: string[];
     competitors?: string[];
@@ -449,6 +474,8 @@ export interface SkuStockView {
   changes_30d: number;
   last_change: string | null;
   last_change_at: ISODate | null;
+  parent_sku?: string | null;
+  price_history?: { date: ISODate; price: number }[];
 }
 
 // ---------- 日志与校验 ----------

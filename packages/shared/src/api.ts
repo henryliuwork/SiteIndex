@@ -11,6 +11,7 @@ import type {
   CategoryMode,
   DesignTokens,
   FileCheck,
+  HistoryRange,
   ISODate,
   ISODateTime,
   Keyword,
@@ -28,6 +29,7 @@ import type {
   SeoPage,
   Severity,
   SiteConfig,
+  SkuGroupingRule,
   SkuRecord,
   SkuStockView,
   StockStatus,
@@ -196,6 +198,7 @@ export interface InventorySummary {
   trend: { dates: ISODate[]; series: { category: string; rates: (number | null)[] }[] };
   category_rates: { category: string; rate: number; total: number }[];
   category_source: CategoryMode;
+  timezone?: string;
   uncategorized: number;
   today: { type: "restock" | "oos" | "price" | "new" | "removed"; sku: string; title: string; detail?: string }[];
 }
@@ -203,6 +206,16 @@ export interface InventorySummary {
 export interface SkuStockFilters {
   status?: StockStatus | "today";
   category?: string;
+  parent_only?: boolean;
+  watched_only?: boolean;
+  price_changed_within?: HistoryRange;
+}
+
+export interface SkuGroupingPreview {
+  parents: number;
+  children: number;
+  samples: { parent: string; children: string[] }[];
+  unmatched: number;
 }
 
 // ---------- 产品 ----------
@@ -232,11 +245,13 @@ export interface SeoSummary {
   crawled_at: ISODateTime | null;
   title_range: [number, number];
   description_range: [number, number];
+  issue_counts?: { rule: string; label: string; severity: Severity; count: number }[];
 }
 
 export interface SeoIssueFilters {
   severity?: Severity;
   status?: SeoIssue["status"];
+  rules?: string[];
 }
 
 export interface SeoPageFilters {
@@ -409,6 +424,9 @@ export interface SiteIndexApi {
   overview: {
     get(id: ProjectId): Promise<OverviewData>;
   };
+  sku?: {
+    previewGrouping(id: ProjectId, rule: SkuGroupingRule): Promise<SkuGroupingPreview>;
+  };
   inventory: {
     summary(id: ProjectId, days?: 14 | 30): Promise<InventorySummary>;
     listSkus(id: ProjectId, q: ListQuery<SkuStockFilters>): Promise<PageResult<SkuStockView>>;
@@ -432,7 +450,8 @@ export interface SiteIndexApi {
     orphanPages(id: ProjectId): Promise<string[]>;
     getPage(id: ProjectId, url: string): Promise<SeoPage | null>;
     googleSiteUrl(url: string): Promise<string>; // 返回 https://www.google.com/search?q=site:…
-    checkIndex(id: ProjectId, urls?: string[]): Promise<{ runId: string }>; // 批量，后台 Job
+    /** @deprecated 批量检查收录将在 UI 与 Desktop 清除调用后移除；保留单页 googleSiteUrl。 */
+    checkIndex(id: ProjectId, urls?: string[]): Promise<{ runId: string }>;
   };
   content: {
     summary(id: ProjectId): Promise<ContentSummary>;
