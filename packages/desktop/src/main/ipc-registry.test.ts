@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { API_INVOKE_METHODS, ipcChannel } from "../shared/ipc-contract.js";
+import { API_INVOKE_METHODS } from "@siteindex/shared";
+import { ipcChannel } from "../shared/ipc-contract.js";
 import { createHandlerRegistry, getIpcHandlerPaths } from "./ipc-registry.js";
 
 describe("IPC invoke registry contract", () => {
