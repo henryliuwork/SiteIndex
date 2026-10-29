@@ -251,8 +251,9 @@ export function InventoryPage() {
   const project = projectQuery.data?.summary;
   const watchedCategories = projectQuery.data?.config.categories.watched ?? [];
   const displayDefaultCategories = showDefaultCategories ?? watchedCategories.length === 0;
-  const groupingEnabled = Boolean(projectQuery.data?.config.sku_grouping?.enabled);
-  const skuRows = (skuQuery.data?.rows ?? []).map((row) => ({ ...row, is_parent: query.filters?.parent_only ? true : (row as InventoryTableRow).is_parent })) as InventoryTableRow[];
+  const skuRows = (skuQuery.data?.rows ?? []) as InventoryTableRow[];
+  const hasParentGroupingData = skuRows.some((row) => row.parent_sku != null || row.is_parent === true);
+  const groupingEnabled = Boolean(projectQuery.data?.config.sku_grouping?.enabled) && hasParentGroupingData;
   const kpis: Kpi[] = summary?.kpis ?? [];
   const statusFilter = query.filters?.status ?? "all";
   const categoryFilter = query.filters?.category ?? "all";

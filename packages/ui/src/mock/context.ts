@@ -139,14 +139,10 @@ export function rowFromSku(record: SkuRecord, history: string, since: string): S
     last_change: previous === current ? null : reverseNames[previous] + " → " + reverseNames[current],
     last_change_at: previous === current ? null : dateBefore((record.sku.length + changes) % 10),
     parent_sku: record.sku.match(/^(.+?)-[A-Z]$/)?.[1] ?? null,
-    price_history: (() => {
-      const skuNumber = Number(record.sku.match(/\d+$/)?.[0] ?? 0);
-      return [
-        { date: dateBefore(60), price: record.price + (skuNumber % 3 === 0 ? 2.25 : 0) },
-        { date: dateBefore(18), price: record.price + (skuNumber % 7 === 0 ? -1.5 : 0) },
-        { date: FIXED_TODAY, price: record.price },
-      ];
-    })(),
+    price_history: fixtures.events
+      .filter((event) => event.sku === record.sku && event.type === "price_change" && typeof event.to === "number")
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((event) => ({ date: event.date, price: event.to as number })),
   };
 }
 

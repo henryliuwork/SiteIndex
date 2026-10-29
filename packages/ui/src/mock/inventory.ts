@@ -34,9 +34,10 @@ function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
 }
 
 function priceChangedWithin(row: SkuStockView, range: HistoryRange): boolean {
-  const history = row.price_history ?? [];
   const cutoff = range === "all" ? Number.NEGATIVE_INFINITY : Date.parse(FIXED_TODAY) - range * 86_400_000;
-  return history.some((point, index) => index > 0 && point.price !== history[index - 1]?.price && Date.parse(point.date) >= cutoff);
+  return fixtures.events.some((event) => event.sku === row.sku
+    && event.type === "price_change"
+    && Date.parse(event.date) >= cutoff);
 }
 
 export function createInventoryMock(): SiteIndexApi["inventory"] {
