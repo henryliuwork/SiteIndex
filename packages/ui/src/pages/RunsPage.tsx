@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
-import type { JobName, JobProgress, JobResult, ListQuery, RunLog, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
-import type { ColumnDef } from "@tanstack/react-table";
-import { Activity, CalendarClock, CheckCircle2, ClipboardCheck, FileText, Palette, RefreshCw, Square, Wifi } from "lucide-react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
+import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader } from "../components";
+import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
 import "./runs/page.css";
 
 const jobLabels: Record<string, string> = {
@@ -39,6 +39,7 @@ const optionLabels: { key: keyof ScheduleConfig["options"]; label: string }[] = 
 ];
 
 type ActiveRun = { runId: string; job: JobName };
+type ScheduleDraft = JobSchedule;
 const cloneSchedule = (schedule: ScheduleConfig): ScheduleConfig => JSON.parse(JSON.stringify(schedule)) as ScheduleConfig;
 
 function formatDateTime(value: string | null): string {
@@ -73,6 +74,28 @@ function weekdaySummary(days: Weekday[] | undefined): string {
   return selected ? `每周${selected}` : "未选择星期";
 }
 
+function triggerLabel(trigger: RunLog["trigger"]): string {
+  return trigger === "schedule" ? "定时计划" : trigger === "cli" ? "命令行" : "手动执行";
+}
+
+function stepLabel(step: string, index: number): string {
+  const labels: Record<string, string> = {
+    load_project: "读取项目配置", fetch_feed: "读取 Feed", sync_products: "同步产品", sync_inventory: "同步库存",
+    generate_report: "生成库存日报", rebuild_views: "重建数据视图", fetch_sitemap: "读取 Sitemap", crawl_pages: "抓取页面",
+    classify_content: "识别博客与分类", extract_design: "提取设计规范", validate_files: "校验数据文件", update_readme: "更新 README",
+    archive_report: "生成月度归档", check_index: "检查 Google 索引", startup: "启动任务",
+  };
+  return labels[step] ?? `步骤 ${index + 1}`;
+}
+
+function stepStatusLabel(status: RunLogStep["status"]): string {
+  return status === "ok" ? "完成" : status === "failed" ? "失败" : "跳过";
+}
+
+function stepStatusTone(status: RunLogStep["status"]): "ok" | "danger" | "neutral" {
+  return status === "ok" ? "ok" : status === "failed" ? "danger" : "neutral";
+}
+
 export function RunsPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -83,12 +106,12 @@ export function RunsPage() {
   const historyQuery = useQuery({ queryKey: ["job-history", id], queryFn: () => api.jobs.history(id, 30) });
   const runningQuery = useQuery({ queryKey: ["running-job", id], queryFn: () => api.jobs.running(id), refetchInterval: 1500 });
   const [draft, setDraft] = useState<ScheduleConfig | null>(null);
-  const [tableQuery, setTableQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [runResult, setRunResult] = useState<JobResult | null>(null);
   const [logs, setLogs] = useState<JobProgress[]>([]);
-  const [selectedRun, setSelectedRun] = useState<RunLog | null>(null);
+  const [editingScheduleJob, setEditingScheduleJob] = useState<SchedulableJob | null>(null);
+  const [scheduleDialogDraft, setScheduleDialogDraft] = useState<ScheduleDraft | null>(null);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [reauthorizingSchedule, setReauthorizingSchedule] = useState(false);
   const [claimingRunner, setClaimingRunner] = useState(false);
@@ -124,13 +147,6 @@ export function RunsPage() {
   }, [activeRun, id, queryClient]);
 
   const history = historyQuery.data ?? [];
-  const rowColumns: ColumnDef<RunLog, unknown>[] = [
-    { id: "time", header: "时间", size: 130, cell: ({ row }) => <code className="si-runs-date">{formatDateTime(row.original.started_at)}</code> },
-    { id: "job", header: "任务", size: 130, cell: ({ row }) => <span>{jobLabels[row.original.job]}</span> },
-    { id: "device", header: "设备", size: 120, cell: ({ row }) => <span>{row.original.device_name ?? "—"}</span> },
-    { id: "summary", header: "结果", size: 370, cell: ({ row }) => <span className="si-runs-summary-cell">{runSummary(row.original)}</span> },
-    { id: "status", header: "状态", size: 90, cell: ({ row }) => <Chip tone={statusTone(row.original.status)}>{statusLabel(row.original.status)}</Chip> },
-  ];
   const lastByJob = useMemo(() => new Map(history.map((run) => [run.job, run])), [history]);
 
   const announce = (message: string) => {
@@ -160,23 +176,28 @@ export function RunsPage() {
     catch (error) { announce("停止失败：" + (apiErrorMessage(error, "请稍后重试"))); }
   };
 
-  const updateScheduleJob = (key: SchedulableJob, patch: Partial<ScheduleConfig[SchedulableJob]>) => {
-    setDraft((current) => current ? { ...current, [key]: { ...current[key], ...patch } } : current);
+  const openScheduleEditor = (key: SchedulableJob) => {
+    if (!draft) return;
+    setEditingScheduleJob(key);
+    setScheduleDialogDraft({ ...draft[key], days: draft[key].days ? [...draft[key].days] : undefined });
   };
 
-  const toggleWeekday = (key: SchedulableJob, day: Weekday) => {
-    if (!draft || key === "monthly") return;
-    const days = draft[key].days ?? [];
-    const next = days.includes(day) ? days.filter((value) => value !== day) : [...days, day].sort((a, b) => a - b);
-    updateScheduleJob(key, { days: next });
+  const updateScheduleDialog = (patch: Partial<ScheduleDraft>) => {
+    setScheduleDialogDraft((current) => current ? { ...current, ...patch } : current);
   };
 
-  const saveSchedule = async () => {
-    if (!draft || savingSchedule) return;
-    if (draft.monthly.day_of_month == null || draft.monthly.day_of_month < 1 || draft.monthly.day_of_month > 31) { announce("每月日期须在 1 到 31 之间"); return; }
+  const toggleScheduleDialogWeekday = (day: Weekday) => {
+    if (!scheduleDialogDraft) return;
+    const days = scheduleDialogDraft.days ?? [];
+    updateScheduleDialog({ days: days.includes(day) ? days.filter((value) => value !== day) : [...days, day].sort((a, b) => a - b) });
+  };
+
+  const saveSchedule = async (nextDraft: ScheduleConfig | null = draft): Promise<boolean> => {
+    if (!nextDraft || savingSchedule) return false;
+    if (nextDraft.monthly.day_of_month == null || nextDraft.monthly.day_of_month < 1 || nextDraft.monthly.day_of_month > 31) { announce("每月日期须在 1 到 31 之间"); return false; }
     setSavingSchedule(true);
     try {
-      const saved = await api.schedule.save(id, draft);
+      const saved = await api.schedule.save(id, nextDraft);
       queryClient.setQueryData(["schedule", id], saved);
       setDraft(cloneSchedule(saved.config));
       const runner = queryClient.getQueryData<RunnerState>(["runner", id]);
@@ -184,8 +205,16 @@ export function RunsPage() {
       announce(runner && !runner.is_this_device
         ? runner.runner ? `计划已保存，将在执行设备“${runner.runner.device_name}”上运行` : "计划已保存。尚未指定执行设备，点击“改为本机”后才会注册系统计划任务"
         : saved.registered ? "计划已保存，系统计划任务已更新" : "计划已保存，系统计划任务尚未注册，请查看上方运行模式");
-    } catch (error) { announce("保存失败：" + (apiErrorMessage(error, "请稍后重试"))); }
+      return true;
+    } catch (error) { announce("保存失败：" + (apiErrorMessage(error, "请稍后重试"))); return false; }
     finally { setSavingSchedule(false); }
+  };
+
+  const saveScheduleFromDialog = async () => {
+    if (!draft || !editingScheduleJob || !scheduleDialogDraft) return;
+    const next = { ...draft, [editingScheduleJob]: scheduleDialogDraft };
+    setDraft(next);
+    if (await saveSchedule(next)) { setEditingScheduleJob(null); setScheduleDialogDraft(null); }
   };
 
   const reauthorizeSchedule = async () => {
@@ -232,65 +261,89 @@ export function RunsPage() {
   const runnerState: RunnerState | undefined = runnerQuery.data;
   const currentDevice = runnerState?.this_device.device_name ?? "本机";
 
-  return <div className="si-page si-runs-page">
-    <ProjectHeader project={project} activeTab="runs" />
-    {feedback && <p className="si-feedback" role="status">{feedback}</p>}
-    <div className="si-runs-layout">
-      <main className="si-runs-main">
-        <section className="si-runs-job-grid" aria-label="手动运行任务">{jobCards.map(({ job, title, description, icon: Icon }) => {
+  return <DialogPrimitive.Root open={Boolean(editingScheduleJob)} onOpenChange={(open) => { if (!open) { setEditingScheduleJob(null); setScheduleDialogDraft(null); } }}>
+    <div className="si-page si-runs-page si-runs-page-v2">
+      <ProjectHeader project={project} activeTab="runs" />
+      {feedback && <p className="si-feedback" role="status">{feedback}</p>}
+
+      <section className="si-runs-block si-runs-execution">
+        <div className="si-runs-block-heading"><div><h2>立即执行</h2><p>手动启动任务，查看当前步骤与进度。</p></div>
+          <div className="si-runs-device-inline">
+            {runnerQuery.isLoading ? <span className="si-muted">正在读取执行设备…</span> : runnerQuery.isError || !runnerState ? <ApiErrorNotice className="si-runs-inline-error" label="执行设备信息加载失败。" error={runnerQuery.error} onRetry={() => void runnerQuery.refetch()} /> : <>
+              <Activity size={16} aria-hidden="true" /><span>计划执行设备：<strong>{runnerState.runner?.device_name ?? "尚未指定"}{runnerState.is_this_device ? "（本机）" : ""}</strong></span>
+              {!runnerState.is_this_device && <Button size="small" disabled={claimingRunner} onClick={() => void claimRunner()}>{claimingRunner ? "设置中…" : "改为本机"}</Button>}
+            </>}
+          </div>
+        </div>
+        <div className="si-runs-job-grid" aria-label="手动运行任务">{jobCards.map(({ job, title, description, icon: Icon }) => {
           const last = lastByJob.get(job);
           return <button type="button" key={job} className="si-run-job-card" disabled={Boolean(activeRun) || startingJob} onClick={() => void startJob(job)}>
             <span className="si-run-job-heading"><strong>{title}</strong><Icon size={16} aria-hidden="true" /></span><span>{description}</span>
             <small>{last ? `上次 ${formatDateTime(last.started_at)} · ${statusLabel(last.status)}` : "尚未运行"}</small>
           </button>;
-        })}</section>
-
-        <section className="si-run-console" aria-live="polite">
-          {runningQuery.isError && <ApiErrorNotice className="si-runs-inline-error" label="当前运行状态读取失败。" error={runningQuery.error} onRetry={() => void runningQuery.refetch()} />}
-          <header><div><strong>{activeRun ? jobLabels[activeRun.job] : runResult ? jobLabels[runResult.job] : "运行日志"}</strong>{activeRun ? <Chip tone="info">运行中{progress?.pct == null ? "" : ` · ${progress.pct}%`}</Chip> : runResult ? <Chip tone={runResult.status === "ok" ? "ok" : runResult.status === "failed" ? "danger" : "warn"}>{statusLabel(runResult.status)}</Chip> : <Chip>空闲</Chip>}</div>{activeRun && <Button size="small" onClick={() => void stopJob()} icon={<Square size={12} />}>停止</Button>}</header>
-          {activeRun && progress?.pct != null && <div className="si-run-progress"><span style={{ width: `${progress.pct}%` }} /></div>}
-          <div className="si-run-log-list">{logs.length ? logs.map((event, index) => <div key={`${event.runId}-${index}`} className={`si-run-log si-run-log-${event.level}`}><code>{new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(event.at))}</code><span>{event.message}</span>{event.step && <small>{event.step}</small>}</div>) : <p>{runResult?.summary ?? "暂无运行中的任务。选择上方任务卡片，查看实时进度与日志。"}</p>}</div>
-        </section>
-
-        <section className="si-runs-history"><div className="si-runs-section-heading"><div><h2>运行历史</h2><p>最近 30 次任务执行记录</p></div><Button size="small" onClick={() => void historyQuery.refetch()}>刷新</Button></div>
-          {historyQuery.isLoading ? <div className="si-query-loading" role="status">正在加载运行历史…</div> : historyQuery.isError ? <ApiErrorNotice label="运行历史加载失败。" error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /> : <DataTable<RunLog> tableId="runs.history" scopeId={id} rows={history} total={history.length} columns={rowColumns} query={tableQuery} onQueryChange={setTableQuery} onRowClick={setSelectedRun} getRowId={(row) => row.run_id} maxHeight={306} rowHeight={48} showPagination={false} emptyTitle="还没有运行记录" emptyDescription="手动执行或等待定时任务后，记录会显示在这里。" />}
-        </section>
-      </main>
-
-      <aside className="si-runs-side">
-        <section className="si-runner-card">
-          {runnerQuery.isLoading ? <div className="si-query-loading" role="status">正在读取执行设备…</div> : runnerQuery.isError || !runnerState ? <ApiErrorNotice label="执行设备信息加载失败。" error={runnerQuery.error} onRetry={() => void runnerQuery.refetch()} /> : <>
-            <div className="si-runs-section-heading"><h2>执行设备</h2><Chip tone={runnerState.is_this_device ? "ok" : runnerState.runner ? "warn" : "neutral"}>{runnerState.is_this_device ? "本机执行" : runnerState.runner ? "其他设备" : "未指定"}</Chip></div>
-            <div className={`si-runner-device${runnerState.is_this_device ? " is-current" : ""}`}><Activity size={17} aria-hidden="true" /><div><strong>{runnerState.runner?.device_name ?? "尚未指定执行设备"}{runnerState.is_this_device ? "（本机）" : ""}</strong><span>{runnerState.runner ? `计划任务只在这台设备上执行 · 设备 ID ${runnerState.runner.device_id}` : "计划任务需要指定一台持续运行的设备"}</span></div></div>
-            <p>{runnerState.is_this_device ? "本机正在负责此项目的定时任务。" : runnerState.runner ? "其他设备可通过 SiteIndex 设置改为本机。" : "设置为本机后，此设备会负责执行计划任务。"}</p>
-            {!runnerState.is_this_device && <Button size="small" onClick={() => void claimRunner()} disabled={claimingRunner}>{claimingRunner ? "设置中…" : "改为本机"}</Button>}
-          </>}
-        </section>
-
-        <section className="si-schedule-card">
-          {scheduleQuery.isLoading || (!scheduleQuery.isError && !draft) ? <div className="si-query-loading" role="status">正在加载定时计划…</div> : scheduleQuery.isError || !scheduleState || !draft ? <ApiErrorNotice label="定时计划加载失败。" error={scheduleQuery.error} onRetry={() => void scheduleQuery.refetch()} /> : <>
-          <div className="si-schedule-heading"><div><h2>定时计划</h2><p>选择每个任务在哪几周几、几点执行；保存后自动更新系统计划任务。</p></div><Chip tone={scheduleState.registered ? "ok" : "warn"}>{scheduleState.registered ? "已注册到任务计划程序" : "尚未注册"}</Chip></div>
-          <div className="si-schedule-runtime" aria-live="polite">
-            <span>当前模式</span>
-            {scheduleRuntimeQuery.isLoading ? <span className="si-schedule-runtime-loading" role="status">正在读取…</span> : scheduleRuntimeQuery.isError ? <ApiErrorNotice className="si-schedule-runtime-error" label="运行模式读取失败。" error={scheduleRuntimeQuery.error} onRetry={() => void scheduleRuntimeQuery.refetch()} /> : <Chip tone={scheduleRuntimeQuery.data?.mode === "system" ? "ok" : "neutral"}>{scheduleRuntimeQuery.data?.mode === "system" ? "系统计划任务" : scheduleRuntimeQuery.data?.mode === "resident" ? "软件常驻（关闭软件后不执行）" : "运行模式不可用"}</Chip>}
-            {scheduleRuntimeQuery.data?.authorization_required && <><span className="si-schedule-auth-hint">需要授权才能注册系统计划任务</span><Button size="small" disabled={!api.schedule.reauthorize || reauthorizingSchedule} onClick={() => void reauthorizeSchedule()}>{reauthorizingSchedule ? "授权中…" : "重新授权注册"}</Button></>}
+        })}</div>
+        <div className={`si-run-state${activeRun || startingJob ? " is-running" : runResult?.status === "failed" ? " is-failed" : ""}`} aria-live="polite">
+          <div className="si-run-state-heading"><div><span className="si-run-state-eyebrow">当前运行状态</span><strong>{activeRun ? jobLabels[activeRun.job] : startingJob ? "正在启动任务…" : runResult ? jobLabels[runResult.job] : "当前没有任务运行"}</strong></div>
+            {activeRun || startingJob ? <Chip tone="info">{activeRun ? "运行中" : "启动中"}</Chip> : runResult ? <Chip tone={statusTone(runResult.status)}>{statusLabel(runResult.status)}</Chip> : <Chip tone="neutral">空闲</Chip>}
+            {activeRun && <Button size="small" onClick={() => void stopJob()} icon={<Square size={12} />}>停止</Button>}
           </div>
-          <div className="si-schedule-jobs">{scheduleItems.map((item) => {
+          {activeRun ? <>
+            <div className="si-run-state-progress-label"><span>{progress?.step ? `第 ${Math.max(1, [...new Set(logs.map((item) => item.step).filter((step): step is string => Boolean(step) && step !== "启动"))].indexOf(progress.step) + 1)} 步 · ${stepLabel(progress.step, 0)}` : "正在等待步骤进度"}</span><strong>{progress?.pct == null ? "进度计算中" : `${progress.pct}%`}</strong></div>
+            <div className={`si-run-state-progress${progress?.pct == null ? " is-indeterminate" : ""}`} role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress?.pct ?? undefined}><span style={{ width: progress?.pct == null ? undefined : `${Math.max(0, Math.min(100, progress.pct))}%` }} /></div>
+            <p className="si-run-state-message">{progress?.message ?? "任务已启动，正在等待执行设备反馈。"}</p>
+          </> : startingJob ? <><div className="si-run-state-progress-label"><span>正在连接执行设备</span><strong>启动中</strong></div><div className="si-run-state-progress is-indeterminate" role="progressbar" aria-label="正在启动任务"><span /></div></> : <p className="si-run-state-message">{runResult?.summary ?? (runningQuery.isError ? "运行状态暂时无法确认。" : "选择上方任务卡片即可立即运行。")}</p>}
+          {runningQuery.isError && <ApiErrorNotice className="si-runs-inline-error" label="当前运行状态读取失败。" error={runningQuery.error} onRetry={() => void runningQuery.refetch()} />}
+          {logs.length > 0 && <div className="si-run-recent-log">{logs.slice(-3).map((event, index) => <div key={`${event.runId}-${index}`} className={`si-run-log si-run-log-${event.level}`}><code>{new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(event.at))}</code><span>{event.message}</span>{event.step && <small>{stepLabel(event.step, index)}</small>}</div>)}</div>}
+        </div>
+      </section>
+
+      <section className="si-runs-block si-runs-schedule">
+        <div className="si-runs-block-heading"><div><h2>定时计划</h2><p>任务逐项展示下次运行时间；编辑窗口中设置星期和时间并一次保存。</p></div>
+          <div className="si-schedule-mode"><span>运行模式</span>{scheduleRuntimeQuery.isLoading ? <span className="si-muted">正在读取…</span> : scheduleRuntimeQuery.isError ? <ApiErrorNotice className="si-schedule-runtime-error" label="运行模式读取失败。" error={scheduleRuntimeQuery.error} onRetry={() => void scheduleRuntimeQuery.refetch()} /> : <Chip tone={scheduleRuntimeQuery.data?.mode === "system" ? "ok" : "neutral"}>{scheduleRuntimeQuery.data?.mode === "system" ? "系统计划任务" : scheduleRuntimeQuery.data?.mode === "resident" ? "软件常驻（关闭后不执行）" : "不可用"}</Chip>}</div>
+        </div>
+        {scheduleRuntimeQuery.data?.authorization_required && <div className="si-schedule-auth-banner"><span>需要授权才能注册系统计划任务。</span><Button size="small" disabled={!api.schedule.reauthorize || reauthorizingSchedule} onClick={() => void reauthorizeSchedule()}>{reauthorizingSchedule ? "授权中…" : "重新授权注册"}</Button></div>}
+        {scheduleQuery.isLoading || (!scheduleQuery.isError && !draft) ? <div className="si-query-loading" role="status">正在加载定时计划…</div> : scheduleQuery.isError || !scheduleState || !draft ? <ApiErrorNotice label="定时计划加载失败。" error={scheduleQuery.error} onRetry={() => void scheduleQuery.refetch()} /> : <>
+          <div className="si-schedule-plan-status"><Chip tone={scheduleState.registered ? "ok" : "warn"}>{scheduleState.registered ? "已注册到任务计划程序" : "尚未注册"}</Chip><span>执行设备：{runnerState?.runner?.device_name ?? currentDevice}</span></div>
+          <div className="si-schedule-rows">{scheduleItems.map((item) => {
             const jobSchedule = draft[item.key];
             const monthly = item.key === "monthly";
-            return <section className="si-schedule-job" key={item.key}>
-              <div className="si-schedule-job-heading"><div><strong>{item.title}</strong><small>{item.hint}</small></div><label className="si-schedule-enabled"><input type="checkbox" checked={jobSchedule.enabled} onChange={(event) => updateScheduleJob(item.key, { enabled: event.target.checked })} /><span>启用</span></label></div>
-              {!monthly && <div className="si-weekday-picker" role="group" aria-label={`${item.title} 执行星期`}>{weekdays.map((day) => <button type="button" key={day.value} aria-pressed={jobSchedule.days?.includes(day.value) ?? false} className={jobSchedule.days?.includes(day.value) ? "active" : ""} onClick={() => toggleWeekday(item.key, day.value)}>{day.label}</button>)}</div>}
-              <div className="si-schedule-time-row">{monthly && <label>每月 <input aria-label="每月几号" type="number" min={1} max={31} value={jobSchedule.day_of_month ?? 1} onChange={(event) => updateScheduleJob(item.key, { day_of_month: Number(event.target.value) })} /> 日</label>}<input aria-label={`${item.title} 执行时间`} type="time" value={jobSchedule.time} onChange={(event) => updateScheduleJob(item.key, { time: event.target.value })} /></div>
-              <p>{monthly ? `每月 ${jobSchedule.day_of_month ?? 1} 日 ${jobSchedule.time}` : `${weekdaySummary(jobSchedule.days)} · ${jobSchedule.time}`} · 只在执行设备 {runnerState?.runner?.device_name ?? currentDevice} 上运行</p>
-            </section>;
+            const nextRun = scheduleState.next_runs.find((run) => run.job === item.key)?.at ?? null;
+            return <article className="si-schedule-row" key={item.key}>
+              <div className="si-schedule-row-title"><strong>{item.title}</strong><small>{item.hint}</small></div>
+              <div className="si-schedule-row-meta"><Chip tone={jobSchedule.enabled ? "ok" : "neutral"}>{jobSchedule.enabled ? "已启用" : "已停用"}</Chip><span>{monthly ? `每月 ${jobSchedule.day_of_month ?? 1} 日 ${jobSchedule.time}` : `${weekdaySummary(jobSchedule.days)} · ${jobSchedule.time}`}</span><span>下次：{jobSchedule.enabled ? nextRun ? formatDateTime(nextRun) : "等待计算" : "—"}</span></div>
+              <Button size="small" icon={<Pencil size={13} />} onClick={() => openScheduleEditor(item.key)}>编辑</Button>
+            </article>;
           })}</div>
-          <div className="si-schedule-options">{optionLabels.map((option) => <label key={option.key}><input type="checkbox" checked={draft.options[option.key]} onChange={(event) => setDraft((current) => current ? { ...current, options: { ...current.options, [option.key]: event.target.checked } } : current)} /><span>{option.label}</span></label>)}</div>
-          <div className="si-schedule-actions"><Button variant="primary" disabled={savingSchedule} onClick={() => void saveSchedule()}>{savingSchedule ? "保存中…" : "保存计划"}</Button><span>{scheduleState.next_runs[0]?.at ? `下次：${formatDateTime(scheduleState.next_runs[0].at)}` : "保存后计算下次执行时间"}</span></div>
+          <details className="si-schedule-options-details"><summary>高级计划选项</summary><div className="si-schedule-options">{optionLabels.map((option) => <label key={option.key}><input type="checkbox" checked={draft.options[option.key]} onChange={(event) => setDraft((current) => current ? { ...current, options: { ...current.options, [option.key]: event.target.checked } } : current)} /><span>{option.label}</span></label>)}</div><div className="si-schedule-actions"><Button variant="primary" disabled={savingSchedule} onClick={() => void saveSchedule()}>{savingSchedule ? "保存中…" : "保存计划"}</Button></div></details>
+        </>}
+      </section>
+
+      <section className="si-runs-block si-runs-history">
+        <div className="si-runs-block-heading"><div><h2>运行历史</h2><p>最近 30 次任务执行记录；展开记录查看步骤结果和失败原因。</p></div><Button size="small" onClick={() => void historyQuery.refetch()}>刷新</Button></div>
+        {historyQuery.isLoading ? <div className="si-query-loading" role="status">正在加载运行历史…</div> : historyQuery.isError ? <ApiErrorNotice label="运行历史加载失败。" error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /> : history.length ? <div className="si-run-history-list">
+          {history.map((run) => <details className="si-run-history-item" key={run.run_id}>
+            <summary><span className="si-run-history-time">{formatDateTime(run.started_at)}</span><strong>{jobLabels[run.job]}</strong><span className="si-run-history-trigger">{triggerLabel(run.trigger)}</span><Chip tone={statusTone(run.status)}>{statusLabel(run.status)}</Chip><span className="si-run-history-duration">{runDuration(run)}</span><span className="si-run-history-summary">{runSummary(run)}</span></summary>
+            <div className="si-run-history-detail"><div className="si-run-history-context"><span>执行设备：{run.device_name ?? "—"}</span><span>开始：{formatDateTime(run.started_at)}</span><span>结束：{run.finished_at ? formatDateTime(run.finished_at) : "进行中"}</span></div>
+              {run.steps?.length ? <ol className="si-run-history-steps">{run.steps.map((step, index) => <li key={`${step.key}-${index}`} className={`is-${step.status}`}><span className="si-run-step-number">{index + 1}</span><div><strong>{stepLabel(step.key, index)}</strong>{step.message && <p>{step.message}</p>}</div><Chip tone={stepStatusTone(step.status)}>{stepStatusLabel(step.status)}</Chip></li>)}</ol> : <p className="si-run-history-empty">这条记录没有返回分步结果。</p>}
+              {run.errors?.length ? <div className="si-run-history-errors"><strong>失败原因</strong>{run.errors.map((error, index) => <p key={index}>{error}</p>)}</div> : null}
+            </div>
+          </details>)}
+        </div> : <div className="si-run-history-empty-state"><strong>还没有运行记录</strong><span>手动执行或等待定时任务后，记录会显示在这里。</span></div>}
+      </section>
+
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="si-runs-dialog-overlay" />
+        <DialogPrimitive.Content className="si-runs-dialog">
+          <div className="si-runs-dialog-heading"><DialogPrimitive.Title>{editingScheduleJob ? `编辑${scheduleItems.find((item) => item.key === editingScheduleJob)?.title ?? "任务"}计划` : "编辑计划"}</DialogPrimitive.Title><DialogPrimitive.Close asChild><Button size="small" aria-label="关闭计划编辑">关闭</Button></DialogPrimitive.Close></div>
+          <DialogPrimitive.Description>修改完成后保存一次，即更新该项目的计划任务。</DialogPrimitive.Description>
+          {editingScheduleJob && scheduleDialogDraft && <>
+            <label className="si-schedule-dialog-enabled"><input type="checkbox" checked={scheduleDialogDraft.enabled} onChange={(event) => updateScheduleDialog({ enabled: event.target.checked })} /><span>启用此任务</span></label>
+            {editingScheduleJob === "monthly" ? <label className="si-schedule-dialog-month">每月 <input aria-label="每月几号" type="number" min={1} max={31} value={scheduleDialogDraft.day_of_month ?? 1} onChange={(event) => updateScheduleDialog({ day_of_month: Number(event.target.value) })} /> 日</label> : <div className="si-weekday-picker" role="group" aria-label="执行星期">{weekdays.map((day) => <button type="button" key={day.value} aria-pressed={scheduleDialogDraft.days?.includes(day.value) ?? false} className={scheduleDialogDraft.days?.includes(day.value) ? "active" : ""} onClick={() => toggleScheduleDialogWeekday(day.value)}>{day.label}</button>)}</div>}
+            <label className="si-schedule-dialog-time">执行时间<input aria-label="执行时间" type="time" value={scheduleDialogDraft.time} onChange={(event) => updateScheduleDialog({ time: event.target.value })} /></label>
           </>}
-        </section>
-      </aside>
+          <div className="si-runs-dialog-actions"><DialogPrimitive.Close asChild><Button type="button">取消</Button></DialogPrimitive.Close><Button variant="primary" disabled={savingSchedule || !scheduleDialogDraft} onClick={() => void saveScheduleFromDialog()}>{savingSchedule ? "保存中…" : "保存计划"}</Button></div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
     </div>
-    <DetailPanel open={Boolean(selectedRun)} onClose={() => setSelectedRun(null)} title={selectedRun ? `${jobLabels[selectedRun.job]} · ${formatDateTime(selectedRun.started_at)}` : "运行详情"}>{selectedRun && <dl className="si-detail-list"><div><dt>结果</dt><dd><Chip tone={statusTone(selectedRun.status)}>{statusLabel(selectedRun.status)}</Chip></dd></div><div><dt>设备</dt><dd>{selectedRun.device_name ?? "—"}</dd></div><div><dt>触发方式</dt><dd>{selectedRun.trigger === "schedule" ? "定时计划" : selectedRun.trigger === "cli" ? "命令行" : "手动"}</dd></div><div><dt>耗时</dt><dd>{runDuration(selectedRun)}</dd></div><div><dt>摘要</dt><dd>{runSummary(selectedRun)}</dd></div>{selectedRun.errors?.map((error, index) => <div key={index}><dt>问题 {index + 1}</dt><dd>{error}</dd></div>)}</dl>}</DetailPanel>
-  </div>;
+  </DialogPrimitive.Root>;
 }
