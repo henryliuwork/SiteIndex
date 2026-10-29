@@ -3,22 +3,31 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip } from "../components";
+import { ApiErrorNotice, Button, Chip, Tabs } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
 import "./app-settings/page.css";
 
 const RELEASES_URL = "https://github.com/henryliuwork/SiteIndex/releases/latest";
+const settingsTabs = [
+  { value: "basic", label: "基本信息" },
+  { value: "environment", label: "浏览器与命令行" },
+  { value: "notifications", label: "通知" },
+  { value: "skills", label: "Agent 平台" },
+  { value: "about", label: "关于" },
+] as const;
+type SettingsTab = (typeof settingsTabs)[number]["value"];
 
 export function AppSettingsPage() {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<SettingsTab>("basic");
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
-  const browserQuery = useQuery({ queryKey: ["settings", "browser"], queryFn: () => api.settings.detectBrowser() });
-  const cliQuery = useQuery({ queryKey: ["settings", "cli"], queryFn: () => api.settings.cliStatus() });
+  const browserQuery = useQuery({ queryKey: ["settings", "browser"], queryFn: () => api.settings.detectBrowser(), enabled: activeTab === "environment" });
+  const cliQuery = useQuery({ queryKey: ["settings", "cli"], queryFn: () => api.settings.cliStatus(), enabled: activeTab === "environment" });
   const platformQuery = useQuery({ queryKey: ["app", "platform"], queryFn: () => api.app.platform() });
-  const versionQuery = useQuery({ queryKey: ["app", "version"], queryFn: () => api.app.version() });
-  const skillsQuery = useQuery({ queryKey: ["skills"], queryFn: () => api.skills.list() });
+  const versionQuery = useQuery({ queryKey: ["app", "version"], queryFn: () => api.app.version(), enabled: activeTab === "about" });
+  const skillsQuery = useQuery({ queryKey: ["skills"], queryFn: () => api.skills.list(), enabled: activeTab === "about" });
   const updates = useUpdatesController();
-  const runningJobsQuery = useAnyRunningJob(updates.status?.state === "ready");
+  const runningJobsQuery = useAnyRunningJob(activeTab === "about" && updates.status?.state === "ready");
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [testingBrowser, setTestingBrowser] = useState(false);
@@ -169,10 +178,11 @@ export function AppSettingsPage() {
   return (
     <div className="si-page si-app-settings-page">
       <header className="si-app-settings-heading"><h1>设置</h1><code>{settingsPath} · 只对本机生效</code></header>
+      <Tabs value={activeTab} options={settingsTabs} onChange={setActiveTab} ariaLabel="软件设置分区" />
       {platformQuery.isError && <ApiErrorNotice label="系统平台信息读取失败。" error={platformQuery.error} onRetry={() => void platformQuery.refetch()} />}
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
 
-      <section className="si-app-settings-card">
+      {activeTab === "basic" && <section className="si-app-settings-card">
         <h2>常规</h2>
         <div className="si-app-setting-row">
           <label htmlFor="si-projects-root">项目根目录</label>
@@ -189,8 +199,9 @@ export function AppSettingsPage() {
           <input id="si-cache-dir" className="si-setting-input si-setting-mono" value={draft.cache_dir} onChange={(event) => setDraft({ ...draft, cache_dir: event.target.value })} onBlur={() => void saveSettings({ cache_dir: draft.cache_dir })} />
           <span className="si-setting-hint">数据库等不进云盘</span>
         </div>
-      </section>
+      </section>}
 
+      {activeTab === "environment" && <>
       <section className="si-app-settings-card">
         <h2>浏览器（设计规范提取）</h2>
         <div className="si-app-setting-row si-browser-detected">
@@ -218,8 +229,9 @@ export function AppSettingsPage() {
           <Chip tone={cliStatus?.installed ? "ok" : "warn"}>{cliStatus?.installed ? "已安装" : "未安装"}</Chip>
         </div>
       </section>
+      </>}
 
-      <section className="si-app-settings-card">
+      {activeTab === "notifications" && <section className="si-app-settings-card">
         <h2>通知</h2>
         <div className="si-app-setting-row si-notify-row">
           <strong>系统通知</strong>
@@ -236,9 +248,9 @@ export function AppSettingsPage() {
           <input id="si-dingtalk-webhook" className="si-setting-input si-setting-mono" type="password" autoComplete="new-password" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…" value={draft.notify.dingtalk_webhook ?? ""} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, dingtalk_webhook: event.target.value || null } })} onBlur={() => void saveSettings({ notify: draft.notify })} />
           {api.settings.sendTestNotification && <Button disabled={sendingTestNotification} onClick={() => void sendTestNotification()}>{sendingTestNotification ? "发送中…" : "发送测试"}</Button>}
         </div>
-      </section>
+      </section>}
 
-      <section className="si-app-settings-card">
+      {activeTab === "skills" && <section className="si-app-settings-card">
         <h2>Agent 平台 Skill 目录</h2>
         {draft.skill_platforms.map((platform, index) => {
           const detectedPlatform = platform.id === "claude-code" && platform.detected;
@@ -252,9 +264,9 @@ export function AppSettingsPage() {
           </div>;
         })}
         <div className="si-platform-add-row"><Button icon={<Plus size={15} />} onClick={() => savePlatforms([...draft.skill_platforms, { id: `custom-${Date.now()}`, name: "新平台", dir: "", detected: false }])}>添加平台目录</Button></div>
-      </section>
+      </section>}
 
-      <section className="si-app-settings-card">
+      {activeTab === "about" && <section className="si-app-settings-card">
         <h2>关于</h2>
         <div className="si-app-setting-row">
           <strong>版本</strong>
@@ -286,7 +298,7 @@ export function AppSettingsPage() {
           <code className="si-setting-hint si-setting-mono">{logsPath}</code>
           {api.settings.openLogs && <Button disabled={openingLogs} onClick={() => void openLogs()}>{openingLogs ? "打开中…" : "打开"}</Button>}
         </div>
-      </section>
+      </section>}
       {saving && <span className="si-sr-only" role="status">正在保存软件设置…</span>}
     </div>
   );
