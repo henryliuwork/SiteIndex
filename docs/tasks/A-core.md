@@ -102,3 +102,13 @@
 - [x] Magento BlogPosting / Amasty 风格页面与 /blog、/news URL 规则进入 blog_index；测试 fixture 仅包含虚构结构片段
 - [x] Core 锁在 partial 与异常时释放，Windows EPERM/EBUSY 短暂占用重试；旧心跳锁回收
 - [x] init 的各步骤状态与中文原因写入 logs/runs.jsonl
+
+### 2026-10-29 · 用户反馈 v2（#143）
+- [ ] A-2 父子 SKU 规则引擎与 `sku.previewGrouping`
+- [x] A-3 读取博客 sitemap 与 URL 前缀配置识别博客页
+- [ ] A-4 关注分类合并、去重并在库存摘要中标记
+- [ ] A-5 在线率范围 30/60/90/全部
+- [ ] A-6 价格追踪与变动范围筛选
+- [ ] A-7 SEO 问题分类扩充
+- [x] A-8 趋势图日期已核实，详见规划 §8.1
+- [ ] A-9 去掉批量 index-check Job
