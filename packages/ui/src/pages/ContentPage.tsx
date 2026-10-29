@@ -114,7 +114,7 @@ export function ContentPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目内容加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-content-page">
-    <ProjectHeader project={project} activeTab="content" status={<Chip tone="info">示例数据</Chip>} actions={<><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></>} />
+    <ProjectHeader project={project} activeTab="content" actions={<><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></>} />
     <div className="si-content-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载内容概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="内容概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className="si-content-toolbar si-content-toolbar-table">
       <Segmented value={view} options={viewOptions} onChange={setView} ariaLabel="内容视图" />

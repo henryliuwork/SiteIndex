@@ -61,7 +61,6 @@ const TrendChart = memo(function TrendChart({ summary }: { summary: InventorySum
     <section className="si-inventory-chart si-panel" aria-label="分类在线率趋势">
       <div className="si-panel-heading">
         <h2>分类在线率趋势 · 近 30 天</h2>
-        <Chip tone="neutral">示例数据</Chip>
       </div>
       <div className="si-trend-chart">
         <ResponsiveContainer width="100%" height="100%">
@@ -289,7 +288,7 @@ export function InventoryPage() {
       />
       <div className="si-inventory-legend" aria-label="库存状态图例">
         <span><i className="si-status-in" />有货</span><span><i className="si-status-out" />缺货</span><span><i className="si-status-preorder" />预售</span><span><i className="si-status-unknown" />未知 / 未上架</span>
-        <span>数据：index/views/sku_stock.jsonl · 30 天趋势为示例数据</span>
+        <span>数据：index/views/sku_stock.jsonl</span>
       </div>
       <DetailPanel open={Boolean(selectedRow)} onClose={() => setSelectedRow(null)} title={selectedRow?.sku ?? "SKU 详情"}>
         {selectedRow && <StockDetail row={selectedRow} />}
