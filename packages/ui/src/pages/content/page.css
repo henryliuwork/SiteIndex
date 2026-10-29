@@ -27,7 +27,7 @@ display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px;
 }
 
 .si-content-total {
-margin-left: auto; color: var(--color-muted); font-size: 11px; white-space: nowrap;
+margin-left: auto; color: var(--color-muted); font-size: 12px; white-space: nowrap;
 }
 
 .si-content-page .si-data-table {
@@ -51,11 +51,11 @@ max-width: 390px; overflow: hidden; color: var(--color-ink); font-size: 12px; fo
 }
 
 .si-content-title-cell code,.si-content-date,.si-content-url {
-color: var(--color-muted); font-family: var(--font-mono); font-size: 10px;
+color: var(--color-muted); font-family: var(--font-mono); font-size: 12px;
 }
 
 .si-content-keyword-cell small {
-color: var(--color-muted); font-size: 10px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-content-url {
@@ -63,11 +63,11 @@ display: inline-block; max-width: 270px; overflow: hidden; text-overflow: ellips
 }
 
 .si-content-data-note {
-margin: -5px 0 0; color: var(--color-muted); font-size: 11px;
+margin: -5px 0 0; color: var(--color-muted); font-size: 12px;
 }
 
 .si-content-data-note code {
-color: var(--color-ink-2); font-family: var(--font-mono); font-size: 10px;
+color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px;
 }
 
 .si-content-detail {
@@ -79,7 +79,7 @@ display: grid; gap: 4px; align-content: center; min-height: 54px; padding: 8px 0
 }
 
 .si-content-detail>div>span {
-color: var(--color-muted); font-size: 10px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-content-detail>div.full,.si-content-detail>.si-button {

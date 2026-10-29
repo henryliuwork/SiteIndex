@@ -23,7 +23,7 @@ min-height: 376px; padding: 16px 18px;
 }
 
 .si-category-source {
-margin: 9px 0 15px; color: var(--color-muted); font-size: 11px; line-height: 1.4;
+margin: 9px 0 15px; color: var(--color-muted); font-size: 12px; line-height: 1.4;
 }
 
 .si-category-rates {
@@ -35,7 +35,7 @@ display: grid; grid-template-columns: minmax(86px, 1fr) minmax(56px, 1.2fr) 42px
 }
 
 .si-category-name {
-overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap;
+overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .si-category-track, .si-rate-track {
@@ -51,7 +51,7 @@ background: var(--color-warn);
 }
 
 .si-category-percent {
-color: var(--color-ink-2); font-family: var(--font-mono); font-size: 11px; text-align: right;
+color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-align: right;
 }
 
 .si-today-changes {
@@ -59,11 +59,11 @@ display: grid; gap: 0; margin-top: 16px; padding-top: 4px; border-top: 1px solid
 }
 
 .si-today-changes h3 {
-margin: 8px 0 4px; color: var(--color-muted); font-size: 11px; font-weight: 600;
+margin: 8px 0 4px; color: var(--color-muted); font-size: 12px; font-weight: 600;
 }
 
 .si-today-change {
-display: flex; min-width: 0; min-height: 39px; align-items: center; gap: 8px; border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: 11px;
+display: flex; min-width: 0; min-height: 39px; align-items: center; gap: 8px; border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: 12px;
 }
 
 .si-today-change:last-child {
@@ -75,7 +75,7 @@ overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .si-today-change strong {
-color: var(--color-ink); font-family: var(--font-mono); font-size: 10px;
+color: var(--color-ink); font-family: var(--font-mono); font-size: 12px;
 }
 
 .si-sync-progress {
@@ -115,7 +115,7 @@ width: min(360px, 34vw);
 }
 
 .si-table-total {
-margin-left: auto; color: var(--color-muted); font-size: 11px; white-space: nowrap;
+margin-left: auto; color: var(--color-muted); font-size: 12px; white-space: nowrap;
 }
 
 .si-inventory-filters {
@@ -123,7 +123,7 @@ display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
 }
 
 .si-filter-label {
-margin-right: 1px; color: var(--color-muted); font-size: 11px;
+margin-right: 1px; color: var(--color-muted); font-size: 12px;
 }
 
 .si-filter-category-label {
@@ -143,7 +143,7 @@ overflow: hidden; color: var(--color-ink-2); font-size: 12px; font-weight: 500; 
 }
 
 .si-product-cell small {
-overflow: hidden; color: var(--color-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap;
+overflow: hidden; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .si-rate-cell {
@@ -155,7 +155,7 @@ width: 68px; height: 6px;
 }
 
 .si-rate-cell > span:last-child {
-min-width: 32px; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 11px; text-align: right;
+min-width: 32px; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-align: right;
 }
 
 .si-last-change {
@@ -163,15 +163,15 @@ display: grid; gap: 2px; white-space: normal;
 }
 
 .si-last-change strong {
-color: var(--color-ink-2); font-size: 11px; font-weight: 500;
+color: var(--color-ink-2); font-size: 12px; font-weight: 500;
 }
 
 .si-last-change small {
-color: var(--color-muted); font-size: 10px;
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-inventory-legend {
-display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: -10px; color: var(--color-muted); font-size: 10px;
+display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: -10px; color: var(--color-muted); font-size: 12px;
 }
 
 .si-inventory-legend span {
@@ -203,7 +203,7 @@ max-height: min(80vh, 760px); overflow: auto;
 }
 
 .si-report-dialog pre {
-max-height: 55vh; overflow: auto; padding: 13px; border: 1px solid var(--color-line-soft); border-radius: 6px; background: var(--color-subtle); color: var(--color-ink-2); font-family: var(--font-mono); font-size: 11px; line-height: 1.6; white-space: pre-wrap;
+max-height: 55vh; overflow: auto; padding: 13px; border: 1px solid var(--color-line-soft); border-radius: 6px; background: var(--color-subtle); color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap;
 }
 
 @media (max-width: 1280px) {

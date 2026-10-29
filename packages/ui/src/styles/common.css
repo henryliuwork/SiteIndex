@@ -47,7 +47,7 @@ min-height: 280px; place-content: center; justify-items: center; gap: 10px; bord
 }
 
 .si-api-error-detail {
-max-width: 100%; color: var(--color-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere;
+max-width: 100%; color: var(--color-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere;
 }
 
 .si-api-error-retry {
