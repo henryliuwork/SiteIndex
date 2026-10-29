@@ -1,6 +1,7 @@
-import { access, cp, mkdir, readdir, rm } from "node:fs/promises";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { access, cp, mkdir, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { copyFontAssets } from "./font-resources.mjs";
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(desktopRoot, "../..");
@@ -21,27 +22,15 @@ async function copyDirectory(source, destination) {
   return true;
 }
 
-async function findFonts(directory) {
-  if (!(await exists(directory))) return [];
-  const files = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const fullPath = join(directory, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...(await findFonts(fullPath)));
-    } else if ([".woff", ".woff2", ".ttf", ".otf"].includes(extname(entry.name).toLowerCase())) {
-      files.push(fullPath);
-    }
-  }
-  return files;
-}
-
 await rm(buildResources, { recursive: true, force: true });
 await mkdir(buildResources, { recursive: true });
 await mkdir(join(buildResources, "fonts"), { recursive: true });
 
 const packagedCli = join(repositoryRoot, "packages/cli/dist/cli.js");
 if (!(await exists(packagedCli))) {
-  throw new Error("CLI bundle is missing. Run `pnpm --filter @siteindex/cli build` before preparing desktop resources.");
+  throw new Error(
+    "CLI bundle is missing. Run `pnpm --filter @siteindex/cli build` before preparing desktop resources.",
+  );
 }
 await cp(packagedCli, join(buildResources, "cli.js"));
 
@@ -58,10 +47,5 @@ if (await exists(join(uiDist, "index.html"))) {
   await cp(fallback, join(buildResources, "ui/index.html"));
 }
 
-const fontFiles = await findFonts(uiDist);
-for (const fontPath of fontFiles) {
-  const fontRelativePath = relative(uiDist, fontPath);
-  const targetPath = join(buildResources, "fonts", fontRelativePath);
-  await mkdir(dirname(targetPath), { recursive: true });
-  await cp(fontPath, targetPath);
-}
+const fontFiles = await copyFontAssets(uiDist, join(buildResources, "fonts"));
+console.info(`Packaged ${fontFiles.length} UI font assets.`);

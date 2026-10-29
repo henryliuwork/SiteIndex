@@ -29,6 +29,7 @@
 
 - [x] electron-builder：Windows NSIS（`oneClick: false`、`perMachine: false`、可改安装目录、桌面与开始菜单快捷方式、中文安装界面）；macOS dmg universal
 - [x] `resources/`：`cli.js`（A 的 tsup 产物）、`skills/`、`templates/`、`schemas/`、字体
+- [x] C-2：将 UI 构建产物中的字体文件复制到安装包 `resources/fonts/`；回归测试覆盖 Geist 与 Geist Mono 字体资源。实际字体文件随 B-1 的 UI 构建接入
 - [x] `.github/workflows/release.yml`：tag `v*` → windows-latest 构建 exe、macos-latest 构建 dmg → 上传到 GitHub Release
 - [x] CI 增加：每个 PR 在 windows-latest 上执行 `pnpm --filter @siteindex/desktop build`（不打安装包）以尽早发现打包问题
 - [x] **验收（M1 集成）**：从 Actions 下载 exe，在 Windows 11 上安装、打开，看到 mock/占位的项目中心
