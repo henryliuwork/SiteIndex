@@ -186,9 +186,9 @@
 ### 11.3 第二轮可并行任务
 
 - **A**：先等待 C-IPC-TEST 的合并、修复 #176 CI 并完成契约；随后 A-2 确定性分组引擎与 Core 服务单独 PR。暂不开始 A0b；D 的 mock 需先能兼容 `"all"`。
-- **B**：#179 合并后进行 [#88](https://github.com/henryliuwork/SiteIndex/issues/88) / [#93](https://github.com/henryliuwork/SiteIndex/issues/93) 的 10k SKU 共享 UI 性能基准，分别记录 mock/真实 IPC，不跨 D 页面。真实 Windows 高 DPI 交给 E。
+- **B**：#179 合并后先就 [#177](https://github.com/henryliuwork/SiteIndex/issues/177) 提供共享 `Tabs` / `ProjectHeader` 的稳定 tab ID 与 panel ID 约定，并评估能否在 B 自有的 `App.tsx` 路由壳统一承载 `tabpanel`；不可要求 D 修改 B 文件。与 D 确认后再进行 [#88](https://github.com/henryliuwork/SiteIndex/issues/88) / [#93](https://github.com/henryliuwork/SiteIndex/issues/93) 的 10k SKU 共享 UI 性能基准，分别记录 mock/真实 IPC。真实 Windows 高 DPI 交给 E。
 - **C**：先合并 #178，再做 C-IPC-TEST；只有 #176 与 A-2 合并后才实现 `sku.previewGrouping` 的 preload/handler，最后单独契约 PR 清除 pending。避免同时改两条分支中的 Desktop 测试。
-- **D**：#159 合并后处理 [#177](https://github.com/henryliuwork/SiteIndex/issues/177) 的项目页面 `tab`/`tabpanel` 语义关联；另外先准备库存 mock 接受 14/30/60/90/全部的参数，保持真实 IPC 仅请求已支持的范围，交接 A0b。父 SKU 预览必须在 A/C 就绪后改为 Core 结果。
+- **D**：#159 合并后与 B 协调 [#177](https://github.com/henryliuwork/SiteIndex/issues/177) 的 `tab`/`tabpanel` 语义：B 负责共享 Tabs/ProjectHeader 与全局路由，D 仅修改自身所拥有的项目页面；其他页面归属不明时先由协调者明确，不能越界修改。另先准备库存 mock 接受 14/30/60/90/全部的参数，保持真实 IPC 仅请求已支持的范围，交接 A0b。父 SKU 预览必须在 A/C 就绪后改为 Core 结果。
 - **E**：更新 #163–#174 验收矩阵：#178 是“修复 PR 已完成 + 合成安装版验证，但未合并/未候选版复测”，不再写“无修复 PR”；#159/#179 同理标记 PR 状态，纳入 #177。候选包发布前不关闭 Release Issues，亦不将 CI 通过当作实测。
 
 ### 11.4 审核者的合并队列
