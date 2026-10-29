@@ -6,7 +6,7 @@ import { useParams } from "react-router-dom";
 import { gradeDescriptionLength, gradeTitleLength } from "@siteindex/shared";
 import type {
   JobProgress, JobResult, ListQuery, PageType, SeoIssue, SeoIssueFilters, SeoLink,
-  SeoPage as SeoRecord, SeoPageFilters, SeoRule, Severity,
+  SeoPage as SeoRecord, SeoPageFilters, Severity,
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
@@ -21,13 +21,15 @@ const severityOptions: { value: Severity | "all"; label: string }[] = [
   { value: "all", label: "全部" }, { value: "high", label: "高" }, { value: "mid", label: "中" }, { value: "low", label: "低" },
 ];
 const pageTypeLabels: Record<PageType, string> = { home: "首页", collection: "分类", product: "产品", blog: "博客", page: "页面", other: "其他" };
-const issueLabels: Record<SeoRule, string> = {
+const issueLabels: Record<string, string> = {
   http_4xx: "页面 4xx", http_5xx: "页面 5xx", redirect_chain: "重定向链", noindex: "noindex",
   canonical_other: "Canonical 指向其他页面", canonical_missing: "Canonical 缺失", not_in_sitemap: "未在 Sitemap 中",
   title_missing: "Title 缺失", desc_missing: "Meta description 缺失", title_length: "Title 长度异常",
   desc_length: "Description 长度异常", title_duplicate: "Title 重复", desc_duplicate: "Description 重复",
   h1_missing: "H1 缺失", h1_multiple: "H1 多个", schema_missing: "Schema 缺失", schema_error: "Schema 错误",
   img_alt_missing: "图片 Alt 缺失", thin_content: "内容过短", orphan: "孤立页面",
+  title_too_short: "Title 过短", title_too_long: "Title 过长", desc_too_short: "Description 过短",
+  desc_too_long: "Description 过长", hreflang_mismatch: "hreflang 异常", url_too_long: "URL 过长",
 };
 const severityLabels: Record<Severity, string> = { high: "高", mid: "中", low: "低" };
 const severityTones: Record<Severity, "danger" | "warn" | "neutral"> = { high: "danger", mid: "warn", low: "neutral" };
@@ -53,7 +55,7 @@ function issueColumns(): ColumnDef<SeoIssue, unknown>[] {
   return [
     { id: "severity", accessorKey: "severity", header: "级别", cell: ({ row }) => <Chip tone={severityTones[row.original.severity]}>{severityLabels[row.original.severity]}</Chip>, enableSorting: true },
     { id: "url", accessorKey: "url", header: "页面", cell: ({ row }) => <code className="si-seo-url">{displayPath(row.original.url)}</code>, enableSorting: true },
-    { id: "problem", accessorKey: "detail", header: "问题", cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule]}</strong><span>{row.original.detail}</span></span>, enableSorting: false },
+    { id: "problem", accessorKey: "detail", header: "问题", cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span>{row.original.detail}</span></span>, enableSorting: false },
     { id: "last_seen", accessorKey: "last_seen", header: "发现于", cell: ({ row }) => <code className="si-seo-date">{row.original.last_seen.slice(5)}</code>, enableSorting: true },
   ];
 }
@@ -168,6 +170,32 @@ export function SeoPage() {
   ];
   const activeListQuery = view === "issues" ? issuesQuery : view === "pages" ? pagesQuery : linksQuery;
   const busy = Boolean(activeRunId || runKind);
+  const ruleFilters = useMemo(() => {
+    const counts = new Map<string, { rule: string; label: string; count: number }>();
+    if (summary?.issue_counts?.length) {
+      for (const item of summary.issue_counts) {
+        const current = counts.get(item.rule);
+        counts.set(item.rule, {
+          rule: item.rule,
+          label: item.label || issueLabels[item.rule] || item.rule,
+          count: (current?.count ?? 0) + item.count,
+        });
+      }
+    } else {
+      for (const issue of issueList?.rows ?? []) {
+        const current = counts.get(issue.rule);
+        counts.set(issue.rule, {
+          rule: issue.rule,
+          label: issueLabels[issue.rule] ?? issue.rule,
+          count: (current?.count ?? 0) + 1,
+        });
+      }
+    }
+    return [...counts.values()].sort((left, right) => right.count - left.count || left.label.localeCompare(right.label, "zh-CN"));
+  }, [issueList?.rows, summary?.issue_counts]);
+  const primaryRuleFilters = ruleFilters.slice(0, 6);
+  const additionalRuleFilters = ruleFilters.slice(6);
+  const selectedRules = issueQuery.filters?.rules ?? [];
 
   useEffect(() => {
     setView("issues"); setIssueQuery(initialIssueQuery); setPageQuery(initialPageQuery); setLinkQuery(initialLinkQuery);
@@ -201,6 +229,11 @@ export function SeoPage() {
     else setLinkQuery((current) => ({ ...current, page: 1, search: search || undefined }));
   };
   const setSeverity = (value: Severity | "all" | undefined) => setIssueQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, severity: !value || value === "all" ? undefined : value } }));
+  const toggleRule = (rule: string) => setIssueQuery((current) => {
+    const selected = current.filters?.rules ?? [];
+    const rules = selected.includes(rule) ? selected.filter((item) => item !== rule) : [...selected, rule];
+    return { ...current, page: 1, filters: { ...current.filters, rules: rules.length ? rules : undefined } };
+  });
   const setPageType = (value: PageType | "all" | undefined) => setPageQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, page_type: !value || value === "all" ? undefined : value } }));
   const setIndexed = (value: "all" | "yes" | "no" | "unchecked" | undefined) => setPageQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, indexed: !value || value === "all" ? undefined : value } }));
 
@@ -224,7 +257,7 @@ export function SeoPage() {
       const result = await api.seo.listIssues(id, { ...issueQuery, page: 1, pageSize: 0 });
       const lines = [["级别", "页面", "问题", "说明", "状态", "首次发现", "最近发现"].join(",")];
       result.rows.forEach((issue) => lines.push([
-        severityLabels[issue.severity], issue.url, issueLabels[issue.rule], issue.detail, issue.status, issue.first_seen, issue.last_seen,
+        severityLabels[issue.severity], issue.url, issueLabels[issue.rule] ?? issue.rule, issue.detail, issue.status, issue.first_seen, issue.last_seen,
       ].map(csvCell).join(",")));
       const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -248,7 +281,16 @@ export function SeoPage() {
     <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className={`si-seo-controls${view === "issues" ? " is-issues" : ""}`}>
       <Segmented value={view} options={views} onChange={setView} ariaLabel="SEO 视图" />
-      {view === "issues" && <div className="si-seo-filter-group" aria-label="按严重级别筛选">{severityOptions.map((item) => <FilterPill key={item.value} currentValue={issueQuery.filters?.severity ?? "all"} value={item.value} onValueChange={setSeverity}>{item.label}</FilterPill>)}</div>}
+      {view === "issues" && <>
+        <div className="si-seo-filter-group" aria-label="按严重级别筛选">{severityOptions.map((item) => <FilterPill key={item.value} currentValue={issueQuery.filters?.severity ?? "all"} value={item.value} onValueChange={setSeverity}>{item.label}</FilterPill>)}</div>
+        <div className="si-seo-rule-filters" aria-label="按问题类型筛选">
+          {primaryRuleFilters.map((item) => <button key={item.rule} type="button" className={`si-seo-rule-filter${selectedRules.includes(item.rule) ? " is-active" : ""}`} aria-pressed={selectedRules.includes(item.rule)} onClick={() => toggleRule(item.rule)}>{item.label}<span>{item.count}</span></button>)}
+          {additionalRuleFilters.length > 0 && <details className="si-seo-more-rules">
+            <summary>更多问题类型{selectedRules.some((rule) => additionalRuleFilters.some((item) => item.rule === rule)) ? " · 已选" : ""}</summary>
+            <div className="si-seo-more-rules-menu">{additionalRuleFilters.map((item) => <label key={item.rule}><input type="checkbox" checked={selectedRules.includes(item.rule)} onChange={() => toggleRule(item.rule)} /><span>{item.label}</span><small>{item.count}</small></label>)}</div>
+          </details>}
+        </div>
+      </>}
       {view === "pages" && <div className="si-seo-page-filters"><div>{pageTypes.map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.page_type ?? "all"} value={item.value} onValueChange={setPageType}>{item.label}</FilterPill>)}</div><div>{[{ value: "all" as const, label: "全部收录" }, { value: "yes" as const, label: "已收录" }, { value: "no" as const, label: "未收录" }, { value: "unchecked" as const, label: "未检查" }].map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.indexed ?? "all"} value={item.value} onValueChange={setIndexed}>{item.label}</FilterPill>)}</div></div>}
       {view === "links" && <Chip tone="warn">孤立页面 {orphansQuery.data?.length ?? 0}</Chip>}
       <SearchInput value={(view === "issues" ? issueQuery : view === "pages" ? pageQuery : linkQuery).search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" />

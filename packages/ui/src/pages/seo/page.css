@@ -34,6 +34,47 @@ flex: 1; justify-content: space-between; gap: 8px;
 padding-left: 8px; border-left: 1px solid var(--color-line);
 }
 
+.si-seo-rule-filters {
+display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+
+.si-seo-rule-filter {
+display: inline-flex; min-height: 30px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); font: inherit; font-size: 12px; cursor: pointer;
+}
+
+.si-seo-rule-filter > span, .si-seo-more-rules-menu small {
+color: var(--color-muted); font-family: var(--font-mono); font-size: 12px;
+}
+
+.si-seo-rule-filter.is-active {
+border-color: var(--color-brand); background: var(--color-brand); color: #fff;
+}
+
+.si-seo-rule-filter.is-active > span {
+color: #fff;
+}
+
+.si-seo-more-rules {
+position: relative;
+}
+
+.si-seo-more-rules > summary {
+display: inline-flex; min-height: 30px; align-items: center; padding: 0 9px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); font-size: 12px; cursor: pointer; list-style: none;
+}
+
+.si-seo-more-rules > summary::-webkit-details-marker { display: none; }
+
+.si-seo-more-rules-menu {
+position: absolute; z-index: 20; top: calc(100% + 5px); right: 0; display: grid; min-width: 220px; gap: 2px; padding: 7px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface); box-shadow: 0 12px 32px rgba(20,24,29,.16);
+}
+
+.si-seo-more-rules-menu label {
+display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 7px; min-height: 30px; padding: 0 5px; border-radius: 5px; color: var(--color-ink-2); font-size: 12px; cursor: pointer;
+}
+
+.si-seo-more-rules-menu label:hover { background: var(--color-subtle); }
+.si-seo-more-rules-menu input { accent-color: var(--color-brand); }
+
 .si-seo-table-frame {
 position: relative; min-width: 0; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
 }

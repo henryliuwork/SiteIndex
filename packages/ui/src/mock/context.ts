@@ -4,7 +4,7 @@ import type {
   DesignTokens, EdmCommandInput, FileCheck, FolderRow, InventorySummary, JobName,
   JobProgress, JobResult, Keyword, ListQuery, OverviewData, PageResult, ProductFilters,
   ProductFull, ProductView, ProjectDetail, ProjectId, ProjectSummary, ProjectUiState, RepairAction, RunLog,
-  RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage, SiteIndexError, SkillInfo, SkillTargetStatus,
+  HistoryRange, RunnerInfo, RunnerState, ScheduleConfig, ScheduleState, SeoIssue, SeoLink, SeoPage, SiteIndexError, SkillInfo, SkillTargetStatus,
   SeoPageFilters, SiteConfig, SiteIndexApi, SkuImageFilters, SkuImageRow, SkuRecord,
   SkuStockFilters, SkuStockView, StockStatus, ValidationReport,
 } from "@siteindex/shared";
@@ -138,6 +138,15 @@ export function rowFromSku(record: SkuRecord, history: string, since: string): S
     online_rate_7d: online7 / 7, online_rate_30d: online / 30, history_30d: history, changes_30d: changes,
     last_change: previous === current ? null : reverseNames[previous] + " → " + reverseNames[current],
     last_change_at: previous === current ? null : dateBefore((record.sku.length + changes) % 10),
+    parent_sku: record.sku.match(/^(.+?)-[A-Z]$/)?.[1] ?? null,
+    price_history: (() => {
+      const skuNumber = Number(record.sku.match(/\d+$/)?.[0] ?? 0);
+      return [
+        { date: dateBefore(60), price: record.price + (skuNumber % 3 === 0 ? 2.25 : 0) },
+        { date: dateBefore(18), price: record.price + (skuNumber % 7 === 0 ? -1.5 : 0) },
+        { date: FIXED_TODAY, price: record.price },
+      ];
+    })(),
   };
 }
 
@@ -221,7 +230,11 @@ export function defaultConfig(id: ProjectId): SiteConfig {
     },
     sitemaps: ["https://" + domain + "/sitemap.xml"],
     crawl: { adapter: "gmc_feed", feed_url: kingsyard ? "https://" + domain + "/feed.xml" : "", sku_field: "id", category_depth: 2, missing_as: "out_of_stock", rate_limit_ms: 200 },
-    categories: { mode: kingsyard ? "manual" : "url_rule" },
+    categories: {
+      mode: kingsyard ? "manual" : "url_rule",
+      watched: kingsyard ? [{ name: "Bird Feeders", slug: "bird-feeders", url: "https://" + domain + "/bird-feeders.html" }] : [],
+    },
+    sku_grouping: kingsyard ? { enabled: true, rule: { type: "regex", value: "^(.+?)-[A-Z]$" } } : { enabled: false, rule: { type: "separator", value: "-" } },
     workspace_folders: [],
     schedule: defaultSchedule(),
   };
@@ -531,7 +544,7 @@ export const seoLinks: SeoLink[] = [
 ];
 export const orphanSeoPages = ["http://127.0.0.1:8765/help/orphan-page"];
 
-export function inventorySummary(id: ProjectId, days = 30): InventorySummary {
+export function inventorySummary(id: ProjectId, range: HistoryRange | 14 = 30): InventorySummary {
   const key = projectKey(id);
   const rows = rowsByProject[key];
   const counts = { in_stock: 0, out_of_stock: 0, preorder: 0, unknown: 0 };
@@ -546,7 +559,9 @@ export function inventorySummary(id: ProjectId, days = 30): InventorySummary {
   const total = rows.length;
   const categoryPriority = (name: string) => /bird-feeders/i.test(name) ? 0 : /bird-houses/i.test(name) ? 1 : /bird-baths/i.test(name) ? 2 : 3;
   const names = [...categories.keys()].sort((left, right) => categoryPriority(left) - categoryPriority(right));
-  const dates = Array.from({ length: days }, (_, index) => dateBefore(days - index - 1));
+  const days = typeof range === "number" ? range : 90;
+  const availableDays = Math.min(days, 1);
+  const dates = Array.from({ length: availableDays }, (_, index) => dateBefore(availableDays - index - 1));
   const trendNames = names.slice(0, 3).sort((left, right) => {
     const priority = (name: string) => /bird-feeders/i.test(name) ? 0 : /bird-baths/i.test(name) ? 1 : /bird-houses/i.test(name) ? 2 : 3;
     return priority(left) - priority(right);
@@ -564,7 +579,7 @@ export function inventorySummary(id: ProjectId, days = 30): InventorySummary {
     const group = categories.get(name) ?? { total: 0, inStock: 0 };
     const rate = /bath/i.test(name) ? 0.5 : /house/i.test(name) ? 1 : 0.73;
     return { category: name, rate, total: group.total };
-  }).sort((left, right) => categoryPriority(left.category) - categoryPriority(right.category)).slice(0, 3);
+  }).sort((left, right) => categoryPriority(left.category) - categoryPriority(right.category));
   const todayRows = rows.filter((row) => todaySkus[key].has(row.sku)).slice(0, 4);
   const today = todayRows.map((row, index) => ({
     type: (["restock", "oos", "price", "new", "removed"] as const)[index % 5]!,
@@ -590,7 +605,7 @@ export function inventorySummary(id: ProjectId, days = 30): InventorySummary {
       { key: "long-out", label: "长期缺货（≥ 14 天）", value: longOut.length.toLocaleString("zh-CN"), hint: longOut[0] ? longOut[0].sku + " · " + longOut[0].days_in_status + " 天" : "暂无长期缺货" , tone: longOut.length ? "warn" : "default" },
       { key: "volatility", label: "状态波动（30 天 ≥ 3 次）", value: volatile.toLocaleString("zh-CN"), hint: "供货不稳定的 SKU" },
     ],
-    trend: { dates, series: trendSeries }, category_rates: categoryRates,
+    trend: { dates, series: trendSeries }, category_rates: categoryRates, timezone: projectConfigs[key].timezone,
     category_source: categoryConfigs[key].mode,
     uncategorized: rows.filter((row) => !row.category).length, today,
   };
