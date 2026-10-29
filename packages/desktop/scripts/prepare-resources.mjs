@@ -1,6 +1,7 @@
-import { access, cp, mkdir, rm } from "node:fs/promises";
+import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { rewriteBundledCliSchemaPaths } from "./cli-schema-paths.mjs";
 import { copyFontAssets } from "./font-resources.mjs";
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -32,10 +33,16 @@ if (!(await exists(packagedCli))) {
     "CLI bundle is missing. Run `pnpm --filter @siteindex/cli build` before preparing desktop resources.",
   );
 }
-await cp(packagedCli, join(buildResources, "cli.js"));
+const bundledCli = await readFile(packagedCli, "utf8");
+const rewrittenCli = rewriteBundledCliSchemaPaths(bundledCli);
+await writeFile(join(buildResources, "cli.js"), rewrittenCli.source, "utf8");
+console.info(`Rewrote ${rewrittenCli.replacementCount} CLI schema paths for packaged resources.`);
 
 for (const directory of ["skills", "templates", "schemas"]) {
-  await copyDirectory(join(repositoryRoot, directory), join(buildResources, directory));
+  const copied = await copyDirectory(join(repositoryRoot, directory), join(buildResources, directory));
+  if (directory === "schemas" && !copied) {
+    throw new Error(`Required schema resources are missing: ${join(repositoryRoot, directory)}`);
+  }
 }
 
 const uiDist = join(repositoryRoot, "packages/ui/dist");
