@@ -29,7 +29,6 @@ import type {
   SeoPage,
   Severity,
   SiteConfig,
-  SkuGroupingRule,
   SkuRecord,
   SkuStockView,
   StockStatus,
@@ -209,13 +208,6 @@ export interface SkuStockFilters {
   parent_only?: boolean;
   watched_only?: boolean;
   price_changed_within?: HistoryRange;
-}
-
-export interface SkuGroupingPreview {
-  parents: number;
-  children: number;
-  samples: { parent: string; children: string[] }[];
-  unmatched: number;
 }
 
 // ---------- 产品 ----------
@@ -423,9 +415,6 @@ export interface SiteIndexApi {
   };
   overview: {
     get(id: ProjectId): Promise<OverviewData>;
-  };
-  sku?: {
-    previewGrouping(id: ProjectId, rule: SkuGroupingRule): Promise<SkuGroupingPreview>;
   };
   inventory: {
     summary(id: ProjectId, days?: 14 | 30): Promise<InventorySummary>;
