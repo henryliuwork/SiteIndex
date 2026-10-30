@@ -182,9 +182,12 @@ export function createWindowManager(options: WindowManagerOptions) {
     mainWindow = window;
     trackMainWindow(window);
 
-    window.once("ready-to-show", () => {
-      if (launchHidden) window.hide();
-      else window.show();
+    const readyToShow = new Promise<void>((resolveReadyToShow) => {
+      window.once("ready-to-show", () => {
+        if (launchHidden) window.hide();
+        else window.show();
+        resolveReadyToShow();
+      });
     });
     window.on("close", (event) => {
       saveWindowBounds(window);
@@ -204,6 +207,7 @@ export function createWindowManager(options: WindowManagerOptions) {
     });
 
     await loadAppContent(window);
+    await readyToShow;
     return window;
   }
 
