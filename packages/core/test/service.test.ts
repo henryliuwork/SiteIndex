@@ -83,6 +83,50 @@ describe("createCoreService initial namespaces", () => {
     expect(await api.inventory.dailyReport("fixture", "2026-10-18")).toBeNull();
   }, 30_000);
 
+  it("serves 14, 30, 60, 90 and all recorded business dates through CoreService", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const dailySummaryPath = path.join(projectPath, PATHS.dailySummary);
+    const businessDates = Array.from({ length: 100 }, (_, index) =>
+      new Date(Date.UTC(2026, 0, 1 + index * 2)).toISOString().slice(0, 10));
+    const historyRows = businessDates.flatMap((date, index) => {
+      const inStock = index % 2 === 0 ? 2 : 1;
+      const categoryRow = { date, category: "bird-feeders", total: 2, in_stock: inStock, out_of_stock: 2 - inStock, preorder: 0, unknown: 0 };
+      return [
+        { ...categoryRow, category: "_all" },
+        categoryRow,
+      ];
+    });
+    await writeCsv(dailySummaryPath, historyRows, CSV_HEADERS.dailySummary, ["date", "category"]);
+    api.invalidate(projectPath);
+
+    const ranges = [14, 30, 60, 90, "all"] as const;
+    const defaultSummary = await api.inventory.summary("fixture");
+    const legacy14 = await api.inventory.summary("fixture", 14);
+    expect(defaultSummary.trend).toEqual(legacy14.trend);
+
+    for (const range of ranges) {
+      const summary = await api.inventory.summary("fixture", range);
+      const count = range === "all" ? businessDates.length : range;
+      const expectedDates = businessDates.slice(-count);
+      expect(summary.trend.dates).toEqual(expectedDates);
+      expect(summary.trend.series).toEqual([{
+        category: "bird-feeders",
+        rates: expectedDates.map((date) => (businessDates.indexOf(date) % 2 === 0 ? 1 : 0.5)),
+      }]);
+    }
+
+    const latestDate = businessDates.at(-1)!;
+    await writeCsv(dailySummaryPath, [
+      { date: latestDate, category: "_all", total: 1, in_stock: 1, out_of_stock: 0, preorder: 0, unknown: 0 },
+      { date: latestDate, category: "bird-feeders", total: 1, in_stock: 1, out_of_stock: 0, preorder: 0, unknown: 0 },
+    ], CSV_HEADERS.dailySummary, ["date", "category"]);
+    api.invalidate(projectPath);
+    for (const range of ranges) {
+      expect((await api.inventory.summary("fixture", range)).trend.dates).toEqual([latestDate]);
+    }
+  }, 30_000);
+
   it("keeps null trend values for missing category business dates", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);
