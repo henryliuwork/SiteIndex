@@ -15,11 +15,111 @@ display: grid; grid-template-columns: minmax(0, 2.16fr) minmax(300px, 1fr); gap:
 }
 
 .si-inventory-chart {
-min-height: 376px; padding: 16px 18px 12px;
+display: flex; min-height: 376px; flex-direction: column; gap: 10px; padding: 16px 18px 12px;
+}
+
+.si-inventory-chart-heading {
+align-items: flex-start; flex-wrap: wrap; gap: 10px 16px;
 }
 
 .si-inventory-chart-heading .si-text-field {
 width: auto; min-width: 108px; height: 31px; padding: 4px 8px; font-size: 12px;
+}
+
+.si-inventory-chart-controls {
+display: flex; min-width: 0; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+}
+
+.si-inventory-trend-picker {
+min-width: 150px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface);
+}
+
+.si-inventory-trend-picker > summary {
+display: flex; min-height: 29px; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 8px; color: var(--color-ink-2); font-size: 12px; cursor: pointer; list-style-position: inside;
+}
+
+.si-inventory-trend-picker > summary span {
+color: var(--color-muted); font-family: var(--font-mono); font-size: 11px;
+}
+
+.si-inventory-trend-picker-content {
+display: grid; min-width: 190px; gap: 8px; padding: 8px; border-top: 1px solid var(--color-line-soft);
+}
+
+.si-inventory-trend-search input {
+box-sizing: border-box; width: 100%; min-width: 0; height: 30px; padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 5px; background: var(--color-surface); color: var(--color-ink); font: 12px var(--font-sans);
+}
+
+.si-inventory-trend-options {
+display: grid; max-height: 132px; gap: 3px; overflow-y: auto;
+}
+
+.si-inventory-trend-options label {
+display: flex; min-width: 0; align-items: center; gap: 7px; padding: 3px 2px; color: var(--color-ink-2); font-size: 12px; cursor: pointer;
+}
+
+.si-inventory-trend-options input {
+flex: none; accent-color: var(--color-brand);
+}
+
+.si-inventory-trend-options label span {
+min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.si-inventory-trend-actions {
+display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+
+.si-inventory-trend-actions button, .si-inventory-trend-legend-heading button {
+padding: 4px 7px; border: 1px solid var(--color-line); border-radius: 5px; background: var(--color-surface); color: var(--color-ink-2); font: inherit; font-size: 11px; cursor: pointer;
+}
+
+.si-inventory-trend-actions button:disabled {
+color: var(--color-muted); cursor: not-allowed; opacity: .6;
+}
+
+.si-inventory-trend-actions small {
+color: var(--color-muted); font-size: 11px;
+}
+
+.si-inventory-trend-empty {
+display: grid; min-height: 190px; place-items: center; margin: 0; color: var(--color-muted); font-size: 13px; text-align: center;
+}
+
+.si-inventory-trend-date-note {
+margin: 0; color: var(--color-brand-strong); font-size: 12px;
+}
+
+.si-inventory-trend-plot {
+width: 100%; min-width: 0; height: 220px;
+}
+
+.si-inventory-trend-legend {
+display: grid; gap: 6px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--color-line-soft); color: var(--color-muted); font-size: 12px;
+}
+
+.si-inventory-trend-legend-heading {
+display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+
+.si-inventory-trend-legend-heading strong {
+color: var(--color-ink-2); font-size: 11px; font-weight: 600;
+}
+
+.si-inventory-trend-legend ul {
+display: grid; max-height: 62px; gap: 3px; overflow-y: auto; margin: 0; padding: 0; list-style: none;
+}
+
+.si-inventory-trend-legend li {
+display: flex; min-width: 0; align-items: center; gap: 7px; color: var(--color-ink-2); font-size: 11px;
+}
+
+.si-inventory-trend-legend li i {
+flex: none; width: 14px; height: 3px; border-radius: 3px;
+}
+
+.si-inventory-trend-legend p {
+margin: 0; color: var(--color-muted); font-size: 11px;
 }
 
 .si-trend-meta {

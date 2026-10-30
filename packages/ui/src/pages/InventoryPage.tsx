@@ -5,13 +5,14 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Download, FileText, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, StatusCells, stockTone } from "../components";
 import { selectInventoryCategoryRates } from "./inventory/categories";
+import { DEFAULT_TREND_CATEGORY_LIMIT, MAX_TREND_CATEGORY_LIMIT, defaultTrendCategories, toggleTrendCategory, trendPoints } from "./inventory/trend";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",
@@ -65,38 +66,67 @@ function categorySourceLabel(summary: InventorySummary, project: ProjectSummary 
   return "URL 规则";
 }
 
-function trendPoints(summary: InventorySummary | undefined) {
-  if (!summary) return [];
-  return summary.trend.dates.map((date, index) => {
-    const point: Record<string, string | number | null> = { day: date.slice(5) };
-    for (const series of summary.trend.series) point[series.category] = series.rates[index] ?? null;
-    return point;
-  });
-}
-
-const TrendChart = memo(function TrendChart({ summary, range, onRangeChange }: { summary: InventorySummary; range: HistoryRange; onRangeChange: (range: HistoryRange) => void }) {
-  const points = trendPoints(summary);
+const TrendChart = memo(function TrendChart({ summary, range, onRangeChange, selectedCategories, onSelectedCategoriesChange }: {
+  summary: InventorySummary;
+  range: HistoryRange;
+  onRangeChange: (range: HistoryRange) => void;
+  selectedCategories: string[] | null;
+  onSelectedCategoriesChange: (categories: string[]) => void;
+}) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [legendExpanded, setLegendExpanded] = useState(true);
+  const defaults = defaultTrendCategories(summary);
+  const selection = selectedCategories ?? defaults;
+  const selected = new Set(selection);
+  const visibleSeries = summary.trend.series.filter((series) => selected.has(series.category));
+  const points = trendPoints(summary, visibleSeries.map((series) => series.category));
+  const availableCategories = summary.trend.series.map((series) => series.category);
+  const normalizedSearchTerm = searchTerm.trim().toLocaleLowerCase("zh-CN");
+  const filteredCategories = availableCategories.filter((category) => category.toLocaleLowerCase("zh-CN").includes(normalizedSearchTerm));
+  const hasNoDates = summary.trend.dates.length === 0;
+  const hasOneDate = summary.trend.dates.length === 1;
   return (
     <section className="si-inventory-chart si-panel" aria-label="分类在线率趋势">
       <div className="si-panel-heading si-inventory-chart-heading">
         <h2>分类在线率趋势 · {rangeLabel(range)}</h2>
-        <select className="si-text-field" aria-label="在线率趋势范围" value={String(range)} onChange={(event) => onRangeChange(event.target.value === "all" ? "all" : Number(event.target.value) as 30 | 60 | 90)}>{historyRanges.map((item) => <option key={item.value} value={item.value} disabled={!isMockApi && item.value !== 30}>{item.label}{!isMockApi && item.value !== 30 ? "（接口更新后开放）" : ""}</option>)}</select>
+        <div className="si-inventory-chart-controls">
+          <select className="si-text-field" aria-label="在线率趋势范围" value={String(range)} onChange={(event) => onRangeChange(event.target.value === "all" ? "all" : Number(event.target.value) as 30 | 60 | 90)}>{historyRanges.map((item) => <option key={item.value} value={item.value} disabled={!isMockApi && item.value !== 30}>{item.label}{!isMockApi && item.value !== 30 ? "（接口更新后开放）" : ""}</option>)}</select>
+          <details className="si-inventory-trend-picker">
+            <summary>选择分类 <span>{visibleSeries.length} / {MAX_TREND_CATEGORY_LIMIT}</span></summary>
+            <div className="si-inventory-trend-picker-content">
+              <label className="si-inventory-trend-search"><span className="si-sr-only">搜索趋势分类</span><input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="搜索分类" aria-label="搜索趋势分类" /></label>
+              {filteredCategories.length > 0 ? <div className="si-inventory-trend-options" role="group" aria-label="趋势图分类">
+                {filteredCategories.map((category) => {
+                  const checked = selected.has(category);
+                  return <label key={category}><input type="checkbox" checked={checked} disabled={!checked && visibleSeries.length >= MAX_TREND_CATEGORY_LIMIT} onChange={() => onSelectedCategoriesChange(toggleTrendCategory(selection, category))} /><span>{category}</span></label>;
+                })}
+              </div> : <p className="si-inventory-trend-empty">没有匹配的分类。</p>}
+              <div className="si-inventory-trend-actions"><button type="button" disabled={visibleSeries.length === 0} onClick={() => onSelectedCategoriesChange([])}>清除</button><button type="button" disabled={visibleSeries.length === defaults.length && visibleSeries.every((series, index) => series.category === defaults[index])} onClick={() => onSelectedCategoriesChange(defaults)}>重置默认</button><small>默认最多 {DEFAULT_TREND_CATEGORY_LIMIT} 类，最多选择 {MAX_TREND_CATEGORY_LIMIT} 类</small></div>
+            </div>
+          </details>
+        </div>
       </div>
       <p className="si-trend-meta">{summary.trend.dates[0] ? `数据自 ${businessDateLabel(summary.trend.dates[0])} 起` : "暂无历史日期"} · 站点时区 {summary.timezone || "未配置"}</p>
-      <div className="si-trend-chart">
+      {hasOneDate && <p className="si-inventory-trend-date-note" role="status">目前仅有 1 个业务日期，后续每日同步自动形成趋势。</p>}
+      {hasNoDates ? <p className="si-inventory-trend-empty" role="status">暂无历史数据。</p> : visibleSeries.length === 0 ? <p className="si-inventory-trend-empty" role="status">请选择至少一个有历史数据的分类。</p> : <div className="si-inventory-trend-plot">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points} margin={{ top: 10, right: 12, bottom: 4, left: 0 }}>
             <CartesianGrid stroke="#E8EBEF" vertical={false} />
             <XAxis dataKey="day" tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} interval={Math.max(0, Math.floor(points.length / 5) - 1)} />
             <YAxis domain={[0, 1]} ticks={[0, 0.25, 0.5, 0.75, 1]} tickFormatter={(value: number) => Math.round(value * 100) + "%"} tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} width={40} />
             <Tooltip formatter={(value) => [formatRate(typeof value === "number" ? value : null), "在线率"]} labelFormatter={(label) => "日期 " + label} />
-            <Legend align="right" verticalAlign="top" height={34} iconType="plainline" wrapperStyle={{ fontSize: 12, color: "#47515B" }} />
-            {summary.trend.series.map((series, index) => (
-              <Line key={series.category} type="monotone" dataKey={series.category} name={series.category} stroke={lineColors[index % lineColors.length]} strokeWidth={2.4} dot={points.length === 1 ? { r: 3 } : false} activeDot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
+            {visibleSeries.map((series, index) => (
+              <Line key={series.category} type="monotone" dataKey={series.category} name={series.category} stroke={lineColors[index % lineColors.length]} strokeWidth={2.4} dot={hasOneDate ? { r: 3 } : false} activeDot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
             ))}
           </LineChart>
         </ResponsiveContainer>
-      </div>
+      </div>}
+      <section className="si-inventory-trend-legend" aria-label="趋势图例">
+        <div className="si-inventory-trend-legend-heading"><strong>图例 · {visibleSeries.length} 个分类</strong><button type="button" aria-controls="si-inventory-trend-legend-list" aria-expanded={legendExpanded} onClick={() => setLegendExpanded((expanded) => !expanded)}>{legendExpanded ? "收起" : "展开"}</button></div>
+        <div id="si-inventory-trend-legend-list" hidden={!legendExpanded}>
+          {visibleSeries.length > 0 ? <ul>{visibleSeries.map((series, index) => <li key={series.category}><i style={{ backgroundColor: lineColors[index % lineColors.length] }} aria-hidden="true" /><span>{series.category}</span></li>)}</ul> : <p>未选择分类。</p>}
+        </div>
+      </section>
     </section>
   );
 });
@@ -218,6 +248,7 @@ export function InventoryPage() {
   const [query, setQuery] = useState<ListQuery<SkuStockFilters>>(INITIAL_QUERY);
   const [selectedRow, setSelectedRow] = useState<InventoryTableRow | null>(null);
   const [historyRange, setHistoryRange] = useState<HistoryRange>(30);
+  const [trendSelection, setTrendSelection] = useState<{ projectId: string; categories: string[] } | null>(null);
   const [showDefaultCategories, setShowDefaultCategories] = useState<boolean | null>(null);
   const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const [report, setReport] = useState<string | null | undefined>(undefined);
@@ -249,6 +280,7 @@ export function InventoryPage() {
   const summary = summaryQuery.data;
   const project = projectQuery.data?.summary;
   const watchedCategories = projectQuery.data?.config.categories.watched ?? [];
+  const selectedTrendCategories = trendSelection?.projectId === id ? trendSelection.categories : null;
   const displayDefaultCategories = showDefaultCategories ?? watchedCategories.length === 0;
   const skuRows = (skuQuery.data?.rows ?? []) as InventoryTableRow[];
   const hasParentGroupingData = skuRows.some((row) => row.parent_sku != null || row.is_parent === true);
@@ -333,7 +365,7 @@ export function InventoryPage() {
       {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <>
         <div className="si-inventory-kpis">{kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
         <div className="si-inventory-overview-grid">
-          <TrendChart summary={summary} range={historyRange} onRangeChange={setHistoryRange} />
+          <TrendChart summary={summary} range={historyRange} onRangeChange={setHistoryRange} selectedCategories={selectedTrendCategories} onSelectedCategoriesChange={(categories) => setTrendSelection({ projectId: id, categories })} />
           <CategoryPanel
             summary={summary}
             project={project}
