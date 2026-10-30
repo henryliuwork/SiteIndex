@@ -210,16 +210,17 @@ export async function createProjectFiles(
     throw createError("UNKNOWN", "项目目录必须位于 projects_root 内。", projectPath);
   }
   await mkdir(root, { recursive: true });
-  let existingEntries: string[] = [];
-  try { existingEntries = await readdir(projectPath); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  if (existingEntries.includes(PATHS.site.split("/").at(-1) ?? "site.json")
-    || existingEntries.includes(PATHS.index.split("/")[0]!)) {
-    throw createError("FOLDER_EXISTS", "目标目录已经包含 SiteIndex 项目数据。", projectPath);
+  try {
+    // Exclusive mkdir is the path reservation: never merge into an existing user directory.
+    await mkdir(projectPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw createError("FOLDER_EXISTS", "目标项目目录已经存在。为保护已有文件，本次没有修改目录内容。", projectPath);
+    }
+    throw error;
   }
 
   try {
-    await mkdir(projectPath, { recursive: true });
     const template = await templateDirectory(templatePath);
     await copyTemplate(template, projectPath, input, detected);
     const config = createConfig(input, detected);
