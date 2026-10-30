@@ -59,6 +59,20 @@ describe("project catalog", () => {
     expect(() => catalogInstance.resolveProject("missing")).toThrowError("找不到指定项目。");
   });
 
+  it("deduplicates the same project registered by projects_root and extra_projects", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "siteindex-projects-overlap-"));
+    roots.push(root);
+    const projectsRoot = path.join(root, "projects");
+    const alpha = await createProject(path.join(projectsRoot, "alpha"));
+    const catalogInstance = createProjectCatalog(() => undefined, () => undefined);
+    catalog = catalogInstance;
+
+    const entries = await catalogInstance.refresh(settings(projectsRoot, [alpha]));
+
+    expect(entries).toEqual([{ id: "alpha", path: alpha }]);
+    expect(catalogInstance.resolveProject("alpha")).toBe(alpha);
+  });
+
   it("debounces index and README changes, invalidates the snapshot, and emits the project id", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "siteindex-watch-"));
     roots.push(root);

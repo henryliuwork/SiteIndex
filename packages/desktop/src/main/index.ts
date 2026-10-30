@@ -2,7 +2,7 @@ import { app, dialog, utilityProcess, type Tray } from "electron";
 import electronUpdater from "electron-updater";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createCoreService, type CoreService } from "@siteindex/core";
+import { createCoreService, type CoreService, type CoreServiceContext } from "@siteindex/core";
 import { EXIT, SCHEDULABLE_JOBS, type AppSettings, type ProjectId } from "@siteindex/shared";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
 import { createJobManager, type JobManagerOptions } from "./job-manager.js";
@@ -134,8 +134,9 @@ if (!hasSingleInstanceLock) {
       (id) => windowManager.sendToWindows("si:projects.onChanged", id),
     );
     projectCatalog = catalog;
-    const coreService = createCoreService({
+    const coreContext = {
       resolveProject: catalog.resolveProject,
+      listRegisteredProjects: async () => catalog.refresh(await settingsStore.get()),
       get deviceId() {
         return currentSettings.device_id;
       },
@@ -148,7 +149,8 @@ if (!hasSingleInstanceLock) {
       templateDir: app.isPackaged
         ? join(process.resourcesPath, "templates", "project")
         : resolve(mainDirectory, "../../../../templates/project"),
-    });
+    } satisfies CoreServiceContext;
+    const coreService = createCoreService(coreContext);
     core = coreService;
     const skillService = createSkillService({
       sourceDirectory: app.isPackaged
