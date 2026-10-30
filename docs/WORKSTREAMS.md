@@ -7,7 +7,7 @@
 | 工作流 | 负责目录（只改这些） | 一句话 |
 |---|---|---|
 | **A · Core** | `packages/core/`、`packages/cli/`、`schemas/`、`fixtures/`、`reference/` | 所有数据逻辑：抓取、库存、视图、SEO、校验、README、台账、分类、Job；以及命令行 |
-| **B · UI 共享层** | `packages/ui/src/components/**`、`src/styles/{app,components,tokens}.css`、`src/App.tsx`；页面 `ReadmePage`、`AppSettingsPage` 及其 `pages/{readme,app-settings}/**` | 共享组件、全局样式、路由骨架 |
+| **B · UI 共享层与应用级页面** | `packages/ui/src/components/**`、`src/styles/{app,components,tokens}.css`、`src/App.tsx`；页面 `ReadmePage`、`AppSettingsPage`、`ProjectCenterPage`、`NewProjectWizardPage`、`SkillsPage` 及其 `pages/{readme,app-settings,project-center,new-project,skills}/**` | 共享组件、全局样式、路由骨架、项目中心/新建向导/Skill 中心 |
 | **C · Desktop** | `packages/desktop/`、`.github/workflows/`、`skills/`、`templates/` | Electron 外壳、IPC 接线、系统计划任务、执行设备/锁、文件夹/回收站、skill 分发、浏览器检测、打包发布 |
 | **D · UI 项目页面** | `packages/ui/src/pages/` 下：`SeoPage`、`InventoryPage`、`ContentPage`、`RunsPage`、`ProjectSettings*Page`，**新增明确归属** `OverviewPage`、`ProductsPage`、`EdmPage`、`DesignPage`；对应 `pages/<page>/**`（含页面级 `page.css`） | 项目内各业务数据页、页面局部交互与样式 |
 | **E · 验收** | 只读代码；可改 `fixtures/`；产出 issue | 在用户本机对真实项目验收，不写产品代码 |
@@ -72,8 +72,8 @@
 
 - 只有 **B** 能改共享组件与全局样式（`components/**`、`app.css`、`components.css`、`tokens.css`、`App.tsx`）。D 需要共享组件调整时，开 issue 标 `ws:B`，不要自己改。
 - **Overview / Products / EDM / Design 四页由 D 负责**：包含 `OverviewPage.tsx`、`ProductsPage.tsx`、`EdmPage.tsx`、`DesignPage.tsx`、对应 `pages/{overview,products,edm,design}/**` 及各自 mock 命名空间。B 不修改这四页的业务 JSX 或页面级样式。
-- **#177 tab/tabpanel 接入**：B 维护 `ProjectHeader`、`ProjectTabPanel`、稳定 ID 与焦点行为；待共享层 PR #183 合并后，D 负责在自己拥有的项目页面中接入 `hasTabPanel` 与 `ProjectTabPanel`，确保当前路由 tab 有对应 panel。不可在 D 页面复制一套标签 ID 逻辑。D 已有的七个页面和本次新增的四个页面可以分 PR 接入。
-- `ProjectCenterPage`、`NewProjectWizardPage`、`SkillsPage` 等未列入上述 B/D 清单的页面**仍待协调**；本次授权仅限上述四个新增项目业务页，不得顺带跨页修改。
+- **#177 tab/tabpanel 接入**：B 维护 `ProjectHeader`、`ProjectTabPanel`、稳定 ID 与焦点行为；#183（共享）和 #187/#188（D 十一个页面）均已合并。后续实际键盘/读屏验收归 E；若发现页面与共享组件问题，依 B/D 所有权拆分修复 PR。
+- **ProjectCenter / NewProjectWizard / Skills 三页由 B 负责**：包含 `ProjectCenterPage.tsx`、`NewProjectWizardPage.tsx`、`SkillsPage.tsx`，对应 `pages/{project-center,new-project,skills}/**` 及各自 mock 命名空间；B 可处理 #102 新建向导 UI 和 #136 项目中心路由，但不得顺带改 D 项目业务页。
 - D 的页面级样式写在各自的 `pages/<page>/page.css`。
 - `src/mock/**` 按命名空间分文件，各改各页面用到的那个；都要改同一个文件时，先合并先提的那个。
 - B 的共享层改动优先合并，D 随后 rebase。

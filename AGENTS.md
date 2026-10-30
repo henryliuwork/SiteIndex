@@ -11,7 +11,7 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 
 ## 硬性规则
 - 只改自己工作流的目录；`packages/shared/` 的修改走 WORKSTREAMS §4 契约流程（单独 `contract/*` 分支与 PR）
-- UI 页面归属：D 拥有 `OverviewPage`、`ProductsPage`、`EdmPage`、`DesignPage` 及既有 D 项目页面；B 只负责共享组件/全局样式及 `ReadmePage`、`AppSettingsPage`。其他页面如项目中心、新建向导、Skills 未因本次划分自动授权，详见 WORKSTREAMS §1/§5.1
+- UI 页面归属：**B** 负责共享组件/全局样式、`ReadmePage`、`AppSettingsPage`，以及应用级 `ProjectCenterPage`、`NewProjectWizardPage`、`SkillsPage`；**D** 负责 `OverviewPage`、`ProductsPage`、`EdmPage`、`DesignPage` 等项目业务页及现有 D 页面。对应局部样式与 mock 命名空间随页面归属；详见 WORKSTREAMS §1/§5.1。
 - 依赖方向：`ui → shared`；`cli → core → shared`；`desktop → core, shared`。ui 不得 import core/desktop；core 不得 import electron
 - 禁止原生 Node 模块（better-sqlite3、sharp 等）；新增大型依赖需在 PR 中说明
 - 路径常量一律用 `PATHS`；退出码用 `EXIT`；错误用 `SiteIndexError`
