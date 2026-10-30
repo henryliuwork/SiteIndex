@@ -9,6 +9,7 @@ export interface IpcTransport {
 const IPC_ERROR_PREFIX = "__SITEINDEX_IPC_ERROR__:";
 type UiStateApi = NonNullable<SiteIndexApi["uiState"]>;
 type UpdatesApi = NonNullable<SiteIndexApi["updates"]>;
+type SkuApi = NonNullable<SiteIndexApi["sku"]>;
 
 function decodeIpcError(error: unknown): unknown {
   const message =
@@ -105,6 +106,9 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       createTag: (...args) => invoke<SiteIndexApi["products"]["createTag"]>("products.createTag", ...args),
       deleteTag: (...args) => invoke<SiteIndexApi["products"]["deleteTag"]>("products.deleteTag", ...args),
       exportCsv: (...args) => invoke<SiteIndexApi["products"]["exportCsv"]>("products.exportCsv", ...args),
+    },
+    sku: {
+      previewGrouping: (...args) => invoke<SkuApi["previewGrouping"]>("sku.previewGrouping", ...args),
     },
     seo: {
       summary: (...args) => invoke<SiteIndexApi["seo"]["summary"]>("seo.summary", ...args),
