@@ -1,14 +1,16 @@
 import type { ProjectId } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { clone, projectConfigs, projectSummaries, projectsChanged } from "../context";
-import { createProjectsMock } from "../projects";
+import { createProjectsMock, mockProjectNonFeedWarnings } from "../projects";
 
 const originalSummary = clone(projectSummaries.riverstone);
 const originalConfig = clone(projectConfigs.riverstone);
+const originalNonFeedWarnings = clone(mockProjectNonFeedWarnings.riverstone);
 
 afterEach(() => {
   projectSummaries.riverstone = clone(originalSummary);
   projectConfigs.riverstone = clone(originalConfig);
+  mockProjectNonFeedWarnings.riverstone = clone(originalNonFeedWarnings);
   projectsChanged.clear();
 });
 
@@ -26,9 +28,25 @@ describe("projects mock summary updates", () => {
     });
 
     const updated = (await api.list()).find(({ id }) => id === "riverstone");
+    const updatedDetail = await api.get("riverstone");
     expect(updated?.warnings).not.toContain(feedWarning);
     expect(updated?.attention).toBe(0);
+    expect(updatedDetail.config.crawl.feed_url).toBe("https://riverstoneoutdoor.com/products.xml");
     expect(changes).toEqual(["riverstone"]);
     unsubscribe();
+  });
+
+  it("preserves unrelated warnings without identifying feed state from warning text", async () => {
+    const api = createProjectsMock();
+    mockProjectNonFeedWarnings.riverstone = ["最近一次同步失败"];
+    projectSummaries.riverstone = { ...projectSummaries.riverstone, warnings: ["最近一次同步失败"] };
+    const project = await api.get("riverstone");
+
+    await api.updateConfig("riverstone", {
+      crawl: { ...project.config.crawl, feed_url: "https://riverstoneoutdoor.com/products.xml" },
+    });
+
+    const updated = (await api.list()).find(({ id }) => id === "riverstone");
+    expect(updated?.warnings).toEqual(["最近一次同步失败"]);
   });
 });

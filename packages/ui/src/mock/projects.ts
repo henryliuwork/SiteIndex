@@ -1,5 +1,11 @@
 import type { ProjectDetail, SiteIndexApi, SiteIndexError } from "@siteindex/shared";
-import { beginRun, categorySeeds, clone, fixtures, mockMode, notifyProjectChanged, projectConfigs, projectIds, projectKey, projectSummaries, projectsChanged, reply, runners, stockSeeds } from "./context";
+import { beginRun, categorySeeds, clone, fixtures, mockMode, notifyProjectChanged, projectConfigs, projectIds, projectKey, projectSummaries, projectsChanged, reply, runners, stockSeeds, type MockProjectId } from "./context";
+
+export const mockProjectNonFeedWarnings: Record<MockProjectId, string[]> = { kingsyard: [], riverstone: [] };
+
+function hasConfiguredFeed(feedUrl: string | string[]): boolean {
+  return (Array.isArray(feedUrl) ? feedUrl : [feedUrl]).some((url) => url.trim().length > 0);
+}
 
 export function createProjectsMock(): SiteIndexApi["projects"] {
   const createdPaths = new Map<string, string>();
@@ -82,15 +88,15 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
     updateConfig: (id, patch) => reply(() => {
       const key = projectKey(id);
       const current = projectConfigs[key];
+      const hadFeed = hasConfiguredFeed(current.crawl.feed_url);
       projectConfigs[key] = { ...current, ...clone(patch) };
       const summary = projectSummaries[key];
       const feedUrl = projectConfigs[key].crawl.feed_url;
-      const hasFeed = (Array.isArray(feedUrl) ? feedUrl : [feedUrl]).some((url) => url.trim().length > 0);
+      const hasFeed = hasConfiguredFeed(feedUrl);
       const feedWarning = "尚未填写 GMC feed 地址，每日库存同步未启用。";
-      const hadFeedWarning = summary.warnings.some((warning) => /gmc feed/i.test(warning));
-      const warnings = summary.warnings.filter((warning) => !/gmc feed/i.test(warning));
-      const attention = hasFeed && hadFeedWarning ? Math.max(0, summary.attention - 1)
-        : !hasFeed && !hadFeedWarning ? summary.attention + 1 : summary.attention;
+      const warnings = [...mockProjectNonFeedWarnings[key], ...(hasFeed ? [] : [feedWarning])];
+      const attention = hasFeed && !hadFeed ? Math.max(0, summary.attention - 1)
+        : !hasFeed && hadFeed ? summary.attention + 1 : summary.attention;
       projectSummaries[key] = {
         ...summary,
         domain: patch.domain ?? summary.domain,
