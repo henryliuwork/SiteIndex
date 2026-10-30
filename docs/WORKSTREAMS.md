@@ -1,15 +1,15 @@
-# SiteIndex · 并行开发分工（3 个 agent）
+# SiteIndex · 并行开发分工（A / B / C / D / E）
 
-> 所有开发 agent 开工前必读：本文件 → `AGENTS.md` → 自己的任务清单 `docs/tasks/{A,B,C}-*.md` → PRD / ARCHITECTURE / DATA_SPEC / DESIGN 中相关章节。
+> 所有开发 agent 开工前必读：本文件 → `AGENTS.md` → 当前计划 `docs/plan/2026-10-29-v020-convergence.md` → A/B/C 各自任务清单（若适用）→ PRD / ARCHITECTURE / DATA_SPEC / DESIGN 中相关章节。
 
-## 1. 三个工作流
+## 1. 五个工作流
 
 | 工作流 | 负责目录（只改这些） | 一句话 |
 |---|---|---|
 | **A · Core** | `packages/core/`、`packages/cli/`、`schemas/`、`fixtures/`、`reference/` | 所有数据逻辑：抓取、库存、视图、SEO、校验、README、台账、分类、Job；以及命令行 |
 | **B · UI 共享层** | `packages/ui/src/components/**`、`src/styles/{app,components,tokens}.css`、`src/App.tsx`；页面 `ReadmePage`、`AppSettingsPage` 及其 `pages/{readme,app-settings}/**` | 共享组件、全局样式、路由骨架 |
 | **C · Desktop** | `packages/desktop/`、`.github/workflows/`、`skills/`、`templates/` | Electron 外壳、IPC 接线、系统计划任务、执行设备/锁、文件夹/回收站、skill 分发、浏览器检测、打包发布 |
-| **D · UI 项目页面** | `packages/ui/src/pages/` 下：`SeoPage`、`InventoryPage`、`ContentPage`、`RunsPage`、`ProjectSettings*Page` 及对应 `pages/<page>/**`（含各页 `page.css`） | 项目内各数据页面 |
+| **D · UI 项目页面** | `packages/ui/src/pages/` 下：`SeoPage`、`InventoryPage`、`ContentPage`、`RunsPage`、`ProjectSettings*Page`，**新增明确归属** `OverviewPage`、`ProductsPage`、`EdmPage`、`DesignPage`；对应 `pages/<page>/**`（含页面级 `page.css`） | 项目内各业务数据页、页面局部交互与样式 |
 | **E · 验收** | 只读代码；可改 `fixtures/`；产出 issue | 在用户本机对真实项目验收，不写产品代码 |
 | 共有 · 契约 | `packages/shared/` | 类型与接口。改动走第 4 节流程 |
 
@@ -46,8 +46,8 @@
   - 仓库是公开的：不要提交任何密钥、token、Webhook 地址、真实客户数据；测试数据只用 fixtures 中的虚构数据
   - 由审核者（项目协调 agent）检查 CI、改动目录、契约后合并；用 **merge commit**（不用 squash）
   - 新增或升级依赖时，必须在同一个 PR 里提交更新后的根目录 `pnpm-lock.yaml`（CI 使用 `--frozen-lockfile`）
-- 分支命名：`a/<主题>`、`b/<主题>`、`c/<主题>`、契约 `contract/<主题>`。
-- PR 小而频繁（建议 ≤ 600 行改动）。**每个 PR 都基于最新 `main` 开分支**，不要叠在自己未合并的分支上；前一个 PR 未合并时可以先开下一个，但依赖前一个的改动要等它合并后再 rebase。标题前缀 `[A]`/`[B]`/`[C]`/`[contract]`。
+- 分支命名：`a/<主题>`、`b/<主题>`、`c/<主题>`、`d/<主题>`、文档 `docs/<主题>`、契约 `contract/<主题>`。
+- PR 小而频繁（建议 ≤ 600 行改动）。**每个 PR 都基于最新 `main` 开分支**，不要叠在自己未合并的分支上；前一个 PR 未合并时可以先开下一个，但依赖前一个的改动要等它合并后再 rebase。标题前缀 `[A]`/`[B]`/`[C]`/`[D]`/`[contract]`/`[docs]`。
 - 每个 PR 勾选对应任务清单条目；开工前先 `git pull --rebase origin main`。
 - 不要修改其他工作流目录下的文件；发现对方的 bug，开 issue 并 @ 对应工作流（标签 `ws:A`/`ws:B`/`ws:C`）。
 
@@ -55,7 +55,7 @@
 
 1. 单独开 `contract/<主题>` 分支，PR 只包含 `packages/shared/` 的改动（必要时附带 docs 中对应说明）。
 2. 只做**加法**优先：新增字段用可选（`?`），新增方法不改旧方法。破坏性改动必须在 PR 描述里写明影响的工作流与迁移方式。
-3. 合并后，其他两个工作流在下一个 PR 前 rebase；B 同步更新 mock，C 同步更新 IPC 路由。
+3. 合并后，所有受影响工作流在下一个 PR 前 rebase；相关 UI 工作流同步更新 mock，C 同步更新 IPC 路由。
 4. 同一时间最多一个未合并的契约 PR，避免冲突。
 
 ## 5. 里程碑与集成检查点
@@ -71,6 +71,9 @@
 ## 5.1 B 与 D 的边界
 
 - 只有 **B** 能改共享组件与全局样式（`components/**`、`app.css`、`components.css`、`tokens.css`、`App.tsx`）。D 需要共享组件调整时，开 issue 标 `ws:B`，不要自己改。
+- **Overview / Products / EDM / Design 四页由 D 负责**：包含 `OverviewPage.tsx`、`ProductsPage.tsx`、`EdmPage.tsx`、`DesignPage.tsx`、对应 `pages/{overview,products,edm,design}/**` 及各自 mock 命名空间。B 不修改这四页的业务 JSX 或页面级样式。
+- **#177 tab/tabpanel 接入**：B 维护 `ProjectHeader`、`ProjectTabPanel`、稳定 ID 与焦点行为；待共享层 PR #183 合并后，D 负责在自己拥有的项目页面中接入 `hasTabPanel` 与 `ProjectTabPanel`，确保当前路由 tab 有对应 panel。不可在 D 页面复制一套标签 ID 逻辑。D 已有的七个页面和本次新增的四个页面可以分 PR 接入。
+- `ProjectCenterPage`、`NewProjectWizardPage`、`SkillsPage` 等未列入上述 B/D 清单的页面**仍待协调**；本次授权仅限上述四个新增项目业务页，不得顺带跨页修改。
 - D 的页面级样式写在各自的 `pages/<page>/page.css`。
 - `src/mock/**` 按命名空间分文件，各改各页面用到的那个；都要改同一个文件时，先合并先提的那个。
 - B 的共享层改动优先合并，D 随后 rebase。
