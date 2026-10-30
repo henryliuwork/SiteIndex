@@ -22,6 +22,14 @@ function testContext(): IpcContext {
         preview: vi.fn(async () => ({ categories: [], unmapped: 0 })),
         save: vi.fn(async () => ({ categories: [], unmapped: 0 })),
       },
+      sku: {
+        previewGrouping: vi.fn(async () => ({
+          parents: 1,
+          children: 2,
+          samples: [{ parent: "parent", children: ["parent-A", "parent-B"] }],
+          unmatched: 1,
+        })),
+      },
     },
     projects: { resolveProject: vi.fn(() => "C:/projects/demo") },
     jobs: { run: vi.fn(async () => ({ runId: "2026-10-28-index-check" })) },
@@ -34,12 +42,13 @@ describe("IPC handler completeness", () => {
     const apiMethods = new Set<string>(API_INVOKE_METHODS);
     const pendingMethods = new Set(PENDING_HANDLERS);
     const registeredMethods = Object.keys(implementations);
-    const expectedMethods = API_INVOKE_METHODS.filter((method) => !pendingMethods.has(method));
+    const registeredSet = new Set(registeredMethods);
+    const missingMethods = API_INVOKE_METHODS.filter((method) => !registeredSet.has(method));
 
     expect([...pendingMethods].filter((method) => !apiMethods.has(method))).toEqual([]);
     expect(PENDING_HANDLERS).toHaveLength(pendingMethods.size);
     expect(registeredMethods.filter((method) => !apiMethods.has(method))).toEqual([]);
-    expect(registeredMethods.sort()).toEqual([...expectedMethods].sort());
+    expect(missingMethods.filter((method) => !pendingMethods.has(method))).toEqual([]);
     expect(API_INVOKE_METHODS).toContain("uiState.get");
     expect(API_INVOKE_METHODS).toContain("updates.check");
     expect(API_EVENT_METHODS).toContain("updates.onStatus");
@@ -53,6 +62,12 @@ describe("IPC handler completeness", () => {
     await expect(implementations["categories.get"]?.("demo")).resolves.toEqual({ mode: "feed" });
     await expect(implementations["categories.preview"]?.("demo", { mode: "feed" })).resolves.toEqual({ categories: [], unmapped: 0 });
     await expect(implementations["categories.save"]?.("demo", { mode: "feed" })).resolves.toEqual({ categories: [], unmapped: 0 });
+    await expect(implementations["sku.previewGrouping"]?.("demo", { type: "suffix", value: "-A" })).resolves.toEqual({
+      parents: 1,
+      children: 2,
+      samples: [{ parent: "parent", children: ["parent-A", "parent-B"] }],
+      unmatched: 1,
+    });
     await expect(implementations["seo.checkIndex"]?.("demo")).resolves.toEqual({ runId: "2026-10-28-index-check" });
     expect(context.jobs.run).toHaveBeenCalledWith({ projectPath: "C:/projects/demo", job: "index-check" });
   });

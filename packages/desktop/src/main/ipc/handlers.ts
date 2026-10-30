@@ -18,6 +18,7 @@ import { createScheduleHandlers } from "./schedule.js";
 import { createSeoHandlers } from "./seo.js";
 import { createSettingsHandlers } from "./settings.js";
 import { createShellHandlers } from "./shell.js";
+import { createSkuHandlers } from "./sku.js";
 import { createSkillsHandlers } from "./skills.js";
 import { createUiStateHandlers } from "./ui-state.js";
 import { createUpdatesHandlers } from "./updates.js";
@@ -32,6 +33,7 @@ export function createIpcHandlerImplementations(context: IpcContext): IpcHandler
     ...createOverviewHandlers(context),
     ...createInventoryHandlers(context),
     ...createProductsHandlers(context),
+    ...createSkuHandlers(context),
     ...createSeoHandlers(context),
     ...createContentHandlers(context),
     ...createEdmHandlers(context),
