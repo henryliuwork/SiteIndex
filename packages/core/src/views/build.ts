@@ -9,12 +9,14 @@ import {
   type ISODate,
   type ProductView,
   type SiteConfig,
+  type SkuGroupingRule,
   type SkuRecord,
   type SkuStockView,
   type StockStatus,
 } from "@siteindex/shared";
 import { readCsv, type CsvRow } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
+import { groupSkuIds } from "../inventory/sku-grouping";
 
 const PRODUCT_FIELDS = [
   "handle", "product_id", "title", "url", "category", "categories", "price_min", "price_max",
@@ -25,7 +27,7 @@ const PRODUCT_FIELDS = [
 
 const SKU_STOCK_FIELDS = [
   "sku", "title", "variant_title", "category", "price", "stock_status", "since", "days_in_status",
-  "online_rate_7d", "online_rate_30d", "history_30d", "changes_30d", "last_change", "last_change_at",
+  "online_rate_7d", "online_rate_30d", "history_30d", "changes_30d", "last_change", "last_change_at", "parent_sku",
 ] as const;
 
 const PRODUCT_FLOAT_FIELDS = ["price_min", "price_max", "compare_at_max"] as const;
@@ -227,6 +229,7 @@ export function buildSkuStockViews(
   latestRows: readonly InventoryLatest[],
   allEvents: readonly InventoryEvent[],
   today: ISODate,
+  groupingRule?: SkuGroupingRule,
 ): SkuStockView[] {
   const start = dateAtOffset(today, -29);
   const latest = new Map(latestRows.map((row) => [row.sku, row]));
@@ -238,8 +241,12 @@ export function buildSkuStockViews(
     recentBySku.set(event.sku, list);
   }
 
+  const activeSkus = [...skuRows].filter((row) => row.status === "active").sort((a, b) => compareText(a.sku, b.sku));
+  const parentByChild = groupingRule
+    ? groupSkuIds(activeSkus.map((row) => row.sku), groupingRule).parentByChild
+    : undefined;
   const views: SkuStockView[] = [];
-  for (const sku of [...skuRows].filter((row) => row.status === "active").sort((a, b) => compareText(a.sku, b.sku))) {
+  for (const sku of activeSkus) {
     const latestRow = latest.get(sku.sku);
     let state: StockStatus | null = isStockStatus(latestRow?.stock_status) ? latestRow.stock_status : "unknown";
     const events = [...(recentBySku.get(sku.sku) ?? [])].sort((a, b) => compareText(a.date, b.date) || compareText(a.type, b.type));
@@ -290,6 +297,7 @@ export function buildSkuStockViews(
       changes_30d: events.length,
       last_change: lastEvent?.type ?? null,
       last_change_at: lastEvent?.date ?? null,
+      ...(parentByChild?.has(sku.sku) ? { parent_sku: parentByChild.get(sku.sku) ?? null } : {}),
     });
   }
   return views;
@@ -313,7 +321,8 @@ export async function buildViews(projectPath: string, options: BuildViewsOptions
   const campaignRows = campaigns as unknown as EdmCampaign[];
   const events = eventsByMonth.flat() as unknown as InventoryEvent[];
   const products = buildProductViews(skus, latest, mediaRows, tagRows, campaignRows, today);
-  const stock = buildSkuStockViews(skus, latest, events, today);
+  const groupingRule = site.sku_grouping?.enabled ? site.sku_grouping.rule : undefined;
+  const stock = buildSkuStockViews(skus, latest, events, today, groupingRule);
 
   await Promise.all([
     writeJsonl(path.join(projectPath, PATHS.productsView), products as unknown as JsonRecord[], {

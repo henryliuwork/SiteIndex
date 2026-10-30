@@ -104,7 +104,7 @@
 - [x] init 的各步骤状态与中文原因写入 logs/runs.jsonl
 
 ### 2026-10-29 · 用户反馈 v2（#143）
-- [ ] A-2 父子 SKU 规则引擎与 `sku.previewGrouping`
+- [x] A-2 父子 SKU 规则引擎与 `sku.previewGrouping`
 - [x] A-3 读取博客 sitemap 与 URL 前缀配置识别博客页
 - [ ] A-4 关注分类合并、去重并在库存摘要中标记
 - [ ] A-5 在线率范围 30/60/90/全部

@@ -57,6 +57,8 @@ import {
   type SeoSummary,
   type SiteConfig,
   type SiteIndexApi,
+  type SkuGroupingPreview,
+  type SkuGroupingRule,
   type SkuRecord,
   type SkuImageFilters,
   type SkuImageRow,
@@ -72,6 +74,7 @@ import { atomicWrite } from "../io/atomic-write";
 import { readCsv, writeCsv, type CsvRow } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
+import { previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
 import { runDaily } from "../jobs/daily";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
@@ -109,6 +112,7 @@ export interface CoreServiceContext {
 export interface CoreService {
   projects: Pick<SiteIndexApi["projects"], "get" | "updateConfig" | "detect" | "inspectFeed" | "create">;
   overview: SiteIndexApi["overview"];
+  sku: NonNullable<SiteIndexApi["sku"]>;
   inventory: Pick<SiteIndexApi["inventory"], "summary" | "listSkus" | "dailyReport">;
   products: Pick<SiteIndexApi["products"], "list" | "get" | "setTags" | "listTags" | "createTag" | "deleteTag">;
   seo: Omit<SiteIndexApi["seo"], "checkIndex">;
@@ -1246,6 +1250,20 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
   };
 
+  const sku: CoreService["sku"] = {
+    previewGrouping: async (id, rule: SkuGroupingRule): Promise<SkuGroupingPreview> => {
+      const snapshot = await load(resolve(id));
+      try {
+        return previewSkuGrouping(snapshot.skus.filter((row) => row.status === "active").map((row) => row.sku), rule);
+      } catch (error) {
+        if (error instanceof SkuGroupingRuleError) {
+          throw siteError(error.code, error.message, error.detail);
+        }
+        throw error;
+      }
+    },
+  };
+
   const inventory: CoreService["inventory"] = {
     summary: async (id, days = 14) => inventorySummary(await load(resolve(id)), days),
     listSkus: async (id, query) => {
@@ -1740,5 +1758,5 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
   };
 
-  return { projects, overview, inventory, products, seo, content, edm, design, readme, categories, folders, files, schedule, runner, runJob, invalidate };
+  return { projects, overview, sku, inventory, products, seo, content, edm, design, readme, categories, folders, files, schedule, runner, runJob, invalidate };
 }
