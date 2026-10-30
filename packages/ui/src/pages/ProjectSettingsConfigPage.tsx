@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import type { FeedInspectResult, SeoRule, SiteConfig, SkuGroupingRule, SkuStockView, WatchedCategory } from "@siteindex/shared";
+import type { FeedInspectResult, SeoRule, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
+import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import "./project-settings-config/page.css";
 
 const settingsTabs = [
@@ -45,40 +46,6 @@ function asLines(values: readonly string[] | undefined): string { return values?
 function fromLines(value: string): string[] { return value.split("\n").map((item) => item.trim()).filter(Boolean); }
 function asFeeds(value: SiteConfig["crawl"]["feed_url"]): string { return (Array.isArray(value) ? value : [value]).join("\n"); }
 
-function parentSkuForRule(sku: string, rule: SkuGroupingRule): string | null {
-  if (!rule.value) return null;
-  if (rule.type === "suffix") return sku.endsWith(rule.value) && sku.length > rule.value.length ? sku.slice(0, -rule.value.length) : null;
-  if (rule.type === "separator") {
-    const index = sku.lastIndexOf(rule.value);
-    return index > 0 ? sku.slice(0, index) : null;
-  }
-  try {
-    return sku.match(new RegExp(rule.value))?.[1] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function skuRuleError(rule: SkuGroupingRule): string | null {
-  if (!rule.value.trim()) return "规则值不能为空。";
-  if (rule.type !== "regex") return null;
-  try { new RegExp(rule.value); return null; }
-  catch { return "正则表达式语法无效。"; }
-}
-
-function previewSkuGroups(rows: readonly SkuStockView[], rule: SkuGroupingRule) {
-  const groups = new Map<string, string[]>();
-  let unmatched = 0;
-  for (const row of rows) {
-    const parent = parentSkuForRule(row.sku, rule);
-    if (!parent) { unmatched += 1; continue; }
-    const children = groups.get(parent) ?? [];
-    children.push(row.sku);
-    groups.set(parent, children);
-  }
-  return { groups: [...groups].map(([parent, children]) => ({ parent, children })), unmatched };
-}
-
 function categoryKey(category: Pick<WatchedCategory, "name" | "slug">): string {
   return category.slug?.trim() || category.name.trim().toLocaleLowerCase("zh-CN");
 }
@@ -92,6 +59,8 @@ export function ProjectSettingsConfigPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
+  const [draft, setDraft] = useState<SiteConfig | null>(null);
+  const grouping = draft?.sku_grouping ?? { enabled: false, rule: { type: "separator", value: "-" } as SkuGroupingRule };
   const categoryPreviewQuery = useQuery({
     queryKey: ["category-preview", id],
     queryFn: () => api.categories.preview(id, projectQuery.data!.config.categories),
@@ -99,12 +68,10 @@ export function ProjectSettingsConfigPage() {
     staleTime: 60_000,
   });
   const skuPreviewQuery = useQuery({
-    queryKey: ["sku-grouping-preview", id],
-    queryFn: () => api.inventory.listSkus(id, { page: 1, pageSize: 100, filters: {} }),
-    enabled: Boolean(projectQuery.data),
-    staleTime: 60_000,
+    queryKey: skuGroupingPreviewQueryKey(id, grouping.rule),
+    queryFn: () => fetchSkuGroupingPreview(api, id, grouping.rule),
+    enabled: Boolean(projectQuery.data && draft && grouping.enabled),
   });
-  const [draft, setDraft] = useState<SiteConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [jsonOpen, setJsonOpen] = useState(false);
@@ -178,7 +145,10 @@ export function ProjectSettingsConfigPage() {
       const saved = await api.projects.updateConfig(id, config);
       setDraft(saved);
       setOverrideText(JSON.stringify(saved.crawl.overrides ?? {}, null, 2));
-      await invalidateProjectSummary(queryClient, id);
+      await Promise.all([
+        invalidateProjectSummary(queryClient, id),
+        queryClient.invalidateQueries({ queryKey: ["sku-grouping-preview", id] }),
+      ]);
       setFeedback("已保存配置");
     } catch (error) {
       setFeedback("保存失败：" + (apiErrorMessage(error, "请稍后重试")));
@@ -222,11 +192,7 @@ export function ProjectSettingsConfigPage() {
     }
   };
 
-  const grouping = draft?.sku_grouping ?? { enabled: false, rule: { type: "separator", value: "-" } as SkuGroupingRule };
-  const groupingError = skuRuleError(grouping.rule);
-  const skuPreviewRows = skuPreviewQuery.data?.rows ?? [];
-  const groupingPreview = useMemo(() => previewSkuGroups(skuPreviewRows, grouping.rule), [skuPreviewRows, grouping.rule]);
-  const groupedChildCount = groupingPreview.groups.reduce((total, item) => total + item.children.length, 0);
+  const groupingPreview: SkuGroupingPreview | undefined = skuPreviewQuery.data;
   const watchedCategories = draft?.categories.watched ?? [];
   const availableCategories = categoryPreviewQuery.data?.categories ?? [];
 
@@ -303,12 +269,12 @@ export function ProjectSettingsConfigPage() {
           </div>
           <p className="si-config-help">{grouping.rule.type === "regex" ? "正则的第一个捕获组作为父 SKU，例如 ^(.+?)-[A-Z]$。" : grouping.rule.type === "suffix" ? "只匹配并移除 SKU 末尾的完整后缀，例如 -G。" : "按最后一个分隔符拆分，分隔符左侧作为父 SKU，例如 -。"}</p>
           <div className="si-config-grouping-preview" aria-live="polite">
-            <div className="si-config-grouping-preview-heading"><strong>实时分组预览</strong><span>当前 SKU 列表样本 · {skuPreviewRows.length} 条</span></div>
-            {!grouping.enabled ? <p>启用分组后查看当前样本的匹配结果。</p> : groupingError ? <p className="si-form-error" role="alert">{groupingError}</p> : skuPreviewQuery.isLoading ? <p>正在读取 SKU 样本…</p> : skuPreviewQuery.isError ? <p>SKU 样本读取失败。保存规则后仍可继续配置。</p> : <>
-              <div className="si-config-grouping-stats"><span><strong>{groupingPreview.groups.length}</strong> 个父 SKU</span><span><strong>{groupedChildCount}</strong> 个匹配子 SKU</span><span><strong>{groupingPreview.unmatched}</strong> 个未匹配 SKU</span></div>
-              {groupingPreview.groups.length > 0 ? <ul>{groupingPreview.groups.slice(0, 6).map((item) => <li key={item.parent}><code>{item.parent}</code><span>{item.children.length} 个：{item.children.slice(0, 4).join("、")}{item.children.length > 4 ? " …" : ""}</span></li>)}</ul> : <p>当前样本中没有匹配到父子 SKU 分组。</p>}
-              <small>预览只运行在当前列表前 100 个 SKU；保存后核心任务会按完整 Feed 重新计算。</small>
-            </>}
+            <div className="si-config-grouping-preview-heading"><strong>实时分组预览</strong><span>Core 全量 SKU 结果</span></div>
+            {!grouping.enabled ? <p>启用分组后查看 Core 返回的规则匹配结果。</p> : skuPreviewQuery.isLoading ? <p role="status">正在通过 Core 计算全部 SKU 的分组预览…</p> : skuPreviewQuery.isError ? <div className="si-config-inline-error" role="alert"><span>{skuPreviewQuery.error instanceof Error ? skuPreviewQuery.error.message : apiErrorMessage(skuPreviewQuery.error, "父子 SKU 预览失败。")}</span><Button size="small" onClick={() => void skuPreviewQuery.refetch()}>重试</Button></div> : groupingPreview ? <>
+              <div className="si-config-grouping-stats"><span><strong>{groupingPreview.parents}</strong> 个父 SKU</span><span><strong>{groupingPreview.children}</strong> 个匹配子 SKU</span><span><strong>{groupingPreview.unmatched}</strong> 个未匹配 SKU</span></div>
+              {groupingPreview.parents === 0 ? <p>当前规则未识别到父子 SKU 分组。</p> : groupingPreview.samples.length > 0 ? <ul>{groupingPreview.samples.slice(0, 6).map((item) => <li key={item.parent}><code>{item.parent}</code><span>{item.children.length} 个：{item.children.slice(0, 4).join("、")}{item.children.length > 4 ? " …" : ""}</span></li>)}</ul> : <p>已取得分组计数，Core 未返回样例。</p>}
+              <small>计数与样例仅表示规则识别结果，不代表父 SKU 库存或在线率。</small>
+            </> : <p role="status">正在准备分组预览…</p>}
           </div>
         </ConfigCard>
 
