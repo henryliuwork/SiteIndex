@@ -18,3 +18,29 @@ describe("inventory range mock", () => {
     }
   });
 });
+
+describe("inventory watched categories mock", () => {
+  it("returns watched/manual markers from the project configuration", async () => {
+    const api = createInventoryMock();
+    const summary = await api.summary("kingsyard", 30);
+
+    expect(summary.category_rates.find((item) => item.category === "bird-feeders")).toMatchObject({
+      watched: true,
+      manual: true,
+      total: expect.any(Number),
+    });
+    expect(summary.category_rates.find((item) => item.category === "hummingbird-feeders")).toMatchObject({
+      watched: false,
+      manual: true,
+      total: 0,
+    });
+  });
+
+  it("applies watched_only to rows returned by the inventory API", async () => {
+    const api = createInventoryMock();
+    const result = await api.listSkus("kingsyard", { page: 1, pageSize: 0, filters: { watched_only: true } });
+
+    expect(result.total).toBeGreaterThan(0);
+    expect(result.rows.every((row) => row.category === "bird-feeders")).toBe(true);
+  });
+});

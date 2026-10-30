@@ -7,6 +7,7 @@ import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
+import { invalidateInventoryForCategoryChange } from "./project-settings-config/inventory-cache";
 import "./project-settings-config/page.css";
 
 const settingsTabs = [
@@ -139,6 +140,7 @@ export function ProjectSettingsConfigPage() {
       setFeedback("保存失败：" + (apiErrorMessage(error, "数据修正 JSON 格式无效")));
       return;
     }
+    const previousCategories = projectQuery.data?.config.categories ?? config.categories;
     setSaving(true);
     setFeedback("");
     try {
@@ -148,6 +150,7 @@ export function ProjectSettingsConfigPage() {
       await Promise.all([
         invalidateProjectSummary(queryClient, id),
         queryClient.invalidateQueries({ queryKey: ["sku-grouping-preview", id] }),
+        invalidateInventoryForCategoryChange(queryClient, id, previousCategories, saved.categories),
       ]);
       setFeedback("已保存配置");
     } catch (error) {

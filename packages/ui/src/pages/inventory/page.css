@@ -50,6 +50,14 @@ color: var(--color-brand-strong); text-decoration: underline;
 margin-left: 6px; padding: 1px 4px; border-radius: 3px; background: var(--color-brand-soft); color: var(--color-brand-strong); font-family: var(--font-sans); font-size: 11px;
 }
 
+.si-category-name .si-category-manual {
+background: var(--color-neutral-soft); color: var(--color-muted);
+}
+
+.si-category-no-data {
+color: var(--color-muted); font-size: 12px;
+}
+
 .si-category-default-toggle {
 display: inline-flex; align-items: center; gap: 7px; margin: 9px 0 0; color: var(--color-ink-2); font-size: 12px;
 }
@@ -156,6 +164,10 @@ display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
 
 .si-inventory-parent-toggle {
 display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--color-ink-2); font-size: 12px; white-space: nowrap;
+}
+
+.si-inventory-watched-toggle {
+margin-left: 0;
 }
 
 .si-inventory-sku-cell {

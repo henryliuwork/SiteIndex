@@ -50,7 +50,8 @@ export function createInventoryMock(): MockInventoryApi {
     listSkus: (id, query: ListQuery<SkuStockFilters>) => reply(() => {
       const key = projectKey(id);
       const filters = query.filters ?? {};
-      const watchedSlugs = new Set((projectConfigs[key].categories.watched ?? []).map((item) => item.slug).filter((slug): slug is string => Boolean(slug)));
+      const watchedCategories = projectConfigs[key].categories.watched ?? [];
+      const watchedCategoryKeys = new Set(watchedCategories.flatMap((item) => [item.slug, item.name]).map((value) => value?.trim()).filter((value): value is string => Boolean(value)));
       const source: MockSkuRow[] = filters.parent_only ? parentRows(rowsByProject[key]) : rowsByProject[key];
       return selectRows(
       source, query,
@@ -61,7 +62,7 @@ export function createInventoryMock(): MockInventoryApi {
         const priceRange = filters.price_changed_within as HistoryRange | undefined;
         return (!status || (status === "today" ? todaySkus[key].has(row.sku) : row.stock_status === status))
           && (!category || row.category === category)
-          && (!filters.watched_only || watchedSlugs.has(row.category))
+          && (!filters.watched_only || watchedCategoryKeys.has(row.category))
           && (!priceRange || priceChangedWithin(row, priceRange));
       },
       );

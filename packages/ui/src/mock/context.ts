@@ -568,11 +568,34 @@ export function inventorySummary(id: ProjectId, range: 14 | HistoryRange = 30): 
     const rate = group?.total ? group.inStock / group.total : null;
     return { category: name, rates: dates.map(() => rate) };
   });
-  const categoryRates = names.map((name) => {
+  const watchedCategories = projectConfigs[key].categories.watched ?? [];
+  const manualCategories = categoryConfigs[key].mode === "manual" ? categoryConfigs[key].manual ?? [] : [];
+  const categoryRates: InventorySummary["category_rates"] = names.map((name) => {
     const group = categories.get(name) ?? { total: 0, inStock: 0 };
     const rate = group.total ? group.inStock / group.total : 0;
-    return { category: name, rate, total: group.total };
-  }).sort((left, right) => categoryPriority(left.category) - categoryPriority(right.category));
+    const watched = watchedCategories.find((item) => item.slug === name || item.name === name);
+    const manual = manualCategories.some((item) => item.slug === name || item.name === name);
+    return { category: name, rate, total: group.total, watched: Boolean(watched), manual: manual || watched?.manual === true };
+  });
+  for (const configured of [...manualCategories, ...watchedCategories]) {
+    const category = configured.slug?.trim() || configured.name.trim();
+    if (!category) continue;
+    const existing = categoryRates.find((item) => item.category === category || item.category === configured.name);
+    if (existing) {
+      if (watchedCategories.some((item) => item.slug === existing.category || item.name === existing.category)) existing.watched = true;
+      if (manualCategories.some((item) => item.slug === existing.category || item.name === existing.category)) existing.manual = true;
+      if ("manual" in configured && configured.manual) existing.manual = true;
+      continue;
+    }
+    categoryRates.push({
+      category,
+      rate: 0,
+      total: 0,
+      watched: watchedCategories.some((item) => item.slug === category || item.name === category),
+      manual: manualCategories.some((item) => item.slug === category || item.name === category) || ("manual" in configured && configured.manual === true),
+    });
+  }
+  categoryRates.sort((left, right) => categoryPriority(left.category) - categoryPriority(right.category));
   const todayRows = rows.filter((row) => todaySkus[key].has(row.sku)).slice(0, 4);
   const today = todayRows.map((row, index) => ({
     type: (["restock", "oos", "price", "new", "removed"] as const)[index % 5]!,

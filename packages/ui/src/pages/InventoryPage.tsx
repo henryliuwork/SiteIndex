@@ -11,6 +11,7 @@ import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, Sk
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, StatusCells, stockTone } from "../components";
+import { selectInventoryCategoryRates } from "./inventory/categories";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",
@@ -111,14 +112,7 @@ const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCat
   onManage: () => void;
   onSelectCategory: (slug: string) => void;
 }) {
-  const watched = new Map(watchedCategories.map((item) => [item.slug ?? item.name, item]));
-  const categoryMap = new Map(summary.category_rates.map((item) => [item.category, item]));
-  for (const category of watchedCategories) {
-    const slug = category.slug ?? category.name;
-    if (!categoryMap.has(slug)) categoryMap.set(slug, { category: slug, rate: 0, total: 0 });
-  }
-  const allCategories = [...categoryMap.values()].map((item) => ({ ...item, watched: watched.has(item.category), label: watched.get(item.category)?.name ?? item.category }));
-  const categories = watched.size > 0 && !showDefaultCategories ? allCategories.filter((item) => item.watched) : allCategories;
+  const categories = selectInventoryCategoryRates(summary, watchedCategories, showDefaultCategories);
   const rows = expanded ? categories : categories.slice(0, 8);
   return (
     <aside className="si-category-panel si-panel">
@@ -131,14 +125,15 @@ const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCat
       <div className="si-category-rates">
         {rows.map((item) => (
           <button type="button" className="si-category-rate" key={item.category} onClick={() => onSelectCategory(item.category)}>
-            <span className="si-category-name">{item.label}{item.watched && <small>关注</small>}</span>
-            <span className="si-category-track" role="progressbar" aria-label={item.category + "在线率"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(item.rate * 100)}>
+            <span className="si-category-name">{item.label}{item.watched && <small>关注</small>}{item.manual && <small className="si-category-manual">手动</small>}</span>
+            {item.total > 0 ? <span className="si-category-track" role="progressbar" aria-label={item.category + "在线率"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(item.rate * 100)}>
               <span className={item.rate < 0.6 ? "is-low" : ""} style={{ width: Math.max(0, Math.min(100, item.rate * 100)) + "%" }} />
-            </span>
+            </span> : <span className="si-category-no-data">暂无库存数据</span>}
             <span className="si-category-percent">{item.total ? formatRate(item.rate) : "—"}</span>
           </button>
         ))}
         {categories.length === 0 && <p className="si-empty-note">暂无分类数据。可设置关注分类。</p>}
+        {categories.length > 0 && categories.every((item) => item.total === 0) && <p className="si-empty-note">这些分类暂时没有库存数据；完成一次同步后会显示库存指标。</p>}
       </div>
       {categories.length > 8 && <button type="button" className="si-category-expand" onClick={onToggleExpanded}>{expanded ? "收起分类" : `展开全部 ${categories.length} 个分类`}</button>}
       <div className="si-today-changes">
@@ -261,10 +256,12 @@ export function InventoryPage() {
   const kpis: Kpi[] = summary?.kpis ?? [];
   const statusFilter = query.filters?.status ?? "all";
   const categoryFilter = query.filters?.category ?? "all";
+  const watchedOnly = Boolean(query.filters?.watched_only);
 
   const onSearch = useCallback((search: string) => setQuery((current) => ({ ...current, page: 1, search: search || undefined })), []);
   const onStatusChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: !value || value === "all" ? undefined : value as SkuStockFilters["status"] } }));
   const onCategoryChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, category: !value || value === "all" ? undefined : value } }));
+  const onWatchedOnlyChange = (checked: boolean) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, watched_only: checked || undefined } }));
   const onPriceChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, price_changed_within: !value || value === "none" ? undefined : value === "all" ? "all" : Number(value) as 30 | 60 | 90 } }));
   const onParentOnlyChange = (checked: boolean) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: checked || undefined } }));
   const sortByRate = () => setQuery((current) => ({ ...current, page: 1, sort: { field: "online_rate_30d", dir: current.sort?.field === "online_rate_30d" && current.sort.dir === "asc" ? "desc" : "asc" } }));
@@ -308,6 +305,7 @@ export function InventoryPage() {
           { value: "none", label: "全部价格" }, { value: "30", label: "近 30 天" },
           { value: "60", label: "近 60 天" }, { value: "90", label: "近 90 天" }, { value: "all", label: "有历史变动" },
         ].map((option) => <FilterPill key={option.value} currentValue={query.filters?.price_changed_within?.toString() ?? "none"} value={option.value} onValueChange={onPriceChange}>{option.label}</FilterPill>)}
+        <label className="si-inventory-parent-toggle si-inventory-watched-toggle"><input type="checkbox" checked={watchedOnly} onChange={(event) => onWatchedOnlyChange(event.target.checked)} /><span>仅关注分类</span></label>
         {groupingEnabled && <label className="si-inventory-parent-toggle"><input type="checkbox" checked={Boolean(query.filters?.parent_only)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>}
       </div>
     </div>
@@ -365,7 +363,7 @@ export function InventoryPage() {
         getRowId={(row) => row.sku}
         maxHeight={560}
         emptyTitle="没有匹配的 SKU"
-        emptyDescription="请修改搜索文字或库存筛选条件。"
+        emptyDescription={watchedOnly ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或库存筛选条件。"}
         toolbar={tableToolbar}
       />
       <div className="si-inventory-legend" aria-label="库存状态图例">
