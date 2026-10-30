@@ -84,9 +84,10 @@ export async function assertSiteNotRegistered(
   const canonicalDomain = normalizeSiteDomain(siteDomain);
   if (!canonicalDomain) throw guardError("CONFIG_INVALID", "无法识别网站域名，暂不能创建项目。", siteDomain);
 
-  const entries = listRegisteredProjects
-    ? [...await listRegisteredProjects()]
-    : await scanProjectRoot(path.resolve(projectsRoot));
+  const entries = [
+    ...await scanProjectRoot(path.resolve(projectsRoot)),
+    ...(listRegisteredProjects ? [...await listRegisteredProjects()] : []),
+  ];
   const uniqueEntries = new Map<string, RegisteredProjectPath>();
   for (const entry of entries) uniqueEntries.set(pathKey(entry.path), entry);
 

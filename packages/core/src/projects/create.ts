@@ -1,4 +1,4 @@
-import { access, cp, mkdir, readFile, readdir } from "node:fs/promises";
+import { access, cp, lstat, mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -96,11 +96,17 @@ async function copySkills(templatePath: string, projectPath: string): Promise<vo
     try { markdown = await readFile(path.join(source, "SKILL.md"), "utf8"); }
     catch { continue; }
     const version = /^version:\s*["']?([^\r\n"']+)/mu.exec(markdown)?.[1]?.trim() || "0.0.0";
-    await cp(source, path.join(projectPath, PATHS.skillsDir, entry.name), { recursive: true, force: true });
+    await cp(source, path.join(projectPath, PATHS.skillsDir, entry.name), { recursive: true, force: false, errorOnExist: false });
     skills.push({ name: entry.name, version });
   }
   if (!skills.length) throw createError("PROJECT_NOT_FOUND", "软件内置 skills 目录为空。", sourceRoot);
-  await atomicWrite(path.join(projectPath, PATHS.skillsManifest), `${JSON.stringify({ schema_version: "1.0", skills }, null, 2)}\n`);
+  const manifestPath = path.join(projectPath, PATHS.skillsManifest);
+  try {
+    await access(manifestPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await atomicWrite(manifestPath, `${JSON.stringify({ schema_version: "1.0", skills }, null, 2)}\n`);
+  }
 }
 
 function createConfig(input: CreateProjectInput, detected: DetectResult): SiteConfig {
@@ -211,16 +217,37 @@ export async function createProjectFiles(
   }
   await mkdir(root, { recursive: true });
   try {
-    // Exclusive mkdir is the path reservation: never merge into an existing user directory.
     await mkdir(projectPath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      throw createError("FOLDER_EXISTS", "目标项目目录已经存在。为保护已有文件，本次没有修改目录内容。", projectPath);
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const existingTarget = await lstat(projectPath);
+    if (!existingTarget.isDirectory() || existingTarget.isSymbolicLink()) {
+      throw createError("FOLDER_EXISTS", "目标路径已存在且不是普通目录。为保护已有内容，本次没有修改目录。", projectPath);
     }
-    throw error;
+    try {
+      await access(path.join(projectPath, PATHS.site));
+      throw createError("FOLDER_EXISTS", "目标目录已经是 SiteIndex 项目。为保护已有项目，本次没有修改目录内容。", projectPath);
+    } catch (readError) {
+      if ((readError as NodeJS.ErrnoException).code !== "ENOENT") throw readError;
+    }
+    try {
+      await access(path.join(projectPath, PATHS.index));
+      throw createError("FOLDER_EXISTS", "目标目录已包含 SiteIndex 数据。为保护已有项目，本次没有修改目录内容。", projectPath);
+    } catch (indexError) {
+      if ((indexError as NodeJS.ErrnoException).code !== "ENOENT") throw indexError;
+    }
   }
 
   try {
+    // Claim the data root before copying any template files. Existing user files outside index/ remain intact.
+    try {
+      await mkdir(path.join(projectPath, PATHS.index));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw createError("FOLDER_EXISTS", "目标目录已包含 SiteIndex 数据。为保护已有项目，本次没有修改目录内容。", projectPath);
+      }
+      throw error;
+    }
     const template = await templateDirectory(templatePath);
     await copyTemplate(template, projectPath, input, detected);
     const config = createConfig(input, detected);
