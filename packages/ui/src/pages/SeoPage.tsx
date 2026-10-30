@@ -54,8 +54,8 @@ function csvCell(value: string): string {
 function issueColumns(): ColumnDef<SeoIssue, unknown>[] {
   return [
     { id: "severity", accessorKey: "severity", header: "级别", cell: ({ row }) => <Chip tone={severityTones[row.original.severity]}>{severityLabels[row.original.severity]}</Chip>, enableSorting: true },
-    { id: "url", accessorKey: "url", header: "页面", cell: ({ row }) => <code className="si-seo-url">{displayPath(row.original.url)}</code>, enableSorting: true },
-    { id: "problem", accessorKey: "detail", header: "问题", cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span>{row.original.detail}</span></span>, enableSorting: false },
+    { id: "url", accessorKey: "url", header: "页面", cell: ({ row }) => <code className="si-seo-url" title={row.original.url}>{displayPath(row.original.url)}</code>, enableSorting: true },
+    { id: "problem", accessorKey: "detail", header: "问题", cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span title={row.original.detail}>{row.original.detail}</span></span>, enableSorting: false },
     { id: "last_seen", accessorKey: "last_seen", header: "发现于", cell: ({ row }) => <code className="si-seo-date">{row.original.last_seen.slice(5)}</code>, enableSorting: true },
   ];
 }
