@@ -244,7 +244,11 @@ export type SeoRule =
   | "canonical_missing"
   | "not_in_sitemap"
   | "title_missing"
+  | "title_too_short"
+  | "title_too_long"
   | "desc_missing"
+  | "desc_too_short"
+  | "desc_too_long"
   | "title_length"
   | "desc_length"
   | "title_duplicate"
@@ -254,6 +258,8 @@ export type SeoRule =
   | "schema_missing"
   | "schema_error"
   | "img_alt_missing"
+  | "hreflang_invalid"
+  | "url_too_long"
   | "thin_content"
   | "orphan";
 
