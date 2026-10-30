@@ -6,6 +6,14 @@ import { isProjectInsideRoot } from "../project-catalog.js";
 import type { IpcContext } from "./context.js";
 
 export function createProjectsHandlers(context: IpcContext): IpcHandlerImplementations {
+  let createQueue: Promise<void> = Promise.resolve();
+
+  function enqueueCreate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = createQueue.then(operation);
+    createQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
   return {
     "projects.list": async () => {
       const entries = await context.projects.refresh(await context.settings.get());
@@ -15,7 +23,7 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
     "projects.detect": (...args) => context.core.projects.detect(args[0] as string),
     "projects.inspectFeed": (...args) =>
       context.core.projects.inspectFeed(args[0] as string[], args[1] as { sku_field: string; category_depth: number }),
-    "projects.create": async (...args) => {
+    "projects.create": (...args) => enqueueCreate(async () => {
       const input = args[0] as Parameters<typeof context.core.projects.create>[0];
       const created = await context.core.projects.create(input);
       const projectPath = path.resolve(input.projects_root, created.id);
@@ -37,7 +45,7 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
       context.core.invalidate(registeredPath);
       const { runId } = await context.jobs.run({ projectPath: registeredPath, job: "init" });
       return { id: created.id, runId };
-    },
+    }),
     "projects.addExisting": async (value) => {
       if (typeof value !== "string") {
         throw { code: "PROJECT_NOT_FOUND", message: "请选择有效的项目目录。" } satisfies SiteIndexError;
