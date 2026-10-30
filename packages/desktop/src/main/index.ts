@@ -10,6 +10,7 @@ import { completeInitSchedule } from "./init-schedule.js";
 import { showJobNotification } from "./notifications.js";
 import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
 import { parseRunJobArguments } from "./run-job-args.js";
+import { createWindowThenReconcileInBackground } from "./startup-reconciliation.js";
 import { createResidentScheduler, type ResidentScheduler } from "./scheduler/resident-scheduler.js";
 import { createSystemScheduler, type ScheduleRuntimeStatus } from "./scheduler/schedule.js";
 import { createSkillService } from "./skill-service.js";
@@ -31,6 +32,7 @@ let launchHidden = process.platform === "win32" && process.argv.includes(backgro
 let systemTray: Tray | null = null;
 let residentScheduler: ResidentScheduler | null = null;
 let scheduleMode: ScheduleRuntimeStatus["mode"] = "system";
+let startupScheduleReconciliation: Promise<ScheduleRuntimeStatus> | null = null;
 const windowManager = createWindowManager({
   mainDirectory,
   fallbackPath,
@@ -94,7 +96,11 @@ if (!hasSingleInstanceLock) {
       event.preventDefault();
       isShuttingDown = true;
       residentScheduler?.stop();
-      void Promise.all([jobs.shutdown(), projectCatalog?.close()]).finally(() => {
+      void Promise.all([
+        jobs.shutdown(),
+        projectCatalog?.close(),
+        startupScheduleReconciliation?.catch(() => undefined),
+      ]).finally(() => {
         projectCatalog = null;
         app.quit();
       });
@@ -178,8 +184,11 @@ if (!hasSingleInstanceLock) {
       systemTray?.destroy();
       systemTray = null;
     };
-    const reconcileSchedules = async (allowElevation: boolean): Promise<ScheduleRuntimeStatus> => {
-      const entries = await catalog.refresh(currentSettings);
+    const reconcileSchedules = async (
+      allowElevation: boolean,
+      knownEntries?: Awaited<ReturnType<typeof catalog.refresh>>,
+    ): Promise<ScheduleRuntimeStatus> => {
+      const entries = knownEntries ?? (await catalog.refresh(currentSettings));
       const definitions = await Promise.all(
         entries.map(async ({ id, path: projectPath }) => {
           const [schedule, runner] = await Promise.all([coreService.schedule.get(id), coreService.runner.get(id)]);
@@ -208,7 +217,8 @@ if (!hasSingleInstanceLock) {
           };
         },
       });
-    await reconcileSchedules(false);
+    const initialProjects = await catalog.refresh(currentSettings);
+    if (launchHidden) await reconcileSchedules(false, initialProjects);
     if (launchHidden && scheduleMode === "system") {
       app.quit();
       return;
@@ -259,7 +269,16 @@ if (!hasSingleInstanceLock) {
 
     windowManager.registerContentSecurityPolicy();
     if (!launchHidden) {
-      await windowManager.createMainWindow();
+      await createWindowThenReconcileInBackground(
+        () => windowManager.createMainWindow(),
+        () => {
+          startupScheduleReconciliation = reconcileSchedules(false, initialProjects);
+          return startupScheduleReconciliation;
+        },
+        (error) => {
+          console.error("启动时校正计划任务失败。", error instanceof Error ? error.message : String(error));
+        },
+      );
     }
 
     updates.start();
