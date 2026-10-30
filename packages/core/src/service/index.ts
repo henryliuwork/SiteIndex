@@ -75,6 +75,7 @@ import { readCsv, writeCsv, type CsvRow } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
 import { previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
+import { selectInventoryDates, type InventorySummaryRange } from "../inventory/history-range";
 import { runDaily } from "../jobs/daily";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
@@ -673,8 +674,8 @@ function mergedCategoryRates(snapshot: ProjectSnapshot): MergedCategoryRate[] {
   }).sort((left, right) => codeUnitCompare(left.category, right.category));
 }
 
-function inventorySummary(snapshot: ProjectSnapshot, days: 14 | 30): InventorySummary {
-  const dates = [...new Set(snapshot.dailySummary.map((row) => row.date))].sort(codeUnitCompare).slice(-days);
+function inventorySummary(snapshot: ProjectSnapshot, range: InventorySummaryRange): InventorySummary {
+  const dates = selectInventoryDates(snapshot.dailySummary, range);
   const categories = [...new Set(snapshot.dailySummary.map((row) => row.category).filter((category) => category !== "_all"))].sort(codeUnitCompare);
   const byCategoryDate = new Map(snapshot.dailySummary.map((row) => [`${row.category}\u0000${row.date}`, row]));
   const trend = categories.map((category) => ({

@@ -63,6 +63,7 @@ describe("createCoreService initial namespaces", () => {
       api.projects.get("fixture"),
       api.inventory.summary("fixture", 30),
     ]);
+    const legacy14DayInventory = await api.inventory.summary("fixture", 14);
 
     expect(detail.summary).toMatchObject({
       id: "fixture",
@@ -75,11 +76,34 @@ describe("createCoreService initial namespaces", () => {
     });
     expect(inventory.as_of).toBe("2026-10-21");
     expect(inventory.trend.dates).toEqual(["2026-10-19", "2026-10-20", "2026-10-21"]);
+    expect(legacy14DayInventory.trend).toEqual(inventory.trend);
     expect(inventory.category_rates.length).toBeGreaterThan(0);
     expect(inventory.category_source).toBe(detail.config.categories?.mode ?? "feed");
     expect(await api.inventory.dailyReport("fixture", "2026-10-21")).toContain("库存日报");
     expect(await api.inventory.dailyReport("fixture", "2026-10-18")).toBeNull();
   }, 30_000);
+
+  it("keeps null trend values for missing category business dates", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const dailySummaryPath = path.join(projectPath, PATHS.dailySummary);
+    await writeCsv(dailySummaryPath, [
+      { date: "2026-10-19", category: "alpha", total: 2, in_stock: 1, out_of_stock: 1, preorder: 0, unknown: 0 },
+      { date: "2026-10-19", category: "_all", total: 2, in_stock: 1, out_of_stock: 1, preorder: 0, unknown: 0 },
+      { date: "2026-10-20", category: "beta", total: 0, in_stock: 0, out_of_stock: 0, preorder: 0, unknown: 0 },
+      { date: "2026-10-20", category: "_all", total: 0, in_stock: 0, out_of_stock: 0, preorder: 0, unknown: 0 },
+    ], CSV_HEADERS.dailySummary, ["date", "category"]);
+    api.invalidate(projectPath);
+
+    const summary = await api.inventory.summary("fixture", 14);
+    expect(summary.trend).toEqual({
+      dates: ["2026-10-19", "2026-10-20"],
+      series: [
+        { category: "alpha", rates: [0.5, null] },
+        { category: "beta", rates: [null, 0] },
+      ],
+    });
+  });
 
   it("merges watched categories for display without changing inventory source data", async () => {
     const { projectPath } = await makeProject();
