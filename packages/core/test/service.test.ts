@@ -309,6 +309,32 @@ describe("createCoreService initial namespaces", () => {
     expect(products.rows.map((row) => row.handle)).toEqual(["feeder-2"]);
   }, 20_000);
 
+  it("filters SKUs by real price changes within 30, 60, 90 and all days", async () => {
+    const { projectPath } = await makeProject();
+    const asOf = Date.UTC(2026, 9, 21);
+    const dateBefore = (days: number) => new Date(asOf - days * 86_400_000).toISOString().slice(0, 10);
+    const rows = [
+      { ...stockRow("SKU-20", "Changed 20 days ago", "in_stock"), price_history: [{ date: dateBefore(20), price: 10 }] },
+      { ...stockRow("SKU-30", "Changed at 30-day boundary", "in_stock"), price_history: [{ date: dateBefore(30), price: 10.5 }] },
+      { ...stockRow("SKU-45", "Changed 45 days ago", "in_stock"), price_history: [{ date: dateBefore(45), price: 11 }] },
+      { ...stockRow("SKU-75", "Changed 75 days ago", "in_stock"), price_history: [{ date: dateBefore(75), price: 12 }] },
+      { ...stockRow("SKU-FUTURE", "Future event", "in_stock"), price_history: [{ date: "2026-10-22", price: 13 }] },
+      stockRow("SKU-BASELINE", "Current price only", "in_stock"),
+    ];
+    await writeJsonl(path.join(projectPath, PATHS.skuStockView), rows as unknown as JsonRecord[], {
+      primaryKey: ["sku"], fieldOrder: STOCK_FIELDS, floatFields: ["price", "online_rate_7d", "online_rate_30d"],
+    });
+    const api = service(projectPath);
+    const matchingSkus = async (range: 30 | 60 | 90 | "all") => (await api.inventory.listSkus("fixture", {
+      page: 1, pageSize: 20, filters: { price_changed_within: range },
+    })).rows.map((row) => row.sku).sort();
+
+    expect(await matchingSkus(30)).toEqual(["SKU-20", "SKU-30"]);
+    expect(await matchingSkus(60)).toEqual(["SKU-20", "SKU-30", "SKU-45"]);
+    expect(await matchingSkus(90)).toEqual(["SKU-20", "SKU-30", "SKU-45", "SKU-75"]);
+    expect(await matchingSkus("all")).toEqual(["SKU-20", "SKU-30", "SKU-45", "SKU-75"]);
+  }, 20_000);
+
   it("returns product detail and tag counts, then writes normalized tags to all active variants", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);

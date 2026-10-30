@@ -82,6 +82,7 @@ import {
   withSiteCreateLock,
   type RegisteredProjectPath,
 } from "../projects/create-guard";
+import { hasPriceChangeWithin } from "../inventory/price-history";
 import { runDaily } from "../jobs/daily";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
@@ -1459,6 +1460,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         if (filters?.status === "today" && !todaySkus.has(row.sku)) return false;
         if (filters?.status && filters.status !== "today" && row.stock_status !== filters.status) return false;
         if (filters?.category && row.category !== filters.category) return false;
+        if (filters?.price_changed_within
+          && !hasPriceChangeWithin(row.price_history, filters.price_changed_within, snapshot.asOf)) return false;
         if (watchedCategoryTokens && !categoryIdentityTokens({ slug: row.category }).some((token) => watchedCategoryTokens.has(token))) return false;
         return true;
       });

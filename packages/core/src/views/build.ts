@@ -2,7 +2,6 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
   PATHS,
-  eventsFile,
   type EdmCampaign,
   type InventoryEvent,
   type InventoryLatest,
@@ -17,6 +16,7 @@ import {
 import { readCsv, type CsvRow } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { groupSkuIds } from "../inventory/sku-grouping";
+import { buildPriceHistory } from "../inventory/price-history";
 
 const PRODUCT_FIELDS = [
   "handle", "product_id", "title", "url", "category", "categories", "price_min", "price_max",
@@ -27,7 +27,7 @@ const PRODUCT_FIELDS = [
 
 const SKU_STOCK_FIELDS = [
   "sku", "title", "variant_title", "category", "price", "stock_status", "since", "days_in_status",
-  "online_rate_7d", "online_rate_30d", "history_30d", "changes_30d", "last_change", "last_change_at", "parent_sku",
+  "online_rate_7d", "online_rate_30d", "history_30d", "changes_30d", "last_change", "last_change_at", "parent_sku", "price_history",
 ] as const;
 
 const PRODUCT_FLOAT_FIELDS = ["price_min", "price_max", "compare_at_max"] as const;
@@ -209,17 +209,6 @@ export function buildProductViews(
   return products;
 }
 
-function monthRange(start: ISODate, end: ISODate): string[] {
-  const months: string[] = [];
-  let cursor = `${start.slice(0, 7)}-01`;
-  const lastMonth = end.slice(0, 7);
-  while (cursor.slice(0, 7) <= lastMonth) {
-    months.push(cursor.slice(0, 7));
-    cursor = dateAtOffset(cursor, 32).slice(0, 7) + "-01";
-  }
-  return months;
-}
-
 function symbolFor(status: StockStatus | null): string {
   return status ? STOCK_SYMBOL[status] : "-";
 }
@@ -245,6 +234,7 @@ export function buildSkuStockViews(
   const parentByChild = groupingRule
     ? groupSkuIds(activeSkus.map((row) => row.sku), groupingRule).parentByChild
     : undefined;
+  const priceHistoryBySku = buildPriceHistory(allEvents, today);
   const views: SkuStockView[] = [];
   for (const sku of activeSkus) {
     const latestRow = latest.get(sku.sku);
@@ -298,6 +288,7 @@ export function buildSkuStockViews(
       last_change: lastEvent?.type ?? null,
       last_change_at: lastEvent?.date ?? null,
       ...(parentByChild?.has(sku.sku) ? { parent_sku: parentByChild.get(sku.sku) ?? null } : {}),
+      ...(priceHistoryBySku.has(sku.sku) ? { price_history: priceHistoryBySku.get(sku.sku)! } : {}),
     });
   }
   return views;
@@ -308,14 +299,22 @@ export async function buildViews(projectPath: string, options: BuildViewsOptions
   const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
   const today = options.date ?? dateInTimezone(options.now ?? new Date(), site.timezone || "UTC");
 
-  const [skuRows, latestRows, mediaRows, tagRows, campaigns, eventsByMonth] = await Promise.all([
+  const [skuRows, latestRows, mediaRows, tagRows, campaigns] = await Promise.all([
     readJsonl(path.join(projectPath, PATHS.skus)),
     readJsonl(path.join(projectPath, PATHS.inventoryLatest)),
     readCsv(path.join(projectPath, PATHS.skuMedia)),
     readCsv(path.join(projectPath, PATHS.skuTags)),
     readJsonl(path.join(projectPath, PATHS.edmCampaigns)),
-    Promise.all(monthRange(dateAtOffset(today, -29), today).map((month) => readJsonl(path.join(projectPath, eventsFile(month))))),
   ]);
+  let eventFiles: string[] = [];
+  try {
+    eventFiles = (await readdir(path.join(projectPath, PATHS.eventsDir)))
+      .filter((name) => /^\d{4}-(?:0[1-9]|1[0-2])\.jsonl$/u.test(name))
+      .sort(compareText);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const eventsByMonth = await Promise.all(eventFiles.map((name) => readJsonl(path.join(projectPath, PATHS.eventsDir, name))));
   const skus = skuRows as unknown as SkuRecord[];
   const latest = latestRows as unknown as InventoryLatest[];
   const campaignRows = campaigns as unknown as EdmCampaign[];
