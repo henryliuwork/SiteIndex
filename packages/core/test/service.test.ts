@@ -2,7 +2,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { CSV_HEADERS, PATHS, type Category, type SkuStockView, type StockStatus } from "@siteindex/shared";
+import { CSV_HEADERS, PATHS, type Category, type SeoIssue, type SkuStockView, type StockStatus } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
 import { readCsv, writeCsv } from "../src/io/csv";
@@ -450,6 +450,39 @@ describe("createCoreService initial namespaces", () => {
     const result = await api.runJob({ projectPath, job: "views", trigger: "manual", dryRun: true }, () => undefined);
     expect(result).toMatchObject({ job: "views", status: "ok", exitCode: 0 });
   }, 45_000);
+
+  it("returns complete SEO rule counts and filters issues by selected rules", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const issues: SeoIssue[] = [
+      { url: "https://shop.example.test/short", rule: "title_too_short", severity: "low", detail: "fixture", status: "open", first_seen: "2026-10-29", last_seen: "2026-10-30" },
+      { url: "https://shop.example.test/lang-open", rule: "hreflang_invalid", severity: "mid", detail: "fixture", status: "open", first_seen: "2026-10-29", last_seen: "2026-10-30" },
+      { url: "https://shop.example.test/lang-ignored", rule: "hreflang_invalid", severity: "mid", detail: "fixture", status: "ignored", first_seen: "2026-10-29", last_seen: "2026-10-30" },
+      { url: "https://shop.example.test/long-url", rule: "url_too_long", severity: "low", detail: "fixture", status: "fixed", first_seen: "2026-10-29", last_seen: "2026-10-30" },
+    ];
+    await writeJsonl(path.join(projectPath, PATHS.seoIssues), issues.map((issue) => ({ ...issue })), "seo_issue");
+    api.invalidate(projectPath);
+
+    const summary = await api.seo.summary("fixture");
+    const counts = new Map(summary.issue_counts?.map((item) => [item.rule, item]) ?? []);
+    expect(counts.size).toBe(26);
+    expect(counts.get("title_too_short")).toMatchObject({ label: "Title 过短", severity: "low", count: 1 });
+    expect(counts.get("hreflang_invalid")).toMatchObject({ label: "hreflang 异常", severity: "mid", count: 2 });
+    expect(counts.get("url_too_long")).toMatchObject({ label: "URL 过长", severity: "low", count: 1 });
+    expect(counts.get("http_4xx")).toMatchObject({ count: 0 });
+
+    const selected = await api.seo.listIssues("fixture", {
+      page: 1, pageSize: 10, filters: { rules: ["hreflang_invalid"] },
+    });
+    expect(selected.total).toBe(2);
+    expect(selected.rows.every((issue) => issue.rule === "hreflang_invalid")).toBe(true);
+
+    const combined = await api.seo.listIssues("fixture", {
+      page: 1, pageSize: 10, filters: { rules: ["hreflang_invalid", "url_too_long"], severity: "mid", status: "open" },
+    });
+    expect(combined.total).toBe(1);
+    expect(combined.rows[0]?.url).toBe("https://shop.example.test/lang-open");
+  });
 
   it("keeps warm 10,000-row inventory queries under 50 ms", async () => {
     const { projectPath } = await makeProject();
