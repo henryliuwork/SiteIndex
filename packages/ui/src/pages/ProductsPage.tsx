@@ -7,7 +7,7 @@ import { useParams } from "react-router-dom";
 import type { ListQuery, ProductFilters, ProductFull, ProductView, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, ProjectHeader, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, ProjectHeader, ProjectTabPanel, stockTone } from "../components";
 
 const initialQuery: ListQuery<ProductFilters> = { page: 1, pageSize: 100, filters: {} };
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
@@ -199,13 +199,14 @@ export function ProductsPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目产品页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-products-page">
-    <ProjectHeader project={project} activeTab="products" actions={
+    <ProjectHeader project={project} activeTab="products" hasTabPanel actions={
       <>
         <Button icon={<Tag size={15} />} onClick={() => setTagDialogOpen(true)}>标签管理</Button>
         <Button onClick={() => void exportCsv()}>导出 CSV</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={Boolean(activeRunId)} onClick={() => void runSync()}>{activeRunId ? "同步中…" : "立即同步"}</Button>
       </>
     } />
+    <ProjectTabPanel projectId={project.id} tab="products">
     <div className="si-products-filterbar">
       <span>库存</span>{stockOptions.map((option) => <FilterPill key={option.value} currentValue={stock} value={option.value} onValueChange={onStockChange}>{option.label}</FilterPill>)}
       <span>标签</span><FilterPill currentValue={tag} value="all" onValueChange={onTagChange}>全部</FilterPill>
@@ -252,6 +253,7 @@ export function ProductsPage() {
       </Dialog.Portal>
     </Dialog.Root>
     <ConfirmDialog open={Boolean(deleteTag)} onOpenChange={(open) => { if (!open) setDeleteTag(null); }} title="删除标签？" description={deleteTag ? "将从所有“" + deleteTag + "”产品中移除该标签。" : "删除标签后无法恢复。"} confirmLabel="删除标签" tone="danger" onConfirm={removeManagedTag} />
+    </ProjectTabPanel>
   </div>;
 }
 import "./products/page.css";

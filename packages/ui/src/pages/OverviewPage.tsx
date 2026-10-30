@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, ProjectDetail, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, KpiCard, ProjectHeader } from "../components";
+import { ApiErrorNotice, Button, Chip, KpiCard, ProjectHeader, ProjectTabPanel } from "../components";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
 };
@@ -95,12 +95,13 @@ export function OverviewPage() {
 
   const summary = project.summary;
   return <div className="si-page si-overview-page">
-    <ProjectHeader project={summary} activeTab="overview" status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>} actions={
+    <ProjectHeader project={summary} activeTab="overview" hasTabPanel status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>} actions={
       <>
         <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={running} onClick={() => void runSync()}>{running ? "同步中…" : "立即同步"}</Button>
       </>
     } />
+    <ProjectTabPanel projectId={summary.id} tab="overview">
 
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
     <section className="si-overview-kpis" aria-label="项目指标">
@@ -144,6 +145,7 @@ export function OverviewPage() {
       </aside>
     </div>
     </>}
+    </ProjectTabPanel>
   </div>;
 }
 import "./overview/page.css";
