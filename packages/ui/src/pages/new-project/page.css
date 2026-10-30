@@ -320,6 +320,8 @@ color:var(--color-brand);
 
 .si-wizard-progress-row.is-running>svg { color:var(--color-info); }
 .si-wizard-progress-row.is-failed>svg { color:var(--color-danger); }
+.si-wizard-progress-row.is-skipped>span:nth-child(2) strong,
+.si-wizard-progress-row.is-skipped .si-wizard-step-actions>span { color:var(--color-muted); }
 
 .si-wizard-progress-row>span:nth-child(2) {
 display:grid; gap:2px;
@@ -333,6 +335,7 @@ color:var(--color-ink); font-size:12px;
 color:var(--color-muted); font-size: 12px;
 }
 
+.si-wizard-progress-row .si-wizard-step-message { color:var(--color-info); }
 .si-wizard-progress-row .si-wizard-step-reason { color:var(--color-danger); }
 .si-wizard-step-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; }
 .si-wizard-progress-row.is-failed .si-wizard-step-actions>span { color:var(--color-danger); }
@@ -341,6 +344,8 @@ color:var(--color-muted); font-size: 12px;
 .si-wizard-progress-dot {
 width:8px; height:8px; justify-self:center; border:1px solid var(--color-faint); border-radius:50%;
 }
+
+.si-wizard-progress-skip { justify-self:center; color:var(--color-muted); font-size:16px; line-height:1; }
 
 .si-spin {
 animation:si-spin 1s linear infinite;
