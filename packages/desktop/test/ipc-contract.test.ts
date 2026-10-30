@@ -2,12 +2,28 @@ import { describe, expect, it } from "vitest";
 import type { SiteIndexApi } from "@siteindex/shared";
 import { createHandlerRegistry, getIpcHandlerPaths, serializeIpcError } from "../src/main/ipc-registry.js";
 import { createApiBridge } from "../src/preload/api.js";
-import { API_EVENT_METHODS, API_INVOKE_METHODS } from "@siteindex/shared";
+import { API_EVENT_METHODS, API_INVOKE_METHODS, PENDING_HANDLERS } from "@siteindex/shared";
 
 function getApiMethodPaths(api: SiteIndexApi): string[] {
   return Object.entries(api)
     .flatMap(([namespace, methods]) => Object.keys(methods).map((method) => `${namespace}.${method}`))
     .sort();
+}
+
+function expectInvokeCoverage(
+  bridgeInvokeMethods: readonly string[],
+  contractInvokeMethods: readonly string[],
+  pendingHandlers: readonly string[],
+): void {
+  const contractMethods = new Set(contractInvokeMethods);
+  const bridgeMethods = new Set(bridgeInvokeMethods);
+  const pendingMethods = new Set(pendingHandlers);
+
+  expect(pendingHandlers.filter((method) => !contractMethods.has(method))).toEqual([]);
+  expect(bridgeInvokeMethods.filter((method) => !contractMethods.has(method))).toEqual([]);
+  expect(contractInvokeMethods.filter((method) => !pendingMethods.has(method) && !bridgeMethods.has(method))).toEqual(
+    [],
+  );
 }
 
 describe("SiteIndex IPC contract", () => {
@@ -18,9 +34,24 @@ describe("SiteIndex IPC contract", () => {
     });
     const apiMethods = getApiMethodPaths(api);
     const eventMethods = [...API_EVENT_METHODS].sort();
+    const invokeMethods = apiMethods.filter((method) => !eventMethods.includes(method));
 
-    expect(apiMethods.filter((method) => !eventMethods.includes(method))).toEqual([...API_INVOKE_METHODS].sort());
+    expectInvokeCoverage(invokeMethods, API_INVOKE_METHODS, PENDING_HANDLERS);
     expect(apiMethods.filter((method) => eventMethods.includes(method))).toEqual(eventMethods);
+  });
+
+  it("allows pending invoke methods to be absent or exposed before their pending entry is cleared", () => {
+    const contractMethods = ["settings.get", "example.pending"];
+    const pendingMethods = ["example.pending"];
+
+    expect(() => expectInvokeCoverage(["settings.get"], contractMethods, pendingMethods)).not.toThrow();
+    expect(() =>
+      expectInvokeCoverage(["settings.get", "example.pending"], contractMethods, pendingMethods),
+    ).not.toThrow();
+  });
+
+  it("rejects bridge invoke methods outside the contract", () => {
+    expect(() => expectInvokeCoverage(["settings.get", "extra.method"], ["settings.get"], [])).toThrow();
   });
 
   it("registers exactly one IPC handler for each invoke method", () => {
