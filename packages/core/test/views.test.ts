@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
   type StockStatus,
 } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { writeJsonl } from "../src/io/jsonl";
 import { buildProductViews, buildViews } from "../src/views/build";
 
 const TEMP_DIRS: string[] = [];
@@ -80,6 +81,42 @@ describe("buildViews", () => {
       last_change: "stock_change",
       last_change_at: "2026-10-20",
     });
+  }, 20_000);
+
+  it("writes parent mappings onto child rows without creating parent inventory or rates", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "siteindex-views-grouping-"));
+    TEMP_DIRS.push(tempRoot);
+    const projectPath = path.join(tempRoot, "project");
+    await cp(FIXTURE_PROJECT, projectPath, { recursive: true });
+
+    const sitePath = path.join(projectPath, PATHS.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as Record<string, unknown>;
+    site.sku_grouping = { enabled: true, rule: { type: "regex", value: "^(.+)-[A-Z]+$" } };
+    await writeFile(sitePath, `${JSON.stringify(site, null, 2)}\n`, "utf8");
+
+    const skus = [makeSku("FAMILY-RED", "family", null), makeSku("FAMILY-BLUE", "family", null)];
+    const latestRows = [latest("FAMILY-RED", "in_stock"), latest("FAMILY-BLUE", "out_of_stock")];
+    await writeJsonl(path.join(projectPath, PATHS.skus), skus as unknown as Record<string, unknown>[], { primaryKey: ["sku"] });
+    await writeJsonl(path.join(projectPath, PATHS.inventoryLatest), latestRows as unknown as Record<string, unknown>[], { primaryKey: ["sku"] });
+
+    const result = await buildViews(projectPath, { date: "2026-10-21" });
+    const stockRows = (await readFile(path.join(projectPath, PATHS.skuStockView), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(result.skuStock).toBe(2);
+    expect(stockRows).toHaveLength(2);
+    expect(stockRows.map((row) => row.sku)).toEqual(["FAMILY-BLUE", "FAMILY-RED"]);
+    expect(stockRows.every((row) => row.parent_sku === "FAMILY")).toBe(true);
+    expect(stockRows.find((row) => row.sku === "FAMILY-RED")).toMatchObject({
+      stock_status: "in_stock",
+      online_rate_7d: 1,
+      online_rate_30d: 1,
+    });
+    expect(stockRows.find((row) => row.sku === "FAMILY-BLUE")).toMatchObject({
+      stock_status: "out_of_stock",
+      online_rate_7d: 0,
+      online_rate_30d: 0,
+    });
+    expect(stockRows.some((row) => row.sku === "FAMILY")).toBe(false);
   }, 20_000);
 
   it("uses feed images before manual images, then falls back to manual and none", () => {

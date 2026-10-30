@@ -244,6 +244,31 @@ describe("createCoreService initial namespaces", () => {
     expect((await api.projects.get("fixture")).summary.warnings).toEqual([]);
   }, 30_000);
 
+  it("previews active feed SKUs and reports invalid grouping rules as configuration errors", async () => {
+    const { projectPath } = await makeProject();
+    await writeJsonl(path.join(projectPath, PATHS.skus), [
+      { sku: "FAMILY-A-RED", status: "active" },
+      { sku: "FAMILY-A-BLUE", status: "active" },
+      { sku: "SINGLE-G", status: "active" },
+      { sku: "REMOVED-A-RED", status: "removed" },
+    ], { primaryKey: ["sku"] });
+    const api = service(projectPath);
+
+    await expect(api.sku.previewGrouping("fixture", { type: "separator", value: "-" })).resolves.toEqual({
+      parents: 2,
+      children: 3,
+      samples: [
+        { parent: "FAMILY-A", children: ["FAMILY-A-BLUE", "FAMILY-A-RED"] },
+        { parent: "SINGLE", children: ["SINGLE-G"] },
+      ],
+      unmatched: 0,
+    });
+    await expect(api.sku.previewGrouping("fixture", { type: "regex", value: "[" })).rejects.toMatchObject({
+      code: "CONFIG_INVALID",
+      message: "SKU 分组规则无效：正则表达式语法无效。",
+    });
+  }, 30_000);
+
   it("serves the remaining core query namespaces and runs a dry-run views Job", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);

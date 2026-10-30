@@ -17,7 +17,8 @@
     "history_30d": { "type": "string", "pattern": "^[iopu-]{30}$" },
     "changes_30d": { "type": "integer", "minimum": 0 },
     "last_change": { "type": ["string", "null"] },
-    "last_change_at": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+    "last_change_at": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "parent_sku": { "type": ["string", "null"] }
   },
   "required": ["sku", "title", "variant_title", "category", "price", "stock_status", "since", "days_in_status", "online_rate_7d", "online_rate_30d", "history_30d", "changes_30d", "last_change", "last_change_at"],
   "x-primary-key": ["sku"]
