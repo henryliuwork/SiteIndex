@@ -8,7 +8,7 @@ import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
-import { api, apiErrorMessage } from "../api";
+import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, StatusCells, stockTone } from "../components";
 
@@ -33,7 +33,11 @@ function businessDateLabel(value: string): string {
 }
 
 function requestInventorySummary(id: string, range: HistoryRange): Promise<InventorySummary> {
-  const summary = api.inventory.summary as unknown as (projectId: string, historyRange: HistoryRange) => Promise<InventorySummary>;
+  if (!isMockApi) {
+    if (range !== 30) throw new Error("当前桌面接口仅支持 30 天范围，其他范围将在接口更新后开放。");
+    return api.inventory.summary(id, 30);
+  }
+  const summary = api.inventory.summary as unknown as (projectId: string, historyRange: 14 | HistoryRange) => Promise<InventorySummary>;
   return summary(id, range);
 }
 
@@ -75,7 +79,7 @@ const TrendChart = memo(function TrendChart({ summary, range, onRangeChange }: {
     <section className="si-inventory-chart si-panel" aria-label="分类在线率趋势">
       <div className="si-panel-heading si-inventory-chart-heading">
         <h2>分类在线率趋势 · {rangeLabel(range)}</h2>
-        <select className="si-text-field" aria-label="在线率趋势范围" value={String(range)} onChange={(event) => onRangeChange(event.target.value === "all" ? "all" : Number(event.target.value) as 30 | 60 | 90)}>{historyRanges.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+        <select className="si-text-field" aria-label="在线率趋势范围" value={String(range)} onChange={(event) => onRangeChange(event.target.value === "all" ? "all" : Number(event.target.value) as 30 | 60 | 90)}>{historyRanges.map((item) => <option key={item.value} value={item.value} disabled={!isMockApi && item.value !== 30}>{item.label}{!isMockApi && item.value !== 30 ? "（接口更新后开放）" : ""}</option>)}</select>
       </div>
       <p className="si-trend-meta">{summary.trend.dates[0] ? `数据自 ${businessDateLabel(summary.trend.dates[0])} 起` : "暂无历史日期"} · 站点时区 {summary.timezone || "未配置"}</p>
       <div className="si-trend-chart">
