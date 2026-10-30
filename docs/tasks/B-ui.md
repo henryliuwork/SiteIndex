@@ -52,10 +52,13 @@
 ## M3 · 打磨
 - [x] 逐页对照画板修正细节；1100 宽窗口下布局不溢出（侧栏折叠）— [PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)、[PR #60](https://github.com/henryliuwork/SiteIndex/pull/60)、[PR #61](https://github.com/henryliuwork/SiteIndex/pull/61)、[PR #62](https://github.com/henryliuwork/SiteIndex/pull/62)、[PR #63](https://github.com/henryliuwork/SiteIndex/pull/63)、[PR #64](https://github.com/henryliuwork/SiteIndex/pull/64)、[PR #65](https://github.com/henryliuwork/SiteIndex/pull/65)、[PR #66](https://github.com/henryliuwork/SiteIndex/pull/66)、[PR #67](https://github.com/henryliuwork/SiteIndex/pull/67)、[PR #68](https://github.com/henryliuwork/SiteIndex/pull/68)
 - [x] 共享组件键盘焦点、Dialog/Drawer 焦点返回与文字对比度 — [PR #179](https://github.com/henryliuwork/SiteIndex/pull/179)
-- [x] Tabs / ProjectHeader 稳定 tab 与 panel ID；README、软件设置面板建立 aria-controls / aria-labelledby 关系 — 本 PR（#177 共享层）
+- [x] Tabs / ProjectHeader 稳定 tab 与 panel ID；README、软件设置面板建立 aria-controls / aria-labelledby 关系 — [PR #183](https://github.com/henryliuwork/SiteIndex/pull/183)
 - [ ] 项目数据页接入 ProjectTabPanel；页面清单与归属待按 [issue #177](https://github.com/henryliuwork/SiteIndex/issues/177) 协调，不跨 D 文件边界
-- [ ] 性能：1 万 SKU mock 下任何操作 < 200ms；首屏 < 1 秒 — 交互基准待 [PR #69](https://github.com/henryliuwork/SiteIndex/pull/69) 合并；首屏指标待 [issue #88](https://github.com/henryliuwork/SiteIndex/issues/88)
-- [ ] 与 C 联调：真实 IPC 下全部页面可用（发现契约不一致 → 开 contract PR）— [issue #82](https://github.com/henryliuwork/SiteIndex/issues/82)，等待 C 发布 v0.1.0-alpha.1 安装包
+- [x] 10,000 SKU 浏览器 mock 交互：七类操作、两轮测试均低于 200 ms — [PR #69](https://github.com/henryliuwork/SiteIndex/pull/69)
+- [x] [issue #88](https://github.com/henryliuwork/SiteIndex/issues/88) 浏览器 mock 首屏（Chrome 145、1100×720 / DPR 1.5）：项目中心 5 次冷会话 722–875 ms（中位数 804 ms），FCP 560–600 ms。库存页首批表格数据 1,356–1,484 ms（中位数 1,434 ms），单独记录，不与项目中心首屏混算 — [PR #184](https://github.com/henryliuwork/SiteIndex/pull/184)。截图：[项目中心](../../packages/ui/screenshots/issue-88-mock-project-center.png) / [10k SKU 库存页](../../packages/ui/screenshots/issue-88-mock-10k.png)
+- [x] Electron source build 真实 preload / IPC 诊断基准（Electron 45、UI 0.1.4、`app.isPackaged=false`）：10,000 条合成 SKU 的 `inventory.listSkus` 5/5 成功，2.3–3.2 ms；库存页首批数据 5/5 成功，166–357 ms；冷启动到项目中心 2,087–2,150 ms。此记录不是安装包验收 — [PR #184](https://github.com/henryliuwork/SiteIndex/pull/184)。截图：[真实 IPC 的 10k SKU 表格](../../packages/ui/screenshots/issue-93-electron-10k-table.png)
+- [ ] [issue #93](https://github.com/henryliuwork/SiteIndex/issues/93) 正式安装包验收：尚未验证，不得以浏览器 mock 或 Electron source build 结果代替
+- [ ] 与 C 联调：真实 IPC 下全部页面可用（发现契约不一致 → 开 contract PR）— [issue #82](https://github.com/henryliuwork/SiteIndex/issues/82)，等待正式安装包验收
 - [ ] 运行页系统计划任务 / 软件常驻状态与授权重新注册 — [PR #72](https://github.com/henryliuwork/SiteIndex/pull/72) 尚未合并
 
 ## 交付给其他工作流
