@@ -107,7 +107,7 @@
 - [x] A-2 父子 SKU 规则引擎与 `sku.previewGrouping`
 - [x] A-3 读取博客 sitemap 与 URL 前缀配置识别博客页
 - [x] A-4 关注分类合并、去重并在库存摘要中标记
-- [ ] A-5 在线率范围 30/60/90/全部
+- [x] A-5 在线率范围 30/60/90/全部：Core 使用真实业务日期，CoreService API 覆盖所有范围与不足历史（A-5b）
 - [ ] A-6 价格追踪与变动范围筛选
 - [ ] A-7 SEO 问题分类扩充
 - [x] A-8 趋势图日期已核实，详见规划 §8.1
@@ -115,4 +115,4 @@
 
 ### v0.2.0 收敛计划
 - [x] A0a：以可选 `sku` 命名空间声明 `previewGrouping`，并登记 IPC invoke 与 pending handler 清单
-- [ ] A0b：等待 mock 参数兼容后单独扩大 `inventory.summary` 的范围参数
+- [x] A0b：单独扩大 `inventory.summary` 范围参数，保留 14 并支持 `30 | 60 | 90 | "all"`（#204）
