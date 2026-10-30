@@ -6,7 +6,7 @@ import type { DesignTokens } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
+import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
 
 type ColorKey = "primary" | "text" | "text_muted" | "background" | "surface" | "border" | "sale";
 const colorItems: { key: ColorKey; label: string }[] = [
@@ -188,7 +188,7 @@ export function DesignPage() {
 
   return (
     <div className="si-page si-design-page">
-      <ProjectHeader project={project} activeTab="design" status={tokens
+      <ProjectHeader project={project} activeTab="design" hasTabPanel status={tokens
         ? <Chip tone="neutral">提取于 {formatExtracted(tokens.extracted_at)} · {tokens.source_pages.length} 个页面{import.meta.env.DEV ? " · 示例数据" : ""}</Chip>
         : <Chip tone="warn">尚未提取设计规范</Chip>} actions={
           <>
@@ -197,6 +197,7 @@ export function DesignPage() {
             <Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void refresh()}>{activeRunId ? "提取中…" : "重新提取"}</Button>
           </>
         } />
+      <ProjectTabPanel projectId={project.id} tab="design">
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
       {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
       {designQuery.isLoading ? <div className="si-page-loading" role="status">正在加载设计规范…</div> : designQuery.isError ? <ApiErrorNotice label="设计规范加载失败。" error={designQuery.error} onRetry={() => void designQuery.refetch()} /> : <div className="si-design-layout">
@@ -210,6 +211,7 @@ export function DesignPage() {
           <ScreenshotsCard screenshots={screenshots} onOpen={(path) => void openScreenshot(path)} />
         </aside>
       </div>}
+      </ProjectTabPanel>
     </div>
   );
 }
