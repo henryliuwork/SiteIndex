@@ -217,7 +217,7 @@
 | **A · Core** | A-4（关注分类去重和摘要标记）→ 独立 `contract/inventory-history-range` A0b → A-5（30/60/90/全部真实范围）→ A-6（只从真实 events 建价格历史与筛选）→ A-7（SEO `rule` 生成、`issue_counts` 与 `rules` 过滤）→ A-9（协调废弃批量 Job） | 每项独立小 PR；fixture/schema/黄金测试同步；不得伪造日期、父 SKU 库存或价格。A0b 仅当 D mock 和 Core 实现可兼容时合入。 |
 | **C · Desktop** | C2 `sku.previewGrouping` preload+handler+错误测试 → handler PR 合并后单独 `contract/*` 清 `PENDING_HANDLERS` → 核查 #91 Design/Categories IPC 与 #100 新建根目录/init → 安装版回归与候选包 | #189 已合并，C2 可立即开始。真实 IPC 不能以 mock/源码构建代替；保持 #92 未达 1 秒的证据，不自关 Issue。 |
 | **D · 项目页面** | 等 C2 后把父 SKU 预览从本地前 100 条近似逻辑迁移到真实 IPC；随 A-4/A-5/A-6/A-7 各 PR 增量联调库存/项目设置/SEO；核验 Runs 进度和状态 | 只改 D 自有页面及相关 mock；所有数据链来自 Core，不静默降级成假结果。#177 代码完成不等于实测完成。 |
-| **B · UI 共享层** | #82 真实 Electron UI 路由/共享状态辅助检查、#93 packaged 首载与 E 配合；读审 #102 init 向导完成页及 #136 偶发路由；必要时优化共享组件 | NewProjectWizard、ProjectCenter、Skills 等未明确在 B/D 目录清单，**改这些页面前先请求正式归属裁决**；不能凭历史 Issue 标签跨工作流提交。 |
+| **B · UI 共享层与应用级页面** | #82 真实 Electron UI 路由/共享状态辅助检查、#93 packaged 首载与 E 配合；按证据检查并修复 #102 init 新建完成页及 #136 项目中心偶发路由问题 | **已确认** `ProjectCenterPage`、`NewProjectWizardPage`、`SkillsPage` 归 B；可修改这三页及对应局部样式/mock，D 项目业务页仍由 D 单独维护。 |
 | **E · 验收** | 先用隔离的 Windows **内部测试包**回归 #163/#91/#93/#100 与启动性能，再准备正式 `v0.2.0-rc1` 的 #163–#174、#177、#82、PRD §8 全矩阵 | 每次记录安装包 SHA256、commit、Windows build、脱敏结果；候选包之前不关闭旧 Release Issue。macOS 独立记录，不以 Windows 替代。 |
 
 ### 12.3 发布阻断清单
