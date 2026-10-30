@@ -2,10 +2,10 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { PATHS, type SkuStockView, type StockStatus } from "@siteindex/shared";
+import { CSV_HEADERS, PATHS, type Category, type SkuStockView, type StockStatus } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
-import { readCsv } from "../src/io/csv";
+import { readCsv, writeCsv } from "../src/io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../src/io/jsonl";
 
 const FIXTURE_PROJECT = path.resolve(process.cwd(), "fixtures/expected/project");
@@ -79,6 +79,83 @@ describe("createCoreService initial namespaces", () => {
     expect(inventory.category_source).toBe(detail.config.categories?.mode ?? "feed");
     expect(await api.inventory.dailyReport("fixture", "2026-10-21")).toContain("库存日报");
     expect(await api.inventory.dailyReport("fixture", "2026-10-18")).toBeNull();
+  }, 30_000);
+
+  it("merges watched categories for display without changing inventory source data", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const legacy = await api.inventory.summary("fixture", 30);
+    expect(legacy.category_rates.every((row) => !("watched" in row) && !("manual" in row))).toBe(true);
+
+    const categoriesPath = path.join(projectPath, PATHS.categories);
+    const dailySummaryPath = path.join(projectPath, PATHS.dailySummary);
+    const skuStockPath = path.join(projectPath, PATHS.skuStockView);
+    const fetchedCategories: Category[] = [
+      { slug: "bird-feeders", name: "Bird Feeders", url: "https://shop.example.test/collections/bird-feeders/", parent: null, source: "feed", last_seen: "2026-10-21" },
+      { slug: "garden-tools", name: "Garden Tools", url: "https://shop.example.test/collections/garden-tools/", parent: null, source: "feed", last_seen: "2026-10-21" },
+      { slug: "empty-category", name: "Empty Category", url: "https://shop.example.test/collections/empty-category/", parent: null, source: "feed", last_seen: "2026-10-21" },
+    ];
+    await writeFile(categoriesPath, `${JSON.stringify(fetchedCategories, null, 2)}\n`, "utf8");
+    await writeCsv(dailySummaryPath, [
+      { date: "2026-10-21", category: "bird-feeders", total: 4, in_stock: 3, out_of_stock: 1, preorder: 0, unknown: 0 },
+      { date: "2026-10-21", category: "garden-tools", total: 6, in_stock: 3, out_of_stock: 3, preorder: 0, unknown: 0 },
+      { date: "2026-10-21", category: "legacy-only", total: 2, in_stock: 1, out_of_stock: 1, preorder: 0, unknown: 0 },
+      { date: "2026-10-21", category: "_all", total: 12, in_stock: 7, out_of_stock: 5, preorder: 0, unknown: 0 },
+      { date: "2026-10-21", category: "", total: 99, in_stock: 99, out_of_stock: 0, preorder: 0, unknown: 0 },
+    ], CSV_HEADERS.dailySummary, ["date", "category"]);
+    await writeJsonl(skuStockPath, [
+      stockRow("SKU-A", "Bird product", "in_stock", "bird-feeders"),
+      stockRow("SKU-B", "Garden product", "in_stock", "garden-tools"),
+      stockRow("SKU-C", "Empty product", "in_stock", "empty-category"),
+      stockRow("SKU-D", "Legacy product", "in_stock", "legacy-only"),
+      stockRow("SKU-E", "Manual product", "in_stock", "manual-category"),
+    ] as unknown as JsonRecord[], { primaryKey: ["sku"], fieldOrder: STOCK_FIELDS, floatFields: ["price", "online_rate_7d", "online_rate_30d"] });
+    api.invalidate(projectPath);
+
+    const initial = await api.projects.get("fixture");
+    const watched = [
+      { name: "Bird Feeders", slug: "tracked-bird-feeders", manual: false },
+      { name: "Birds manually selected", slug: "bird-feeders", url: "https://shop.example.test/collections/other/", manual: true },
+      { name: "Birds selected by URL", slug: "bird-feeders-url-alias", url: "https://shop.example.test/collections/bird-feeders/?source=watch", manual: true },
+      { name: "Garden Tools", slug: "garden-tools-copy", url: "https://shop.example.test/collections/garden-tools-copy", manual: false },
+      { name: "Legacy category", slug: "legacy-only", url: "https://shop.example.test/collections/legacy-only", manual: false },
+      { name: "Manual category", slug: "manual-category", url: "https://shop.example.test/collections/manual-category", manual: true },
+      { name: "   ", manual: true },
+    ];
+    await api.projects.updateConfig("fixture", { categories: { ...initial.config.categories, watched } });
+
+    const sourceBeforeDisplayCalls = await Promise.all([
+      readFile(dailySummaryPath),
+      readFile(skuStockPath),
+      readFile(categoriesPath),
+    ]);
+    const summary = await api.inventory.summary("fixture", 30);
+    expect(summary.category_rates).toEqual([
+      { category: "bird-feeders", rate: 0.75, total: 4, watched: true, manual: true },
+      { category: "empty-category", rate: 0, total: 0, watched: false, manual: false },
+      { category: "garden-tools", rate: 0.5, total: 6, watched: true, manual: false },
+      { category: "legacy-only", rate: 0.5, total: 2, watched: true, manual: false },
+      { category: "manual-category", rate: 0, total: 0, watched: true, manual: true },
+    ]);
+    expect(summary.kpis.find((item) => item.key === "total")?.value).toBe("12");
+
+    const watchedRows = await api.inventory.listSkus("fixture", {
+      page: 1, pageSize: 20, filters: { watched_only: true },
+    });
+    expect(watchedRows.rows.map((row) => row.category)).toEqual([
+      "bird-feeders", "garden-tools", "legacy-only", "manual-category",
+    ]);
+    expect(await Promise.all([readFile(dailySummaryPath), readFile(skuStockPath), readFile(categoriesPath)]))
+      .toEqual(sourceBeforeDisplayCalls);
+    const validation = await api.files.validate("fixture");
+    expect(validation.files.find((file) => file.path === PATHS.site)).toMatchObject({ status: "ok" });
+
+    await api.projects.updateConfig("fixture", {
+      categories: { ...initial.config.categories, watched: [...watched].reverse() },
+    });
+    await writeFile(categoriesPath, `${JSON.stringify([...fetchedCategories].reverse(), null, 2)}\n`, "utf8");
+    api.invalidate(projectPath);
+    expect((await api.inventory.summary("fixture", 30)).category_rates).toEqual(summary.category_rates);
   }, 30_000);
 
   it("preserves a readable Chinese feed failure reason in daily results and run logs", async () => {

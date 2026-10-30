@@ -65,6 +65,19 @@
             },
             "required": ["slug", "name", "url"]
           }
+        },
+        "watched": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "slug": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "manual": { "type": "boolean" }
+            },
+            "required": ["name"]
+          }
         }
       },
       "required": ["mode"]
