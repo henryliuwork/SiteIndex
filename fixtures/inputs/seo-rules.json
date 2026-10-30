@@ -1,0 +1,170 @@
+{
+  "long_url_segments": 2100,
+  "long_url_token": "@long-url",
+  "sitemap_paths": [
+    "/products/short-metadata",
+    "/products/long-metadata",
+    "/products/duplicate-a",
+    "/products/duplicate-b",
+    "/products/missing-metadata",
+    "/blog/no-schema",
+    "/errors/not-found",
+    "/errors/server-error",
+    "/redirect/start",
+    "@long-url"
+  ],
+  "redirects": [
+    {
+      "path": "/redirect/start",
+      "to": "/redirect/middle"
+    },
+    {
+      "path": "/redirect/middle",
+      "to": "/redirect/final"
+    }
+  ],
+  "pages": [
+    {
+      "path": "/products/short-metadata",
+      "title": "Tiny",
+      "description": "Brief",
+      "canonical": "missing",
+      "headings": [],
+      "robots": "noindex",
+      "image_alt": [
+        null
+      ],
+      "hreflang": [
+        {
+          "language": "en_US",
+          "href": "/en-us"
+        },
+        {
+          "language": "en",
+          "href": "/en"
+        },
+        {
+          "language": "EN-us",
+          "href": "/en-us-duplicate"
+        },
+        {
+          "language": "fr",
+          "href": "javascript:alert(1)"
+        },
+        {
+          "language": "en",
+          "href": "/en-duplicate"
+        }
+      ],
+      "links": [
+        "/outside-sitemap"
+      ]
+    },
+    {
+      "path": "/products/long-metadata",
+      "title_repeat": {
+        "text": "L",
+        "count": 90
+      },
+      "description_repeat": {
+        "text": "D",
+        "count": 220
+      },
+      "canonical": "other",
+      "headings": [
+        "Primary",
+        "Secondary"
+      ],
+      "schema": [
+        {
+          "@type": "Product"
+        }
+      ],
+      "image_alt": [
+        ""
+      ]
+    },
+    {
+      "path": "/products/duplicate-a",
+      "title": "Duplicate product title used by two fixture pages",
+      "description": "Duplicate description used by both deterministic fixture product pages for rule coverage.",
+      "canonical": "self",
+      "headings": [
+        "Duplicate A"
+      ]
+    },
+    {
+      "path": "/products/duplicate-b",
+      "title": "Duplicate product title used by two fixture pages",
+      "description": "Duplicate description used by both deterministic fixture product pages for rule coverage.",
+      "canonical": "self",
+      "headings": [
+        "Duplicate B"
+      ]
+    },
+    {
+      "path": "/products/missing-metadata",
+      "title": null,
+      "description": null,
+      "canonical": "self",
+      "headings": [
+        "Missing metadata"
+      ],
+      "schema": [
+        {
+          "@type": "Product",
+          "name": "Fixture product"
+        }
+      ]
+    },
+    {
+      "path": "/blog/no-schema",
+      "title": "A deterministic fixture blog page",
+      "description": "A sufficiently long description for this deterministic SEO rules fixture.",
+      "canonical": "self",
+      "headings": [
+        "Fixture blog"
+      ],
+      "schema": [],
+      "body": "A short blog body."
+    },
+    {
+      "path": "/errors/not-found",
+      "status": 404,
+      "title": "Not found fixture page",
+      "description": "A sufficiently long error fixture description that keeps the length checks out of this case.",
+      "canonical": "self",
+      "headings": [
+        "Not found"
+      ]
+    },
+    {
+      "path": "/errors/server-error",
+      "status": 500,
+      "title": "Server error fixture page",
+      "description": "A sufficiently long error fixture description that keeps the length checks out of this case.",
+      "canonical": "self",
+      "headings": [
+        "Server error"
+      ]
+    },
+    {
+      "path": "@long-url",
+      "title": "A deterministic page with a very long URL",
+      "description": "A sufficiently long description for this deterministic SEO rules fixture.",
+      "canonical": "self",
+      "headings": [
+        "Long URL"
+      ]
+    },
+    {
+      "path": "/redirect/final",
+      "title": "Redirect destination fixture page",
+      "description": "A sufficiently long description for this deterministic SEO rules fixture.",
+      "canonical": "missing",
+      "headings": [
+        "Redirect destination"
+      ]
+    }
+  ]
+}

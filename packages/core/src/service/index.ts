@@ -88,6 +88,7 @@ import { assertRunner, readRunner, withLock } from "../io/runner-lock";
 import { createProjectFiles } from "../projects/create";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
+import { buildSeoIssueCounts } from "../seo/rules";
 import { runMonthly } from "../jobs/monthly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
 import { launchChromium, type BrowserLauncher } from "../browser/automation";
@@ -1647,12 +1648,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         crawled_at: crawled ? `${crawled}T00:00:00.000Z` : null,
         title_range: [...titleRange] as [number, number],
         description_range: [...descriptionRange] as [number, number],
+        issue_counts: buildSeoIssueCounts(snapshot.seoIssues),
       };
     },
     listIssues: async (id, query) => {
       const snapshot = await load(resolve(id));
       const rows = snapshot.seoIssues.filter((issue) => (!query.filters?.severity || issue.severity === query.filters.severity)
-        && (!query.filters?.status || issue.status === query.filters.status));
+        && (!query.filters?.status || issue.status === query.filters.status)
+        && (!query.filters?.rules?.length || query.filters.rules.includes(issue.rule)));
       return paginate(rows, query, (row) => [row.url, row.rule, row.detail, row.severity, row.status], "severity", (row) => `${row.url}\u0000${row.rule}`);
     },
     listPages: async (id, query) => {
