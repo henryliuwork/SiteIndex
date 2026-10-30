@@ -426,7 +426,7 @@ export interface SiteIndexApi {
     get(id: ProjectId): Promise<OverviewData>;
   };
   inventory: {
-    summary(id: ProjectId, days?: 14 | 30): Promise<InventorySummary>;
+    summary(id: ProjectId, days?: 14 | HistoryRange): Promise<InventorySummary>;
     listSkus(id: ProjectId, q: ListQuery<SkuStockFilters>): Promise<PageResult<SkuStockView>>;
     dailyReport(id: ProjectId, date: ISODate): Promise<string | null>; // Markdown
     exportCsv(id: ProjectId, q: ListQuery<SkuStockFilters>): Promise<string>; // 保存后的文件路径
