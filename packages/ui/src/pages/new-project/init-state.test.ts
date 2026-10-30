@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyInitProgress,
   applyInitResult,
+  finalInitProgressPercent,
   getInitCompletionStatus,
   nextInitProgressPercent,
   scheduleRetryFailure,
@@ -74,6 +75,17 @@ describe("新建项目 init 八步状态", () => {
     expect(states.folders?.status).toBe("ok");
     expect(states.schedule).toMatchObject({ status: "waiting", reason: "未返回步骤结果" });
     expect(getInitCompletionStatus(result([{ key: "folders", status: "ok" }]), states)).toBe("incomplete");
+  });
+
+  it("失败进度不能掩盖最终结果缺步，完成进度按结果步骤覆盖率计算", () => {
+    const incompleteResult = result(allOk().filter((step) => step.key !== "schedule"));
+    const progressStates = applyInitProgress({}, progress("schedule", 96, "注册失败", "error"));
+    const states = applyInitResult(progressStates, incompleteResult);
+
+    expect(states.schedule?.status).toBe("failed");
+    expect(getInitCompletionStatus(incompleteResult, states)).toBe("incomplete");
+    expect(finalInitProgressPercent(incompleteResult)).toBe(87.5);
+    expect(finalInitProgressPercent(result(allOk()))).toBe(100);
   });
 
   it("重试调度时只有 Desktop 确认 registered 才显示成功", () => {
