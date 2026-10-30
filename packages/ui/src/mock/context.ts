@@ -677,6 +677,7 @@ export function beginRun(projectPath: string, job: JobName): string {
   const active = { projectPath, job, pct: 0, timer: 0 as unknown as ReturnType<typeof setInterval> };
   if (job === "init") {
     const dailyFails = mockMode === "init-daily-fail";
+    const scheduleSkipped = mockMode === "init-schedule-skipped";
     const dailyError = "首次每日同步失败：模拟 Feed 请求超时。";
     let index = 0;
     active.timer = setInterval(() => {
@@ -697,7 +698,9 @@ export function beginRun(projectPath: string, job: JobName): string {
         runId, job, status: dailyFails ? "partial" : "ok", exitCode: dailyFails ? 1 : 0,
         summary: dailyFails ? "创建完成，但有步骤失败" : "项目创建完成",
         errors: dailyFails ? [dailyError] : [],
-        steps: INIT_STEPS.map((step) => ({ key: step, status: dailyFails && step === "daily" ? "failed" as const : "ok" as const, ...(dailyFails && step === "daily" ? { message: dailyError } : {}) })),
+        steps: INIT_STEPS.map((step) => step === "schedule" && scheduleSkipped
+          ? { key: step, status: "skipped" as const, message: "项目未启用定时任务。" }
+          : { key: step, status: dailyFails && step === "daily" ? "failed" as const : "ok" as const, ...(dailyFails && step === "daily" ? { message: dailyError } : {}) }),
       };
       runHistory.unshift({ run_id: runId, job, trigger: "manual", device_name: "本地开发工作站", started_at: "2026-10-22T10:00:00+08:00", finished_at: "2026-10-22T10:00:03+08:00", status: result.status, errors: result.errors });
       finishedListeners.forEach((callback) => callback(clone(result)));

@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CircleAlert, FolderOpen, LoaderCircle, Plus, X } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobProgress, type JobResult, type Platform } from "@siteindex/shared";
+import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary } from "../project-queries";
 import { ApiErrorNotice, Button, Chip } from "../components";
 import { useWizardDraft } from "./wizard-state";
+import { applyInitProgress, applyInitResult, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
 
 const steps = [
   { path: "/new/url", label: "网址" },
@@ -26,44 +27,10 @@ const progressSteps: Record<InitStepKey, { name: string; detail: string }> = {
   schedule: { name: "注册定时任务", detail: "为项目启用计划任务" },
 };
 
-type StepStatus = "waiting" | "running" | "ok" | "failed";
-type StepState = { status: StepStatus; reason?: string };
-type StepStates = Partial<Record<InitStepKey, StepState>>;
 type RetryableStep = Extract<InitStepKey, "daily" | "weekly" | "views" | "schedule">;
-
-function initStepKey(value?: string): InitStepKey | undefined {
-  return INIT_STEPS.find((key) => key === value);
-}
 
 function isRetryableStep(key: InitStepKey): key is RetryableStep {
   return key === "daily" || key === "weekly" || key === "views" || key === "schedule";
-}
-
-function applyInitProgress(current: StepStates, event: JobProgress): StepStates {
-  const key = initStepKey(event.step);
-  if (!key) return current;
-  const next = { ...current };
-  for (const previous of INIT_STEPS) {
-    if (previous === key) break;
-    if (next[previous]?.status === "running") next[previous] = { status: "ok" };
-  }
-  next[key] = event.level === "error" ? { status: "failed", reason: event.message } : { status: "running" };
-  return next;
-}
-
-function applyInitResult(current: StepStates, result: JobResult): StepStates {
-  const next = { ...current };
-  for (const step of result.steps ?? []) {
-    const key = initStepKey(step.key);
-    if (!key) continue;
-    next[key] = step.status === "ok" ? { status: "ok" }
-      : step.status === "failed" ? { status: "failed", reason: step.message || result.errors?.join("；") || result.summary }
-        : { status: "waiting", reason: step.message || "本次已跳过" };
-  }
-  for (const key of INIT_STEPS) {
-    if (next[key]?.status === "running") next[key] = result.status === "ok" ? { status: "ok" } : { status: "waiting", reason: "未返回步骤结果" };
-  }
-  return next;
 }
 
 function slugFor(url: string): string {
@@ -143,8 +110,9 @@ export function NewProjectWizardPage() {
   const [canRetryFeed, setCanRetryFeed] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [uspDraft, setUspDraft] = useState("");
-  const [stepStates, setStepStates] = useState<StepStates>({});
-  const [retryStates, setRetryStates] = useState<StepStates>({});
+  const [stepStates, setStepStates] = useState<InitStepStates>({});
+  const [retryStates, setRetryStates] = useState<InitStepStates>({});
+  const [progressPct, setProgressPct] = useState(0);
   const [finished, setFinished] = useState<JobResult | null>(null);
   const retryRunIds = useRef(new Map<string, RetryableStep>());
   const active = Math.max(0, steps.findIndex((step) => pathname.endsWith(step.path)));
@@ -161,17 +129,21 @@ export function NewProjectWizardPage() {
     if (active === 0 && draft.created) reset();
   }, [active, draft.created, reset]);
   useEffect(() => {
-    setStepStates({}); setRetryStates({}); setFinished(null); retryRunIds.current.clear();
+    setStepStates({}); setRetryStates({}); setProgressPct(0); setFinished(null); retryRunIds.current.clear();
   }, [createdRunId]);
   useEffect(() => {
     if (active !== 3 || !createdRunId) return;
     const onProgress = api.jobs.onProgress((event) => {
-      if (event.runId === createdRunId && event.job === "init") setStepStates((current) => applyInitProgress(current, event));
+      if (event.runId === createdRunId && event.job === "init") {
+        setStepStates((current) => applyInitProgress(current, event));
+        setProgressPct((current) => nextInitProgressPercent(current, event.pct));
+      }
     });
     const onFinished = api.jobs.onFinished((result) => {
       if (result.runId === createdRunId) {
         setFinished(result);
         setStepStates((current) => applyInitResult(current, result));
+        setProgressPct(100);
       }
       const retryKey = retryRunIds.current.get(result.runId);
       if (retryKey) {
@@ -261,8 +233,9 @@ export function NewProjectWizardPage() {
     try {
       if (key === "schedule") {
         const schedule = await api.schedule.get(projectId);
-        await api.schedule.save(projectId, schedule.config);
-        setRetryStates((current) => ({ ...current, schedule: { status: "ok" } }));
+        const saved = await api.schedule.save(projectId, schedule.config);
+        const reason = scheduleRetryFailure(saved.registered);
+        setRetryStates((current) => ({ ...current, schedule: reason ? { status: "failed", reason } : { status: "ok" } }));
       } else {
         const project = await api.projects.get(projectId);
         const run = await api.jobs.run({ projectPath: project.summary.path, job: key });
@@ -276,16 +249,17 @@ export function NewProjectWizardPage() {
   if (active === 3 && !draft.created) return <Navigate to="/new/brand" replace />;
   const detection = draft.detect;
   const previewPath = pathJoin(draft.projectsRoot || settings.data?.projects_root || "D:/SiteIndex/projects", draft.folderName || "[文件夹名]");
-  const stateFor = (key: InitStepKey): StepState => retryStates[key] ?? stepStates[key] ?? { status: "waiting" };
-  const completedCount = INIT_STEPS.filter((key) => stateFor(key).status === "ok").length;
-  const allSucceeded = Boolean(finished) && completedCount === INIT_STEPS.length;
-  const hasFinishedFailures = Boolean(finished) && !allSucceeded;
-  const progressWidth = Math.round(completedCount / INIT_STEPS.length * 100);
-  const stepReasons = INIT_STEPS.map((key) => stateFor(key).reason).filter(Boolean);
-  const remainingErrors = finished?.errors?.filter((message) => !stepReasons.includes(message)) ?? [];
-  const globalFailure = hasFinishedFailures && (remainingErrors.length > 0 || stepReasons.length === 0)
-    ? remainingErrors.join("；") || finished?.summary || "未收到全部步骤的完成结果。"
-    : "";
+  const states: InitStepStates = { ...stepStates, ...retryStates };
+  const stateFor = (key: InitStepKey): InitStepState => states[key] ?? { status: "waiting" };
+  const completionStatus = getInitCompletionStatus(finished, states);
+  const completedCount = INIT_STEPS.filter((key) => ["ok", "failed", "skipped"].includes(stateFor(key).status)).length;
+  const allSucceeded = completionStatus === "success";
+  const hasFinishedFailures = completionStatus === "failed";
+  const progressWidth = progressPct;
+  const remainingErrors = finished ? unresolvedInitErrors(finished, states) : [];
+  const globalFailure = hasFinishedFailures
+    ? remainingErrors.join("；") || (INIT_STEPS.some((key) => stateFor(key).status === "failed") ? "" : finished?.summary || "初始化未完成。")
+    : completionStatus === "incomplete" ? finished?.errors?.join("；") || finished?.summary || "未收到全部步骤的完成结果。" : "";
 
   return <div className="si-page si-wizard-page">
     <div className="si-wizard-breadcrumb"><Link to="/">项目中心</Link><span>/</span><strong>新建项目</strong></div>
@@ -361,15 +335,15 @@ export function NewProjectWizardPage() {
     {active === 3 && draft.created && <div className="si-wizard-done-layout">
       {draft.created.path ? null : <p className="si-form-error" role="alert">项目已创建，但暂时无法读取实际路径。请重试读取，路径读取成功后即可打开文件夹。</p>}
       <section className="si-wizard-card si-wizard-progress-card">
-        <header className="si-wizard-progress-heading"><h1>{allSucceeded ? "项目创建完成" : hasFinishedFailures ? "创建完成，但有步骤失败" : "正在创建 " + draft.brand.name}</h1><Chip tone={hasFinishedFailures ? "danger" : allSucceeded ? "ok" : "info"}>{hasFinishedFailures ? "需处理" : allSucceeded ? "完成" : completedCount + " / " + INIT_STEPS.length}</Chip></header>
+        <header className="si-wizard-progress-heading"><h1>{allSucceeded ? "项目创建完成" : hasFinishedFailures ? "创建完成，但有步骤失败" : completionStatus === "skipped" ? "创建完成，部分步骤已跳过" : completionStatus === "incomplete" ? "项目创建未完成" : "正在创建 " + draft.brand.name}</h1><Chip tone={hasFinishedFailures ? "danger" : allSucceeded ? "ok" : completionStatus === "skipped" || completionStatus === "incomplete" ? "warn" : "info"}>{hasFinishedFailures ? "需处理" : allSucceeded ? "完成" : completionStatus === "skipped" ? "有步骤跳过" : completionStatus === "incomplete" ? "未完成" : completedCount + " / " + INIT_STEPS.length}</Chip></header>
         <div className="si-wizard-progress-track"><span style={{ width: progressWidth + "%" }} /></div>
         <div className="si-wizard-progress-list">{INIT_STEPS.map((key) => {
           const { name, detail } = progressSteps[key];
           const step = stateFor(key);
-          const label = step.status === "ok" ? "完成" : step.status === "running" ? "进行中" : step.status === "failed" ? "失败" : "等待中";
+          const label = step.status === "ok" ? "完成" : step.status === "running" ? "进行中" : step.status === "failed" ? "失败" : step.status === "skipped" ? "已跳过" : "等待中";
           return <div key={key} className={`si-wizard-progress-row is-${step.status}`}>
-            {step.status === "ok" ? <Check size={17} aria-hidden="true" /> : step.status === "running" ? <LoaderCircle size={17} className="si-spin" aria-hidden="true" /> : step.status === "failed" ? <CircleAlert size={17} aria-hidden="true" /> : <span className="si-wizard-progress-dot" />}
-            <span><strong>{name}</strong><small>{detail}</small>{step.reason && <small className="si-wizard-step-reason" role={step.status === "failed" ? "alert" : undefined}>{step.reason}</small>}</span>
+            {step.status === "ok" ? <Check size={17} aria-hidden="true" /> : step.status === "running" ? <LoaderCircle size={17} className="si-spin" aria-hidden="true" /> : step.status === "failed" ? <CircleAlert size={17} aria-hidden="true" /> : step.status === "skipped" ? <span className="si-wizard-progress-skip" aria-hidden="true">—</span> : <span className="si-wizard-progress-dot" />}
+            <span><strong>{name}</strong><small>{detail}</small>{step.status === "running" && step.message && <small className="si-wizard-step-message" aria-live="polite">{step.message}</small>}{step.reason && <small className="si-wizard-step-reason" role={step.status === "failed" ? "alert" : undefined}>{step.reason}</small>}</span>
             <div className="si-wizard-step-actions"><span aria-live="polite">{label}</span>{step.status === "failed" && isRetryableStep(key) && <Button size="small" aria-label={`${name}重试`} onClick={() => void retryStep(key)}>重试</Button>}</div>
           </div>;
         })}</div>
