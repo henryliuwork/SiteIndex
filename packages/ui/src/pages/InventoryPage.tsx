@@ -342,7 +342,7 @@ export function InventoryPage() {
             onShowDefaultCategories={setShowDefaultCategories}
             expanded={categoriesExpanded}
             onToggleExpanded={() => setCategoriesExpanded((value) => !value)}
-            onManage={() => navigate(`/p/${id}/settings/config#watched-categories`)}
+            onManage={() => navigate(`/p/${id}/settings/config?section=watched-categories`)}
             onSelectCategory={(category) => onCategoryChange(category)}
           />
         </div>

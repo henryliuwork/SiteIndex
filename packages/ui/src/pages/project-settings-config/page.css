@@ -4,11 +4,12 @@
 .si-config-subtabs a:hover { background: var(--color-neutral-soft); }
 .si-config-subtabs a.active { background: var(--color-ink); color: #fff; }
 .si-config-layout { display: grid; grid-template-columns: minmax(155px, 180px) minmax(0, 1fr); align-items: start; gap: 18px; }
-.si-config-outline { position: sticky; top: 12px; display: grid; gap: 2px; padding: 10px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
-.si-config-outline a { padding: 8px 10px; border-radius: 6px; color: var(--color-ink-2); font-size: 12px; text-decoration: none; }
-.si-config-outline a:hover { background: var(--color-neutral-soft); color: var(--color-ink); }
+.si-config-outline { position: sticky; top: calc(112px + var(--si-content-top-padding, 0px)); display: grid; gap: 2px; padding: 10px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-config-outline button { padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--color-ink-2); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.si-config-outline button:hover, .si-config-outline button.active { background: var(--color-neutral-soft); color: var(--color-ink); }
+.si-config-outline button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 .si-config-sections { display: grid; gap: 14px; min-width: 0; }
-.si-config-card { display: grid; gap: 15px; min-width: 0; padding: 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); scroll-margin-top: 16px; }
+.si-config-card { display: grid; gap: 15px; min-width: 0; padding: 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); scroll-margin-top: calc(112px + var(--si-content-top-padding, 0px)); }
 .si-config-card h2 { margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 700; }
 .si-config-grid { display: grid; min-width: 0; gap: 14px 16px; }
 .si-config-grid-3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
