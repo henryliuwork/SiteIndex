@@ -29,6 +29,7 @@ import type {
   SeoPage,
   Severity,
   SiteConfig,
+  SkuGroupingRule,
   SkuRecord,
   SkuStockView,
   StockStatus,
@@ -52,6 +53,14 @@ export interface ListQuery<F = Record<string, unknown>> {
 export interface PageResult<T> {
   rows: T[];
   total: number;
+}
+
+/** 父子 SKU 规则预览；counts 仅描述按规则识别出的父/子 SKU，不代表父 SKU 库存。 */
+export interface SkuGroupingPreview {
+  parents: number;
+  children: number;
+  samples: { parent: string; children: string[] }[];
+  unmatched: number;
 }
 
 export interface Kpi {
@@ -421,6 +430,10 @@ export interface SiteIndexApi {
     listSkus(id: ProjectId, q: ListQuery<SkuStockFilters>): Promise<PageResult<SkuStockView>>;
     dailyReport(id: ProjectId, date: ISODate): Promise<string | null>; // Markdown
     exportCsv(id: ProjectId, q: ListQuery<SkuStockFilters>): Promise<string>; // 保存后的文件路径
+  };
+  /** v0.2.0 新增能力尚未由 UI / Desktop 实现，保持命名空间可选以兼容旧 bridge 与 mock。 */
+  sku?: {
+    previewGrouping(id: ProjectId, rule: SkuGroupingRule): Promise<SkuGroupingPreview>;
   };
   products: {
     list(id: ProjectId, q: ListQuery<ProductFilters>): Promise<PageResult<ProductView>>;
