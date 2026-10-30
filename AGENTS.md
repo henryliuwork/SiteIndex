@@ -3,7 +3,7 @@
 你是 SiteIndex 的并行工作流之一（A / B / C / D / E）。开始任何工作前：
 
 1. 读 `docs/WORKSTREAMS.md` §1，确认你是 **A（Core）/ B（UI 共享层）/ C（Desktop）/ D（UI 项目页面）/ E（真实项目验收）** 中的哪一个，以及你**只能修改的目录**
-2. 读你的任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`，按里程碑顺序做；当前一轮的任务以 `docs/plan/2026-10-29-feedback-v2.md` 为准
+2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。当前执行顺序以 `docs/plan/2026-10-29-v020-convergence.md` 为准，`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
@@ -11,12 +11,13 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 
 ## 硬性规则
 - 只改自己工作流的目录；`packages/shared/` 的修改走 WORKSTREAMS §4 契约流程（单独 `contract/*` 分支与 PR）
+- UI 页面归属：D 拥有 `OverviewPage`、`ProductsPage`、`EdmPage`、`DesignPage` 及既有 D 项目页面；B 只负责共享组件/全局样式及 `ReadmePage`、`AppSettingsPage`。其他页面如项目中心、新建向导、Skills 未因本次划分自动授权，详见 WORKSTREAMS §1/§5.1
 - 依赖方向：`ui → shared`；`cli → core → shared`；`desktop → core, shared`。ui 不得 import core/desktop；core 不得 import electron
 - 禁止原生 Node 模块（better-sqlite3、sharp 等）；新增大型依赖需在 PR 中说明
 - 路径常量一律用 `PATHS`；退出码用 `EXIT`；错误用 `SiteIndexError`
 - core 输出必须与 `fixtures/expected/` 逐字节一致（排序用 `compareKeys`）
 - **不要直接 push 到 `main`，不要合并自己的 PR**：提交 PR 后由审核者合并（WORKSTREAMS §3）
-- 每个 PR：三系统 CI 全部通过（本地通过不算）；改了依赖就同时提交 `pnpm-lock.yaml`；勾选任务清单；标题前缀 `[A]`/`[B]`/`[C]`/`[contract]`
+- 每个 PR：三系统 CI 全部通过（本地通过不算）；改了依赖就同时提交 `pnpm-lock.yaml`；勾选任务清单；标题前缀 `[A]`/`[B]`/`[C]`/`[D]`/`[contract]`/`[docs]`
 - 每个 PR 基于最新 `main` 开分支，不要叠在自己未合并的分支上
 - 小步提交，PR ≤ 600 行改动为宜；开工前 `git pull --rebase origin main`
 - **仓库公开**：禁止提交密钥、token、Webhook、真实客户或订单数据
