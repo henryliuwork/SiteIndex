@@ -513,6 +513,166 @@ function inventoryEvents(snapshot: ProjectSnapshot): InventorySummary["today"] {
   return entries.sort((a, b) => codeUnitCompare(a.sku, b.sku) || codeUnitCompare(a.type, b.type));
 }
 
+interface MergedCategoryRate {
+  category: string;
+  total: number;
+  inStock: number;
+  watched: boolean;
+  manual: boolean;
+  tokens: Set<string>;
+}
+
+interface CategoryRateCandidate {
+  category: string;
+  tokens: string[];
+  priority: number;
+  total: number;
+  inStock: number;
+  watched: boolean;
+  manual: boolean;
+}
+
+function normalizedCategoryLabel(value: string): string {
+  return value.normalize("NFKC").trim().toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizedCategoryUrl(value: string): string {
+  const trimmed = value.normalize("NFKC").trim();
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed);
+    url.search = "";
+    url.hash = "";
+    url.pathname = url.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+    return url.toString();
+  } catch {
+    return trimmed.toLowerCase().replace(/[?#].*$/, "").replace(/\/+$/, "");
+  }
+}
+
+function categoryIdentityTokens(identity: { name?: string; slug?: string; url?: string }): string[] {
+  const tokens = new Set<string>();
+  for (const value of [identity.name, identity.slug]) {
+    if (typeof value !== "string") continue;
+    const label = normalizedCategoryLabel(value);
+    if (label) tokens.add(`label:${label}`);
+  }
+  if (typeof identity.url === "string" && identity.url.trim()) {
+    const normalizedUrl = normalizedCategoryUrl(identity.url);
+    if (normalizedUrl) tokens.add(`url:${normalizedUrl}`);
+  }
+  return [...tokens].sort(codeUnitCompare);
+}
+
+function categoryFallbackKey(identity: { name?: string; slug?: string; url?: string }): string {
+  if (identity.slug?.trim()) return identity.slug.trim();
+  if (identity.url?.trim()) {
+    try {
+      const part = new URL(identity.url).pathname.split("/").filter(Boolean).at(-1);
+      if (part) return decodeURIComponent(part);
+    } catch { /* 继续使用名称作为分类键。 */ }
+  }
+  return identity.name?.trim() ?? "";
+}
+
+function mergedCategoryRates(snapshot: ProjectSnapshot): MergedCategoryRate[] {
+  const candidates: CategoryRateCandidate[] = [];
+  const add = (
+    identity: { name?: string; slug?: string; url?: string },
+    options: Omit<CategoryRateCandidate, "category" | "tokens"> & { category?: string },
+  ) => {
+    const tokens = categoryIdentityTokens(identity);
+    const category = options.category?.trim() || categoryFallbackKey(identity);
+    if (!tokens.length || !category || category === "_all") return;
+    candidates.push({ ...options, category, tokens });
+  };
+
+  for (const row of snapshot.dailySummary) {
+    if (row.date !== snapshot.asOf || !row.category.trim() || row.category === "_all") continue;
+    add({ slug: row.category }, {
+      category: row.category,
+      priority: 0,
+      total: row.total,
+      inStock: row.in_stock,
+      watched: false,
+      manual: false,
+    });
+  }
+  for (const category of snapshot.categories) {
+    add(category, {
+      category: category.slug,
+      priority: 1,
+      total: 0,
+      inStock: 0,
+      watched: false,
+      manual: category.source === "manual",
+    });
+  }
+  if (snapshot.config.categories.mode === "manual") {
+    for (const category of snapshot.config.categories.manual ?? []) {
+      add(category, {
+        category: category.slug,
+        priority: 2,
+        total: 0,
+        inStock: 0,
+        watched: false,
+        manual: true,
+      });
+    }
+  }
+  for (const category of snapshot.config.categories.watched ?? []) {
+    add(category, {
+      priority: 3,
+      total: 0,
+      inStock: 0,
+      watched: true,
+      manual: category.manual === true,
+    });
+  }
+
+  const parents = candidates.map((_, index) => index);
+  const find = (index: number): number => {
+    const parent = parents[index]!;
+    if (parent === index) return index;
+    parents[index] = find(parent);
+    return parents[index]!;
+  };
+  const union = (left: number, right: number) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parents[Math.max(leftRoot, rightRoot)] = Math.min(leftRoot, rightRoot);
+  };
+  const tokenOwners = new Map<string, number>();
+  candidates.forEach((candidate, index) => {
+    for (const token of candidate.tokens) {
+      const owner = tokenOwners.get(token);
+      if (owner === undefined) tokenOwners.set(token, index);
+      else union(owner, index);
+    }
+  });
+
+  const groups = new Map<number, CategoryRateCandidate[]>();
+  candidates.forEach((candidate, index) => {
+    const root = find(index);
+    const group = groups.get(root) ?? [];
+    group.push(candidate);
+    groups.set(root, group);
+  });
+  return [...groups.values()].map((group) => {
+    const canonical = [...group].sort((left, right) => left.priority - right.priority || codeUnitCompare(left.category, right.category))[0]!;
+    return {
+      category: canonical.category,
+      total: group.reduce((total, candidate) => total + candidate.total, 0),
+      inStock: group.reduce((total, candidate) => total + candidate.inStock, 0),
+      watched: group.some((candidate) => candidate.watched),
+      manual: group.some((candidate) => candidate.manual),
+      tokens: new Set(group.flatMap((candidate) => candidate.tokens).concat(categoryIdentityTokens({ slug: canonical.category }))),
+    };
+  }).sort((left, right) => codeUnitCompare(left.category, right.category));
+}
+
 function inventorySummary(snapshot: ProjectSnapshot, days: 14 | 30): InventorySummary {
   const dates = [...new Set(snapshot.dailySummary.map((row) => row.date))].sort(codeUnitCompare).slice(-days);
   const categories = [...new Set(snapshot.dailySummary.map((row) => row.category).filter((category) => category !== "_all"))].sort(codeUnitCompare);
@@ -526,9 +686,17 @@ function inventorySummary(snapshot: ProjectSnapshot, days: 14 | 30): InventorySu
   }));
   const totals = summaryTotals(snapshot.dailySummary, snapshot.asOf);
   const rate = totals.total ? totals.in_stock / totals.total : 0;
-  const categoryRates = snapshot.dailySummary.filter((row) => row.date === snapshot.asOf && row.category !== "_all")
-    .sort((a, b) => codeUnitCompare(a.category, b.category))
-    .map((row) => ({ category: row.category, rate: row.total ? row.in_stock / row.total : 0, total: row.total }));
+  const categoryRates = snapshot.config.categories.watched === undefined
+    ? snapshot.dailySummary.filter((row) => row.date === snapshot.asOf && row.category !== "_all")
+      .sort((a, b) => codeUnitCompare(a.category, b.category))
+      .map((row) => ({ category: row.category, rate: row.total ? row.in_stock / row.total : 0, total: row.total }))
+    : mergedCategoryRates(snapshot).map((row) => ({
+      category: row.category,
+      rate: row.total ? row.inStock / row.total : 0,
+      total: row.total,
+      watched: row.watched,
+      manual: row.manual,
+    }));
   return {
     as_of: snapshot.asOf,
     kpis: [
@@ -1270,10 +1438,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const snapshot = await load(resolve(id));
       const filters = query.filters;
       const todaySkus = new Set(snapshot.events.filter((event) => event.date === snapshot.asOf).map((event) => event.sku));
+      const watchedCategoryTokens = filters?.watched_only
+        ? new Set(mergedCategoryRates(snapshot).filter((category) => category.watched).flatMap((category) => [...category.tokens]))
+        : null;
       const rows = snapshot.skuStock.filter((row) => {
         if (filters?.status === "today" && !todaySkus.has(row.sku)) return false;
         if (filters?.status && filters.status !== "today" && row.stock_status !== filters.status) return false;
         if (filters?.category && row.category !== filters.category) return false;
+        if (watchedCategoryTokens && !categoryIdentityTokens({ slug: row.category }).some((token) => watchedCategoryTokens.has(token))) return false;
         return true;
       });
       return paginate(rows, query, (row) => [row.sku, row.title, row.variant_title, row.category], "sku", (row) => row.sku);
