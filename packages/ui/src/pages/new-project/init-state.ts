@@ -30,6 +30,17 @@ export function nextInitProgressPercent(current: number, pct: number | null): nu
   return Math.min(100, Math.max(0, pct));
 }
 
+function reportedInitSteps(result: JobResult): Set<InitStepKey> {
+  return new Set((result.steps ?? [])
+    .map((step) => initStepKey(step.key))
+    .filter((key): key is InitStepKey => key !== undefined));
+}
+
+export function finalInitProgressPercent(result: JobResult): number {
+  const reportedSteps = reportedInitSteps(result);
+  return (reportedSteps.size / INIT_STEPS.length) * 100;
+}
+
 export function applyInitResult(current: InitStepStates, result: JobResult): InitStepStates {
   const next = { ...current };
   const received = new Set<InitStepKey>();
@@ -69,6 +80,10 @@ export function unresolvedInitErrors(result: JobResult, states: InitStepStates):
 export function getInitCompletionStatus(result: JobResult | null, states: InitStepStates): InitCompletionStatus {
   if (!result) return "running";
 
+  const reportedSteps = reportedInitSteps(result);
+  const allResolved = INIT_STEPS.every((key) => states[key]?.status === "ok" || states[key]?.status === "failed" || states[key]?.status === "skipped");
+  if (!allResolved || INIT_STEPS.some((key) => !reportedSteps.has(key))) return "incomplete";
+
   const failedStepKeys = (result.steps ?? []).flatMap((step) => {
     const key = initStepKey(step.key);
     return key && step.status === "failed" ? [key] : [];
@@ -79,8 +94,7 @@ export function getInitCompletionStatus(result: JobResult | null, states: InitSt
     || ((result.status === "failed" || result.status === "partial") && !allOriginalFailuresRecovered);
   if (hasFailure) return "failed";
 
-  const allResolved = INIT_STEPS.every((key) => states[key]?.status === "ok" || states[key]?.status === "skipped");
-  if (!allResolved || result.status === "skipped") return "incomplete";
+  if (result.status === "skipped") return "incomplete";
   return INIT_STEPS.some((key) => states[key]?.status === "skipped") ? "skipped" : "success";
 }
 

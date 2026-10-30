@@ -7,7 +7,7 @@ import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary } from "../project-queries";
 import { ApiErrorNotice, Button, Chip } from "../components";
 import { useWizardDraft } from "./wizard-state";
-import { applyInitProgress, applyInitResult, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
+import { applyInitProgress, applyInitResult, finalInitProgressPercent, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
 
 const steps = [
   { path: "/new/url", label: "网址" },
@@ -143,7 +143,7 @@ export function NewProjectWizardPage() {
       if (result.runId === createdRunId) {
         setFinished(result);
         setStepStates((current) => applyInitResult(current, result));
-        setProgressPct(100);
+        setProgressPct(finalInitProgressPercent(result));
       }
       const retryKey = retryRunIds.current.get(result.runId);
       if (retryKey) {
