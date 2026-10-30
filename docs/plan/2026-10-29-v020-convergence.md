@@ -198,3 +198,49 @@
 3. A rebase #176，确认三个系统 CI 全绿后才合并。
 4. 进入 A-2 → C IPC → D 真数据预览的能力链；A0b 需等待 D mock 兼容性前置。
 5. E 从 G3 候选包重新验收；未有候选包时不得宣告 v0.2.0 完成。
+
+## 12. 10 月 30 日第三轮交接（以 GitHub 状态为准）
+
+> 本节更新 §11 的合并前快照，不改变 A/B/C/D/E 原有目录边界。当前 `main` 为 `ed2a79a450`（已含 #159、#178、#179、#180），最新公开 Release 仍为 v0.1.4；以下 5 个 PR 均 open、mergeable。记录的是审查时点，实际动手前仍需重新 `git fetch` 核实。
+
+| 工作流 | PR | 验证状态 | 合并依赖 / 后续 |
+|---|---|---|---|
+| C | [#181](https://github.com/henryliuwork/SiteIndex/pull/181) pending-aware IPC 测试 | 三系统 CI 全绿 | **优先合并**，是 #176 的解锁条件 |
+| D | [#182](https://github.com/henryliuwork/SiteIndex/pull/182) 库存范围 mock 兼容 | 三系统 CI 全绿 | 可独立合并；为 A0b 前置，不代表 Core 已支持 60/90/全部 |
+| B | [#183](https://github.com/henryliuwork/SiteIndex/pull/183) 共享 tab/tabpanel | 三系统 CI 全绿 | 可独立合并；D1 本地分支需随后 rebase |
+| B | [#184](https://github.com/henryliuwork/SiteIndex/pull/184) 10k SKU 基准记录 | 三系统 CI 全绿 | 可独立合并；#88 浏览器 mock 满足，#93 安装包回归仍待验收 |
+| A | [#176](https://github.com/henryliuwork/SiteIndex/pull/176) SKU 预览契约 | 原 CI 红（Desktop 旧断言） | **先 #181 合并 → A rebase #176 → 新 CI 全绿后才能合并** |
+
+### 12.1 当前最短合并链
+
+1. 审核者先合并 #181；#182、#183、#184 独立审核合并，注意每次 main 变化后的冲突与 CI 状态。
+2. A 在 #181 合并后 rebase #176 到最新 main，重跑 `pnpm typecheck`、完整测试及三系统 CI；全部通过后审核者合并 #176。
+3. D 等 #183 合并，把本地 `codex/d1-project-tabpanel-a11y`（当前提交 `ae89cc9`）rebase 到最新 main，验证并提交页面 PR；不要直接从其他 Agent 分支合并代码。
+4. A 的 A-2 Core 分组引擎依赖 #176；C2 的真 IPC handler 依赖 #176 + A-2 Core 可调用实现；D 的远端真实分组预览依赖 C2。
+5. A0b 库存范围契约必须等 #182 的 mock 兼容进入 main，并确认 Core 范围计算准备就绪；不要仅扩类型就让真实 UI 传 60/90/全部。
+
+### 12.2 A 的下一轮
+
+- 第一项仅处理 #176 的 rebase、CI 与合并，不改其他工作流目录。
+- #176 合并后开 A-2 独立 Core PR：suffix、separator、regex 父 SKU 推导、稳定排序、冲突/非法规则/未匹配测试、`sku.previewGrouping` Core 返回；父级不产生额外库存实体、价格/在线率不虚构。范围较大时先规则引擎 PR，再服务/视图 PR。
+- A-4 关注分类、A-5 历史范围、A-6 价格历史、A-7 SEO 规则继续按 §3 顺序小步推进。A0b 与 A-5 协调，别与 #176 混在一个契约 PR。
+
+### 12.3 B 与 D 的 #177 分工
+
+- #183 提供 `ProjectTabPanel`、`ProjectHeader hasTabPanel` 与稳定 ID；B 已处理自身 README 和设置页。D1 必须等 #183 合并后再测，不能将尚未合并的组件当作 main 已支持。
+- D 仅接入其当前明确拥有的 Inventory、SEO、Content、Runs、Project Settings Config/Categories/Files，并验证每一页 tab/panel 关联与焦点返回。
+- **待协调者确认的归属建议**：Overview、Products、EDM、Design 都属于“项目业务页面”，建议明确归 **D**；B 保留共享组件/App 路由、README/AppSettings。确认后单独更新 `docs/WORKSTREAMS.md` 与 `AGENTS.md`，再由 D 补齐这四页。**确认前不要跨权限编辑。**
+- #182 合并后 D 可准备 A0b 的类型安全对接；真实 Desktop IPC 在 A-5 未就绪前保持旧参数 30，不给用户错误印象“60/90/全部已生效”。
+
+### 12.4 C 的下一轮
+
+- #181 合并完成后暂停再改 IPC 测试，避免反复与 A 的契约 PR 发生冲突。
+- 等 #176 + A-2 合并后，C 才实现 `sku.previewGrouping` 的 preload 与 handler，并做成功/异常/完整性测试；先把 handler 实现 PR 合并，再以独立 `contract/*` PR 清除 `PENDING_HANDLERS`。
+- 在等待 A 时，可以只读调查 [#92](https://github.com/henryliuwork/SiteIndex/issues/92) 的安装包冷启动瓶颈，和 [#93](https://github.com/henryliuwork/SiteIndex/issues/93) 的 packaged 冷加载证据；不得把 source-build 2.1 秒与正式安装包性能混为一谈。需修复则新开 C 所属小 PR。
+
+### 12.5 E 的下一轮
+
+- 维持 #163–#174 与 #177 的代码/CI/合成包/正式候选包四列证据；#163 已重开，合成包成功不是正式 v0.2.0 验收。
+- #183 合并且 D1 页面 PR 合并后，补做 #177 的路由标签/tabpanel 语义与 NVDA/Narrator 检查；在此之前保持 open。
+- #184 的浏览器 mock 首屏 722–875ms 满足 #88 中“10k SKU mock 首屏 <1s”的验收范围，但库存页首批表格 1.36–1.48s、Electron source-build 冷启动 2.09–2.15s 是不同指标，不能用一个数字替代全部。#93 仍需安装包级复测。
+- 暂无正式 v0.2.0 候选包，不提前关闭真实项目问题；准备安装版可复现步骤、结果格式与脱敏规则即可。
