@@ -51,7 +51,9 @@
 
 ## M3 · 打磨
 - [x] 逐页对照画板修正细节；1100 宽窗口下布局不溢出（侧栏折叠）— [PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)、[PR #60](https://github.com/henryliuwork/SiteIndex/pull/60)、[PR #61](https://github.com/henryliuwork/SiteIndex/pull/61)、[PR #62](https://github.com/henryliuwork/SiteIndex/pull/62)、[PR #63](https://github.com/henryliuwork/SiteIndex/pull/63)、[PR #64](https://github.com/henryliuwork/SiteIndex/pull/64)、[PR #65](https://github.com/henryliuwork/SiteIndex/pull/65)、[PR #66](https://github.com/henryliuwork/SiteIndex/pull/66)、[PR #67](https://github.com/henryliuwork/SiteIndex/pull/67)、[PR #68](https://github.com/henryliuwork/SiteIndex/pull/68)
-- [ ] 键盘可达与 aria-label；对比度检查 — 待 [issue #81](https://github.com/henryliuwork/SiteIndex/issues/81) 合并后完成全页复核
+- [x] 共享组件键盘焦点、Dialog/Drawer 焦点返回与文字对比度 — [PR #179](https://github.com/henryliuwork/SiteIndex/pull/179)
+- [x] Tabs / ProjectHeader 稳定 tab 与 panel ID；README、软件设置面板建立 aria-controls / aria-labelledby 关系 — 本 PR（#177 共享层）
+- [ ] 项目数据页接入 ProjectTabPanel；页面清单与归属待按 [issue #177](https://github.com/henryliuwork/SiteIndex/issues/177) 协调，不跨 D 文件边界
 - [ ] 性能：1 万 SKU mock 下任何操作 < 200ms；首屏 < 1 秒 — 交互基准待 [PR #69](https://github.com/henryliuwork/SiteIndex/pull/69) 合并；首屏指标待 [issue #88](https://github.com/henryliuwork/SiteIndex/issues/88)
 - [ ] 与 C 联调：真实 IPC 下全部页面可用（发现契约不一致 → 开 contract PR）— [issue #82](https://github.com/henryliuwork/SiteIndex/issues/82)，等待 C 发布 v0.1.0-alpha.1 安装包
 - [ ] 运行页系统计划任务 / 软件常驻状态与授权重新注册 — [PR #72](https://github.com/henryliuwork/SiteIndex/pull/72) 尚未合并

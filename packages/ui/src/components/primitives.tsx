@@ -59,6 +59,20 @@ interface ChoiceControlProps<T extends string> {
   ariaLabel?: string;
 }
 
+interface TabsProps<T extends string> extends ChoiceControlProps<T> {
+  tabIdPrefix: string;
+  panelIdPrefix?: string;
+}
+
+export function TabPanel({ id, labelledBy, children, className = "" }: {
+  id: string;
+  labelledBy: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div id={id} role="tabpanel" aria-labelledby={labelledBy} tabIndex={0} className={"si-tab-panel" + (className ? " " + className : "")}>{children}</div>;
+}
+
 export function Segmented<T extends string>({ value, options, onChange, ariaLabel = "视图切换" }: ChoiceControlProps<T>) {
   return (
     <div className="si-segmented" role="group" aria-label={ariaLabel}>
@@ -71,7 +85,19 @@ export function SubTabs<T extends string>(props: ChoiceControlProps<T>) {
   return <div className="si-subtabs"><Segmented {...props} ariaLabel={props.ariaLabel ?? "设置子页"} /></div>;
 }
 
-export function Tabs<T extends string>({ value, options, onChange, ariaLabel = "页面标签" }: ChoiceControlProps<T>) {
+export function Tabs<T extends string>({ value, options, onChange, ariaLabel = "页面标签", tabIdPrefix, panelIdPrefix }: TabsProps<T>) {
+  const focusSelectedTab = (nextValue: T, attempt = 0) => {
+    const tablist = Array.from(document.querySelectorAll<HTMLElement>('[role="tablist"]'))
+      .find((element) => element.getAttribute("aria-label") === ariaLabel);
+    const nextTab = Array.from(tablist?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])
+      .find((element) => element.dataset.tabValue === nextValue && element.getAttribute("aria-selected") === "true");
+    if (nextTab) {
+      nextTab.focus();
+    } else if (attempt < 30) {
+      window.requestAnimationFrame(() => focusSelectedTab(nextValue, attempt + 1));
+    }
+  };
+
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
     const enabledOptions = options.flatMap((option, index) => option.disabled ? [] : [{ option, index }]);
     if (enabledOptions.length === 0) return;
@@ -100,18 +126,7 @@ export function Tabs<T extends string>({ value, options, onChange, ariaLabel = "
     if (!target) return;
     const nextValue = target.option.value;
     onChange(nextValue);
-    const focusSelectedTab = (attempt = 0) => {
-      const tablist = Array.from(document.querySelectorAll<HTMLElement>('[role="tablist"]'))
-        .find((element) => element.getAttribute("aria-label") === ariaLabel);
-      const nextTab = Array.from(tablist?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])
-        .find((element) => element.dataset.tabValue === nextValue && element.getAttribute("aria-selected") === "true");
-      if (nextTab) {
-        nextTab.focus();
-      } else if (attempt < 30) {
-        window.requestAnimationFrame(() => focusSelectedTab(attempt + 1));
-      }
-    };
-    window.requestAnimationFrame(() => focusSelectedTab());
+    window.requestAnimationFrame(() => focusSelectedTab(nextValue));
   };
 
   return (
@@ -120,12 +135,17 @@ export function Tabs<T extends string>({ value, options, onChange, ariaLabel = "
         key={option.value}
         type="button"
         role="tab"
+        id={`${tabIdPrefix}-${option.value}`}
+        aria-controls={panelIdPrefix && value === option.value ? `${panelIdPrefix}-${option.value}` : undefined}
         aria-selected={value === option.value}
         tabIndex={value === option.value ? 0 : -1}
         disabled={option.disabled}
         data-tab-value={option.value}
         className={value === option.value ? "active" : ""}
-        onClick={() => onChange(option.value)}
+        onClick={() => {
+          onChange(option.value);
+          window.requestAnimationFrame(() => focusSelectedTab(option.value));
+        }}
         onKeyDown={(event) => handleKeyDown(event, index)}
       >{option.label}</button>)}
     </div>

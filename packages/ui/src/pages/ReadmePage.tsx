@@ -5,7 +5,7 @@ import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
+import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
 const autoDescriptions: Record<string, string> = {
   "task-routing": "7 个任务 → _agent/skills/",
   "data-guide": "index/ 各表说明与写入规则",
@@ -143,13 +143,15 @@ export function ReadmePage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 README 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-readme-page">
-    <ProjectHeader project={project} activeTab="readme" subtitle={`README.md · ${data ? latestUpdate(data) : "—"}`} actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />
+    <ProjectHeader project={project} activeTab="readme" hasTabPanel subtitle={`README.md · ${data ? latestUpdate(data) : "—"}`} actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />
+    <ProjectTabPanel projectId={project.id} tab="readme">
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
     {readmeQuery.isLoading ? <div className="si-page-loading" role="status">正在加载 README…</div> : readmeQuery.isError || !data ? <ApiErrorNotice label="README 内容加载失败。" error={readmeQuery.error} onRetry={() => void readmeQuery.refetch()} /> : <div className="si-readme-layout">
       <UserBlocksCard blocks={draft} savedBlocks={data.user_blocks} onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))} onReset={() => { setDraft(data.user_blocks); setEditingRules(false); }} onSave={() => void onSave()} saving={saving} editingRules={editingRules} onEditRules={() => setEditingRules(true)} onCancelRules={() => { setDraft((current) => ({ ...current, rules: data.user_blocks.rules })); setEditingRules(false); }} />
       <AutoBlocksCard data={data} />
     </div>}
+    </ProjectTabPanel>
   </div>;
 }
 import "./readme/page.css";
