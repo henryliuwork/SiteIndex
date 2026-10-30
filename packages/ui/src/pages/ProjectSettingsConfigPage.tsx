@@ -1,22 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { FeedInspectResult, SeoRule, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
+import { configSectionLinks, isConfigSectionId, scrollToConfigSection, type ConfigSectionId } from "./project-settings-config/section-navigation";
 import { invalidateInventoryForCategoryChange } from "./project-settings-config/inventory-cache";
 import "./project-settings-config/page.css";
 
 const settingsTabs = [
   { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
 ] as const;
-const sectionLinks = [
-  ["basic", "基本信息"], ["brand", "品牌"], ["source", "数据源"], ["crawl", "抓取"], ["blog-recognition", "博客识别"], ["sku-grouping", "父子 SKU"], ["watched-categories", "关注分类"], ["seo", "SEO"], ["edm", "EDM"], ["integrations", "集成与预留数据源"],
-] as const;
-
 function TextField({ label, value, onChange, mono = false, placeholder, type = "text" }: {
   label: string; value: string; onChange: (value: string) => void; mono?: boolean; placeholder?: string; type?: string;
 }) {
@@ -35,8 +32,8 @@ function TextAreaField({ label, value, onChange, mono = false, rows = 3 }: {
   return <label className="si-config-field"><span>{label}</span><textarea className={mono ? "si-config-textarea si-config-mono" : "si-config-textarea"} rows={rows} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
-function ConfigCard({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-  return <section className="si-config-card" id={id}><h2>{title}</h2>{children}</section>;
+function ConfigCard({ id, title, children }: { id: ConfigSectionId; title: string; children: ReactNode }) {
+  return <section className="si-config-card" id={id} aria-labelledby={`${id}-heading`}><h2 id={`${id}-heading`}>{title}</h2>{children}</section>;
 }
 
 function SettingsNav({ id, value }: { id: string; value: typeof settingsTabs[number]["value"] }) {
@@ -58,6 +55,8 @@ function sameCategory(left: WatchedCategory, right: WatchedCategory): boolean {
 
 export function ProjectSettingsConfigPage() {
   const { id = "kingsyard" } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const requestedSection = searchParams.get("section");
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const [draft, setDraft] = useState<SiteConfig | null>(null);
@@ -85,7 +84,8 @@ export function ProjectSettingsConfigPage() {
   const [watchedName, setWatchedName] = useState("");
   const [watchedSlug, setWatchedSlug] = useState("");
   const [watchedUrl, setWatchedUrl] = useState("");
-  const didScrollToAnchor = useRef(false);
+  const [activeSection, setActiveSection] = useState<ConfigSectionId>("basic");
+  const handledRequestedSection = useRef<string | null>(null);
 
   useEffect(() => {
     if (!projectQuery.data) return;
@@ -94,13 +94,22 @@ export function ProjectSettingsConfigPage() {
   }, [projectQuery.data]);
 
   useEffect(() => {
-    if (!draft || didScrollToAnchor.current) return;
-    didScrollToAnchor.current = true;
-    const target = window.location.hash.split("#").at(-1);
-    if (target && target !== "/p/" + id + "/settings/config") {
-      requestAnimationFrame(() => document.getElementById(target)?.scrollIntoView({ block: "start" }));
+    if (!draft) return;
+    if (!isConfigSectionId(requestedSection)) {
+      handledRequestedSection.current = null;
+      return;
     }
-  }, [draft, id]);
+    if (handledRequestedSection.current === requestedSection) return;
+    handledRequestedSection.current = requestedSection;
+    setActiveSection(requestedSection);
+    const frame = window.requestAnimationFrame(() => scrollToConfigSection(requestedSection));
+    return () => window.cancelAnimationFrame(frame);
+  }, [draft, requestedSection]);
+
+  const selectSection = (sectionId: ConfigSectionId) => {
+    setActiveSection(sectionId);
+    scrollToConfigSection(sectionId);
+  };
 
   const patch = <K extends keyof SiteConfig>(key: K, value: SiteConfig[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
   const patchBrand = <K extends keyof SiteConfig["brand"]>(key: K, value: SiteConfig["brand"][K]) => setDraft((current) => current ? { ...current, brand: { ...current.brand, [key]: value } } : current);
@@ -210,7 +219,7 @@ export function ProjectSettingsConfigPage() {
     <SettingsNav id={id} value="config" />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-config-layout">
-      <nav className="si-config-outline" aria-label="配置目录">{sectionLinks.map(([target, label]) => <a key={target} href={"#" + target}>{label}</a>)}</nav>
+      <nav className="si-config-outline" aria-label="配置目录">{configSectionLinks.map(([target, label]) => <button key={target} type="button" aria-controls={target} aria-current={activeSection === target ? "location" : undefined} className={activeSection === target ? "active" : undefined} onClick={() => selectSection(target)}>{label}</button>)}</nav>
       <div className="si-config-sections">
         <ConfigCard id="basic" title="基本信息"><div className="si-config-grid si-config-grid-3">
           <TextField label="域名" value={draft.domain} mono onChange={(value) => patch("domain", value)} />
