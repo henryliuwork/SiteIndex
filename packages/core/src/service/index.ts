@@ -76,6 +76,12 @@ import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
 import { previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
 import { selectInventoryDates, type InventorySummaryRange } from "../inventory/history-range";
+import {
+  assertSiteNotRegistered,
+  normalizeSiteDomain,
+  withSiteCreateLock,
+  type RegisteredProjectPath,
+} from "../projects/create-guard";
 import { runDaily } from "../jobs/daily";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
@@ -98,6 +104,8 @@ export interface CoreServiceContext {
   resolveProject(id: ProjectId): string;
   deviceId: string;
   cacheDir: string;
+  /** Desktop supplies the current projects_root + extra_projects catalog for authoritative create checks. */
+  listRegisteredProjects?: () => Promise<readonly RegisteredProjectPath[]>;
   deviceName?: string;
   templateDir?: string;
   /** Path to the caller-selected Chrome/Edge executable; core never discovers a system browser. */
@@ -1413,9 +1421,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     inspectFeed: inspectFeeds,
     create: async (input: CreateProjectInput) => {
       const detected = await detectSite(input.url);
-      const created = await createProjectFiles(input, detected, ctx.templateDir);
-      invalidate(created.path);
-      return { id: created.id, runId: `${localDate(created.config.timezone)}-init` };
+      const domain = normalizeSiteDomain(detected.final_url);
+      if (!domain) throw siteError("CONFIG_INVALID", "无法识别网站域名，暂不能创建项目。", detected.final_url);
+      return withSiteCreateLock(domain, async () => {
+        await assertSiteNotRegistered(domain, input.projects_root, ctx.listRegisteredProjects);
+        const created = await createProjectFiles(input, detected, ctx.templateDir);
+        invalidate(created.path);
+        return { id: created.id, runId: `${localDate(created.config.timezone)}-init` };
+      });
     },
   };
 

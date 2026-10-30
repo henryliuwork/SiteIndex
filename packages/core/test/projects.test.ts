@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { INIT_STEPS, PATHS, type CreateProjectInput, type DetectResult, type JobProgress, type SiteConfig } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createCoreService } from "../src/service";
+import { createCoreService, type CoreServiceContext } from "../src/service";
 import { createProjectFiles } from "../src/projects/create";
 import { readJsonl } from "../src/io/jsonl";
 
@@ -40,12 +40,13 @@ function mockWebsite(initPages = false): void {
   }));
 }
 
-function makeService() {
+function makeService(listRegisteredProjects?: CoreServiceContext["listRegisteredProjects"]) {
   return createCoreService({
     resolveProject: () => "",
     deviceId: "test-device",
     deviceName: "Test Device",
     cacheDir: path.join(os.tmpdir(), "siteindex-test-cache"),
+    ...(listRegisteredProjects ? { listRegisteredProjects } : {}),
   });
 }
 
@@ -127,6 +128,145 @@ describe("project service", () => {
     expect(result.samples.length).toBeGreaterThan(0);
   });
 
+  it("rejects a registered domain after normalizing scheme, www, case and path", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-duplicate-domain-"));
+    TEMP_DIRS.push(root);
+    const registeredPath = path.join(root, "registered-outside-root");
+    const registeredSitePath = path.join(registeredPath, PATHS.site);
+    await mkdir(path.dirname(registeredSitePath), { recursive: true });
+    const registeredSite = '{"domain":"HTTPS://WWW.Example.com/catalog/"}\n';
+    await writeFile(registeredSitePath, registeredSite, "utf8");
+    const projectsRoot = path.join(root, "new-projects");
+    const api = makeService(async () => [{ id: "existing-store", path: registeredPath }]);
+
+    await expect(api.projects.create({
+      ...createInput(projectsRoot),
+      url: "http://example.COM/",
+      folder_name: "second-store",
+    })).rejects.toMatchObject({
+      code: "FOLDER_EXISTS",
+      message: "这个网站已经登记在项目“existing-store”中，不能重复创建。请打开现有项目。",
+    });
+
+    expect(await readFile(registeredSitePath, "utf8")).toBe(registeredSite);
+    await expect(readdir(projectsRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("allows a distinct subdomain while checking registered extra projects", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-distinct-subdomain-"));
+    TEMP_DIRS.push(root);
+    const registeredPath = path.join(root, "registered-outside-root");
+    const registeredSitePath = path.join(registeredPath, PATHS.site);
+    await mkdir(path.dirname(registeredSitePath), { recursive: true });
+    await writeFile(registeredSitePath, '{"domain":"shop.example.com"}\n', "utf8");
+    const projectsRoot = path.join(root, "new-projects");
+    const api = makeService(async () => [{ id: "shop", path: registeredPath }]);
+
+    const created = await api.projects.create({
+      ...createInput(projectsRoot),
+      url: "https://example.com",
+      folder_name: "example-main-site",
+    });
+
+    expect(created.id).toBe("example-main-site");
+    expect(await readFile(path.join(projectsRoot, created.id, PATHS.site), "utf8")).toContain('"domain": "example.com"');
+  });
+
+  it("checks the project root even when the Desktop callback only lists extra projects", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-root-registration-check-"));
+    TEMP_DIRS.push(root);
+    const projectsRoot = path.join(root, "projects");
+    const registeredPath = path.join(projectsRoot, "existing-main-store");
+    const sitePath = path.join(registeredPath, PATHS.site);
+    await mkdir(path.dirname(sitePath), { recursive: true });
+    const originalSite = '{"domain":"https://www.example.com/catalog/"}\n';
+    await writeFile(sitePath, originalSite, "utf8");
+    const extraProjectPath = path.join(root, "desktop-extra-project");
+    await mkdir(path.dirname(path.join(extraProjectPath, PATHS.site)), { recursive: true });
+    await writeFile(path.join(extraProjectPath, PATHS.site), '{"domain":"other.example"}\n', "utf8");
+    const api = makeService(async () => [{ id: "extra-project", path: extraProjectPath }]);
+
+    await expect(api.projects.create({
+      ...createInput(projectsRoot),
+      folder_name: "second-example-store",
+    })).rejects.toMatchObject({
+      code: "FOLDER_EXISTS",
+      message: "这个网站已经登记在项目“existing-main-store”中，不能重复创建。请打开现有项目。",
+    });
+
+    expect(await readFile(sitePath, "utf8")).toBe(originalSite);
+    await expect(readdir(path.join(projectsRoot, "second-example-store"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses an existing SiteIndex directory without changing its data", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-no-overwrite-existing-project-"));
+    TEMP_DIRS.push(root);
+    const projectPath = path.join(root, "example-shop");
+    const sitePath = path.join(projectPath, PATHS.site);
+    const existingRowsPath = path.join(projectPath, PATHS.skus);
+    await mkdir(path.dirname(existingRowsPath), { recursive: true });
+    const originalSite = '{"domain":"existing.example","brand":{"name":"Keep me"}}\n';
+    const originalRows = '{"sku":"KEEP-1","status":"active"}\n';
+    const originalReadme = "# Existing SiteIndex project\n";
+    await Promise.all([
+      writeFile(sitePath, originalSite, "utf8"),
+      writeFile(existingRowsPath, originalRows, "utf8"),
+      writeFile(path.join(projectPath, PATHS.readme), originalReadme, "utf8"),
+    ]);
+
+    await expect(makeService().projects.create(createInput(root))).rejects.toMatchObject({
+      code: "FOLDER_EXISTS",
+      message: "目标目录已经是 SiteIndex 项目。为保护已有项目，本次没有修改目录内容。",
+    });
+
+    expect(await readFile(sitePath, "utf8")).toBe(originalSite);
+    expect(await readFile(existingRowsPath, "utf8")).toBe(originalRows);
+    expect(await readFile(path.join(projectPath, PATHS.readme), "utf8")).toBe(originalReadme);
+    expect((await readdir(projectPath)).sort()).toEqual([PATHS.readme, PATHS.index.split(path.sep)[0]].sort());
+  });
+
+  it("allows only one concurrent create for the same canonical domain", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-concurrent-create-"));
+    TEMP_DIRS.push(root);
+    const api = makeService();
+    const results = await Promise.allSettled([
+      api.projects.create({ ...createInput(root), folder_name: "first-store", url: "https://example.com" }),
+      api.projects.create({ ...createInput(root), folder_name: "second-store", url: "http://www.example.com/" }),
+    ]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({ status: "rejected", reason: { code: expect.stringMatching(/^(FOLDER_EXISTS|LOCKED)$/u) } });
+    expect((await readdir(root)).filter((entry) => entry.endsWith("-store"))).toHaveLength(1);
+  });
+
+  it("allows only one concurrent create for the same destination path", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-concurrent-create-path-"));
+    TEMP_DIRS.push(root);
+    const api = makeService();
+    const results = await Promise.allSettled([
+      api.projects.create({ ...createInput(root), folder_name: "shared-folder", url: "https://example.com" }),
+      api.projects.create({ ...createInput(root), folder_name: "shared-folder", url: "https://other.example" }),
+    ]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({ status: "rejected", reason: { code: "FOLDER_EXISTS" } });
+    expect(await readdir(root)).toEqual(["shared-folder"]);
+    expect(await readFile(path.join(root, "shared-folder", PATHS.site), "utf8"))
+      .toMatch(/"domain": "(example\.com|other\.example)"/u);
+  });
+
   it("creates files immediately, then completes the init job with progress for every step", async () => {
     mockWebsite(true);
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-create-"));
@@ -198,12 +338,17 @@ describe("project service", () => {
     await mkdir(path.join(projectPath, "custom"), { recursive: true });
     await writeFile(path.join(projectPath, PATHS.aboutFile), "根目录旧说明\n");
     await writeFile(path.join(projectPath, "custom", PATHS.aboutFile), "自定义目录旧说明\n");
+    await writeFile(path.join(projectPath, "custom", "notes.txt"), "自定义内容保持不变\n");
+    await writeFile(path.join(projectPath, "user-file.txt"), "根目录用户文件保持不变\n");
     const originalReadme = '# 用户 README\n\n<!-- siteindex:auto:start id="folder-map" -->\n旧内容\n<!-- siteindex:auto:end id="folder-map" -->\n';
     await writeFile(path.join(projectPath, PATHS.readme), originalReadme);
 
-    await makeService().projects.create(createInput(root));
+    await expect(makeService().projects.create(createInput(root))).resolves.toMatchObject({ id: "example-shop" });
     expect(await readFile(path.join(projectPath, PATHS.aboutFile), "utf8")).toBe("根目录旧说明\n");
     expect(await readFile(path.join(projectPath, "custom", PATHS.aboutFile), "utf8")).toBe("自定义目录旧说明\n");
+    expect(await readFile(path.join(projectPath, "custom", "notes.txt"), "utf8")).toBe("自定义内容保持不变\n");
+    expect(await readFile(path.join(projectPath, "user-file.txt"), "utf8")).toBe("根目录用户文件保持不变\n");
     expect(await readFile(path.join(projectPath, PATHS.readme), "utf8")).toBe(originalReadme);
+    expect(await readdir(projectPath)).toContain(PATHS.index.split(path.sep)[0]);
   }, 60_000);
 });
