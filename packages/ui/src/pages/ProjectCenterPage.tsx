@@ -8,6 +8,7 @@ import type { Kpi, ListQuery, ProjectSummary, RunLog } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, KpiCard } from "../components";
+import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
 
 const jobNames: Record<string, string> = {
   daily: "每日同步", weekly: "每周同步", monthly: "每月归档", validate: "数据校验",
@@ -71,13 +72,18 @@ function RunDetail({ run }: { run: RunLog }) {
 }
 
 function ProjectCard({ project, onOpenFolder }: { project: ProjectSummary; onOpenFolder: (path: string) => void }) {
+  const detailQuery = useQuery({ queryKey: projectQueryKeys.detail(project.id), queryFn: () => api.projects.get(project.id) });
   const warning = projectWarning(project);
+  const feedStatus = feedConfigurationStatus(detailQuery.data?.config.crawl.feed_url);
+  const warningAction = projectWarningAction(project, feedStatus);
+  const showWarning = warning !== null || warningAction === "feed";
+  const warningLines = warning?.lines ?? ["尚未配置有效的商品 Feed。"];
   const chips = [
     ["到货", project.today.restock], ["缺货", project.today.oos], ["调价", project.today.price],
     ["上新", project.today.new], ["移除", project.today.removed],
   ] as const;
   return (
-    <article className={"si-project-card" + (warning ? " is-warning" : "")}>
+    <article className={"si-project-card" + (showWarning ? " is-warning" : "")}>
       <div className="si-project-card-heading">
         <div className="si-project-heading-copy">
           <Link to={"/p/" + project.id + "/inventory"} className="si-project-title">{project.name}</Link>
@@ -85,10 +91,12 @@ function ProjectCard({ project, onOpenFolder }: { project: ProjectSummary; onOpe
         </div>
         <Chip tone={warning?.tone ?? (project.sync.state === "ok" ? "ok" : "neutral")}>{statusLabel(project)}</Chip>
       </div>
-      {warning && <div className={"si-project-warning si-project-warning-" + warning.tone}>
-        <div>{warning.lines.map((line) => <span key={line}>{line}</span>)}</div>
+      {showWarning && <div className={"si-project-warning si-project-warning-" + (warning?.tone ?? "warn")}>
+        <div>{warningLines.map((line) => <span key={line}>{line}</span>)}{detailQuery.isError && <small>{apiErrorMessage(detailQuery.error, "暂时无法读取 Feed 配置。")}</small>}</div>
         <div className="si-project-warning-actions">
-          <Link to={"/p/" + project.id + "/settings/config"}>填写 feed</Link>
+          {warningAction === "feed" && <Link to={"/p/" + project.id + "/settings/config"}>填写 feed</Link>}
+          {warningAction === "runs" && <Link to={"/p/" + project.id + "/runs"}>{project.sync.state === "never" ? "立即同步" : project.sync.state === "failed" || project.sync.state === "partial" ? "查看运行问题" : "查看运行记录"}</Link>}
+          {warningAction === "project" && <Link to={"/p/" + project.id}>查看项目</Link>}
           <button type="button" onClick={() => onOpenFolder(project.path)}>打开文件夹</button>
         </div>
       </div>}
