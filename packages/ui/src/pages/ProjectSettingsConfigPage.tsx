@@ -5,7 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import type { FeedInspectResult, SeoRule, SiteConfig, SkuGroupingRule, SkuStockView, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader } from "../components";
+import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
 import "./project-settings-config/page.css";
 
 const settingsTabs = [
@@ -236,7 +236,8 @@ export function ProjectSettingsConfigPage() {
 
   return <DialogPrimitive.Root open={jsonOpen} onOpenChange={(open) => { if (open) openJson(); else setJsonOpen(false); }}>
   <div className="si-page si-project-config-page">
-    <ProjectHeader project={project} activeTab="settings" subtitle="index/site.json" actions={<><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></>} />
+    <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle="index/site.json" actions={<><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></>} />
+    <ProjectTabPanel projectId={project.id} tab="settings">
     <SettingsNav id={id} value="config" />
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-config-layout">
@@ -368,6 +369,7 @@ export function ProjectSettingsConfigPage() {
         ].map(([title, detail]) => <div className="si-config-reserved" key={title}><strong>{title}</strong><span>{detail}</span><Chip tone="neutral">预留 · 未连接</Chip></div>)}</div></ConfigCard>
       </div>
     </div>
+    </ProjectTabPanel>
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="si-config-json-overlay" />
       <DialogPrimitive.Content className="si-config-json-dialog" onOpenAutoFocus={(event) => { event.preventDefault(); jsonEditorRef.current?.focus(); }}>

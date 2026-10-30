@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./project-settings-categories/page.css";
 
@@ -179,14 +179,17 @@ export function ProjectSettingsCategoriesPage() {
   if (projectQuery.isError || !projectQuery.data) return <ApiErrorNotice page label="项目分类设置页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data.summary;
   if (configQuery.isError) return <div className="si-page si-category-page">
-    <ProjectHeader project={project} activeTab="settings" />
+    <ProjectHeader project={project} activeTab="settings" hasTabPanel />
+    <ProjectTabPanel projectId={project.id} tab="settings">
     <SettingsNav id={id} />
     <ApiErrorNotice label="分类配置加载失败。" error={configQuery.error} onRetry={() => void configQuery.refetch()} />
+    </ProjectTabPanel>
   </div>;
   if (configQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载分类设置…</div>;
 
   return <div className="si-page si-category-page">
-    <ProjectHeader project={project} activeTab="settings" subtitle={`${project.domain} · ${modeDescription(draft.mode)}`} actions={<><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></>} />
+    <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle={`${project.domain} · ${modeDescription(draft.mode)}`} actions={<><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></>} />
+    <ProjectTabPanel projectId={project.id} tab="settings">
     <SettingsNav id={id} />
     {feedback && <p className={feedback.type === "error" ? "si-form-error" : "si-feedback"} role={feedback.type === "error" ? "alert" : "status"}>{feedback.message}</p>}
     <section className="si-category-mode-section"><h2>分类识别方式</h2><div className="si-category-mode-grid">{matchingModes.map((mode) => <button type="button" key={mode.value} className={`si-category-mode-card${draft.mode === mode.value ? " active" : ""}`} aria-pressed={draft.mode === mode.value} onClick={() => setDraft((current) => current ? { ...current, mode: mode.value } : current)}><span className="si-category-mode-title"><strong>{mode.title}</strong><Chip tone={draft.mode === mode.value ? "ok" : "neutral"}>{draft.mode === mode.value ? "当前" : mode.hint}</Chip></span><span>{mode.detail}</span></button>)}</div></section>
@@ -211,5 +214,6 @@ export function ProjectSettingsCategoriesPage() {
       <p className="si-category-editor-count">当前预览命中 {selected.skuCount.toLocaleString("zh-CN")} 个 SKU。编辑后请重新预览匹配结果。</p>
       <div className="si-category-editor-actions"><Button variant="danger" onClick={() => removeCategory(selectedIndex)}>删除分类</Button><Button variant="primary" onClick={() => setSelectedIndex(null)}>完成编辑</Button></div>
     </div>}</DetailPanel>
+    </ProjectTabPanel>
   </div>;
 }

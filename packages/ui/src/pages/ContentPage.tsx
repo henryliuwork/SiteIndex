@@ -6,7 +6,7 @@ import { useParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, Segmented } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
 
 type ContentView = "blog" | "keywords";
 type IssueFilter = BlogFilters["issue"] | "all";
@@ -114,7 +114,8 @@ export function ContentPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目内容加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-content-page">
-    <ProjectHeader project={project} activeTab="content" actions={<><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></>} />
+    <ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></>} />
+    <ProjectTabPanel projectId={project.id} tab="content">
     <div className="si-content-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载内容概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="内容概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className="si-content-toolbar si-content-toolbar-table">
       <Segmented value={view} options={viewOptions} onChange={setView} ariaLabel="内容视图" />
@@ -136,6 +137,7 @@ export function ContentPage() {
       {selected && "title" in selected && <div className="si-content-detail"><div><span>Slug</span><code>{selected.slug}</code></div><div><span>发布日期</span><code>{selected.published_at}</code></div><div><span>类别</span>{selected.category || "—"}</div><div><span>字数</span>{selected.word_count ?? "未统计"}</div><div><span>主关键词</span>{selected.primary_keyword || "未登记"}</div><div><span>内链</span>{selected.links_internal.length} 出 / {selected.links_in ?? 0} 入</div><div><span>链接产品</span>{selected.links_products.join("、") || "无"}</div><div><span>缺货产品</span>{selected.linked_out_of_stock?.join("、") || "无"}</div><div><span>Schema</span>{selected.has_faq ? "BlogPosting / FAQ" : "缺失"}</div><div className="full"><span>Meta description</span>{selected.meta_description || "缺失"}</div><Button size="small" onClick={() => void api.shell.openExternal(selected.url)}><ExternalLink size={13} />打开文章</Button></div>}
       {selected && "keyword" in selected && <div className="si-content-detail"><div><span>类型</span>{selected.role === "primary" ? "主词" : "次词"}</div><div><span>搜索意图</span>{intentLabels[selected.intent]}</div><div><span>主题簇</span>{selected.cluster}</div><div><span>状态</span>{keywordStatusLabels[selected.status]}</div><div><span>目标页面</span><code>{selected.target_url || "未分配"}</code></div><div><span>搜索量</span>{selected.search_volume ?? "预留"}</div><div><span>当前排名</span>{selected.current_rank ?? "预留"}</div><div className="full"><span>备注</span>{selected.note || "—"}</div>{selected.target_url && <Button size="small" onClick={() => void api.shell.openExternal(selected.target_url!)}><ExternalLink size={13} />打开目标页面</Button>}</div>}
     </DetailPanel>
+    </ProjectTabPanel>
   </div>;
 }
 import "./content/page.css";

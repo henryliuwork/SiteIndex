@@ -10,7 +10,7 @@ import {
 import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, SearchInput, StatusCells, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, StatusCells, stockTone } from "../components";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",
@@ -321,6 +321,7 @@ export function InventoryPage() {
       <ProjectHeader
         project={project}
         activeTab="inventory"
+        hasTabPanel
         status={project.sync.state === "ok" ? <Chip tone="ok">{dateTime(project.sync.at)} 同步成功</Chip> : <Chip tone={project.sync.state === "failed" ? "danger" : "warn"}>{project.sync.state === "failed" ? "同步失败" : project.sync.state === "running" ? "同步中" : "待处理"}</Chip>}
         actions={
           <>
@@ -330,6 +331,7 @@ export function InventoryPage() {
           </>
         }
       />
+      <ProjectTabPanel projectId={project.id} tab="inventory">
       {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <>
         <div className="si-inventory-kpis">{kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
         <div className="si-inventory-overview-grid">
@@ -374,6 +376,7 @@ export function InventoryPage() {
         {selectedRow && <StockDetail row={selectedRow} />}
       </DetailPanel>
       <DailyReportDialog report={report} onOpenChange={(open) => { if (!open) setReport(undefined); }} />
+      </ProjectTabPanel>
     </div>
   );
 }
