@@ -198,3 +198,53 @@
 3. A rebase #176，确认三个系统 CI 全绿后才合并。
 4. 进入 A-2 → C IPC → D 真数据预览的能力链；A0b 需等待 D mock 兼容性前置。
 5. E 从 G3 候选包重新验收；未有候选包时不得宣告 v0.2.0 完成。
+
+## 12. 第四轮交接与 v0.2.0 发包路线图（2026-10-30）
+
+> **本节为最新执行关卡**，优先于 §8、§11 的旧队列与原第三轮快照；旧节保留为历史决策证据。核对时 `main` = `c7e1176b7acbe350b0d4d2434fc0ddc61d9094ca`，公开 Release 仍是 `v0.1.4`。发包日期是条件预测，不是无需验收的承诺。
+
+### 12.1 已完成与关键缺口
+
+- 已合并：#181（pending-aware IPC 测试）、#176（可选 SKU 预览契约）、#182（库存范围 mock）、#183（共享 tabpanel）、#186（四页归 D）、#187/#188（D 共 11 页接入）、#184（10k SKU 基准）、#189（A-2 Core 分组/父 SKU 视图）、#190（Desktop 启动后台校正）。
+- #88 因 #184 合并自动关闭；#92 仍开放（Windows 安装版启动约 1.69 秒，尚未达到 1 秒目标）；#93 仍需正式安装包 10k SKU 首载 10 次验证；#177 虽有代码，仍欠真实键盘与辅助技术验收。
+- 当前 shared 的 `sku.previewGrouping` 已列入 `PENDING_HANDLERS`，Core 已实现，但 Desktop IPC handler 与 UI 真数据预览尚未串通；`inventory.summary` 真实范围仍未放行 60/90/全部。
+- A 尚未完成：A-4 关注分类、A0b/A-5 历史范围、A-6 价格历史、A-7 SEO 规则计数/筛选、A-9 废弃批量 index-check；这是正式 v0.2.0 的主要关键路径。
+
+### 12.2 五个工作流的下一轮小 PR（不得跨目录）
+
+| 工作流 | 优先顺序 | 完成标准 / 依赖 |
+|---|---|---|
+| **A · Core** | A-4（关注分类去重和摘要标记）→ 独立 `contract/inventory-history-range` A0b → A-5（30/60/90/全部真实范围）→ A-6（只从真实 events 建价格历史与筛选）→ A-7（SEO `rule` 生成、`issue_counts` 与 `rules` 过滤）→ A-9（协调废弃批量 Job） | 每项独立小 PR；fixture/schema/黄金测试同步；不得伪造日期、父 SKU 库存或价格。A0b 仅当 D mock 和 Core 实现可兼容时合入。 |
+| **C · Desktop** | C2 `sku.previewGrouping` preload+handler+错误测试 → handler PR 合并后单独 `contract/*` 清 `PENDING_HANDLERS` → 核查 #91 Design/Categories IPC 与 #100 新建根目录/init → 安装版回归与候选包 | #189 已合并，C2 可立即开始。真实 IPC 不能以 mock/源码构建代替；保持 #92 未达 1 秒的证据，不自关 Issue。 |
+| **D · 项目页面** | 等 C2 后把父 SKU 预览从本地前 100 条近似逻辑迁移到真实 IPC；随 A-4/A-5/A-6/A-7 各 PR 增量联调库存/项目设置/SEO；核验 Runs 进度和状态 | 只改 D 自有页面及相关 mock；所有数据链来自 Core，不静默降级成假结果。#177 代码完成不等于实测完成。 |
+| **B · UI 共享层** | #82 真实 Electron UI 路由/共享状态辅助检查、#93 packaged 首载与 E 配合；读审 #102 init 向导完成页及 #136 偶发路由；必要时优化共享组件 | NewProjectWizard、ProjectCenter、Skills 等未明确在 B/D 目录清单，**改这些页面前先请求正式归属裁决**；不能凭历史 Issue 标签跨工作流提交。 |
+| **E · 验收** | 先用隔离的 Windows **内部测试包**回归 #163/#91/#93/#100 与启动性能，再准备正式 `v0.2.0-rc1` 的 #163–#174、#177、#82、PRD §8 全矩阵 | 每次记录安装包 SHA256、commit、Windows build、脱敏结果；候选包之前不关闭旧 Release Issue。macOS 独立记录，不以 Windows 替代。 |
+
+### 12.3 发布阻断清单
+
+| 类别 | 阻断 / 风险 | 放行证据 |
+|---|---|---|
+| **P0 功能数据** | #165 SEO 覆盖；#166 价格历史（父 SKU 已入 main）；#170 关注分类/真实历史范围/价格筛选 | A-4/5/6/7 的 Core 数据、契约、schema、fixture、D 真实 IPC/CLI 数字一致 |
+| **P0 IPC/新建** | `sku.previewGrouping` 待 C2；#91 Design/Categories 的旧版 NOT_IMPLEMENTED；#100 根目录重复层级/init 调度；#102 init UI 完成页 | 最新候选包逐项无 NOT_IMPLEMENTED、无重复目录、init 八步可追踪且定时任务正确注册；若已修复，先给出代码与安装包证据再判定 |
+| **P0 安装包** | #163 CLI schema 安装路径、#93 10k SKU 首次查询、#82 全路由真实 IPC、#177 tabpanel 实际键盘/读屏 | E 在候选包实测通过，失败有 `code/message` 和复现记录 |
+| **P1 可商量延期** | #92 首屏目标 1 秒（当前约 1.69 秒）；#136 偶发路由未复现；#155 Windows 并行测试波动 | 不得静默宣布完成；若无稳定功能性故障且用户批准，可列为已知延期；CI 仍必须全绿 |
+| **跨流清理** | A-9 批量 index-check 废弃及 C/共享契约清理 | UI、Core、CLI、Desktop 与 `packages/shared` 清单一致，保留单页 Google 查询入口 |
+
+### 12.4 双轨发包关卡和预计时间（北京时间）
+
+| 关卡 | 预计窗口 | 内容 | 是否面向普通用户 |
+|---|---|---|---|
+| **T0 内部安装测试包** | **10/31–11/02**（约 1–3 天） | C 从包含 #190 的最新 main 打隔离 Windows 包，E 提前测 #163/#91/#93/#100、启动和路由，立即暴露安装器问题 | 否；不打正式 Release，不宣称 v0.2.0 完成 |
+| **G2 功能收敛** | **11/03–11/09**（约 4–8 个有效开发日） | A-4/5/6/7/9，C2/IPC，D 真实数据联调；全部 PR 逐个过三系统 CI | 否 |
+| **G3 `v0.2.0-rc1`** | **目标 11/09–11/12** | 功能完整 + Windows/macOS/Ubuntu CI 绿 + 正式候选安装包 SHA/commit 锁定；E 端到端验收 | 仅测试人员 |
+| **G4 `v0.2.0` 正式 Release** | **争取 11/13–11/18** | E 候选包通过、阻断项归零或经用户批准延期，再做 tag/Release | 是 |
+
+> 时间窗口按五个 Agent 并行、每天有可审核的小 PR、无新的 P0 缺陷估算。**若 A-7 SEO 规则、#100 init 或安装版 #93 复现出新 P0，日期顺延，不以赶进度为由跳过验收。** T0 可提前发供内部测试，但不等于正式版。
+
+### 12.5 协调者合并与收尾规则
+
+1. C2 handler PR → 三系统 CI → 审核合并；**之后** 单独 `contract/*` PR 移除对应 pending，不在 Desktop PR 越界改 shared。
+2. A0b 契约与 Core 范围计算配套推进；D 在真 IPC 支持前继续守住旧参数，不允许页面用 30 天结果假装 90/全部。
+3. D 的 #177 十一个项目页及 B 共享层已进 main；E 完成实际键盘、NVDA/Narrator 与高 DPI 后才讨论关闭 #177。
+4. Release 前对照 #91/#100/#102/#82 等较旧 Issue 做 evidence-first 反查；Issue OPEN 不能自动等于当前 main 有 bug，代码合并也不能自动等于安装版通过。
+5. 根 README/旧任务清单/PRD 的历史版本表述需在 G3 前清理，但保留历史决策记录；本规划 PR 不等于发版批准。
