@@ -105,6 +105,14 @@ width: 72px;
 width: 220px;
 }
 
+.si-seo-table-issues .si-table td:nth-child(2) {
+overflow: hidden;
+}
+
+.si-seo-table-issues .si-table td:nth-child(3) {
+overflow: hidden;
+}
+
 .si-seo-table-issues .si-table th:nth-child(4),
 .si-seo-table-issues .si-table td:nth-child(4) {
 width: 96px;
@@ -119,19 +127,19 @@ height: 52px;
 }
 
 .si-seo-url {
-display: inline-block; max-width: 320px; overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis; vertical-align: middle; white-space: nowrap;
+display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis; vertical-align: middle; white-space: nowrap;
 }
 
 .si-seo-issue-cell {
-display: grid; max-width: 520px; gap: 2px; white-space: normal;
+display: grid; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; gap: 2px; line-height: 16px; overflow: hidden; white-space: normal;
 }
 
 .si-seo-issue-cell strong {
-color: var(--color-ink-2); font-size: 12px; font-weight: 600;
+display: block; min-width: 0; overflow: hidden; color: var(--color-ink-2); font-size: 12px; font-weight: 600; line-height: 16px; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .si-seo-issue-cell > span {
-color: var(--color-muted); font-size: 12px;
+display: -webkit-box; min-width: 0; overflow: hidden; color: var(--color-muted); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
 
 .si-seo-date {
