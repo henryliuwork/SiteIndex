@@ -678,6 +678,7 @@ export function beginRun(projectPath: string, job: JobName): string {
   if (job === "init") {
     const dailyFails = mockMode === "init-daily-fail";
     const scheduleSkipped = mockMode === "init-schedule-skipped";
+    const scheduleResultMissing = mockMode === "init-missing-schedule";
     const dailyError = "首次每日同步失败：模拟 Feed 请求超时。";
     let index = 0;
     active.timer = setInterval(() => {
@@ -687,18 +688,21 @@ export function beginRun(projectPath: string, job: JobName): string {
       active.pct = Math.round(index / INIT_STEPS.length * 100);
       progressListeners.forEach((callback) => callback({
         runId, projectPath, job, pct: active.pct, step: key,
-        level: dailyFails && key === "daily" ? "error" : "info",
-        message: dailyFails && key === "daily" ? dailyError : `正在执行 ${key} 步骤`,
+        level: dailyFails && key === "daily" || scheduleResultMissing && key === "schedule" ? "error" : "info",
+        message: dailyFails && key === "daily" ? dailyError : scheduleResultMissing && key === "schedule" ? "模拟调度错误事件；最终步骤结果缺失。" : `正在执行 ${key} 步骤`,
         at: new Date().toISOString(),
       }));
       if (index < INIT_STEPS.length) return;
       clearInterval(active.timer);
       activeRuns.delete(runId);
       const result: JobResult = {
-        runId, job, status: dailyFails ? "partial" : "ok", exitCode: dailyFails ? 1 : 0,
-        summary: dailyFails ? "创建完成，但有步骤失败" : "项目创建完成",
-        errors: dailyFails ? [dailyError] : [],
-        steps: INIT_STEPS.map((step) => step === "schedule" && scheduleSkipped
+        runId, job, status: dailyFails || scheduleResultMissing ? "partial" : "ok", exitCode: dailyFails || scheduleResultMissing ? 1 : 0,
+        summary: scheduleResultMissing ? "初始化结果未返回定时任务步骤。" : dailyFails ? "创建完成，但有步骤失败" : "项目创建完成",
+        errors: [
+          ...(dailyFails ? [dailyError] : []),
+          ...(scheduleResultMissing ? ["初始化结果未返回定时任务步骤。"] : []),
+        ],
+        steps: INIT_STEPS.filter((step) => !scheduleResultMissing || step !== "schedule").map((step) => step === "schedule" && scheduleSkipped
           ? { key: step, status: "skipped" as const, message: "项目未启用定时任务。" }
           : { key: step, status: dailyFails && step === "daily" ? "failed" as const : "ok" as const, ...(dailyFails && step === "daily" ? { message: dailyError } : {}) }),
       };
