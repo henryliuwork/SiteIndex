@@ -4,10 +4,11 @@ import { Check, CircleAlert, FolderOpen, LoaderCircle, Plus, X } from "lucide-re
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { invalidateProjectSummary } from "../project-queries";
+import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip } from "../components";
 import { useWizardDraft } from "./wizard-state";
 import { applyInitProgress, applyInitResult, finalInitProgressPercent, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
+import { findExistingProject, type ExistingProject } from "./new-project/duplicate-check";
 
 const steps = [
   { path: "/new/url", label: "网址" },
@@ -77,6 +78,13 @@ function DetectSummary({ result }: { result: DetectResult }) {
   </div>;
 }
 
+function DuplicateProjectNotice({ project }: { project: ExistingProject }) {
+  return <div className="si-wizard-duplicate-warning" role="alert">
+    <span>这个网站已登记为“{project.name}”，不能重复创建。</span>
+    <Link className="si-button si-button-primary" to={"/p/" + project.id}>打开已有项目</Link>
+  </div>;
+}
+
 function FeedStats({ result }: { result: FeedInspectResult }) {
   const skipped = result.skipped.duplicate + result.skipped.missing_price_or_link + result.skipped.no_id;
   const stats = [
@@ -103,6 +111,7 @@ export function NewProjectWizardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { draft, update, reset } = useWizardDraft();
+  const registeredProjects = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -159,10 +168,15 @@ export function NewProjectWizardPage() {
   const detectSite = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(""); setFeedback("");
     try {
+      const projects = await queryClient.fetchQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list(), staleTime: 0 });
+      if (findExistingProject(projects, draft.url)) {
+        update({ detect: null, feedResult: null });
+        return;
+      }
       const result = await api.projects.detect(draft.url.trim());
       const brandName = draft.brand.name || slugFor(draft.url).replace(/(^|-)([a-z])/g, (_match, _dash, letter: string) => letter.toUpperCase());
       update({ detect: result, feedUrls: result.feed_candidates, feedResult: null, folderName: draft.folderName || slugFor(draft.url), brand: { ...draft.brand, name: brandName } });
-    } catch (cause) { setError(apiErrorMessage(cause, "网站检测失败，请重试。")); }
+    } catch (cause) { setError(apiErrorMessage(cause, "网站检测或重复项目检查失败，请重试。")); }
     finally { setBusy(false); }
   };
 
@@ -183,6 +197,11 @@ export function NewProjectWizardPage() {
     if (!draft.brand.name.trim() || !draft.folderName.trim() || !root.trim()) { setError("请填写品牌名、项目文件夹名和项目根目录。"); return; }
     setBusy(true); setError("");
     try {
+      const projects = await queryClient.fetchQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list(), staleTime: 0 });
+      if (findExistingProject(projects, draft.url, draft.detect?.final_url ?? "")) {
+        navigate("/new/url");
+        return;
+      }
       const created = await api.projects.create({
         url: draft.detect?.final_url ?? draft.url,
         feed_urls: draft.feedUrls,
@@ -248,6 +267,7 @@ export function NewProjectWizardPage() {
 
   if (active === 3 && !draft.created) return <Navigate to="/new/brand" replace />;
   const detection = draft.detect;
+  const duplicateProject = findExistingProject(registeredProjects.data ?? [], draft.url, detection?.final_url ?? "");
   const previewPath = pathJoin(draft.projectsRoot || settings.data?.projects_root || "D:/SiteIndex/projects", draft.folderName || "[文件夹名]");
   const states: InitStepStates = { ...stepStates, ...retryStates };
   const stateFor = (key: InitStepKey): InitStepState => states[key] ?? { status: "waiting" };
@@ -273,8 +293,10 @@ export function NewProjectWizardPage() {
         <Button type="submit" variant="primary" disabled={busy}>{busy ? "正在检测…" : "检测"}</Button>
       </form>
       {detection ? <DetectSummary result={detection} /> : <div className="si-wizard-empty"><CircleAlert size={18} />输入网址后检测站点信息。</div>}
+      {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
+      {registeredProjects.isError && <ApiErrorNotice label="已登记项目清单读取失败，无法检查重复网站。" error={registeredProjects.error} onRetry={() => void registeredProjects.refetch()} />}
       {error && <p className="si-form-error" role="alert">{error}</p>}{feedback && <p className="si-feedback" role="status">{feedback}</p>}
-      <footer className="si-wizard-actions"><Button onClick={() => { reset(); navigate("/"); }}>取消</Button><Button variant="primary" disabled={!detection} onClick={() => navigate("/new/source")}>下一步：数据源</Button></footer>
+      <footer className="si-wizard-actions"><Button onClick={() => { reset(); navigate("/"); }}>取消</Button><Button variant="primary" disabled={!detection || Boolean(duplicateProject)} onClick={() => navigate("/new/source")}>下一步：数据源</Button></footer>
     </section>}
 
     {active === 1 && detection && <div className="si-wizard-source-layout">
@@ -286,6 +308,7 @@ export function NewProjectWizardPage() {
         <div><dt>语言 / 币种</dt><dd>{detection.locale ?? "—"} / {detection.currency ?? "—"}</dd></div>
       </dl><p>GMC feed 可能不在网站上公开，请从 Merchant Center 或 Feed 插件中复制地址。</p></section>
       <div className="si-wizard-source-main">
+        {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
         <section className="si-wizard-card">
           <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null }); }} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null }); }}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null })}><Plus size={14} /></Button></>}</div>)}
             {feedError && <div className="si-wizard-feed-error" role="alert"><span>{feedError}</span>{canRetryFeed && <Button size="small" disabled={busy} onClick={() => void inspectFeed()}>{busy ? "正在重试…" : "重试"}</Button>}</div>}
@@ -300,11 +323,12 @@ export function NewProjectWizardPage() {
           </div><div className="si-wizard-field"><span>商品从 Feed 消失时</span><label className="si-radio-row"><input type="radio" checked={draft.missingAs === "out_of_stock"} onChange={() => update({ missingAs: "out_of_stock" })} />先记为缺货，连续 30 天未出现再判定下架</label><label className="si-radio-row"><input type="radio" checked={draft.missingAs === "removed"} onChange={() => update({ missingAs: "removed" })} />立即判定下架</label></div>
             <div className="si-wizard-category-chips">{draft.feedResult.category_distribution.slice(0, 4).map((category) => <Chip key={category.slug}>{category.slug} · {category.count}</Chip>)}</div>
           </section>} />}
-        <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/url")}>上一步</Button><Button variant="primary" disabled={!draft.feedResult} onClick={() => navigate("/new/brand")}>下一步：品牌配置</Button></footer>
+        <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/url")}>上一步</Button><Button variant="primary" disabled={!draft.feedResult || Boolean(duplicateProject)} onClick={() => navigate("/new/brand")}>下一步：品牌配置</Button></footer>
       </div>
     </div>}
 
     {active === 2 && detection && <>
+      {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
       <div className="si-wizard-brand-layout">
         <section className="si-wizard-card">
           <header className="si-wizard-card-heading"><h2>品牌信息</h2><Chip tone="info">根据网址预填，可修改</Chip></header>
@@ -329,7 +353,7 @@ export function NewProjectWizardPage() {
         </section>
       </div>
       {error && <p className="si-form-error" role="alert">{error}</p>}
-      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/source")}>上一步</Button><Button variant="primary" onClick={() => void createProject()} disabled={busy}>{busy ? "正在创建…" : "创建项目"}</Button></footer>
+      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/source")}>上一步</Button><Button variant="primary" onClick={() => void createProject()} disabled={busy || Boolean(duplicateProject)}>{busy ? "正在创建…" : "创建项目"}</Button></footer>
     </>}
 
     {active === 3 && draft.created && <div className="si-wizard-done-layout">
