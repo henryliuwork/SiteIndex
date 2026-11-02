@@ -12,11 +12,21 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Columns3 } from "lucide-react";
 import type { ListQuery } from "@siteindex/shared";
 import { Button, ColumnCheckbox, Pagination, Popover } from "./primitives";
 import { useColumnPrefs } from "./utils";
+import { assertCompatibleRowText, calculateColumnWidths } from "./table-layout";
 
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends RowData, TValue> {
     reserved?: boolean;
     defaultHidden?: boolean;
+    /** 基准宽度(px)，参与 colgroup 计算。 */
+    width?: number;
+    /** 剩余空间分配权重：0 固定，1 次要伸缩，2 主要伸缩。默认 0。 */
+    grow?: 0 | 1 | 2;
+    /** 最小宽度(px)，列宽低于此值时表格出现横向滚动。 */
+    minWidth?: number;
+    align?: "start" | "end";
+    /** single 单行省略，clamp2 两行省略，wrap 自由换行。 */
+    text?: "single" | "clamp2" | "wrap";
   }
 }
 
@@ -55,6 +65,7 @@ export function DataTable<T, F = Record<string, unknown>>({
 }: DataTableProps<T, F>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
   const columnIds = useMemo(() => columns.map(getColumnId), [columns]);
   const defaultVisible = useMemo(() => columns.flatMap((column, index) => column.meta?.defaultHidden ? [] : [getColumnId(column, index)]), [columns]);
   const columnPrefs = useColumnPrefs(tableId, scopeId);
@@ -74,6 +85,9 @@ export function DataTable<T, F = Record<string, unknown>>({
     rowCount: total,
     state: { columnVisibility, sorting },
   });
+  const visibleColumns = table.getVisibleLeafColumns();
+  const columnWidths = calculateColumnWidths(visibleColumns.map((column) => column.columnDef.meta ?? {}), availableWidth);
+  const tableWidth = columnWidths.reduce((totalWidth, width) => totalWidth + width, 0);
   const rowModel = table.getRowModel();
   const virtualizer = useVirtualizer({
     count: rowModel.rows.length,
@@ -84,8 +98,22 @@ export function DataTable<T, F = Record<string, unknown>>({
   const virtualRows = virtualizer.getVirtualItems();
   const firstVirtualRow = virtualRows[0];
   const lastVirtualRow = virtualRows[virtualRows.length - 1];
-  const visibleColumnCount = Math.max(1, table.getVisibleLeafColumns().length);
+  const visibleColumnCount = Math.max(1, visibleColumns.length);
   const pageSize = pageSizeValue(query.pageSize);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const updateWidth = () => setAvailableWidth(element.clientWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  if (import.meta.env.DEV) {
+    assertCompatibleRowText(columns, rowHeight, true);
+  }
 
   const sortBy = (columnId: string) => {
     const dir = query.sort?.field === columnId && query.sort.dir === "asc" ? "desc" : "asc";
@@ -121,15 +149,24 @@ export function DataTable<T, F = Record<string, unknown>>({
         </Popover>
       </div>
       <div className="si-table-scroll" ref={scrollRef} style={{ height: maxHeight }}>
-        <table className="si-table">
+        <table className="si-table" style={{ width: tableWidth }}>
+          <colgroup>
+            {visibleColumns.map((column, index) => (
+              <col
+                key={column.id}
+                style={{ width: tableWidth ? `${(columnWidths[index] ?? 0) / tableWidth * 100}%` : undefined }}
+              />
+            ))}
+          </colgroup>
           {showHeader && <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   const sorted = header.column.getIsSorted();
                   const reserved = Boolean(header.column.columnDef.meta?.reserved);
+                  const align = header.column.columnDef.meta?.align;
                   return (
-                    <th key={header.id} className={reserved ? "is-reserved" : ""} aria-sort={sorted ? sorted === "asc" ? "ascending" : "descending" : "none"}>
+                    <th key={header.id} className={reserved ? "is-reserved" : ""} style={align ? { textAlign: align === "end" ? "right" : "left" } : undefined} aria-sort={sorted ? sorted === "asc" ? "ascending" : "descending" : "none"}>
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (
                         <button className="si-sort-button" type="button" onClick={() => sortBy(header.column.id)}>
                           {flexRender(header.column.columnDef.header, header.getContext())}
@@ -172,11 +209,20 @@ export function DataTable<T, F = Record<string, unknown>>({
                         }
                       }}
                     >
-                      {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className={cell.column.columnDef.meta?.reserved ? "is-reserved" : ""}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </td>
-                      ))}
+                      {row.getVisibleCells().map((cell) => {
+                        const meta = cell.column.columnDef.meta;
+                        const text = meta?.text ?? "single";
+                        const titleValue = cell.getValue();
+                        const title = typeof titleValue === "string" || typeof titleValue === "number" ? String(titleValue) : undefined;
+                        const textClass = text === "clamp2" ? "si-cell-2" : text === "wrap" ? "si-cell-wrap" : "si-cell-1";
+                        return (
+                          <td key={cell.id} className={meta?.reserved ? "is-reserved" : ""} style={meta?.align ? { textAlign: meta.align === "end" ? "right" : "left" } : undefined}>
+                            <div className={textClass} title={title}>
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </div>
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
