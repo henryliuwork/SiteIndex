@@ -129,6 +129,15 @@
         color: #718078;
         font-size: 12px;
       }
+      .load-error {
+        margin: 0 0 20px;
+        padding: 14px 16px;
+        border-radius: 8px;
+        color: #9f1d1d;
+        background: #fff1f0;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
       @media (max-width: 1000px) {
         .app {
           grid-template-columns: 180px 1fr;
@@ -155,6 +164,7 @@
           <h1>项目中心</h1>
           <button class="button">＋ 新建项目</button>
         </div>
+        <p id="load-error" class="load-error" role="alert" hidden></p>
         <section class="summary" aria-label="项目汇总">
           <div class="card">
             <div class="label">项目数</div>
@@ -179,5 +189,6 @@
         <p class="notice">当前为 M1 占位界面，项目数据与完整界面将在后续版本接入</p>
       </main>
     </div>
+    <script type="module" src="./fallback.ts"></script>
   </body>
 </html>

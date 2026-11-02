@@ -2,6 +2,7 @@ import { app, BrowserWindow, screen, session, shell } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadAppContent } from "./renderer-loader.js";
 
 interface WindowBounds {
   x?: number;
@@ -139,27 +140,6 @@ export function createWindowManager(options: WindowManagerOptions) {
     }
   }
 
-  async function loadAppContent(window: BrowserWindow): Promise<void> {
-    if (process.env.ELECTRON_RENDERER_URL !== undefined) {
-      try {
-        await window.loadURL(options.devUiUrl);
-        return;
-      } catch {
-        await window.loadFile(options.fallbackPath);
-        return;
-      }
-    }
-
-    const uiIndex = app.isPackaged
-      ? join(process.resourcesPath, "ui", "index.html")
-      : resolve(options.mainDirectory, "../../../ui/dist/index.html");
-    try {
-      await window.loadFile(uiIndex);
-    } catch {
-      await window.loadFile(options.fallbackPath);
-    }
-  }
-
   async function createMainWindow(): Promise<BrowserWindow> {
     const window = new BrowserWindow({
       ...readWindowBounds(),
@@ -206,7 +186,11 @@ export function createWindowManager(options: WindowManagerOptions) {
       if (isHttpUrl(url)) void shell.openExternal(url);
     });
 
-    await loadAppContent(window);
+    await loadAppContent(window, options, {
+      isPackaged: app.isPackaged,
+      rendererUrl: process.env.ELECTRON_RENDERER_URL,
+      resourcesPath: process.resourcesPath,
+    });
     await readyToShow;
     return window;
   }

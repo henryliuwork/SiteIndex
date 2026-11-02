@@ -27,6 +27,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(desktopRoot, "src/renderer"),
+    base: "./",
     build: {
       rollupOptions: { input: resolve(desktopRoot, "src/renderer/fallback.html") },
     },
