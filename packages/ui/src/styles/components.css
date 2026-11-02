@@ -134,6 +134,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-search-input input::placeholder { color: var(--color-faint); }
 
 .si-data-table { min-width: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-page-fill { display: flex; min-height: 0; flex-direction: column; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); }
+.si-page-fill > .si-table-region { min-height: var(--si-table-min-h, 320px); flex: 1 1 auto; }
+.si-data-table.is-fill { display: flex; min-height: 0; height: 100%; flex-direction: column; }
+.si-data-table.is-fill > .si-table-toolbar, .si-data-table.is-fill > .si-pagination { flex: none; }
+.si-data-table.is-fill > .si-table-scroll { min-height: 0; height: auto; max-height: none; flex: 1 1 auto; }
 .si-table-toolbar { display: flex; min-height: 48px; align-items: center; flex-wrap: wrap; gap: 12px; padding: 7px 12px; border-bottom: 1px solid var(--color-line); }
 .si-table-toolbar-content { display: flex; min-width: 0; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 8px; }
 .si-table-toolbar-settings { display: flex; flex: none; margin-left: auto; }

@@ -44,7 +44,7 @@
 | Chip | 圆角 999、12px/600；ok / warn / danger / info / neutral |
 | LengthBadge | 圆角 4、等宽；绿 / 橙 / 红（SEO 字符数） |
 | KpiCard | 白卡片，标签 12px 灰 + 数字 20–24/700 + 说明；可点击跳转；预留卡片用虚线边框 |
-| DataTable | 外层卡片；**最大高度 520–560，内部滚动，表头 sticky**；行高 ≥ 44；可点击行 hover 与选中底色 #F2F8F5；右上"列设置"弹层（勾选列，持久化到 ui-state）；预留列表头灰底灰字；列宽通过 `ColumnDef.meta` 的 `width/grow/minWidth/align/text` 声明，隐藏列后按当前可见列重算 |
+| DataTable | 外层卡片；默认 `height="fill"` 填充页面剩余高度，表体内部滚动且表头 sticky；也支持固定数值高度；`maxHeight` 弃用并保留一版；行高 ≥ 44；可点击行 hover 与选中底色 #F2F8F5；右上"列设置"弹层（勾选列，持久化到 ui-state）；预留列表头灰底灰字；列宽通过 `ColumnDef.meta` 的 `width/grow/minWidth/align/text` 声明，隐藏列后按当前可见列重算 |
 | DetailPanel | 表格右侧 320–400 宽；点击行出现；右上关闭；分区用细线分隔 |
 | Popover | 白底、圆角 10、阴影 `0 12px 32px rgba(20,24,29,.16)` |
 | Pagination | 32×32 页码按钮；每页 20/50/100 |
@@ -68,6 +68,10 @@
 | 日期 | 100 | 0 | 92 | `single` |
 
 `text` 默认为 `single`。`.si-cell-1` 单行省略并通过 `title` 提示全文，`.si-cell-2` 最多两行；`clamp2` 需要 `rowHeight >= 52px`。`text: "wrap"` 不可用于虚拟滚动表格。
+
+### DataTable 高度填充
+
+`height` 可设为数值或 `"fill"`（默认）。填充模式要求表格位于 `.si-page-fill` 页面容器中；页面内表格区域使用 `flex: 1 1 auto` 且最小高度 320px。表体滚动区占用剩余空间，工具栏和分页栏保持在滚动区外。旧 `maxHeight` 在一个兼容版本内继续生效，之后移除。
 
 ## 3. 页面与画板对照
 
