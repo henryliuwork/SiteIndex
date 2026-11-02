@@ -369,6 +369,24 @@ describe("createCoreService initial namespaces", () => {
     expect((await api.projects.get("fixture")).config.locale).toBe("en-GB");
   }, 30_000);
 
+  it("refreshes the snapshot after an external writer updates the blog index", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const blogIndexPath = path.join(projectPath, PATHS.blogIndex);
+    const existingRows = await readJsonl(blogIndexPath);
+    const initial = await api.content.summary("fixture");
+    expect(initial.kpis.find((item) => item.key === "blogs")?.value).toBe(String(existingRows.length));
+
+    const addedRow = existingRows[0]
+      ? { ...existingRows[0], url: "https://shop.example.test/blog/external-writer", slug: "external-writer" }
+      : { url: "https://shop.example.test/blog/external-writer", slug: "external-writer", title: "External writer fixture" };
+    const replacement = [...existingRows, addedRow].map((row) => JSON.stringify(row)).join("\n") + "\n";
+    await writeFile(blogIndexPath, replacement, "utf8");
+
+    const refreshed = await api.content.summary("fixture");
+    expect(refreshed.kpis.find((item) => item.key === "blogs")?.value).toBe(String(existingRows.length + 1));
+  }, 30_000);
+
   it("writes a feed and refreshes the project summary without a missing-feed warning", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);
