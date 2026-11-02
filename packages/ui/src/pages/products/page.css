@@ -1,37 +1,45 @@
 .si-products-page {
-gap: 16px;
+display: flex; min-height: 0; flex-direction: column; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); gap: 16px;
+}
+
+.si-products-page > .si-tab-panel {
+display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 16px;
 }
 
 .si-products-filterbar {
-display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 7px; color: var(--color-muted); font-size: 12px;
+display: flex; min-width: 0; flex: none; flex-wrap: wrap; align-items: flex-start; gap: 12px; color: var(--color-muted); font-size: 12px;
 }
 
-.si-products-filterbar > span:not(.si-products-result-count) {
+.si-products-filter-conditions {
+min-width: 0; flex: 1 1 auto;
+}
+
+.si-products-filter-conditions .si-filter-bar-items {
+width: 100%; gap: 7px;
+}
+
+.si-products-filter-label {
 margin-right: 2px;
 }
 
-.si-products-filterbar > span:not(:first-child):not(.si-products-result-count) {
+.si-products-filter-label.is-separated {
 margin-left: 11px;
 }
 
 .si-products-result-count {
-margin-left: auto; margin-right: 98px; white-space: nowrap;
+flex: none; margin-left: auto; white-space: nowrap;
 }
 
 .si-products-table-frame {
-position: relative; min-width: 0; overflow: visible; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
+display: flex; min-width: 0; min-height: var(--si-table-min-h, 320px); flex: 1 1 auto; flex-direction: column; overflow: visible; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
 }
 
 .si-products-table-frame .si-data-table {
-overflow: visible; border: 0; border-radius: 0;
+min-height: 0; flex: 1 1 auto; overflow: hidden; border: 0; border-radius: 0;
 }
 
-.si-products-table-frame .si-table-toolbar {
-position: absolute; z-index: 3; top: -48px; right: 12px; min-height: 32px; padding: 0; border: 0; background: transparent;
-}
-
-.si-products-table-frame .si-table-toolbar-content {
-display: none;
+.si-products-table-frame .si-data-table.is-fill {
+min-height: 0; flex: 1 1 auto;
 }
 
 .si-products-table-frame .si-table td {
@@ -249,18 +257,6 @@ justify-self: end;
 @media (max-width: 980px) {
 .si-products-result-count {
 margin-left: auto; margin-right: 0;
-}
-}
-
-@media (max-width: 980px) {
-.si-products-table-frame .si-table-toolbar {
-position: static; min-height: 48px; padding: 7px 12px; border-bottom: 1px solid var(--color-line); background: var(--color-surface);
-}
-}
-
-@media (max-width: 980px) {
-.si-products-table-frame .si-table-toolbar-content {
-display: flex;
 }
 }
 

@@ -7,7 +7,7 @@ import { useParams } from "react-router-dom";
 import type { ListQuery, ProductFilters, ProductFull, ProductView, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterPill, ProjectHeader, ProjectTabPanel, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, FilterBar, FilterPill, ProjectHeader, ProjectTabPanel, stockTone } from "../components";
 
 const initialQuery: ListQuery<ProductFilters> = { page: 1, pageSize: 100, filters: {} };
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
@@ -42,21 +42,21 @@ function ProductPreview({ src, alt }: { src: string | null; alt: string }) {
 
 function productColumns(): ColumnDef<ProductView, unknown>[] {
   return [
-    { id: "product", accessorKey: "title", header: "产品", cell: ({ row }) => {
+    { id: "product", accessorKey: "title", header: "产品", meta: { width: 320, grow: 2, minWidth: 240, text: "single" }, cell: ({ row }) => {
       const product = row.original;
       return <span className="si-product-main-cell">
         <ProductThumbnail src={product.image_url} />
         <span className="si-product-main-copy"><strong>{product.title}</strong><span><code>{product.handle}</code>{product.price_dropped_at && <Chip tone="warn">降价</Chip>}{product.restocked_at && <Chip tone="ok">到货</Chip>}{product.is_new && <Chip tone="info">新品</Chip>}</span></span>
       </span>;
     }, enableSorting: true },
-    { id: "category", accessorKey: "category", header: "分类", cell: ({ row }) => <code className="si-mono">{row.original.category || "—"}</code>, enableSorting: true },
-    { id: "price", accessorKey: "price_min", header: "价格", cell: ({ row }) => priceCell(row.original), enableSorting: true },
-    { id: "in_stock_variants", accessorKey: "in_stock_variants", header: "有货变体", cell: ({ row }) => row.original.in_stock_variants + "/" + row.original.variant_count, enableSorting: true },
-    { id: "stock_status", accessorKey: "stock_status", header: "库存", cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockLabels[row.original.stock_status]}</Chip>, enableSorting: true },
-    { id: "tags", accessorKey: "tags", header: "标签", cell: ({ row }) => <span className="si-product-tags-cell">{row.original.tags.slice(0, 3).map((tag) => <span className="si-product-tag" key={tag}>{tag}</span>)}{row.original.exclude_edm === 1 && <span className="si-product-tag si-product-tag-warn">不进 EDM</span>}</span>, enableSorting: false },
-    { id: "rating", accessorKey: "rating", header: "评分", cell: ({ row }) => row.original.rating == null ? "—" : row.original.rating.toFixed(1) + (row.original.review_count ? " (" + row.original.review_count + ")" : ""), enableSorting: true },
-    { id: "units_30d", accessorKey: "units_30d", header: "30天销量", cell: () => "—", enableSorting: false, meta: { reserved: true } },
-    { id: "revenue_30d", accessorKey: "revenue_30d", header: "30天销售额", cell: () => "—", enableSorting: false, meta: { reserved: true } },
+    { id: "category", accessorKey: "category", header: "分类", meta: { width: 160, grow: 1, minWidth: 130, text: "single" }, cell: ({ row }) => <code className="si-mono">{row.original.category || "—"}</code>, enableSorting: true },
+    { id: "price", accessorKey: "price_min", header: "价格", meta: { width: 100, grow: 0, minWidth: 88, align: "end", text: "single" }, cell: ({ row }) => priceCell(row.original), enableSorting: true },
+    { id: "in_stock_variants", accessorKey: "in_stock_variants", header: "有货变体", meta: { width: 105, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => row.original.in_stock_variants + "/" + row.original.variant_count, enableSorting: true },
+    { id: "stock_status", accessorKey: "stock_status", header: "库存", meta: { width: 90, grow: 0, minWidth: 82, text: "single" }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockLabels[row.original.stock_status]}</Chip>, enableSorting: true },
+    { id: "tags", accessorKey: "tags", header: "标签", meta: { width: 170, grow: 0, minWidth: 146, text: "single" }, cell: ({ row }) => <span className="si-product-tags-cell">{row.original.tags.slice(0, 3).map((tag) => <span className="si-product-tag" key={tag}>{tag}</span>)}{row.original.exclude_edm === 1 && <span className="si-product-tag si-product-tag-warn">不进 EDM</span>}</span>, enableSorting: false },
+    { id: "rating", accessorKey: "rating", header: "评分", meta: { width: 96, grow: 0, minWidth: 86, align: "end", text: "single" }, cell: ({ row }) => row.original.rating == null ? "—" : row.original.rating.toFixed(1) + (row.original.review_count ? " (" + row.original.review_count + ")" : ""), enableSorting: true },
+    { id: "units_30d", accessorKey: "units_30d", header: "30天销量", cell: () => "—", enableSorting: false, meta: { width: 102, grow: 0, minWidth: 92, align: "end", reserved: true, text: "single" } },
+    { id: "revenue_30d", accessorKey: "revenue_30d", header: "30天销售额", cell: () => "—", enableSorting: false, meta: { width: 128, grow: 0, minWidth: 112, align: "end", reserved: true, text: "single" } },
   ];
 }
 
@@ -208,9 +208,11 @@ export function ProductsPage() {
     } />
     <ProjectTabPanel projectId={project.id} tab="products">
     <div className="si-products-filterbar">
-      <span>库存</span>{stockOptions.map((option) => <FilterPill key={option.value} currentValue={stock} value={option.value} onValueChange={onStockChange}>{option.label}</FilterPill>)}
-      <span>标签</span><FilterPill currentValue={tag} value="all" onValueChange={onTagChange}>全部</FilterPill>
-      {(tagsQuery.data ?? []).map((item) => <FilterPill key={item.tag} currentValue={tag} value={item.tag} onValueChange={onTagChange}>{item.tag}</FilterPill>)}
+      <FilterBar className="si-products-filter-conditions">
+        <span className="si-products-filter-label">库存</span>{stockOptions.map((option) => <FilterPill key={option.value} currentValue={stock} value={option.value} onValueChange={onStockChange}>{option.label}</FilterPill>)}
+        <span className="si-products-filter-label is-separated">标签</span><FilterPill currentValue={tag} value="all" onValueChange={onTagChange}>全部</FilterPill>
+        {(tagsQuery.data ?? []).map((item) => <FilterPill key={item.tag} currentValue={tag} value={item.tag} onValueChange={onTagChange}>{item.tag}</FilterPill>)}
+      </FilterBar>
       {tagsQuery.isError && <ApiErrorNotice label="标签筛选加载失败。" error={tagsQuery.error} onRetry={() => void tagsQuery.refetch()} />}
       <span className="si-products-result-count">显示 {listQuery.data?.total ?? 0} 个产品</span>
     </div>
@@ -221,7 +223,7 @@ export function ProductsPage() {
         tableId="products.list" scopeId={id}
         rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
         query={query} onQueryChange={setQuery} onRowClick={(row) => { setSelectedHandle(row.handle); setDetailFeedback(""); }}
-        getRowId={(row) => row.handle} maxHeight={560} rowHeight={52} showPagination={false}
+        getRowId={(row) => row.handle} height="fill" rowHeight={52} showPagination={false}
         emptyTitle="没有匹配的产品" emptyDescription="请修改搜索文字或库存、标签筛选条件。"
       />}
       <p className="si-products-table-note">数据：index/views/products.jsonl · 点击产品查看详情 · 评分为示例值 · 灰色列为销量预留</p>
