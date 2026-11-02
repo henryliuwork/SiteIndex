@@ -1,7 +1,7 @@
 import path from "node:path";
 import { XMLParser } from "fast-xml-parser";
 import { parseDocument } from "htmlparser2";
-import { PATHS, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig } from "@siteindex/shared";
+import { DEFAULT_DESCRIPTION_RANGE, DEFAULT_TITLE_RANGE, PATHS, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { readJsonl, writeJsonl } from "../io/jsonl";
@@ -77,6 +77,36 @@ function contentLinks(root: HtmlNode, pageUrl: string, origin: string): { url: s
     return [{ url, anchor: text(n), nofollow: (attr(n, "rel") ?? "").toLowerCase().split(/\s+/).includes("nofollow") }];
   });
 }
+function hreflangData(root: HtmlNode, baseUrl: string): { links: { lang: string; url: string }[]; problems: string[] } {
+  const links: { lang: string; url: string }[] = [];
+  const problems = new Set<string>();
+  const seenLanguages = new Set<string>();
+  const alternates = walk(root, (node) => node.name === "link"
+    && (attr(node, "rel") ?? "").toLowerCase().split(/\s+/).includes("alternate")
+    && attr(node, "hreflang") !== null, OMIT);
+  for (const node of alternates) {
+    const language = attr(node, "hreflang");
+    if (!language) continue;
+    let normalizedLanguage = language.toLowerCase();
+    if (normalizedLanguage !== "x-default") {
+      try {
+        const canonical = Intl.getCanonicalLocales(language);
+        if (canonical.length !== 1) throw new RangeError("Expected one language tag");
+        normalizedLanguage = canonical[0]!.toLowerCase();
+      } catch {
+        problems.add("Invalid hreflang language: " + language);
+      }
+    }
+    if (seenLanguages.has(normalizedLanguage)) problems.add("Duplicate hreflang language: " + language);
+    seenLanguages.add(normalizedLanguage);
+    const targetValue = attr(node, "href");
+    const target = targetValue ? cleanUrl(targetValue, baseUrl) : null;
+    if (!target) problems.add("Missing or invalid hreflang URL for " + language);
+    else links.push({ lang: language, url: target });
+  }
+  return { links, problems: [...problems].sort(compareKeys) };
+}
+
 function jsonLd(root: HtmlNode): JsonObject[] {
   const output: JsonObject[] = [];
   for (const node of walk(root, (n) => n.name === "script" && attr(n, "type")?.toLowerCase() === "application/ld+json")) {
@@ -143,7 +173,7 @@ function isConfiguredBlogUrl(url: string, recognition: BlogRecognition): boolean
 }
 function dateDiff(newer: string, older: string): number { return Math.floor((Date.parse(newer + "T00:00:00Z") - Date.parse(older + "T00:00:00Z")) / 86400000); }
 
-interface Parsed { page: SeoPage; doc: HtmlNode; links: { url: string; anchor: string; nofollow: boolean }[]; lastmod?: string }
+interface Parsed { page: SeoPage; doc: HtmlNode; links: { url: string; anchor: string; nofollow: boolean }[]; hreflangProblems: string[]; lastmod?: string }
 interface FetchData { status: number; body: string; url: string; redirects: string[]; ms: number; xRobotsTag: string | null }
 
 function schemaTypeName(value: unknown): string {
@@ -297,7 +327,8 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
       const title = walk(doc, (n) => n.name === "title").map((n) => text(n))[0] || null;
       const description = meta(doc, "description");
       const canonicalNode = walk(doc, (n) => n.name === "link" && (attr(n, "rel") ?? "").toLowerCase().split(/\s+/).includes("canonical"))[0];
-      const canonical = cleanUrl(attr(canonicalNode, "href") ?? "", response.url);
+      const canonicalHref = attr(canonicalNode, "href");
+      const canonical = canonicalHref ? cleanUrl(canonicalHref, response.url) : null;
       const robots = meta(doc, "robots");
       const ld = jsonLd(doc);
       const types = typesOf(ld);
@@ -309,6 +340,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
       }
       const images = walk(area(doc), (n) => n.name === "img", OMIT);
       const links = contentLinks(doc, response.url, origin);
+      const hreflang = hreflangData(doc, response.url);
       const page: SeoPage = {
         url, page_type: pageType(url, productUrls, config.categories.url_pattern, categorySlugs, doc, blog), status_code: response.status, ...(response.url !== url ? { final_url: response.url } : {}),
         ...(response.redirects.length ? { redirect_chain: response.redirects } : {}), response_ms: response.ms,
@@ -318,8 +350,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
         canonical, canonical_status: !canonical ? "missing" : canonical === url ? "self" : "other",
         robots_meta: robots, x_robots_tag: response.xRobotsTag,
         indexable: response.status < 400 && !/noindex/i.test((robots ?? "") + " " + (response.xRobotsTag ?? "")) && (!canonical || canonical === url),
-        in_sitemap: true, hreflang: walk(doc, (n) => n.name === "link" && !!attr(n, "hreflang"))
-          .flatMap((n) => { const target = cleanUrl(attr(n, "href") ?? "", response.url); const lang = attr(n, "hreflang"); return target && lang ? [{ lang, url: target }] : []; }),
+        in_sitemap: true, hreflang: hreflang.links,
         og: { ...(meta(doc, "og:title") ? { title: meta(doc, "og:title") } : {}), ...(meta(doc, "og:description") ? { description: meta(doc, "og:description") } : {}),
           ...(cleanUrl(meta(doc, "og:image") ?? "", response.url) ? { image: cleanUrl(meta(doc, "og:image")!, response.url) } : {}) },
         twitter_card: meta(doc, "twitter:card"), schema_types: types, ...(schemaErrors.length ? { schema_errors: schemaErrors } : {}),
@@ -329,7 +360,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
           .map((n) => cleanUrl(attr(n, "href")!, response.url)).filter((href) => !!href && new URL(href).origin !== origin).length,
         links_internal_in: 0, last_crawled: date,
       };
-      rows.push({ page, doc, links, ...(lastmod ? { lastmod } : {}) });
+      rows.push({ page, doc, links, hreflangProblems: hreflang.problems, ...(lastmod ? { lastmod } : {}) });
     } catch (error) { errors.push(url + ": " + (error instanceof Error ? error.message : String(error))); }
   }
   if (!urls.size) errors.push("sitemap has no crawlable URLs");
@@ -340,19 +371,34 @@ function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, d
   const issues = new Map<string, Omit<SeoIssue, "status" | "first_seen" | "last_seen">>();
   const add = (url: string, rule: SeoRule, severity: SeoIssue["severity"], detail: string) => issues.set(url + "\n" + rule, { url, rule, severity, detail });
   const titleMap = new Map<string, SeoPage[]>(), descMap = new Map<string, SeoPage[]>();
-  for (const { page } of rows) {
+  const titleRange = config.seo?.title_range ?? DEFAULT_TITLE_RANGE;
+  const descriptionRange = config.seo?.description_range ?? DEFAULT_DESCRIPTION_RANGE;
+  for (const row of rows) {
+    const { page } = row;
     if (page.title) titleMap.set(page.title.toLowerCase(), [...(titleMap.get(page.title.toLowerCase()) ?? []), page]);
     if (page.meta_description) descMap.set(page.meta_description.toLowerCase(), [...(descMap.get(page.meta_description.toLowerCase()) ?? []), page]);
     if (page.status_code >= 400 && page.status_code < 500) add(page.url, "http_4xx", "high", "HTTP " + page.status_code);
     if (page.status_code >= 500) add(page.url, "http_5xx", "high", "HTTP " + page.status_code);
     if ((page.redirect_chain?.length ?? 0) >= 2) add(page.url, "redirect_chain", "mid", "Redirect chain has at least two hops");
     if (/noindex/i.test((page.robots_meta ?? "") + " " + (page.x_robots_tag ?? ""))) add(page.url, "noindex", "low", "Page is marked noindex");
+    if (page.url.length > 2048) add(page.url, "url_too_long", "low", "URL length " + page.url.length + " exceeds 2048 characters");
+    if (row.hreflangProblems.length) add(page.url, "hreflang_invalid", "mid", row.hreflangProblems.join("; "));
     if (page.canonical_status === "other") add(page.url, "canonical_other", "mid", "Canonical points to " + page.canonical);
     if (page.canonical_status === "missing") add(page.url, "canonical_missing", "low", "Canonical link is missing");
     if (!page.title) add(page.url, "title_missing", "mid", "Title is missing");
-    else if (gradeTitleLength(page.title_length, config.seo?.title_range) === "poor") add(page.url, "title_length", "low", "Title length is " + page.title_length);
+    else if (gradeTitleLength(page.title_length, titleRange) === "poor") {
+      const tooShort = page.title_length < titleRange[0];
+      const rule = tooShort ? "title_too_short" : "title_too_long";
+      const limit = tooShort ? titleRange[0] : titleRange[1];
+      add(page.url, rule, "low", "Title length " + page.title_length + (tooShort ? " is below " : " is above ") + limit);
+    }
     if (!page.meta_description) add(page.url, "desc_missing", "mid", "Meta description is missing");
-    else if (gradeDescriptionLength(page.description_length, config.seo?.description_range) === "poor") add(page.url, "desc_length", "low", "Description length is " + page.description_length);
+    else if (gradeDescriptionLength(page.description_length, descriptionRange) === "poor") {
+      const tooShort = page.description_length < descriptionRange[0];
+      const rule = tooShort ? "desc_too_short" : "desc_too_long";
+      const limit = tooShort ? descriptionRange[0] : descriptionRange[1];
+      add(page.url, rule, "low", "Description length " + page.description_length + (tooShort ? " is below " : " is above ") + limit);
+    }
     if (!page.h1_count) add(page.url, "h1_missing", "low", "H1 is missing");
     if (page.h1_count > 1) add(page.url, "h1_multiple", "low", "Multiple H1 elements");
     const types = page.schema_types.map(schemaTypeName);
