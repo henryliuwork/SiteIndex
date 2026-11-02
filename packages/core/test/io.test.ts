@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -137,6 +137,22 @@ describe("core io", () => {
       now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
     })).resolves.toBe("recovered");
     await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("treats an empty lock record as active and reclaims it only after it is stale", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "");
+
+    await expect(withLock(root, () => "must not enter")).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+
+    const staleAt = new Date("2026-10-22T09:00:00.000Z");
+    await utimes(lockPath, staleAt, staleAt);
+    await expect(withLock(root, () => "recovered", {
+      now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
+    })).resolves.toBe("recovered");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("removes locks for partial results and rejected callbacks", async () => {

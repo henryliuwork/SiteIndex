@@ -87,13 +87,24 @@ async function openOrRecover(lockPath: string, staleAfterMs: number, now: () => 
     handle = await open(lockPath, "r");
     const identity = await handle.stat();
     const text = await handle.readFile({ encoding: "utf8" });
-    const record = JSON.parse(text) as Partial<LockRecord>;
-    const heartbeat = typeof record.heartbeat === "string" ? Date.parse(record.heartbeat) : Number.NaN;
-    if (!Number.isFinite(heartbeat) || now().getTime() - heartbeat <= staleAfterMs) {
+    let record: Partial<LockRecord> | null = null;
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        record = parsed as Partial<LockRecord>;
+      }
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      // Lock creation and heartbeats update the opened file in place; a contender can observe partial JSON.
+    }
+    const heartbeat = typeof record?.heartbeat === "string" ? Date.parse(record.heartbeat) : Number.NaN;
+    const lastActivity = Number.isFinite(heartbeat) ? heartbeat : identity.mtimeMs;
+    if (!Number.isFinite(lastActivity) || now().getTime() - lastActivity <= staleAfterMs) {
       throw lockError("项目正在运行另一个任务，请稍后重试。");
     }
     const current = await lstat(lockPath);
-    if (current.ino !== identity.ino || current.dev !== identity.dev) {
+    if (current.ino !== identity.ino || current.dev !== identity.dev
+      || current.size !== identity.size || current.mtimeMs !== identity.mtimeMs || current.ctimeMs !== identity.ctimeMs) {
       throw lockError("项目运行锁刚刚更新，请稍后重试。");
     }
     const retired = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
