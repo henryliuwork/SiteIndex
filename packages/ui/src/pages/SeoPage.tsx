@@ -53,29 +53,29 @@ function csvCell(value: string): string {
 
 function issueColumns(): ColumnDef<SeoIssue, unknown>[] {
   return [
-    { id: "severity", accessorKey: "severity", header: "级别", cell: ({ row }) => <Chip tone={severityTones[row.original.severity]}>{severityLabels[row.original.severity]}</Chip>, enableSorting: true },
-    { id: "url", accessorKey: "url", header: "页面", cell: ({ row }) => <code className="si-seo-url" title={row.original.url}>{displayPath(row.original.url)}</code>, enableSorting: true },
-    { id: "problem", accessorKey: "detail", header: "问题", cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span title={row.original.detail}>{row.original.detail}</span></span>, enableSorting: false },
-    { id: "last_seen", accessorKey: "last_seen", header: "发现于", cell: ({ row }) => <code className="si-seo-date">{row.original.last_seen.slice(5)}</code>, enableSorting: true },
+    { id: "severity", accessorKey: "severity", header: "级别", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={severityTones[row.original.severity]}>{severityLabels[row.original.severity]}</Chip>, enableSorting: true },
+    { id: "url", accessorKey: "url", header: "页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <code className="si-seo-url" title={row.original.url}>{displayPath(row.original.url)}</code>, enableSorting: true },
+    { id: "problem", accessorKey: "detail", header: "问题", meta: { width: 220, grow: 1, minWidth: 160, text: "single" }, cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span title={row.original.detail}>{row.original.detail}</span></span>, enableSorting: false },
+    { id: "last_seen", accessorKey: "last_seen", header: "发现于", meta: { width: 100, grow: 0, minWidth: 92, text: "single" }, cell: ({ row }) => <code className="si-seo-date">{row.original.last_seen.slice(5)}</code>, enableSorting: true },
   ];
 }
 
 function pageColumns(titleRange: [number, number], descriptionRange: [number, number]): ColumnDef<SeoRecord, unknown>[] {
   return [
-    { id: "url", accessorKey: "url", header: "页面", cell: ({ row }) => <span className="si-seo-page-cell"><code>{displayPath(row.original.url)}</code><span>{row.original.title || "无 Title"}</span></span>, enableSorting: true },
-    { id: "page_type", accessorKey: "page_type", header: "类型", cell: ({ row }) => <Chip tone="neutral">{pageTypeLabels[row.original.page_type]}</Chip>, enableSorting: true },
-    { id: "title_length", accessorKey: "title_length", header: "Title 长度", cell: ({ row }) => <span className="si-seo-length-cell">{row.original.title_length}<LengthBadge length={row.original.title_length} kind="title" range={titleRange} /></span>, enableSorting: true },
-    { id: "description_length", accessorKey: "description_length", header: "Description 长度", cell: ({ row }) => <span className="si-seo-length-cell">{row.original.description_length}<LengthBadge length={row.original.description_length} kind="description" range={descriptionRange} /></span>, enableSorting: true },
-    { id: "google_indexed", accessorKey: "google_indexed", header: "收录", cell: ({ row }) => <Chip tone={row.original.google_indexed === true ? "ok" : row.original.google_indexed === false ? "danger" : "neutral"}>{row.original.google_indexed === true ? "已收录" : row.original.google_indexed === false ? "未收录" : "未检查"}</Chip>, enableSorting: true },
+    { id: "url", accessorKey: "url", header: "页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-seo-page-cell"><code>{displayPath(row.original.url)}</code><span>{row.original.title || "无 Title"}</span></span>, enableSorting: true },
+    { id: "page_type", accessorKey: "page_type", header: "类型", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone="neutral">{pageTypeLabels[row.original.page_type]}</Chip>, enableSorting: true },
+    { id: "title_length", accessorKey: "title_length", header: "Title 长度", meta: { width: 96, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ row }) => <span className="si-seo-length-cell">{row.original.title_length}<LengthBadge length={row.original.title_length} kind="title" range={titleRange} /></span>, enableSorting: true },
+    { id: "description_length", accessorKey: "description_length", header: "Description 长度", meta: { width: 96, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ row }) => <span className="si-seo-length-cell">{row.original.description_length}<LengthBadge length={row.original.description_length} kind="description" range={descriptionRange} /></span>, enableSorting: true },
+    { id: "google_indexed", accessorKey: "google_indexed", header: "收录", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={row.original.google_indexed === true ? "ok" : row.original.google_indexed === false ? "danger" : "neutral"}>{row.original.google_indexed === true ? "已收录" : row.original.google_indexed === false ? "未收录" : "未检查"}</Chip>, enableSorting: true },
   ];
 }
 
 function linkColumns(): ColumnDef<SeoLink, unknown>[] {
   return [
-    { id: "from", accessorKey: "from", header: "来源页面", cell: ({ row }) => <code className="si-seo-url">{displayPath(row.original.from)}</code>, enableSorting: true },
-    { id: "anchor", accessorKey: "anchor", header: "锚文本", cell: ({ row }) => row.original.anchor || "（空锚文本）", enableSorting: true },
-    { id: "to", accessorKey: "to", header: "目标页面", cell: ({ row }) => <span className="si-seo-link-target"><code>{displayPath(row.original.to)}</code>{row.original.nofollow && <Chip tone="warn">nofollow</Chip>}</span>, enableSorting: true },
-    { id: "to_type", accessorKey: "to_type", header: "类型", cell: ({ row }) => <Chip tone="neutral">{pageTypeLabels[row.original.to_type === "page" ? "page" : row.original.to_type]}</Chip>, enableSorting: true },
+    { id: "from", accessorKey: "from", header: "来源页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <code className="si-seo-url">{displayPath(row.original.from)}</code>, enableSorting: true },
+    { id: "anchor", accessorKey: "anchor", header: "锚文本", meta: { width: 220, grow: 1, minWidth: 160, text: "clamp2" }, cell: ({ row }) => row.original.anchor || "（空锚文本）", enableSorting: true },
+    { id: "to", accessorKey: "to", header: "目标页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-seo-link-target"><code>{displayPath(row.original.to)}</code>{row.original.nofollow && <Chip tone="warn">nofollow</Chip>}</span>, enableSorting: true },
+    { id: "to_type", accessorKey: "to_type", header: "类型", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone="neutral">{pageTypeLabels[row.original.to_type === "page" ? "page" : row.original.to_type]}</Chip>, enableSorting: true },
   ];
 }
 

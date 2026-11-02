@@ -91,33 +91,6 @@ position: absolute; z-index: 4; top: -50px; right: 0; min-height: 32px; padding:
 height: 405px; max-height: 405px;
 }
 
-.si-seo-table-issues .si-table {
-min-width: 760px; table-layout: fixed;
-}
-
-.si-seo-table-issues .si-table th:nth-child(1),
-.si-seo-table-issues .si-table td:nth-child(1) {
-width: 72px;
-}
-
-.si-seo-table-issues .si-table th:nth-child(2),
-.si-seo-table-issues .si-table td:nth-child(2) {
-width: 220px;
-}
-
-.si-seo-table-issues .si-table td:nth-child(2) {
-overflow: hidden;
-}
-
-.si-seo-table-issues .si-table td:nth-child(3) {
-overflow: hidden;
-}
-
-.si-seo-table-issues .si-table th:nth-child(4),
-.si-seo-table-issues .si-table td:nth-child(4) {
-width: 96px;
-}
-
 .si-seo-table-frame .si-data-table > .si-table-scroll {
 min-height: 405px;
 }
@@ -147,7 +120,7 @@ color: var(--color-muted); font-family: var(--font-mono); font-size: 12px;
 }
 
 .si-seo-page-cell {
-display: grid; max-width: 290px; gap: 2px;
+display: grid; min-width: 0; gap: 2px;
 }
 
 .si-seo-page-cell > code, .si-seo-link-target > code {
