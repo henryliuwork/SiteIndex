@@ -116,9 +116,11 @@ export function DataTable<T, F = Record<string, unknown>>({
     <section className="si-data-table" aria-label={tableId + " 数据表"}>
       <div className="si-table-toolbar">
         <div className="si-table-toolbar-content">{toolbar}</div>
-        <Popover trigger={<Button size="small" icon={<Columns3 size={15} />}>列设置</Button>} className="si-column-popover">
-          {columnMenu}
-        </Popover>
+        <div className="si-table-toolbar-settings">
+          <Popover trigger={<Button size="small" icon={<Columns3 size={15} />}>列设置</Button>} className="si-column-popover">
+            {columnMenu}
+          </Popover>
+        </div>
       </div>
       <div className="si-table-scroll" ref={scrollRef} style={{ height: maxHeight }}>
         <table className="si-table">

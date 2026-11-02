@@ -25,6 +25,12 @@
   --color-chart-feeders: #1E6B52;
   --color-chart-baths: #D9822B;
   --color-chart-houses: #7FB2E5;
+  --si-gap-1: 6px;
+  --si-gap-2: 8px;
+  --si-gap-3: 12px;
+  --si-gap-4: 16px;
+  --si-gap-5: 24px;
+  --si-gap-6: 32px;
   --font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
   --font-mono: "Geist Mono Variable", Consolas, monospace;
 }

@@ -51,6 +51,7 @@
 - [x] 全部写入操作的"已保存 / 失败原因"反馈；危险操作二次确认；空状态与错误状态 — [PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)、[PR #52](https://github.com/henryliuwork/SiteIndex/pull/52)、[PR #53](https://github.com/henryliuwork/SiteIndex/pull/53)、[PR #55](https://github.com/henryliuwork/SiteIndex/pull/55)、[PR #73](https://github.com/henryliuwork/SiteIndex/pull/73)
 
 ## M3 · 打磨
+- [ ] B-T3 共享层：DataTable 列设置置于常规工具栏槽位、FilterBar 超过两行可折叠、补充间距 token — 本 PR；D 页面样式中的 `top:-50px` / `padding-right:90px` 遗留规则未改，需由 D 清理
 - [x] 逐页对照画板修正细节；1100 宽窗口下布局不溢出（侧栏折叠）— [PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)、[PR #60](https://github.com/henryliuwork/SiteIndex/pull/60)、[PR #61](https://github.com/henryliuwork/SiteIndex/pull/61)、[PR #62](https://github.com/henryliuwork/SiteIndex/pull/62)、[PR #63](https://github.com/henryliuwork/SiteIndex/pull/63)、[PR #64](https://github.com/henryliuwork/SiteIndex/pull/64)、[PR #65](https://github.com/henryliuwork/SiteIndex/pull/65)、[PR #66](https://github.com/henryliuwork/SiteIndex/pull/66)、[PR #67](https://github.com/henryliuwork/SiteIndex/pull/67)、[PR #68](https://github.com/henryliuwork/SiteIndex/pull/68)
 - [x] 共享组件键盘焦点、Dialog/Drawer 焦点返回与文字对比度 — [PR #179](https://github.com/henryliuwork/SiteIndex/pull/179)
 - [x] Tabs / ProjectHeader 稳定 tab 与 panel ID；README、软件设置面板建立 aria-controls / aria-labelledby 关系 — [PR #183](https://github.com/henryliuwork/SiteIndex/pull/183)
