@@ -2,6 +2,7 @@ import type { ProjectDetail, SiteIndexApi, SiteIndexError } from "@siteindex/sha
 import { beginRun, categorySeeds, clone, fixtures, mockMode, notifyProjectChanged, projectConfigs, projectIds, projectKey, projectSummaries, projectsChanged, reply, runners, stockSeeds, type MockProjectId } from "./context";
 
 export const mockProjectNonFeedWarnings: Record<MockProjectId, string[]> = { kingsyard: [], riverstone: [] };
+const demoBirdshopHost = "kingsyard.example.test";
 
 function hasConfiguredFeed(feedUrl: string | string[]): boolean {
   return (Array.isArray(feedUrl) ? feedUrl : [feedUrl]).some((url) => url.trim().length > 0);
@@ -28,9 +29,9 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
     detect: (url) => reply(() => {
       const normalized = /^https?:\/\//i.test(url) ? url : "https://" + url;
       const baseUrl = normalized.replace(/\/$/, "");
-      const isKingsyard = new URL(baseUrl).hostname.toLowerCase().endsWith("kingsyard.com");
+      const isKingsyard = new URL(baseUrl).hostname.toLowerCase().endsWith(demoBirdshopHost);
       if (isKingsyard) {
-        const finalUrl = "https://www.kingsyard.com";
+        const finalUrl = `https://www.${demoBirdshopHost}`;
         return {
           input: url, final_url: finalUrl, redirect_status: 301,
           robots: { found: true, disallow_count: 1, sitemaps: [finalUrl + "/sitemap.xml"] },
@@ -49,7 +50,7 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
     }),
     inspectFeed: (_feedUrls, opts) => reply(() => {
       if (mockMode === "feed-error") throw { code: "FEED_FETCH_FAILED", message: "无法读取 Feed，请检查地址后重试。" } satisfies SiteIndexError;
-      if (fixtures.site.domain === "kingsyard.com") return {
+      if (fixtures.site.domain?.split(".")[0]?.toLowerCase() === "kingsyard") return {
         items: 20, usable_skus: 18, products: 16,
         skipped: { duplicate: 1, missing_price_or_link: 1, no_id: 0 },
         stock: { in_stock: 16, out_of_stock: 1, preorder: 0, unknown: 1 },

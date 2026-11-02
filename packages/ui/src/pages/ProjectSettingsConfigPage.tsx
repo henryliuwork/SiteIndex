@@ -9,6 +9,7 @@ import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "..
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { configSectionLinks, isConfigSectionId, scrollToConfigSection, type ConfigSectionId } from "./project-settings-config/section-navigation";
 import { invalidateInventoryForCategoryChange } from "./project-settings-config/inventory-cache";
+import { didBlogRecognitionConfigChange, markBlogRecognitionConfigUpdated } from "./content/blog-recognition";
 import "./project-settings-config/page.css";
 
 const settingsTabs = [
@@ -195,10 +196,14 @@ export function ProjectSettingsConfigPage() {
       return;
     }
     const previousCategories = projectQuery.data?.config.categories ?? config.categories;
+    const previousBlogRecognition = projectQuery.data?.config.content;
     setSaving(true);
     setFeedback("");
     try {
       const saved = await api.projects.updateConfig(id, config);
+      if (didBlogRecognitionConfigChange(previousBlogRecognition, saved.content)) {
+        markBlogRecognitionConfigUpdated(id);
+      }
       setDraft(saved);
       setOverrideText(JSON.stringify(saved.crawl.overrides ?? {}, null, 2));
       await Promise.all([
@@ -307,7 +312,7 @@ export function ProjectSettingsConfigPage() {
         </div></ConfigCard>
 
         <ConfigCard id="blog-recognition" title="博客识别">
-          <p className="si-config-help">使用博客专用 Sitemap 或文章 URL 前缀识别博客内容；这些规则只调整内容分类，不改变抓取范围。</p>
+          <p className="si-config-help">博客 Sitemap 会将其中的文章 URL 加入抓取队列；博客 URL 规则用于识别内容类型。</p>
           <div className="si-config-grid si-config-grid-2">
             <TextAreaField label="博客 Sitemap（每行一个地址）" value={asLines(draft.content?.blog_sitemaps)} onChange={(value) => patch("content", { ...draft.content, blog_sitemaps: fromLines(value) })} mono rows={3} />
             <TextAreaField label="博客 URL 前缀或规则（每行一条）" value={asLines(draft.content?.blog_url_patterns)} onChange={(value) => patch("content", { ...draft.content, blog_url_patterns: fromLines(value) })} mono rows={3} />
