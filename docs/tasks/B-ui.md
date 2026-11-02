@@ -62,6 +62,9 @@
 - [ ] 与 C 联调：真实 IPC 下全部页面可用（发现契约不一致 → 开 contract PR）— [issue #82](https://github.com/henryliuwork/SiteIndex/issues/82)，等待正式安装包验收
 - [ ] 运行页系统计划任务 / 软件常驻状态与授权重新注册 — [PR #72](https://github.com/henryliuwork/SiteIndex/pull/72) 尚未合并
 
+## v0.1.7 · 表格与规则
+- [x] B-T1：DataTable 列宽契约、可见列 colgroup 重算、文本截断类与虚拟行高断言；宽度档位已写入 DESIGN — 本 PR
+
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码
