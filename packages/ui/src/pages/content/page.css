@@ -2,6 +2,30 @@
 gap: 16px;
 }
 
+.si-content-recognition-summary {
+display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 10px 14px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: 12px;
+}
+
+.si-content-recognition-summary a, .si-content-blog-empty a {
+color: var(--color-brand); font-weight: 600; text-decoration: none;
+}
+
+.si-content-recognition-summary a:hover, .si-content-blog-empty a:hover {
+text-decoration: underline;
+}
+
+.si-content-blog-empty {
+display: grid; min-height: 260px; justify-items: center; align-content: center; gap: 10px; padding: 24px; border: 1px dashed var(--color-line); border-radius: 8px; background: var(--color-surface); color: var(--color-ink-2); text-align: center;
+}
+
+.si-content-blog-empty strong {
+color: var(--color-ink); font-size: 14px;
+}
+
+.si-content-blog-empty p, .si-content-blog-empty small {
+max-width: 600px; margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.55;
+}
+
 .si-content-kpis {
 display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px;
 }
