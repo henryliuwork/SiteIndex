@@ -40,6 +40,8 @@ export interface DataTableProps<T, F = Record<string, unknown>> {
   onQueryChange: (query: ListQuery<F>) => void;
   onRowClick?: (row: T) => void;
   getRowId?: (row: T, index: number) => string;
+  height?: number | "fill";
+  /** @deprecated Use `height` instead. Kept for one compatibility version. */
   maxHeight?: number;
   rowHeight?: number;
   showHeader?: boolean;
@@ -61,8 +63,10 @@ function pageSizeValue(value: number): 20 | 50 | 100 {
 
 export function DataTable<T, F = Record<string, unknown>>({
   tableId, scopeId, rows, total, columns, query, onQueryChange, onRowClick, getRowId,
-  maxHeight = 560, rowHeight = 44, showHeader = true, showPagination = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
+  height, maxHeight, rowHeight = 44, showHeader = true, showPagination = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
 }: DataTableProps<T, F>) {
+  const resolvedHeight = height ?? (maxHeight === undefined ? "fill" : maxHeight);
+  const isFill = resolvedHeight === "fill";
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
@@ -141,7 +145,7 @@ export function DataTable<T, F = Record<string, unknown>>({
   );
 
   return (
-    <section className="si-data-table" aria-label={tableId + " 数据表"}>
+    <section className={`si-data-table${isFill ? " is-fill si-table-region" : ""}`} aria-label={tableId + " 数据表"}>
       <div className="si-table-toolbar">
         <div className="si-table-toolbar-content">{toolbar}</div>
         <div className="si-table-toolbar-settings">
@@ -150,7 +154,7 @@ export function DataTable<T, F = Record<string, unknown>>({
           </Popover>
         </div>
       </div>
-      <div className="si-table-scroll" ref={scrollRef} style={{ height: maxHeight }}>
+      <div className="si-table-scroll" ref={scrollRef} style={isFill ? undefined : { height: resolvedHeight }}>
         <table className="si-table" style={{ width: tableWidth }}>
           <colgroup>
             {visibleColumns.map((column, index) => (
