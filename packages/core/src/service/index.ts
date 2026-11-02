@@ -72,6 +72,7 @@ import {
 } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { readCsv, writeCsv, type CsvRow } from "../io/csv";
+import { compareKeys } from "../io/compare";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
 import { previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
@@ -163,6 +164,32 @@ interface ProjectSnapshot {
   skuTags: CsvRow[];
   asOf: ISODate;
 }
+
+interface SnapshotCacheEntry {
+  fingerprint: string;
+  snapshot: Promise<ProjectSnapshot>;
+}
+
+const SNAPSHOT_FILE_PATHS = [
+  PATHS.site,
+  PATHS.runner,
+  PATHS.skus,
+  PATHS.inventoryLatest,
+  PATHS.dailySummary,
+  PATHS.productsView,
+  PATHS.skuStockView,
+  PATHS.productDetails,
+  PATHS.seoPages,
+  PATHS.seoIssues,
+  PATHS.seoLinks,
+  PATHS.blogIndex,
+  PATHS.keywords,
+  PATHS.skuMedia,
+  PATHS.edmCampaigns,
+  PATHS.categories,
+  PATHS.runs,
+  PATHS.skuTags,
+] as const;
 
 const PRODUCT_FIELDS = [
   "handle", "product_id", "title", "url", "category", "categories", "price_min", "price_max",
@@ -352,6 +379,30 @@ async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
 
 function serializeSiteConfig(config: SiteConfig): string {
   return `${JSON.stringify(config, (key, value) => key === "workspace_folders" ? undefined : value, 2)}\n`;
+}
+
+async function snapshotFingerprint(projectPath: string): Promise<string> {
+  let eventFiles: string[];
+  try {
+    eventFiles = (await readdir(path.join(projectPath, PATHS.eventsDir)))
+      .filter((name) => /^\d{4}-\d{2}\.jsonl$/.test(name))
+      .map((name) => path.join(PATHS.eventsDir, name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    eventFiles = [];
+  }
+
+  const filePaths = [...SNAPSHOT_FILE_PATHS, ...eventFiles].sort(compareKeys);
+  const entries = await Promise.all(filePaths.map(async (relativePath) => {
+    try {
+      const file = await stat(path.join(projectPath, relativePath));
+      return `${relativePath}\u0000${file.dev}\u0000${file.ino}\u0000${file.size}\u0000${file.mtimeMs}\u0000${file.ctimeMs}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return `${relativePath}\u0000missing`;
+      throw error;
+    }
+  }));
+  return entries.join("\n");
 }
 
 async function loadSnapshot(projectPath: string): Promise<ProjectSnapshot> {
@@ -1070,17 +1121,24 @@ async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot)
 }
 
 export function createCoreService(ctx: CoreServiceContext): CoreService {
-  const cache = new Map<string, Promise<ProjectSnapshot>>();
+  const cache = new Map<string, SnapshotCacheEntry>();
   const createdTags = new Map<string, Set<string>>();
   const resolve = (id: ProjectId) => path.resolve(ctx.resolveProject(id));
   const invalidate = (projectPath: string) => { cache.delete(path.resolve(projectPath)); };
-  const load = (projectPath: string): Promise<ProjectSnapshot> => {
+  const load = async (projectPath: string): Promise<ProjectSnapshot> => {
     const key = path.resolve(projectPath);
+    let fingerprint: string;
+    try {
+      fingerprint = await snapshotFingerprint(key);
+    } catch {
+      cache.delete(key);
+      return loadSnapshot(key);
+    }
     const existing = cache.get(key);
-    if (existing) return existing;
+    if (existing?.fingerprint === fingerprint) return existing.snapshot;
     const pending = loadSnapshot(key);
-    cache.set(key, pending);
-    void pending.catch(() => { if (cache.get(key) === pending) cache.delete(key); });
+    cache.set(key, { fingerprint, snapshot: pending });
+    void pending.catch(() => { if (cache.get(key)?.snapshot === pending) cache.delete(key); });
     return pending;
   };
 

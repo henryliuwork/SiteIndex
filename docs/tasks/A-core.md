@@ -61,7 +61,7 @@
 
 ### A8 查询服务 `core/src/service/`
 - [x] `createCoreService(ctx: { resolveProject(id): string; deviceId: string; cacheDir: string })` 覆盖 WORKSTREAMS §2 分配给 core 的项目、概览、库存、产品、SEO、内容、EDM、设计、README、分类、文件夹、文件、计划与执行设备方法；桌面专属方法留给 C
-- [x] 已实现方法使用统一分页/排序/筛选/搜索和内存缓存；暴露 `invalidate(projectPath)` 供 C 在文件变化时调用
+- [x] 已实现方法使用统一分页/排序/筛选/搜索和内存缓存；读取时比对索引文件指纹以识别外部写入，并暴露 `invalidate(projectPath)` 供 C 主动失效
 - [x] `projects.detect`、`inspectFeed`、`create`；新建项目复制模板、写配置与工作区、触发首次 daily
 - [x] `runJob(req: JobRequest, report: ProgressReporter): Promise<JobResult>` —— 统一入口、执行前检查、锁、runs.jsonl；daily、views、readme、weekly、monthly、validate、design、index-check 已接入
 - [x] monthly、design、index-check 等 Job 在对应模块完成后接入统一入口
