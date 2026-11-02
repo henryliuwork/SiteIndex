@@ -10,7 +10,7 @@ import {
 import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, StatusCells, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, StatusCells, stockTone } from "../components";
 import { selectInventoryCategoryRates } from "./inventory/categories";
 import { DEFAULT_TREND_CATEGORY_LIMIT, MAX_TREND_CATEGORY_LIMIT, defaultTrendCategories, toggleTrendCategory, trendPoints } from "./inventory/trend";
 
@@ -326,7 +326,7 @@ export function InventoryPage() {
         <Button size="small" onClick={sortByRate}>按在线率排序</Button>
         <span className="si-table-total">显示 {skuRows.length} / {skuQuery.data?.total.toLocaleString("zh-CN") ?? "—"} 个{query.filters?.parent_only ? "父 SKU" : " SKU"}</span>
       </div>
-      <div className="si-inventory-filters">
+      <FilterBar className="si-inventory-filters">
         <span className="si-filter-label">状态</span>
         {stockOptions.map((option) => <FilterPill key={option.value} currentValue={statusFilter} value={option.value} onValueChange={onStatusChange}>{option.label}</FilterPill>)}
         <span className="si-filter-label si-filter-category-label">分类</span>
@@ -339,7 +339,7 @@ export function InventoryPage() {
         ].map((option) => <FilterPill key={option.value} currentValue={query.filters?.price_changed_within?.toString() ?? "none"} value={option.value} onValueChange={onPriceChange}>{option.label}</FilterPill>)}
         <label className="si-inventory-parent-toggle si-inventory-watched-toggle"><input type="checkbox" checked={watchedOnly} onChange={(event) => onWatchedOnlyChange(event.target.checked)} /><span>仅关注分类</span></label>
         {groupingEnabled && <label className="si-inventory-parent-toggle"><input type="checkbox" checked={Boolean(query.filters?.parent_only)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>}
-      </div>
+      </FilterBar>
     </div>
   );
 
@@ -393,7 +393,7 @@ export function InventoryPage() {
         onQueryChange={setQuery}
         onRowClick={setSelectedRow}
         getRowId={(row) => row.sku}
-        maxHeight={560}
+        height="fill"
         emptyTitle="没有匹配的 SKU"
         emptyDescription={watchedOnly ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或库存筛选条件。"}
         toolbar={tableToolbar}

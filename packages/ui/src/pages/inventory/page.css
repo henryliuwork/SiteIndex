@@ -1,5 +1,13 @@
 .si-inventory-page {
-gap: 16px;
+display: flex; min-height: 0; flex-direction: column; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); gap: 16px;
+}
+
+.si-inventory-page > .si-tab-panel {
+display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 16px;
+}
+
+.si-inventory-page > .si-tab-panel > .si-data-table.is-fill {
+min-height: var(--si-table-min-h, 320px); flex: 1 1 auto;
 }
 
 .si-inventory-kpis {
@@ -259,7 +267,11 @@ margin-left: auto; color: var(--color-muted); font-size: 12px; white-space: nowr
 }
 
 .si-inventory-filters {
-display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
+width: 100%;
+}
+
+.si-inventory-filters .si-filter-bar-items {
+width: 100%; gap: 7px;
 }
 
 .si-inventory-parent-toggle {
