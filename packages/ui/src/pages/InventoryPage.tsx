@@ -229,15 +229,15 @@ function DailyReportDialog({ report, onOpenChange }: { report: string | null | u
 
 function inventoryColumns(): ColumnDef<InventoryTableRow, unknown>[] {
   return [
-    { id: "sku", accessorKey: "sku", header: "SKU", cell: ({ row }) => <span className="si-inventory-sku-cell"><span className="si-mono">{row.original.sku}</span>{row.original.is_parent && <small>父 SKU</small>}</span>, enableSorting: true },
-    { id: "title", accessorKey: "title", header: "产品 / 变体", cell: ({ row }) => <span className="si-product-cell"><strong>{row.original.title}</strong>{row.original.is_parent && <small>子 SKU {row.original.children_count ?? 0} 个 · 有货 {row.original.in_stock_children_count ?? 0} 个</small>}{!row.original.is_parent && row.original.variant_title && <small>{row.original.variant_title}</small>}</span>, enableSorting: true },
-    { id: "category", accessorKey: "category", header: "分类", cell: ({ row }) => <span className="si-mono">{row.original.category}</span>, enableSorting: true },
-    { id: "price", accessorKey: "price", header: "价格", cell: ({ row }) => <span className="si-mono">{row.original.price.toFixed(2)}</span>, enableSorting: true },
-    { id: "stock_status", accessorKey: "stock_status", header: "当前状态", cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockNames[row.original.stock_status]}</Chip>, enableSorting: true },
-    { id: "days_in_status", accessorKey: "days_in_status", header: "持续", cell: ({ row }) => row.original.days_in_status >= 60 ? "60 天+" : row.original.days_in_status <= 1 ? "今天" : row.original.days_in_status + " 天", enableSorting: true },
-    { id: "online_rate_30d", accessorKey: "online_rate_30d", header: "30 天在线率", cell: ({ row }) => row.original.is_parent ? <span className="si-muted">—</span> : <span className="si-rate-cell"><span className="si-rate-track"><span className={row.original.online_rate_30d !== null && row.original.online_rate_30d < 0.6 ? "is-low" : ""} style={{ width: (row.original.online_rate_30d ?? 0) * 100 + "%" }} /></span><span>{formatRate(row.original.online_rate_30d)}</span></span>, enableSorting: true },
-    { id: "history_30d", accessorKey: "history_30d", header: "近 30 天（左旧右新）", cell: ({ row }) => <StatusCells history={row.original.history_30d} />, enableSorting: false },
-    { id: "last_change", accessorKey: "last_change", header: "最近变化", cell: ({ row }) => row.original.last_change ? <span className="si-last-change"><strong>{row.original.last_change_at ?? "近期"}</strong><small>{row.original.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
+    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 122, grow: 0, minWidth: 110, text: "single" }, cell: ({ row }) => <span className="si-inventory-sku-cell"><span className="si-mono">{row.original.sku}</span>{row.original.is_parent && <small>父 SKU</small>}</span>, enableSorting: true },
+    { id: "title", accessorKey: "title", header: "产品 / 变体", meta: { width: 300, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-product-cell"><strong>{row.original.title}</strong>{row.original.is_parent && <small>子 SKU {row.original.children_count ?? 0} 个 · 有货 {row.original.in_stock_children_count ?? 0} 个</small>}{!row.original.is_parent && row.original.variant_title && <small>{row.original.variant_title}</small>}</span>, enableSorting: true },
+    { id: "category", accessorKey: "category", header: "分类", meta: { width: 150, grow: 1, minWidth: 120, text: "single" }, cell: ({ row }) => <span className="si-mono">{row.original.category}</span>, enableSorting: true },
+    { id: "price", accessorKey: "price", header: "价格", meta: { width: 96, grow: 0, minWidth: 88, align: "end", text: "single" }, cell: ({ row }) => <span className="si-mono">{row.original.price.toFixed(2)}</span>, enableSorting: true },
+    { id: "stock_status", accessorKey: "stock_status", header: "当前状态", meta: { width: 104, grow: 0, minWidth: 94, text: "single" }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockNames[row.original.stock_status]}</Chip>, enableSorting: true },
+    { id: "days_in_status", accessorKey: "days_in_status", header: "持续", meta: { width: 84, grow: 0, minWidth: 76, align: "end", text: "single" }, cell: ({ row }) => row.original.days_in_status >= 60 ? "60 天+" : row.original.days_in_status <= 1 ? "今天" : row.original.days_in_status + " 天", enableSorting: true },
+    { id: "online_rate_30d", accessorKey: "online_rate_30d", header: "30 天在线率", meta: { width: 140, grow: 0, minWidth: 128, align: "end", text: "single" }, cell: ({ row }) => row.original.is_parent ? <span className="si-muted">—</span> : <span className="si-rate-cell"><span className="si-rate-track"><span className={row.original.online_rate_30d !== null && row.original.online_rate_30d < 0.6 ? "is-low" : ""} style={{ width: (row.original.online_rate_30d ?? 0) * 100 + "%" }} /></span><span>{formatRate(row.original.online_rate_30d)}</span></span>, enableSorting: true },
+    { id: "history_30d", accessorKey: "history_30d", header: "近 30 天（左旧右新）", meta: { width: 184, grow: 0, minWidth: 168, text: "single" }, cell: ({ row }) => <StatusCells history={row.original.history_30d} />, enableSorting: false },
+    { id: "last_change", accessorKey: "last_change", header: "最近变化", meta: { width: 180, grow: 1, minWidth: 150, text: "clamp2" }, cell: ({ row }) => row.original.last_change ? <span className="si-last-change"><strong>{row.original.last_change_at ?? "近期"}</strong><small>{row.original.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
   ];
 }
 
@@ -394,6 +394,7 @@ export function InventoryPage() {
         onRowClick={setSelectedRow}
         getRowId={(row) => row.sku}
         height="fill"
+        rowHeight={52}
         emptyTitle="没有匹配的 SKU"
         emptyDescription={watchedOnly ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或库存筛选条件。"}
         toolbar={tableToolbar}
