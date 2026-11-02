@@ -1,5 +1,9 @@
 .si-seo-page {
-gap: 14px;
+display: flex; min-height: 0; flex-direction: column; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); gap: 14px;
+}
+
+.si-seo-page > .si-tab-panel {
+display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 14px;
 }
 
 .si-seo-kpis {
@@ -14,28 +18,24 @@ min-height: 88px; padding: 11px 14px;
 display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 9px;
 }
 
-.si-seo-controls.is-issues {
-padding-right: 90px;
-}
-
 .si-seo-controls > .si-search-input {
 width: min(280px, 24vw); margin-left: auto;
 }
 
-.si-seo-filter-group, .si-seo-page-filters, .si-seo-page-filters > div {
-display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px;
+.si-seo-filterbar {
+flex: 1 1 520px;
 }
 
-.si-seo-page-filters {
-flex: 1; justify-content: space-between; gap: 8px;
+.si-seo-filterbar .si-filter-bar-items {
+width: 100%; gap: 6px;
 }
 
-.si-seo-page-filters > div + div {
-padding-left: 8px; border-left: 1px solid var(--color-line);
+.si-seo-filter-label {
+margin: 0 2px 0 5px; color: var(--color-muted); font-size: 12px; white-space: nowrap;
 }
 
-.si-seo-rule-filters {
-display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px;
+.si-seo-filter-label:first-child {
+margin-left: 0;
 }
 
 .si-seo-rule-filter {
@@ -76,23 +76,11 @@ display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: cent
 .si-seo-more-rules-menu input { accent-color: var(--color-brand); }
 
 .si-seo-table-frame {
-position: relative; min-width: 0; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
+position: relative; display: flex; min-width: 0; min-height: var(--si-table-min-h, 320px); flex: 1 1 auto; flex-direction: column; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
 }
 
 .si-seo-table-frame .si-data-table {
-min-height: 0; overflow: visible; border: 0; border-radius: 0;
-}
-
-.si-seo-table-issues .si-data-table > .si-table-toolbar {
-position: absolute; z-index: 4; top: -50px; right: 0; min-height: 32px; padding: 0; border: 0; background: transparent;
-}
-
-.si-seo-table-frame .si-table-scroll {
-height: 405px; max-height: 405px;
-}
-
-.si-seo-table-frame .si-data-table > .si-table-scroll {
-min-height: 405px;
+min-height: 0; flex: 1 1 auto; overflow: visible; border: 0; border-radius: 0;
 }
 
 .si-seo-table-frame .si-table td {
@@ -234,16 +222,6 @@ color: var(--color-ink-2);
 @media (max-width: 1280px) {
 .si-seo-kpis {
 grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-}
-
-@media (max-width: 1280px) {
-.si-seo-controls.is-issues {
-padding-right: 0;
-}
-
-.si-seo-table-issues .si-data-table > .si-table-toolbar {
-position: static; min-height: 48px; padding: 7px 12px; border-bottom: 1px solid var(--color-line); background: var(--color-surface);
 }
 }
 

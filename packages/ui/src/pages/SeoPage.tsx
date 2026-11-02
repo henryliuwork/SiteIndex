@@ -10,7 +10,7 @@ import type {
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, LengthBadge, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, LengthBadge, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
 
 type SeoView = "issues" | "pages" | "links";
 const pageTypes: { value: PageType | "all"; label: string }[] = [
@@ -280,29 +280,34 @@ export function SeoPage() {
     } />
     <ProjectTabPanel projectId={project.id} tab="seo">
     <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-    <div className={`si-seo-controls${view === "issues" ? " is-issues" : ""}`}>
+    <div className="si-seo-controls">
       <Segmented value={view} options={views} onChange={setView} ariaLabel="SEO 视图" />
-      {view === "issues" && <>
-        <div className="si-seo-filter-group" aria-label="按严重级别筛选">{severityOptions.map((item) => <FilterPill key={item.value} currentValue={issueQuery.filters?.severity ?? "all"} value={item.value} onValueChange={setSeverity}>{item.label}</FilterPill>)}</div>
-        <div className="si-seo-rule-filters" aria-label="按问题类型筛选">
-          {primaryRuleFilters.map((item) => <button key={item.rule} type="button" className={`si-seo-rule-filter${selectedRules.includes(item.rule) ? " is-active" : ""}`} aria-pressed={selectedRules.includes(item.rule)} onClick={() => toggleRule(item.rule)}>{item.label}<span>{item.count}</span></button>)}
-          {additionalRuleFilters.length > 0 && <details className="si-seo-more-rules">
-            <summary>更多问题类型{selectedRules.some((rule) => additionalRuleFilters.some((item) => item.rule === rule)) ? " · 已选" : ""}</summary>
-            <div className="si-seo-more-rules-menu">{additionalRuleFilters.map((item) => <label key={item.rule}><input type="checkbox" checked={selectedRules.includes(item.rule)} onChange={() => toggleRule(item.rule)} /><span>{item.label}</span><small>{item.count}</small></label>)}</div>
-          </details>}
-        </div>
-      </>}
-      {view === "pages" && <div className="si-seo-page-filters"><div>{pageTypes.map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.page_type ?? "all"} value={item.value} onValueChange={setPageType}>{item.label}</FilterPill>)}</div><div>{[{ value: "all" as const, label: "全部收录" }, { value: "yes" as const, label: "已收录" }, { value: "no" as const, label: "未收录" }, { value: "unchecked" as const, label: "未检查" }].map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.indexed ?? "all"} value={item.value} onValueChange={setIndexed}>{item.label}</FilterPill>)}</div></div>}
+      {view === "issues" && <FilterBar className="si-seo-filterbar">
+        <span className="si-seo-filter-label">严重级别</span>
+        {severityOptions.map((item) => <FilterPill key={item.value} currentValue={issueQuery.filters?.severity ?? "all"} value={item.value} onValueChange={setSeverity}>{item.label}</FilterPill>)}
+        <span className="si-seo-filter-label">问题类型</span>
+        {primaryRuleFilters.map((item) => <button key={item.rule} type="button" className={`si-seo-rule-filter${selectedRules.includes(item.rule) ? " is-active" : ""}`} aria-pressed={selectedRules.includes(item.rule)} onClick={() => toggleRule(item.rule)}>{item.label}<span>{item.count}</span></button>)}
+        {additionalRuleFilters.length > 0 && <details className="si-seo-more-rules">
+          <summary>更多问题类型{selectedRules.some((rule) => additionalRuleFilters.some((item) => item.rule === rule)) ? " · 已选" : ""}</summary>
+          <div className="si-seo-more-rules-menu">{additionalRuleFilters.map((item) => <label key={item.rule}><input type="checkbox" checked={selectedRules.includes(item.rule)} onChange={() => toggleRule(item.rule)} /><span>{item.label}</span><small>{item.count}</small></label>)}</div>
+        </details>}
+      </FilterBar>}
+      {view === "pages" && <FilterBar className="si-seo-filterbar">
+        <span className="si-seo-filter-label">页面类型</span>
+        {pageTypes.map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.page_type ?? "all"} value={item.value} onValueChange={setPageType}>{item.label}</FilterPill>)}
+        <span className="si-seo-filter-label">收录状态</span>
+        {[{ value: "all" as const, label: "全部收录" }, { value: "yes" as const, label: "已收录" }, { value: "no" as const, label: "未收录" }, { value: "unchecked" as const, label: "未检查" }].map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.indexed ?? "all"} value={item.value} onValueChange={setIndexed}>{item.label}</FilterPill>)}
+      </FilterBar>}
       {view === "links" && <Chip tone="warn">孤立页面 {orphansQuery.data?.length ?? 0}</Chip>}
       <SearchInput value={(view === "issues" ? issueQuery : view === "pages" ? pageQuery : linkQuery).search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" />
     </div>
     {progressText && <div className="si-seo-progress" role="status"><span>{progressText}</span>{progressPct != null && <strong>{progressPct}%</strong>}</div>}
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
-    <div className={`si-seo-table-frame si-seo-table-${view}`}>
+    <div className={`si-seo-table-frame si-table-region si-seo-table-${view}`}>
       {activeListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "issues" ? "问题清单" : view === "pages" ? "页面列表" : "内链列表"}…</div> : activeListQuery.isError ? <ApiErrorNotice label={`${view === "issues" ? "SEO 问题清单" : view === "pages" ? "SEO 页面列表" : "SEO 内链列表"}加载失败。`} error={activeListQuery.error} onRetry={() => void activeListQuery.refetch()} /> : <>
-        {view === "issues" && <DataTable tableId="seo.issues" rows={issueList?.rows ?? []} total={issueList?.total ?? 0} columns={issueColumnDefs} query={issueQuery} onQueryChange={setIssueQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url + ":" + row.rule} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。" />}
-        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" />}
-        {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} maxHeight={405} rowHeight={52} showPagination={false} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" />}
+        {view === "issues" && <DataTable tableId="seo.issues" rows={issueList?.rows ?? []} total={issueList?.total ?? 0} columns={issueColumnDefs} query={issueQuery} onQueryChange={setIssueQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url + ":" + row.rule} height="fill" rowHeight={52} showPagination={false} emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。" />}
+        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={52} showPagination={false} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" />}
+        {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} showPagination={false} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" />}
         {view === "issues" && <div className="si-seo-length-legend"><span>长度：</span><LengthBadge length={50} kind="title" range={titleRange} /><span>最佳</span><LengthBadge length={25} kind="title" range={titleRange} /><span>可接受</span><LengthBadge length={10} kind="title" range={titleRange} /><span>需修改</span><span>· Title {titleRange[0]}–{titleRange[1]} · Description {descriptionRange[0]}–{descriptionRange[1]}</span></div>}
       </>}
       {view === "links" && <div className="si-seo-orphans"><strong><AlertTriangle size={14} />孤立页面</strong>{orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}</div>}
