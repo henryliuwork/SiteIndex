@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -385,6 +385,40 @@ describe("createCoreService initial namespaces", () => {
 
     const refreshed = await api.content.summary("fixture");
     expect(refreshed.kpis.find((item) => item.key === "blogs")?.value).toBe(String(existingRows.length + 1));
+  }, 30_000);
+
+  it("builds project cards from summary files only and refreshes after an external blog write", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const blogIndexPath = path.join(projectPath, PATHS.blogIndex);
+    const blogRows = await readJsonl(blogIndexPath);
+    const seoIssueRows = await readJsonl(path.join(projectPath, PATHS.seoIssues));
+
+    const seoPagesPath = path.join(projectPath, PATHS.seoPages);
+    await mkdir(path.dirname(seoPagesPath), { recursive: true });
+    await writeFile(seoPagesPath, "not valid JSONL\n", "utf8");
+    const initial = await api.projects.get("fixture");
+    expect(initial.summary.blog_count).toBe(blogRows.length);
+    expect(initial.summary.attention).toBe(seoIssueRows.filter((row) => row.status === "open").length);
+
+    const updatedBlogIndex = [...blogRows, { ...blogRows[0], slug: "external-summary-refresh" }]
+      .map((row) => JSON.stringify(row)).join("\n") + "\n";
+    await writeFile(blogIndexPath, updatedBlogIndex, "utf8");
+
+    expect((await api.projects.get("fixture")).summary.blog_count).toBe(blogRows.length + 1);
+  }, 30_000);
+
+  it("reads schedule configuration without loading unrelated index files", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const seoPagesPath = path.join(projectPath, PATHS.seoPages);
+    await mkdir(path.dirname(seoPagesPath), { recursive: true });
+    await writeFile(seoPagesPath, "not valid JSONL\n", "utf8");
+
+    await expect(api.schedule.get("fixture")).resolves.toMatchObject({
+      config: { daily: { enabled: true } },
+      registered: false,
+    });
   }, 30_000);
 
   it("writes a feed and refreshes the project summary without a missing-feed warning", async () => {
