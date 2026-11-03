@@ -12,7 +12,9 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Columns3 } from "lucide-react";
 import type { ListQuery } from "@siteindex/shared";
 import { Button, ColumnCheckbox, Pagination, Popover } from "./primitives";
 import { useColumnPrefs } from "./utils";
-import { assertCompatibleRowText, calculateColumnWidths } from "./table-layout";
+import { assertCompatibleRowText, calculateColumnWidths, findColumnsWithoutWidthContract } from "./table-layout";
+
+const warnedWidthContracts = new Set<string>();
 
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends RowData, TValue> {
@@ -76,6 +78,15 @@ export function DataTable<T, F = Record<string, unknown>>({
   const columnIdsKey = columnIds.join("\u0000");
   const defaultsKey = defaultVisible.join("\u0000");
   useEffect(() => columnPrefs.configure(columnIds, defaultVisible), [columnPrefs.configure, columnIdsKey, defaultsKey]);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const missing = findColumnsWithoutWidthContract(columns);
+    if (missing.length === 0) return;
+    const warningKey = `${tableId}:${missing.join(",")}`;
+    if (warnedWidthContracts.has(warningKey)) return;
+    warnedWidthContracts.add(warningKey);
+    console.warn(`[DataTable:${tableId}] 以下列缺少 ColumnDef.meta 宽度契约，也没有旧的 size：${missing.join(", ")}。请使用 meta.width/grow/minWidth。`);
+  }, [columns, tableId]);
   const visibleColumnIds = columnPrefs.visible ?? defaultVisible;
   const columnVisibility = useMemo(() => Object.fromEntries(columnIds.map((id) => [id, visibleColumnIds.includes(id)])), [columnIds, visibleColumnIds]);
   const sorting: SortingState = query.sort ? [{ id: query.sort.field, desc: query.sort.dir === "desc" }] : [];

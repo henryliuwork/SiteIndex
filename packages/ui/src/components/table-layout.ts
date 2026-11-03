@@ -10,6 +10,15 @@ function nonNegative(value: number | undefined): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : undefined;
 }
 
+/** Finds columns with neither the DataTable width contract nor a legacy TanStack size. */
+export function findColumnsWithoutWidthContract<TData extends RowData>(columns: ColumnDef<TData, unknown>[]): string[] {
+  return columns.flatMap((column, index) => {
+    if (column.meta !== undefined || ("size" in column && column.size !== undefined)) return [];
+    const id = column.id ?? ("accessorKey" in column && typeof column.accessorKey === "string" ? column.accessorKey : `column-${index}`);
+    return [id];
+  });
+}
+
 /** Calculates widths for the columns that are currently visible. */
 export function calculateColumnWidths(columns: TableColumnWidthMeta[], availableWidth: number): number[] {
   if (columns.length === 0) return [];
