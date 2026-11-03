@@ -1,6 +1,8 @@
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import { writeRunner } from "@siteindex/core";
 import type { AppSettings, SiteIndexError } from "@siteindex/shared";
+import type { AddExistingTiming, AddExistingTimingCallback } from "../add-existing-trace.js";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import { isProjectInsideRoot } from "../project-catalog.js";
 import type { IpcContext } from "./context.js";
@@ -47,24 +49,58 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
       return { id: created.id, runId };
     }),
     "projects.addExisting": async (value) => {
-      if (typeof value !== "string") {
-        throw { code: "PROJECT_NOT_FOUND", message: "请选择有效的项目目录。" } satisfies SiteIndexError;
+      const handlerStartedAt = context.traceAddExisting ? performance.now() : 0;
+      const timings: AddExistingTiming[] | null = context.traceAddExisting ? [] : null;
+      const recordTiming: AddExistingTimingCallback = (phase, durationMs) => {
+        timings?.push({ phase, durationMs });
+      };
+      const timingCallback = timings ? recordTiming : undefined;
+      const measure = async <T>(
+        phase: "path_check" | "settings_registration" | "core.projects.get",
+        operation: () => Promise<T>,
+      ) => {
+        if (!timings) return operation();
+        const startedAt = performance.now();
+        try {
+          return await operation();
+        } finally {
+          recordTiming(phase, performance.now() - startedAt);
+        }
+      };
+
+      try {
+        if (typeof value !== "string") {
+          throw { code: "PROJECT_NOT_FOUND", message: "请选择有效的项目目录。" } satisfies SiteIndexError;
+        }
+        const projectPath = await measure("path_check", () => context.projects.resolveExistingPath(value));
+        const { current, updated, registeredAsExtra } = await measure("settings_registration", async () => {
+          const current = await context.settings.get();
+          let updated: AppSettings = current;
+          const registeredAsExtra = !isProjectInsideRoot(current.projects_root, projectPath);
+          if (registeredAsExtra) {
+            const paths = new Set(current.extra_projects.map((entry) => path.resolve(entry)));
+            paths.add(projectPath);
+            updated = await context.settings.set({ extra_projects: [...paths] });
+          }
+          return { current, updated, registeredAsExtra };
+        });
+        if (registeredAsExtra) await context.settingsChanged(updated, true, timingCallback);
+        else await context.projects.refresh(current, timingCallback);
+        const id = path.basename(projectPath);
+        await context.projects.ensureProject(id, updated, timingCallback);
+        await context.reconcileSchedules(true, undefined, timingCallback);
+        const project = await measure("core.projects.get", async () => context.core.projects.get(id));
+        return project.summary;
+      } finally {
+        if (timings) {
+          recordTiming("handler.total", performance.now() - handlerStartedAt);
+          try {
+            await context.traceAddExisting?.(timings);
+          } catch {
+            // 诊断日志不可覆盖添加项目的成功结果或原始错误。
+          }
+        }
       }
-      const projectPath = await context.projects.resolveExistingPath(value);
-      const current = await context.settings.get();
-      let updated: AppSettings = current;
-      if (!isProjectInsideRoot(current.projects_root, projectPath)) {
-        const paths = new Set(current.extra_projects.map((entry) => path.resolve(entry)));
-        paths.add(projectPath);
-        updated = await context.settings.set({ extra_projects: [...paths] });
-        await context.settingsChanged(updated);
-      } else {
-        await context.projects.refresh(current);
-      }
-      const id = path.basename(projectPath);
-      await context.projects.ensureProject(id, updated);
-      await context.reconcileSchedules(true);
-      return (await context.core.projects.get(id)).summary;
     },
     "projects.updateConfig": (...args) =>
       context.withProject(args[0], (id) =>

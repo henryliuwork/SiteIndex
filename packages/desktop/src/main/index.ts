@@ -1,6 +1,7 @@
 import { app, dialog, utilityProcess, type Tray } from "electron";
 import electronUpdater from "electron-updater";
 import { basename, dirname, join, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { createCoreService, type CoreService, type CoreServiceContext } from "@siteindex/core";
 import { EXIT, SCHEDULABLE_JOBS, type AppSettings, type ProjectId } from "@siteindex/shared";
@@ -16,6 +17,11 @@ import { createSystemScheduler, type ScheduleRuntimeStatus } from "./scheduler/s
 import { createSkillService } from "./skill-service.js";
 import { createDesktopIntegrations } from "./desktop-integrations.js";
 import { createSettingsStore } from "./settings-store.js";
+import {
+  createAddExistingTraceWriter,
+  type AddExistingTimingCallback,
+  type AddExistingTracePhase,
+} from "./add-existing-trace.js";
 import { createUiStateStore } from "./ui-state-store.js";
 import { createUpdateService } from "./update-service.js";
 import { createWindowManager } from "./window-manager.js";
@@ -41,6 +47,20 @@ const windowManager = createWindowManager({
   shouldHideOnClose: () => process.platform === "win32" && scheduleMode === "resident" && Boolean(systemTray),
   isShuttingDown: () => isShuttingDown,
 });
+
+async function measureAddExistingPhase<T>(
+  phase: AddExistingTracePhase,
+  onTiming: AddExistingTimingCallback | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!onTiming) return operation();
+  const startedAt = performance.now();
+  try {
+    return await operation();
+  } finally {
+    onTiming(phase, performance.now() - startedAt);
+  }
+}
 
 if (process.platform === "win32") app.setAppUserModelId("com.siteindex.desktop");
 
@@ -189,15 +209,23 @@ if (!hasSingleInstanceLock) {
     const reconcileSchedules = async (
       allowElevation: boolean,
       knownEntries?: Awaited<ReturnType<typeof catalog.refresh>>,
+      onTiming?: AddExistingTimingCallback,
     ): Promise<ScheduleRuntimeStatus> => {
-      const entries = knownEntries ?? (await catalog.refresh(currentSettings));
+      const entries = knownEntries ?? (await catalog.refresh(currentSettings, onTiming));
       const definitions = await Promise.all(
         entries.map(async ({ id, path: projectPath }) => {
-          const [schedule, runner] = await Promise.all([coreService.schedule.get(id), coreService.runner.get(id)]);
+          const [schedule, runner] = await Promise.all([
+            measureAddExistingPhase("core.schedule.get", onTiming, () => coreService.schedule.get(id)),
+            measureAddExistingPhase("core.runner.get", onTiming, () => coreService.runner.get(id)),
+          ]);
           return { projectId: id, projectPath, config: schedule.config, isThisDevice: runner.is_this_device };
         }),
       );
-      const status = await scheduler.reconcile(definitions, allowElevation);
+      const status = await measureAddExistingPhase(
+        "scheduler.reconcile",
+        onTiming,
+        () => scheduler.reconcile(definitions, allowElevation),
+      );
       await applyScheduleMode(status);
       return status;
     };
@@ -251,17 +279,20 @@ if (!hasSingleInstanceLock) {
       uiState: createUiStateStore(async () => (await settingsStore.get()).cache_dir),
       core: coreService,
       projects: catalog,
-      settingsChanged: async (updated, reconcile = true) => {
+      settingsChanged: async (updated, reconcile = true, onTiming) => {
         const projectsChanged =
           currentSettings.projects_root !== updated.projects_root ||
           currentSettings.extra_projects.length !== updated.extra_projects.length ||
           currentSettings.extra_projects.some((entry, index) => entry !== updated.extra_projects[index]);
         currentSettings = updated;
-        if (projectsChanged && reconcile) await reconcileSchedules(true);
+        if (projectsChanged && reconcile) await reconcileSchedules(true, undefined, onTiming);
       },
       jobs,
       scheduler,
       reconcileSchedules,
+      ...(process.env.SITEINDEX_TRACE === "1"
+        ? { traceAddExisting: createAddExistingTraceWriter(app.getPath("logs")) }
+        : {}),
       onRunnerClaimed: async () => {
         await reconcileSchedules(true);
       },
