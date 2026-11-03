@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -123,31 +123,42 @@ function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onO
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const submitting = useRef(false);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting.current) return;
     if (!path.trim()) { setError("请输入项目文件夹路径。"); return; }
-    setSaving(true); setError("");
+    submitting.current = true;
+    setSaving(true);
+    setError("");
     try {
       const project = await api.projects.addExisting(path.trim());
       onAdded(project); onOpenChange(false); setPath("");
     } catch (cause) {
       setError(apiErrorMessage(cause, "添加项目失败，请重试。"));
-    } finally { setSaving(false); }
+    } finally {
+      submitting.current = false;
+      setSaving(false);
+    }
   };
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen && submitting.current) return;
+      onOpenChange(nextOpen);
+    }}>
       <Dialog.Portal>
         <Dialog.Overlay className="si-dialog-overlay" />
         <Dialog.Content className="si-confirm-dialog si-add-project-dialog">
           <Dialog.Title className="si-dialog-title">添加已有项目</Dialog.Title>
           <Dialog.Description className="si-dialog-description">选择云盘中已经创建的 SiteIndex 项目文件夹。</Dialog.Description>
-          <form onSubmit={submit}>
+          <form onSubmit={submit} aria-busy={saving}>
             <label className="si-field-label" htmlFor="existing-project-path">项目文件夹路径</label>
-            <input id="existing-project-path" className="si-text-field" autoFocus value={path} onChange={(event) => setPath(event.target.value)} placeholder="D:\\云盘\\projects\\项目名" />
+            <input id="existing-project-path" className="si-text-field" autoFocus value={path} disabled={saving} onChange={(event) => setPath(event.target.value)} placeholder="D:\\云盘\\projects\\项目名" />
             {error && <p className="si-form-error" role="alert">{error}</p>}
+            {saving && <p className="si-muted" role="status" aria-live="polite">正在读取项目…</p>}
             <div className="si-dialog-actions">
-              <Button type="button" onClick={() => onOpenChange(false)}>取消</Button>
-              <Button type="submit" variant="primary" disabled={saving}>{saving ? "正在添加…" : "添加项目"}</Button>
+              <Button type="button" disabled={saving} onClick={() => onOpenChange(false)}>取消</Button>
+              <Button type="submit" variant="primary" disabled={saving}>{saving ? "读取中…" : "添加项目"}</Button>
             </div>
           </form>
         </Dialog.Content>
