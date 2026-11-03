@@ -538,7 +538,7 @@ export const seoLinks: SeoLink[] = [
   { from: "https://demo-store.example.test/blog/example-guide", to: "https://demo-store.example.test/collections/demo-category-1", anchor: "查看示例分类", to_type: "collection" },
   { from: "https://demo-store.example.test/demo/page-2", to: "https://demo-store.example.test/", anchor: "首页", to_type: "page" },
 ];
-export const orphanSeoPages = ["https://demo-store.example.test/demo/orphan-page"];
+export const orphanSeoPages = Array.from({ length: 64 }, (_, index) => `https://demo-store.example.test/demo/orphan-page-${index + 1}`);
 
 export function inventorySummary(id: ProjectId, range: 14 | HistoryRange = 30): InventorySummary {
   const key = projectKey(id);

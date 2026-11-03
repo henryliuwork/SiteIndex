@@ -83,6 +83,10 @@ position: relative; display: flex; min-width: 0; min-height: var(--si-table-min-
 min-height: 0; flex: 1 1 auto; overflow: visible; border: 0; border-radius: 0;
 }
 
+.si-seo-table-links {
+min-height: var(--si-table-min-h, 320px); flex: 1 0 auto;
+}
+
 .si-seo-table-frame .si-table td {
 height: 52px;
 }
@@ -144,18 +148,24 @@ margin: -5px 0 0; color: var(--color-muted); font-size: 12px;
 }
 
 .si-seo-orphans {
-display: grid; gap: 8px; margin-top: 12px; padding: 12px; border: 1px solid var(--color-line); border-radius: 7px; background: var(--color-surface); color: var(--color-muted); font-size: 12px;
+flex: none; min-width: 0; margin-top: 12px; padding: 0 12px; border: 1px solid var(--color-line); border-radius: 7px; background: var(--color-surface); color: var(--color-muted); font-size: 12px;
 }
 
-.si-seo-orphans > strong {
-display: inline-flex; align-items: center; gap: 6px; color: var(--color-ink-2); font-size: 12px;
+.si-seo-orphans > summary {
+display: flex; min-height: 40px; align-items: center; gap: 7px; color: var(--color-ink-2); font-size: 12px; font-weight: 600; cursor: pointer; list-style: none;
 }
 
-.si-seo-orphans > button {
-display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border: 0; border-top: 1px solid var(--color-line-soft); background: transparent; color: var(--color-brand-strong); text-align: left;
+.si-seo-orphans > summary::-webkit-details-marker { display: none; }
+
+.si-seo-orphans-list {
+display: grid; max-height: 200px; gap: 2px; overflow: auto; padding-bottom: 8px;
 }
 
-.si-seo-orphans > button code {
+.si-seo-orphans-list > button {
+display: flex; min-width: 0; justify-content: space-between; gap: 10px; padding: 7px 0; border: 0; border-top: 1px solid var(--color-line-soft); background: transparent; color: var(--color-brand-strong); text-align: left;
+}
+
+.si-seo-orphans-list > button code {
 overflow: hidden; color: var(--color-ink-2); text-overflow: ellipsis; white-space: nowrap;
 }
 
