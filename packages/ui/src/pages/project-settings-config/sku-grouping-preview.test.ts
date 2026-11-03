@@ -54,6 +54,9 @@ describe("SKU 分组预览 IPC", () => {
     expect(source).toContain("collision.children.join(\"、\")");
     expect(source).toContain('queryClient.invalidateQueries({ queryKey: ["sku-grouping-preview", id] })');
     expect(source).toContain("不代表父 SKU 库存或在线率");
+    expect(source).toContain("可能把以数字结尾的普通 SKU 误判为子 SKU，也不识别末尾字母后缀。");
+    expect(source).toContain("已匹配 <strong>{groupingPreview.children}</strong> 个子 SKU");
+    expect(source).toContain("未匹配 <strong>{groupingPreview.unmatched}</strong> 个");
     expect(source).not.toMatch(/parentSkuForRule|previewSkuGroups|pageSize:\s*100/);
     expect(source).not.toContain("api.inventory.listSkus");
   });
