@@ -174,6 +174,31 @@ describe("project service", () => {
     expect(await readFile(path.join(projectsRoot, created.id, PATHS.site), "utf8")).toContain('"domain": "example.com"');
   });
 
+  it("allows different domains to share a brand name", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-same-brand-different-domains-"));
+    TEMP_DIRS.push(root);
+    const api = makeService();
+
+    const first = await api.projects.create({
+      ...createInput(root),
+      url: "https://example.com",
+      folder_name: "example-store",
+    });
+    const second = await api.projects.create({
+      ...createInput(root),
+      url: "https://other.example",
+      folder_name: "other-store",
+    });
+    const firstConfig = JSON.parse(await readFile(path.join(root, first.id, PATHS.site), "utf8")) as SiteConfig;
+    const secondConfig = JSON.parse(await readFile(path.join(root, second.id, PATHS.site), "utf8")) as SiteConfig;
+
+    expect(firstConfig.brand.name).toBe("Example Shop");
+    expect(secondConfig.brand.name).toBe(firstConfig.brand.name);
+    expect([firstConfig.domain, secondConfig.domain]).toEqual(["example.com", "other.example"]);
+    expect((await readdir(root)).sort()).toEqual(["example-store", "other-store"]);
+  });
+
   it("checks the project root even when the Desktop callback only lists extra projects", async () => {
     mockWebsite();
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-root-registration-check-"));
