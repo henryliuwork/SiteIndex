@@ -242,7 +242,7 @@ function inventoryColumns(): ColumnDef<InventoryTableRow, unknown>[] {
 }
 
 export function InventoryPage() {
-  const { id = "kingsyard" } = useParams();
+  const { id = "demo" } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<ListQuery<SkuStockFilters>>(INITIAL_QUERY);

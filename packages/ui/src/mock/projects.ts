@@ -1,8 +1,8 @@
 import type { ProjectDetail, SiteIndexApi, SiteIndexError } from "@siteindex/shared";
 import { beginRun, categorySeeds, clone, fixtures, mockMode, notifyProjectChanged, projectConfigs, projectIds, projectKey, projectSummaries, projectsChanged, reply, runners, stockSeeds, type MockProjectId } from "./context";
 
-export const mockProjectNonFeedWarnings: Record<MockProjectId, string[]> = { kingsyard: [], riverstone: [] };
-const demoBirdshopHost = "kingsyard.example.test";
+export const mockProjectNonFeedWarnings: Record<MockProjectId, string[]> = { demo: [], demo2: [] };
+const demoStoreHost = "demo-store.example.test";
 
 function hasConfiguredFeed(feedUrl: string | string[]): boolean {
   return (Array.isArray(feedUrl) ? feedUrl : [feedUrl]).some((url) => url.trim().length > 0);
@@ -48,9 +48,9 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
     detect: (url) => reply(() => {
       const normalized = /^https?:\/\//i.test(url) ? url : "https://" + url;
       const baseUrl = normalized.replace(/\/$/, "");
-      const isKingsyard = new URL(baseUrl).hostname.toLowerCase().endsWith(demoBirdshopHost);
-      if (isKingsyard) {
-        const finalUrl = `https://www.${demoBirdshopHost}`;
+      const isDemoStore = new URL(baseUrl).hostname.toLowerCase().endsWith(demoStoreHost);
+      if (isDemoStore) {
+        const finalUrl = `https://${demoStoreHost}`;
         return {
           input: url, final_url: finalUrl, redirect_status: 301,
           robots: { found: true, disallow_count: 1, sitemaps: [finalUrl + "/sitemap.xml"] },
@@ -69,21 +69,21 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
     }),
     inspectFeed: (_feedUrls, opts) => reply(() => {
       if (mockMode === "feed-error") throw { code: "FEED_FETCH_FAILED", message: "无法读取 Feed，请检查地址后重试。" } satisfies SiteIndexError;
-      if (fixtures.site.domain?.split(".")[0]?.toLowerCase() === "kingsyard") return {
-        items: 20, usable_skus: 18, products: 16,
+      if (fixtures.site.domain?.split(".")[0]?.toLowerCase() === "demo-store") return {
+        items: 12, usable_skus: 10, products: 8,
         skipped: { duplicate: 1, missing_price_or_link: 1, no_id: 0 },
-        stock: { in_stock: 16, out_of_stock: 1, preorder: 0, unknown: 1 },
+        stock: { in_stock: 8, out_of_stock: 1, preorder: 0, unknown: 1 },
         field_coverage: [
           { field: opts.sku_field, pct: 100 }, { field: "title", pct: 100 }, { field: "link", pct: 100 },
           { field: "price", pct: 95 }, { field: "availability", pct: 90 }, { field: "image_link", pct: 90 },
           { field: "product_type", pct: 90 }, { field: "item_group_id", pct: 20 }, { field: "sale_price", pct: 10 },
         ],
-        category_distribution: [{ slug: "bird-feeders", count: 10 }, { slug: "bird-houses", count: 4 }, { slug: "bird-baths", count: 4 }],
+        category_distribution: [{ slug: "demo-category-1", count: 5 }, { slug: "demo-category-2", count: 3 }, { slug: "demo-category-3", count: 2 }],
         samples: [
-          { sku: "KYBF000-G", title: "Kingsyard Feeder 0 & Co", variant_title: "Green", category: "bird-feeders", price: 19.99, stock_status: "in_stock" },
-          { sku: "KYBF000-R", title: "Kingsyard Feeder 0 & Co", variant_title: "Red", category: "bird-feeders", price: 19.99, stock_status: "in_stock" },
-          { sku: "KYBF002", title: "Kingsyard Feeder 2 & Co", variant_title: null, category: "bird-houses", price: 16.99, stock_status: "in_stock" },
-          { sku: "KYBF003", title: "Kingsyard Feeder 3 & Co", variant_title: null, category: "bird-baths", price: 22.99, stock_status: "out_of_stock" },
+          { sku: "DEMO001A01", title: "示例商品 1", variant_title: "样式 1", category: "demo-category-1", price: 12.34, stock_status: "in_stock" },
+          { sku: "DEMO001A02", title: "示例商品 1", variant_title: "样式 2", category: "demo-category-1", price: 12.34, stock_status: "in_stock" },
+          { sku: "DEMO002A01", title: "示例商品 2", variant_title: null, category: "demo-category-2", price: 23.45, stock_status: "in_stock" },
+          { sku: "DEMO003A01", title: "示例商品 3", variant_title: null, category: "demo-category-3", price: 34.56, stock_status: "out_of_stock" },
         ],
       };
       return {
@@ -115,13 +115,13 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
       const slug = folderName.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "existing";
       const id = mockProjectIdForPath(normalizedPath);
       const summary = {
-        ...projectSummaries.riverstone,
+        ...projectSummaries.demo2,
         id,
         name: folderName,
         path: trimmedPath,
         domain: `${slug}.example.test`,
       };
-      addedProjects.set(normalizedPath, { summary, config: projectConfigs.riverstone, runner: runners.riverstone });
+      addedProjects.set(normalizedPath, { summary, config: projectConfigs.demo2, runner: runners.demo2 });
       notifyProjectChanged(id);
       return summary;
     }),

@@ -108,7 +108,7 @@ function ProductDetailContent({
 }
 
 export function ProductsPage() {
-  const { id = "kingsyard" } = useParams();
+  const { id = "demo" } = useParams();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<ListQuery<ProductFilters>>(initialQuery);
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);

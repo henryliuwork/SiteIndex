@@ -29,7 +29,7 @@ function projectPath(path: string, file: string): string {
 }
 
 export function OverviewPage() {
-  const { id = "kingsyard" } = useParams();
+  const { id = "demo" } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });

@@ -133,7 +133,7 @@ function SeoDetail({
 }
 
 export function SeoPage() {
-  const { id = "kingsyard" } = useParams();
+  const { id = "demo" } = useParams();
   const queryClient = useQueryClient();
   const [view, setView] = useState<SeoView>("issues");
   const [issueQuery, setIssueQuery] = useState(initialIssueQuery);

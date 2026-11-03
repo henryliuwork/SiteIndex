@@ -97,7 +97,7 @@ function stepStatusTone(status: RunLogStep["status"]): "ok" | "danger" | "neutra
 }
 
 export function RunsPage() {
-  const { id = "kingsyard" } = useParams<{ id: string }>();
+  const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const scheduleQuery = useQuery({ queryKey: ["schedule", id], queryFn: () => api.schedule.get(id) });

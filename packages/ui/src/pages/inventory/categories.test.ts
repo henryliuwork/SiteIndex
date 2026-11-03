@@ -8,9 +8,9 @@ const summary: InventorySummary = {
   kpis: [],
   trend: { dates: ["2026-10-30"], series: [] },
   category_rates: [
-    { category: "bird-feeders", rate: 0.75, total: 8, watched: true, manual: false },
+    { category: "demo-category-1", rate: 0.75, total: 8, watched: true, manual: false },
     { category: "manual-empty", rate: 0, total: 0, watched: true, manual: true },
-    { category: "bird-houses", rate: 0.5, total: 4, watched: false, manual: false },
+    { category: "demo-category-2", rate: 0.5, total: 4, watched: false, manual: false },
   ],
   category_source: "feed",
   uncategorized: 0,
@@ -18,7 +18,7 @@ const summary: InventorySummary = {
 };
 
 const watchedCategories: WatchedCategory[] = [
-  { name: "Bird Feeders", slug: "bird-feeders" },
+  { name: "示例分类 1", slug: "demo-category-1" },
   { name: "No Inventory Yet", slug: "not-in-summary", manual: true },
 ];
 
@@ -27,7 +27,7 @@ describe("库存页关注分类数据", () => {
     const categories = selectInventoryCategoryRates(summary, watchedCategories, false);
 
     expect(categories).toEqual([
-      { ...summary.category_rates[0], watched: true, manual: false, label: "Bird Feeders" },
+      { ...summary.category_rates[0], watched: true, manual: false, label: "示例分类 1" },
       { ...summary.category_rates[1], watched: true, manual: true, label: "manual-empty" },
     ]);
     expect(categories.some((item) => item.category === "not-in-summary")).toBe(false);
@@ -37,9 +37,9 @@ describe("库存页关注分类数据", () => {
     const categories = selectInventoryCategoryRates(summary, watchedCategories, true);
 
     expect(categories.map(({ category, watched, manual }) => ({ category, watched, manual }))).toEqual([
-      { category: "bird-feeders", watched: true, manual: false },
+      { category: "demo-category-1", watched: true, manual: false },
       { category: "manual-empty", watched: true, manual: true },
-      { category: "bird-houses", watched: false, manual: false },
+      { category: "demo-category-2", watched: false, manual: false },
     ]);
   });
 
