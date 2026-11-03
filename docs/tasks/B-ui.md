@@ -31,6 +31,7 @@
 
 ### B4 项目中心 `/` 与 库存页 `/p/:id/inventory`
 - [x] 项目中心：PRD §5.1 全部内容；异常卡片高亮规则 — [PR #13](https://github.com/henryliuwork/SiteIndex/pull/13)、[PR #61](https://github.com/henryliuwork/SiteIndex/pull/61)
+- [x] 项目中心“添加已有项目”回归：验证路径、项目 ID 路由、列表刷新与重复添加提示；FilterBar DOM 回归：两行内不折叠、超过两行可折叠，弹层不受内容区裁切 — 本 PR
 - [x] 库存：PRD §5.4 全部内容；趋势图有 Y 轴 0–100% 与图例；SKU 明细表 1 万行 mock 下滚动/筛选无卡顿 — [PR #13](https://github.com/henryliuwork/SiteIndex/pull/13)、[PR #60](https://github.com/henryliuwork/SiteIndex/pull/60)
 - **验收**：与画板 Main / Inventory 并排截图对比，结构与文案一致
 
