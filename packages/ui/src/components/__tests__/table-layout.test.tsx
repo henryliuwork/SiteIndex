@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "../table";
-import { assertCompatibleRowText, calculateColumnWidths, type TableColumnWidthMeta } from "../table-layout";
+import { assertCompatibleRowText, calculateColumnWidths, findColumnsWithoutWidthContract, type TableColumnWidthMeta } from "../table-layout";
 
 describe("DataTable column width contract", () => {
   it("distributes extra width according to grow weights", () => {
@@ -31,6 +31,15 @@ describe("DataTable column width contract", () => {
 
   it("uses equal fallback widths for columns without width metadata", () => {
     expect(calculateColumnWidths([{}, {}, {}], 600)).toEqual([200, 200, 200]);
+  });
+
+  it("finds columns without meta or a legacy size for the development warning", () => {
+    const columns: ColumnDef<{ configured: string; legacy: string; missing: string }, unknown>[] = [
+      { accessorKey: "configured", meta: { width: 120 } },
+      { accessorKey: "legacy", size: 140 },
+      { accessorKey: "missing" },
+    ];
+    expect(findColumnsWithoutWidthContract(columns)).toEqual(["missing"]);
   });
 
   it("rejects wrap in virtual tables and clamp2 rows shorter than 52px", () => {

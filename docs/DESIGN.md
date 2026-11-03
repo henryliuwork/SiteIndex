@@ -69,6 +69,32 @@
 
 `text` 默认为 `single`。`.si-cell-1` 单行省略并通过 `title` 提示全文，`.si-cell-2` 最多两行；`clamp2` 需要 `rowHeight >= 52px`。`text: "wrap"` 不可用于虚拟滚动表格。
 
+### DataTable 列宽契约写法
+
+每个列都应在 `ColumnDef.meta` 中声明宽度契约：`width` 是基准宽度，`grow` 是剩余空间分配权重（0 固定、1 次要、2 主要），`minWidth` 是最小宽度，`align` 控制左右对齐，`text` 选择单行省略、两行省略或换行。列隐藏后 DataTable 会按可见列重新计算 `<colgroup>`。
+
+不要用 TanStack 的 `size` 代替 `meta`：DataTable 的列宽算法不读取 `size`。不要用页面 CSS 的 `nth-child` 设置表格列宽：隐藏列或列重排后，CSS 位置可能和列定义错位。不要新增 `maxHeight`：它已弃用；固定区域使用数值 `height`，页面剩余空间使用 `height="fill"`。
+
+虚拟行高必须和实际 CSS 行高一致，否则滚动位置会逐行偏移。`clamp2` 的行高至少为 52px；虚拟表格不要使用 `text: "wrap"`。
+
+```tsx
+const columns: ColumnDef<RunLog, unknown>[] = [
+  { accessorKey: "started_at", header: "时间", meta: { width: 140, grow: 0, minWidth: 128, text: "single" } },
+  { accessorKey: "summary", header: "摘要", meta: { width: 320, grow: 1, minWidth: 220, align: "start", text: "single" } },
+];
+
+<DataTable
+  tableId="runs.history"
+  rows={rows}
+  total={rows.length}
+  columns={columns}
+  query={query}
+  onQueryChange={setQuery}
+  height="fill"
+  rowHeight={52}
+/>
+```
+
 ### DataTable 高度填充
 
 `height` 可设为数值或 `"fill"`（默认）。填充模式要求表格位于 `.si-page-fill` 页面容器中；页面内表格区域使用 `flex: 1 1 auto` 且最小高度 320px。表体滚动区占用剩余空间，工具栏和分页栏保持在滚动区外。旧 `maxHeight` 在一个兼容版本内继续生效，之后移除。

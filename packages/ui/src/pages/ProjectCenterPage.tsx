@@ -177,10 +177,10 @@ export function ProjectCenterPage() {
   const [runQuery, setRunQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
 
   const runColumns = useMemo<ColumnDef<RunLog, unknown>[]>(() => [
-    { id: "started_at", accessorKey: "started_at", header: "时间", cell: ({ row }) => <span className="si-mono">{formatRunTime(row.original.started_at)}</span>, enableSorting: true },
-    { id: "job", accessorKey: "job", header: "任务", cell: ({ row }) => <span>{jobNames[row.original.job] ?? row.original.job}</span>, enableSorting: true },
-    { id: "summary", accessorFn: runSummary, header: "执行摘要", cell: ({ row }) => <span className="si-run-summary">{runSummary(row.original)}</span> },
-    { id: "status", accessorKey: "status", header: "状态", cell: ({ row }) => <CenterStatus status={row.original.status === "ok" ? "ok" : row.original.status === "failed" ? "failed" : row.original.status === "partial" ? "partial" : "never"} /> },
+    { id: "started_at", accessorKey: "started_at", header: "时间", meta: { width: 140, grow: 0, minWidth: 128, text: "single" }, cell: ({ row }) => <span className="si-mono">{formatRunTime(row.original.started_at)}</span>, enableSorting: true },
+    { id: "job", accessorKey: "job", header: "任务", meta: { width: 112, grow: 0, minWidth: 100, text: "single" }, cell: ({ row }) => <span>{jobNames[row.original.job] ?? row.original.job}</span>, enableSorting: true },
+    { id: "summary", accessorFn: runSummary, header: "执行摘要", meta: { width: 320, grow: 1, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-run-summary">{runSummary(row.original)}</span> },
+    { id: "status", accessorKey: "status", header: "状态", meta: { width: 96, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <CenterStatus status={row.original.status === "ok" ? "ok" : row.original.status === "failed" ? "failed" : row.original.status === "partial" ? "partial" : "never"} /> },
   ], []);
   const runs = useMemo(() => {
     const source = [...(runsQuery.data ?? [])];
@@ -292,7 +292,8 @@ export function ProjectCenterPage() {
             onQueryChange={setRunQuery}
             onRowClick={setSelectedRun}
             getRowId={(run) => run.run_id}
-            maxHeight={138}
+            height={138}
+            rowHeight={46}
             showHeader={false}
             showPagination={false}
             toolbar={<div className="si-recent-heading">
