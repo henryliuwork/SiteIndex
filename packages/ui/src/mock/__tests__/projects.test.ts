@@ -15,6 +15,21 @@ afterEach(() => {
 });
 
 describe("projects mock summary updates", () => {
+  it("adds existing project paths to the list and rejects normalized duplicates", async () => {
+    const api = createProjectsMock();
+    const path = "D:/SiteIndex/Projects/Cedar Shop";
+    const added = await api.addExisting(path);
+
+    expect(added.path).toBe(path);
+    expect((await api.list()).filter(({ id }) => id === added.id)).toHaveLength(1);
+    expect(await api.get(added.id)).toMatchObject({ summary: { id: added.id, path, name: "Cedar Shop" } });
+    await expect(api.addExisting("d:\\siteindex\\projects\\cedar shop\\")).rejects.toMatchObject({
+      code: "FOLDER_EXISTS",
+      message: "该项目已添加到项目中心。",
+    });
+    expect((await api.list()).filter(({ id }) => id === added.id)).toHaveLength(1);
+  });
+
   it("clears the feed warning and emits a project change after saving a feed", async () => {
     const api = createProjectsMock();
     const feedWarning = "尚未填写 GMC feed 地址，每日库存同步未启用。";

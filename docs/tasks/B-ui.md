@@ -19,6 +19,7 @@
 
 ### B2 mock 层 `src/mock/`
 - [x] `createMockApi(): SiteIndexApi`，**覆盖接口全部方法**（未用到的返回合理默认值），类型检查保证与契约一致 — [PR #10](https://github.com/henryliuwork/SiteIndex/pull/10)、[PR #80](https://github.com/henryliuwork/SiteIndex/pull/80)
+- [x] `projects.addExisting(path)` 在 mock 中登记路径、刷新列表并拒绝归一化后的重复路径 — 本 PR
 - [x] 数据来源：`fixtures/expected/project/index/`（Kingsyard 示例）+ 生成器扩充到 2 个项目、1 万 SKU（用于性能测试）；写一个 `scripts/build-mock-data.ts` 把 fixtures 转成 mock 用的 JSON — [PR #10](https://github.com/henryliuwork/SiteIndex/pull/10)
 - [x] 模拟延迟（100–300ms）、Job 进度事件（`jobs.onProgress` 每 300ms 推一条）、可切换"错误场景"（URL `?mock=error`）— [PR #10](https://github.com/henryliuwork/SiteIndex/pull/10)
 
