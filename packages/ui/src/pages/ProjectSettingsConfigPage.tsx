@@ -334,7 +334,10 @@ export function ProjectSettingsConfigPage() {
             {skuPreviewQuery.isLoading ? <p role="status">正在通过 Core 计算全部 SKU 的分组预览…</p> : skuPreviewQuery.isError ? <div className="si-config-inline-error" role="alert"><span>{skuPreviewQuery.error instanceof Error ? skuPreviewQuery.error.message : apiErrorMessage(skuPreviewQuery.error, "父子 SKU 预览失败。")}</span><Button size="small" onClick={() => void skuPreviewQuery.refetch()}>重试</Button></div> : groupingPreview ? <>
               <div className="si-config-grouping-stats"><span><strong>{groupingPreview.parents}</strong> 个父 SKU</span><span><strong>{groupingPreview.children}</strong> 个匹配子 SKU</span><span><strong>{groupingPreview.unmatched}</strong> 个未匹配 SKU</span></div>
               {groupingPreview.parents === 0 ? <p>当前规则未识别到父子 SKU 分组。</p> : groupingPreview.samples.length > 0 ? <ul>{groupingPreview.samples.slice(0, 6).map((item) => <li key={item.parent}><code>{item.parent}</code><span>{item.children.length} 个：{item.children.slice(0, 4).join("、")}{item.children.length > 4 ? " …" : ""}</span></li>)}</ul> : <p>已取得分组计数，Core 未返回样例。</p>}
-              <div className="si-config-grouping-collisions"><strong>因父 SKU 自身也在 Feed 中而跳过</strong><p>当前 IPC 未提供被跳过组的明细，暂无法列出；这不表示数量为 0。</p></div>
+              {groupingPreview.collisions?.length ? <details className="si-config-grouping-collisions">
+                <summary>有 {groupingPreview.collisions.length} 个父 SKU 本身也是在售 SKU，已跳过分组</summary>
+                <ul>{groupingPreview.collisions.map((collision) => <li key={collision.parent}><code>{collision.parent}</code><span>子 SKU：{collision.children.length ? collision.children.join("、") : "未提供明细"}</span></li>)}</ul>
+              </details> : null}
               <small>计数与样例仅表示规则识别结果，不代表父 SKU 库存或在线率。</small>
             </> : <p role="status">正在准备分组预览…</p>}
           </div>

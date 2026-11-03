@@ -3,6 +3,7 @@ import { createAppMock } from "./app";
 import { createUiStateMock } from "./ui-state";
 import { createSettingsMock } from "./settings";
 import { createProjectsMock } from "./projects";
+import { createSkuMock } from "./sku";
 import { createOverviewMock } from "./overview";
 import { createInventoryMock } from "./inventory";
 import { createProductsMock } from "./products";
@@ -27,6 +28,7 @@ export function createMockApi(): SiteIndexApi {
     uiState: createUiStateMock(),
     settings: createSettingsMock(),
     projects: createProjectsMock(),
+    sku: createSkuMock(),
     overview: createOverviewMock(),
     inventory: createInventoryMock(),
     products: createProductsMock(),

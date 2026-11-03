@@ -42,8 +42,11 @@
 .si-config-grouping-preview ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
 .si-config-grouping-preview li { display: grid; grid-template-columns: minmax(100px,.6fr) minmax(0,1.4fr); gap: 8px; padding: 6px 8px; border-radius: 5px; background: var(--color-surface); }
 .si-config-grouping-preview li span { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
-.si-config-grouping-collisions { display: grid; gap: 4px; padding: 9px 10px; border-left: 3px solid var(--color-line); border-radius: 4px; background: var(--color-surface); }
-.si-config-grouping-collisions strong { color: var(--color-ink); font-size: 12px; }
+.si-config-grouping-collisions { display: grid; gap: 8px; padding: 9px 10px; border-left: 3px solid var(--color-warning, #B87B1B); border-radius: 4px; background: var(--color-surface); }
+.si-config-grouping-collisions summary { color: var(--color-ink); cursor: pointer; font-size: 12px; font-weight: 600; }
+.si-config-grouping-collisions ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.si-config-grouping-collisions li { display: grid; grid-template-columns: minmax(100px,.6fr) minmax(0,1.4fr); gap: 8px; padding: 6px 8px; border-radius: 5px; background: var(--color-subtle); }
+.si-config-grouping-collisions li span { overflow-wrap: anywhere; color: var(--color-muted); }
 .si-config-grouping-preview > small { color: var(--color-muted); font-size: 12px; }
 .si-config-watched-options, .si-config-watched-list { display: grid; gap: 7px; }
 .si-config-watched-option { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 48px; padding: 8px 10px; border: 1px solid var(--color-line-soft); border-radius: 7px; cursor: pointer; }
