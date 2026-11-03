@@ -80,11 +80,11 @@ function triggerLabel(trigger: RunLog["trigger"]): string {
 }
 
 const historyColumns: ColumnDef<RunLog, unknown>[] = [
-  { id: "started_at", accessorKey: "started_at", header: "时间", meta: { width: 128, grow: 0, minWidth: 112, text: "single" }, cell: ({ row }) => <code className="si-runs-date">{formatDateTime(row.original.started_at)}</code>, enableSorting: false },
-  { id: "job", accessorKey: "job", header: "任务名", meta: { width: 132, grow: 0, minWidth: 108, text: "single" }, cell: ({ row }) => <strong className="si-runs-job-name">{jobLabels[row.original.job]}</strong>, enableSorting: false },
-  { id: "status", accessorKey: "status", header: "状态", meta: { width: 92, grow: 0, minWidth: 82, text: "single" }, cell: ({ row }) => <Chip tone={statusTone(row.original.status)}>{statusLabel(row.original.status)}</Chip>, enableSorting: false },
-  { id: "duration", accessorFn: runDuration, header: "耗时", meta: { width: 96, grow: 0, minWidth: 84, text: "single" }, cell: ({ row }) => <span className="si-runs-duration">{runDuration(row.original)}</span>, enableSorting: false },
-  { id: "summary", accessorFn: (run) => `${triggerLabel(run.trigger)} · ${runSummary(run)}`, header: "结果 / 信息", meta: { width: 340, grow: 2, minWidth: 220, text: "clamp2" }, cell: ({ row }) => <span className="si-runs-summary-cell">{triggerLabel(row.original.trigger)} · {runSummary(row.original)}</span>, enableSorting: false },
+  { id: "started_at", accessorKey: "started_at", header: "时间", meta: { width: 100, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <code className="si-runs-date">{formatDateTime(row.original.started_at)}</code>, enableSorting: false },
+  { id: "job", accessorKey: "job", header: "任务名", meta: { width: 96, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <strong className="si-runs-job-name">{jobLabels[row.original.job]}</strong>, enableSorting: false },
+  { id: "status", accessorKey: "status", header: "状态", meta: { width: 78, grow: 0, minWidth: 70, text: "single" }, cell: ({ row }) => <Chip tone={statusTone(row.original.status)}>{statusLabel(row.original.status)}</Chip>, enableSorting: false },
+  { id: "duration", accessorFn: runDuration, header: "耗时", meta: { width: 92, grow: 0, minWidth: 82, text: "single" }, cell: ({ row }) => <span className="si-runs-duration">{runDuration(row.original)}</span>, enableSorting: false },
+  { id: "summary", accessorFn: (run) => `${triggerLabel(run.trigger)} · ${runSummary(run)}`, header: "结果 / 信息", meta: { width: 220, grow: 2, minWidth: 180, text: "clamp2" }, cell: ({ row }) => <span className="si-runs-summary-cell">{triggerLabel(row.original.trigger)} · {runSummary(row.original)}</span>, enableSorting: false },
 ];
 
 function stepLabel(step: string, index: number): string {
