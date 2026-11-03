@@ -105,7 +105,7 @@ export function EdmPage() {
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
-      query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} maxHeight={520}
+      query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height={520} rowHeight={48}
       showPagination={false} emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-top"><h2>SKU 宣传图</h2><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />

@@ -15,7 +15,7 @@
 .si-files-table-card .si-data-table { border: 0; border-radius: 0; }
 .si-files-table-card .si-table th { padding: 0 12px; }
 .si-files-table-card .si-table td { height: 48px; padding: 0 12px; }
-.si-files-table-card .si-table tr:has(.si-files-group-label) td { height: 34px; background: var(--color-subtle); }
+.si-files-table-card .si-table tr:has(.si-files-group-label) td { height: 48px; background: var(--color-subtle); }
 .si-files-group-label { color: var(--color-ink-2); font-size: 12px; }
 .si-files-path { display: block; overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .si-files-number { color: var(--color-ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
