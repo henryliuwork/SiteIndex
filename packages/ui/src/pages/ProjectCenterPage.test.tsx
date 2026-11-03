@@ -42,6 +42,9 @@ describe("ProjectCenterPage add existing project flow", () => {
       registered.push(added);
       return added;
     });
+    let resolvePendingAdd!: (value: ProjectSummary) => void;
+    const pendingAdd = new Promise<ProjectSummary>((resolve) => { resolvePendingAdd = resolve; });
+    addExisting.mockImplementationOnce(() => pendingAdd);
     mockApi.projects.list = list;
     mockApi.projects.get = get;
     mockApi.projects.addExisting = addExisting;
@@ -66,8 +69,18 @@ describe("ProjectCenterPage add existing project flow", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "添加已有项目" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "项目文件夹路径" }), { target: { value: ` ${projectPath} ` } });
+    const pathInput = screen.getByRole("textbox", { name: "项目文件夹路径" });
+    fireEvent.change(pathInput, { target: { value: ` ${projectPath} ` } });
     fireEvent.click(screen.getByRole("button", { name: "添加项目" }));
+    expect(await screen.findByText("正在读取项目…", { exact: true })).toBeTruthy();
+    expect((pathInput as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "读取中…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "取消" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.submit(pathInput.closest("form")!);
+    expect(addExisting).toHaveBeenCalledTimes(1);
+    const addedProject = { ...project, path: projectPath };
+    registered.push(addedProject);
+    resolvePendingAdd(addedProject);
 
     const projectLink = await screen.findByRole("link", { name: "Cedar Shop" });
     expect(projectLink.getAttribute("href")).toBe("/p/cedar-shop/inventory");
