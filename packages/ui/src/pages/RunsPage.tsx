@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useParams } from "react-router-dom";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
+import type { JobName, JobProgress, JobResult, JobSchedule, ListQuery, RunLog, RunLogStep, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
 import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, ProjectHeader, ProjectTabPanel } from "../components";
 import "./runs/page.css";
 
 const jobLabels: Record<string, string> = {
@@ -78,6 +79,14 @@ function triggerLabel(trigger: RunLog["trigger"]): string {
   return trigger === "schedule" ? "定时计划" : trigger === "cli" ? "命令行" : "手动执行";
 }
 
+const historyColumns: ColumnDef<RunLog, unknown>[] = [
+  { id: "started_at", accessorKey: "started_at", header: "时间", meta: { width: 128, grow: 0, minWidth: 112, text: "single" }, cell: ({ row }) => <code className="si-runs-date">{formatDateTime(row.original.started_at)}</code>, enableSorting: false },
+  { id: "job", accessorKey: "job", header: "任务名", meta: { width: 132, grow: 0, minWidth: 108, text: "single" }, cell: ({ row }) => <strong className="si-runs-job-name">{jobLabels[row.original.job]}</strong>, enableSorting: false },
+  { id: "status", accessorKey: "status", header: "状态", meta: { width: 92, grow: 0, minWidth: 82, text: "single" }, cell: ({ row }) => <Chip tone={statusTone(row.original.status)}>{statusLabel(row.original.status)}</Chip>, enableSorting: false },
+  { id: "duration", accessorFn: runDuration, header: "耗时", meta: { width: 96, grow: 0, minWidth: 84, text: "single" }, cell: ({ row }) => <span className="si-runs-duration">{runDuration(row.original)}</span>, enableSorting: false },
+  { id: "summary", accessorFn: (run) => `${triggerLabel(run.trigger)} · ${runSummary(run)}`, header: "结果 / 信息", meta: { width: 340, grow: 2, minWidth: 220, text: "clamp2" }, cell: ({ row }) => <span className="si-runs-summary-cell">{triggerLabel(row.original.trigger)} · {runSummary(row.original)}</span>, enableSorting: false },
+];
+
 function stepLabel(step: string, index: number): string {
   const labels: Record<string, string> = {
     load_project: "读取项目配置", fetch_feed: "读取 Feed", sync_products: "同步产品", sync_inventory: "同步库存",
@@ -107,6 +116,8 @@ export function RunsPage() {
   const runningQuery = useQuery({ queryKey: ["running-job", id], queryFn: () => api.jobs.running(id), refetchInterval: 1500 });
   const [draft, setDraft] = useState<ScheduleConfig | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
+  const [selectedHistoryRunId, setSelectedHistoryRunId] = useState<string | null>(null);
+  const [historyTableQuery, setHistoryTableQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [runResult, setRunResult] = useState<JobResult | null>(null);
   const [logs, setLogs] = useState<JobProgress[]>([]);
@@ -148,6 +159,11 @@ export function RunsPage() {
 
   const history = historyQuery.data ?? [];
   const lastByJob = useMemo(() => new Map(history.map((run) => [run.job, run])), [history]);
+  const historyTableRows = useMemo(() => history.slice(
+    (historyTableQuery.page - 1) * historyTableQuery.pageSize,
+    historyTableQuery.page * historyTableQuery.pageSize,
+  ), [history, historyTableQuery.page, historyTableQuery.pageSize]);
+  const selectedHistoryRun = history.find((run) => run.run_id === selectedHistoryRunId);
 
   const announce = (message: string) => {
     setFeedback(message);
@@ -320,16 +336,29 @@ export function RunsPage() {
       </section>
 
       <section className="si-runs-block si-runs-history">
-        <div className="si-runs-block-heading"><div><h2>运行历史</h2><p>最近 30 次任务执行记录；展开记录查看步骤结果和失败原因。</p></div><Button size="small" onClick={() => void historyQuery.refetch()}>刷新</Button></div>
-        {historyQuery.isLoading ? <div className="si-query-loading" role="status">正在加载运行历史…</div> : historyQuery.isError ? <ApiErrorNotice label="运行历史加载失败。" error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /> : history.length ? <div className="si-run-history-list">
-          {history.map((run) => <details className="si-run-history-item" key={run.run_id}>
-            <summary><span className="si-run-history-time">{formatDateTime(run.started_at)}</span><strong>{jobLabels[run.job]}</strong><span className="si-run-history-trigger">{triggerLabel(run.trigger)}</span><Chip tone={statusTone(run.status)}>{statusLabel(run.status)}</Chip><span className="si-run-history-duration">{runDuration(run)}</span><span className="si-run-history-summary">{runSummary(run)}</span></summary>
-            <div className="si-run-history-detail"><div className="si-run-history-context"><span>执行设备：{run.device_name ?? "—"}</span><span>开始：{formatDateTime(run.started_at)}</span><span>结束：{run.finished_at ? formatDateTime(run.finished_at) : "进行中"}</span></div>
-              {run.steps?.length ? <ol className="si-run-history-steps">{run.steps.map((step, index) => <li key={`${step.key}-${index}`} className={`is-${step.status}`}><span className="si-run-step-number">{index + 1}</span><div><strong>{stepLabel(step.key, index)}</strong>{step.message && <p>{step.message}</p>}</div><Chip tone={stepStatusTone(step.status)}>{stepStatusLabel(step.status)}</Chip></li>)}</ol> : <p className="si-run-history-empty">这条记录没有返回分步结果。</p>}
-              {run.errors?.length ? <div className="si-run-history-errors"><strong>失败原因</strong>{run.errors.map((error, index) => <p key={index}>{error}</p>)}</div> : null}
-            </div>
-          </details>)}
-        </div> : <div className="si-run-history-empty-state"><strong>还没有运行记录</strong><span>手动执行或等待定时任务后，记录会显示在这里。</span></div>}
+        <div className="si-runs-block-heading"><div><h2>运行历史</h2><p>最近 30 次任务执行记录；选择一条记录查看步骤结果和失败原因。</p></div><Button size="small" onClick={() => void historyQuery.refetch()}>刷新</Button></div>
+        {historyQuery.isLoading ? <div className="si-query-loading" role="status">正在加载运行历史…</div> : historyQuery.isError ? <ApiErrorNotice label="运行历史加载失败。" error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /> : <>
+          <DataTable
+            tableId="runs.history"
+            rows={historyTableRows}
+            total={history.length}
+            columns={historyColumns}
+            query={historyTableQuery}
+            onQueryChange={setHistoryTableQuery}
+            onRowClick={(run) => setSelectedHistoryRunId((current) => current === run.run_id ? null : run.run_id)}
+            getRowId={(run) => run.run_id}
+            height="fill"
+            rowHeight={52}
+            emptyTitle="还没有运行记录"
+            emptyDescription="手动执行或等待定时任务后，记录会显示在这里。"
+          />
+          {selectedHistoryRun && <div className="si-run-history-detail" aria-label={`${jobLabels[selectedHistoryRun.job]}运行详情`}>
+            <div className="si-run-history-detail-heading"><strong>{jobLabels[selectedHistoryRun.job]} · {statusLabel(selectedHistoryRun.status)}</strong><Button size="small" variant="quiet" onClick={() => setSelectedHistoryRunId(null)}>收起详情</Button></div>
+            <div className="si-run-history-context"><span>执行方式：{triggerLabel(selectedHistoryRun.trigger)}</span><span>执行设备：{selectedHistoryRun.device_name ?? "—"}</span><span>开始：{formatDateTime(selectedHistoryRun.started_at)}</span><span>结束：{selectedHistoryRun.finished_at ? formatDateTime(selectedHistoryRun.finished_at) : "进行中"}</span></div>
+            {selectedHistoryRun.steps?.length ? <ol className="si-run-history-steps">{selectedHistoryRun.steps.map((step, index) => <li key={`${step.key}-${index}`} className={`is-${step.status}`}><span className="si-run-step-number">{index + 1}</span><div><strong>{stepLabel(step.key, index)}</strong>{step.message && <p>{step.message}</p>}</div><Chip tone={stepStatusTone(step.status)}>{stepStatusLabel(step.status)}</Chip></li>)}</ol> : <p className="si-run-history-empty">这条记录没有返回分步结果。</p>}
+            {selectedHistoryRun.errors?.length ? <div className="si-run-history-errors"><strong>失败原因</strong>{selectedHistoryRun.errors.map((error, index) => <p key={index}>{error}</p>)}</div> : null}
+          </div>}
+        </>}
       </section>
       </ProjectTabPanel>
 
