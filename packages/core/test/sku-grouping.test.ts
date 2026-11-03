@@ -5,6 +5,26 @@ import { describe, expect, it } from "vitest";
 import { groupSkuIds, previewSkuGrouping, SkuGroupingRuleError } from "../src/inventory/sku-grouping";
 
 const GROUPING_FIXTURE = path.resolve(process.cwd(), "fixtures/sku-grouping/193-skus.json");
+const collisionRuleCases: { name: string; skus: string[]; rule: SkuGroupingRule; children: string[] }[] = [
+  {
+    name: "suffix",
+    skus: ["DEMO001A", "DEMO001A01"],
+    rule: { type: "suffix", value: "01" },
+    children: ["DEMO001A01"],
+  },
+  {
+    name: "separator",
+    skus: ["DEMO001A", "DEMO001A-02", "DEMO001A-01"],
+    rule: { type: "separator", value: "-" },
+    children: ["DEMO001A-01", "DEMO001A-02"],
+  },
+  {
+    name: "regex",
+    skus: ["DEMO001A", "DEMO001A02", "DEMO001A01"],
+    rule: { type: "regex", value: "^(.+?)\\d{1,3}$" },
+    children: ["DEMO001A01", "DEMO001A02"],
+  },
+];
 
 describe("deterministic SKU grouping", () => {
   it("removes a literal suffix and de-duplicates repeated feed IDs", () => {
@@ -48,6 +68,49 @@ describe("deterministic SKU grouping", () => {
       samples: [],
       unmatched: 3,
     });
+  });
+
+  it("omits the collisions field when all rule-derived parents are synthetic", () => {
+    const preview = previewSkuGrouping(
+      ["DEMO001A01", "DEMO001A02"],
+      { type: "regex", value: "^(.+?)\\d{1,3}$" },
+    );
+
+    expect(preview).toMatchObject({ parents: 1, children: 2, unmatched: 0 });
+    expect(preview.collisions).toBeUndefined();
+  });
+
+  it("reports a single feed-parent collision without changing grouping", () => {
+    const preview = previewSkuGrouping(
+      ["DEMO001A", "DEMO001A02", "DEMO001A01"],
+      { type: "regex", value: "^(.+?)\\d{1,3}$" },
+    );
+
+    expect(preview).toMatchObject({
+      parents: 0,
+      children: 0,
+      unmatched: 3,
+      collisions: [{ parent: "DEMO001A", children: ["DEMO001A01", "DEMO001A02"] }],
+    });
+  });
+
+  it("sorts multiple colliding parents and children with compareKeys", () => {
+    const preview = previewSkuGrouping(
+      ["DEMO002B02", "DEMO001A02", "DEMO002B", "DEMO001A01", "DEMO001A", "DEMO002B01"],
+      { type: "regex", value: "^(.+?)\\d{1,3}$" },
+    );
+
+    expect(preview.collisions).toEqual([
+      { parent: "DEMO001A", children: ["DEMO001A01", "DEMO001A02"] },
+      { parent: "DEMO002B", children: ["DEMO002B01", "DEMO002B02"] },
+    ]);
+    expect(preview).toMatchObject({ parents: 0, children: 0, unmatched: 6 });
+  });
+
+  it.each(collisionRuleCases)("reports collisions for the $name rule", ({ skus, rule, children }) => {
+    const preview = previewSkuGrouping(skus, rule);
+
+    expect(preview.collisions).toEqual([{ parent: "DEMO001A", children }]);
   });
 
   it("treats a derived parent that already exists as a real SKU as a collision", () => {

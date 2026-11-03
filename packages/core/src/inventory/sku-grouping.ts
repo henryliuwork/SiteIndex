@@ -11,6 +11,7 @@ export interface SkuGroup {
 
 export interface SkuGroupingResult {
   groups: SkuGroup[];
+  collisions: SkuGroup[];
   unmatched: string[];
   parentByChild: ReadonlyMap<string, string>;
 }
@@ -89,13 +90,17 @@ export function groupSkuIds(skus: readonly string[], inputRule: SkuGroupingRule)
 
   const groups = [...candidates]
     .filter(([parent]) => !skuSet.has(parent))
-    .map(([parent, children]) => ({ parent, children: children.sort(compareKeys) }))
+    .map(([parent, children]) => ({ parent, children: [...children].sort(compareKeys) }))
+    .sort((left, right) => compareKeys(left.parent, right.parent));
+  const collisions = [...candidates]
+    .filter(([parent]) => skuSet.has(parent))
+    .map(([parent, children]) => ({ parent, children: [...children].sort(compareKeys) }))
     .sort((left, right) => compareKeys(left.parent, right.parent));
   const parentByChild = new Map<string, string>();
   for (const group of groups) for (const child of group.children) parentByChild.set(child, group.parent);
   const unmatched = uniqueSkus.filter((sku) => !parentByChild.has(sku));
 
-  return { groups, unmatched, parentByChild };
+  return { groups, collisions, unmatched, parentByChild };
 }
 
 export function previewSkuGrouping(skus: readonly string[], rule: SkuGroupingRule): SkuGroupingPreview {
@@ -109,5 +114,6 @@ export function previewSkuGrouping(skus: readonly string[], rule: SkuGroupingRul
       children: groupChildren.slice(0, MAX_PREVIEW_CHILDREN),
     })),
     unmatched: result.unmatched.length,
+    ...(result.collisions.length > 0 ? { collisions: result.collisions } : {}),
   };
 }
