@@ -170,6 +170,16 @@ interface SnapshotCacheEntry {
   snapshot: Promise<ProjectSnapshot>;
 }
 
+type ProjectSummarySnapshot = Pick<ProjectSnapshot,
+  "projectPath" | "config" | "runner" | "skus" | "latest" | "dailySummary" | "events" |
+  "products" | "seoIssues" | "blogIndex" | "runs" | "asOf"
+>;
+
+interface ProjectSummaryCacheEntry {
+  fingerprint: string;
+  snapshot: Promise<ProjectSummarySnapshot>;
+}
+
 const SNAPSHOT_FILE_PATHS = [
   PATHS.site,
   PATHS.runner,
@@ -189,6 +199,18 @@ const SNAPSHOT_FILE_PATHS = [
   PATHS.categories,
   PATHS.runs,
   PATHS.skuTags,
+] as const;
+
+const PROJECT_SUMMARY_FILE_PATHS = [
+  PATHS.site,
+  PATHS.runner,
+  PATHS.skus,
+  PATHS.inventoryLatest,
+  PATHS.dailySummary,
+  PATHS.productsView,
+  PATHS.seoIssues,
+  PATHS.blogIndex,
+  PATHS.runs,
 ] as const;
 
 const PRODUCT_FIELDS = [
@@ -381,7 +403,7 @@ function serializeSiteConfig(config: SiteConfig): string {
   return `${JSON.stringify(config, (key, value) => key === "workspace_folders" ? undefined : value, 2)}\n`;
 }
 
-async function snapshotFingerprint(projectPath: string): Promise<string> {
+async function snapshotFingerprint(projectPath: string, basePaths: readonly string[] = SNAPSHOT_FILE_PATHS): Promise<string> {
   let eventFiles: string[];
   try {
     eventFiles = (await readdir(path.join(projectPath, PATHS.eventsDir)))
@@ -392,7 +414,7 @@ async function snapshotFingerprint(projectPath: string): Promise<string> {
     eventFiles = [];
   }
 
-  const filePaths = [...SNAPSHOT_FILE_PATHS, ...eventFiles].sort(compareKeys);
+  const filePaths = [...basePaths, ...eventFiles].sort(compareKeys);
   const entries = await Promise.all(filePaths.map(async (relativePath) => {
     try {
       const file = await stat(path.join(projectPath, relativePath));
@@ -453,6 +475,29 @@ async function loadSnapshot(projectPath: string): Promise<ProjectSnapshot> {
       skuTags,
       asOf,
     };
+  } catch (error) {
+    if (isSiteIndexError(error)) throw error;
+    throw siteError("PROJECT_UNREADABLE", "无法读取项目数据文件", String(error));
+  }
+}
+
+async function loadProjectSummarySnapshot(projectPath: string): Promise<ProjectSummarySnapshot> {
+  const config = await readSiteConfig(projectPath);
+  try {
+    const [runner, skus, latest, dailyCsv, products, seoIssues, blogIndex, runs] = await Promise.all([
+      readRunner(projectPath),
+      readJsonlAs<SkuRecord>(projectPath, PATHS.skus),
+      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest),
+      readCsv(path.join(projectPath, PATHS.dailySummary)),
+      readJsonlAs<ProductView>(projectPath, PATHS.productsView),
+      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues),
+      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex),
+      readJsonlAs<RunLog>(projectPath, PATHS.runs),
+    ]);
+    const dailySummary = parseDailySummary(dailyCsv);
+    const asOf = dailySummary.map((row) => row.date).sort(codeUnitCompare).at(-1) ?? localDate(config.timezone);
+    const events = parseEvents(await readJsonl(path.join(projectPath, eventsFile(monthFor(asOf)))));
+    return { projectPath, config, runner, skus, latest, dailySummary, events, products, seoIssues, blogIndex, runs, asOf };
   } catch (error) {
     if (isSiteIndexError(error)) throw error;
     throw siteError("PROJECT_UNREADABLE", "无法读取项目数据文件", String(error));
@@ -521,7 +566,7 @@ function todayCounts(events: readonly InventoryEvent[], date: ISODate): ProjectS
   return result;
 }
 
-function projectSummary(snapshot: ProjectSnapshot, id: ProjectId, deviceId: string): ProjectSummary {
+function projectSummary(snapshot: ProjectSummarySnapshot, id: ProjectId, deviceId: string): ProjectSummary {
   const activeSkus = snapshot.skus.filter((row) => row.status === "active");
   const activeProducts = snapshot.products.filter((row) => row.status === "active");
   const productCount = activeProducts.length || new Set(activeSkus.map((row) => row.handle)).size;
@@ -1122,9 +1167,14 @@ async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot)
 
 export function createCoreService(ctx: CoreServiceContext): CoreService {
   const cache = new Map<string, SnapshotCacheEntry>();
+  const projectSummaryCache = new Map<string, ProjectSummaryCacheEntry>();
   const createdTags = new Map<string, Set<string>>();
   const resolve = (id: ProjectId) => path.resolve(ctx.resolveProject(id));
-  const invalidate = (projectPath: string) => { cache.delete(path.resolve(projectPath)); };
+  const invalidate = (projectPath: string) => {
+    const key = path.resolve(projectPath);
+    cache.delete(key);
+    projectSummaryCache.delete(key);
+  };
   const load = async (projectPath: string): Promise<ProjectSnapshot> => {
     const key = path.resolve(projectPath);
     let fingerprint: string;
@@ -1139,6 +1189,24 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     const pending = loadSnapshot(key);
     cache.set(key, { fingerprint, snapshot: pending });
     void pending.catch(() => { if (cache.get(key)?.snapshot === pending) cache.delete(key); });
+    return pending;
+  };
+  const loadProjectSummary = async (projectPath: string): Promise<ProjectSummarySnapshot> => {
+    const key = path.resolve(projectPath);
+    let fingerprint: string;
+    try {
+      fingerprint = await snapshotFingerprint(key, PROJECT_SUMMARY_FILE_PATHS);
+    } catch {
+      projectSummaryCache.delete(key);
+      return loadProjectSummarySnapshot(key);
+    }
+    const existing = projectSummaryCache.get(key);
+    if (existing?.fingerprint === fingerprint) return existing.snapshot;
+    const pending = loadProjectSummarySnapshot(key);
+    projectSummaryCache.set(key, { fingerprint, snapshot: pending });
+    void pending.catch(() => {
+      if (projectSummaryCache.get(key)?.snapshot === pending) projectSummaryCache.delete(key);
+    });
     return pending;
   };
 
@@ -1451,7 +1519,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
 
   const projects: CoreService["projects"] = {
     get: async (id) => {
-      const snapshot = await load(resolve(id));
+      const snapshot = await loadProjectSummary(resolve(id));
       return { summary: projectSummary(snapshot, id, ctx.deviceId), config: snapshot.config, runner: snapshot.runner };
     },
     updateConfig: async (id, patch) => {
@@ -1952,7 +2020,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
 
   const schedule: CoreService["schedule"] = {
     get: async (id): Promise<ScheduleState> => {
-      const config = (await load(resolve(id))).config.schedule;
+      const config = (await readSiteConfig(resolve(id))).schedule;
       const next_runs = (["daily", "validate", "weekly", "readme", "monthly"] as const).map((job) => ({ job, at: null }));
       return { config, registered: false, next_runs };
     },
