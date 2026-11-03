@@ -55,14 +55,13 @@ export interface PageResult<T> {
   total: number;
 }
 
-/** 父子 SKU 规则预览；counts 仅描述按规则识别出的父/子 SKU，不代表父 SKU 库存。 */
+/** 父 SKU 是规则推导出的候选父项，且该 SKU 本身存在于 feed；children 为命中它的子 SKU。 */
 export interface SkuGroupingCollision {
-  /** 按规则推导出的父 SKU 已作为真实 SKU 存在于 feed 中。 */
   parent: string;
-  /** 规则原本会归入该父 SKU 的子 SKU。 */
   children: string[];
 }
 
+/** 父子 SKU 规则预览；counts 仅描述按规则识别出的父/子 SKU，不代表父 SKU 库存。 */
 export interface SkuGroupingPreview {
   parents: number;
   children: number;
