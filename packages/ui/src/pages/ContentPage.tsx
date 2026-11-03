@@ -64,7 +64,7 @@ function keywordColumns(): ColumnDef<Keyword, unknown>[] {
 }
 
 export function ContentPage() {
-  const { id = "kingsyard" } = useParams();
+  const { id = "demo" } = useParams();
   const [view, setView] = useState<ContentView>("blog");
   const [blogQuery, setBlogQuery] = useState(initialBlogQuery);
   const [keywordQuery, setKeywordQuery] = useState(initialKeywordQuery);

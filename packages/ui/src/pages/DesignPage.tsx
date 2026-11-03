@@ -15,8 +15,8 @@ const colorItems: { key: ColorKey; label: string }[] = [
   { key: "surface", label: "surface" }, { key: "border", label: "border" }, { key: "sale", label: "sale" },
 ];
 const typeSamples: Record<string, string> = {
-  h1: "Feed the birds", h2: "Squirrel-proof feeders", h3: "Easy to clean",
-  body: "Durable feeders and baths for backyard birders.", small: "Free shipping over $49",
+  h1: "Example product guide", h2: "Designed for everyday use", h3: "Simple and practical",
+  body: "Fictional content used to preview the typography scale.", small: "Example label · no real store data",
 };
 const typographyNames: Record<string, string> = { h1: "h1", h2: "h2", h3: "h3", body: "body", small: "small" };
 const textValue = (value: string | number | undefined, fallback = "—"): string => value === undefined || value === "" ? fallback : String(value);
@@ -127,7 +127,7 @@ function ScreenshotsCard({ screenshots, onOpen }: { screenshots: { name: string;
 }
 
 export function DesignPage() {
-  const { id = "kingsyard" } = useParams();
+  const { id = "demo" } = useParams();
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState("");
   const [copiedColor, setCopiedColor] = useState("");

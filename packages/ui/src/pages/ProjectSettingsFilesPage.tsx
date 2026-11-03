@@ -73,7 +73,7 @@ function repairLabel(action: RepairAction): string {
 }
 
 export function ProjectSettingsFilesPage() {
-  const { id = "kingsyard" } = useParams<{ id: string }>();
+  const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const reportQuery = useQuery({ queryKey: ["files", id], queryFn: () => api.files.lastReport(id) });

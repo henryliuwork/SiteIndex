@@ -64,7 +64,7 @@ function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
 }
 
 export function EdmPage() {
-  const { id = "kingsyard" } = useParams();
+  const { id = "demo" } = useParams();
   const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 20, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
   const [feedback, setFeedback] = useState("");

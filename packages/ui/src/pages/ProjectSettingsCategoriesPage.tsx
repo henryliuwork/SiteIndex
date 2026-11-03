@@ -42,7 +42,7 @@ function categorySlug(url: string): string {
 }
 
 export function ProjectSettingsCategoriesPage() {
-  const { id = "kingsyard" } = useParams<{ id: string }>();
+  const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const configQuery = useQuery({ queryKey: ["categories", id], queryFn: () => api.categories.get(id) });
@@ -203,9 +203,9 @@ export function ProjectSettingsCategoriesPage() {
       <aside className="si-category-candidates"><div className="si-category-card-heading"><div><h2>从 sitemap 发现的候选分类页</h2><p>非产品、非博客页面上列出多个产品的 URL</p></div></div>{(preview?.candidates ?? []).map((candidate) => <div className="si-category-candidate" key={candidate.url}><div><code>{candidate.url}</code><span>{candidate.configured ? "已配置" : `页面列出 ${candidate.product_links} 个产品`}</span></div>{candidate.configured || (draft.manual ?? []).some((category) => category.url === candidate.url) ? <Chip tone="ok">已加入</Chip> : <Button size="small" onClick={() => addCandidate(candidate.url)}>加入</Button>}</div>)}{!preview?.candidates.length && <p className="si-category-empty">暂无候选分类页。预览匹配结果以刷新列表。</p>}<Button size="small" onClick={importFeedCategories}>从 feed 导入分类</Button></aside>
     </div>}
     <DetailPanel open={Boolean(selected)} onClose={() => setSelectedIndex(null)} title={selected?.name || "编辑分类"}>{selected && selectedIndex !== null && <div className="si-category-editor">
-      <label>分类名称<input className="si-text-field" value={selected.name} onChange={(event) => updateCategory(selectedIndex, { name: event.target.value })} placeholder="例如 Bird Feeders" /></label>
-      <label>Slug<input className="si-text-field si-category-mono" value={selected.slug} onChange={(event) => updateCategory(selectedIndex, { slug: event.target.value })} placeholder="bird-feeders" /></label>
-      <label>分类页 URL<input className="si-text-field si-category-mono" value={selected.url} onChange={(event) => updateCategory(selectedIndex, { url: event.target.value })} placeholder="/bird-feeders.html" /></label>
+      <label>分类名称<input className="si-text-field" value={selected.name} onChange={(event) => updateCategory(selectedIndex, { name: event.target.value })} placeholder="例如 示例分类" /></label>
+      <label>Slug<input className="si-text-field si-category-mono" value={selected.slug} onChange={(event) => updateCategory(selectedIndex, { slug: event.target.value })} placeholder="demo-category-1" /></label>
+      <label>分类页 URL<input className="si-text-field si-category-mono" value={selected.url} onChange={(event) => updateCategory(selectedIndex, { url: event.target.value })} placeholder="/collections/demo-category-1" /></label>
       <fieldset><legend>匹配规则（按顺序）</legend>{selected.match.map((rule, ruleIndex) => <div className="si-category-editor-rule" key={`${selected.rowId}-${ruleIndex}`}>
         <select className="si-text-field" aria-label={`匹配规则类型 ${ruleIndex + 1}`} value={rule.type} onChange={(event) => updateMatch(selectedIndex, ruleIndex, { type: event.target.value as CategoryMatchType })}>{matchTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
         <input className="si-text-field" aria-label={`匹配规则值 ${ruleIndex + 1}`} value={rule.value} onChange={(event) => updateMatch(selectedIndex, ruleIndex, { value: event.target.value })} placeholder="输入匹配值" />

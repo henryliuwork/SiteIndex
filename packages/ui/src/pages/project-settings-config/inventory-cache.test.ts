@@ -6,7 +6,7 @@ import { invalidateInventoryForCategoryChange } from "./inventory-cache";
 
 const categories: SiteConfig["categories"] = {
   mode: "feed",
-  watched: [{ name: "Bird Feeders", slug: "bird-feeders", manual: false }],
+  watched: [{ name: "示例分类 1", slug: "demo-category-1", manual: false }],
 };
 
 describe("关注分类缓存刷新", () => {

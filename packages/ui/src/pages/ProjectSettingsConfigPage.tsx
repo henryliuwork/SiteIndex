@@ -100,7 +100,7 @@ function sameCategory(left: WatchedCategory, right: WatchedCategory): boolean {
 }
 
 export function ProjectSettingsConfigPage() {
-  const { id = "kingsyard" } = useParams<{ id: string }>();
+  const { id = "demo" } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const requestedSection = searchParams.get("section");
   const queryClient = useQueryClient();

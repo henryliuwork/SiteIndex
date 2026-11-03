@@ -9,7 +9,7 @@ describe("inventory range mock", () => {
     const ranges: (14 | HistoryRange)[] = [14, 30, 60, 90, "all"];
 
     for (const range of ranges) {
-      const summary = await api.summary("kingsyard", range);
+      const summary = await api.summary("demo", range);
       expect(summary.trend.dates).toEqual([FIXED_TODAY]);
       expect(summary.trend.series.every((series) => series.rates.length === 1)).toBe(true);
       for (const series of summary.trend.series) {
@@ -22,14 +22,14 @@ describe("inventory range mock", () => {
 describe("inventory watched categories mock", () => {
   it("returns watched/manual markers from the project configuration", async () => {
     const api = createInventoryMock();
-    const summary = await api.summary("kingsyard", 30);
+    const summary = await api.summary("demo", 30);
 
-    expect(summary.category_rates.find((item) => item.category === "bird-feeders")).toMatchObject({
+    expect(summary.category_rates.find((item) => item.category === "demo-category-1")).toMatchObject({
       watched: true,
       manual: true,
       total: expect.any(Number),
     });
-    expect(summary.category_rates.find((item) => item.category === "hummingbird-feeders")).toMatchObject({
+    expect(summary.category_rates.find((item) => item.category === "demo-category-5")).toMatchObject({
       watched: false,
       manual: true,
       total: 0,
@@ -38,9 +38,9 @@ describe("inventory watched categories mock", () => {
 
   it("applies watched_only to rows returned by the inventory API", async () => {
     const api = createInventoryMock();
-    const result = await api.listSkus("kingsyard", { page: 1, pageSize: 0, filters: { watched_only: true } });
+    const result = await api.listSkus("demo", { page: 1, pageSize: 0, filters: { watched_only: true } });
 
     expect(result.total).toBeGreaterThan(0);
-    expect(result.rows.every((row) => row.category === "bird-feeders")).toBe(true);
+    expect(result.rows.every((row) => row.category === "demo-category-1")).toBe(true);
   });
 });
