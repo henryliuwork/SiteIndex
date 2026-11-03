@@ -52,6 +52,7 @@
 
 ## M3 · 打磨
 - [ ] B-T3 共享层：DataTable 列设置置于常规工具栏槽位、FilterBar 超过两行可折叠、补充间距 token — 本 PR；D 页面样式中的 `top:-50px` / `padding-right:90px` 遗留规则未改，需由 D 清理
+  - [x] FilterBar 按垂直重叠识别行，混合高度标签与 chip 不误折叠；折叠边界为第二行最大 bottom，并为焦点描边留白（本 PR）
 - [x] 逐页对照画板修正细节；1100 宽窗口下布局不溢出（侧栏折叠）— [PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)、[PR #60](https://github.com/henryliuwork/SiteIndex/pull/60)、[PR #61](https://github.com/henryliuwork/SiteIndex/pull/61)、[PR #62](https://github.com/henryliuwork/SiteIndex/pull/62)、[PR #63](https://github.com/henryliuwork/SiteIndex/pull/63)、[PR #64](https://github.com/henryliuwork/SiteIndex/pull/64)、[PR #65](https://github.com/henryliuwork/SiteIndex/pull/65)、[PR #66](https://github.com/henryliuwork/SiteIndex/pull/66)、[PR #67](https://github.com/henryliuwork/SiteIndex/pull/67)、[PR #68](https://github.com/henryliuwork/SiteIndex/pull/68)
 - [x] B-T2：DataTable `height: number | "fill"`、表格区 flex 自适应（最小 320px）、表体滚动与分页条分离，`maxHeight` 弃用兼容 — 本 PR
 - [x] 共享组件键盘焦点、Dialog/Drawer 焦点返回与文字对比度 — [PR #179](https://github.com/henryliuwork/SiteIndex/pull/179)
