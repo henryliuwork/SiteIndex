@@ -103,6 +103,9 @@
 - [x] Core 锁在 partial 与异常时释放，Windows EPERM/EBUSY 短暂占用重试；旧心跳锁回收
 - [x] init 的各步骤状态与中文原因写入 logs/runs.jsonl
 
+### Issue #206 · 项目创建回归矩阵
+- [x] 并发重复域名只允许一个项目创建；同品牌名的不同域名可分别创建
+
 ### 2026-10-29 · 用户反馈 v2（#143）
 - [x] A-2 父子 SKU 规则引擎与 `sku.previewGrouping`
 - [x] A-3 读取博客 sitemap 与 URL 前缀配置识别博客页
