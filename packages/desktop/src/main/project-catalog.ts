@@ -1,7 +1,9 @@
 import { access, readdir, realpath, stat } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { watch, type FSWatcher } from "chokidar";
 import { PATHS, type AppSettings, type ProjectId, type SiteIndexError } from "@siteindex/shared";
+import type { AddExistingTimingCallback } from "./add-existing-trace.js";
 
 export interface ProjectPathEntry {
   id: ProjectId;
@@ -16,8 +18,8 @@ interface ProjectWatch {
 
 export interface ProjectCatalog {
   resolveProject(id: ProjectId): string;
-  ensureProject(id: ProjectId, settings: AppSettings): Promise<ProjectPathEntry>;
-  refresh(settings: AppSettings): Promise<ProjectPathEntry[]>;
+  ensureProject(id: ProjectId, settings: AppSettings, onTiming?: AddExistingTimingCallback): Promise<ProjectPathEntry>;
+  refresh(settings: AppSettings, onTiming?: AddExistingTimingCallback): Promise<ProjectPathEntry[]>;
   resolveExistingPath(value: string): Promise<string>;
   close(): Promise<void>;
 }
@@ -112,7 +114,24 @@ export function createProjectCatalog(
     await projectWatch.watcher.close();
   }
 
-  async function refresh(settings: AppSettings): Promise<ProjectPathEntry[]> {
+  async function refresh(settings: AppSettings, onTiming?: AddExistingTimingCallback): Promise<ProjectPathEntry[]> {
+    if (!onTiming) return refreshEntries(settings);
+    const refreshStartedAt = performance.now();
+    let watcherReadyMs = 0;
+    try {
+      return await refreshEntries(settings, (durationMs) => {
+        watcherReadyMs = durationMs;
+        onTiming("watcher.ready", durationMs);
+      });
+    } finally {
+      onTiming("catalog.refresh", Math.max(0, performance.now() - refreshStartedAt - watcherReadyMs));
+    }
+  }
+
+  async function refreshEntries(
+    settings: AppSettings,
+    onWatcherReady?: (durationMs: number) => void,
+  ): Promise<ProjectPathEntry[]> {
     const candidates: string[] = [];
     if (settings.projects_root.trim()) {
       try {
@@ -161,16 +180,18 @@ export function createProjectCatalog(
         currentKeys.has(key) ? Promise.resolve() : stopWatch(key, projectWatch),
       ),
     );
+    const watcherStartedAt = onWatcherReady ? performance.now() : 0;
     await Promise.all(entries.map(startWatch));
+    if (onWatcherReady) onWatcherReady(performance.now() - watcherStartedAt);
     return entries;
   }
 
   return {
     resolveProject,
-    async ensureProject(id, settings) {
+    async ensureProject(id, settings, onTiming) {
       const existingPath = paths.get(id);
       if (existingPath) return { id, path: existingPath };
-      await refresh(settings);
+      await refresh(settings, onTiming);
       const projectPath = paths.get(id);
       if (!projectPath) throw catalogError("PROJECT_NOT_FOUND", "找不到指定项目。", id);
       return { id, path: projectPath };

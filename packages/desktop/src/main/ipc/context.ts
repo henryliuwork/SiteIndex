@@ -8,6 +8,7 @@ import type { UiStateStore } from "../ui-state-store.js";
 import type { UpdateService } from "../update-service.js";
 import type { SkillService } from "../skill-service.js";
 import type { DesktopIntegrations } from "../desktop-integrations.js";
+import type { AddExistingTimingCallback, AddExistingTraceWriter } from "../add-existing-trace.js";
 
 export interface IpcDependencies {
   settings: SettingsStore;
@@ -15,10 +16,15 @@ export interface IpcDependencies {
   updates: UpdateService;
   core: CoreService;
   projects: ProjectCatalog;
-  settingsChanged: (value: AppSettings, reconcile?: boolean) => Promise<void>;
+  settingsChanged: (value: AppSettings, reconcile?: boolean, onTiming?: AddExistingTimingCallback) => Promise<void>;
   jobs: JobManager;
   scheduler: SystemScheduler;
-  reconcileSchedules: (allowElevation: boolean) => Promise<ScheduleRuntimeStatus>;
+  reconcileSchedules: (
+    allowElevation: boolean,
+    knownEntries?: Awaited<ReturnType<ProjectCatalog["refresh"]>>,
+    onTiming?: AddExistingTimingCallback,
+  ) => Promise<ScheduleRuntimeStatus>;
+  traceAddExisting?: AddExistingTraceWriter;
   onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>;
   skills: SkillService;
   desktopIntegrations: DesktopIntegrations;
