@@ -7,6 +7,7 @@ import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
+import { recommendedSkuGroupingPattern, skuGroupingExample, skuGroupingPresetForRule, skuGroupingPresetOptions, skuGroupingRuleForPreset, trailingNumberPattern, type SkuGroupingPreset } from "./project-settings-config/sku-grouping-presets";
 import { configSectionLinks, isConfigSectionId, scrollToConfigSection, type ConfigSectionId } from "./project-settings-config/section-navigation";
 import { invalidateInventoryForCategoryChange } from "./project-settings-config/inventory-cache";
 import { didBlogRecognitionConfigChange, markBlogRecognitionConfigUpdated } from "./content/blog-recognition";
@@ -45,51 +46,6 @@ function asLines(values: readonly string[] | undefined): string { return values?
 function fromLines(value: string): string[] { return value.split("\n").map((item) => item.trim()).filter(Boolean); }
 function asFeeds(value: SiteConfig["crawl"]["feed_url"]): string { return (Array.isArray(value) ? value : [value]).join("\n"); }
 
-const defaultSkuGroupingPattern = "^(.+?)\\d{1,3}$";
-const skuGroupingPresetOptions = [
-  { value: "trailing-number", label: "移除末尾数字序号（电商默认）" },
-  { value: "suffix", label: "移除固定后缀" },
-  { value: "separator", label: "按分隔符归组" },
-  { value: "custom-regex", label: "自定义正则" },
-] as const;
-type SkuGroupingPreset = typeof skuGroupingPresetOptions[number]["value"];
-
-function skuGroupingPresetForRule(rule: SkuGroupingRule): SkuGroupingPreset {
-  if (rule.type === "suffix") return "suffix";
-  if (rule.type === "separator") return "separator";
-  return rule.value === defaultSkuGroupingPattern ? "trailing-number" : "custom-regex";
-}
-
-function skuGroupingRuleForPreset(preset: SkuGroupingPreset, current: SkuGroupingRule): SkuGroupingRule {
-  if (preset === "trailing-number") return { type: "regex", value: defaultSkuGroupingPattern };
-  if (preset === "suffix") return current.type === "suffix" ? current : { type: "suffix", value: "-G" };
-  if (preset === "separator") return current.type === "separator" ? current : { type: "separator", value: "-" };
-  return current.type === "regex" && current.value !== defaultSkuGroupingPattern
-    ? current
-    : { type: "regex", value: "^(.+?)-[A-Z]$" };
-}
-
-function skuGroupingExample(rule: SkuGroupingRule): string {
-  if (rule.type === "suffix") {
-    return rule.value ? `DEMO001A${rule.value} → DEMO001A` : "请填写固定后缀";
-  }
-  if (rule.type === "separator") {
-    return rule.value ? `DEMO001A${rule.value}01 → DEMO001A` : "请填写分隔符";
-  }
-  const samples = ["DEMO001A01", "DEMO001A-G", "DEMO001A-BLK"];
-  try {
-    const expression = new RegExp(rule.value);
-    for (const sku of samples) {
-      const match = expression.exec(sku);
-      if (!match) continue;
-      return match[1] ? `${sku} → ${match[1]}` : `${sku} → 正则需包含父 SKU 捕获组`;
-    }
-    return `${samples[0]} → 当前规则未匹配示例`;
-  } catch {
-    return "正则格式无效，暂无法生成示例";
-  }
-}
-
 function categoryKey(category: Pick<WatchedCategory, "name" | "slug">): string {
   return category.slug?.trim() || category.name.trim().toLocaleLowerCase("zh-CN");
 }
@@ -106,7 +62,12 @@ export function ProjectSettingsConfigPage() {
   const queryClient = useQueryClient();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const [draft, setDraft] = useState<SiteConfig | null>(null);
-  const grouping = draft?.sku_grouping ?? { enabled: false, rule: { type: "regex", value: defaultSkuGroupingPattern } as SkuGroupingRule };
+  const grouping = draft?.sku_grouping ?? { enabled: false, rule: { type: "regex", value: recommendedSkuGroupingPattern } as SkuGroupingRule };
+  const groupingPreset = skuGroupingPresetForRule(grouping.rule);
+  const groupingRulePlaceholder = grouping.rule.type === "suffix" ? "-G"
+    : grouping.rule.type === "separator" ? "-"
+      : groupingPreset === "trailing-number" ? trailingNumberPattern
+        : groupingPreset === "recommended-two-digit" ? recommendedSkuGroupingPattern : "^(.+?)-[A-Z]$";
   const categoryPreviewQuery = useQuery({
     queryKey: ["category-preview", id],
     queryFn: () => api.categories.preview(id, projectQuery.data!.config.categories),
@@ -323,16 +284,19 @@ export function ProjectSettingsConfigPage() {
           <p className="si-config-help">Feed 只提供子 SKU 时，可按规则推导父 SKU。库存状态仍按子 SKU 计算。</p>
           <label className="si-config-check si-config-grouping-switch"><input type="checkbox" checked={grouping.enabled} onChange={(event) => patch("sku_grouping", { ...grouping, enabled: event.target.checked })} /><span>启用父子 SKU 分组</span></label>
           <div className="si-config-grouping-rule">
-            <SelectField label="分组规则类型" value={skuGroupingPresetForRule(grouping.rule)} options={skuGroupingPresetOptions} onChange={(value) => {
+            <div className="si-config-grouping-preset">
+              <SelectField label="分组规则类型" value={groupingPreset} options={skuGroupingPresetOptions} onChange={(value) => {
               patch("sku_grouping", { ...grouping, rule: skuGroupingRuleForPreset(value as SkuGroupingPreset, grouping.rule) });
-            }} />
-            <TextField label="规则值" mono value={grouping.rule.value} placeholder={grouping.rule.type === "regex" ? "^(.+?)\\d{1,3}$" : grouping.rule.type === "suffix" ? "-G" : "-"} hint={<small className="si-config-field-hint">示例：{skuGroupingExample(grouping.rule)}</small>} onChange={(value) => patch("sku_grouping", { ...grouping, rule: { ...grouping.rule, value } as SkuGroupingRule })} />
+              }} />
+              {groupingPreset === "trailing-number" && <small className="si-config-grouping-caveat">可能把以数字结尾的普通 SKU 误判为子 SKU，也不识别末尾字母后缀。</small>}
+            </div>
+            <TextField label="规则值" mono value={grouping.rule.value} placeholder={groupingRulePlaceholder} hint={<small className="si-config-field-hint">示例：{skuGroupingExample(grouping.rule)}</small>} onChange={(value) => patch("sku_grouping", { ...grouping, rule: { ...grouping.rule, value } as SkuGroupingRule })} />
           </div>
-          <p className="si-config-help">{grouping.rule.type === "regex" ? "正则的第一个捕获组作为父 SKU，例如 ^(.+?)-[A-Z]$。" : grouping.rule.type === "suffix" ? "只匹配并移除 SKU 末尾的完整后缀，例如 -G。" : "按最后一个分隔符拆分，分隔符左侧作为父 SKU，例如 -。"}</p>
+          <p className="si-config-help">{grouping.rule.type === "regex" ? "正则的第一个捕获组作为父 SKU；请参考规则值下方的即时示例。" : grouping.rule.type === "suffix" ? "只匹配并移除 SKU 末尾的完整后缀，例如 -G。" : "按最后一个分隔符拆分，分隔符左侧作为父 SKU，例如 -。"}</p>
           <div className="si-config-grouping-preview" aria-live="polite">
             <div className="si-config-grouping-preview-heading"><strong>实时分组预览</strong><span>{grouping.enabled ? "Core 全量 SKU 结果" : "预览，未生效"}</span></div>
             {skuPreviewQuery.isLoading ? <p role="status">正在通过 Core 计算全部 SKU 的分组预览…</p> : skuPreviewQuery.isError ? <div className="si-config-inline-error" role="alert"><span>{skuPreviewQuery.error instanceof Error ? skuPreviewQuery.error.message : apiErrorMessage(skuPreviewQuery.error, "父子 SKU 预览失败。")}</span><Button size="small" onClick={() => void skuPreviewQuery.refetch()}>重试</Button></div> : groupingPreview ? <>
-              <div className="si-config-grouping-stats"><span><strong>{groupingPreview.parents}</strong> 个父 SKU</span><span><strong>{groupingPreview.children}</strong> 个匹配子 SKU</span><span><strong>{groupingPreview.unmatched}</strong> 个未匹配 SKU</span></div>
+              <div className="si-config-grouping-stats"><span><strong>{groupingPreview.parents}</strong> 个父 SKU</span><span>已匹配 <strong>{groupingPreview.children}</strong> 个子 SKU</span><span>未匹配 <strong>{groupingPreview.unmatched}</strong> 个</span></div>
               {groupingPreview.parents === 0 ? <p>当前规则未识别到父子 SKU 分组。</p> : groupingPreview.samples.length > 0 ? <ul>{groupingPreview.samples.slice(0, 6).map((item) => <li key={item.parent}><code>{item.parent}</code><span>{item.children.length} 个：{item.children.slice(0, 4).join("、")}{item.children.length > 4 ? " …" : ""}</span></li>)}</ul> : <p>已取得分组计数，Core 未返回样例。</p>}
               {groupingPreview.collisions?.length ? <details className="si-config-grouping-collisions">
                 <summary>有 {groupingPreview.collisions.length} 个父 SKU 本身也是在售 SKU，已跳过分组</summary>
