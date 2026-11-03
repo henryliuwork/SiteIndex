@@ -28,7 +28,7 @@ const INITIAL_QUERY: ListQuery<SkuStockFilters> = { page: 1, pageSize: 20, filte
 const historyRanges: { value: HistoryRange; label: string }[] = [
   { value: 30, label: "30 天" }, { value: 60, label: "60 天" }, { value: 90, label: "90 天" }, { value: "all", label: "全部" },
 ];
-type InventoryTableRow = SkuStockView & { is_parent?: boolean; children_count?: number; in_stock_children_count?: number };
+type InventoryTableRow = SkuStockView;
 
 function rangeLabel(range: HistoryRange): string { return range === "all" ? "全部" : `近 ${range} 天`; }
 function businessDateLabel(value: string): string {

@@ -482,6 +482,9 @@ export interface SkuStockView {
   last_change_at: ISODate | null;
   parent_sku?: string | null;
   price_history?: { date: ISODate; price: number }[];
+  is_parent?: boolean;
+  children_count?: number;
+  in_stock_children_count?: number;
 }
 
 // ---------- 日志与校验 ----------
