@@ -8,16 +8,35 @@ function hasConfiguredFeed(feedUrl: string | string[]): boolean {
   return (Array.isArray(feedUrl) ? feedUrl : [feedUrl]).some((url) => url.trim().length > 0);
 }
 
+function normalizeProjectPath(path: string): string {
+  return path.trim().replaceAll("/", "\\").replace(/\\+/g, "\\").replace(/\\$/, "").toLocaleLowerCase();
+}
+
+function mockProjectIdForPath(normalizedPath: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < normalizedPath.length; index += 1) {
+    hash = Math.imul(hash ^ normalizedPath.charCodeAt(index), 16777619);
+  }
+  return "mock-" + (hash >>> 0).toString(36);
+}
+
 export function createProjectsMock(): SiteIndexApi["projects"] {
   const createdPaths = new Map<string, string>();
+  const addedProjects = new Map<string, ProjectDetail>();
+  const registeredProjects = () => [
+    ...(mockMode === "empty" ? [] : projectIds.map((id) => projectSummaries[id])),
+    ...[...addedProjects.values()].map(({ summary }) => summary),
+  ];
   const joinPath = (root: string, folder: string) => {
     const cleanRoot = root.replace(/[\\/]+$/, "");
     return cleanRoot + (root.includes("\\") ? "\\" : "/") + folder;
   };
 
   return {
-    list: () => reply(() => mockMode === "empty" ? [] : projectIds.map((id) => projectSummaries[id])),
+    list: () => reply(registeredProjects),
     get: (id) => reply<ProjectDetail>(() => {
+      const added = [...addedProjects.values()].find((project) => project.summary.id === id);
+      if (added) return added;
       const summary = projectSummaries[projectKey(id)];
       const path = createdPaths.get(id);
       return {
@@ -85,7 +104,27 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
       createdPaths.set(id, path);
       return { id, runId: beginRun(path, "init") };
     }),
-    addExisting: () => reply(projectSummaries.riverstone),
+    addExisting: (path) => reply<ProjectDetail["summary"]>(() => {
+      const trimmedPath = path.trim();
+      const normalizedPath = normalizeProjectPath(trimmedPath);
+      if (!normalizedPath) throw { code: "PROJECT_UNREADABLE", message: "项目文件夹路径不能为空。" } satisfies SiteIndexError;
+      const duplicate = registeredProjects().find((project) => normalizeProjectPath(project.path) === normalizedPath);
+      if (duplicate) throw { code: "FOLDER_EXISTS", message: "该项目已添加到项目中心。" } satisfies SiteIndexError;
+
+      const folderName = trimmedPath.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "已有项目";
+      const slug = folderName.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "existing";
+      const id = mockProjectIdForPath(normalizedPath);
+      const summary = {
+        ...projectSummaries.riverstone,
+        id,
+        name: folderName,
+        path: trimmedPath,
+        domain: `${slug}.example.test`,
+      };
+      addedProjects.set(normalizedPath, { summary, config: projectConfigs.riverstone, runner: runners.riverstone });
+      notifyProjectChanged(id);
+      return summary;
+    }),
     updateConfig: (id, patch) => reply(() => {
       const key = projectKey(id);
       const current = projectConfigs[key];
