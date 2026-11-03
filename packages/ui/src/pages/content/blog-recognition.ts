@@ -61,3 +61,20 @@ export function blogRecognitionNeedsRecrawl(
   const lastStartedAt = Date.parse(latestSuccessfulWeeklyStartedAt);
   return !Number.isFinite(lastStartedAt) || lastStartedAt < configUpdatedAt;
 }
+
+export function blogIndexNotice(
+  config: BlogRecognitionConfig | undefined,
+  configUpdatedAt: number | null,
+  latestSuccessfulWeeklyStartedAt: string | null,
+  blogCount: number,
+  lastRecognizedDate: string | null,
+): string | null {
+  if (blogCount <= 0) return null;
+  if (!hasBlogRecognitionConfig(config)) return "当前未配置博客识别，下方列表来自旧索引";
+  if (configUpdatedAt === null || !latestSuccessfulWeeklyStartedAt) return null;
+
+  const latestRunAt = Date.parse(latestSuccessfulWeeklyStartedAt);
+  if (!Number.isFinite(latestRunAt) || configUpdatedAt <= latestRunAt) return null;
+
+  return `博客识别配置已更新，当前列表来自旧索引（最近识别于 ${lastRecognizedDate ?? latestSuccessfulWeeklyStartedAt.slice(0, 10)}），重新抓取后生效`;
+}
