@@ -118,35 +118,49 @@ function sku(url: string): SkuRecord {
 }
 
 describe("weekly sync", () => {
-  it("recognizes configured blog sitemap URLs and URL prefixes", async () => {
+  it("keeps the Core blog summary in sync with sitemap and URL-prefix configuration", async () => {
     const base = await blogRecognitionFixtureServer();
-    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-weekly-blog-config-"));
-    roots.push(root);
-    for (const relative of [PATHS.seoPages, PATHS.seoIssues, PATHS.seoLinks, PATHS.blogIndex, PATHS.productDetails, PATHS.skus, PATHS.categories]) {
-      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
-    }
-    await writeJsonl(path.join(root, PATHS.skus), [], "sku");
     const source = JSON.parse(await readFile(path.join(process.cwd(), "fixtures/inputs/site.json"), "utf8")) as SiteConfig;
     const baseConfig = { ...source, base_url: base, sitemaps: [base + "/sitemap.xml"],
-      crawl: { ...source.crawl, rate_limit_ms: 0, max_pages: 10 },
+      crawl: { ...source.crawl, blog_url_patterns: [], rate_limit_ms: 0, max_pages: 10 },
       categories: { mode: "manual", manual: [{ slug: "fixture", name: "Fixture", url: base + "/fixture", match: [] }] } } as SiteConfig;
+    const scenarios: Array<{ content?: SiteConfig["content"]; expectedPages: number; expectedUrls: string[] }> = [
+      { expectedPages: 2, expectedUrls: [] },
+      { content: { blog_url_patterns: ["/guides/"] }, expectedPages: 2, expectedUrls: [base + "/guides/pattern-story"] },
+      {
+        content: { blog_sitemaps: [base + "/blog-sitemap.xml"], blog_url_patterns: ["/guides/"] },
+        expectedPages: 3,
+        expectedUrls: [base + "/editorial/dedicated-sitemap-story", base + "/guides/pattern-story"],
+      },
+    ];
 
-    const withoutConfig = await runWeekly(root, baseConfig, { date: "2026-10-29" });
-    expect(withoutConfig.counts.pages).toBe(2);
-    const pagesWithoutConfig = await readJsonl(path.join(root, PATHS.seoPages));
-    expect(pagesWithoutConfig.filter((row) => row.page_type === "blog")).toHaveLength(0);
+    for (const scenario of scenarios) {
+      const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-weekly-blog-summary-"));
+      roots.push(root);
+      await mkdir(path.dirname(path.join(root, PATHS.site)), { recursive: true });
+      for (const relative of [PATHS.seoPages, PATHS.seoIssues, PATHS.seoLinks, PATHS.blogIndex, PATHS.productDetails, PATHS.skus, PATHS.categories]) {
+        await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+      }
+      await writeJsonl(path.join(root, PATHS.skus), [], "sku");
+      await writeJsonl(path.join(root, PATHS.blogIndex), [], "blog_post");
+      const config = { ...baseConfig, ...(scenario.content ? { content: scenario.content } : {}) };
+      await writeFile(path.join(root, PATHS.site), JSON.stringify(config));
+      const api = createCoreService({
+        resolveProject: (id) => id === "fixture" ? root : path.join(root, "missing"),
+        deviceId: "weekly-blog-summary-test",
+        cacheDir: path.join(root, "cache"),
+      });
 
-    const configured = { ...baseConfig, content: {
-      blog_sitemaps: [base + "/blog-sitemap.xml"],
-      blog_url_patterns: ["/guides/"],
-    } } as SiteConfig;
-    const withConfig = await runWeekly(root, configured, { date: "2026-10-29" });
-    expect(withConfig.counts.blog).toBe(2);
-    const pagesWithConfig = await readJsonl(path.join(root, PATHS.seoPages));
-    expect(pagesWithConfig.filter((row) => row.page_type === "blog").map((row) => row.url)).toEqual([
-      base + "/editorial/dedicated-sitemap-story", base + "/guides/pattern-story",
-    ]);
-    expect(await readJsonl(path.join(root, PATHS.blogIndex))).toHaveLength(2);
+      // Warm the snapshot first so the assertion also exercises the service after weekly writes.
+      expect((await api.content.summary("fixture")).kpis.find((item) => item.key === "blogs")?.value).toBe("0");
+      const weekly = await api.runJob({ projectPath: root, job: "weekly", trigger: "manual", date: "2026-10-29" }, () => undefined);
+      expect(weekly.counts?.pages).toBe(scenario.expectedPages);
+      expect(weekly.counts?.blog ?? 0).toBe(scenario.expectedUrls.length);
+
+      const blogRows = await readJsonl(path.join(root, PATHS.blogIndex));
+      expect(blogRows.map((row) => row.url)).toEqual(scenario.expectedUrls);
+      expect((await api.content.summary("fixture")).kpis.find((item) => item.key === "blogs")?.value).toBe(String(blogRows.length));
+    }
   }, 20_000);
 
   it("expands sitemaps and writes SEO, links, blog, product details and categories", async () => {
