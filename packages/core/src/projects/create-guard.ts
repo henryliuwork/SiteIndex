@@ -113,12 +113,16 @@ export async function withSiteCreateLock<T>(siteDomain: string, fn: () => Promis
   if (!canonicalDomain) throw guardError("CONFIG_INVALID", "无法识别网站域名，暂不能创建项目。", siteDomain);
   const key = createHash("sha256").update(canonicalDomain).digest("hex");
   const lockProject = path.join(os.tmpdir(), "siteindex-create-locks", key);
-  try {
-    return await withLock(lockProject, fn, { job: "project-create" });
-  } catch (error) {
-    if (error instanceof CoreIOError && error.code === "LOCKED") {
-      throw new CoreIOError("LOCKED", "同一网站正在创建，请稍后刷新项目列表。", error.exitCode);
+  const deadline = Date.now() + 10_000;
+  while (true) {
+    try {
+      return await withLock(lockProject, fn, { job: "project-create" });
+    } catch (error) {
+      if (!(error instanceof CoreIOError) || error.code !== "LOCKED") throw error;
+      if (Date.now() >= deadline) {
+        throw new CoreIOError("LOCKED", "同一网站正在创建，请稍后刷新项目列表。", error.exitCode);
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
     }
-    throw error;
   }
 }

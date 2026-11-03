@@ -75,6 +75,9 @@ function lockError(message: string): CoreIOError {
   return new CoreIOError("LOCKED", message, EXIT.LOCKED);
 }
 
+const LOCK_READ_RETRIES = 8;
+const LOCK_READ_RETRY_MS = 10;
+
 async function openOrRecover(lockPath: string, staleAfterMs: number, now: () => Date) {
   try {
     return await open(lockPath, "wx");
@@ -82,38 +85,62 @@ async function openOrRecover(lockPath: string, staleAfterMs: number, now: () => 
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
 
-  let handle;
-  try {
-    handle = await open(lockPath, "r");
-    const identity = await handle.stat();
-    const text = await handle.readFile({ encoding: "utf8" });
-    const record = JSON.parse(text) as Partial<LockRecord>;
-    const heartbeat = typeof record.heartbeat === "string" ? Date.parse(record.heartbeat) : Number.NaN;
-    if (!Number.isFinite(heartbeat) || now().getTime() - heartbeat <= staleAfterMs) {
-      throw lockError("项目正在运行另一个任务，请稍后重试。");
+  for (let attempt = 0; attempt <= LOCK_READ_RETRIES; attempt += 1) {
+    let handle;
+    let incomplete = false;
+    try {
+      handle = await open(lockPath, "r");
+      const identity = await handle.stat();
+      const text = await handle.readFile({ encoding: "utf8" });
+      let record: Partial<LockRecord> | null = null;
+      try {
+        const parsed: unknown = JSON.parse(text);
+        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+          record = parsed as Partial<LockRecord>;
+        } else {
+          incomplete = true;
+        }
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        incomplete = true;
+      }
+      const heartbeat = typeof record?.heartbeat === "string" ? Date.parse(record.heartbeat) : Number.NaN;
+      if (!Number.isFinite(heartbeat)) incomplete = true;
+      const lastActivity = Number.isFinite(heartbeat) ? heartbeat : identity.mtimeMs;
+      const stale = Number.isFinite(lastActivity) && now().getTime() - lastActivity > staleAfterMs;
+
+      if (incomplete && !stale) {
+        if (attempt < LOCK_READ_RETRIES) continue;
+        throw lockError("项目运行锁内容尚未写入完成，请稍后重试。");
+      }
+      if (!stale) throw lockError("项目正在运行另一个任务，请稍后重试。");
+
+      const current = await lstat(lockPath);
+      if (current.ino !== identity.ino || current.dev !== identity.dev
+        || current.size !== identity.size || current.mtimeMs !== identity.mtimeMs || current.ctimeMs !== identity.ctimeMs) {
+        throw lockError("项目运行锁刚刚更新，请稍后重试。");
+      }
+      const retired = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+      await rename(lockPath, retired);
+      await unlink(retired).catch(() => undefined);
+      return await open(lockPath, "wx");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "EEXIST") {
+        throw lockError("项目运行锁刚刚更新，请稍后重试。");
+      }
+      throw error;
+    } finally {
+      await handle?.close().catch(() => undefined);
     }
-    const current = await lstat(lockPath);
-    if (current.ino !== identity.ino || current.dev !== identity.dev) {
-      throw lockError("项目运行锁刚刚更新，请稍后重试。");
-    }
-    const retired = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
-    await rename(lockPath, retired);
-    await unlink(retired).catch(() => undefined);
-    return await open(lockPath, "wx");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as NodeJS.ErrnoException).code === "EEXIST") {
-      throw lockError("项目运行锁刚刚更新，请稍后重试。");
-    }
-    throw error;
-  } finally {
-    await handle?.close().catch(() => undefined);
   }
+  throw lockError("项目运行锁内容尚未写入完成，请稍后重试。");
 }
 
-async function writeLock(handle: Awaited<ReturnType<typeof open>>, record: LockRecord): Promise<void> {
-  await handle.truncate(0);
-  await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8");
-  await handle.sync();
+async function writeLock(lockPath: string, record: LockRecord): Promise<LockIdentity> {
+  await atomicWrite(lockPath, `${JSON.stringify(record)}\n`);
+  const written = await lstat(lockPath);
+  return { ino: written.ino, dev: written.dev };
 }
 
 type LockIdentity = { ino: number; dev: number };
@@ -162,12 +189,21 @@ export async function withLock<T>(project: string, fn: () => Promise<T> | T, opt
   const heartbeatMs = options.heartbeatMs ?? 30_000;
   const started = now().toISOString();
   let handle;
+  let identity: LockIdentity | undefined;
+  let record: LockRecord | undefined;
+  let cleaned = false;
+  const cleanup = async () => {
+    if (!identity || cleaned) return;
+    await unlinkOwnedLock(lockPath, identity, record ? { pid: record.pid, started_at: record.started_at } : undefined);
+    cleaned = true;
+  };
   try {
     const parent = path.dirname(lockPath);
     await mkdir(parent, { recursive: true });
     handle = await openOrRecover(lockPath, staleAfterMs, now);
-    const identity = await handle.stat();
-    const record: LockRecord = {
+    const reservation = await handle.stat();
+    identity = { ino: reservation.ino, dev: reservation.dev };
+    record = {
       device_id: options.deviceId ?? "unknown",
       device_name: options.deviceName ?? "unknown",
       pid: process.pid,
@@ -175,13 +211,15 @@ export async function withLock<T>(project: string, fn: () => Promise<T> | T, opt
       started_at: started,
       heartbeat: started,
     };
-    await writeLock(handle, record);
+    await handle.close();
+    handle = undefined;
+    identity = await writeLock(lockPath, record);
     let heartbeatError: unknown;
     let heartbeatTask = Promise.resolve();
     const timer = setInterval(() => {
       heartbeatTask = heartbeatTask.then(() => {
-        record.heartbeat = now().toISOString();
-        return writeLock(handle!, record);
+        record!.heartbeat = now().toISOString();
+        return writeLock(lockPath, record!).then((writtenIdentity) => { identity = writtenIdentity; });
       }).catch((error: unknown) => { heartbeatError = error; });
     }, heartbeatMs);
     timer.unref?.();
@@ -192,16 +230,11 @@ export async function withLock<T>(project: string, fn: () => Promise<T> | T, opt
     } finally {
       clearInterval(timer);
       await heartbeatTask;
-      await handle.close();
-      handle = undefined;
-      await unlinkOwnedLock(lockPath, identity, { pid: record.pid, started_at: record.started_at });
+      await cleanup();
     }
   } catch (error) {
-    if (handle) {
-      const identity = await handle.stat().catch(() => undefined);
-      await handle.close().catch(() => undefined);
-      if (identity) await unlinkOwnedLock(lockPath, identity).catch(() => undefined);
-    }
+    await handle?.close().catch(() => undefined);
+    await cleanup().catch(() => undefined);
     throw error;
   }
 }

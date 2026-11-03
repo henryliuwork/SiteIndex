@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -138,6 +138,59 @@ describe("core io", () => {
     })).resolves.toBe("recovered");
     await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("treats an empty lock record as active and reclaims it only after it is stale", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "");
+
+    await expect(withLock(root, () => "must not enter")).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+
+    const staleAt = new Date("2026-10-22T09:00:00.000Z");
+    await utimes(lockPath, staleAt, staleAt);
+    await expect(withLock(root, () => "recovered", {
+      now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
+    })).resolves.toBe("recovered");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("handles 200 concurrent lock attempts without exposing partial JSON", async () => {
+    const root = await tempDir();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    const attempts = Array.from({ length: 200 }, () => withLock(root, async () => {
+      started();
+      await gate;
+      return "owner";
+    }, { heartbeatMs: 2 }));
+    const settledAttempts = Promise.allSettled(attempts);
+
+    await entered;
+    await new Promise<void>((resolve) => setTimeout(resolve, 40));
+    release();
+    const results = await settledAttempts;
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === "rejected");
+    expect(rejected).toHaveLength(199);
+    expect(rejected.every((result) => !(result.reason instanceof SyntaxError))).toBe(true);
+    expect(rejected.every((result) => typeof result.reason === "object" && result.reason !== null
+      && "code" in result.reason && result.reason.code === "LOCKED")).toBe(true);
+
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "{\"heartbeat\":", "utf8");
+    const malformedAttempts = await Promise.allSettled(
+      Array.from({ length: 200 }, () => withLock(root, () => "must not enter")),
+    );
+    expect(malformedAttempts.every((result) => result.status === "rejected")).toBe(true);
+    expect(malformedAttempts.every((result) => result.status === "rejected"
+      && !(result.reason instanceof SyntaxError)
+      && typeof result.reason === "object" && result.reason !== null
+      && "code" in result.reason && result.reason.code === "LOCKED")).toBe(true);
+  }, 20_000);
 
   it("removes locks for partial results and rejected callbacks", async () => {
     const root = await tempDir();

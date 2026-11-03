@@ -243,9 +243,9 @@ describe("project service", () => {
 
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(rejected[0]).toMatchObject({ status: "rejected", reason: { code: expect.stringMatching(/^(FOLDER_EXISTS|LOCKED)$/u) } });
+    expect(rejected[0]).toMatchObject({ status: "rejected", reason: { code: "FOLDER_EXISTS" } });
     expect((await readdir(root)).filter((entry) => entry.endsWith("-store"))).toHaveLength(1);
-  });
+  }, 15_000);
 
   it("allows only one concurrent create for the same destination path", async () => {
     mockWebsite();
