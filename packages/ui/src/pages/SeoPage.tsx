@@ -298,7 +298,6 @@ export function SeoPage() {
         <span className="si-seo-filter-label">收录状态</span>
         {[{ value: "all" as const, label: "全部收录" }, { value: "yes" as const, label: "已收录" }, { value: "no" as const, label: "未收录" }, { value: "unchecked" as const, label: "未检查" }].map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.indexed ?? "all"} value={item.value} onValueChange={setIndexed}>{item.label}</FilterPill>)}
       </FilterBar>}
-      {view === "links" && <Chip tone="warn">孤立页面 {orphansQuery.data?.length ?? 0}</Chip>}
       <SearchInput value={(view === "issues" ? issueQuery : view === "pages" ? pageQuery : linkQuery).search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" />
     </div>
     {progressText && <div className="si-seo-progress" role="status"><span>{progressText}</span>{progressPct != null && <strong>{progressPct}%</strong>}</div>}
@@ -310,8 +309,13 @@ export function SeoPage() {
         {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} showPagination={false} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" />}
         {view === "issues" && <div className="si-seo-length-legend"><span>长度：</span><LengthBadge length={50} kind="title" range={titleRange} /><span>最佳</span><LengthBadge length={25} kind="title" range={titleRange} /><span>可接受</span><LengthBadge length={10} kind="title" range={titleRange} /><span>需修改</span><span>· Title {titleRange[0]}–{titleRange[1]} · Description {descriptionRange[0]}–{descriptionRange[1]}</span></div>}
       </>}
-      {view === "links" && <div className="si-seo-orphans"><strong><AlertTriangle size={14} />孤立页面</strong>{orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}</div>}
     </div>
+    {view === "links" && <details className="si-seo-orphans">
+      <summary><AlertTriangle size={14} />孤立页面 {orphansQuery.data?.length ?? "—"} 个</summary>
+      <div className="si-seo-orphans-list">
+        {orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}
+      </div>
+    </details>}
     <p className="si-seo-disclaimer">Google site: 检查结果仅供参考，以 Search Console 为准。收录数据最后检查：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}。</p>
     <DetailPanel open={Boolean(selectedUrl)} onClose={() => { setSelectedUrl(null); setSelectedLink(null); }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
       {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}
