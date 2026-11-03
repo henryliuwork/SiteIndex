@@ -56,11 +56,20 @@ export interface PageResult<T> {
 }
 
 /** 父子 SKU 规则预览；counts 仅描述按规则识别出的父/子 SKU，不代表父 SKU 库存。 */
+export interface SkuGroupingCollision {
+  /** 按规则推导出的父 SKU 已作为真实 SKU 存在于 feed 中。 */
+  parent: string;
+  /** 规则原本会归入该父 SKU 的子 SKU。 */
+  children: string[];
+}
+
 export interface SkuGroupingPreview {
   parents: number;
   children: number;
   samples: { parent: string; children: string[] }[];
   unmatched: number;
+  /** 仅报告被现有真实 SKU 阻止的候选分组，不改变归组行为。 */
+  collisions?: SkuGroupingCollision[];
 }
 
 export interface Kpi {
