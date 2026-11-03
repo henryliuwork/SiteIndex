@@ -1,7 +1,7 @@
 import type { HistoryRange, InventorySummary, ListQuery, ProjectId, SkuStockFilters, SiteIndexApi, SkuStockView } from "@siteindex/shared";
 import { FIXED_TODAY, fixtures, inventorySummary, projectConfigs, projectKey, projectSummaries, reply, rowsByProject, selectRows, todaySkus } from "./context";
 
-type MockSkuRow = SkuStockView & { is_parent?: boolean; children_count?: number; in_stock_children_count?: number };
+type MockSkuRow = SkuStockView;
 type MockHistoryRange = 14 | HistoryRange;
 type MockInventoryApi = Omit<SiteIndexApi["inventory"], "summary"> & {
   summary(id: ProjectId, range?: MockHistoryRange): Promise<InventorySummary>;
