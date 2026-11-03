@@ -7,7 +7,7 @@ import type { BlogFilters, BlogPost, JobProgress, JobResult, Keyword, KeywordFil
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
-import { blogRecognitionCounts, blogRecognitionNeedsRecrawl, getBlogRecognitionConfigUpdatedAt, hasBlogRecognitionConfig } from "./content/blog-recognition";
+import { blogIndexNotice, blogRecognitionCounts, blogRecognitionNeedsRecrawl, getBlogRecognitionConfigUpdatedAt, hasBlogRecognitionConfig } from "./content/blog-recognition";
 
 type ContentView = "blog" | "keywords";
 type IssueFilter = BlogFilters["issue"] | "all";
@@ -87,7 +87,7 @@ export function ContentPage() {
   const blogConfig = projectQuery.data?.config.content;
   const blogConfigCounts = blogRecognitionCounts(blogConfig);
   const blogRecognitionConfigured = hasBlogRecognitionConfig(blogConfig);
-  const blogConfigUpdatedAt = useMemo(() => getBlogRecognitionConfigUpdatedAt(id), [id]);
+  const blogConfigUpdatedAt = getBlogRecognitionConfigUpdatedAt(id);
   const latestSuccessfulWeeklyStartedAt = useMemo(() => [...(jobHistoryQuery.data ?? [])]
     .filter((run) => run.job === "weekly" && run.status === "ok" && run.finished_at)
     .sort((left, right) => Date.parse(right.started_at) - Date.parse(left.started_at))[0]?.started_at ?? null,
@@ -99,6 +99,7 @@ export function ContentPage() {
   const hasBlogFilters = Boolean(blogQuery.search || blogQuery.filters?.issue);
   const showBlogRecognitionEmpty = view === "blog" && blogs?.total === 0 && !hasBlogFilters;
   const lastRecognizedDate = seoSummaryQuery.data?.crawled_at?.slice(0, 10) ?? null;
+  const blogListNotice = blogIndexNotice(blogConfig, blogConfigUpdatedAt, latestSuccessfulWeeklyStartedAt, blogs?.total ?? 0, lastRecognizedDate);
   const issueCounts = useMemo(() => ({
     noLinks: summary?.kpis.find((item) => item.key === "no_links")?.value ?? "0",
     noSchema: summary?.kpis.find((item) => item.key === "no_schema")?.value ?? "0",
@@ -182,8 +183,13 @@ export function ContentPage() {
     <ProjectTabPanel projectId={project.id} tab="content">
     <div className="si-content-recognition-summary" role="status">
       <span>博客 Sitemap {blogConfigCounts.sitemaps} 条 · URL 规则 {blogConfigCounts.rules} 条 · 最近识别于 {seoSummaryQuery.isLoading ? "读取中" : seoSummaryQuery.isError ? "读取失败" : lastRecognizedDate ?? "尚未记录"}</span>
-      <Link to={`/p/${id}/settings/config?section=blog-recognition`}>去设置</Link>
+      <div className="si-content-recognition-actions">
+        <Link to={`/p/${id}/settings/config?section=blog-recognition`}>去设置</Link>
+        {view === "blog" && <Button size="small" variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button>}
+        {view === "blog" && recrawlProgress && <small className="si-content-recognition-progress" role="status">{recrawlProgress}</small>}
+      </div>
     </div>
+    {view === "blog" && blogListNotice && <p className="si-content-blog-notice" role="status">{blogListNotice}</p>}
     <div className="si-content-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载内容概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="内容概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className="si-content-toolbar si-content-toolbar-table">
       <Segmented value={view} options={viewOptions} onChange={setView} ariaLabel="内容视图" />

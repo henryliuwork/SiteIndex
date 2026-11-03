@@ -10,6 +10,10 @@ display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 16px;
 display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 10px 14px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: 12px;
 }
 
+.si-content-recognition-actions {
+display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px;
+}
+
 .si-content-recognition-summary a, .si-content-blog-empty a {
 color: var(--color-brand); font-weight: 600; text-decoration: none;
 }
@@ -20,6 +24,14 @@ text-decoration: underline;
 
 .si-content-blog-empty {
 display: grid; min-height: 260px; justify-items: center; align-content: center; gap: 10px; padding: 24px; border: 1px dashed var(--color-line); border-radius: 8px; background: var(--color-surface); color: var(--color-ink-2); text-align: center;
+}
+
+.si-content-blog-notice {
+margin: -6px 0 0; padding: 9px 12px; border: 1px solid #E7D4A1; border-radius: 7px; background: #FFF9E9; color: #6C5114; font-size: 12px; line-height: 1.5;
+}
+
+.si-content-recognition-progress {
+color: var(--color-muted); font-size: 12px;
 }
 
 .si-content-blog-empty strong {
