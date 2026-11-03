@@ -6,8 +6,9 @@ import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./sku-group
 const result: SkuGroupingPreview = {
   parents: 2,
   children: 5,
-  samples: [{ parent: "LAMP", children: ["LAMP-BLK", "LAMP-WHT"] }],
+  samples: [{ parent: "DEMO001A", children: ["DEMO001A01", "DEMO001A02"] }],
   unmatched: 3,
+  collisions: [{ parent: "DEMO002A", children: ["DEMO002A01", "DEMO002A02"] }],
 };
 
 describe("SKU 分组预览 IPC", () => {
@@ -23,7 +24,7 @@ describe("SKU 分组预览 IPC", () => {
   it("直接返回 Core 对完整 SKU 集合的预览结果", async () => {
     const previewGrouping = vi.fn(async () => result);
     const api: Pick<SiteIndexApi, "sku"> = { sku: { previewGrouping } };
-    const rule: SkuGroupingRule = { type: "regex", value: "^(.+?)-[A-Z]+$" };
+    const rule: SkuGroupingRule = { type: "regex", value: "^(.+?)\\d{1,3}$" };
 
     await expect(fetchSkuGroupingPreview(api, "demo", rule)).resolves.toBe(result);
     expect(previewGrouping).toHaveBeenCalledOnce();
@@ -46,6 +47,11 @@ describe("SKU 分组预览 IPC", () => {
     expect(source).toContain("skuPreviewQuery.isError");
     expect(source).toContain("skuPreviewQuery.refetch()");
     expect(source).toContain("当前规则未识别到父子 SKU 分组。");
+    expect(source).toContain("groupingPreview.collisions?.length");
+    expect(source).toContain("有 {groupingPreview.collisions.length} 个父 SKU 本身也是在售 SKU，已跳过分组");
+    expect(source).toContain("groupingPreview.collisions.map((collision)");
+    expect(source).toContain("collision.parent");
+    expect(source).toContain("collision.children.join(\"、\")");
     expect(source).toContain('queryClient.invalidateQueries({ queryKey: ["sku-grouping-preview", id] })');
     expect(source).toContain("不代表父 SKU 库存或在线率");
     expect(source).not.toMatch(/parentSkuForRule|previewSkuGroups|pageSize:\s*100/);
