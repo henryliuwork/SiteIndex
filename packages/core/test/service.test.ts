@@ -458,6 +458,24 @@ describe("createCoreService initial namespaces", () => {
     });
   }, 30_000);
 
+  it("passes SKU grouping collisions through the Core service preview", async () => {
+    const { projectPath } = await makeProject();
+    await writeJsonl(path.join(projectPath, PATHS.skus), [
+      { sku: "DEMO001A", status: "active" },
+      { sku: "DEMO001A01", status: "active" },
+      { sku: "DEMO001A02", status: "active" },
+    ], { primaryKey: ["sku"] });
+    const api = service(projectPath);
+
+    await expect(api.sku.previewGrouping("fixture", { type: "regex", value: "^(.+?)\\d{1,3}$" })).resolves.toEqual({
+      parents: 0,
+      children: 0,
+      samples: [],
+      unmatched: 3,
+      collisions: [{ parent: "DEMO001A", children: ["DEMO001A01", "DEMO001A02"] }],
+    });
+  }, 30_000);
+
   it("serves the remaining core query namespaces and runs a dry-run views Job", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);

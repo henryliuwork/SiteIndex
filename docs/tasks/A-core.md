@@ -120,3 +120,7 @@
 ### v0.2.0 收敛计划
 - [x] A0a：以可选 `sku` 命名空间声明 `previewGrouping`，并登记 IPC invoke 与 pending handler 清单
 - [x] A0b：单独扩大 `inventory.summary` 范围参数，保留 14 并支持 `30 | 60 | 90 | "all"`（#204）
+
+## 本机运行测试的注意事项
+- 全仓测试前先运行 `pnpm typecheck`：UI 的 `pretypecheck` 会从 fixture 生成本地 mock 数据，随后再运行 `pnpm test`。直接先运行 Vitest 可能因缺少该生成文件而使 UI 测试无法加载。
+- Windows 本机在高负载下若出现临时目录 `EBUSY` 或测试超时，可用 `pnpm exec vitest run --maxWorkers=2 --minWorkers=1` 降低并发后复跑；待测试进程退出后再清理系统临时目录。本轮 4 worker 全仓运行通过，未复现 Core 测试清理或锁释放问题。
