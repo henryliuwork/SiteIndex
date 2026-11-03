@@ -7,13 +7,22 @@ interface FilterRowMetric {
 }
 
 export function calculateFilterBarCollapseHeight(items: readonly FilterRowMetric[]): number | null {
-  const rows = new Map<number, number>();
-  items.forEach(({ top, height }) => rows.set(top, Math.max(rows.get(top) ?? 0, height)));
-  const rowTops = [...rows.keys()].sort((a, b) => a - b);
-  const secondRowTop = rowTops[1];
-  return rowTops.length > 2 && secondRowTop !== undefined
-    ? secondRowTop + rows.get(secondRowTop)!
-    : null;
+  const sortedItems = [...items].sort((a, b) => a.top - b.top);
+  const rowBottoms: number[] = [];
+
+  sortedItems.forEach(({ top, height }) => {
+    const bottom = top + height;
+    const currentRowIndex = rowBottoms.length - 1;
+    const currentRowBottom = rowBottoms[currentRowIndex];
+
+    if (currentRowBottom === undefined || top >= currentRowBottom) {
+      rowBottoms.push(bottom);
+    } else {
+      rowBottoms[currentRowIndex] = Math.max(currentRowBottom, bottom);
+    }
+  });
+
+  return rowBottoms.length > 2 ? rowBottoms[1] ?? null : null;
 }
 
 export function FilterBar({ children, className = "" }: { children: ReactNode; className?: string }) {
