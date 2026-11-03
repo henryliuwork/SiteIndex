@@ -28,17 +28,6 @@
 .si-runs-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; }
 .si-runs-section-heading h2, .si-schedule-heading h2 { margin: 0; color: var(--color-ink); font-size: 14px; }
 .si-runs-section-heading p { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; }
-.si-runs-history .si-data-table { border: 0; border-radius: 0; }
-.si-runs-history .si-table { width: 100%; min-width: 700px; table-layout: fixed; }
-.si-runs-history .si-table th { padding: 0 10px; }
-.si-runs-history .si-table th:nth-child(1) { width: 17%; }
-.si-runs-history .si-table th:nth-child(2) { width: 17%; }
-.si-runs-history .si-table th:nth-child(3) { width: 16%; }
-.si-runs-history .si-table th:nth-child(4) { width: 38%; }
-.si-runs-history .si-table th:nth-child(5) { width: 12%; }
-.si-runs-history .si-table td { height: 48px; padding: 0 10px; font-size: 12px; }
-.si-runs-date { color: var(--color-muted); font-family: var(--font-mono); font-size: 12px; }
-.si-runs-summary-cell { display: block; overflow: hidden; color: var(--color-ink-2); text-overflow: ellipsis; white-space: nowrap; }
 .si-runner-card { padding-bottom: 14px; }
 .si-runner-card .si-runs-section-heading { padding-bottom: 12px; }
 .si-runner-device { display: flex; align-items: flex-start; gap: 10px; margin: 0 14px; padding: 12px; border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); }
