@@ -54,12 +54,12 @@ function feedImageLabel(url: string | null): string {
 
 function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
   return [
-    { id: "sku", accessorKey: "sku", header: "SKU", cell: ({ row }) => <code className="si-edm-sku">{row.original.sku}</code>, enableSorting: true },
-    { id: "product", accessorKey: "title", header: "产品 / 变体", cell: ({ row }) => <span className="si-edm-product"><strong>{row.original.title}</strong><small>{row.original.variant_title || "默认款"}</small></span>, enableSorting: true },
-    { id: "stock_status", accessorKey: "stock_status", header: "库存", cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockLabels[row.original.stock_status]}</Chip>, enableSorting: true },
-    { id: "feed_image_url", accessorKey: "feed_image_url", header: "抓取到的首图 URL", cell: ({ row }) => <span className="si-edm-feed-cell"><ImageThumbnail src={row.original.feed_image_url} label={row.original.sku + " Feed 首图"} /><code title={row.original.feed_image_url ?? undefined}>{feedImageLabel(row.original.feed_image_url)}</code></span> },
-    { id: "manual_image_url", accessorKey: "manual_image_url", header: "手动输入的首图 URL", cell: ({ row }) => <ManualImageCell projectId={projectId} row={row.original} /> },
-    { id: "used", accessorKey: "used", header: "agent 使用", cell: ({ row }) => <Chip tone={row.original.used === "manual" ? "info" : row.original.used === "feed" ? "ok" : "danger"}>{row.original.used === "manual" ? "手动首图" : row.original.used === "feed" ? "抓取首图" : "缺图"}</Chip>, enableSorting: true },
+    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 130, text: "single" }, cell: ({ row }) => <code className="si-edm-sku">{row.original.sku}</code>, enableSorting: true },
+    { id: "product", accessorKey: "title", header: "产品 / 变体", meta: { width: 280, grow: 2, minWidth: 200, text: "single" }, cell: ({ row }) => <span className="si-edm-product"><strong>{row.original.title}</strong><small>{row.original.variant_title || "默认款"}</small></span>, enableSorting: true },
+    { id: "stock_status", accessorKey: "stock_status", header: "库存", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockLabels[row.original.stock_status]}</Chip>, enableSorting: true },
+    { id: "feed_image_url", accessorKey: "feed_image_url", header: "抓取到的首图 URL", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-edm-feed-cell"><ImageThumbnail src={row.original.feed_image_url} label={row.original.sku + " Feed 首图"} /><code title={row.original.feed_image_url ?? undefined}>{feedImageLabel(row.original.feed_image_url)}</code></span> },
+    { id: "manual_image_url", accessorKey: "manual_image_url", header: "手动输入的首图 URL", meta: { width: 320, grow: 2, minWidth: 260, text: "single" }, cell: ({ row }) => <ManualImageCell projectId={projectId} row={row.original} /> },
+    { id: "used", accessorKey: "used", header: "agent 使用", meta: { width: 100, grow: 0, minWidth: 96, text: "single" }, cell: ({ row }) => <Chip tone={row.original.used === "manual" ? "info" : row.original.used === "feed" ? "ok" : "danger"}>{row.original.used === "manual" ? "手动首图" : row.original.used === "feed" ? "抓取首图" : "缺图"}</Chip>, enableSorting: true },
   ];
 }
 
