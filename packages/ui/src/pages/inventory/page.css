@@ -19,8 +19,36 @@ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px;
 min-height: 92px; padding: 12px 15px;
 }
 
+.si-inventory-overview-summary {
+display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 14px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface);
+}
+
+.si-inventory-overview-summary > div {
+display: flex; min-width: 0; align-items: baseline; gap: 12px; flex-wrap: wrap;
+}
+
+.si-inventory-overview-summary strong {
+color: var(--color-ink); font-size: 13px;
+}
+
+.si-inventory-overview-summary span {
+color: var(--color-muted); font-size: 12px;
+}
+
+.si-inventory-overview-summary button {
+flex: none; min-height: 30px; padding: 4px 10px; border: 1px solid var(--color-line); border-radius: 5px; background: var(--color-surface); color: var(--color-brand-strong); cursor: pointer; font: inherit; font-size: 12px;
+}
+
+.si-inventory-overview-summary button:focus-visible {
+outline: 2px solid var(--color-brand); outline-offset: 2px;
+}
+
 .si-inventory-overview-grid {
 display: grid; grid-template-columns: minmax(0, 2.16fr) minmax(300px, 1fr); gap: 16px;
+}
+
+.si-inventory-overview-grid[hidden] {
+display: none;
 }
 
 .si-inventory-chart {
@@ -399,7 +427,7 @@ max-height: min(80vh, 760px); overflow: auto;
 max-height: 55vh; overflow: auto; padding: 13px; border: 1px solid var(--color-line-soft); border-radius: 6px; background: var(--color-subtle); color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 980px) {
 .si-inventory-kpis {
 grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -426,6 +454,12 @@ min-height: auto;
 @media (max-width: 980px) {
 .si-inventory-chart {
 min-height: 330px;
+}
+}
+
+@media (max-width: 760px) {
+.si-inventory-overview-summary {
+align-items: flex-start; flex-direction: column; gap: 8px;
 }
 }
 

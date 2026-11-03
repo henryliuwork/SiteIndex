@@ -13,6 +13,7 @@ import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, StatusCells, stockTone } from "../components";
 import { selectInventoryCategoryRates } from "./inventory/categories";
 import { DEFAULT_TREND_CATEGORY_LIMIT, MAX_TREND_CATEGORY_LIMIT, defaultTrendCategories, toggleTrendCategory, trendPoints } from "./inventory/trend";
+import { readOverviewPanelsExpanded, saveOverviewPanelsExpanded } from "./inventory/overview-panels";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",
@@ -251,12 +252,16 @@ export function InventoryPage() {
   const [trendSelection, setTrendSelection] = useState<{ projectId: string; categories: string[] } | null>(null);
   const [showDefaultCategories, setShowDefaultCategories] = useState<boolean | null>(null);
   const [categoriesExpanded, setCategoriesExpanded] = useState(false);
+  const [overviewPanelsExpanded, setOverviewPanelsExpanded] = useState(false);
   const [report, setReport] = useState<string | null | undefined>(undefined);
   const [feedback, setFeedback] = useState("");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
 
-  useEffect(() => { setQuery(INITIAL_QUERY); setSelectedRow(null); setShowDefaultCategories(null); setCategoriesExpanded(false); setHistoryRange(30); }, [id]);
+  useEffect(() => {
+    setQuery(INITIAL_QUERY); setSelectedRow(null); setShowDefaultCategories(null); setCategoriesExpanded(false); setHistoryRange(30);
+    setOverviewPanelsExpanded(readOverviewPanelsExpanded(id));
+  }, [id]);
   useEffect(() => {
     if (!activeRunId) return;
     const unsubscribeProgress = api.jobs.onProgress((progress) => {
@@ -289,6 +294,11 @@ export function InventoryPage() {
   const statusFilter = query.filters?.status ?? "all";
   const categoryFilter = query.filters?.category ?? "all";
   const watchedOnly = Boolean(query.filters?.watched_only);
+  const toggleOverviewPanels = () => setOverviewPanelsExpanded((expanded) => {
+    const nextExpanded = !expanded;
+    saveOverviewPanelsExpanded(id, nextExpanded);
+    return nextExpanded;
+  });
 
   const onSearch = useCallback((search: string) => setQuery((current) => ({ ...current, page: 1, search: search || undefined })), []);
   const onStatusChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: !value || value === "all" ? undefined : value as SkuStockFilters["status"] } }));
@@ -364,20 +374,28 @@ export function InventoryPage() {
       <ProjectTabPanel projectId={project.id} tab="inventory">
       {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <>
         <div className="si-inventory-kpis">{kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-        <div className="si-inventory-overview-grid">
-          <TrendChart summary={summary} range={historyRange} onRangeChange={setHistoryRange} selectedCategories={selectedTrendCategories} onSelectedCategoriesChange={(categories) => setTrendSelection({ projectId: id, categories })} />
-          <CategoryPanel
-            summary={summary}
-            project={project}
-            watchedCategories={watchedCategories}
-            showDefaultCategories={displayDefaultCategories}
-            onShowDefaultCategories={setShowDefaultCategories}
-            expanded={categoriesExpanded}
-            onToggleExpanded={() => setCategoriesExpanded((value) => !value)}
-            onManage={() => navigate(`/p/${id}/settings/config?section=watched-categories`)}
-            onSelectCategory={(category) => onCategoryChange(category)}
-          />
-        </div>
+        <section className="si-inventory-overview" aria-label="库存趋势与分类概览">
+          <div className="si-inventory-overview-summary">
+            <div><strong>库存趋势与分类在线率</strong><span>趋势数据 {summary.trend.dates.length} 个业务日期 · {summary.category_rates.length} 个分类</span></div>
+            <button type="button" aria-expanded={overviewPanelsExpanded} aria-controls={`si-inventory-overview-grid-${id}`} onClick={toggleOverviewPanels}>{overviewPanelsExpanded ? "收起" : "展开趋势与分类面板"}</button>
+          </div>
+          <div className="si-inventory-overview-grid" id={`si-inventory-overview-grid-${id}`} hidden={!overviewPanelsExpanded}>
+            {overviewPanelsExpanded && <>
+            <TrendChart summary={summary} range={historyRange} onRangeChange={setHistoryRange} selectedCategories={selectedTrendCategories} onSelectedCategoriesChange={(categories) => setTrendSelection({ projectId: id, categories })} />
+            <CategoryPanel
+              summary={summary}
+              project={project}
+              watchedCategories={watchedCategories}
+              showDefaultCategories={displayDefaultCategories}
+              onShowDefaultCategories={setShowDefaultCategories}
+              expanded={categoriesExpanded}
+              onToggleExpanded={() => setCategoriesExpanded((value) => !value)}
+              onManage={() => navigate(`/p/${id}/settings/config?section=watched-categories`)}
+              onSelectCategory={(category) => onCategoryChange(category)}
+            />
+            </>}
+          </div>
+        </section>
       </>}
       {syncMessage && <div className="si-sync-progress" role="status"><span>{syncMessage}</span>{activeRunId && <span>同步任务运行中</span>}</div>}
       {feedback && <p className="si-feedback" role="status">{feedback}</p>}
