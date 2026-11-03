@@ -19,13 +19,7 @@
 .si-category-table-card .si-data-table { border: 0; border-radius: 0; }
 .si-category-table-card .si-table-toolbar { min-height: 0; padding: 0; border: 0; }
 .si-category-table-card .si-table-scroll { border-top: 1px solid var(--color-line-soft); }
-.si-category-table-card .si-table { width: 100%; min-width: 0; table-layout: fixed; }
 .si-category-table-card .si-table th { padding: 0 7px; }
-.si-category-table-card .si-table th:nth-child(1) { width: 22%; }
-.si-category-table-card .si-table th:nth-child(2) { width: 20%; }
-.si-category-table-card .si-table th:nth-child(3) { width: 42%; }
-.si-category-table-card .si-table th:nth-child(4) { width: 8%; }
-.si-category-table-card .si-table th:nth-child(5) { width: 8%; }
 .si-category-table-card .si-table td { height: 50px; padding: 0 7px; white-space: normal; }
 .si-category-name-cell { display: grid; min-width: 0; gap: 3px; }
 .si-category-name-cell strong { overflow: hidden; color: var(--color-ink-2); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }

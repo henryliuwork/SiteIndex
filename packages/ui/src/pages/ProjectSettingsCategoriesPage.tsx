@@ -91,11 +91,11 @@ export function ProjectSettingsCategoriesPage() {
   })), [draft?.manual, preview]);
   const selected = selectedIndex === null ? null : rows[selectedIndex] ?? null;
   const columns = useMemo<ColumnDef<CategoryRow, unknown>[]>(() => [
-    { id: "category", header: "分类", size: 140, cell: ({ row }) => <div className="si-category-name-cell"><strong>{row.original.name || "未命名分类"}</strong><code>{row.original.slug}</code></div> },
-    { id: "url", accessorKey: "url", header: "分类页 URL", size: 150, cell: ({ row }) => <code className="si-category-url-cell">{row.original.url || "—"}</code> },
-    { id: "match", header: "匹配规则（满足任一条）", size: 285, cell: ({ row }) => <div className="si-category-rule-list">{row.original.match.length ? row.original.match.map((rule, index) => <span className="si-category-rule-chip" key={`${row.original.rowId}-${index}`}>{matchTypeOptions.find((option) => option.value === rule.type)?.label} “{rule.value}”</span>) : <span className="si-muted">未设置</span>}</div> },
-    { id: "skuCount", accessorKey: "skuCount", header: "SKU", size: 64, cell: ({ getValue }) => <Chip tone={Number(getValue()) > 0 ? "ok" : "warn"}>{Number(getValue()).toLocaleString("zh-CN")}</Chip> },
-    { id: "actions", header: "操作", size: 72, cell: ({ row }) => <Button size="small" variant="quiet" onClick={() => setSelectedIndex(Number(row.original.rowId.slice(9)))}>编辑</Button> },
+    { id: "category", header: "分类", meta: { width: 280, grow: 2, minWidth: 200, text: "single" }, cell: ({ row }) => <div className="si-category-name-cell"><strong>{row.original.name || "未命名分类"}</strong><code>{row.original.slug}</code></div> },
+    { id: "url", accessorKey: "url", header: "分类页 URL", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <code className="si-category-url-cell">{row.original.url || "—"}</code> },
+    { id: "match", header: "匹配规则（满足任一条）", meta: { width: 220, grow: 1, minWidth: 160, text: "single" }, cell: ({ row }) => <div className="si-category-rule-list">{row.original.match.length ? row.original.match.map((rule, index) => <span className="si-category-rule-chip" key={`${row.original.rowId}-${index}`}>{matchTypeOptions.find((option) => option.value === rule.type)?.label} “{rule.value}”</span>) : <span className="si-muted">未设置</span>}</div> },
+    { id: "skuCount", accessorKey: "skuCount", header: "SKU", meta: { width: 88, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ getValue }) => <Chip tone={Number(getValue()) > 0 ? "ok" : "warn"}>{Number(getValue()).toLocaleString("zh-CN")}</Chip> },
+    { id: "actions", header: "操作", meta: { width: 88, grow: 0, minWidth: 80, text: "single" }, cell: ({ row }) => <Button size="small" variant="quiet" onClick={() => setSelectedIndex(Number(row.original.rowId.slice(9)))}>编辑</Button> },
   ], []);
 
   const previewConfig = async () => {
