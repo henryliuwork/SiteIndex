@@ -66,7 +66,7 @@ export function SideNav({ projects = [], deviceName, runnerProject }: SideNavPro
       <NavLink to="/skills" className={navClass} title="Skill 中心">
         <Sparkles size={17} aria-hidden="true" /><span className="si-nav-label">Skill 中心</span>
       </NavLink>
-      <NavLink to="/p/kingsyard/runs" className={navClass} title="定时任务">
+      <NavLink to="/schedules" className={navClass} title="定时任务">
         <Activity size={17} aria-hidden="true" /><span className="si-nav-label">定时任务</span>
       </NavLink>
       <NavLink to="/settings" className={navClass} title="设置">
