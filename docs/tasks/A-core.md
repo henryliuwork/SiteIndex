@@ -61,6 +61,7 @@
 
 ### A8 查询服务 `core/src/service/`
 - [x] 概览 SEO 提醒按规则汇总前 5 类，使用中文规则名并链接到软件内对应的开放问题筛选
+- [x] 内容摘要返回博客缺 schema、无站内链接、链接缺货产品的真实计数，并与列表筛选使用同一判断
 - [x] `createCoreService(ctx: { resolveProject(id): string; deviceId: string; cacheDir: string })` 覆盖 WORKSTREAMS §2 分配给 core 的项目、概览、库存、产品、SEO、内容、EDM、设计、README、分类、文件夹、文件、计划与执行设备方法；桌面专属方法留给 C
 - [x] 已实现方法使用统一分页/排序/筛选/搜索和内存缓存；读取时比对索引文件指纹以识别外部写入，并暴露 `invalidate(projectPath)` 供 C 主动失效
 - [x] `projects.detect`、`inspectFeed`、`create`；新建项目复制模板、写配置与工作区、触发首次 daily

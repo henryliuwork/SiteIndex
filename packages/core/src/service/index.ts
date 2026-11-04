@@ -833,6 +833,13 @@ function filterProducts(rows: readonly ProductView[], filters: ProductFilters | 
   });
 }
 
+function blogMatchesIssue(row: BlogPost, issue: NonNullable<BlogFilters["issue"]>, pagesByUrl: ReadonlyMap<string, SeoPage>): boolean {
+  if (issue === "no_links") return row.links_internal.length === 0 && row.links_products.length === 0;
+  if (issue === "links_oos") return (row.linked_out_of_stock?.length ?? 0) > 0;
+  const page = pagesByUrl.get(row.url);
+  return !page?.schema_types?.some((type) => /article|blogposting/i.test(type));
+}
+
 function normalizedTags(tags: readonly string[]): string[] {
   return [...new Set(tags.flatMap((value) => value.split(";")).map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
     .sort(codeUnitCompare);
@@ -1839,9 +1846,16 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const snapshot = await load(resolve(id));
       const keywords = new Set(snapshot.keywords.map((row) => row.keyword.toLowerCase()));
       const uncovered = (snapshot.config.seo?.core_keywords ?? []).filter((keyword) => !keywords.has(keyword.toLowerCase()));
+      const pagesByUrl = new Map(snapshot.seoPages.map((page) => [page.url, page]));
+      const noSchema = snapshot.blogIndex.filter((row) => blogMatchesIssue(row, "no_schema", pagesByUrl)).length;
+      const noLinks = snapshot.blogIndex.filter((row) => blogMatchesIssue(row, "no_links", pagesByUrl)).length;
+      const linksOos = snapshot.blogIndex.filter((row) => blogMatchesIssue(row, "links_oos", pagesByUrl)).length;
       return {
         kpis: [
           { key: "blogs", label: "博客文章", value: String(snapshot.blogIndex.length) },
+          { key: "no_schema", label: "缺少 schema", value: String(noSchema) },
+          { key: "no_links", label: "正文无站内链接", value: String(noLinks) },
+          { key: "links_oos", label: "链接到缺货产品", value: String(linksOos), tone: linksOos ? "warn" : "ok" },
           { key: "keywords", label: "关键词", value: String(snapshot.keywords.length) },
           { key: "uncovered", label: "未映射核心关键词", value: String(uncovered.length), tone: uncovered.length ? "warn" : "ok" },
         ],
@@ -1850,15 +1864,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
     listBlog: async (id, query) => {
       const snapshot = await load(resolve(id));
-      const rows = snapshot.blogIndex.filter((row) => {
-        if (query.filters?.issue === "no_links") return row.links_internal.length === 0;
-        if (query.filters?.issue === "links_oos") return (row.linked_out_of_stock?.length ?? 0) > 0;
-        if (query.filters?.issue === "no_schema") {
-          const page = snapshot.seoPages.find((candidate) => candidate.url === row.url);
-          return !page?.schema_types?.some((type) => /article|blogposting/i.test(type));
-        }
-        return true;
-      });
+      const pagesByUrl = new Map(snapshot.seoPages.map((page) => [page.url, page]));
+      const rows = snapshot.blogIndex.filter((row) => !query.filters?.issue || blogMatchesIssue(row, query.filters.issue, pagesByUrl));
       return paginate(rows, query, (row) => [row.url, row.title, row.slug, row.author, row.category, row.tags], "published_at", (row) => row.url);
     },
     listKeywords: async (id, query) => {
