@@ -8,6 +8,14 @@ export function createSeoHandlers(context: IpcContext): IpcHandlerImplementation
       context.withProject(args[0], (id) =>
         context.core.seo.listIssues(id, args[1] as Parameters<typeof context.core.seo.listIssues>[1]),
       ),
+    "seo.setIssueStatus": (...args) =>
+      context.withProject(args[0], (id) =>
+        context.core.seo.setIssueStatus(id, args[1] as Parameters<typeof context.core.seo.setIssueStatus>[1]),
+      ),
+    "seo.setRuleIgnored": (...args) =>
+      context.withProject(args[0], (id) =>
+        context.core.seo.setRuleIgnored(id, args[1] as Parameters<typeof context.core.seo.setRuleIgnored>[1], args[2] as boolean),
+      ),
     "seo.listPages": (...args) =>
       context.withProject(args[0], (id) =>
         context.core.seo.listPages(id, args[1] as Parameters<typeof context.core.seo.listPages>[1]),
