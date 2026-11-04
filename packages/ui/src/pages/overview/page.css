@@ -43,7 +43,7 @@ margin: 0; padding: 0; list-style: none;
 }
 
 .si-overview-attention li {
-display: grid; grid-template-columns: 24px minmax(0, 1fr) 52px; align-items: center; gap: 9px; min-height: 38px; border-top: 1px solid var(--color-line-soft);
+display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 38px; border-top: 1px solid var(--color-line-soft);
 }
 
 .si-overview-attention li > .si-chip {
@@ -52,6 +52,10 @@ min-width: 21px; justify-content: center; padding: 0 4px;
 
 .si-overview-attention-text {
 color: var(--color-ink-2); font-size: 12px; line-height: 1.45;
+}
+
+.si-overview-attention-actions {
+display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px;
 }
 
 .si-overview-attention li a {
@@ -154,6 +158,10 @@ padding: 14px;
 
 @media (max-width: 760px) {
 .si-overview-attention li {
-grid-template-columns: 24px minmax(0, 1fr) 42px; gap: 6px;
+grid-template-columns: 24px minmax(0, 1fr); gap: 6px;
+}
+
+.si-overview-attention-actions {
+grid-column: 2; justify-self: end;
 }
 }

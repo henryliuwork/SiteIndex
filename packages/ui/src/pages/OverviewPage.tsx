@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, FolderOpen, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AttentionItem, OverviewData, ProjectDetail, SyncState } from "@siteindex/shared";
+import type { AttentionItem, OverviewData, ProjectDetail, SeoIssue, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, KpiCard, ProjectHeader, ProjectTabPanel } from "../components";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
+import { issueLabels } from "./seo/labels";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
 };
@@ -27,6 +28,17 @@ function severityLabel(severity: AttentionItem["severity"]): string {
 
 function projectPath(path: string, file: string): string {
   return path.replace(/[\\/]+$/, "") + (path.includes("\\") ? "\\" : "/") + file;
+}
+
+function attentionSeoRule(link: string, text: string): SeoIssue["rule"] | undefined {
+  let routeRule: string | null = null;
+  try {
+    routeRule = new URL(link, "http://siteindex.local").searchParams.get("rule");
+  }
+  catch { /* 非标准链接仍可从提醒文案中识别规则。 */ }
+  if (routeRule && routeRule in issueLabels) return routeRule as SeoIssue["rule"];
+  const matches = Object.entries(issueLabels).filter(([rule, label]) => text.includes(rule) || text.includes(label));
+  return matches.length === 1 ? matches[0]?.[0] as SeoIssue["rule"] : undefined;
 }
 
 export function OverviewPage() {
@@ -66,6 +78,22 @@ export function OverviewPage() {
     try { await action(); setFeedback(success); }
     catch (cause) { setFeedback(apiErrorMessage(cause, "操作失败，请重试。")); }
   };
+  const ignoreAttentionRule = async (rule: SeoIssue["rule"]) => {
+    const setRuleIgnored = api.seo.setRuleIgnored;
+    if (!setRuleIgnored) return;
+    const label = labelAttentionText(rule);
+    if (!window.confirm(`忽略“${label}”规则？\n影响范围：全站同一规则。`)) return;
+    setFeedback("");
+    try {
+      const result = await setRuleIgnored(id, rule, true);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["overview", id] }),
+        queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
+        queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
+      ]);
+      setFeedback(`已更新 ${result.updated} 条`);
+    } catch (cause) { setFeedback(apiErrorMessage(cause, "SEO 规则忽略失败。")); }
+  };
 
   const copyInstruction = () => withFeedback(() => api.shell.copyText(overview?.agent_instruction ?? ""), "已复制 agent 接入指令。");
   const validateFiles = async () => {
@@ -95,6 +123,7 @@ export function OverviewPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目概览加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   const summary = project.summary;
+  const canIgnoreAttention = typeof api.seo.setRuleIgnored === "function";
   return <div className="si-page si-overview-page">
     <ProjectHeader project={summary} activeTab="overview" hasTabPanel status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>} actions={
       <>
@@ -114,11 +143,17 @@ export function OverviewPage() {
         <section className="si-overview-attention si-panel">
           <div className="si-panel-heading"><h2>需要关注</h2><span>来自今日同步与数据检查</span></div>
           {overview.attention.length ? <ul>
-            {overview.attention.map((item, index) => <li key={item.text + index}>
+            {overview.attention.map((item, index) => {
+              const rule = attentionSeoRule(item.link, item.text);
+              return <li key={item.text + index}>
               <Chip tone={severityTone(item.severity)}>{severityLabel(item.severity)}</Chip>
               <span className="si-overview-attention-text">{labelAttentionText(item.text)}</span>
-              <a href={attentionDestination(item.link, id)} onClick={(event) => { event.preventDefault(); navigate(attentionDestination(item.link, id)); }}>{item.link_label}<ExternalLink size={12} aria-hidden="true" /></a>
-            </li>)}
+              <div className="si-overview-attention-actions">
+                <a href={attentionDestination(item.link, id)} onClick={(event) => { event.preventDefault(); navigate(attentionDestination(item.link, id)); }}>{item.link_label}<ExternalLink size={12} aria-hidden="true" /></a>
+                {canIgnoreAttention && rule && <Button size="small" onClick={() => void ignoreAttentionRule(rule)}>忽略</Button>}
+              </div>
+            </li>;
+            })}
           </ul> : <div className="si-empty-state"><Check size={16} />当前没有需要处理的事项。</div>}
         </section>
 
