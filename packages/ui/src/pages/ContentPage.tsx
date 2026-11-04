@@ -10,6 +10,7 @@ import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, Filter
 import { blogIndexNotice, blogRecognitionCounts, blogRecognitionNeedsRecrawl, getBlogRecognitionConfigUpdatedAt, hasBlogRecognitionConfig } from "./content/blog-recognition";
 
 type ContentView = "blog" | "keywords";
+export const SHOW_KEYWORD_MAPPING = false;
 type IssueFilter = BlogFilters["issue"] | "all";
 type RoleFilter = KeywordFilters["role"] | "all";
 type StatusFilter = KeywordFilters["status"] | "all";
@@ -105,9 +106,9 @@ export function ContentPage() {
     noSchema: summary?.kpis.find((item) => item.key === "no_schema")?.value ?? "0",
     oos: summary?.kpis.find((item) => item.key === "links_oos")?.value ?? "0",
   }), [summary]);
-  const viewOptions = [
+  const viewOptions: { value: ContentView; label: string }[] = [
     { value: "blog" as const, label: "博客文章 " + (blogs?.total ?? 0) },
-    { value: "keywords" as const, label: "关键词映射 " + (keywords?.total ?? 0) },
+    ...(SHOW_KEYWORD_MAPPING ? [{ value: "keywords" as const, label: "关键词映射 " + (keywords?.total ?? 0) }] : []),
   ];
   const activeQuery = view === "blog" ? blogListQuery : keywordListQuery;
   const blogColumnDefs = useMemo(blogColumns, []);
