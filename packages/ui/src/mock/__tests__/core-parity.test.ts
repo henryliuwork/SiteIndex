@@ -89,11 +89,13 @@ describe("UI mock 与 Core 查询语义对齐", () => {
     const byIntent = await api.listKeywords("demo", { page: 1, pageSize: 0, search: "informational" });
     const byNote = await api.listKeywords("demo", { page: 1, pageSize: 0, search: "核心词待补目标页" });
     const noSchema = await api.listBlog("demo", { page: 1, pageSize: 0, filters: { issue: "no_schema" } });
+    const noLinks = await api.listBlog("demo", { page: 1, pageSize: 0, filters: { issue: "no_links" } });
     const summary = await api.summary("demo");
     const expectedNoSchema = generatedBlogs.filter((blog) => {
       const page = seoPages.find((candidate) => candidate.url === blog.url);
       return !page?.schema_types?.some((type) => /article|blogposting/i.test(type));
     });
+    const expectedNoLinks = generatedBlogs.filter((blog) => blog.links_internal.length === 0 && blog.links_products.length === 0);
 
     expect(byUrl.total).toBe(generatedBlogs.length);
     expect(byAuthor.total).toBe(generatedBlogs.length);
@@ -104,6 +106,8 @@ describe("UI mock 与 Core 查询语义对齐", () => {
     expect(byNote.rows.every((row) => row.note === "核心词待补目标页")).toBe(true);
     expect(noSchema.rows.map((row) => row.url).sort(compareKey)).toEqual(expectedNoSchema.map((row) => row.url).sort(compareKey));
     expect(summary.kpis.find((metric) => metric.key === "no_schema")?.value).toBe(String(expectedNoSchema.length));
+    expect(noLinks.rows.map((row) => row.url).sort(compareKey)).toEqual(expectedNoLinks.map((row) => row.url).sort(compareKey));
+    expect(summary.kpis.find((metric) => metric.key === "no_links")?.value).toBe(String(expectedNoLinks.length));
   });
 
   it("分页列表使用 Core 的默认排序与稳定平局键", async () => {

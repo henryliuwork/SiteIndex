@@ -20,7 +20,7 @@ export function createContentMock(): SiteIndexApi["content"] {
     }),
     listBlog: (_id, query) => reply(() => selectRows(
       generatedBlogs, query, (row) => [row.url, row.title, row.slug, row.author, row.category, row.tags].join(" "),
-      (row, filters) => !filters.issue || (filters.issue === "no_links" ? row.links_internal.length === 0 : filters.issue === "no_schema" ? !hasArticleSchema(row.url) : (row.linked_out_of_stock?.length ?? 0) > 0),
+      (row, filters) => !filters.issue || (filters.issue === "no_links" ? row.links_internal.length === 0 && row.links_products.length === 0 : filters.issue === "no_schema" ? !hasArticleSchema(row.url) : (row.linked_out_of_stock?.length ?? 0) > 0),
       "published_at", (row) => row.url,
     )),
     listKeywords: (_id, query) => reply(() => selectRows(
