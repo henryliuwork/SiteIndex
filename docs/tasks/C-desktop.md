@@ -126,7 +126,7 @@
 - [x] scheduler 校正时缺失项目路径记录警告并跳过；Windows 旧任务因授权拒绝而保留时，保存为孤立任务供后续查询与清理。
 - [x] `schedule.verify` 检查任务存在、Windows 触发时间/日期和命令路径；repair 调用统一校正与授权流程并复核。
 - [ ] `schedule.listOrphans` / `removeOrphan` 安全枚举与清理。
-- [ ] Core SEO 状态方法合并后接 IPC。
+- [x] Core SEO 状态方法已合并；Desktop IPC 直通 Core，覆盖单条/批量状态与整类规则忽略/取消忽略。`PENDING_HANDLERS` 清理按契约流程另开 PR。
 
 - 给 B：Electron 里的真实 `window.siteindex`；`uiState` 存储
 - 给 A：浏览器路径、device_id、cacheDir 通过 `createCoreService(ctx)` 与 `runJob` 参数传入

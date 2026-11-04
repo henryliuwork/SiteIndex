@@ -80,4 +80,32 @@ describe("createApiBridge IPC errors", () => {
       detail: "正则表达式语法无效",
     });
   });
+
+  it("forwards SEO issue and rule status updates through the API bridge", async () => {
+    const results = [{ updated: 1 }, { updated: 2 }, { updated: 2 }, { updated: 1 }];
+    const invoke = vi.fn(async () => results.shift());
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+    const singleInput = {
+      targets: [{ url: "https://shop.example.test/page-a", rule: "desc_missing" as const }],
+      status: "ignored" as const,
+    };
+    const batchInput = {
+      targets: [
+        { url: "https://shop.example.test/page-a", rule: "desc_missing" as const },
+        { url: "https://shop.example.test/page-b", rule: "title_missing" as const },
+      ],
+      status: "fixed" as const,
+    };
+
+    await expect(bridge.seo.setIssueStatus?.("demo", singleInput)).resolves.toEqual({ updated: 1 });
+    await expect(bridge.seo.setIssueStatus?.("demo", batchInput)).resolves.toEqual({ updated: 2 });
+    await expect(bridge.seo.setRuleIgnored?.("demo", "desc_missing", true)).resolves.toEqual({ updated: 2 });
+    await expect(bridge.seo.setRuleIgnored?.("demo", "desc_missing", false)).resolves.toEqual({ updated: 1 });
+    expect(invoke.mock.calls).toEqual([
+      ["si:seo.setIssueStatus", "demo", singleInput],
+      ["si:seo.setIssueStatus", "demo", batchInput],
+      ["si:seo.setRuleIgnored", "demo", "desc_missing", true],
+      ["si:seo.setRuleIgnored", "demo", "desc_missing", false],
+    ]);
+  });
 });
