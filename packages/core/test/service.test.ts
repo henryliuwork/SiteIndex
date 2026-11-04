@@ -421,6 +421,35 @@ describe("createCoreService initial namespaces", () => {
     });
   }, 30_000);
 
+  it("groups overview SEO attention by rule and links to the in-app filtered list", async () => {
+    const { projectPath } = await makeProject();
+    const makeIssue = (rule: SeoIssue["rule"], status: SeoIssue["status"], index: number): SeoIssue => ({
+      url: `https://shop.example.test/page-${index}`,
+      rule,
+      severity: "mid",
+      detail: "虚构问题",
+      status,
+      first_seen: "2026-10-20",
+      last_seen: "2026-10-21",
+    });
+    const issues = [
+      makeIssue("desc_duplicate", "open", 1), makeIssue("desc_duplicate", "open", 2),
+      makeIssue("http_4xx", "open", 3), makeIssue("title_missing", "open", 4),
+      makeIssue("schema_missing", "open", 5), makeIssue("desc_missing", "open", 6),
+      makeIssue("orphan", "open", 7), makeIssue("title_duplicate", "fixed", 8),
+    ];
+    await writeJsonl(path.join(projectPath, PATHS.seoIssues), issues.map((issue) => ({ ...issue })), "seo_issue");
+    const overview = await service(projectPath).overview.get("fixture");
+    const seoAttention = overview.attention.filter((item) => item.link_label === "查看 SEO 问题");
+    expect(seoAttention).toHaveLength(5);
+    expect(seoAttention[0]).toMatchObject({ text: "页面 4xx：1 个页面", link: "/p/fixture/seo?rule=http_4xx&status=open" });
+    expect(seoAttention.find((item) => item.text === "Description 重复：2 个页面"))
+      .toMatchObject({ link: "/p/fixture/seo?rule=desc_duplicate&status=open" });
+    expect(seoAttention.some((item) => item.text === "Meta description 缺失：1 个页面")).toBe(true);
+    expect(seoAttention.every((item) => item.link.startsWith("/p/fixture/seo?"))).toBe(true);
+    expect(seoAttention.some((item) => item.text.includes("Title 重复"))).toBe(false);
+  }, 20_000);
+
   it("writes a feed and refreshes the project summary without a missing-feed warning", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);

@@ -1742,9 +1742,17 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         { key: "online_rate", label: "有货率", value: rate === null ? "—" : `${(rate * 100).toFixed(1)}%`, tone: rate !== null && rate > 0.8 ? "ok" : "warn" },
         { key: "attention", label: "待处理 SEO 问题", value: String(openIssues.length), tone: openIssues.length ? "warn" : "ok" },
       ];
-      const attention: AttentionItem[] = openIssues.slice(0, 6).map((issue) => ({
-        severity: issue.severity, text: `${issue.rule}：${issue.detail}`, link: issue.url, link_label: "查看 SEO 问题",
-      }));
+      const severityOrder = { high: 0, mid: 1, low: 2 } as const;
+      const attention: AttentionItem[] = buildSeoIssueCounts(openIssues)
+        .filter((item) => item.count > 0)
+        .sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || b.count - a.count || codeUnitCompare(a.rule, b.rule))
+        .slice(0, 5)
+        .map((item) => ({
+          severity: item.severity,
+          text: `${item.rule === "desc_missing" ? "Meta description 缺失" : item.label}：${item.count} 个页面`,
+          link: `/p/${encodeURIComponent(id)}/seo?rule=${encodeURIComponent(item.rule)}&status=open`,
+          link_label: "查看 SEO 问题",
+        }));
       if (!feedUrlsFromConfig(snapshot.config).length) {
         attention.unshift({ severity: "mid", text: "尚未填写 GMC feed", link: `/p/${id}/settings`, link_label: "配置 feed" });
       }
