@@ -1,11 +1,12 @@
-.si-files-page { gap: 16px; }
+.si-files-page { gap: var(--si-gap-4); }
+.si-files-page > .si-tab-panel { display: flex; flex-direction: column; gap: var(--si-gap-3); }
 .si-files-page .si-project-header-identity code { max-width: 560px; }
-.si-files-subtabs { display: flex; align-items: center; gap: 6px; }
-.si-files-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 14px; border-radius: 6px; color: var(--color-ink-2); font-size: 13px; text-decoration: none; }
+.si-files-subtabs { display: flex; align-items: center; gap: var(--si-gap-1); }
+.si-files-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 var(--si-gap-3); border-radius: 6px; color: var(--color-ink-2); font-size: 13px; text-decoration: none; }
 .si-files-subtabs a:hover { background: var(--color-neutral-soft); }
 .si-files-subtabs a.active { background: var(--color-ink); color: #fff; }
-.si-files-summary { display: flex; min-height: 50px; align-items: center; flex-wrap: wrap; gap: 20px; padding: 10px 16px; border: 1px solid var(--color-line); border-radius: 9px; background: var(--color-surface); }
-.si-files-summary > div { display: flex; align-items: baseline; gap: 6px; color: var(--color-muted); font-size: 12px; }
+.si-files-summary { display: flex; min-height: 50px; align-items: center; flex-wrap: wrap; gap: var(--si-gap-5); padding: var(--si-gap-2) var(--si-gap-4); border: 1px solid var(--color-line); border-radius: 9px; background: var(--color-surface); }
+.si-files-summary > div { display: flex; align-items: baseline; gap: var(--si-gap-1); color: var(--color-muted); font-size: 12px; }
 .si-files-summary strong { color: var(--color-ink); font-size: 16px; font-variant-numeric: tabular-nums; }
 .si-files-summary .is-ok { color: var(--color-brand); }
 .si-files-summary .is-error { color: var(--color-danger); }
@@ -13,17 +14,17 @@
 .si-files-summary small { margin-left: auto; color: var(--color-muted); font-size: 12px; }
 .si-files-table-card { min-width: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
 .si-files-table-card .si-data-table { border: 0; border-radius: 0; }
-.si-files-table-card .si-table th { padding: 0 12px; }
-.si-files-table-card .si-table td { height: 48px; padding: 0 12px; }
+.si-files-table-card .si-table th { padding: 0 var(--si-gap-3); }
+.si-files-table-card .si-table td { height: 48px; padding: 0 var(--si-gap-3); }
 .si-files-table-card .si-table tr:has(.si-files-group-label) td { height: 48px; background: var(--color-subtle); }
 .si-files-group-label { color: var(--color-ink-2); font-size: 12px; }
 .si-files-path { display: block; overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .si-files-number { color: var(--color-ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
 .si-files-date { color: var(--color-muted); font-size: 12px; }
-.si-files-status { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 6px; }
+.si-files-status { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: var(--si-gap-1); }
 .si-files-status > span:last-child:not(.si-chip) { overflow: hidden; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.si-files-actions { display: flex; align-items: center; gap: 6px; }
+.si-files-actions { display: flex; align-items: center; gap: var(--si-gap-1); }
 .si-files-actions .si-button { flex: none; }
 .si-files-actions .si-button-danger:not(:disabled) { color: var(--color-danger); }
-.si-files-note { margin: -4px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
-@media (max-width: 900px) { .si-files-summary { gap: 12px; } .si-files-summary small { flex-basis: 100%; margin-left: 0; } }
+.si-files-note { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
+@media (max-width: 900px) { .si-files-summary { gap: var(--si-gap-3); } .si-files-summary small { flex-basis: 100%; margin-left: 0; } }
