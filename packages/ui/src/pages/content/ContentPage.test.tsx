@@ -21,6 +21,7 @@ describe("ContentPage 博客重新抓取", () => {
       disconnect(): void {}
     });
     const mockApi = createMockApi();
+    const listKeywords = vi.spyOn(mockApi.content, "listKeywords");
     const run = vi.fn(async () => ({ runId: "weekly-refresh-1" }));
     mockApi.jobs.run = run;
     mockApi.jobs.history = vi.fn(async () => []);
@@ -45,6 +46,8 @@ describe("ContentPage 博客重新抓取", () => {
       </QueryClientProvider>,
     );
 
+    await waitFor(() => expect(listKeywords).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /关键词映射/ })).toBeNull();
     const refreshButton = await screen.findByRole("button", { name: "重新抓取" });
     fireEvent.click(refreshButton);
     await waitFor(() => expect(run).toHaveBeenCalledWith({ projectPath: expect.any(String), job: "weekly" }));
