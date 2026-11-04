@@ -75,6 +75,7 @@ describe("createCoreService initial namespaces", () => {
       is_runner: false,
     });
     expect(inventory.as_of).toBe("2026-10-21");
+    expect(inventory.timezone).toBe(detail.config.timezone);
     expect(inventory.trend.dates).toEqual(["2026-10-19", "2026-10-20", "2026-10-21"]);
     expect(legacy14DayInventory.trend).toEqual(inventory.trend);
     expect(inventory.category_rates.length).toBeGreaterThan(0);
@@ -307,6 +308,51 @@ describe("createCoreService initial namespaces", () => {
       page: 1, pageSize: 0, filters: { stock: "in", tag: "fall", category: "bird-houses" },
     });
     expect(products.rows.map((row) => row.handle)).toEqual(["feeder-2"]);
+  }, 20_000);
+
+  it("builds deterministic parent display rows without persisting or counting them as stock", async () => {
+    const { projectPath } = await makeProject();
+    const sitePath = path.join(projectPath, PATHS.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8"));
+    site.sku_grouping = { enabled: true, rule: { type: "regex", value: "^(.+?)\\d{1,3}$" } };
+    await writeFile(sitePath, JSON.stringify(site));
+    const skuStockPath = path.join(projectPath, PATHS.skuStockView);
+    const rows = [
+      { ...stockRow("DEMO001A01", "Demo parent A", "in_stock", "z-category"), parent_sku: "DEMO001A", price: 30 },
+      { ...stockRow("DEMO001A02", "Demo parent A", "out_of_stock", "a-category"), parent_sku: "DEMO001A", price: 20,
+        price_history: [{ date: "2026-10-20", price: 20 }] },
+      { ...stockRow("DEMO002B01", "Demo parent B", "out_of_stock"), parent_sku: "DEMO002B" },
+      { ...stockRow("DEMO002B02", "Demo parent B", "out_of_stock"), parent_sku: "DEMO002B" },
+      { ...stockRow("DEMO003C01", "Demo parent C", "unknown"), parent_sku: "DEMO003C" },
+      { ...stockRow("DEMO003C02", "Demo parent C", "preorder"), parent_sku: "DEMO003C" },
+      stockRow("INDEPENDENT", "Independent", "in_stock"),
+    ];
+    await writeJsonl(skuStockPath, rows.map((row) => ({ ...row })), { primaryKey: ["sku"], fieldOrder: STOCK_FIELDS });
+    const originalFile = await readFile(skuStockPath);
+    const api = service(projectPath);
+    const query = { page: 1, pageSize: 0, filters: { parent_only: true } } as const;
+    const parents = await api.inventory.listSkus("fixture", query);
+    expect(parents.total).toBe(4);
+    expect(parents.rows.map((row) => row.sku)).toEqual(["DEMO001A", "DEMO002B", "DEMO003C", "INDEPENDENT"]);
+    expect(parents.rows[0]).toMatchObject({ is_parent: true, children_count: 2, in_stock_children_count: 1,
+      stock_status: "in_stock", category: "a-category", price: 20, online_rate_7d: null, online_rate_30d: null });
+    expect(parents.rows[1]).toMatchObject({ stock_status: "out_of_stock", children_count: 2, in_stock_children_count: 0 });
+    expect(parents.rows[2]).toMatchObject({ stock_status: "preorder", children_count: 2 });
+    expect(parents.rows[3]?.is_parent).toBeUndefined();
+    expect((await api.inventory.listSkus("fixture", { ...query, pageSize: 2, page: 2 })).rows.map((row) => row.sku))
+      .toEqual(["DEMO003C", "INDEPENDENT"]);
+    expect((await api.inventory.listSkus("fixture", { ...query, search: "DEMO001A02" })).rows.map((row) => row.sku))
+      .toEqual(["DEMO001A"]);
+    expect((await api.inventory.listSkus("fixture", { ...query, filters: { parent_only: true, price_changed_within: 30 } })).rows.map((row) => row.sku))
+      .toEqual(["DEMO001A"]);
+    expect((await api.inventory.listSkus("fixture", { page: 1, pageSize: 0 })).rows.map((row) => row.sku))
+      .toEqual(rows.map((row) => row.sku).sort());
+    expect(await readFile(skuStockPath)).toEqual(originalFile);
+
+    site.sku_grouping.enabled = false;
+    await writeFile(sitePath, JSON.stringify(site));
+    api.invalidate(projectPath);
+    expect((await api.inventory.listSkus("fixture", query)).total).toBe(rows.length);
   }, 20_000);
 
   it("filters SKUs by real price changes within 30, 60, 90 and all days", async () => {

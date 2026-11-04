@@ -203,6 +203,7 @@
 `sku`★ `title` `variant_title` `category` `price` `stock_status` `since` `days_in_status` `online_rate_7d` `online_rate_30d` `history_30d` `changes_30d` `last_change` `last_change_at`
 - `history_30d`：30 个字符，最旧在左，每天一个：`i` 有货 / `o` 缺货 / `p` 预售 / `u` 未知 / `-` 未上架；由 events + latest 回推
 - `online_rate_*` = 有货天数 / 在售天数（`-` 不计入分母）
+- `inventory.listSkus` 的 `parent_only` 展示模式：仅在 `sku_grouping.enabled=true` 时，根据子 SKU 的 `parent_sku` 临时合成父行，并保留未归组的独立 SKU；父行不写入本文件，也不计入库存实体或在线率。父行状态为任一子项有货则有货、全缺货则缺货、其余预售优先于未知；分类取子项众数（并列按 `compareKeys`），价格取子项最低价。父行历史为未知、在线率为空；搜索子 SKU 可命中父行。
 
 ### 5.18 `logs/runs.jsonl`（★run_id）
 `run_id`★(`{date}-{job}`) `job`✓ `trigger`(`schedule`/`manual`/`cli`) `device_name` `started_at`✓ `finished_at` `status`✓(`ok`/`partial`/`failed`/`skipped`) `counts` `errors`
