@@ -20,3 +20,19 @@
 .si-schedule-cadence time, .si-schedule-last-run time { color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; }
 .si-schedules-state { margin: 0; padding: 28px 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); text-align: center; }
 @media (max-width: 760px) { .si-schedules-heading { flex-direction: column; } .si-schedule-filter { width: 100%; justify-content: space-between; } .si-schedule-filter select { flex: 1; } }
+.si-schedule-status-column { min-width: 240px; }
+.si-schedule-status-cell { display: grid; justify-items: start; gap: 7px; }
+.si-schedule-status-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.si-schedule-status-message, .si-schedule-status-error { color: var(--color-muted); font-size: 11px; line-height: 1.4; white-space: normal; }
+.si-schedule-status-error, .si-schedule-cleanup-error { color: var(--color-danger); }
+.si-orphan-schedules { display: grid; gap: 12px; padding: 18px 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-orphan-schedules-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.si-orphan-schedules-heading h2 { margin: 0; color: var(--color-ink); font-size: 15px; }
+.si-orphan-schedules-heading p { margin: 5px 0 0; color: var(--color-muted); font-size: 12px; }
+.si-orphan-schedule-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.si-orphan-schedule-list li { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--color-line-soft); }
+.si-orphan-schedule-list li > div { display: grid; min-width: 0; gap: 3px; color: var(--color-ink-2); font-size: 12px; }
+.si-orphan-schedule-list strong { color: var(--color-ink); font-size: 13px; }
+.si-orphan-schedule-list code { overflow-wrap: anywhere; color: var(--color-muted); font: 11px var(--font-mono); }
+.si-schedule-cleanup-error { margin: 0; font-size: 12px; }
+@media (max-width: 760px) { .si-orphan-schedule-list li { align-items: flex-start; flex-direction: column; } }

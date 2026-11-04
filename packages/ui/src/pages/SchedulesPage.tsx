@@ -1,11 +1,17 @@
 import { useState, type KeyboardEvent } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import type { ProjectSummary, RunLog, ScheduleState } from "@siteindex/shared";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Chip } from "../components";
+import { ApiErrorNotice, Button, Chip } from "../components";
 import "./schedules/page.css";
+
+type ScheduleVerification = {
+  state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error";
+  message?: string;
+  repaired?: boolean;
+};
 
 const jobLabels: Record<string, string> = {
   daily: "每日同步",
@@ -51,6 +57,84 @@ function ScheduleCadence({ enabled, time }: { enabled: boolean; time: string }) 
   </div>;
 }
 
+function ScheduleStatusCell({ project, registered }: { project: ProjectSummary; registered: boolean }) {
+  const queryClient = useQueryClient();
+  const [result, setResult] = useState<ScheduleVerification | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState("");
+  const verify = api.schedule.verify;
+  const state = result?.state ?? (registered ? "ok" : "unregistered");
+  const status = state === "ok" ? { label: "已注册", tone: "ok" as const }
+    : state === "unregistered" ? { label: "未注册", tone: "warn" as const }
+      : state === "path_mismatch" ? { label: "路径不一致", tone: "warn" as const }
+        : state === "orphaned" ? { label: "路径不存在", tone: "warn" as const }
+          : { label: "校验失败", tone: "danger" as const };
+
+  const runVerification = async (repair = false) => {
+    if (!verify || checking) return;
+    setChecking(true);
+    setError("");
+    try {
+      const next = await verify(project.id, repair ? { repair: true } : undefined);
+      setResult(next);
+      if (repair && next.state === "ok") {
+        await queryClient.invalidateQueries({ queryKey: ["schedule", project.id] });
+      }
+    } catch (cause) {
+      setError(apiErrorMessage(cause, "计划任务校验失败。"));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return <div className="si-schedule-status-cell">
+    <Chip tone={status.tone}>{status.label}</Chip>
+    {verify && <div className="si-schedule-status-actions">
+      <Button size="small" disabled={checking} onClick={(event) => { event.stopPropagation(); void runVerification(); }}>{checking ? "校验中…" : "校验"}</Button>
+      {result?.state === "path_mismatch" && <Button size="small" variant="primary" disabled={checking} onClick={(event) => { event.stopPropagation(); void runVerification(true); }}>{checking ? "修复中…" : "修复"}</Button>}
+    </div>}
+    {(result?.message || error) && <small className={error || result?.state === "error" ? "si-schedule-status-error" : "si-schedule-status-message"} role={error || result?.state === "error" ? "alert" : "status"}>{error || result?.message}</small>}
+  </div>;
+}
+
+function OrphanScheduleTasks() {
+  const queryClient = useQueryClient();
+  const [cleaningTask, setCleaningTask] = useState<string | null>(null);
+  const [cleanupError, setCleanupError] = useState("");
+  const orphansQuery = useQuery({
+    queryKey: ["schedule", "orphans"],
+    queryFn: () => api.schedule.listOrphans!(),
+    retry: false,
+  });
+
+  const cleanTask = async (taskName: string) => {
+    const removeOrphan = api.schedule.removeOrphan;
+    if (!removeOrphan || cleaningTask) return;
+    setCleaningTask(taskName);
+    setCleanupError("");
+    try {
+      await removeOrphan(taskName);
+      await queryClient.invalidateQueries({ queryKey: ["schedule", "orphans"] });
+    } catch (cause) {
+      setCleanupError(apiErrorMessage(cause, "清理孤立任务失败。"));
+    } finally {
+      setCleaningTask(null);
+    }
+  };
+
+  return <section className="si-orphan-schedules" aria-label="孤立任务">
+    <div className="si-orphan-schedules-heading"><div><h2>孤立任务</h2><p>这些系统计划任务指向已不存在的项目目录。</p></div></div>
+    {cleanupError && <p className="si-schedule-cleanup-error" role="alert">{cleanupError}</p>}
+    {orphansQuery.isLoading ? <p className="si-schedules-state" role="status">正在读取孤立任务…</p>
+      : orphansQuery.isError ? <ApiErrorNotice label="孤立任务加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} />
+        : (orphansQuery.data?.length ?? 0) === 0 ? <p className="si-schedules-state" role="status">没有孤立任务。</p>
+          : <ul className="si-orphan-schedule-list">{orphansQuery.data!.map((task) => <li key={task.taskName}>
+            <div><strong>{task.taskName}</strong><code>{task.path}</code><span>{task.reason}</span></div>
+            {api.schedule.removeOrphan && <Button size="small" disabled={cleaningTask !== null} onClick={() => void cleanTask(task.taskName)}>{cleaningTask === task.taskName ? "清理中…" : "清理"}</Button>}
+          </li>)}</ul>}
+  </section>;
+}
+
 export function SchedulesPage() {
   const navigate = useNavigate();
   const [selectedProject, setSelectedProject] = useState("all");
@@ -78,6 +162,7 @@ export function SchedulesPage() {
 
   const openProjectRuns = (project: ProjectSummary) => navigate(`/p/${project.id}/runs`);
   const handleRowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, project: ProjectSummary) => {
+    if (event.target !== event.currentTarget) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     openProjectRuns(project);
@@ -103,8 +188,8 @@ export function SchedulesPage() {
     {runtimeStatusQuery.isError && <ApiErrorNotice label="计划任务运行模式读取失败。" error={runtimeStatusQuery.error} onRetry={() => void runtimeStatusQuery.refetch()} />}
     {projectsQuery.isLoading ? <p className="si-schedules-state" role="status">正在加载项目计划…</p>
       : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />
-      : projects.length === 0 ? <p className="si-schedules-state" role="status">还没有项目，添加项目后会在这里汇总计划任务。</p>
-      : <div className="si-schedules-table-wrap">
+      : <>
+        {projects.length === 0 ? <p className="si-schedules-state" role="status">还没有项目，添加项目后会在这里汇总计划任务。</p> : <div className="si-schedules-table-wrap">
         {visibleProjects.length === 0 ? <p className="si-schedules-state" role="status">没有找到所选项目。</p> : <table className="si-schedules-table">
           <thead><tr>
             <th scope="col">项目</th>
@@ -112,7 +197,7 @@ export function SchedulesPage() {
             <th scope="col">每周抓取</th>
             <th scope="col">最近一次运行</th>
             <th scope="col">下一次运行</th>
-            <th scope="col">系统计划任务</th>
+            <th scope="col" className="si-schedule-status-column">系统计划任务</th>
             <th scope="col"><span className="si-sr-only">操作</span></th>
           </tr></thead>
           <tbody>{visibleProjects.map((project) => {
@@ -131,11 +216,13 @@ export function SchedulesPage() {
                   : lastRun ? <div className="si-schedule-last-run"><Chip tone={runStatus(lastRun).tone}>{runStatus(lastRun).label}</Chip><time>{formatDateTime(lastRun.finished_at ?? lastRun.started_at)}</time></div>
                     : <span className="si-muted">暂无运行记录</span>}</td>
               <td>{scheduleQuery?.isError ? <span className="si-muted">—</span> : next ? <span>{jobLabels[next.job] ?? next.job} · {formatDateTime(next.at)}</span> : schedule ? <span className="si-muted">暂无计划</span> : <span className="si-muted">正在读取…</span>}</td>
-              <td>{scheduleQuery?.isError ? <span className="si-muted">读取失败</span> : schedule ? <Chip tone={schedule.registered ? "ok" : "warn"}>{schedule.registered ? "已注册" : "未注册"}</Chip> : <span className="si-muted">正在读取…</span>}</td>
+              <td className="si-schedule-status-column">{scheduleQuery?.isError ? <span className="si-muted">读取失败</span> : schedule ? <ScheduleStatusCell project={project} registered={schedule.registered} /> : <span className="si-muted">正在读取…</span>}</td>
               <td><Link className="si-button si-button-small" to={`/p/${project.id}/runs`} onClick={(event) => event.stopPropagation()}>去配置</Link></td>
             </tr>;
           })}</tbody>
         </table>}
-      </div>}
+        </div>}
+      </>}
+    {typeof api.schedule.listOrphans === "function" && <OrphanScheduleTasks />}
   </div>;
 }

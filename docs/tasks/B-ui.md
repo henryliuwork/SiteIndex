@@ -35,6 +35,7 @@
 - [x] 项目中心“添加已有项目”回归：验证路径、项目 ID 路由、列表刷新与重复添加提示；FilterBar DOM 回归：两行内不折叠、超过两行可折叠，弹层不受内容区裁切 — 本 PR
 - [x] 项目中心最近运行表使用列宽契约并统一虚拟行高；DESIGN 补列宽契约写法，DataTable DEV 告警检测缺少 meta/size 的列 — 本 PR
 - [x] 项目中心待处理提醒可按项目展开，显示提醒数量与最近三条，并跳转到对应 SEO 待处理问题 — 本 PR
+- [x] 项目中心支持按契约可选能力移除项目（确认仅取消登记），添加已有项目后非阻塞校验计划任务路径并显示结果 — 本 PR
 - [x] 库存：PRD §5.4 全部内容；趋势图有 Y 轴 0–100% 与图例；SKU 明细表 1 万行 mock 下滚动/筛选无卡顿 — [PR #13](https://github.com/henryliuwork/SiteIndex/pull/13)、[PR #60](https://github.com/henryliuwork/SiteIndex/pull/60)
 - **验收**：与画板 Main / Inventory 并排截图对比，结构与文案一致
 
@@ -51,9 +52,10 @@
 - [x] B12 README：用户区块编辑保存、自动区块列表；不再生成或展示目录地图 — [PR #34](https://github.com/henryliuwork/SiteIndex/pull/34)、[PR #114](https://github.com/henryliuwork/SiteIndex/issues/114)
 - [x] B13 项目设置子页：配置 / 分类（三种模式、手动分类表与匹配规则、候选分类页、预览 → 保存）/ 本地文件（一键校验、按状态显示修复按钮）；取消文件夹管理页 — [PR #39](https://github.com/henryliuwork/SiteIndex/pull/39)、[PR #41](https://github.com/henryliuwork/SiteIndex/pull/41)、[PR #42](https://github.com/henryliuwork/SiteIndex/pull/42)、[PR #44](https://github.com/henryliuwork/SiteIndex/pull/44)、[PR #52](https://github.com/henryliuwork/SiteIndex/pull/52)、[PR #114](https://github.com/henryliuwork/SiteIndex/issues/114)
 - [x] B14 运行与定时任务（Runs）：手动执行 + 实时日志 + 停止；历史；执行设备卡片；计划编辑（周几多选、时间、每月几号、四个选项）— [PR #45](https://github.com/henryliuwork/SiteIndex/pull/45)、[PR #55](https://github.com/henryliuwork/SiteIndex/pull/55)
-- [x] v0.1.9 全项目定时任务汇总 `/schedules`：按项目筛选、显示每日/每周计划与最近/下次运行；行内加载错误隔离并可跳转配置 — 本 PR
+- [x] v0.1.9 全项目定时任务汇总 `/schedules`：按项目筛选、显示每日/每周计划与最近/下次运行；行内加载错误隔离并可跳转配置 — [PR #273](https://github.com/henryliuwork/SiteIndex/pull/273)
+- [x] 定时任务汇总接入可选校验/修复与孤立任务清理；Desktop 未实现时隐藏不可用操作 — 本 PR
 - [x] B15 Skill 中心、软件设置 — [PR #46](https://github.com/henryliuwork/SiteIndex/pull/46)、[PR #48](https://github.com/henryliuwork/SiteIndex/pull/48)、[PR #73](https://github.com/henryliuwork/SiteIndex/pull/73)
-- [x] v0.1.9 软件设置补充项目根目录用途与“移动或重新添加项目”说明 — 本 PR
+- [x] v0.1.9 软件设置补充项目根目录用途与“移动或重新添加项目”说明 — [PR #275](https://github.com/henryliuwork/SiteIndex/pull/275)
 - [x] 全部写入操作的"已保存 / 失败原因"反馈；危险操作二次确认；空状态与错误状态 — [PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)、[PR #52](https://github.com/henryliuwork/SiteIndex/pull/52)、[PR #53](https://github.com/henryliuwork/SiteIndex/pull/53)、[PR #55](https://github.com/henryliuwork/SiteIndex/pull/55)、[PR #73](https://github.com/henryliuwork/SiteIndex/pull/73)
 
 ## M3 · 打磨

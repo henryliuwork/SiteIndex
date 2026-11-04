@@ -30,6 +30,15 @@ describe("projects mock summary updates", () => {
     expect((await api.list()).filter(({ id }) => id === added.id)).toHaveLength(1);
   });
 
+  it("removes a project from registration without deleting its project data", async () => {
+    const api = createProjectsMock();
+    const before = await api.get("demo2");
+    await api.remove?.("demo2");
+
+    expect((await api.list()).some(({ id }) => id === "demo2")).toBe(false);
+    expect((await api.get("demo2")).summary.path).toBe(before.summary.path);
+  });
+
   it("clears the feed warning and emits a project change after saving a feed", async () => {
     const api = createProjectsMock();
     const feedWarning = "尚未填写 GMC Feed 地址，每日库存同步未启用。";
