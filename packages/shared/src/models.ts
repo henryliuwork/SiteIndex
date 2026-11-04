@@ -109,7 +109,8 @@ export interface SiteConfig {
     competitors?: string[];
     title_range?: [number, number];
     description_range?: [number, number];
-    ignore_rules?: { url: string; rule: SeoRule }[];
+    /** 省略 url 时，该规则适用于全部页面。 */
+    ignore_rules?: { url?: string; rule: SeoRule }[];
   };
   edm?: {
     platform?: "mailchimp" | "wordpress" | "other";
