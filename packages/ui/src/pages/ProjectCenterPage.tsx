@@ -186,19 +186,37 @@ function AttentionKpi({ count, expanded, onToggle }: { count: number; expanded: 
   </button>;
 }
 
-function AttentionDetails({ projects }: { projects: ProjectSummary[] }) {
+function AttentionDetails({ project }: { project: ProjectSummary }) {
+  const issuesQuery = useQuery({
+    queryKey: ["projects", project.id, "seo", "issues", "open", "recent"],
+    queryFn: () => api.seo.listIssues(project.id, {
+      page: 1,
+      pageSize: 3,
+      sort: { field: "last_seen", dir: "desc" },
+      filters: { status: "open" },
+    }),
+  });
+  const issues = issuesQuery.data?.rows ?? [];
+  return <article className="si-center-attention-item" key={project.id}>
+    <div className="si-center-attention-project">
+      <strong>{project.name}</strong>
+      <Chip tone="warn">{project.attention} 条待处理</Chip>
+    </div>
+    {issuesQuery.isLoading ? <p className="si-muted" role="status">正在读取最近提醒…</p>
+      : issuesQuery.isError ? <ApiErrorNotice className="si-center-attention-error" label="提醒加载失败。" error={issuesQuery.error} onRetry={() => void issuesQuery.refetch()} />
+      : issues.length > 0 ? <ul>{issues.map((issue) => <li key={project.id + ":" + issue.url + ":" + issue.rule}>
+        <span>{issue.detail}</span><small>{issue.last_seen}</small>
+      </li>)}</ul>
+      : <p className="si-muted" role="status">暂无可展示的待处理提醒。</p>}
+    <Link className="si-button si-button-small" to={"/p/" + project.id + "/seo?status=open"}>去处理</Link>
+  </article>;
+}
+
+function AttentionList({ projects }: { projects: ProjectSummary[] }) {
   const pendingProjects = projects.filter((project) => project.attention > 0);
   return <section id="si-center-attention-panel" className="si-center-attention-panel" aria-label="待处理提醒列表">
     {pendingProjects.length === 0 ? <p role="status">当前没有待处理提醒。</p> : pendingProjects.map((project) => {
-      const messages = project.warnings.slice(0, 3);
-      return <article className="si-center-attention-item" key={project.id}>
-        <div className="si-center-attention-project">
-          <strong>{project.name}</strong>
-          <Chip tone="warn">{project.attention} 条待处理</Chip>
-        </div>
-        <ul>{(messages.length > 0 ? messages : ["有待处理事项，请打开项目查看。"]).map((message, index) => <li key={project.id + ":" + index}>{message}</li>)}</ul>
-        <Link className="si-button si-button-small" to={"/p/" + project.id + "/seo?status=open"}>去处理</Link>
-      </article>;
+      return <AttentionDetails project={project} key={project.id} />;
     })}
   </section>;
 }
@@ -307,7 +325,7 @@ export function ProjectCenterPage() {
             {scheduleQuery.isError && <ApiErrorNotice className="si-center-query-error" label="定时计划加载失败。" error={scheduleQuery.error} onRetry={() => void scheduleQuery.refetch()} />}
           </div>
         </div>
-        {attentionExpanded && <AttentionDetails projects={projects} />}
+        {attentionExpanded && <AttentionList projects={projects} />}
         <section className="si-project-grid" aria-label="项目列表">
           {projects.length === 0 ? <div className="si-project-empty" role="status">
             <FolderOpen size={22} aria-hidden="true" />

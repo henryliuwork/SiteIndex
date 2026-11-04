@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import type { ProjectDetail, ProjectSummary, SiteIndexError } from "@siteindex/shared";
+import type { ProjectDetail, ProjectSummary, SeoIssue, SiteIndexError } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 afterEach(() => {
@@ -115,10 +115,25 @@ describe("ProjectCenterPage attention list", () => {
     const sourceProjects = await mockApi.projects.list();
     const reminders = ["最近提醒 1", "最近提醒 2", "最近提醒 3", "更早的提醒"];
     const projects: ProjectSummary[] = sourceProjects.map((project, index) => index === 0
-      ? { ...project, attention: 4, warnings: reminders }
+      ? { ...project, attention: 4, warnings: [] }
       : { ...project, attention: 0, warnings: [] });
+    const issueRows: SeoIssue[] = reminders.map((detail, index) => ({
+      url: "https://demo.example.test/page-" + index,
+      rule: "title_missing",
+      severity: "high",
+      detail,
+      status: "open",
+      first_seen: "2026-11-01",
+      last_seen: "2026-11-0" + (4 - index),
+    }));
     mockApi.projects.list = vi.fn(async () => projects);
     mockApi.jobs.history = vi.fn(async () => []);
+    mockApi.seo.listIssues = vi.fn(async (_id, query) => ({
+      rows: issueRows.filter((issue) => !query.filters?.status || issue.status === query.filters.status)
+        .sort((a, b) => b.last_seen.localeCompare(a.last_seen))
+        .slice((query.page - 1) * query.pageSize, query.page * query.pageSize),
+      total: issueRows.length,
+    }));
 
     vi.doMock("../api", () => ({
       api: mockApi,
@@ -137,10 +152,14 @@ describe("ProjectCenterPage attention list", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /待处理提醒/ }));
     const panel = screen.getByRole("region", { name: "待处理提醒列表" });
+    await within(panel).findByText("最近提醒 1");
     expect(within(panel).getByText(projects[0]!.name)).toBeTruthy();
     expect(within(panel).getByText("4 条待处理")).toBeTruthy();
     for (const message of reminders.slice(0, 3)) expect(within(panel).getByText(message)).toBeTruthy();
     expect(within(panel).queryByText("更早的提醒")).toBeNull();
+    expect(mockApi.seo.listIssues).toHaveBeenCalledWith(projects[0]!.id, {
+      page: 1, pageSize: 3, sort: { field: "last_seen", dir: "desc" }, filters: { status: "open" },
+    });
     expect(within(panel).getByRole("link", { name: "去处理" }).getAttribute("href"))
       .toBe("/p/" + projects[0]!.id + "/seo?status=open");
   });
