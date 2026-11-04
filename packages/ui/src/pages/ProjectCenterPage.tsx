@@ -172,6 +172,37 @@ function CenterStatus({ status }: { status: ProjectSummary["sync"]["state"] }) {
   return <Chip tone={tone}>{status === "ok" ? "成功" : status === "failed" ? "失败" : status === "partial" ? "提醒" : status === "running" ? "运行中" : "待配置"}</Chip>;
 }
 
+function AttentionKpi({ count, expanded, onToggle }: { count: number; expanded: boolean; onToggle: () => void }) {
+  return <button
+    type="button"
+    className={"si-kpi-card si-center-attention-toggle" + (count > 0 ? " si-kpi-warn" : "")}
+    aria-expanded={expanded}
+    aria-controls="si-center-attention-panel"
+    onClick={onToggle}
+  >
+    <span className="si-kpi-label">待处理提醒</span>
+    <strong className="si-kpi-value">{count}</strong>
+    <span className="si-kpi-hint">点击按项目查看提醒</span>
+  </button>;
+}
+
+function AttentionDetails({ projects }: { projects: ProjectSummary[] }) {
+  const pendingProjects = projects.filter((project) => project.attention > 0);
+  return <section id="si-center-attention-panel" className="si-center-attention-panel" aria-label="待处理提醒列表">
+    {pendingProjects.length === 0 ? <p role="status">当前没有待处理提醒。</p> : pendingProjects.map((project) => {
+      const messages = project.warnings.slice(0, 3);
+      return <article className="si-center-attention-item" key={project.id}>
+        <div className="si-center-attention-project">
+          <strong>{project.name}</strong>
+          <Chip tone="warn">{project.attention} 条待处理</Chip>
+        </div>
+        <ul>{(messages.length > 0 ? messages : ["有待处理事项，请打开项目查看。"]).map((message, index) => <li key={project.id + ":" + index}>{message}</li>)}</ul>
+        <Link className="si-button si-button-small" to={"/p/" + project.id + "/seo?status=open"}>去处理</Link>
+      </article>;
+    })}
+  </section>;
+}
+
 export function ProjectCenterPage() {
   const queryClient = useQueryClient();
   const projectsQuery = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
@@ -186,6 +217,7 @@ export function ProjectCenterPage() {
   const [settingRoot, setSettingRoot] = useState(false);
   const [selectedRun, setSelectedRun] = useState<RunLog | null>(null);
   const [runQuery, setRunQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
+  const [attentionExpanded, setAttentionExpanded] = useState(false);
 
   const runColumns = useMemo<ColumnDef<RunLog, unknown>[]>(() => [
     { id: "started_at", accessorKey: "started_at", header: "时间", meta: { width: 140, grow: 0, minWidth: 128, text: "single" }, cell: ({ row }) => <span className="si-mono">{formatRunTime(row.original.started_at)}</span>, enableSorting: true },
@@ -243,7 +275,7 @@ export function ProjectCenterPage() {
 
   const metrics: Kpi[] = [
     { key: "projects", label: "项目", value: String(projects.length) },
-    { key: "attention", label: "待处理提醒", value: String(totalAttention), tone: totalAttention ? "warn" : "default", link: primary ? "/p/" + primary.id : undefined },
+    { key: "attention", label: "待处理提醒", value: String(totalAttention), tone: totalAttention ? "warn" : "default" },
     { key: "today-oos", label: "今日新缺货 SKU", value: String(newOutOfStock), tone: newOutOfStock ? "danger" : "default", link: primary ? "/p/" + primary.id + "/inventory" : undefined },
     { key: "next-run", label: "下一个定时任务", value: scheduleQuery.isLoading ? "正在读取…" : scheduleQuery.isError ? "读取失败" : nextTime === "—" ? "暂无计划" : nextTime + " · " + (primary?.name ?? ""), hint: nextJob },
   ];
@@ -267,12 +299,15 @@ export function ProjectCenterPage() {
       </header>
       {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : <>
         <div className="si-center-kpis">
-          {metrics.slice(0, 3).map((metric) => <KpiCard key={metric.key} metric={metric} />)}
+          {metrics.slice(0, 3).map((metric) => metric.key === "attention"
+            ? <AttentionKpi key={metric.key} count={totalAttention} expanded={attentionExpanded} onToggle={() => setAttentionExpanded((expanded) => !expanded)} />
+            : <KpiCard key={metric.key} metric={metric} />)}
           <div className="si-center-kpi-with-retry">
             <KpiCard metric={metrics[3]!} />
             {scheduleQuery.isError && <ApiErrorNotice className="si-center-query-error" label="定时计划加载失败。" error={scheduleQuery.error} onRetry={() => void scheduleQuery.refetch()} />}
           </div>
         </div>
+        {attentionExpanded && <AttentionDetails projects={projects} />}
         <section className="si-project-grid" aria-label="项目列表">
           {projects.length === 0 ? <div className="si-project-empty" role="status">
             <FolderOpen size={22} aria-hidden="true" />

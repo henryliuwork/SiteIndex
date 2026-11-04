@@ -6,6 +6,19 @@ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;
 min-height: 88px; padding: 12px 16px;
 }
 
+.si-center-attention-toggle { width: 100%; font: inherit; text-align: left; cursor: pointer; }
+.si-center-attention-toggle:hover { border-color: #BACBC1; box-shadow: 0 4px 14px rgba(23, 62, 46, 0.08); }
+.si-center-attention-toggle:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+.si-center-attention-toggle[aria-expanded="true"] { border-color: var(--color-brand); }
+
+.si-center-attention-panel { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-center-attention-panel > p { margin: 0; color: var(--color-muted); font-size: 13px; }
+.si-center-attention-item { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 2fr) auto; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--color-line-soft); }
+.si-center-attention-item:last-child { border-bottom: 0; }
+.si-center-attention-project { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.si-center-attention-project strong { color: var(--color-ink); font-size: 13px; }
+.si-center-attention-item ul { display: grid; gap: 3px; margin: 0; padding-left: 17px; color: var(--color-ink-2); font-size: 12px; line-height: 1.5; }
+
 .si-center-kpis .si-kpi-card:last-child .si-kpi-value {
 font-size: 14px; line-height: 1.35;
 }
@@ -231,5 +244,11 @@ grid-template-columns: minmax(0, 1fr);
 @media (max-width: 760px) {
 .si-project-card, .si-new-project-card {
 min-height: 240px;
+}
+}
+
+@media (max-width: 900px) {
+.si-center-attention-item {
+grid-template-columns: minmax(0, 1fr);
 }
 }
