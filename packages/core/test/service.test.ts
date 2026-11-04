@@ -2,7 +2,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { CSV_HEADERS, PATHS, type Category, type SeoIssue, type SkuStockView, type StockStatus } from "@siteindex/shared";
+import { CSV_HEADERS, PATHS, type BlogPost, type Category, type SeoIssue, type SkuStockView, type StockStatus } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
 import { readCsv, writeCsv } from "../src/io/csv";
@@ -432,6 +432,36 @@ describe("createCoreService initial namespaces", () => {
     const refreshed = await api.content.summary("fixture");
     expect(refreshed.kpis.find((item) => item.key === "blogs")?.value).toBe(String(existingRows.length + 1));
   }, 30_000);
+
+  it("counts blog issues with the same Article schema and link rules as listBlog", async () => {
+    const { projectPath } = await makeProject();
+    const blog = (slug: string, linksInternal: string[], linksProducts: string[], oos: string[] = []): BlogPost => ({
+      url: `https://shop.example.test/blog/${slug}`, slug, title: slug,
+      published_at: "2026-10-20", updated_at: null, category: null, author: null, tags: [],
+      meta_description: null, word_count: 100, links_internal: linksInternal,
+      links_products: linksProducts, linked_out_of_stock: oos, last_crawled: "2026-10-21",
+    });
+    const blogs = [
+      blog("empty", [], []),
+      blog("product-link", [], ["DEMO001A"], ["DEMO001A"]),
+      blog("internal-link", ["https://shop.example.test/page"], []),
+      blog("article", ["https://shop.example.test/other"], []),
+    ];
+    await writeJsonl(path.join(projectPath, PATHS.blogIndex), blogs.map((row) => ({ ...row })), { primaryKey: ["url"] });
+    await writeJsonl(path.join(projectPath, PATHS.seoPages), [
+      { url: blogs[1]!.url, schema_types: ["Article"] },
+      { url: blogs[2]!.url, schema_types: ["FAQPage"] },
+      { url: blogs[3]!.url, schema_types: ["https://schema.org/BlogPosting"] },
+    ], { primaryKey: ["url"] });
+    const api = service(projectPath);
+    const summary = await api.content.summary("fixture");
+    const kpis = new Map(summary.kpis.map((item) => [item.key, item.value]));
+    expect(kpis.get("blogs")).toBe("4");
+    for (const [issue, expected] of [["no_schema", 2], ["no_links", 1], ["links_oos", 1]] as const) {
+      expect(kpis.get(issue)).toBe(String(expected));
+      expect((await api.content.listBlog("fixture", { page: 1, pageSize: 0, filters: { issue } })).total).toBe(expected);
+    }
+  }, 20_000);
 
   it("builds project cards from summary files only and refreshes after an external blog write", async () => {
     const { projectPath } = await makeProject();
