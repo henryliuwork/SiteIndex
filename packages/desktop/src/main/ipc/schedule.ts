@@ -1,3 +1,4 @@
+import { dialog } from "electron";
 import type { ScheduleState } from "@siteindex/shared";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import type { IpcContext } from "./context.js";
@@ -77,5 +78,30 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
       }),
     "schedule.status": () => context.scheduler.getRuntimeStatus(),
     "schedule.reauthorize": () => context.reconcileSchedules(true),
+    "schedule.listOrphans": async () => {
+      const entries = await context.projects.refresh(await context.settings.get());
+      return context.scheduler.listOrphans(entries.map(({ path: projectPath }) => ({ projectPath })));
+    },
+    "schedule.removeOrphan": async (taskName) => {
+      if (typeof taskName !== "string" || !taskName.replace(/^\\+/, "").toLowerCase().startsWith("siteindex")) {
+        throw { code: "CONFIG_INVALID", message: "只能清理名称以 SiteIndex 开头的计划任务。" };
+      }
+      const entries = await context.projects.refresh(await context.settings.get());
+      const orphans = await context.scheduler.listOrphans(entries.map(({ path: projectPath }) => ({ projectPath })));
+      const orphan = orphans.find(({ taskName: candidate }) => candidate.toLowerCase() === taskName.toLowerCase());
+      if (!orphan) throw { code: "PROJECT_NOT_FOUND", message: "该计划任务不在孤立任务列表中。" };
+      const confirmation = await dialog.showMessageBox({
+        type: "warning",
+        title: "清理孤立计划任务",
+        message: `确认删除计划任务“${orphan.taskName}”吗？`,
+        detail: `项目路径：${orphan.path}\n原因：${orphan.reason}`,
+        buttons: ["取消", "删除任务"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      if (confirmation.response !== 1) return;
+      await context.scheduler.removeOrphan(orphan.taskName);
+    },
   };
 }
