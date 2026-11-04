@@ -9,6 +9,7 @@ import { createMockApi } from "../mock";
 afterEach(() => {
   cleanup();
   vi.doUnmock("../api");
+  vi.unstubAllGlobals();
   vi.resetModules();
 });
 
@@ -46,12 +47,16 @@ describe("ProjectCenterPage add existing project flow", () => {
       registered.push(added);
       return added;
     });
+    let resolveVerification!: (value: { state: "path_mismatch"; message: string }) => void;
+    const pendingVerification = new Promise<{ state: "path_mismatch"; message: string }>((resolve) => { resolveVerification = resolve; });
+    const verify = vi.fn(async () => pendingVerification);
     let resolvePendingAdd!: (value: ProjectSummary) => void;
     const pendingAdd = new Promise<ProjectSummary>((resolve) => { resolvePendingAdd = resolve; });
     addExisting.mockImplementationOnce(() => pendingAdd);
     mockApi.projects.list = list;
     mockApi.projects.get = get;
     mockApi.projects.addExisting = addExisting;
+    mockApi.schedule.verify = verify;
     mockApi.jobs.history = vi.fn(async () => []);
 
     vi.doMock("../api", () => ({
@@ -89,6 +94,10 @@ describe("ProjectCenterPage add existing project flow", () => {
     const projectLink = await screen.findByRole("link", { name: "Cedar Shop" });
     expect(projectLink.getAttribute("href")).toBe("/p/cedar-shop/inventory");
     expect(addExisting).toHaveBeenNthCalledWith(1, projectPath);
+    await waitFor(() => expect(verify).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("正在校验系统计划任务…")).toBeTruthy();
+    resolveVerification({ state: "path_mismatch", message: "系统任务指向旧路径。" });
+    expect(await screen.findByText(/系统计划任务：路径不一致/)).toBeTruthy();
     await waitFor(() => expect(get).toHaveBeenCalledWith("cedar-shop"));
     expect((await mockApi.projects.list())[0]?.path).toBe(projectPath);
 
@@ -162,5 +171,61 @@ describe("ProjectCenterPage attention list", () => {
     });
     expect(within(panel).getByRole("link", { name: "去处理" }).getAttribute("href"))
       .toBe("/p/" + projects[0]!.id + "/seo?status=open");
+  });
+});
+
+describe("ProjectCenterPage project removal", () => {
+  it("confirms unregistering without deleting files and refreshes the center", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const mockApi = createMockApi();
+    const remove = mockApi.projects.remove;
+    if (!remove) throw new Error("project removal mock is missing");
+    const removeSpy = vi.fn(remove);
+    mockApi.projects.remove = removeSpy;
+    mockApi.jobs.history = vi.fn(async () => []);
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      apiErrorMessage: (error: unknown, fallback: string) =>
+        typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+          ? error.message
+          : fallback,
+    }));
+    const { ProjectCenterPage } = await import("./ProjectCenterPage");
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Demo Catalog更多操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除项目" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("仅取消登记，不会删除项目文件夹里的任何文件；同时会注销这个项目的系统计划任务。")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除项目" }));
+
+    await waitFor(() => expect(removeSpy).toHaveBeenCalledWith("demo2"));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Demo Catalog" })).toBeNull());
+    expect((await mockApi.projects.get("demo2")).summary.path).toBeTruthy();
+  });
+
+  it("hides the more menu when the optional remove method is unavailable", async () => {
+    const mockApi = createMockApi();
+    delete mockApi.projects.remove;
+    mockApi.jobs.history = vi.fn(async () => []);
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      apiErrorMessage: (error: unknown, fallback: string) =>
+        typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+          ? error.message
+          : fallback,
+    }));
+    const { ProjectCenterPage } = await import("./ProjectCenterPage");
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider>);
+
+    await screen.findByRole("link", { name: "Demo Catalog" });
+    expect(screen.queryByRole("button", { name: "Demo Catalog更多操作" })).toBeNull();
   });
 });

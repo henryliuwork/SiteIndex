@@ -23,9 +23,10 @@ function mockProjectIdForPath(normalizedPath: string): string {
 export function createProjectsMock(): SiteIndexApi["projects"] {
   const createdPaths = new Map<string, string>();
   const addedProjects = new Map<string, ProjectDetail>();
+  const removedProjectIds = new Set<string>();
   const registeredProjects = () => [
-    ...(mockMode === "empty" ? [] : projectIds.map((id) => projectSummaries[id])),
-    ...[...addedProjects.values()].map(({ summary }) => summary),
+    ...(mockMode === "empty" ? [] : projectIds.map((id) => projectSummaries[id]).filter(({ id }) => !removedProjectIds.has(id))),
+    ...[...addedProjects.values()].map(({ summary }) => summary).filter(({ id }) => !removedProjectIds.has(id)),
   ];
   const joinPath = (root: string, folder: string) => {
     const cleanRoot = root.replace(/[\\/]+$/, "");
@@ -121,9 +122,14 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
         path: trimmedPath,
         domain: `${slug}.example.test`,
       };
+      removedProjectIds.delete(id);
       addedProjects.set(normalizedPath, { summary, config: projectConfigs.demo2, runner: runners.demo2 });
       notifyProjectChanged(id);
       return summary;
+    }),
+    remove: (id) => reply(() => {
+      removedProjectIds.add(id);
+      notifyProjectChanged(id);
     }),
     updateConfig: (id, patch) => reply(() => {
       const key = projectKey(id);

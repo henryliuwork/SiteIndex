@@ -2,13 +2,22 @@ import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
-import { FolderOpen, Plus } from "lucide-react";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
+import { FolderOpen, MoreHorizontal, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Kpi, ListQuery, ProjectSummary, RunLog } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, KpiCard } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, KpiCard } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
+
+type ScheduleVerification = {
+  state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error";
+  message?: string;
+  repaired?: boolean;
+};
+
+type ScheduleVerificationDisplay = { state: "pending" } | { state: "complete"; result: ScheduleVerification } | { state: "error"; message: string };
 
 const jobNames: Record<string, string> = {
   daily: "每日同步", weekly: "每周同步", monthly: "每月归档", validate: "数据校验",
@@ -71,7 +80,44 @@ function RunDetail({ run }: { run: RunLog }) {
   );
 }
 
-function ProjectCard({ project, onOpenFolder }: { project: ProjectSummary; onOpenFolder: (path: string) => void }) {
+function ProjectActionsMenu({ project, onRemove }: { project: ProjectSummary; onRemove: (project: ProjectSummary) => void }) {
+  const [open, setOpen] = useState(false);
+  return <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+    <PopoverPrimitive.Trigger asChild>
+      <button type="button" className="si-project-more" aria-label={`${project.name}更多操作`} aria-expanded={open} title="更多操作">
+        <MoreHorizontal size={17} aria-hidden="true" />
+      </button>
+    </PopoverPrimitive.Trigger>
+    <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Content className="si-popover-content si-project-action-menu" align="end" sideOffset={6}>
+        <button type="button" className="si-project-menu-action" onClick={() => { setOpen(false); onRemove(project); }}>移除项目</button>
+        <PopoverPrimitive.Arrow className="si-popover-arrow" />
+      </PopoverPrimitive.Content>
+    </PopoverPrimitive.Portal>
+  </PopoverPrimitive.Root>;
+}
+
+function scheduleVerificationLabel(check: ScheduleVerificationDisplay): string {
+  if (check.state === "pending") return "正在校验系统计划任务…";
+  if (check.state === "error") return "系统计划任务校验失败：" + check.message;
+  const labels: Record<ScheduleVerification["state"], string> = {
+    ok: "已注册",
+    unregistered: "未注册",
+    path_mismatch: "路径不一致",
+    orphaned: "路径不存在",
+    error: "校验失败",
+  };
+  return "系统计划任务：" + labels[check.result.state] + (check.result.message ? " · " + check.result.message : "");
+}
+
+function ProjectCard({
+  project, onOpenFolder, onRemove, scheduleVerification,
+}: {
+  project: ProjectSummary;
+  onOpenFolder: (path: string) => void;
+  onRemove: (project: ProjectSummary) => void;
+  scheduleVerification?: ScheduleVerificationDisplay;
+}) {
   const detailQuery = useQuery({ queryKey: projectQueryKeys.detail(project.id), queryFn: () => api.projects.get(project.id) });
   const warning = projectWarning(project);
   const feedStatus = feedConfigurationStatus(detailQuery.data?.config.crawl.feed_url);
@@ -89,8 +135,12 @@ function ProjectCard({ project, onOpenFolder }: { project: ProjectSummary; onOpe
           <Link to={"/p/" + project.id + "/inventory"} className="si-project-title">{project.name}</Link>
           <span className="si-project-domain">{project.domain} · {platformNames[project.platform]}</span>
         </div>
-        <Chip tone={warning?.tone ?? (project.sync.state === "ok" ? "ok" : "neutral")}>{statusLabel(project)}</Chip>
+        <div className="si-project-card-actions">
+          <Chip tone={warning?.tone ?? (project.sync.state === "ok" ? "ok" : "neutral")}>{statusLabel(project)}</Chip>
+          {typeof api.projects.remove === "function" && <ProjectActionsMenu project={project} onRemove={onRemove} />}
+        </div>
       </div>
+      {scheduleVerification && <p className={"si-project-schedule-verification" + (scheduleVerification.state === "error" || (scheduleVerification.state === "complete" && scheduleVerification.result.state === "error") ? " is-error" : "")} role="status">{scheduleVerificationLabel(scheduleVerification)}</p>}
       {showWarning && <div className={"si-project-warning si-project-warning-" + (warning?.tone ?? "warn")}>
         <div>{warningLines.map((line) => <span key={line}>{line}</span>)}{detailQuery.isError && <small>{apiErrorMessage(detailQuery.error, "暂时无法读取 Feed 配置。")}</small>}</div>
         <div className="si-project-warning-actions">
@@ -236,6 +286,9 @@ export function ProjectCenterPage() {
   const [selectedRun, setSelectedRun] = useState<RunLog | null>(null);
   const [runQuery, setRunQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
   const [attentionExpanded, setAttentionExpanded] = useState(false);
+  const [projectToRemove, setProjectToRemove] = useState<ProjectSummary | null>(null);
+  const [removingProject, setRemovingProject] = useState(false);
+  const [scheduleVerifications, setScheduleVerifications] = useState<Record<string, ScheduleVerificationDisplay>>({});
 
   const runColumns = useMemo<ColumnDef<RunLog, unknown>[]>(() => [
     { id: "started_at", accessorKey: "started_at", header: "时间", meta: { width: 140, grow: 0, minWidth: 128, text: "single" }, cell: ({ row }) => <span className="si-mono">{formatRunTime(row.original.started_at)}</span>, enableSorting: true },
@@ -287,8 +340,37 @@ export function ProjectCenterPage() {
     catch (cause) { setFeedback(apiErrorMessage(cause, "打开文件夹失败。")); }
   };
   const handleAdded = async (project: ProjectSummary) => {
+    const verify = api.schedule.verify;
+    if (verify) {
+      setScheduleVerifications((current) => ({ ...current, [project.id]: { state: "pending" } }));
+      void verify(project.id).then((result) => {
+        setScheduleVerifications((current) => ({ ...current, [project.id]: { state: "complete", result } }));
+      }).catch((cause: unknown) => {
+        setScheduleVerifications((current) => ({ ...current, [project.id]: { state: "error", message: apiErrorMessage(cause, "校验失败，请稍后重试。") } }));
+      });
+    }
     await invalidateProjectSummary(queryClient, project.id);
     setFeedback("已添加项目：" + project.name);
+  };
+
+  const removeProject = async () => {
+    const project = projectToRemove;
+    const remove = api.projects.remove;
+    if (!project || !remove || removingProject) return;
+    setRemovingProject(true);
+    try {
+      await remove(project.id);
+      setProjectToRemove(null);
+      await queryClient.invalidateQueries({ queryKey: projectQueryKeys.list, exact: true });
+      queryClient.removeQueries({ queryKey: projectQueryKeys.detail(project.id), exact: true });
+      queryClient.removeQueries({ queryKey: ["schedule", project.id] });
+      queryClient.removeQueries({ queryKey: ["runs", project.id] });
+      setFeedback("已从项目中心移除：" + project.name);
+    } catch (cause) {
+      setFeedback(apiErrorMessage(cause, "移除项目失败，请重试。"));
+    } finally {
+      setRemovingProject(false);
+    }
   };
 
   const metrics: Kpi[] = [
@@ -332,7 +414,13 @@ export function ProjectCenterPage() {
             <strong>还没有项目</strong>
             <span>新建项目，或添加云盘中已有的 SiteIndex 项目文件夹。</span>
           </div> : <>
-            {projects.map((project) => <ProjectCard key={project.id} project={project} onOpenFolder={(path) => void openFolder(path)} />)}
+            {projects.map((project) => <ProjectCard
+              key={project.id}
+              project={project}
+              onOpenFolder={(path) => void openFolder(path)}
+              onRemove={(target) => setProjectToRemove(target)}
+              scheduleVerification={scheduleVerifications[project.id]}
+            />)}
             <Link className="si-new-project-card" to="/new/url"><Plus size={22} /><strong>新建项目</strong><span>输入网址，3 分钟生成工作区</span></Link>
           </>}
         </section>
@@ -367,6 +455,14 @@ export function ProjectCenterPage() {
         </section>
       </>}
       <AddExistingDialog open={addExistingOpen} onOpenChange={setAddExistingOpen} onAdded={(project) => void handleAdded(project)} />
+      <ConfirmDialog
+        open={Boolean(projectToRemove)}
+        onOpenChange={(open) => { if (!open && !removingProject) setProjectToRemove(null); }}
+        title="移除项目？"
+        description="仅取消登记，不会删除项目文件夹里的任何文件；同时会注销这个项目的系统计划任务。"
+        confirmLabel={removingProject ? "移除中…" : "移除项目"}
+        onConfirm={removeProject}
+      />
       <DetailPanel open={Boolean(selectedRun)} onClose={() => setSelectedRun(null)} title="运行详情">
         {selectedRun && <RunDetail run={selectedRun} />}
       </DetailPanel>
