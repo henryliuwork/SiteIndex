@@ -25,7 +25,7 @@ export function createOverviewMock(): SiteIndexApi["overview"] {
       return {
         kpis,
         attention,
-        readme: { overview: "仅用于界面演示的虚构项目。目标市场与人群均为示例。", focus: "演示内容与虚构商品资料。" },
+        readme: { overview: "仅用于界面演示的虚构项目。\n\n- 网站：https://demo-store.example.test\n- 目标市场：示例市场\n- 目标人群：演示用户\n\n<!-- 仅供 mock 生成的注释 -->", focus: "演示内容与虚构商品资料。" },
         agent_instruction: "进入 " + summary.path + "，先完整阅读 README.md，再根据数据开展工作。",
         changelog: [
           { date: FIXED_TODAY, text: "数据校验：2 个文件错误、1 个缺失" },
