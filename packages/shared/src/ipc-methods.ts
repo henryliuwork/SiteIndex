@@ -22,6 +22,7 @@ export const API_INVOKE_METHODS = [
   "projects.inspectFeed",
   "projects.create",
   "projects.addExisting",
+  "projects.remove",
   "projects.updateConfig",
   "overview.get",
   "inventory.summary",
@@ -38,6 +39,8 @@ export const API_INVOKE_METHODS = [
   "sku.previewGrouping",
   "seo.summary",
   "seo.listIssues",
+  "seo.setIssueStatus",
+  "seo.setRuleIgnored",
   "seo.listPages",
   "seo.listLinks",
   "seo.orphanPages",
@@ -73,6 +76,9 @@ export const API_INVOKE_METHODS = [
   "jobs.running",
   "schedule.get",
   "schedule.save",
+  "schedule.verify",
+  "schedule.listOrphans",
+  "schedule.removeOrphan",
   "schedule.status",
   "schedule.reauthorize",
   "runner.get",
@@ -94,7 +100,15 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = ["sku.previewGrouping"];
+export const PENDING_HANDLERS: readonly string[] = [
+  "sku.previewGrouping",
+  "projects.remove",
+  "seo.setIssueStatus",
+  "seo.setRuleIgnored",
+  "schedule.verify",
+  "schedule.listOrphans",
+  "schedule.removeOrphan",
+];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 
