@@ -138,14 +138,24 @@ function toBytes(value: unknown): Uint8Array {
 async function runCommand(file: string, args: string[]): Promise<string> {
   const codePage = await currentCodePage();
   try {
-    const { stdout } = await execFileAsync(file, args, { windowsHide: true, maxBuffer: 2 * 1024 * 1024, encoding: "buffer" });
+    const { stdout } = await execFileAsync(file, args, {
+      windowsHide: true,
+      maxBuffer: 2 * 1024 * 1024,
+      encoding: "buffer",
+    });
     return decodeConsoleOutput(toBytes(stdout), codePage);
   } catch (error: unknown) {
     const commandError = error as { code?: number | string; stdout?: unknown; stderr?: unknown };
     const stdout = decodeConsoleOutput(toBytes(commandError.stdout), codePage);
     const stderr = decodeConsoleOutput(toBytes(commandError.stderr), codePage);
     const detail = [stdout, stderr].filter(Boolean).join("\n");
-    throw Object.assign(new Error(`${file} 执行失败。`), { code: commandError.code, detail, stdout, stderr, cause: error });
+    throw Object.assign(new Error(`${file} 执行失败。`), {
+      code: commandError.code,
+      detail,
+      stdout,
+      stderr,
+      cause: error,
+    });
   }
 }
 
@@ -242,7 +252,7 @@ function isAccessDenied(error: unknown): boolean {
   );
 }
 
-function isMissingTask(error: unknown): boolean {
+export function isWindowsTaskMissing(error: unknown): boolean {
   const value = error as CommandError;
   const detail = `${value?.message ?? ""}\n${value?.detail ?? ""}`;
   return /0x80070002|cannot find the file specified|cannot find the path specified|does not exist|not found|找不到|不存在/i.test(
@@ -260,11 +270,16 @@ function normalizedXml(value: string): string {
 }
 
 function normalizedSchedule(value: string): string | null {
-  const match = /<scheduleby(?:month|week)>[\s\S]*?<\/scheduleby(?:month|week)>/.exec(normalizedXml(value));
-  return match?.[0].replace(/<startboundary>[\s\S]*?<\/startboundary>/, "") ?? null;
+  const match = /<calendartrigger>[\s\S]*?<\/calendartrigger>/.exec(normalizedXml(value));
+  return (
+    match?.[0].replace(
+      /<startboundary>\d{4}-\d{2}-\d{2}t(\d{2}:\d{2}):\d{2}<\/startboundary>/,
+      "<startboundary>$1</startboundary>",
+    ) ?? null
+  );
 }
 
-function taskMatches(actualXml: string, definition: WindowsTaskDefinition): boolean {
+export function windowsTaskMatches(actualXml: string, definition: WindowsTaskDefinition): boolean {
   const actual = normalizedXml(actualXml);
   const expected = normalizedXml(buildWindowsTaskXml(definition));
   const required = [
@@ -348,7 +363,7 @@ async function applyNormalOperations(
     const operation = operations[index]!;
     if (operation.action === "delete") {
       await runner("schtasks.exe", ["/Delete", "/TN", operation.name, "/F"]).catch((error: unknown) => {
-        if (!isMissingTask(error)) throw error;
+        if (!isWindowsTaskMissing(error)) throw error;
       });
       continue;
     }
@@ -364,7 +379,7 @@ async function taskExists(name: string, runner: CommandRunner): Promise<boolean>
     await runner("schtasks.exe", ["/Query", "/TN", name, "/XML"]);
     return true;
   } catch (error) {
-    if (isMissingTask(error)) return false;
+    if (isWindowsTaskMissing(error)) return false;
     throw error;
   }
 }
@@ -432,11 +447,11 @@ export function createWindowsTaskRegistrar(options: WindowsTaskRegistrarOptions 
       for (const [name, definition] of definitions) {
         try {
           const existingXml = await runner("schtasks.exe", ["/Query", "/TN", name, "/XML"]);
-          if (!taskMatches(existingXml, { ...definition, userId })) {
+          if (!windowsTaskMatches(existingXml, { ...definition, userId })) {
             createOperations.push({ action: "create", name, xml: buildWindowsTaskXml({ ...definition, userId }) });
           }
         } catch (error) {
-          if (isMissingTask(error)) {
+          if (isWindowsTaskMissing(error)) {
             createOperations.push({ action: "create", name, xml: buildWindowsTaskXml({ ...definition, userId }) });
           } else if (isAccessDenied(error)) {
             createOperations.push({ action: "create", name, xml: buildWindowsTaskXml({ ...definition, userId }) });

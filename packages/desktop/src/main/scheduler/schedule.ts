@@ -8,6 +8,8 @@ import {
   createWindowsTaskRegistrar,
   windowsRootTaskName,
   windowsTaskName,
+  isWindowsTaskMissing,
+  windowsTaskMatches,
   WINDOWS_SCHEDULED_JOBS,
   type WindowsTaskDefinition,
   type WindowsTaskRegistrar,
@@ -29,12 +31,18 @@ export interface LaunchAgentDefinition {
 export interface SystemScheduler {
   getState(projectId: string, projectPath: string, config: ScheduleConfig): Promise<ScheduleState>;
   getRuntimeStatus(): Promise<ScheduleRuntimeStatus>;
+  verify(project: ScheduleProjectDefinition): Promise<ScheduleVerification>;
   reconcile(
     projects: ScheduleProjectDefinition[],
     allowElevation: boolean,
     removedProjectIds?: string[],
   ): Promise<ScheduleRuntimeStatus>;
   reauthorize(projects: ScheduleProjectDefinition[]): Promise<ScheduleRuntimeStatus>;
+}
+
+export interface ScheduleVerification {
+  state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error";
+  message?: string;
 }
 
 export interface ScheduleRuntimeStatus {
@@ -173,6 +181,10 @@ function projectIdFromTaskName(taskName: string): string | null {
     if (suffix.endsWith(ending)) return suffix.slice(0, -ending.length);
   }
   return null;
+}
+
+function sameWindowsPath(left: string, right: string): boolean {
+  return path.win32.resolve(left).toLowerCase() === path.win32.resolve(right).toLowerCase();
 }
 
 export function buildLaunchAgentPlist(definition: LaunchAgentDefinition): string {
@@ -394,6 +406,91 @@ export function createSystemScheduler(options: {
     return { mode: state.mode, authorization_required: state.authorization_required };
   }
 
+  async function verify(project: ScheduleProjectDefinition): Promise<ScheduleVerification> {
+    try {
+      if (!(await stat(project.projectPath)).isDirectory()) {
+        return { state: "orphaned", message: "项目目录不存在，计划任务可能仍指向旧路径。" };
+      }
+      if (platform === "win32") {
+        const userId = (await runCommand("whoami.exe", [])).trim();
+        for (const job of WINDOWS_SCHEDULED_JOBS) {
+          const expected = project.isThisDevice && project.config[job].enabled;
+          const names = [windowsTaskName(project.projectId, job), windowsRootTaskName(project.projectId, job)];
+          let foundXml: string | null = null;
+          for (const name of names) {
+            try {
+              foundXml = await runCommand("schtasks.exe", ["/Query", "/TN", name, "/XML"]);
+              break;
+            } catch (error) {
+              if (!isWindowsTaskMissing(error)) {
+                return {
+                  state: "error",
+                  message: `读取计划任务失败：${error instanceof Error ? error.message : String(error)}`,
+                };
+              }
+            }
+          }
+          if (!foundXml) {
+            if (expected) return { state: "unregistered", message: `缺少 ${job} 系统计划任务。` };
+            continue;
+          }
+          if (!expected) return { state: "error", message: `禁用的 ${job} 计划任务仍然存在。` };
+          const actualPath = projectPathFromWindowsTaskXml(foundXml);
+          if (!actualPath || !sameWindowsPath(actualPath, project.projectPath)) {
+            return { state: "path_mismatch", message: `${job} 任务使用的项目路径与当前路径不一致。` };
+          }
+          const definition: WindowsTaskDefinition = {
+            projectId: project.projectId,
+            projectPath: project.projectPath,
+            executablePath: options.executablePath,
+            userId,
+            job,
+            schedule: project.config[job],
+            options: project.config.options,
+          };
+          if (!windowsTaskMatches(foundXml, definition)) {
+            return { state: "error", message: `${job} 任务的触发时间或设置与项目配置不一致。` };
+          }
+        }
+        return { state: "ok" };
+      }
+      if (platform === "darwin") {
+        for (const job of SCHEDULED_JOBS) {
+          const expected = project.isThisDevice && project.config[job].enabled;
+          const filePath = plistPath(project.projectId, job);
+          let content: string;
+          try {
+            content = await readFile(filePath, "utf8");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+              if (expected) return { state: "unregistered", message: `缺少 ${job} launchd 任务。` };
+              continue;
+            }
+            throw error;
+          }
+          if (!expected) return { state: "error", message: `禁用的 ${job} launchd 任务仍然存在。` };
+          if (!content.includes(`<string>${escapePlist(project.projectPath)}</string>`)) {
+            return { state: "path_mismatch", message: `${job} launchd 任务使用的项目路径与当前路径不一致。` };
+          }
+          const expectedContent = buildLaunchAgentPlist({
+            projectId: project.projectId,
+            projectPath: project.projectPath,
+            executablePath: options.executablePath,
+            job,
+            schedule: project.config[job],
+          });
+          if (content !== expectedContent || !(await isMacRegistered(project.projectId, job))) {
+            return { state: "error", message: `${job} launchd 任务未加载或触发配置不一致。` };
+          }
+        }
+        return { state: "ok" };
+      }
+      return { state: "error", message: "当前平台不支持计划任务核验。" };
+    } catch (error) {
+      return { state: "error", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   async function reconcile(
     projects: ScheduleProjectDefinition[],
     allowElevation: boolean,
@@ -553,6 +650,7 @@ export function createSystemScheduler(options: {
       };
     },
     getRuntimeStatus,
+    verify,
     reconcile,
     reauthorize(projects) {
       return reconcile(projects, true);

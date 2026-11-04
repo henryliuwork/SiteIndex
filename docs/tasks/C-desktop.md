@@ -124,7 +124,7 @@
 
 - [x] `projects.remove` 只取消本机登记；根目录项目写入 `hidden_projects`，重新添加时恢复；取消登记后校正系统任务，授权失败仍保留取消登记并返回原因。
 - [x] scheduler 校正时缺失项目路径记录警告并跳过；Windows 旧任务因授权拒绝而保留时，保存为孤立任务供后续查询与清理。
-- [ ] `schedule.verify` 检查与修复系统任务。
+- [x] `schedule.verify` 检查任务存在、Windows 触发时间/日期和命令路径；repair 调用统一校正与授权流程并复核。
 - [ ] `schedule.listOrphans` / `removeOrphan` 安全枚举与清理。
 - [ ] Core SEO 状态方法合并后接 IPC。
 
