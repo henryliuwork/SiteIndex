@@ -632,35 +632,45 @@ const searchIndexCache = new WeakMap<readonly unknown[], readonly string[]>();
 
 export function selectRows<T, F = Record<string, unknown>>(
   source: readonly T[], query: ListQuery<F>, searchText: (row: T) => string,
-  matches: (row: T, filters: F) => boolean = () => true,
+  matches: (row: T, filters: F) => boolean,
+  defaultSortField: string,
+  defaultKey: (row: T) => string,
 ): PageResult<T> {
-  const search = query.search?.trim().toLocaleLowerCase();
+  const search = query.search?.trim().toLowerCase();
   let searchIndex = search ? searchIndexCache.get(source) : undefined;
   if (search && !searchIndex) {
-    searchIndex = source.map((row) => searchText(row).toLocaleLowerCase());
+    searchIndex = source.map((row) => searchText(row).toLowerCase());
     searchIndexCache.set(source, searchIndex);
   }
-  let rows = source.filter((row, index) =>
+  const rows = source.filter((row, index) =>
     (!search || searchIndex?.[index]?.includes(search)) && matches(row, (query.filters ?? {}) as F),
   );
-  if (query.sort) {
-    const field = query.sort.field;
-    const factor = query.sort.dir === "asc" ? 1 : -1;
-    rows = [...rows].sort((left, right) => {
-      const a = (left as unknown as Record<string, unknown>)[field];
-      const b = (right as unknown as Record<string, unknown>)[field];
-      const numericA = typeof a === "number" ? a : Number.NaN;
-      const numericB = typeof b === "number" ? b : Number.NaN;
-      if (!Number.isNaN(numericA) && !Number.isNaN(numericB)) return (numericA - numericB) * factor;
-      return String(a ?? "").localeCompare(String(b ?? ""), "zh-CN") * factor;
-    });
-  }
-  const total = rows.length;
-  if (query.pageSize === 0) return { rows, total };
-  const pageSize = Math.max(1, query.pageSize || 20);
-  const start = Math.max(0, query.page - 1) * pageSize;
-  rows = rows.slice(start, start + pageSize);
-  return { rows, total };
+  const field = query.sort?.field ?? defaultSortField;
+  const direction = query.sort?.dir === "desc" ? -1 : 1;
+  const sorted = [...rows].sort((left, right) => {
+    const a = (left as unknown as Record<string, unknown>)[field];
+    const b = (right as unknown as Record<string, unknown>)[field];
+    const primary = compareSortValues(a, b) * direction;
+    return primary || compareMockKeys(defaultKey(left), defaultKey(right));
+  });
+  if (query.pageSize === 0) return { rows: sorted, total: sorted.length };
+  const page = Math.max(1, Math.floor(query.page || 1));
+  const pageSize = Math.max(1, Math.floor(query.pageSize || 20));
+  const start = (page - 1) * pageSize;
+  return { rows: sorted.slice(start, start + pageSize), total: sorted.length };
+}
+
+function compareSortValues(left: unknown, right: unknown): number {
+  if (left === right) return 0;
+  if (left === null || left === undefined) return 1;
+  if (right === null || right === undefined) return -1;
+  if (typeof left === "number" && typeof right === "number") return left < right ? -1 : left > right ? 1 : 0;
+  if (typeof left === "boolean" && typeof right === "boolean") return left ? 1 : -1;
+  return compareMockKeys(String(left), String(right));
+}
+
+function compareMockKeys(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export function productRows(id: ProjectId): ProductView[] {

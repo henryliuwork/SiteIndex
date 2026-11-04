@@ -36,9 +36,20 @@ export function createSeoMock(): SiteIndexApi["seo"] {
         issue_counts: [...issueCounts].map(([rule, value]) => ({ rule, label: labels[rule] ?? rule, severity: value.severity, count: value.count })),
       };
     }),
-    listIssues: (_id, query) => reply(() => selectRows(seoIssues, query, (row) => [row.url, row.rule, row.detail].join(" "), (row, filters) => (!filters.severity || row.severity === filters.severity) && (!filters.status || row.status === filters.status) && (!filters.rules?.length || filters.rules.includes(row.rule)))),
-    listPages: (_id, query: ListQuery<SeoPageFilters>) => reply(() => selectRows(seoPages, query, (row) => [row.url, row.title, row.meta_description].join(" "), (row, filters) => (!filters.page_type || row.page_type === filters.page_type) && (!filters.indexed || (filters.indexed === "yes" ? row.google_indexed === true : filters.indexed === "no" ? row.google_indexed === false : row.google_indexed == null)))),
-    listLinks: (_id, query) => reply(() => selectRows(seoLinks, query, (row) => [row.from, row.to, row.anchor, row.to_type].join(" "))),
+    listIssues: (_id, query) => reply(() => selectRows(
+      seoIssues, query, (row) => [row.url, row.rule, row.detail, row.severity, row.status].join(" "),
+      (row, filters) => (!filters.severity || row.severity === filters.severity) && (!filters.status || row.status === filters.status) && (!filters.rules?.length || filters.rules.includes(row.rule)),
+      "severity", (row) => `${row.url}\u0000${row.rule}`,
+    )),
+    listPages: (_id, query: ListQuery<SeoPageFilters>) => reply(() => selectRows(
+      seoPages, query, (row) => [row.url, row.title, row.meta_description, row.page_type].join(" "),
+      (row, filters) => (!filters.page_type || row.page_type === filters.page_type) && (!filters.indexed || (filters.indexed === "yes" ? row.google_indexed === true : filters.indexed === "no" ? row.google_indexed === false : row.google_indexed == null)),
+      "url", (row) => row.url,
+    )),
+    listLinks: (_id, query) => reply(() => selectRows(
+      seoLinks, query, (row) => [row.from, row.to, row.anchor, row.to_type].join(" "), () => true,
+      "from", (row) => `${row.from}\u0000${row.to}\u0000${row.anchor}`,
+    )),
     orphanPages: () => reply([...orphanSeoPages]),
     getPage: (_id, url) => reply(seoPages.find((page) => page.url === url) ?? null),
     googleSiteUrl: (url) => reply(googleSiteSearchUrl(url)),

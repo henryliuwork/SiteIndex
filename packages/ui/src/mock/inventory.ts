@@ -89,6 +89,7 @@ export function createInventoryMock(): MockInventoryApi {
           && (!filters.watched_only || watchedCategoryKeys.has(row.category))
           && (!priceRange || relatedRows(row).some((child) => priceChangedWithin(child, priceRange)));
       },
+      "sku", (row) => row.sku,
       );
     }),
     dailyReport: (id, date) => reply(() => fixtures.dailyReports.find((report) => report.date === date)?.markdown ?? "# " + projectSummaries[projectKey(id)].domain + " 库存日报 · " + date + "\n\n暂无该日期的日报。"),

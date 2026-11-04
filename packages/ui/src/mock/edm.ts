@@ -8,7 +8,7 @@ export function createEdmMock(): SiteIndexApi["edm"] {
       return { total: rows.length, feed: rows.filter((row) => row.feed_image_url).length, manual: rows.filter((row) => row.manual_image_url).length, none: rows.filter((row) => row.used === "none").length };
     }),
     listImages: (id, query: ListQuery<SkuImageFilters>) => reply(() => {
-      return selectRows(edmImageRows(id), query, (row) => [row.sku, row.title].join(" "), (row, filters) => !filters.view || (filters.view === "in_stock" ? row.stock_status === "in_stock" : filters.view === "no_feed" ? row.feed_image_url == null : filters.view === "has_manual" ? row.manual_image_url != null : row.used === "none"));
+      return selectRows(edmImageRows(id), query, (row) => [row.sku, row.title, row.variant_title].join(" "), (row, filters) => !filters.view || (filters.view === "in_stock" ? row.stock_status === "in_stock" : filters.view === "no_feed" ? row.feed_image_url === null : filters.view === "has_manual" ? row.manual_image_url !== null : row.used === "none"), "sku", (row) => row.sku);
     }),
     setManualImage: (id, sku, url) => reply(() => {
       if (url) manualImages.set(id + ":" + sku, url);
