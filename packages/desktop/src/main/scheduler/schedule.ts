@@ -1,7 +1,7 @@
 import type { JobSchedule, ScheduleConfig, ScheduleState, Weekday } from "@siteindex/shared";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
@@ -51,6 +51,8 @@ export interface ScheduleProjectDefinition {
 
 interface PersistedWindowsScheduleState extends ScheduleRuntimeStatus {
   registered_task_names: string[];
+  project_paths: Record<string, string>;
+  orphaned_tasks: { taskName: string; path: string; reason: string }[];
 }
 
 const LAUNCHD_WEEKDAYS: Record<Weekday, number> = {
@@ -78,6 +80,24 @@ function escapePlist(value: string): string {
 
 function assertSafeProjectId(projectId: string): void {
   if (!projectId || /[\\/\0\r\n]/.test(projectId)) throw new Error("项目标识不能包含路径分隔符。");
+}
+
+function isMissingPath(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  );
+}
+
+async function isDirectory(value: string): Promise<boolean> {
+  try {
+    return (await stat(value)).isDirectory();
+  } catch (error) {
+    if (isMissingPath(error)) return false;
+    throw error;
+  }
 }
 
 function parseTime(time: string): { hour: number; minute: number } {
@@ -130,6 +150,29 @@ function launchdInterval(job: ScheduledJob, schedule: JobSchedule): string {
         `<dict><key>Weekday</key><integer>${LAUNCHD_WEEKDAYS[weekday]}</integer><key>Hour</key><integer>${hour}</integer><key>Minute</key><integer>${minute}</integer></dict>`,
     )
     .join("");
+}
+
+export function projectPathFromWindowsTaskXml(xml: string): string | null {
+  const args = /<Arguments>([\s\S]*?)<\/Arguments>/i.exec(xml)?.[1];
+  if (!args) return null;
+  const decoded = args
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
+  return /--run-job\s+"([^"]+)"/i.exec(decoded)?.[1] ?? null;
+}
+
+function projectIdFromTaskName(taskName: string): string | null {
+  const prefix = taskName.startsWith("\\SiteIndex\\") ? "\\SiteIndex\\" : "SiteIndex - ";
+  if (!taskName.startsWith(prefix)) return null;
+  const suffix = taskName.slice(prefix.length);
+  for (const job of WINDOWS_SCHEDULED_JOBS) {
+    const ending = `-${job}`;
+    if (suffix.endsWith(ending)) return suffix.slice(0, -ending.length);
+  }
+  return null;
 }
 
 export function buildLaunchAgentPlist(definition: LaunchAgentDefinition): string {
@@ -224,6 +267,8 @@ export function createSystemScheduler(options: {
     mode: "system",
     authorization_required: false,
     registered_task_names: [],
+    project_paths: {},
+    orphaned_tasks: [],
   };
   let macProjectIds = new Set<string>();
 
@@ -243,10 +288,35 @@ export function createSystemScheduler(options: {
           Array.isArray(state.registered_task_names) &&
           state.registered_task_names.every((name) => typeof name === "string")
         ) {
+          const projectPaths =
+            typeof state.project_paths === "object" &&
+            state.project_paths !== null &&
+            !Array.isArray(state.project_paths)
+              ? Object.fromEntries(
+                  Object.entries(state.project_paths).filter(
+                    (entry): entry is [string, string] => typeof entry[1] === "string",
+                  ),
+                )
+              : {};
+          const orphanedTasks = Array.isArray(state.orphaned_tasks)
+            ? state.orphaned_tasks.filter(
+                (task): task is PersistedWindowsScheduleState["orphaned_tasks"][number] =>
+                  typeof task === "object" &&
+                  task !== null &&
+                  "taskName" in task &&
+                  typeof task.taskName === "string" &&
+                  "path" in task &&
+                  typeof task.path === "string" &&
+                  "reason" in task &&
+                  typeof task.reason === "string",
+              )
+            : [];
           Object.assign(runtimeState, {
             mode: state.mode,
             authorization_required: state.authorization_required,
             registered_task_names: state.registered_task_names,
+            project_paths: projectPaths,
+            orphaned_tasks: orphanedTasks,
           });
         }
       }
@@ -331,6 +401,18 @@ export function createSystemScheduler(options: {
   ): Promise<ScheduleRuntimeStatus> {
     if (platform === "win32") {
       const state = await loadRuntimeState();
+      const projectPaths = { ...state.project_paths };
+      for (const taskName of state.registered_task_names) {
+        const projectId = projectIdFromTaskName(taskName);
+        if (!projectId || projectPaths[projectId]) continue;
+        try {
+          const xml = await runCommand("schtasks.exe", ["/Query", "/TN", taskName, "/XML"]);
+          const projectPath = projectPathFromWindowsTaskXml(xml);
+          if (projectPath) projectPaths[projectId] = projectPath;
+        } catch {
+          // 已不存在或当前用户不可读时，后续注册器仍负责校正任务状态。
+        }
+      }
       const desired: WindowsTaskDefinition[] = [];
       const obsoleteNames: string[] = [];
       for (const id of removedProjectIds) {
@@ -339,7 +421,16 @@ export function createSystemScheduler(options: {
           obsoleteNames.push(windowsTaskName(id, job), windowsRootTaskName(id, job));
         }
       }
+      const existingProjectIds = new Set<string>();
       for (const project of projects) {
+        if (await isDirectory(project.projectPath)) {
+          existingProjectIds.add(project.projectId);
+        } else {
+          console.warn("跳过不存在的项目计划任务。", { projectId: project.projectId });
+        }
+      }
+      for (const project of projects) {
+        if (!existingProjectIds.has(project.projectId)) continue;
         assertSafeProjectId(project.projectId);
         for (const job of WINDOWS_SCHEDULED_JOBS) {
           const nestedName = windowsTaskName(project.projectId, job);
@@ -367,22 +458,69 @@ export function createSystemScheduler(options: {
         allowElevation,
         state.mode,
       );
+      for (const [id, projectPath] of Object.entries(projectPaths)) {
+        if (existingProjectIds.has(id)) continue;
+        try {
+          await access(projectPath);
+          delete projectPaths[id];
+        } catch (error) {
+          if (!isMissingPath(error)) throw error;
+          // 留存缺失路径，稍后结合注册结果登记仍然存在的任务为孤立任务。
+        }
+      }
+      for (const project of projects) {
+        if (existingProjectIds.has(project.projectId)) projectPaths[project.projectId] = project.projectPath;
+      }
+      const registeredNames = new Set(result.registered_task_names);
+      const orphanedTasks = state.orphaned_tasks.filter((task) => registeredNames.has(task.taskName));
+      for (const [id, projectPath] of Object.entries(projectPaths)) {
+        if (existingProjectIds.has(id)) continue;
+        let missing = false;
+        try {
+          await access(projectPath);
+        } catch (error) {
+          if (!isMissingPath(error)) throw error;
+          missing = true;
+        }
+        if (!missing) continue;
+        const projectTaskNames = WINDOWS_SCHEDULED_JOBS.map((job) => windowsTaskName(id, job));
+        if (!projectTaskNames.some((taskName) => registeredNames.has(taskName))) {
+          delete projectPaths[id];
+          continue;
+        }
+        for (const job of WINDOWS_SCHEDULED_JOBS) {
+          const taskName = windowsTaskName(id, job);
+          if (!registeredNames.has(taskName)) continue;
+          if (orphanedTasks.some((task) => task.taskName === taskName)) continue;
+          orphanedTasks.push({ taskName, path: projectPath, reason: "项目路径不存在，且系统拒绝注销旧计划任务。" });
+        }
+      }
       const nextState: PersistedWindowsScheduleState = {
         mode: result.mode,
         authorization_required: result.authorization_required,
         registered_task_names: result.registered_task_names,
+        project_paths: projectPaths,
+        orphaned_tasks: orphanedTasks,
       };
       await saveRuntimeState(nextState);
       return { mode: nextState.mode, authorization_required: nextState.authorization_required };
     }
 
     if (platform === "darwin") {
-      const currentIds = new Set(projects.map(({ projectId }) => projectId));
+      const availableProjects: ScheduleProjectDefinition[] = [];
+      for (const project of projects) {
+        if (await isDirectory(project.projectPath)) {
+          availableProjects.push(project);
+        } else {
+          console.warn("跳过不存在的项目计划任务。", { projectId: project.projectId });
+        }
+      }
+      const currentIds = new Set(availableProjects.map(({ projectId }) => projectId));
       for (const staleId of new Set([...macProjectIds, ...removedProjectIds])) {
         if (currentIds.has(staleId)) continue;
         for (const job of SCHEDULED_JOBS) await removeMac(staleId, job);
       }
-      for (const project of projects) await registerMac(project);
+      for (const project of availableProjects) await registerMac(project);
       macProjectIds = currentIds;
     }
     return { mode: "system", authorization_required: false };

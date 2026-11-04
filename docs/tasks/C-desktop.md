@@ -123,7 +123,7 @@
 ## v0.1.10 · 项目登记与任务核验
 
 - [x] `projects.remove` 只取消本机登记；根目录项目写入 `hidden_projects`，重新添加时恢复；取消登记后校正系统任务，授权失败仍保留取消登记并返回原因。
-- [ ] 缺失项目路径的计划校正容错与孤立任务登记。
+- [x] scheduler 校正时缺失项目路径记录警告并跳过；Windows 旧任务因授权拒绝而保留时，保存为孤立任务供后续查询与清理。
 - [ ] `schedule.verify` 检查与修复系统任务。
 - [ ] `schedule.listOrphans` / `removeOrphan` 安全枚举与清理。
 - [ ] Core SEO 状态方法合并后接 IPC。
