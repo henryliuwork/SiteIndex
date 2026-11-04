@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildWindowsTaskXml,
   buildLaunchAgentPlist,
   calculateNextRuns,
   createSystemScheduler,
@@ -12,7 +13,7 @@ import {
   type ScheduleProjectDefinition,
 } from "./schedule.js";
 import type { ScheduleConfig } from "@siteindex/shared";
-import type { WindowsTaskRegistrar } from "./windows-tasks.js";
+import { windowsTaskName, type WindowsTaskDefinition, type WindowsTaskRegistrar } from "./windows-tasks.js";
 
 const config: ScheduleConfig = {
   daily: { enabled: true, days: [1, 2, 3, 4, 5], time: "02:00" },
@@ -194,6 +195,54 @@ describe("system schedule definitions", () => {
       warning.mockRestore();
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("verifies Windows task registration, path and trigger settings", async () => {
+    const projectPath = tmpdir();
+    const userId = "SYNTHETIC\\Tester";
+    const definitions: WindowsTaskDefinition[] = (["daily", "weekly", "monthly"] as const).map((job) => ({
+      projectId: "synthetic-project",
+      projectPath,
+      executablePath: "C:\\Synthetic\\SiteIndex.exe",
+      userId,
+      job,
+      schedule: config[job],
+      options: config.options,
+    }));
+    const xmlByName = new Map(
+      definitions.map((definition) => [
+        windowsTaskName(definition.projectId, definition.job),
+        buildWindowsTaskXml(definition),
+      ]),
+    );
+    const scheduler = createSystemScheduler({
+      platform: "win32",
+      executablePath: "C:\\Synthetic\\SiteIndex.exe",
+      runCommand: async (_file, args) => {
+        if (args.length === 0) return userId;
+        const xml = xmlByName.get(args[2] ?? "");
+        if (!xml) throw Object.assign(new Error("task not found"), { detail: "The task does not exist" });
+        return xml;
+      },
+    });
+    const project: ScheduleProjectDefinition = {
+      projectId: "synthetic-project",
+      projectPath,
+      config,
+      isThisDevice: true,
+    };
+
+    await expect(scheduler.verify(project)).resolves.toEqual({ state: "ok" });
+    const dailyName = windowsTaskName(project.projectId, "daily");
+    xmlByName.set(
+      dailyName,
+      buildWindowsTaskXml({ ...definitions[0]!, projectPath: path.join(tmpdir(), "old-project") }),
+    );
+    await expect(scheduler.verify(project)).resolves.toMatchObject({ state: "path_mismatch" });
+    xmlByName.set(dailyName, buildWindowsTaskXml({ ...definitions[0]!, schedule: { ...config.daily, time: "03:00" } }));
+    await expect(scheduler.verify(project)).resolves.toMatchObject({ state: "error" });
+    xmlByName.delete(dailyName);
+    await expect(scheduler.verify(project)).resolves.toMatchObject({ state: "unregistered" });
   });
   it("writes and loads macOS LaunchAgents through launchctl", async () => {
     const homeDirectory = await mkdtemp(path.join(tmpdir(), "siteindex-launchd-test-"));

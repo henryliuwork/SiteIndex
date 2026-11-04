@@ -169,6 +169,7 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
     schedule: {
       get: (...args) => invoke<SiteIndexApi["schedule"]["get"]>("schedule.get", ...args),
       save: (...args) => invoke<SiteIndexApi["schedule"]["save"]>("schedule.save", ...args),
+      verify: (...args) => invoke<NonNullable<SiteIndexApi["schedule"]["verify"]>>("schedule.verify", ...args),
       status: () => invoke<NonNullable<SiteIndexApi["schedule"]["status"]>>("schedule.status"),
       reauthorize: () => invoke<NonNullable<SiteIndexApi["schedule"]["reauthorize"]>>("schedule.reauthorize"),
     },
