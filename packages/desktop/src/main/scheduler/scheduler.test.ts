@@ -10,6 +10,7 @@ import {
   type LaunchAgentDefinition,
 } from "./schedule.js";
 import type { ScheduleConfig } from "@siteindex/shared";
+import type { WindowsTaskRegistrar } from "./windows-tasks.js";
 
 const config: ScheduleConfig = {
   daily: { enabled: true, days: [1, 2, 3, 4, 5], time: "02:00" },
@@ -112,6 +113,25 @@ describe("system schedule definitions", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+  it("requests removal of every task name for an explicitly removed project", async () => {
+    const registrar = {
+      reconcile: vi.fn(async (..._args: Parameters<WindowsTaskRegistrar["reconcile"]>) => ({
+        mode: "system" as const,
+        authorization_required: false,
+        registered_task_names: [],
+      })),
+    };
+    const scheduler = createSystemScheduler({
+      platform: "win32",
+      executablePath: "unused.exe",
+      windowsTaskRegistrar: registrar,
+    });
+    await scheduler.reconcile([], true, ["sample-store"]);
+    const obsolete = registrar.reconcile.mock.calls[0]?.[1];
+    expect(obsolete).toContain("\\SiteIndex\\sample-store-daily");
+    expect(obsolete).toContain("SiteIndex - sample-store-daily");
+    expect(obsolete).toHaveLength(10);
   });
   it("writes and loads macOS LaunchAgents through launchctl", async () => {
     const homeDirectory = await mkdtemp(path.join(tmpdir(), "siteindex-launchd-test-"));

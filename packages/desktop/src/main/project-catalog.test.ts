@@ -64,13 +64,30 @@ describe("project catalog", () => {
     roots.push(root);
     const projectsRoot = path.join(root, "projects");
     const alpha = await createProject(path.join(projectsRoot, "alpha"));
-    const catalogInstance = createProjectCatalog(() => undefined, () => undefined);
+    const catalogInstance = createProjectCatalog(
+      () => undefined,
+      () => undefined,
+    );
     catalog = catalogInstance;
 
     const entries = await catalogInstance.refresh(settings(projectsRoot, [alpha]));
 
     expect(entries).toEqual([{ id: "alpha", path: alpha }]);
     expect(catalogInstance.resolveProject("alpha")).toBe(alpha);
+  });
+
+  it("hides a registered root project without changing its files, then restores it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "siteindex-projects-hidden-"));
+    roots.push(root);
+    const projectsRoot = path.join(root, "projects");
+    const alpha = await createProject(path.join(projectsRoot, "alpha"));
+    catalog = createProjectCatalog(
+      () => undefined,
+      () => undefined,
+    );
+
+    expect(await catalog.refresh({ ...settings(projectsRoot), hidden_projects: [alpha] })).toEqual([]);
+    expect(await catalog.refresh(settings(projectsRoot))).toEqual([{ id: "alpha", path: alpha }]);
   });
 
   it("debounces index and README changes, invalidates the snapshot, and emits the project id", async () => {

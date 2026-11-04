@@ -2,6 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiBridge } from "./api.js";
 
 describe("createApiBridge IPC errors", () => {
+  it("forwards project removal and restores a task cleanup warning", async () => {
+    const invoke = vi.fn(async () => {
+      throw new Error(
+        'Error invoking remote method: __SITEINDEX_IPC_ERROR__:{"code":"UNKNOWN","message":"项目已取消登记，但注销系统计划任务需要管理员授权。"}',
+      );
+    });
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+    await expect(bridge.projects.remove?.("fictional")).rejects.toMatchObject({
+      code: "UNKNOWN",
+      message: expect.stringContaining("项目已取消登记"),
+    });
+    expect(invoke).toHaveBeenCalledWith("si:projects.remove", "fictional");
+  });
   it("restores a serialized error when Electron prefixes the remote method context", async () => {
     const bridge = createApiBridge({
       invoke: async () => {

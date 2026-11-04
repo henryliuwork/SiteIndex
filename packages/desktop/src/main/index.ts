@@ -210,6 +210,7 @@ if (!hasSingleInstanceLock) {
       allowElevation: boolean,
       knownEntries?: Awaited<ReturnType<typeof catalog.refresh>>,
       onTiming?: AddExistingTimingCallback,
+      removedProjectIds?: string[],
     ): Promise<ScheduleRuntimeStatus> => {
       const entries = knownEntries ?? (await catalog.refresh(currentSettings, onTiming));
       const definitions = await Promise.all(
@@ -221,10 +222,8 @@ if (!hasSingleInstanceLock) {
           return { projectId: id, projectPath, config: schedule.config, isThisDevice: runner.is_this_device };
         }),
       );
-      const status = await measureAddExistingPhase(
-        "scheduler.reconcile",
-        onTiming,
-        () => scheduler.reconcile(definitions, allowElevation),
+      const status = await measureAddExistingPhase("scheduler.reconcile", onTiming, () =>
+        scheduler.reconcile(definitions, allowElevation, removedProjectIds),
       );
       await applyScheduleMode(status);
       return status;
@@ -282,6 +281,7 @@ if (!hasSingleInstanceLock) {
       settingsChanged: async (updated, reconcile = true, onTiming) => {
         const projectsChanged =
           currentSettings.projects_root !== updated.projects_root ||
+          JSON.stringify(currentSettings.hidden_projects ?? []) !== JSON.stringify(updated.hidden_projects ?? []) ||
           currentSettings.extra_projects.length !== updated.extra_projects.length ||
           currentSettings.extra_projects.some((entry, index) => entry !== updated.extra_projects[index]);
         currentSettings = updated;

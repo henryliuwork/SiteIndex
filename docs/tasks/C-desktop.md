@@ -120,5 +120,13 @@
 
 ## 交付给其他工作流
 
+## v0.1.10 · 项目登记与任务核验
+
+- [x] `projects.remove` 只取消本机登记；根目录项目写入 `hidden_projects`，重新添加时恢复；取消登记后校正系统任务，授权失败仍保留取消登记并返回原因。
+- [ ] 缺失项目路径的计划校正容错与孤立任务登记。
+- [ ] `schedule.verify` 检查与修复系统任务。
+- [ ] `schedule.listOrphans` / `removeOrphan` 安全枚举与清理。
+- [ ] Core SEO 状态方法合并后接 IPC。
+
 - 给 B：Electron 里的真实 `window.siteindex`；`uiState` 存储
 - 给 A：浏览器路径、device_id、cacheDir 通过 `createCoreService(ctx)` 与 `runJob` 参数传入

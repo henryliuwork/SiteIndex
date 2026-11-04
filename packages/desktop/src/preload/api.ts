@@ -86,6 +86,7 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       inspectFeed: (...args) => invoke<SiteIndexApi["projects"]["inspectFeed"]>("projects.inspectFeed", ...args),
       create: (...args) => invoke<SiteIndexApi["projects"]["create"]>("projects.create", ...args),
       addExisting: (...args) => invoke<SiteIndexApi["projects"]["addExisting"]>("projects.addExisting", ...args),
+      remove: (...args) => invoke<NonNullable<SiteIndexApi["projects"]["remove"]>>("projects.remove", ...args),
       updateConfig: (...args) => invoke<SiteIndexApi["projects"]["updateConfig"]>("projects.updateConfig", ...args),
       onChanged: (callback) => listen("projects.onChanged", callback),
     },
