@@ -1,17 +1,19 @@
-import { beginRun, delay, orphanSeoPages, reply, seoIssues, seoLinks, seoPages, selectRows } from "./context";
+import { beginRun, delay, orphanSeoPages, reply, seoIssuesForProject, seoLinks, seoPages, selectRows, syncProjectSeoAttention } from "./context";
 import type { ListQuery, SeoIssue, SeoPageFilters, SiteIndexApi } from "@siteindex/shared";
 import { googleSiteSearchUrl } from "@siteindex/shared";
 
 export function createSeoMock(): SiteIndexApi["seo"] {
   return {
-    summary: () => reply(() => {
+    summary: (id) => reply(() => {
       const indexable = seoPages.filter((page) => page.indexable).length;
       const indexed = seoPages.filter((page) => page.google_indexed === true).length;
       const schemaPages = seoPages.filter((page) => page.status_code < 400 && page.schema_types.length > 0).length;
       const validPages = seoPages.filter((page) => page.status_code < 400).length;
-      const severityCount = (severity: SeoIssue["severity"]) => seoIssues.filter((issue) => issue.severity === severity).length;
+      const issues = seoIssuesForProject(id);
+      const openIssues = issues.filter((issue) => issue.status === "open");
+      const severityCount = (severity: SeoIssue["severity"]) => openIssues.filter((issue) => issue.severity === severity).length;
       const issueCounts = new Map<string, { severity: SeoIssue["severity"]; count: number }>();
-      for (const issue of seoIssues) {
+      for (const issue of issues) {
         const current = issueCounts.get(issue.rule);
         issueCounts.set(issue.rule, { severity: current?.severity ?? issue.severity, count: (current?.count ?? 0) + 1 });
       }
@@ -28,7 +30,7 @@ export function createSeoMock(): SiteIndexApi["seo"] {
           { key: "pages", label: "已抓取页面", value: String(seoPages.length) },
           { key: "indexable", label: "可索引", value: String(indexable), hint: "无 noindex 且 canonical 指向自身" },
           { key: "indexed", label: "收录", value: indexed + " / " + seoPages.length, hint: "Google site: 检查 · 10-19" },
-          { key: "issues", label: "问题", value: String(seoIssues.length), hint: "高 " + severityCount("high") + " · 中 " + severityCount("mid") + " · 低 " + severityCount("low"), tone: "warn" },
+          { key: "issues", label: "开放问题", value: String(openIssues.length), hint: "高 " + severityCount("high") + " · 中 " + severityCount("mid") + " · 低 " + severityCount("low"), tone: openIssues.length ? "warn" : "ok" },
           { key: "schema", label: "Schema 覆盖", value: schemaPages + " / " + validPages },
           { key: "orphans", label: "孤立页面", value: String(orphanSeoPages.length), hint: "站内无人链接" },
         ],
@@ -36,11 +38,23 @@ export function createSeoMock(): SiteIndexApi["seo"] {
         issue_counts: [...issueCounts].map(([rule, value]) => ({ rule, label: labels[rule] ?? rule, severity: value.severity, count: value.count })),
       };
     }),
-    listIssues: (_id, query) => reply(() => selectRows(
-      seoIssues, query, (row) => [row.url, row.rule, row.detail, row.severity, row.status].join(" "),
+    listIssues: (id, query) => reply(() => selectRows(
+      seoIssuesForProject(id), query, (row) => [row.url, row.rule, row.detail, row.severity, row.status].join(" "),
       (row, filters) => (!filters.severity || row.severity === filters.severity) && (!filters.status || row.status === filters.status) && (!filters.rules?.length || filters.rules.includes(row.rule)),
       "severity", (row) => `${row.url}\u0000${row.rule}`,
     )),
+    setIssueStatus: (id, input) => reply(() => {
+      const issues = seoIssuesForProject(id);
+      const targets = new Set(input.targets.map(({ url, rule }) => `${url}\u0000${rule}`));
+      let updated = 0;
+      for (const issue of issues) {
+        if (!targets.has(`${issue.url}\u0000${issue.rule}`) || issue.status === input.status) continue;
+        issue.status = input.status;
+        updated += 1;
+      }
+      if (updated > 0) syncProjectSeoAttention(id);
+      return { updated };
+    }),
     listPages: (_id, query: ListQuery<SeoPageFilters>) => reply(() => selectRows(
       seoPages, query, (row) => [row.url, row.title, row.meta_description, row.page_type].join(" "),
       (row, filters) => (!filters.page_type || row.page_type === filters.page_type) && (!filters.indexed || (filters.indexed === "yes" ? row.google_indexed === true : filters.indexed === "no" ? row.google_indexed === false : row.google_indexed == null)),

@@ -119,12 +119,13 @@ describe("ProjectCenterPage add existing project flow", () => {
 });
 
 describe("ProjectCenterPage attention list", () => {
-  it("expands reminders by project and links to open SEO issues", async () => {
+  async function renderAttentionList(options: { withoutStatus?: boolean; deferStatus?: boolean } = {}) {
     const mockApi = createMockApi();
     const sourceProjects = await mockApi.projects.list();
     const reminders = ["最近提醒 1", "最近提醒 2", "最近提醒 3", "更早的提醒"];
+    let attention = reminders.length;
     const projects: ProjectSummary[] = sourceProjects.map((project, index) => index === 0
-      ? { ...project, attention: 4, warnings: [] }
+      ? { ...project, attention, warnings: [] }
       : { ...project, attention: 0, warnings: [] });
     const issueRows: SeoIssue[] = reminders.map((detail, index) => ({
       url: "https://demo.example.test/page-" + index,
@@ -135,14 +136,34 @@ describe("ProjectCenterPage attention list", () => {
       first_seen: "2026-11-01",
       last_seen: "2026-11-0" + (4 - index),
     }));
-    mockApi.projects.list = vi.fn(async () => projects);
+    mockApi.projects.list = vi.fn(async () => projects.map((project, index) => index === 0 ? { ...project, attention } : project));
     mockApi.jobs.history = vi.fn(async () => []);
-    mockApi.seo.listIssues = vi.fn(async (_id, query) => ({
-      rows: issueRows.filter((issue) => !query.filters?.status || issue.status === query.filters.status)
+    const listIssues = vi.fn(async (_id, query) => {
+      const filtered = issueRows.filter((issue) => !query.filters?.status || issue.status === query.filters.status);
+      return {
+        rows: filtered
         .sort((a, b) => b.last_seen.localeCompare(a.last_seen))
         .slice((query.page - 1) * query.pageSize, query.page * query.pageSize),
-      total: issueRows.length,
-    }));
+        total: filtered.length,
+      };
+    });
+    mockApi.seo.listIssues = listIssues;
+    let rejectPending!: (error: SiteIndexError) => void;
+    const pendingStatus = new Promise<void>((_resolve, reject) => { rejectPending = reject; });
+    const setIssueStatus = vi.fn(async (_id: ProjectSummary["id"], input: { targets: { url: string; rule: SeoIssue["rule"] }[]; status: SeoIssue["status"] }) => {
+      if (options.deferStatus) await pendingStatus;
+      let updated = 0;
+      for (const issue of issueRows) {
+        if (!input.targets.some((target) => target.url === issue.url && target.rule === issue.rule) || issue.status === input.status) continue;
+        if (issue.status === "open" && input.status !== "open") attention -= 1;
+        if (issue.status !== "open" && input.status === "open") attention += 1;
+        issue.status = input.status;
+        updated += 1;
+      }
+      return { updated };
+    });
+    mockApi.seo.setIssueStatus = setIssueStatus;
+    if (options.withoutStatus) delete mockApi.seo.setIssueStatus;
 
     vi.doMock("../api", () => ({
       api: mockApi,
@@ -153,11 +174,17 @@ describe("ProjectCenterPage attention list", () => {
     }));
     const { ProjectCenterPage } = await import("./ProjectCenterPage");
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(["seo", "summary", sourceProjects[0]!.id], await mockApi.seo.summary(sourceProjects[0]!.id));
     render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter><ProjectCenterPage /></MemoryRouter>
       </QueryClientProvider>,
     );
+    return { mockApi, projects, reminders, queryClient, listIssues, setIssueStatus, rejectPending };
+  }
+
+  it("expands reminders by project and links to open SEO issues", async () => {
+    const { mockApi, projects, reminders } = await renderAttentionList();
 
     fireEvent.click(await screen.findByRole("button", { name: /待处理提醒/ }));
     const panel = screen.getByRole("region", { name: "待处理提醒列表" });
@@ -171,6 +198,64 @@ describe("ProjectCenterPage attention list", () => {
     });
     expect(within(panel).getByRole("link", { name: "去处理" }).getAttribute("href"))
       .toBe("/p/" + projects[0]!.id + "/seo?status=open");
+  });
+
+  it("marks only the selected reminder handled and refreshes the project count and reminder page", async () => {
+    const { mockApi, reminders, queryClient, listIssues } = await renderAttentionList();
+    fireEvent.click(await screen.findByRole("button", { name: /待处理提醒/ }));
+    const panel = screen.getByRole("region", { name: "待处理提醒列表" });
+    const row = (await within(panel).findByText(reminders[0]!)).closest("li")!;
+
+    fireEvent.click(within(row).getByRole("button", { name: "已处理" }));
+
+    await waitFor(() => expect(mockApi.seo.setIssueStatus).toHaveBeenCalledWith("demo", {
+      targets: [{ url: "https://demo.example.test/page-0", rule: "title_missing" }], status: "fixed",
+    }));
+    expect(await within(panel).findByText(reminders[3]!)).toBeTruthy();
+    expect(within(panel).queryByText(reminders[0]!)).toBeNull();
+    await waitFor(() => expect(within(screen.getByRole("button", { name: /待处理提醒/ })).getByText("3")).toBeTruthy());
+    expect(queryClient.getQueryState(["seo", "summary", "demo"])?.isInvalidated).toBe(true);
+    expect(listIssues).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores one reminder through setIssueStatus", async () => {
+    const { mockApi, reminders } = await renderAttentionList();
+    fireEvent.click(await screen.findByRole("button", { name: /待处理提醒/ }));
+    const panel = screen.getByRole("region", { name: "待处理提醒列表" });
+    const row = (await within(panel).findByText(reminders[0]!)).closest("li")!;
+
+    fireEvent.click(within(row).getByRole("button", { name: "忽略" }));
+
+    await waitFor(() => expect(mockApi.seo.setIssueStatus).toHaveBeenCalledWith("demo", {
+      targets: [{ url: "https://demo.example.test/page-0", rule: "title_missing" }], status: "ignored",
+    }));
+    expect(await within(panel).findByText(reminders[3]!)).toBeTruthy();
+    expect(within(panel).queryByText(reminders[0]!)).toBeNull();
+  });
+
+  it("shows the API error beside one reminder and disables only that reminder during the request", async () => {
+    const { reminders, rejectPending } = await renderAttentionList({ deferStatus: true });
+    fireEvent.click(await screen.findByRole("button", { name: /待处理提醒/ }));
+    const panel = screen.getByRole("region", { name: "待处理提醒列表" });
+    const row = (await within(panel).findByText(reminders[0]!)).closest("li")!;
+    const otherRow = (await within(panel).findByText(reminders[1]!)).closest("li")!;
+
+    fireEvent.click(within(row).getByRole("button", { name: "已处理" }));
+    await waitFor(() => expect((within(row).getByRole("button", { name: "已处理" }) as HTMLButtonElement).disabled).toBe(true));
+    expect((within(otherRow).getByRole("button", { name: "已处理" }) as HTMLButtonElement).disabled).toBe(false);
+    rejectPending({ code: "WRITE_FAILED", message: "提醒状态保存失败，请重试。" });
+
+    expect(await within(row).findByRole("alert")).toHaveProperty("textContent", "提醒状态保存失败，请重试。");
+    expect(within(panel).getByText(reminders[0]!)).toBeTruthy();
+  });
+
+  it("hides actions when the optional status method is absent", async () => {
+    const { reminders } = await renderAttentionList({ withoutStatus: true });
+    fireEvent.click(await screen.findByRole("button", { name: /待处理提醒/ }));
+    const panel = screen.getByRole("region", { name: "待处理提醒列表" });
+    const row = (await within(panel).findByText(reminders[0]!)).closest("li")!;
+    expect(within(row).queryByRole("button", { name: "已处理" })).toBeNull();
+    expect(within(row).queryByRole("button", { name: "忽略" })).toBeNull();
   });
 });
 

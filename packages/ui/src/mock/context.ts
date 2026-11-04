@@ -530,6 +530,24 @@ export const seoIssues: SeoIssue[] = [
   { url: "https://demo-store.example.test/blog/example-guide", rule: "thin_content", severity: "low", detail: "内容过短且无站内链接 · 15 词", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
   { url: "https://demo-store.example.test/", rule: "title_length", severity: "low", detail: "Title 过短 · 16 字符，建议 30–60", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
 ];
+export function seoIssuesForProject(id: ProjectId): SeoIssue[] {
+  const domain = projectSummaries[projectKey(id)].domain.toLocaleLowerCase();
+  return seoIssues.filter((issue) => new URL(issue.url).hostname.toLocaleLowerCase() === domain);
+}
+export function syncProjectSeoAttention(id: ProjectId): void {
+  const key = projectKey(id);
+  projectSummaries[key] = {
+    ...projectSummaries[key],
+    attention: seoIssuesForProject(id).filter((issue) => issue.status === "open").length,
+  };
+  notifyProjectChanged(id);
+}
+for (const id of projectIds) {
+  projectSummaries[id] = {
+    ...projectSummaries[id],
+    attention: seoIssuesForProject(id).filter((issue) => issue.status === "open").length,
+  };
+}
 export const seoLinks: SeoLink[] = [
   { from: "https://demo-store.example.test/", to: "https://demo-store.example.test/collections/demo-category-1", anchor: "示例分类 1", to_type: "collection" },
   { from: "https://demo-store.example.test/", to: "https://demo-store.example.test/collections/demo-category-2", anchor: "示例分类 2", to_type: "collection" },

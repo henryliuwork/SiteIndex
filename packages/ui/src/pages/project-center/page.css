@@ -18,8 +18,12 @@ min-height: 88px; padding: 12px 16px;
 .si-center-attention-project { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .si-center-attention-project strong { color: var(--color-ink); font-size: 13px; }
 .si-center-attention-item ul { display: grid; gap: 3px; margin: 0; padding-left: 17px; color: var(--color-ink-2); font-size: 12px; line-height: 1.5; }
-.si-center-attention-item li { display: flex; justify-content: space-between; gap: 10px; }
-.si-center-attention-item li small { flex: none; color: var(--color-muted); font-size: 11px; }
+.si-center-attention-item li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.si-center-attention-copy { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; }
+.si-center-attention-copy > span { min-width: 0; }
+.si-center-attention-copy small { flex: none; color: var(--color-muted); font-size: 11px; }
+.si-center-attention-actions { display: flex; flex: none; gap: 5px; }
+.si-center-attention-action-error { grid-column: 1 / -1; color: var(--color-danger); font-size: 11px; line-height: 1.4; }
 .si-center-attention-item > .si-muted { margin: 0; }
 .si-center-attention-error { padding: 0; border: 0; background: transparent; }
 
@@ -290,5 +294,11 @@ min-height: 240px;
 @media (max-width: 900px) {
 .si-center-attention-item {
 grid-template-columns: minmax(0, 1fr);
+}
+}
+
+@media (max-width: 760px) {
+.si-center-attention-copy {
+align-items: flex-start; flex-direction: column; gap: 2px;
 }
 }
