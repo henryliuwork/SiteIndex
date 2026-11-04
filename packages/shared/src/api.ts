@@ -95,6 +95,8 @@ export interface AppSettings {
   device_name: string;
   projects_root: string;
   extra_projects: string[];
+  /** 仅用于本机项目中心隐藏；项目文件保持不变。 */
+  hidden_projects?: string[];
   cache_dir: string;
   browser: { channel: "msedge" | "chrome" | "custom"; executable_path: string | null };
   notify: { on_failure: boolean; on_success: boolean; oos_threshold: number | null; dingtalk_webhook: string | null };
@@ -427,6 +429,8 @@ export interface SiteIndexApi {
     inspectFeed(feedUrls: string[], opts: { sku_field: string; category_depth: number }): Promise<FeedInspectResult>;
     create(input: CreateProjectInput): Promise<{ id: ProjectId; runId: string }>;
     addExisting(path: string): Promise<ProjectSummary>;
+    /** 仅取消本机登记，不删除项目目录中的任何文件。 */
+    remove?(id: ProjectId): Promise<void>;
     updateConfig(id: ProjectId, patch: Partial<SiteConfig>): Promise<SiteConfig>;
     onChanged(cb: (id: ProjectId) => void): Unsubscribe;
   };
@@ -455,6 +459,10 @@ export interface SiteIndexApi {
   seo: {
     summary(id: ProjectId): Promise<SeoSummary>;
     listIssues(id: ProjectId, q: ListQuery<SeoIssueFilters>): Promise<PageResult<SeoIssue>>;
+    /** 按 URL + 规则键批量更新问题状态；兼容旧 bridge，待 Core/IPC 接入后成为常用方法。 */
+    setIssueStatus?(id: ProjectId, input: { targets: { url: string; rule: SeoIssue["rule"] }[]; status: SeoIssue["status"] }): Promise<{ updated: number }>;
+    /** 整类规则忽略状态；落盘与下次 weekly 的状态继承由 Core 实现。 */
+    setRuleIgnored?(id: ProjectId, rule: SeoIssue["rule"], ignored: boolean): Promise<{ updated: number }>;
     listPages(id: ProjectId, q: ListQuery<SeoPageFilters>): Promise<PageResult<SeoPage>>;
     listLinks(id: ProjectId, q: ListQuery): Promise<PageResult<SeoLink>>;
     orphanPages(id: ProjectId): Promise<string[]>;
@@ -511,6 +519,9 @@ export interface SiteIndexApi {
   schedule: {
     get(id: ProjectId): Promise<ScheduleState>;
     save(id: ProjectId, config: ScheduleConfig): Promise<ScheduleState>;
+    verify?(id: ProjectId, opts?: { repair?: boolean }): Promise<{ state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error"; message?: string; repaired?: boolean }>;
+    listOrphans?(): Promise<{ taskName: string; path: string; reason: string }[]>;
+    removeOrphan?(taskName: string): Promise<void>;
     status?(): Promise<ScheduleRuntimeStatus>;
     reauthorize?(): Promise<ScheduleRuntimeStatus>;
   };
