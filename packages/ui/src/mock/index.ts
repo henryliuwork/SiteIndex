@@ -22,7 +22,9 @@ import { createSkillsMock } from "./skills";
 import { createShellMock } from "./shell";
 import { createUpdatesMock } from "./updates";
 
-export function createMockApi(): SiteIndexApi {
+export function createMockApi(options: { seoIssueStatus?: boolean } = {}): SiteIndexApi {
+  const seo = createSeoMock();
+  if (!options.seoIssueStatus) delete seo.setIssueStatus;
   return Object.assign({
     app: createAppMock(),
     uiState: createUiStateMock(),
@@ -32,7 +34,7 @@ export function createMockApi(): SiteIndexApi {
     overview: createOverviewMock(),
     inventory: createInventoryMock(),
     products: createProductsMock(),
-    seo: createSeoMock(),
+    seo,
     content: createContentMock(),
     edm: createEdmMock(),
     design: createDesignMock(),

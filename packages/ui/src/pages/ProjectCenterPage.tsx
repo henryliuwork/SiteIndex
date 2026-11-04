@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { FolderOpen, MoreHorizontal, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { Kpi, ListQuery, ProjectSummary, RunLog } from "@siteindex/shared";
+import type { Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, KpiCard } from "../components";
@@ -236,6 +236,34 @@ function AttentionKpi({ count, expanded, onToggle }: { count: number; expanded: 
   </button>;
 }
 
+function AttentionIssueRow({ project, issue }: { project: ProjectSummary; issue: SeoIssue }) {
+  const queryClient = useQueryClient();
+  const statusMutation = useMutation({
+    mutationFn: (status: "fixed" | "ignored") => {
+      if (!api.seo.setIssueStatus) throw new Error("该功能暂不可用。");
+      return api.seo.setIssueStatus(project.id, { targets: [{ url: issue.url, rule: issue.rule }], status });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        invalidateProjectSummary(queryClient, project.id),
+        queryClient.invalidateQueries({ queryKey: ["projects", project.id, "seo", "issues", "open", "recent"], exact: true }),
+        queryClient.invalidateQueries({ queryKey: ["seo", "issues", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["seo", "summary", project.id] }),
+      ]);
+    },
+  });
+  const canSetStatus = typeof api.seo.setIssueStatus === "function";
+
+  return <li>
+    <div className="si-center-attention-copy"><span>{issue.detail}</span><small>{issue.last_seen}</small></div>
+    {canSetStatus && <div className="si-center-attention-actions">
+      <Button size="small" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate("fixed")}>已处理</Button>
+      <Button size="small" disabled={statusMutation.isPending} onClick={() => statusMutation.mutate("ignored")}>忽略</Button>
+    </div>}
+    {statusMutation.isError && <small className="si-center-attention-action-error" role="alert">{apiErrorMessage(statusMutation.error, "更新提醒状态失败，请重试。")}</small>}
+  </li>;
+}
+
 function AttentionDetails({ project }: { project: ProjectSummary }) {
   const issuesQuery = useQuery({
     queryKey: ["projects", project.id, "seo", "issues", "open", "recent"],
@@ -254,9 +282,7 @@ function AttentionDetails({ project }: { project: ProjectSummary }) {
     </div>
     {issuesQuery.isLoading ? <p className="si-muted" role="status">正在读取最近提醒…</p>
       : issuesQuery.isError ? <ApiErrorNotice className="si-center-attention-error" label="提醒加载失败。" error={issuesQuery.error} onRetry={() => void issuesQuery.refetch()} />
-      : issues.length > 0 ? <ul>{issues.map((issue) => <li key={project.id + ":" + issue.url + ":" + issue.rule}>
-        <span>{issue.detail}</span><small>{issue.last_seen}</small>
-      </li>)}</ul>
+      : issues.length > 0 ? <ul>{issues.map((issue) => <AttentionIssueRow key={project.id + ":" + issue.url + ":" + issue.rule} project={project} issue={issue} />)}</ul>
       : <p className="si-muted" role="status">暂无可展示的待处理提醒。</p>}
     <Link className="si-button si-button-small" to={"/p/" + project.id + "/seo?status=open"}>去处理</Link>
   </article>;
