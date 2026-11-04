@@ -32,6 +32,8 @@ export interface SystemScheduler {
   getState(projectId: string, projectPath: string, config: ScheduleConfig): Promise<ScheduleState>;
   getRuntimeStatus(): Promise<ScheduleRuntimeStatus>;
   verify(project: ScheduleProjectDefinition): Promise<ScheduleVerification>;
+  listOrphans(projects: { projectPath: string }[]): Promise<{ taskName: string; path: string; reason: string }[]>;
+  removeOrphan(taskName: string): Promise<void>;
   reconcile(
     projects: ScheduleProjectDefinition[],
     allowElevation: boolean,
@@ -106,6 +108,49 @@ async function isDirectory(value: string): Promise<boolean> {
     if (isMissingPath(error)) return false;
     throw error;
   }
+}
+
+function isSiteIndexTaskName(taskName: string): boolean {
+  return taskName.replace(/^\\+/, "").toLowerCase().startsWith("siteindex");
+}
+
+export function parseWindowsTaskNamesCsv(output: string): string[] {
+  const rows: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let index = 0; index < output.length; index += 1) {
+    const character = output[index]!;
+    if (character === '"') {
+      if (inQuotes && output[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else inQuotes = !inQuotes;
+    } else if (character === "," && !inQuotes) {
+      rows.push(field);
+      field = "";
+      while (index + 1 < output.length && output[index + 1] !== "\n" && output[index + 1] !== "\r") index += 1;
+    } else if ((character === "\n" || character === "\r") && !inQuotes) {
+      if (field.trim()) rows.push(field.trim());
+      field = "";
+      while (index + 1 < output.length && (output[index + 1] === "\n" || output[index + 1] === "\r")) index += 1;
+    } else field += character;
+  }
+  if (field.trim()) rows.push(field.trim());
+  return rows.map((name) => name.replace(/^\uFEFF/, "")).filter(isSiteIndexTaskName);
+}
+
+function pathKey(value: string): string {
+  const normalized = path.win32.resolve(value);
+  return normalized.toLowerCase();
+}
+
+function taskIdentity(taskName: string): string | null {
+  const normalized = taskName
+    .replace(/^\\+/, "")
+    .replace(/^siteindex\\/i, "")
+    .replace(/^siteindex\s*-\s*/i, "");
+  const match = /^(.*)-(daily|validate|weekly|readme|monthly)$/i.exec(normalized);
+  return match ? `${match[1]!.toLowerCase()}-${match[2]!.toLowerCase()}` : null;
 }
 
 function parseTime(time: string): { hour: number; minute: number } {
@@ -624,6 +669,57 @@ export function createSystemScheduler(options: {
   }
 
   return {
+    async listOrphans(projects) {
+      if (platform !== "win32") return [];
+      const activePaths = new Set(projects.map(({ projectPath }) => pathKey(projectPath)));
+      const output = await runCommand("schtasks.exe", ["/Query", "/FO", "CSV", "/NH"]);
+      const taskNames = parseWindowsTaskNamesCsv(output);
+      const orphans: { taskName: string; path: string; reason: string }[] = [];
+      for (const taskName of taskNames) {
+        let xml: string;
+        try {
+          xml = await runCommand("schtasks.exe", ["/Query", "/TN", taskName, "/XML"]);
+        } catch {
+          continue;
+        }
+        const projectPath = projectPathFromWindowsTaskXml(xml);
+        if (!projectPath) continue;
+        const registered = activePaths.has(pathKey(projectPath));
+        let directoryExists = true;
+        try {
+          directoryExists = (await stat(projectPath)).isDirectory();
+        } catch (error) {
+          const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+          if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+          directoryExists = false;
+        }
+        if (registered && directoryExists) continue;
+        orphans.push({
+          taskName,
+          path: projectPath,
+          reason: !directoryExists ? "任务指向的项目路径已不存在。" : "任务所属项目已从本机取消登记。",
+        });
+      }
+      return orphans;
+    },
+    async removeOrphan(taskName) {
+      if (platform !== "win32") throw new Error("当前平台不支持 Windows 计划任务清理。");
+      if (!isSiteIndexTaskName(taskName)) throw new Error("只能清理名称以 SiteIndex 开头的计划任务。");
+      const state = await loadRuntimeState();
+      const identity = taskIdentity(taskName);
+      const result = await windowsTaskRegistrar.reconcile([], [taskName], [], true, state.mode);
+      if (result.authorization_required) throw new Error("删除计划任务需要管理员授权，任务尚未清理。");
+      const registeredNames = state.registered_task_names.filter((name) => {
+        if (name.toLowerCase() === taskName.toLowerCase()) return false;
+        return !identity || taskIdentity(name) !== identity;
+      });
+      await saveRuntimeState({
+        ...state,
+        mode: result.mode,
+        authorization_required: result.authorization_required,
+        registered_task_names: registeredNames,
+      });
+    },
     async getState(projectId, _projectPath, config) {
       if (platform === "win32") {
         const state = await loadRuntimeState();
