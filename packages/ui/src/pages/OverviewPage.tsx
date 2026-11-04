@@ -6,6 +6,7 @@ import type { AttentionItem, OverviewData, ProjectDetail, SyncState } from "@sit
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, KpiCard, ProjectHeader, ProjectTabPanel } from "../components";
+import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
 };
@@ -115,15 +116,15 @@ export function OverviewPage() {
           {overview.attention.length ? <ul>
             {overview.attention.map((item, index) => <li key={item.text + index}>
               <Chip tone={severityTone(item.severity)}>{severityLabel(item.severity)}</Chip>
-              <span className="si-overview-attention-text">{item.text}</span>
-              <a href={item.link} onClick={(event) => { event.preventDefault(); navigate(item.link); }}>{item.link_label}<ExternalLink size={12} aria-hidden="true" /></a>
+              <span className="si-overview-attention-text">{labelAttentionText(item.text)}</span>
+              <a href={attentionDestination(item.link, id)} onClick={(event) => { event.preventDefault(); navigate(attentionDestination(item.link, id)); }}>{item.link_label}<ExternalLink size={12} aria-hidden="true" /></a>
             </li>)}
           </ul> : <div className="si-empty-state"><Check size={16} />当前没有需要处理的事项。</div>}
         </section>
 
         <section className="si-overview-readme si-panel">
           <div className="si-panel-heading"><h2>README · 项目概况</h2><a href={"#/p/" + id + "/readme"} onClick={(event) => { event.preventDefault(); navigate("/p/" + id + "/readme"); }}>编辑 README</a></div>
-          <p>{overview.readme.overview}</p>
+          <OverviewSummary markdown={overview.readme.overview} />
           <div className="si-overview-focus"><span>当前重点</span><p>{overview.readme.focus}</p></div>
         </section>
       </div>

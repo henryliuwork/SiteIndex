@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, ExternalLink, FileDown, Globe2, RefreshCw } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { gradeDescriptionLength, gradeTitleLength } from "@siteindex/shared";
 import type {
   JobProgress, JobResult, ListQuery, PageType, SeoIssue, SeoIssueFilters, SeoLink,
@@ -11,6 +11,8 @@ import type {
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, LengthBadge, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
+import { issueLabels } from "./seo/labels";
+import { issueFiltersFromSearchParams } from "./seo/query-params";
 
 type SeoView = "issues" | "pages" | "links";
 const pageTypes: { value: PageType | "all"; label: string }[] = [
@@ -21,16 +23,6 @@ const severityOptions: { value: Severity | "all"; label: string }[] = [
   { value: "all", label: "全部" }, { value: "high", label: "高" }, { value: "mid", label: "中" }, { value: "low", label: "低" },
 ];
 const pageTypeLabels: Record<PageType, string> = { home: "首页", collection: "分类", product: "产品", blog: "博客", page: "页面", other: "其他" };
-const issueLabels: Record<string, string> = {
-  http_4xx: "页面 4xx", http_5xx: "页面 5xx", redirect_chain: "重定向链", noindex: "noindex",
-  canonical_other: "Canonical 指向其他页面", canonical_missing: "Canonical 缺失", not_in_sitemap: "未在 Sitemap 中",
-  title_missing: "Title 缺失", desc_missing: "Meta description 缺失", title_length: "Title 长度异常",
-  desc_length: "Description 长度异常", title_duplicate: "Title 重复", desc_duplicate: "Description 重复",
-  h1_missing: "H1 缺失", h1_multiple: "H1 多个", schema_missing: "Schema 缺失", schema_error: "Schema 错误",
-  img_alt_missing: "图片 Alt 缺失", thin_content: "内容过短", orphan: "孤立页面",
-  title_too_short: "Title 过短", title_too_long: "Title 过长", desc_too_short: "Description 过短",
-  desc_too_long: "Description 过长", hreflang_mismatch: "hreflang 异常", url_too_long: "URL 过长",
-};
 const severityLabels: Record<Severity, string> = { high: "高", mid: "中", low: "低" };
 const severityTones: Record<Severity, "danger" | "warn" | "neutral"> = { high: "danger", mid: "warn", low: "neutral" };
 const initialIssueQuery: ListQuery<SeoIssueFilters> = { page: 1, pageSize: 100, filters: {} };
@@ -134,9 +126,12 @@ function SeoDetail({
 
 export function SeoPage() {
   const { id = "demo" } = useParams();
+  const [searchParams] = useSearchParams();
+  const ruleParam = searchParams.get("rule");
+  const statusParam = searchParams.get("status");
   const queryClient = useQueryClient();
   const [view, setView] = useState<SeoView>("issues");
-  const [issueQuery, setIssueQuery] = useState(initialIssueQuery);
+  const [issueQuery, setIssueQuery] = useState<ListQuery<SeoIssueFilters>>(() => ({ ...initialIssueQuery, filters: issueFiltersFromSearchParams(searchParams) }));
   const [pageQuery, setPageQuery] = useState(initialPageQuery);
   const [linkQuery, setLinkQuery] = useState(initialLinkQuery);
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
@@ -198,9 +193,9 @@ export function SeoPage() {
   const selectedRules = issueQuery.filters?.rules ?? [];
 
   useEffect(() => {
-    setView("issues"); setIssueQuery(initialIssueQuery); setPageQuery(initialPageQuery); setLinkQuery(initialLinkQuery);
+    setView("issues"); setIssueQuery({ ...initialIssueQuery, filters: issueFiltersFromSearchParams(searchParams) }); setPageQuery(initialPageQuery); setLinkQuery(initialLinkQuery);
     setSelectedUrl(null); setSelectedLink(null); setFeedback("");
-  }, [id]);
+  }, [id, ruleParam, statusParam, searchParams]);
 
   useEffect(() => {
     if (!activeRunId) return;
