@@ -9,19 +9,31 @@ type MockInventoryApi = Omit<SiteIndexApi["inventory"], "summary"> & {
 
 function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
   const groups = new Map<string, SkuStockView[]>();
+  const existingSkus = new Set(rows.map((row) => row.sku));
   for (const row of rows) {
-    if (!row.parent_sku) continue;
+    if (!row.parent_sku || existingSkus.has(row.parent_sku)) continue;
     const children = groups.get(row.parent_sku) ?? [];
     children.push(row);
     groups.set(row.parent_sku, children);
   }
-  return [...groups].map(([parentSku, children]) => {
+  const parents = [...groups].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([parentSku, children]) => {
+    children.sort((a, b) => a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0);
     const representative = children[0]!;
+    const categoryCounts = new Map<string, number>();
+    for (const child of children) categoryCounts.set(child.category, (categoryCounts.get(child.category) ?? 0) + 1);
+    const category = [...categoryCounts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))[0]?.[0] ?? "";
+    const stockStatus: SkuStockView["stock_status"] = children.some((child) => child.stock_status === "in_stock") ? "in_stock"
+      : children.every((child) => child.stock_status === "out_of_stock") ? "out_of_stock"
+        : children.some((child) => child.stock_status === "preorder") ? "preorder" : "unknown";
     return {
       ...representative,
       sku: parentSku,
       variant_title: null,
-      stock_status: children.some((child) => child.stock_status === "in_stock") ? "in_stock" : representative.stock_status,
+      category,
+      price: Math.min(...children.map((child) => child.price)),
+      stock_status: stockStatus,
+      since: FIXED_TODAY,
+      days_in_status: 0,
       online_rate_7d: null,
       online_rate_30d: null,
       history_30d: "u".repeat(30),
@@ -35,6 +47,8 @@ function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
       in_stock_children_count: children.filter((child) => child.stock_status === "in_stock").length,
     };
   });
+  const groupedChildren = new Set([...groups.values()].flatMap((children) => children.map((child) => child.sku)));
+  return [...parents, ...rows.filter((row) => !groupedChildren.has(row.sku))];
 }
 
 function priceChangedWithin(row: SkuStockView, range: HistoryRange): boolean {
@@ -52,18 +66,28 @@ export function createInventoryMock(): MockInventoryApi {
       const filters = query.filters ?? {};
       const watchedCategories = projectConfigs[key].categories.watched ?? [];
       const watchedCategoryKeys = new Set(watchedCategories.flatMap((item) => [item.slug, item.name]).map((value) => value?.trim()).filter((value): value is string => Boolean(value)));
-      const source: MockSkuRow[] = filters.parent_only ? parentRows(rowsByProject[key]) : rowsByProject[key];
+      const parentView = Boolean(filters.parent_only && projectConfigs[key].sku_grouping?.enabled);
+      const source: MockSkuRow[] = parentView ? parentRows(rowsByProject[key]) : rowsByProject[key];
+      const childrenByParent = new Map<string, SkuStockView[]>();
+      if (parentView) for (const row of rowsByProject[key]) {
+        if (!row.parent_sku) continue;
+        const children = childrenByParent.get(row.parent_sku) ?? [];
+        children.push(row);
+        childrenByParent.set(row.parent_sku, children);
+      }
+      const relatedRows = (row: SkuStockView) => row.is_parent ? childrenByParent.get(row.sku) ?? [] : [row];
       return selectRows(
       source, query,
-      (row) => [row.sku, row.title, row.variant_title, row.category].join(" "),
+      (row) => [row.sku, row.title, row.variant_title, row.category,
+        ...(row.is_parent ? relatedRows(row).map((child) => child.sku) : [])].join(" "),
       (row, filters) => {
         const status = filters.status as SkuStockFilters["status"];
         const category = filters.category as string | undefined;
         const priceRange = filters.price_changed_within as HistoryRange | undefined;
-        return (!status || (status === "today" ? todaySkus[key].has(row.sku) : row.stock_status === status))
+        return (!status || (status === "today" ? relatedRows(row).some((child) => todaySkus[key].has(child.sku)) : row.stock_status === status))
           && (!category || row.category === category)
           && (!filters.watched_only || watchedCategoryKeys.has(row.category))
-          && (!priceRange || priceChangedWithin(row, priceRange));
+          && (!priceRange || relatedRows(row).some((child) => priceChangedWithin(child, priceRange)));
       },
       );
     }),

@@ -84,6 +84,7 @@ import {
   type RegisteredProjectPath,
 } from "../projects/create-guard";
 import { hasPriceChangeWithin } from "../inventory/price-history";
+import { parentStockRows } from "../inventory/parent-stock-view";
 import { runDaily } from "../jobs/daily";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
@@ -815,6 +816,7 @@ function inventorySummary(snapshot: ProjectSnapshot, range: InventorySummaryRang
     trend: { dates, series: trend },
     category_rates: categoryRates,
     category_source: snapshot.config.categories?.mode ?? "feed",
+    timezone: snapshot.config.timezone,
     uncategorized: snapshot.skus.filter((row) => row.status === "active" && row.category === "uncategorized").length,
     today: inventoryEvents(snapshot),
   };
@@ -1579,20 +1581,27 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     listSkus: async (id, query) => {
       const snapshot = await load(resolve(id));
       const filters = query.filters;
+      const priceRange = filters?.price_changed_within;
+      const parentView = Boolean(filters?.parent_only && snapshot.config.sku_grouping?.enabled);
+      const grouped = parentView ? parentStockRows(snapshot.skuStock, snapshot.asOf) : null;
+      const source = grouped?.rows ?? snapshot.skuStock;
+      const relatedRows = (row: SkuStockView): readonly SkuStockView[] =>
+        row.is_parent ? grouped?.childrenByParent.get(row.sku) ?? [] : [row];
       const todaySkus = new Set(snapshot.events.filter((event) => event.date === snapshot.asOf).map((event) => event.sku));
       const watchedCategoryTokens = filters?.watched_only
         ? new Set(mergedCategoryRates(snapshot).filter((category) => category.watched).flatMap((category) => [...category.tokens]))
         : null;
-      const rows = snapshot.skuStock.filter((row) => {
-        if (filters?.status === "today" && !todaySkus.has(row.sku)) return false;
+      const rows = source.filter((row) => {
+        if (filters?.status === "today" && !relatedRows(row).some((child) => todaySkus.has(child.sku))) return false;
         if (filters?.status && filters.status !== "today" && row.stock_status !== filters.status) return false;
         if (filters?.category && row.category !== filters.category) return false;
-        if (filters?.price_changed_within
-          && !hasPriceChangeWithin(row.price_history, filters.price_changed_within, snapshot.asOf)) return false;
+        if (priceRange
+          && !relatedRows(row).some((child) => hasPriceChangeWithin(child.price_history, priceRange, snapshot.asOf))) return false;
         if (watchedCategoryTokens && !categoryIdentityTokens({ slug: row.category }).some((token) => watchedCategoryTokens.has(token))) return false;
         return true;
       });
-      return paginate(rows, query, (row) => [row.sku, row.title, row.variant_title, row.category], "sku", (row) => row.sku);
+      return paginate(rows, query, (row) => [row.sku, row.title, row.variant_title, row.category,
+        ...(row.is_parent ? (grouped?.childrenByParent.get(row.sku) ?? []).map((child) => child.sku) : [])], "sku", (row) => row.sku);
     },
     dailyReport: async (id, date) => {
       const projectPath = resolve(id);

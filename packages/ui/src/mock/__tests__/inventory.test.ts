@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HistoryRange } from "@siteindex/shared";
-import { FIXED_TODAY } from "../context";
+import { FIXED_TODAY, rowsByProject } from "../context";
 import { createInventoryMock } from "../inventory";
 
 describe("inventory range mock", () => {
@@ -42,5 +42,27 @@ describe("inventory watched categories mock", () => {
 
     expect(result.total).toBeGreaterThan(0);
     expect(result.rows.every((row) => row.category === "demo-category-1")).toBe(true);
+  });
+});
+
+describe("inventory parent view mock", () => {
+  it("keeps independent SKUs and resolves child SKU searches to the parent", async () => {
+    const api = createInventoryMock();
+    const original = rowsByProject.demo;
+    const sample = original[0]!;
+    rowsByProject.demo = [
+      { ...sample, sku: "DEMO001A01", parent_sku: "DEMO001A", stock_status: "in_stock", price: 30 },
+      { ...sample, sku: "DEMO001A02", parent_sku: "DEMO001A", stock_status: "out_of_stock", price: 20 },
+      { ...sample, sku: "INDEPENDENT", parent_sku: null, stock_status: "unknown" },
+    ];
+    try {
+      const result = await api.listSkus("demo", { page: 1, pageSize: 0, filters: { parent_only: true } });
+      expect(result.rows.map((row) => row.sku)).toEqual(["DEMO001A", "INDEPENDENT"]);
+      expect(result.rows[0]).toMatchObject({ price: 20, stock_status: "in_stock", children_count: 2, in_stock_children_count: 1 });
+      const found = await api.listSkus("demo", { page: 1, pageSize: 0, search: "DEMO001A02", filters: { parent_only: true } });
+      expect(found.rows.map((row) => row.sku)).toEqual(["DEMO001A"]);
+    } finally {
+      rowsByProject.demo = original;
+    }
   });
 });
