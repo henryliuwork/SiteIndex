@@ -10,11 +10,10 @@ import type {
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, LengthBadge, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
-import { issueLabels } from "./seo/labels";
-import { issueFiltersFromSearchParams } from "./seo/query-params";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, KpiCard, LengthBadge, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
+import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./seo/filters";
+import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams, type SeoSearchParamPatch, type SeoView } from "./seo/query-params";
 
-type SeoView = "issues" | "pages" | "links";
 const pageTypes: { value: PageType | "all"; label: string }[] = [
   { value: "all", label: "全部" }, { value: "home", label: "首页" }, { value: "collection", label: "分类" },
   { value: "product", label: "产品" }, { value: "blog", label: "博客" }, { value: "page", label: "页面" }, { value: "other", label: "其他" },
@@ -23,6 +22,16 @@ const severityOptions: { value: Severity | "all"; label: string }[] = [
   { value: "all", label: "全部" }, { value: "high", label: "高" }, { value: "mid", label: "中" }, { value: "low", label: "低" },
 ];
 const pageTypeLabels: Record<PageType, string> = { home: "首页", collection: "分类", product: "产品", blog: "博客", page: "页面", other: "其他" };
+const issueLabels: Record<string, string> = {
+  http_4xx: "页面 4xx", http_5xx: "页面 5xx", redirect_chain: "重定向链", noindex: "noindex",
+  canonical_other: "Canonical 指向其他页面", canonical_missing: "Canonical 缺失", not_in_sitemap: "未在 Sitemap 中",
+  title_missing: "Title 缺失", desc_missing: "Meta description 缺失", title_length: "Title 长度异常",
+  desc_length: "Description 长度异常", title_duplicate: "Title 重复", desc_duplicate: "Description 重复",
+  h1_missing: "H1 缺失", h1_multiple: "H1 多个", schema_missing: "Schema 缺失", schema_error: "Schema 错误",
+  img_alt_missing: "图片 Alt 缺失", thin_content: "内容过短", orphan: "孤立页面",
+  title_too_short: "Title 过短", title_too_long: "Title 过长", desc_too_short: "Description 过短",
+  desc_too_long: "Description 过长", hreflang_mismatch: "hreflang 异常", url_too_long: "URL 过长",
+};
 const severityLabels: Record<Severity, string> = { high: "高", mid: "中", low: "低" };
 const severityTones: Record<Severity, "danger" | "warn" | "neutral"> = { high: "danger", mid: "warn", low: "neutral" };
 const initialIssueQuery: ListQuery<SeoIssueFilters> = { page: 1, pageSize: 100, filters: {} };
@@ -126,14 +135,13 @@ function SeoDetail({
 
 export function SeoPage() {
   const { id = "demo" } = useParams();
-  const [searchParams] = useSearchParams();
-  const ruleParam = searchParams.get("rule");
-  const statusParam = searchParams.get("status");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialRouteFilters = seoRouteFiltersFromSearchParams(searchParams);
   const queryClient = useQueryClient();
-  const [view, setView] = useState<SeoView>("issues");
-  const [issueQuery, setIssueQuery] = useState<ListQuery<SeoIssueFilters>>(() => ({ ...initialIssueQuery, filters: issueFiltersFromSearchParams(searchParams) }));
-  const [pageQuery, setPageQuery] = useState(initialPageQuery);
-  const [linkQuery, setLinkQuery] = useState(initialLinkQuery);
+  const [view, setView] = useState<SeoView>(() => initialRouteFilters.view);
+  const [issueQuery, setIssueQuery] = useState<ListQuery<SeoIssueFilters>>(() => ({ ...initialIssueQuery, filters: initialRouteFilters.issues, search: searchTextFromSearchParams(searchParams) || undefined }));
+  const [pageQuery, setPageQuery] = useState<ListQuery<SeoPageFilters>>(() => ({ ...initialPageQuery, filters: initialRouteFilters.pages, search: searchTextFromSearchParams(searchParams) || undefined }));
+  const [linkQuery, setLinkQuery] = useState<ListQuery>(() => ({ ...initialLinkQuery, search: searchTextFromSearchParams(searchParams) || undefined }));
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [selectedLink, setSelectedLink] = useState<SeoLink | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -188,14 +196,20 @@ export function SeoPage() {
     }
     return [...counts.values()].sort((left, right) => right.count - left.count || left.label.localeCompare(right.label, "zh-CN"));
   }, [issueList?.rows, summary?.issue_counts]);
-  const primaryRuleFilters = ruleFilters.slice(0, 6);
-  const additionalRuleFilters = ruleFilters.slice(6);
   const selectedRules = issueQuery.filters?.rules ?? [];
 
   useEffect(() => {
-    setView("issues"); setIssueQuery({ ...initialIssueQuery, filters: issueFiltersFromSearchParams(searchParams) }); setPageQuery(initialPageQuery); setLinkQuery(initialLinkQuery);
+    const routeFilters = seoRouteFiltersFromSearchParams(searchParams);
+    const search = searchTextFromSearchParams(searchParams) || undefined;
+    setView(routeFilters.view);
+    setIssueQuery({ ...initialIssueQuery, filters: routeFilters.issues, search });
+    setPageQuery({ ...initialPageQuery, filters: routeFilters.pages, search });
+    setLinkQuery({ ...initialLinkQuery, search });
+  }, [id, searchParams]);
+
+  useEffect(() => {
     setSelectedUrl(null); setSelectedLink(null); setFeedback("");
-  }, [id, ruleParam, statusParam, searchParams]);
+  }, [id]);
 
   useEffect(() => {
     if (!activeRunId) return;
@@ -218,19 +232,53 @@ export function SeoPage() {
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
   }, [activeRunId, id, queryClient]);
 
+  const writeSearchParams = (patch: SeoSearchParamPatch) => setSearchParams((current) => updateSeoSearchParams(current, patch), { replace: true });
+  const changeView = (next: SeoView) => {
+    setView(next);
+    writeSearchParams({ view: next === "issues" ? null : next });
+  };
   const setSearch = (search: string) => {
+    writeSearchParams({ q: search || null });
     if (view === "issues") setIssueQuery((current) => ({ ...current, page: 1, search: search || undefined }));
     else if (view === "pages") setPageQuery((current) => ({ ...current, page: 1, search: search || undefined }));
     else setLinkQuery((current) => ({ ...current, page: 1, search: search || undefined }));
   };
-  const setSeverity = (value: Severity | "all" | undefined) => setIssueQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, severity: !value || value === "all" ? undefined : value } }));
-  const toggleRule = (rule: string) => setIssueQuery((current) => {
-    const selected = current.filters?.rules ?? [];
-    const rules = selected.includes(rule) ? selected.filter((item) => item !== rule) : [...selected, rule];
-    return { ...current, page: 1, filters: { ...current.filters, rules: rules.length ? rules : undefined } };
-  });
-  const setPageType = (value: PageType | "all" | undefined) => setPageQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, page_type: !value || value === "all" ? undefined : value } }));
-  const setIndexed = (value: "all" | "yes" | "no" | "unchecked" | undefined) => setPageQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, indexed: !value || value === "all" ? undefined : value } }));
+  const setSeverity = (value: Severity | "all") => {
+    const severity = value === "all" ? undefined : value;
+    setIssueQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, severity } }));
+    writeSearchParams({ severity: severity ?? null });
+  };
+  const toggleRule = (rule: string) => {
+    const nextRules = selectedRules.includes(rule) ? selectedRules.filter((item) => item !== rule) : [...selectedRules, rule];
+    setIssueQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, rules: nextRules.length ? nextRules : undefined } }));
+    writeSearchParams({ rule: nextRules });
+  };
+  const setRules = (rules: string[]) => {
+    setIssueQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, rules: rules.length ? rules : undefined } }));
+    writeSearchParams({ rule: rules });
+  };
+  const clearIssueStatus = () => {
+    setIssueQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: undefined } }));
+    writeSearchParams({ status: null });
+  };
+  const setPageType = (value: PageType | "all") => {
+    const pageType = value === "all" ? undefined : value;
+    setPageQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, page_type: pageType } }));
+    writeSearchParams({ page_type: pageType ?? null });
+  };
+  const setIndexed = (value: "all" | "yes" | "no" | "unchecked") => {
+    const indexed = value === "all" ? undefined : value;
+    setPageQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, indexed } }));
+    writeSearchParams({ indexed: indexed ?? null });
+  };
+  const selectedConditions: { label: string; onRemove: () => void }[] = view === "issues" ? [
+    ...(issueQuery.filters?.severity ? [{ label: `严重级别 · ${severityLabels[issueQuery.filters.severity]}`, onRemove: () => setSeverity("all") }] : []),
+    ...(issueQuery.filters?.status ? [{ label: `状态 · ${issueQuery.filters.status === "open" ? "待处理" : issueQuery.filters.status === "fixed" ? "已处理" : "已忽略"}`, onRemove: clearIssueStatus }] : []),
+    ...selectedRules.map((rule) => ({ label: `问题类型 · ${issueLabels[rule] ?? rule}`, onRemove: () => toggleRule(rule) })),
+  ] : view === "pages" ? [
+    ...(pageQuery.filters?.page_type ? [{ label: `页面类型 · ${pageTypeLabels[pageQuery.filters.page_type]}`, onRemove: () => setPageType("all") }] : []),
+    ...(pageQuery.filters?.indexed ? [{ label: `收录状态 · ${{ yes: "已收录", no: "未收录", unchecked: "未检查" }[pageQuery.filters.indexed]}`, onRemove: () => setIndexed("all") }] : []),
+  ] : [];
 
   const openPage = async (url: string) => {
     try { await api.shell.openExternal(url); }
@@ -275,26 +323,24 @@ export function SeoPage() {
     } />
     <ProjectTabPanel projectId={project.id} tab="seo">
     <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-    <div className="si-seo-controls">
-      <Segmented value={view} options={views} onChange={setView} ariaLabel="SEO 视图" />
-      {view === "issues" && <FilterBar className="si-seo-filterbar">
-        <span className="si-seo-filter-label">严重级别</span>
-        {severityOptions.map((item) => <FilterPill key={item.value} currentValue={issueQuery.filters?.severity ?? "all"} value={item.value} onValueChange={setSeverity}>{item.label}</FilterPill>)}
-        <span className="si-seo-filter-label">问题类型</span>
-        {primaryRuleFilters.map((item) => <button key={item.rule} type="button" className={`si-seo-rule-filter${selectedRules.includes(item.rule) ? " is-active" : ""}`} aria-pressed={selectedRules.includes(item.rule)} onClick={() => toggleRule(item.rule)}>{item.label}<span>{item.count}</span></button>)}
-        {additionalRuleFilters.length > 0 && <details className="si-seo-more-rules">
-          <summary>更多问题类型{selectedRules.some((rule) => additionalRuleFilters.some((item) => item.rule === rule)) ? " · 已选" : ""}</summary>
-          <div className="si-seo-more-rules-menu">{additionalRuleFilters.map((item) => <label key={item.rule}><input type="checkbox" checked={selectedRules.includes(item.rule)} onChange={() => toggleRule(item.rule)} /><span>{item.label}</span><small>{item.count}</small></label>)}</div>
-        </details>}
-      </FilterBar>}
-      {view === "pages" && <FilterBar className="si-seo-filterbar">
-        <span className="si-seo-filter-label">页面类型</span>
-        {pageTypes.map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.page_type ?? "all"} value={item.value} onValueChange={setPageType}>{item.label}</FilterPill>)}
-        <span className="si-seo-filter-label">收录状态</span>
-        {[{ value: "all" as const, label: "全部收录" }, { value: "yes" as const, label: "已收录" }, { value: "no" as const, label: "未收录" }, { value: "unchecked" as const, label: "未检查" }].map((item) => <FilterPill key={item.value} currentValue={pageQuery.filters?.indexed ?? "all"} value={item.value} onValueChange={setIndexed}>{item.label}</FilterPill>)}
+    <div className="si-seo-controls" data-view={view}>
+      <Segmented value={view} options={views} onChange={changeView} ariaLabel="SEO 视图" />
+      {view !== "links" && <FilterBar className="si-seo-filterbar">
+        {view === "issues" ? <>
+          <SeoSingleFilter label="严重级别" value={issueQuery.filters?.severity ?? "all"} options={severityOptions} onChange={setSeverity} />
+          <SeoMultiFilter label="问题类型" values={selectedRules} options={ruleFilters.map(({ rule, label, count }) => ({ value: rule, label, count }))} onChange={setRules} />
+        </> : <>
+          <SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} />
+          <SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[
+            { value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" },
+          ]} onChange={setIndexed} />
+        </>}
       </FilterBar>}
       <SearchInput value={(view === "issues" ? issueQuery : view === "pages" ? pageQuery : linkQuery).search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" />
     </div>
+    {selectedConditions.length > 0 && <div className="si-seo-selected-filters" aria-label="已选筛选条件">
+      {selectedConditions.map((condition) => <SeoFilterChip key={condition.label} label={condition.label} onRemove={condition.onRemove} />)}
+    </div>}
     {progressText && <div className="si-seo-progress" role="status"><span>{progressText}</span>{progressPct != null && <strong>{progressPct}%</strong>}</div>}
     {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className={`si-seo-table-frame si-table-region si-seo-table-${view}`}>
