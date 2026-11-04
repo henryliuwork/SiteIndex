@@ -33,6 +33,7 @@ async function renderOverview(mockApi: ReturnType<typeof createMockApi>) {
   const { OverviewPage } = await import("./OverviewPage");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={queryClient}><MemoryRouter><OverviewPage /></MemoryRouter></QueryClientProvider>);
+  return queryClient;
 }
 
 describe("OverviewPage SEO 规则忽略", () => {
@@ -69,18 +70,20 @@ describe("OverviewPage SEO 规则忽略", () => {
       severity: "mid", text: "Meta description 缺失：2 个页面",
       link: "/p/demo/seo?rule=desc_missing&status=open", link_label: "查看 SEO 问题",
     }];
-    const overviewGet = vi.fn(async () => ({ ...summary, attention }));
-    mockApi.overview.get = overviewGet;
+    mockApi.overview.get = vi.fn(async () => ({ ...summary, attention }));
     const setRuleIgnored = vi.fn(async () => ({ updated: 2 }));
     mockApi.seo.setRuleIgnored = setRuleIgnored;
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    await renderOverview(mockApi);
+    const queryClient = await renderOverview(mockApi);
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
 
     fireEvent.click(await screen.findByRole("button", { name: "忽略" }));
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("影响范围：全站同一规则"));
     await waitFor(() => expect(setRuleIgnored).toHaveBeenCalledWith("demo", "desc_missing", true));
-    await waitFor(() => expect(overviewGet).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["overview", "demo"] })));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["seo", "summary", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["seo", "issues", "demo"] }));
     expect(await screen.findByText("已更新 2 条")).toBeTruthy();
   });
 });
