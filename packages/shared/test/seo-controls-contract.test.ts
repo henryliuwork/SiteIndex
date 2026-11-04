@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import { API_INVOKE_METHODS, PENDING_HANDLERS, SEO_RULE_LABELS } from "../src";
 
 describe("SEO and project control contract", () => {
-  it("registers every optional method as pending until the bridge implements it", () => {
-    const methods = ["projects.remove", "seo.setIssueStatus", "seo.setRuleIgnored",
-      "schedule.verify", "schedule.listOrphans", "schedule.removeOrphan"];
-    for (const method of methods) {
+  it("removes methods with Desktop handlers from pending while retaining unimplemented optional methods", () => {
+    const implementedMethods = ["seo.setIssueStatus", "seo.setRuleIgnored", "schedule.verify"];
+    const pendingMethods = ["projects.remove", "schedule.listOrphans", "schedule.removeOrphan"];
+
+    for (const method of implementedMethods) {
+      expect(API_INVOKE_METHODS).toContain(method);
+      expect(PENDING_HANDLERS).not.toContain(method);
+    }
+    for (const method of pendingMethods) {
       expect(API_INVOKE_METHODS).toContain(method);
       expect(PENDING_HANDLERS).toContain(method);
     }

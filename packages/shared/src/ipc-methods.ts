@@ -103,9 +103,6 @@ export const API_EVENT_METHODS = [
 export const PENDING_HANDLERS: readonly string[] = [
   "sku.previewGrouping",
   "projects.remove",
-  "seo.setIssueStatus",
-  "seo.setRuleIgnored",
-  "schedule.verify",
   "schedule.listOrphans",
   "schedule.removeOrphan",
 ];
