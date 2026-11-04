@@ -15,65 +15,87 @@ min-height: 88px; padding: 11px 14px;
 }
 
 .si-seo-controls {
-display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 9px;
+display: grid; min-width: 0; grid-template-columns: max-content minmax(0, 1fr) minmax(170px, 240px); align-items: center; gap: 9px;
 }
 
 .si-seo-controls > .si-search-input {
-width: min(280px, 24vw); margin-left: auto;
+width: 100%; min-width: 0; margin-left: 0;
 }
 
 .si-seo-filterbar {
-flex: 1 1 520px;
+width: 100%; min-width: 0; flex: none;
 }
 
 .si-seo-filterbar .si-filter-bar-items {
-width: 100%; gap: 6px;
+width: 100%; flex-wrap: nowrap; gap: 6px; overflow: visible;
 }
 
-.si-seo-filter-label {
-margin: 0 2px 0 5px; color: var(--color-muted); font-size: 12px; white-space: nowrap;
+.si-seo-dropdown-trigger {
+display: inline-flex; min-width: 0; min-height: 32px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 9px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
 }
 
-.si-seo-filter-label:first-child {
-margin-left: 0;
+.si-seo-dropdown-trigger:hover, .si-seo-dropdown-options > button:hover {
+border-color: #BACBC1; background: var(--color-subtle);
 }
 
-.si-seo-rule-filter {
-display: inline-flex; min-height: 30px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); font: inherit; font-size: 12px; cursor: pointer;
+.si-seo-dropdown-content {
+width: max-content; min-width: 170px; max-width: min(320px, calc(100vw - 24px)); padding: 7px;
 }
 
-.si-seo-rule-filter > span, .si-seo-more-rules-menu small {
-color: var(--color-muted); font-family: var(--font-mono); font-size: 12px;
+.si-seo-dropdown-options {
+display: grid; gap: 2px;
 }
 
-.si-seo-rule-filter.is-active {
-border-color: var(--color-brand); background: var(--color-brand); color: #fff;
+.si-seo-dropdown-options > button {
+display: flex; min-height: 32px; align-items: center; justify-content: space-between; gap: 12px; padding: 0 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--color-ink-2); font: inherit; font-size: 12px; text-align: left; cursor: pointer;
 }
 
-.si-seo-rule-filter.is-active > span {
-color: #fff;
+.si-seo-dropdown-options > button[aria-pressed="true"] {
+border-color: var(--color-brand-soft); background: var(--color-brand-soft); color: var(--color-brand-strong); font-weight: 600;
 }
 
-.si-seo-more-rules {
-position: relative;
+.si-seo-dropdown-options small {
+color: var(--color-muted); font-family: var(--font-mono); font-size: 11px;
 }
 
-.si-seo-more-rules > summary {
-display: inline-flex; min-height: 30px; align-items: center; padding: 0 9px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); font-size: 12px; cursor: pointer; list-style: none;
+.si-seo-rule-popover { width: 300px; }
+
+.si-seo-dropdown-search {
+display: flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid var(--color-line); border-radius: 6px; color: var(--color-muted);
 }
 
-.si-seo-more-rules > summary::-webkit-details-marker { display: none; }
+.si-seo-dropdown-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--color-ink); font: inherit; font-size: 12px; }
 
-.si-seo-more-rules-menu {
-position: absolute; z-index: 20; top: calc(100% + 5px); right: 0; display: grid; min-width: 220px; gap: 2px; padding: 7px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface); box-shadow: 0 12px 32px rgba(20,24,29,.16);
+.si-seo-rule-options { max-height: 280px; margin-top: 6px; overflow: auto; }
+
+.si-seo-rule-option {
+display: grid; min-height: 32px; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 7px; padding: 0 5px; border-radius: 5px; color: var(--color-ink-2); font-size: 12px; cursor: pointer;
 }
 
-.si-seo-more-rules-menu label {
-display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 7px; min-height: 30px; padding: 0 5px; border-radius: 5px; color: var(--color-ink-2); font-size: 12px; cursor: pointer;
+.si-seo-rule-option:hover { background: var(--color-subtle); }
+.si-seo-rule-option input { accent-color: var(--color-brand); }
+.si-seo-dropdown-empty { padding: 12px 8px; color: var(--color-muted); font-size: 12px; }
+.si-seo-dropdown-footer { display: flex; justify-content: flex-end; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--color-line-soft); }
+
+.si-seo-selected-filters {
+display: flex; min-width: 0; flex-wrap: wrap; gap: 6px; margin-top: -4px;
 }
 
-.si-seo-more-rules-menu label:hover { background: var(--color-subtle); }
-.si-seo-more-rules-menu input { accent-color: var(--color-brand); }
+.si-seo-filter-chip {
+display: inline-flex; min-height: 25px; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid var(--color-line); border-radius: 999px; background: var(--color-subtle); color: var(--color-ink-2); font: inherit; font-size: 11px; cursor: pointer;
+}
+
+.si-seo-filter-chip > span:last-child { color: var(--color-muted); font-size: 15px; line-height: 1; }
+
+.si-seo-controls .si-segmented { gap: 4px; }
+.si-seo-controls .si-segmented button { padding-inline: 8px; }
+.si-seo-controls[data-view="links"] { grid-template-columns: max-content minmax(170px, 240px); justify-content: space-between; }
+
+@media (max-width: 760px) {
+  .si-seo-controls { grid-template-columns: max-content minmax(0, 1fr) minmax(150px, 190px); gap: 6px; }
+  .si-seo-dropdown-trigger { padding-inline: 6px; gap: 4px; font-size: 11px; }
+  .si-seo-controls .si-segmented button { padding-inline: 6px; font-size: 11px; }
+}
 
 .si-seo-table-frame {
 position: relative; display: flex; min-width: 0; min-height: var(--si-table-min-h, 320px); flex: 1 1 auto; flex-direction: column; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
