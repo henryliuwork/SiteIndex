@@ -29,7 +29,11 @@ export interface LaunchAgentDefinition {
 export interface SystemScheduler {
   getState(projectId: string, projectPath: string, config: ScheduleConfig): Promise<ScheduleState>;
   getRuntimeStatus(): Promise<ScheduleRuntimeStatus>;
-  reconcile(projects: ScheduleProjectDefinition[], allowElevation: boolean): Promise<ScheduleRuntimeStatus>;
+  reconcile(
+    projects: ScheduleProjectDefinition[],
+    allowElevation: boolean,
+    removedProjectIds?: string[],
+  ): Promise<ScheduleRuntimeStatus>;
   reauthorize(projects: ScheduleProjectDefinition[]): Promise<ScheduleRuntimeStatus>;
 }
 
@@ -323,11 +327,18 @@ export function createSystemScheduler(options: {
   async function reconcile(
     projects: ScheduleProjectDefinition[],
     allowElevation: boolean,
+    removedProjectIds: string[] = [],
   ): Promise<ScheduleRuntimeStatus> {
     if (platform === "win32") {
       const state = await loadRuntimeState();
       const desired: WindowsTaskDefinition[] = [];
       const obsoleteNames: string[] = [];
+      for (const id of removedProjectIds) {
+        assertSafeProjectId(id);
+        for (const job of WINDOWS_SCHEDULED_JOBS) {
+          obsoleteNames.push(windowsTaskName(id, job), windowsRootTaskName(id, job));
+        }
+      }
       for (const project of projects) {
         assertSafeProjectId(project.projectId);
         for (const job of WINDOWS_SCHEDULED_JOBS) {
@@ -367,7 +378,7 @@ export function createSystemScheduler(options: {
 
     if (platform === "darwin") {
       const currentIds = new Set(projects.map(({ projectId }) => projectId));
-      for (const staleId of macProjectIds) {
+      for (const staleId of new Set([...macProjectIds, ...removedProjectIds])) {
         if (currentIds.has(staleId)) continue;
         for (const job of SCHEDULED_JOBS) await removeMac(staleId, job);
       }

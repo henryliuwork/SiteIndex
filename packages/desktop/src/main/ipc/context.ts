@@ -23,6 +23,7 @@ export interface IpcDependencies {
     allowElevation: boolean,
     knownEntries?: Awaited<ReturnType<ProjectCatalog["refresh"]>>,
     onTiming?: AddExistingTimingCallback,
+    removedProjectIds?: string[],
   ) => Promise<ScheduleRuntimeStatus>;
   traceAddExisting?: AddExistingTraceWriter;
   onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>;

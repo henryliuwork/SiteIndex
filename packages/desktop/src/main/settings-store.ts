@@ -27,6 +27,7 @@ function createDefaults(settingsDirectory: string, deviceName: string): AppSetti
     device_name: deviceName,
     projects_root: "",
     extra_projects: [],
+    hidden_projects: [],
     cache_dir: join(settingsDirectory, "cache"),
     browser: { channel: "msedge", executable_path: null },
     notify: { on_failure: true, on_success: false, oos_threshold: null, dingtalk_webhook: null },
@@ -47,6 +48,9 @@ function normalizeSettings(value: unknown, defaults: AppSettings): AppSettings {
     extra_projects: Array.isArray(value.extra_projects)
       ? value.extra_projects.filter((item): item is string => typeof item === "string")
       : defaults.extra_projects,
+    hidden_projects: Array.isArray(value.hidden_projects)
+      ? value.hidden_projects.filter((item): item is string => typeof item === "string")
+      : defaults.hidden_projects,
     cache_dir: typeof value.cache_dir === "string" && value.cache_dir ? value.cache_dir : defaults.cache_dir,
     browser: {
       channel:
@@ -81,6 +85,7 @@ function cloneSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
     extra_projects: [...settings.extra_projects],
+    hidden_projects: [...(settings.hidden_projects ?? [])],
     browser: { ...settings.browser },
     notify: { ...settings.notify },
     skill_platforms: settings.skill_platforms.map((platform) => ({ ...platform })),
@@ -91,14 +96,20 @@ function cloneSettings(settings: AppSettings): AppSettings {
 function sameJsonValue(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (Array.isArray(left) || Array.isArray(right)) {
-    return Array.isArray(left) && Array.isArray(right) &&
-      left.length === right.length && left.every((item, index) => sameJsonValue(item, right[index]));
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => sameJsonValue(item, right[index]))
+    );
   }
   if (!isRecord(left) || !isRecord(right)) return false;
   const leftKeys = Object.keys(left);
   const rightKeys = Object.keys(right);
-  return leftKeys.length === rightKeys.length &&
-    leftKeys.every((key) => Object.hasOwn(right, key) && sameJsonValue(left[key], right[key]));
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => Object.hasOwn(right, key) && sameJsonValue(left[key], right[key]))
+  );
 }
 
 const writes = new Map<string, Promise<unknown>>();
@@ -123,6 +134,7 @@ function validatePatch(patch: unknown): asserts patch is Partial<AppSettings> {
     "device_name",
     "projects_root",
     "extra_projects",
+    "hidden_projects",
     "cache_dir",
     "browser",
     "notify",
@@ -137,7 +149,7 @@ function validatePatch(patch: unknown): asserts patch is Partial<AppSettings> {
   for (const key of stringFields) {
     if (key in patch && typeof patch[key] !== "string") invalidSettings(`${key} 必须是字符串。`);
   }
-  for (const key of ["extra_projects", "conflict_patterns"] as const) {
+  for (const key of ["extra_projects", "hidden_projects", "conflict_patterns"] as const) {
     if (key in patch && (!Array.isArray(patch[key]) || !patch[key].every((item) => typeof item === "string"))) {
       invalidSettings(`${key} 必须是字符串数组。`);
     }

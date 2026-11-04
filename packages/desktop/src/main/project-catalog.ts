@@ -133,6 +133,7 @@ export function createProjectCatalog(
     onWatcherReady?: (durationMs: number) => void,
   ): Promise<ProjectPathEntry[]> {
     const candidates: string[] = [];
+    const hidden = new Set((settings.hidden_projects ?? []).map(pathKey));
     if (settings.projects_root.trim()) {
       try {
         const children = await readdir(settings.projects_root, { withFileTypes: true });
@@ -158,6 +159,7 @@ export function createProjectCatalog(
       const projectPath = await readProjectDirectory(candidate);
       if (!projectPath) continue;
       const key = pathKey(projectPath);
+      if (hidden.has(key)) continue;
       if (byPath.has(key)) continue;
 
       const id = path.basename(projectPath);
@@ -210,8 +212,10 @@ export function createProjectCatalog(
   };
 }
 
-export function isProjectInsideRoot(projectsRoot: string, projectPath: string): boolean {
+export async function isProjectInsideRoot(projectsRoot: string, projectPath: string): Promise<boolean> {
   if (!projectsRoot.trim()) return false;
-  const relative = path.relative(path.resolve(projectsRoot), path.resolve(projectPath));
-  return isChildPath(path.resolve(projectsRoot), path.resolve(projectPath)) && !relative.includes(path.sep);
+  const root = await realpath(projectsRoot).catch(() => path.resolve(projectsRoot));
+  const project = await realpath(projectPath).catch(() => path.resolve(projectPath));
+  const relative = path.relative(root, project);
+  return isChildPath(root, project) && !relative.includes(path.sep);
 }

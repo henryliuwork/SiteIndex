@@ -25,6 +25,7 @@ describe("settings store", () => {
     expect(second.device_id).toBe(first.device_id);
     expect(first.device_name).toBe("DESKTOP-01");
     expect(first.projects_root).toBe("");
+    expect(first.hidden_projects).toEqual([]);
     expect(first.cache_dir).toBe(join(settingsDirectory, "cache"));
     expect(await store.exists()).toBe(true);
     expect(JSON.parse(await readFile(store.filePath, "utf8"))).toEqual(first);
@@ -96,5 +97,12 @@ describe("settings store", () => {
     await expect(store.set({ browser: { channel: "invalid", executable_path: null } as never })).rejects.toMatchObject({
       code: "CONFIG_INVALID",
     });
+  });
+
+  it("persists hidden project paths and validates their shape", async () => {
+    const store = createSettingsStore(settingsDirectory, "DESKTOP-01");
+    await store.set({ hidden_projects: ["C:\\Projects\\fictional"] });
+    expect((await store.get()).hidden_projects).toEqual(["C:\\Projects\\fictional"]);
+    await expect(store.set({ hidden_projects: [42] as never })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
   });
 });
