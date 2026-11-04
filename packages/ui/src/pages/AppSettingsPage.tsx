@@ -187,7 +187,10 @@ export function AppSettingsPage() {
         <h2>常规</h2>
         <div className="si-app-setting-row">
           <label htmlFor="si-projects-root">项目根目录</label>
-          <input id="si-projects-root" className="si-setting-input si-setting-mono" value={draft.projects_root} onChange={(event) => setDraft({ ...draft, projects_root: event.target.value })} onBlur={() => void saveSettings({ projects_root: draft.projects_root })} />
+          <div className="si-project-root-field">
+            <input id="si-projects-root" className="si-setting-input si-setting-mono" value={draft.projects_root} onChange={(event) => setDraft({ ...draft, projects_root: event.target.value })} onBlur={() => void saveSettings({ projects_root: draft.projects_root })} />
+            <small className="si-setting-hint">软件会自动扫描这个目录里的项目；也是新建项目的默认位置。不在此目录的项目请用“添加已有项目”。</small>
+          </div>
           <Button onClick={() => void chooseProjectsRoot()}>选择…</Button>
         </div>
         <div className="si-app-setting-row">
@@ -200,6 +203,16 @@ export function AppSettingsPage() {
           <input id="si-cache-dir" className="si-setting-input si-setting-mono" value={draft.cache_dir} onChange={(event) => setDraft({ ...draft, cache_dir: event.target.value })} onBlur={() => void saveSettings({ cache_dir: draft.cache_dir })} />
           <span className="si-setting-hint">数据库等不进云盘</span>
         </div>
+      </section>}
+
+      {activeTab === "basic" && <section className="si-app-settings-card si-project-migration-card">
+        <h2>移动或重新添加项目</h2>
+        <ol className="si-project-migration-steps">
+          <li><span aria-hidden="true">①</span><span className="si-sr-only">第 1 步：</span>先在文件管理器里把项目文件夹移到新位置。</li>
+          <li><span aria-hidden="true">②</span><span className="si-sr-only">第 2 步：</span>若旧位置仍出现无效项目，会在后续版本提供移除功能。</li>
+          <li><span aria-hidden="true">③</span><span className="si-sr-only">第 3 步：</span>在项目中心点击“添加已有项目”，选择新位置。</li>
+          <li><span aria-hidden="true">④</span><span className="si-sr-only">第 4 步：</span>在“定时任务”页确认计划任务已重新启用。</li>
+        </ol>
       </section>}
 
       {activeTab === "environment" && <>
