@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -6,8 +6,10 @@ import {
   buildLaunchAgentPlist,
   calculateNextRuns,
   createSystemScheduler,
+  projectPathFromWindowsTaskXml,
   scheduledOccurrenceKey,
   type LaunchAgentDefinition,
+  type ScheduleProjectDefinition,
 } from "./schedule.js";
 import type { ScheduleConfig } from "@siteindex/shared";
 import type { WindowsTaskRegistrar } from "./windows-tasks.js";
@@ -42,6 +44,14 @@ const sundayMacDefinition: LaunchAgentDefinition = {
 };
 
 describe("system schedule definitions", () => {
+  it("extracts the project path from a SiteIndex Windows task XML action", () => {
+    expect(
+      projectPathFromWindowsTaskXml(
+        "<Task><Actions><Exec><Arguments>--run-job &quot;C:\\Synthetic Projects\\sample-store&quot; daily</Arguments></Exec></Actions></Task>",
+      ),
+    ).toBe("C:\\Synthetic Projects\\sample-store");
+    expect(projectPathFromWindowsTaskXml("<Task><Actions /></Task>")).toBeNull();
+  });
   it("generates a macOS weekday LaunchAgent plist", () => {
     expect(buildLaunchAgentPlist(macDefinition)).toMatchSnapshot();
   });
@@ -82,6 +92,8 @@ describe("system schedule definitions", () => {
     const directory = await mkdtemp(path.join(tmpdir(), "siteindex-windows-schedule-test-"));
     try {
       const statePath = path.join(directory, "state.json");
+      const projectPath = path.join(directory, "sample-store");
+      await mkdir(projectPath);
       const registrar = {
         reconcile: vi.fn(async () => ({
           mode: "system" as const,
@@ -99,13 +111,8 @@ describe("system schedule definitions", () => {
         runtimeStatePath: statePath,
         windowsTaskRegistrar: registrar,
       });
-      await scheduler.reconcile(
-        [{ projectId: "sample-store", projectPath: "C:\\Users\\Tester\\sample-store", config, isThisDevice: true }],
-        false,
-      );
-      await expect(
-        scheduler.getState("sample-store", "C:\\Users\\Tester\\sample-store", config),
-      ).resolves.toMatchObject({
+      await scheduler.reconcile([{ projectId: "sample-store", projectPath, config, isThisDevice: true }], false);
+      await expect(scheduler.getState("sample-store", projectPath, config)).resolves.toMatchObject({
         registered: true,
       });
       await expect(scheduler.getRuntimeStatus()).resolves.toEqual({ mode: "system", authorization_required: false });
@@ -133,8 +140,65 @@ describe("system schedule definitions", () => {
     expect(obsolete).toContain("SiteIndex - sample-store-daily");
     expect(obsolete).toHaveLength(10);
   });
+
+  it("skips a missing project, keeps other tasks, and records denied cleanup as an orphan", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "siteindex-orphan-schedule-test-"));
+    const projectPath = path.join(directory, "missing-project");
+    const activePath = path.join(directory, "active-project");
+    await mkdir(projectPath);
+    await mkdir(activePath);
+    const missingName = "\\SiteIndex\\missing-project-daily";
+    const activeName = "\\SiteIndex\\active-project-daily";
+    const registrar = {
+      reconcile: vi
+        .fn()
+        .mockResolvedValueOnce({
+          mode: "system",
+          authorization_required: false,
+          registered_task_names: [missingName, activeName],
+        })
+        .mockResolvedValueOnce({
+          mode: "system",
+          authorization_required: true,
+          registered_task_names: [missingName, activeName],
+        }),
+    };
+    const scheduler = createSystemScheduler({
+      platform: "win32",
+      executablePath: "unused.exe",
+      runtimeStatePath: path.join(directory, "state.json"),
+      windowsTaskRegistrar: registrar,
+    });
+    const definitions = [
+      { projectId: "missing-project", projectPath, config, isThisDevice: true },
+      { projectId: "active-project", projectPath: activePath, config, isThisDevice: true },
+    ];
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await scheduler.reconcile(definitions, false);
+      await rm(projectPath, { recursive: true, force: true });
+      await expect(scheduler.reconcile(definitions, false)).resolves.toEqual({
+        mode: "system",
+        authorization_required: true,
+      });
+      expect(warning).toHaveBeenCalledWith("跳过不存在的项目计划任务。", { projectId: "missing-project" });
+      const desired = (registrar.reconcile.mock.calls[1]?.[0] ?? []) as ScheduleProjectDefinition[];
+      expect(new Set(desired.map(({ projectId }) => projectId))).toEqual(new Set(["active-project"]));
+      const state = JSON.parse(await readFile(path.join(directory, "state.json"), "utf8")) as {
+        orphaned_tasks: { taskName: string; path: string; reason: string }[];
+      };
+      expect(state.orphaned_tasks).toEqual([
+        { taskName: missingName, path: projectPath, reason: "项目路径不存在，且系统拒绝注销旧计划任务。" },
+      ]);
+    } finally {
+      warning.mockRestore();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   it("writes and loads macOS LaunchAgents through launchctl", async () => {
     const homeDirectory = await mkdtemp(path.join(tmpdir(), "siteindex-launchd-test-"));
+    const projectPath = path.join(homeDirectory, "sample-store");
+    await mkdir(projectPath);
     const commands: { file: string; args: string[] }[] = [];
     const scheduler = createSystemScheduler({
       platform: "darwin",
@@ -155,7 +219,7 @@ describe("system schedule definitions", () => {
     };
     try {
       const state = await scheduler.reconcile(
-        [{ projectId: "sample-store", projectPath: macDefinition.projectPath, config: macConfig, isThisDevice: true }],
+        [{ projectId: "sample-store", projectPath, config: macConfig, isThisDevice: true }],
         false,
       );
       expect(state).toEqual({ mode: "system", authorization_required: false });
