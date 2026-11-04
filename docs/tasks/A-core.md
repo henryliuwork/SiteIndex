@@ -123,6 +123,7 @@
 ### v0.2.0 收敛计划
 - [x] `seo.ignore_rules` 允许省略 URL，以表达整类规则忽略的兼容数据契约
 - [x] 新增 SEO 问题状态、项目取消登记、计划任务校验与孤儿清理的兼容契约，并统一 SEO 规则中文名
+- [x] Core 实现 `seo.setIssueStatus` / `seo.setRuleIgnored`，状态与忽略配置原子写回并由 weekly 继承
 - [x] A0a：以可选 `sku` 命名空间声明 `previewGrouping`，并登记 IPC invoke 与 pending handler 清单
 - [x] A0b：单独扩大 `inventory.summary` 范围参数，保留 14 并支持 `30 | 60 | 90 | "all"`（#204）
 

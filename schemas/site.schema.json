@@ -89,7 +89,7 @@
         "competitors": { "type": "array", "items": { "type": "string" } },
         "title_range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
         "description_range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
-        "ignore_rules": { "type": "array", "items": { "type": "object", "required": ["url", "rule"], "properties": { "url": { "type": "string", "format": "uri" }, "rule": { "type": "string" } } } }
+        "ignore_rules": { "type": "array", "items": { "type": "object", "required": ["rule"], "properties": { "url": { "type": "string", "format": "uri" }, "rule": { "type": "string" } } } }
       }
     },
     "edm": {

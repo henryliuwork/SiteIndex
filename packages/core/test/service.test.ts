@@ -526,6 +526,171 @@ describe("createCoreService initial namespaces", () => {
     expect(seoAttention.some((item) => item.text.includes("Title 重复"))).toBe(false);
   }, 20_000);
 
+  it("updates SEO issue statuses, persists per-page ignores, and counts only open issues", async () => {
+    const { projectPath } = await makeProject();
+    const makeIssue = (url: string, rule: SeoIssue["rule"], status: SeoIssue["status"]): SeoIssue => ({
+      url: `https://shop.example.test/${url}`,
+      rule,
+      severity: "mid",
+      detail: "虚构 SEO 问题",
+      status,
+      first_seen: "2026-11-01",
+      last_seen: "2026-11-01",
+    });
+    await writeJsonl(path.join(projectPath, PATHS.seoIssues), [
+      makeIssue("page-a", "desc_missing", "open"),
+      makeIssue("page-b", "title_missing", "open"),
+      makeIssue("page-c", "desc_missing", "open"),
+    ].map((row) => ({ ...row })), "seo_issue");
+    const api = service(projectPath);
+    const urlA = "https://shop.example.test/page-a";
+    const urlC = "https://shop.example.test/page-c";
+
+    await expect(api.seo.setIssueStatus("fixture", {
+      targets: [{ url: urlA, rule: "desc_missing" }, { url: urlC, rule: "desc_missing" }],
+      status: "ignored",
+    })).resolves.toEqual({ updated: 2 });
+    await expect(api.seo.setIssueStatus("fixture", {
+      targets: [{ url: urlC, rule: "desc_missing" }],
+      status: "fixed",
+    })).resolves.toEqual({ updated: 1 });
+
+    const savedIssues = await readJsonl(path.join(projectPath, PATHS.seoIssues));
+    expect(savedIssues.find((row) => row.url === urlA)).toMatchObject({ status: "ignored" });
+    expect(savedIssues.find((row) => row.url === urlC)).toMatchObject({ status: "fixed" });
+    const config = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as {
+      seo?: { ignore_rules?: { url?: string; rule: string }[] };
+    };
+    expect(config.seo?.ignore_rules).toContainEqual({ url: urlA, rule: "desc_missing" });
+
+    const project = await api.projects.get("fixture");
+    expect(project.summary.attention).toBe(1);
+    const overviewSeo = (await api.overview.get("fixture")).attention.filter((item) => item.link_label === "查看 SEO 问题");
+    expect(overviewSeo).toHaveLength(1);
+    expect(overviewSeo[0]?.link).toContain("rule=title_missing&status=open");
+    expect((await api.seo.listIssues("fixture", { page: 1, pageSize: 0, filters: { status: "open" } })).total).toBe(1);
+
+    await expect(api.seo.setIssueStatus("fixture", { targets: [{ url: urlA, rule: "desc_missing" }], status: "open" }))
+      .resolves.toEqual({ updated: 1 });
+    const reopenedConfig = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as {
+      seo?: { ignore_rules?: { url?: string; rule: string }[] };
+    };
+    expect(reopenedConfig.seo?.ignore_rules).not.toContainEqual({ url: urlA, rule: "desc_missing" });
+    expect((await api.projects.get("fixture")).summary.attention).toBe(2);
+  }, 30_000);
+
+  it("toggles a global SEO rule ignore while preserving specific page ignores and fixed history", async () => {
+    const { projectPath } = await makeProject();
+    const makeIssue = (slug: string, rule: SeoIssue["rule"], status: SeoIssue["status"]): SeoIssue => ({
+      url: `https://shop.example.test/${slug}`,
+      rule,
+      severity: "mid",
+      detail: "虚构 SEO 问题",
+      status,
+      first_seen: "2026-11-01",
+      last_seen: "2026-11-01",
+    });
+    const scopedUrl = "https://shop.example.test/scoped";
+    await writeJsonl(path.join(projectPath, PATHS.seoIssues), [
+      makeIssue("global-one", "desc_missing", "open"),
+      makeIssue("scoped", "desc_missing", "open"),
+      makeIssue("fixed-history", "desc_missing", "fixed"),
+      makeIssue("other-rule", "title_missing", "open"),
+    ].map((row) => ({ ...row })), "seo_issue");
+    const configPath = path.join(projectPath, PATHS.site);
+    const rawConfig = JSON.parse(await readFile(configPath, "utf8")) as {
+      seo?: Record<string, unknown>;
+    };
+    rawConfig.seo = { ...rawConfig.seo, ignore_rules: [{ url: scopedUrl, rule: "desc_missing" }] };
+    await writeFile(configPath, `${JSON.stringify(rawConfig, null, 2)}\n`, "utf8");
+
+    const api = service(projectPath);
+    await expect(api.seo.setRuleIgnored("fixture", "desc_missing", true)).resolves.toEqual({ updated: 2 });
+    let savedIssues = await readJsonl(path.join(projectPath, PATHS.seoIssues));
+    expect(savedIssues.find((row) => row.url === "https://shop.example.test/global-one")).toMatchObject({ status: "ignored" });
+    expect(savedIssues.find((row) => row.url === scopedUrl)).toMatchObject({ status: "ignored" });
+    expect(savedIssues.find((row) => row.url === "https://shop.example.test/fixed-history")).toMatchObject({ status: "fixed" });
+    expect(savedIssues.find((row) => row.url === "https://shop.example.test/other-rule")).toMatchObject({ status: "open" });
+
+    const ignoredConfig = JSON.parse(await readFile(configPath, "utf8")) as {
+      seo?: { ignore_rules?: { url?: string; rule: string }[] };
+    };
+    expect(ignoredConfig.seo?.ignore_rules).toContainEqual({ rule: "desc_missing" });
+    expect(ignoredConfig.seo?.ignore_rules).toContainEqual({ url: scopedUrl, rule: "desc_missing" });
+    const validation = await api.files.validate("fixture", PATHS.site);
+    expect(validation.files.find((file) => file.path === PATHS.site)?.status).toBe("ok");
+
+    await expect(api.seo.setRuleIgnored("fixture", "desc_missing", false)).resolves.toEqual({ updated: 1 });
+    savedIssues = await readJsonl(path.join(projectPath, PATHS.seoIssues));
+    expect(savedIssues.find((row) => row.url === "https://shop.example.test/global-one")).toMatchObject({ status: "open" });
+    expect(savedIssues.find((row) => row.url === scopedUrl)).toMatchObject({ status: "ignored" });
+    expect(savedIssues.find((row) => row.url === "https://shop.example.test/fixed-history")).toMatchObject({ status: "fixed" });
+    const unignoredConfig = JSON.parse(await readFile(configPath, "utf8")) as {
+      seo?: { ignore_rules?: { url?: string; rule: string }[] };
+    };
+    expect(unignoredConfig.seo?.ignore_rules).not.toContainEqual({ rule: "desc_missing" });
+    expect(unignoredConfig.seo?.ignore_rules).toContainEqual({ url: scopedUrl, rule: "desc_missing" });
+  }, 30_000);
+
+  it("keeps ignored SEO issues across weekly and reopens fixed issues when the finding remains", async () => {
+    const { projectPath } = await makeProject();
+    const base = "https://shop.example.test";
+    const configPath = path.join(projectPath, PATHS.site);
+    const config = JSON.parse(await readFile(configPath, "utf8")) as import("@siteindex/shared").SiteConfig;
+    config.domain = "shop.example.test";
+    config.base_url = base;
+    config.sitemaps = [`${base}/sitemap.xml`];
+    config.crawl.feed_url = [];
+    config.crawl.rate_limit_ms = 0;
+    config.crawl.max_pages = 10;
+    config.categories = { mode: "url_rule", url_pattern: "/collections/{slug}" };
+    config.seo = { ...config.seo, ignore_rules: [] };
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.pathname === "/sitemap.xml") {
+        return new Response(`<urlset><url><loc>${base}/</loc></url><url><loc>${base}/collections/fixture</loc></url></urlset>`, {
+          headers: { "content-type": "application/xml" },
+        });
+      }
+      const body = url.pathname === "/"
+        ? '<html><head><title>Fixture home</title></head><body><main><h1>Fixture home</h1><a href="/collections/fixture">Fixture collection</a></main></body></html>'
+        : '<html><head><title>Fixture collection</title></head><body><main><h1>Fixture collection</h1><p>Fictional collection text.</p></main></body></html>';
+      return new Response(body, { headers: { "content-type": "text/html" } });
+    }));
+    const api = service(projectPath);
+    const target = { url: `${base}/`, rule: "desc_missing" as const };
+
+    const initialWeekly = await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-01" }, () => undefined);
+    expect(initialWeekly.status).not.toBe("failed");
+    let issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "open" });
+
+    await api.seo.setIssueStatus("fixture", { targets: [target], status: "ignored" });
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-02" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "ignored" });
+
+    await api.seo.setIssueStatus("fixture", { targets: [target], status: "fixed" });
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-03" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "open" });
+
+    await api.seo.setRuleIgnored("fixture", "desc_missing", true);
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-04" }, () => undefined);
+    const globallyIgnored = await readJsonl(path.join(projectPath, PATHS.seoIssues));
+    issue = globallyIgnored.find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "ignored" });
+    expect(globallyIgnored.find((row) => row.url === `${base}/collections/fixture` && row.rule === "desc_missing"))
+      .toMatchObject({ status: "ignored" });
+    await api.seo.setRuleIgnored("fixture", "desc_missing", false);
+    const globallyReopened = await readJsonl(path.join(projectPath, PATHS.seoIssues));
+    issue = globallyReopened.find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "open" });
+    expect(globallyReopened.find((row) => row.url === `${base}/collections/fixture` && row.rule === "desc_missing"))
+      .toMatchObject({ status: "open" });
+  }, 45_000);
+
   it("writes a feed and refreshes the project summary without a missing-feed warning", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);

@@ -128,7 +128,10 @@ export interface CoreService {
   sku: NonNullable<SiteIndexApi["sku"]>;
   inventory: Pick<SiteIndexApi["inventory"], "summary" | "listSkus" | "dailyReport">;
   products: Pick<SiteIndexApi["products"], "list" | "get" | "setTags" | "listTags" | "createTag" | "deleteTag">;
-  seo: Omit<SiteIndexApi["seo"], "checkIndex">;
+  seo: Omit<SiteIndexApi["seo"], "checkIndex" | "setIssueStatus" | "setRuleIgnored"> & {
+    setIssueStatus: NonNullable<SiteIndexApi["seo"]["setIssueStatus"]>;
+    setRuleIgnored: NonNullable<SiteIndexApi["seo"]["setRuleIgnored"]>;
+  };
   content: SiteIndexApi["content"];
   edm: SiteIndexApi["edm"];
   design: SiteIndexApi["design"];
@@ -402,6 +405,17 @@ async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
 
 function serializeSiteConfig(config: SiteConfig): string {
   return `${JSON.stringify(config, (key, value) => key === "workspace_folders" ? undefined : value, 2)}\n`;
+}
+
+type SeoIgnoreRule = { url?: string; rule: SeoIssue["rule"] };
+
+function normalizeSeoIgnoreRules(rules: readonly SeoIgnoreRule[]): SeoIgnoreRule[] {
+  const unique = new Map<string, SeoIgnoreRule>();
+  for (const entry of rules) {
+    const url = entry.url || undefined;
+    unique.set(`${entry.rule}\n${url ?? ""}`, url ? { url, rule: entry.rule } : { rule: entry.rule });
+  }
+  return [...unique.values()].sort((left, right) => compareKeys(left.rule, right.rule) || compareKeys(left.url ?? "", right.url ?? ""));
 }
 
 async function snapshotFingerprint(projectPath: string, basePaths: readonly string[] = SNAPSHOT_FILE_PATHS): Promise<string> {
@@ -1810,6 +1824,77 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         && (!query.filters?.status || issue.status === query.filters.status)
         && (!query.filters?.rules?.length || query.filters.rules.includes(issue.rule)));
       return paginate(rows, query, (row) => [row.url, row.rule, row.detail, row.severity, row.status], "severity", (row) => `${row.url}\u0000${row.rule}`);
+    },
+    setIssueStatus: async (id, input): Promise<{ updated: number }> => {
+      const projectPath = resolve(id);
+      return withLock(projectPath, async () => {
+        try {
+          const [config, issues] = await Promise.all([
+            readSiteConfig(projectPath),
+            readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues),
+          ]);
+          const targets = new Map(input.targets.map((target) => [`${target.url}\n${target.rule}`, target]));
+          const targetKeys = new Set(targets.keys());
+          const currentIgnoreRules = config.seo?.ignore_rules ?? [];
+          const ignoreRules: SeoIgnoreRule[] = input.status === "ignored"
+            ? [...currentIgnoreRules, ...[...targets.values()].map(({ url, rule }) => ({ url, rule }))]
+            : currentIgnoreRules.filter((entry) => !entry.url || !targetKeys.has(`${entry.url}\n${entry.rule}`));
+          const nextIgnoreRules = normalizeSeoIgnoreRules(ignoreRules);
+          const rulesChanged = JSON.stringify(currentIgnoreRules) !== JSON.stringify(nextIgnoreRules);
+          const nextIssues = issues.map((issue) => {
+            if (!targetKeys.has(`${issue.url}\n${issue.rule}`) || issue.status === input.status) return issue;
+            return { ...issue, status: input.status };
+          });
+          const updated = issues.reduce((count, issue, index) => count + (issue.status !== nextIssues[index]?.status ? 1 : 0), 0);
+          if (rulesChanged) {
+            const nextConfig: SiteConfig = { ...config, seo: { ...config.seo, ignore_rules: nextIgnoreRules } };
+            await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
+          }
+          if (updated) await writeJsonl(path.join(projectPath, PATHS.seoIssues), nextIssues as unknown as JsonRecord[], "seo_issue");
+          return { updated };
+        } catch (error) {
+          throw setError(error);
+        } finally {
+          invalidate(projectPath);
+        }
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "seo-set-issue-status" });
+    },
+    setRuleIgnored: async (id, rule, ignored): Promise<{ updated: number }> => {
+      const projectPath = resolve(id);
+      return withLock(projectPath, async () => {
+        try {
+          const [config, issues] = await Promise.all([
+            readSiteConfig(projectPath),
+            readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues),
+          ]);
+          const currentIgnoreRules = config.seo?.ignore_rules ?? [];
+          const ignoreRules = ignored
+            ? [...currentIgnoreRules, { rule }]
+            : currentIgnoreRules.filter((entry) => entry.rule !== rule || !!entry.url);
+          const nextIgnoreRules = normalizeSeoIgnoreRules(ignoreRules);
+          const rulesChanged = JSON.stringify(currentIgnoreRules) !== JSON.stringify(nextIgnoreRules);
+          const nextIssues = issues.map((issue) => {
+            if (issue.rule !== rule) return issue;
+            if (ignored && issue.status === "open") return { ...issue, status: "ignored" as const };
+            if (!ignored && issue.status === "ignored"
+              && !nextIgnoreRules.some((entry) => entry.rule === rule && entry.url === issue.url)) {
+              return { ...issue, status: "open" as const };
+            }
+            return issue;
+          });
+          const updated = issues.reduce((count, issue, index) => count + (issue.status !== nextIssues[index]?.status ? 1 : 0), 0);
+          if (rulesChanged) {
+            const nextConfig: SiteConfig = { ...config, seo: { ...config.seo, ignore_rules: nextIgnoreRules } };
+            await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
+          }
+          if (updated) await writeJsonl(path.join(projectPath, PATHS.seoIssues), nextIssues as unknown as JsonRecord[], "seo_issue");
+          return { updated };
+        } catch (error) {
+          throw setError(error);
+        } finally {
+          invalidate(projectPath);
+        }
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "seo-set-rule-ignored" });
     },
     listPages: async (id, query) => {
       const snapshot = await load(resolve(id));
