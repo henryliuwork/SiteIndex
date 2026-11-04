@@ -423,7 +423,7 @@ function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, d
   const result: SeoIssue[] = [];
   for (const [key, item] of issues) {
     const old = previous.get(key);
-    result.push({ ...item, status: ignore.some((rule) => rule.url === item.url && rule.rule === item.rule) ? "ignored" : "open", first_seen: old?.first_seen ?? date, last_seen: date });
+    result.push({ ...item, status: ignore.some((rule) => rule.rule === item.rule && (!rule.url || rule.url === item.url)) ? "ignored" : "open", first_seen: old?.first_seen ?? date, last_seen: date });
   }
   for (const [key, old] of previous) {
     if (issues.has(key)) continue;
