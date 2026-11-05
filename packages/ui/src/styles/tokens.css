@@ -25,12 +25,49 @@
   --color-chart-feeders: #1E6B52;
   --color-chart-baths: #D9822B;
   --color-chart-houses: #7FB2E5;
+
+  --font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --font-mono: "Geist Mono Variable", Consolas, monospace;
+
+  --fs-page-title: 20px;
+  --lh-page-title: 28px;
+  --fw-page-title: 600;
+  --fs-section-title: 15px;
+  --lh-section-title: 22px;
+  --fw-section-title: 600;
+  --fs-sub-title: 13px;
+  --lh-sub-title: 20px;
+  --fw-sub-title: 600;
+  --fs-body: 12px;
+  --lh-body: 18px;
+  --fw-body: 400;
+  --fs-caption: 11px;
+  --lh-caption: 16px;
+  --fw-caption: 400;
+  --fs-kpi: 24px;
+  --lh-kpi: 30px;
+  --fw-kpi: 600;
+  --fs-mono: 12px;
+  --lh-mono: 18px;
+  --fw-mono: 400;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  --shadow-pop: 0 12px 32px rgba(20, 24, 29, 0.16);
+  --shadow-drawer: -12px 0 32px rgba(20, 24, 29, 0.16);
+
+  /* Legacy spacing aliases are retained until the page migration in B-4. */
   --si-gap-1: 6px;
   --si-gap-2: 8px;
   --si-gap-3: 12px;
   --si-gap-4: 16px;
   --si-gap-5: 24px;
   --si-gap-6: 32px;
-  --font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-  --font-mono: "Geist Mono Variable", Consolas, monospace;
 }
