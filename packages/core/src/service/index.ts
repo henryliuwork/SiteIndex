@@ -41,6 +41,7 @@ import {
   type ProductDetails,
   type ProductFilters,
   type ProductFull,
+  type ProductVariantStock,
   type ProductView,
   type ProjectDetail,
   type ProjectId,
@@ -1720,9 +1721,42 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const product = snapshot.products.find((row) => row.handle === handle);
       if (!product) throw siteError("UNKNOWN", "找不到指定产品", handle);
       const seoPage = snapshot.seoPages.find((row) => row.url === product.url);
+      const activeSkuRows = snapshot.skus.filter((row) => row.handle === handle && row.status === "active");
+      const relatedSkuIds = new Set(activeSkuRows.map((row) => row.sku));
+      if (activeSkuRows.length > 0 && snapshot.config.sku_grouping?.enabled) {
+        try {
+          const allActiveSkus = snapshot.skus.filter((row) => row.status === "active");
+          const grouping = groupSkuIds(allActiveSkus.map((row) => row.sku), snapshot.config.sku_grouping.rule);
+          const relatedParents = new Set(activeSkuRows.flatMap((row) => {
+            const parent = grouping.parentByChild.get(row.sku);
+            return parent ? [parent] : [];
+          }));
+          for (const group of grouping.groups) {
+            if (relatedParents.has(group.parent)) for (const child of group.children) relatedSkuIds.add(child);
+          }
+        } catch (error) {
+          if (error instanceof SkuGroupingRuleError) throw siteError(error.code, error.message, error.detail);
+          throw error;
+        }
+      }
+      const stockBySku = new Map(snapshot.skuStock.map((row) => [row.sku, row]));
+      const variants: ProductVariantStock[] = [...relatedSkuIds].sort(compareKeys).flatMap((sku) => {
+        const stock = stockBySku.get(sku);
+        return stock ? [{
+          sku: stock.sku,
+          title: stock.title,
+          stock_status: stock.stock_status,
+          since: stock.since,
+          days_in_status: stock.days_in_status,
+          price: stock.price,
+          history_30d: stock.history_30d,
+          online_rate_30d: stock.online_rate_30d,
+        }] : [];
+      });
       return {
         product,
         skus: snapshot.skus.filter((row) => row.handle === handle),
+        variants,
         details: snapshot.productDetails.find((row) => row.handle === handle) ?? null,
         seo: seoPage ? {
           url: seoPage.url,
