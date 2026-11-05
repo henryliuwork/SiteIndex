@@ -8,6 +8,8 @@ import {
   createWindowsTaskRegistrar,
   decodeConsoleOutput,
   parseCodePage,
+  windowsTaskDifferences,
+  windowsTaskMatches,
   windowsTaskXmlBytes,
   type WindowsTaskDefinition,
 } from "./windows-tasks.js";
@@ -86,6 +88,43 @@ describe("Windows Task Scheduler definitions", () => {
       "<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>",
     );
     expect(Buffer.from(bytes.slice(2)).toString("utf16le")).toContain("<ExecutionTimeLimit>PT2H</ExecutionTimeLimit>");
+  });
+
+  it("matches a sanitized real schtasks export structurally and reports expected versus actual fields", async () => {
+    const actualXml = await readFile(new URL("./fixtures/windows-task-query.xml", import.meta.url), "utf8");
+    const definition: WindowsTaskDefinition = {
+      projectId: "sample-store",
+      projectPath: "C:\\SiteIndexFixture\\sample-store",
+      executablePath: "C:\\Program Files\\SiteIndex\\SiteIndex.exe",
+      userId: "FIXTURE-PC\\tester",
+      userSid: "S-1-5-21-111-222-333-1001",
+      job: "daily",
+      schedule: { enabled: true, days: [1, 2, 3, 4, 5, 6, 7], time: "17:00" },
+      options: { wake_to_run: true, run_if_missed: true, notify_on_failure: true, validate_after_sync: false },
+    };
+
+    expect(windowsTaskMatches(actualXml, definition)).toBe(true);
+    expect(windowsTaskDifferences(actualXml, definition)).toEqual([]);
+
+    const commands: { file: string; args: string[] }[] = [];
+    const registrar = createWindowsTaskRegistrar({
+      userId: definition.userId,
+      runCommand: async (file, args) => {
+        commands.push({ file, args });
+        if (file === "whoami.exe") return '"FIXTURE-PC\\tester","S-1-5-21-111-222-333-1001"\r\n';
+        if (file === "schtasks.exe" && args[0] === "/Query") return actualXml;
+        return "";
+      },
+    });
+    await expect(registrar.reconcile([definition], [], [], false)).resolves.toMatchObject({ mode: "system" });
+    expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Create")).toBe(false);
+
+    const differentTime = actualXml.replace("2026-11-05T17:00:00", "2026-11-05T18:00:00");
+    expect(windowsTaskDifferences(differentTime, definition)).toContainEqual({
+      field: "Trigger.Time",
+      expected: "17:00",
+      actual: "18:00",
+    });
   });
 });
 
@@ -184,10 +223,10 @@ describe("Windows schedule registration", () => {
     expect(script.startsWith("\uFEFF")).toBe(true);
     const encodedOperations = /FromBase64String\('([^']+)'\)\)/.exec(script)?.[1];
     expect(script).toContain("$operations = ConvertFrom-Json -InputObject $operationsJson");
-    expect(script).toContain('for ($index = 0; $index -lt $operations.Count; $index++)');
+    expect(script).toContain("for ($index = 0; $index -lt $operations.Count; $index++)");
     expect(script).toContain('/TN "$($operation.name)"');
     expect(script).toContain("$ErrorActionPreference = 'Continue'");
-    expect(script).toContain('$ErrorActionPreference = $previousErrorActionPreference');
+    expect(script).toContain("$ErrorActionPreference = $previousErrorActionPreference");
     expect(encodedOperations).toBeTruthy();
     const operations = JSON.parse(Buffer.from(encodedOperations!, "base64").toString("utf8")) as {
       action: string;
@@ -357,8 +396,8 @@ describe("Windows schedule registration", () => {
 
 describe("Windows 控制台输出解码", () => {
   const gbkMissingTask = Uint8Array.from([
-    180, 237, 206, 243, 58, 32, 207, 181, 205, 179, 213, 210, 178, 187, 181, 189, 214, 184, 182, 168, 181, 196, 206, 196,
-    188, 254, 161, 163,
+    180, 237, 206, 243, 58, 32, 207, 181, 205, 179, 213, 210, 178, 187, 181, 189, 214, 184, 182, 168, 181, 196, 206,
+    196, 188, 254, 161, 163,
   ]);
 
   it("按 OEM 代码页 936 解码中文 schtasks 错误，避免误判为拒绝访问", () => {

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+
+  <RegistrationInfo>
+
+    <Author>SiteIndex</Author>
+
+    <Description>SiteIndex sample-store daily</Description>
+
+    <URI>\SiteIndex\sample-store-daily</URI>
+
+  </RegistrationInfo>
+
+  <Principals>
+
+    <Principal id="Author">
+
+      <UserId>S-1-5-21-111-222-333-1001</UserId>
+
+      <LogonType>InteractiveToken</LogonType>
+
+    </Principal>
+
+  </Principals>
+
+  <Settings>
+
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+
+    <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
+
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+
+    <StartWhenAvailable>true</StartWhenAvailable>
+
+    <WakeToRun>true</WakeToRun>
+
+    <IdleSettings>
+
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+
+      <RestartOnIdle>false</RestartOnIdle>
+
+    </IdleSettings>
+
+  </Settings>
+
+  <Triggers>
+
+    <CalendarTrigger>
+
+      <StartBoundary>2026-11-05T17:00:00</StartBoundary>
+
+      <ScheduleByWeek>
+
+        <WeeksInterval>1</WeeksInterval>
+
+        <DaysOfWeek>
+
+          <Sunday />
+
+          <Monday />
+
+          <Tuesday />
+
+          <Wednesday />
+
+          <Thursday />
+
+          <Friday />
+
+          <Saturday />
+
+        </DaysOfWeek>
+
+      </ScheduleByWeek>
+
+    </CalendarTrigger>
+
+  </Triggers>
+
+  <Actions Context="Author">
+
+    <Exec>
+
+      <Command>C:\Program Files\SiteIndex\SiteIndex.exe</Command>
+
+      <Arguments>--run-job "C:\SiteIndexFixture\sample-store" daily</Arguments>
+
+      <WorkingDirectory>C:\SiteIndexFixture\sample-store</WorkingDirectory>
+
+    </Exec>
+
+  </Actions>
+
+</Task>

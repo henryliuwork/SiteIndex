@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -238,11 +238,82 @@ describe("system schedule definitions", () => {
       dailyName,
       buildWindowsTaskXml({ ...definitions[0]!, projectPath: path.join(tmpdir(), "old-project") }),
     );
-    await expect(scheduler.verify(project)).resolves.toMatchObject({ state: "path_mismatch" });
+    await expect(scheduler.verify(project)).resolves.toMatchObject({
+      state: "path_mismatch",
+      message: expect.stringContaining(`期望 ${projectPath}，实际 ${path.join(tmpdir(), "old-project")}`),
+    });
     xmlByName.set(dailyName, buildWindowsTaskXml({ ...definitions[0]!, schedule: { ...config.daily, time: "03:00" } }));
-    await expect(scheduler.verify(project)).resolves.toMatchObject({ state: "error" });
+    await expect(scheduler.verify(project)).resolves.toMatchObject({
+      state: "error",
+      message: expect.stringContaining("Trigger.Time：期望 02:00，实际 03:00"),
+    });
     xmlByName.delete(dailyName);
     await expect(scheduler.verify(project)).resolves.toMatchObject({ state: "unregistered" });
+  });
+
+  it("verifies a real Windows XML export using synthetic project and account values", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "siteindex-windows-query-verify-test-"));
+    const projectPath = path.join(directory, "sample-store");
+    await mkdir(projectPath);
+    const actualXml = (
+      await readFile(new URL("./fixtures/windows-task-query.xml", import.meta.url), "utf8")
+    ).replaceAll("C:\\SiteIndexFixture\\sample-store", projectPath);
+    const verificationConfig: ScheduleConfig = {
+      ...config,
+      daily: { enabled: true, days: [1, 2, 3, 4, 5, 6, 7], time: "17:00" },
+      validate: { ...config.validate, enabled: false },
+      weekly: { ...config.weekly, enabled: false },
+      readme: { ...config.readme, enabled: false },
+      monthly: { ...config.monthly, enabled: false },
+    };
+    const scheduler = createSystemScheduler({
+      platform: "win32",
+      executablePath: "C:\\Program Files\\SiteIndex\\SiteIndex.exe",
+      runCommand: async (file, args) => {
+        if (file === "whoami.exe" && args.length === 0) return "FIXTURE-PC\\tester";
+        if (file === "whoami.exe") return '"FIXTURE-PC\\tester","S-1-5-21-111-222-333-1001"';
+        if (file === "schtasks.exe" && args[0] === "/Query" && args[2] === windowsTaskName("sample-store", "daily")) {
+          return actualXml;
+        }
+        throw Object.assign(new Error("task not found"), { detail: "The task does not exist" });
+      },
+    });
+
+    try {
+      await expect(
+        scheduler.verify({ projectId: "sample-store", projectPath, config: verificationConfig, isThisDevice: true }),
+      ).resolves.toEqual({ state: "ok" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reports resident scheduling without querying for missing system tasks", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "siteindex-resident-verify-test-"));
+    const projectPath = path.join(directory, "sample-store");
+    const statePath = path.join(directory, "schedule-state.json");
+    await mkdir(projectPath);
+    await writeFile(
+      statePath,
+      JSON.stringify({ mode: "resident", authorization_required: true, registered_task_names: [] }),
+      "utf8",
+    );
+    const runCommand = vi.fn(async () => "");
+    const scheduler = createSystemScheduler({
+      platform: "win32",
+      executablePath: "C:\\Synthetic\\SiteIndex.exe",
+      runtimeStatePath: statePath,
+      runCommand,
+    });
+
+    try {
+      await expect(
+        scheduler.verify({ projectId: "sample-store", projectPath, config, isThisDevice: true }),
+      ).resolves.toEqual({ state: "ok", message: "当前为软件驻留调度，无系统任务。" });
+      expect(runCommand).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   it("writes and loads macOS LaunchAgents through launchctl", async () => {
     const homeDirectory = await mkdtemp(path.join(tmpdir(), "siteindex-launchd-test-"));

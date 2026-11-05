@@ -3,16 +3,20 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { DOMParser } from "@xmldom/xmldom";
 import type { JobSchedule, ScheduleConfig, Weekday } from "@siteindex/shared";
 
 export const WINDOWS_SCHEDULED_JOBS = ["daily", "validate", "weekly", "readme", "monthly"] as const;
 export type WindowsScheduledJob = (typeof WINDOWS_SCHEDULED_JOBS)[number];
+type XmlDocument = ReturnType<DOMParser["parseFromString"]>;
+type XmlElement = NonNullable<XmlDocument["documentElement"]>;
 
 export interface WindowsTaskDefinition {
   projectId: string;
   projectPath: string;
   executablePath: string;
   userId: string;
+  userSid?: string;
   job: WindowsScheduledJob;
   schedule: JobSchedule;
   options: ScheduleConfig["options"];
@@ -260,46 +264,250 @@ export function isWindowsTaskMissing(error: unknown): boolean {
   );
 }
 
-function normalizedXml(value: string): string {
-  return value
-    .replace(/^\uFEFF/, "")
-    .replace(/>\s+</g, "><")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+export interface WindowsTaskDifference {
+  field: string;
+  expected: string;
+  actual: string;
 }
 
-function normalizedSchedule(value: string): string | null {
-  const match = /<calendartrigger>[\s\S]*?<\/calendartrigger>/.exec(normalizedXml(value));
-  return (
-    match?.[0].replace(
-      /<startboundary>\d{4}-\d{2}-\d{2}t(\d{2}:\d{2}):\d{2}<\/startboundary>/,
-      "<startboundary>$1</startboundary>",
-    ) ?? null
-  );
+interface ParsedTaskTrigger {
+  startTime: string | null;
+  enabled: string;
+  kind: "weekly" | "monthly" | "unknown";
+  weekdays: string[];
+  weeksInterval: string | null;
+  monthDays: string[];
+  months: string[];
+}
+
+interface ParsedWindowsTask {
+  userId: string | null;
+  logonType: string | null;
+  runLevel: string;
+  command: string | null;
+  arguments: string | null;
+  workingDirectory: string | null;
+  startWhenAvailable: string;
+  wakeToRun: string;
+  multipleInstancesPolicy: string;
+  executionTimeLimit: string;
+  disallowStartIfOnBatteries: string;
+  stopIfGoingOnBatteries: string;
+  allowHardTerminate: string;
+  enabled: string;
+  priority: string;
+  triggerCount: number;
+  actionCount: number;
+  trigger: ParsedTaskTrigger | null;
+}
+
+function taskXmlDocument(xml: string): XmlDocument {
+  const errors: string[] = [];
+  const document = new DOMParser({
+    onError: (level, message) => {
+      if (level !== "warning") errors.push(message);
+    },
+  }).parseFromString(xml.replace(/^\uFEFF/, ""), "application/xml");
+  if (errors.length || document.documentElement?.localName !== "Task") {
+    throw new Error(errors[0] ?? "XML 根元素不是 Task。");
+  }
+  return document;
+}
+
+function elements(parent: XmlDocument | XmlElement, tagName: string): XmlElement[] {
+  return Array.from(parent.getElementsByTagName(tagName));
+}
+
+function elementText(parent: XmlDocument | XmlElement, tagName: string): string | null {
+  return elements(parent, tagName)[0]?.textContent?.trim() || null;
+}
+
+function taskSetting(document: XmlDocument | XmlElement, tagName: string, defaultValue: string): string {
+  return elementText(document, tagName) ?? defaultValue;
+}
+
+function parseWindowsTask(xml: string): ParsedWindowsTask {
+  const document = taskXmlDocument(xml);
+  const settings = elements(document, "Settings")[0] ?? document;
+  const triggerElement = elements(document, "CalendarTrigger")[0];
+  let trigger: ParsedTaskTrigger | null = null;
+  if (triggerElement) {
+    const startBoundary = elementText(triggerElement, "StartBoundary");
+    const startTimeMatch = startBoundary ? /T(\d{2}:\d{2})(?::\d{2})?/.exec(startBoundary) : null;
+    const weekly = elements(triggerElement, "ScheduleByWeek").length > 0;
+    const monthly = elements(triggerElement, "ScheduleByMonth").length > 0;
+    trigger = {
+      startTime: startTimeMatch?.[1] ?? null,
+      enabled: elementText(triggerElement, "Enabled") ?? "true",
+      kind: weekly ? "weekly" : monthly ? "monthly" : "unknown",
+      weekdays: elements(triggerElement, "DaysOfWeek")
+        .flatMap((element) => Array.from(element.children).map((day) => day.localName ?? day.nodeName))
+        .sort(),
+      weeksInterval: elementText(triggerElement, "WeeksInterval"),
+      monthDays: elements(triggerElement, "DaysOfMonth")
+        .flatMap((element) => Array.from(element.children).map((day) => day.textContent?.trim() ?? ""))
+        .sort(),
+      months: elements(triggerElement, "Months")
+        .flatMap((element) => Array.from(element.children).map((month) => month.localName ?? month.nodeName))
+        .sort(),
+    };
+  }
+  return {
+    userId: elementText(document, "UserId"),
+    logonType: elementText(document, "LogonType"),
+    // Task Scheduler omits schema defaults when exporting a registered task.
+    runLevel: elementText(document, "RunLevel") ?? "LeastPrivilege",
+    command: elementText(document, "Command"),
+    arguments: elementText(document, "Arguments"),
+    workingDirectory: elementText(document, "WorkingDirectory"),
+    startWhenAvailable: taskSetting(settings, "StartWhenAvailable", "false"),
+    wakeToRun: taskSetting(settings, "WakeToRun", "false"),
+    multipleInstancesPolicy: taskSetting(settings, "MultipleInstancesPolicy", "IgnoreNew"),
+    executionTimeLimit: taskSetting(settings, "ExecutionTimeLimit", "PT72H"),
+    disallowStartIfOnBatteries: taskSetting(settings, "DisallowStartIfOnBatteries", "true"),
+    stopIfGoingOnBatteries: taskSetting(settings, "StopIfGoingOnBatteries", "true"),
+    allowHardTerminate: taskSetting(settings, "AllowHardTerminate", "true"),
+    enabled: taskSetting(settings, "Enabled", "true"),
+    priority: taskSetting(settings, "Priority", "7"),
+    triggerCount: elements(document, "CalendarTrigger").length,
+    actionCount: elements(document, "Actions")[0]?.children.length ?? 0,
+    trigger,
+  };
+}
+
+function normalizedField(value: string | null): string {
+  return (value ?? "<缺失>").trim().replaceAll("/", "\\").toLowerCase();
+}
+
+function displayField(value: string | null): string {
+  return value ?? "<缺失>";
+}
+
+export function windowsTaskUserId(xml: string): string | null {
+  return parseWindowsTask(xml).userId;
+}
+
+export function parseWindowsUserSid(output: string): string | null {
+  return /\bS-1-\d+(?:-\d+)+\b/i.exec(output)?.[0] ?? null;
+}
+
+export function isWindowsUserSid(value: string | null): boolean {
+  return value != null && /^S-1-\d+(?:-\d+)+$/i.test(value);
+}
+
+export function windowsTaskDifferences(actualXml: string, definition: WindowsTaskDefinition): WindowsTaskDifference[] {
+  let actual: ParsedWindowsTask;
+  try {
+    actual = parseWindowsTask(actualXml);
+  } catch (error) {
+    return [
+      {
+        field: "XML",
+        expected: "有效的 Task Scheduler 任务 XML",
+        actual: `无法解析：${error instanceof Error ? error.message : String(error)}`,
+      },
+    ];
+  }
+
+  const expectedXml = parseWindowsTask(buildWindowsTaskXml(definition));
+  const expectedArguments = `--run-job "${definition.projectPath}" ${definition.job}`;
+  const expectedUserId = definition.userSid ? `${definition.userId} or ${definition.userSid}` : definition.userId;
+  const userIdMatches =
+    normalizedField(actual.userId) === normalizedField(definition.userId) ||
+    (definition.userSid != null && normalizedField(actual.userId) === normalizedField(definition.userSid));
+  const comparisons: { field: string; expected: string | null; actual: string | null }[] = [
+    { field: "LogonType", expected: "InteractiveToken", actual: actual.logonType },
+    { field: "RunLevel", expected: "LeastPrivilege", actual: actual.runLevel },
+    { field: "Command", expected: definition.executablePath, actual: actual.command },
+    { field: "Arguments", expected: expectedArguments, actual: actual.arguments },
+    { field: "WorkingDirectory", expected: definition.projectPath, actual: actual.workingDirectory },
+    {
+      field: "StartWhenAvailable",
+      expected: definition.options.run_if_missed ? "true" : "false",
+      actual: actual.startWhenAvailable,
+    },
+    { field: "WakeToRun", expected: definition.options.wake_to_run ? "true" : "false", actual: actual.wakeToRun },
+    { field: "MultipleInstancesPolicy", expected: "IgnoreNew", actual: actual.multipleInstancesPolicy },
+    { field: "ExecutionTimeLimit", expected: "PT2H", actual: actual.executionTimeLimit },
+    { field: "DisallowStartIfOnBatteries", expected: "false", actual: actual.disallowStartIfOnBatteries },
+    { field: "StopIfGoingOnBatteries", expected: "false", actual: actual.stopIfGoingOnBatteries },
+    { field: "AllowHardTerminate", expected: "true", actual: actual.allowHardTerminate },
+    { field: "Enabled", expected: "true", actual: actual.enabled },
+    { field: "Priority", expected: "7", actual: actual.priority },
+    { field: "Trigger.Count", expected: "1", actual: String(actual.triggerCount) },
+    { field: "Action.Count", expected: "1", actual: String(actual.actionCount) },
+  ];
+  const differences: WindowsTaskDifference[] = [];
+  if (!userIdMatches) {
+    differences.push({ field: "UserId", expected: expectedUserId, actual: displayField(actual.userId) });
+  }
+  for (const comparison of comparisons) {
+    const expectedValue = normalizedField(comparison.expected);
+    const actualValue = normalizedField(comparison.actual);
+    if (expectedValue !== actualValue) {
+      differences.push({
+        field: comparison.field,
+        expected: displayField(comparison.expected),
+        actual: displayField(comparison.actual),
+      });
+    }
+  }
+
+  const expectedTrigger = expectedXml.trigger;
+  const actualTrigger = actual.trigger;
+  const expectedDays =
+    definition.job === "monthly"
+      ? []
+      : selectedWeekdays(definition.schedule)
+          .map((day) => WINDOWS_DAYS[day])
+          .sort();
+  const expectedMonths = definition.job === "monthly" ? [...WINDOWS_MONTHS].sort() : [];
+  const expectedMonthDays = definition.job === "monthly" ? [String(definition.schedule.day_of_month)] : [];
+  const triggerComparisons: { field: string; expected: string; actual: string }[] = [
+    {
+      field: "Trigger.Time",
+      expected: expectedTrigger?.startTime ?? "<缺失>",
+      actual: actualTrigger?.startTime ?? "<缺失>",
+    },
+    {
+      field: "Trigger.Enabled",
+      expected: expectedTrigger?.enabled ?? "<缺失>",
+      actual: actualTrigger?.enabled ?? "<缺失>",
+    },
+    {
+      field: "Trigger.Type",
+      expected: definition.job === "monthly" ? "monthly" : "weekly",
+      actual: actualTrigger?.kind ?? "<缺失>",
+    },
+    {
+      field: "Trigger.Weekdays",
+      expected: expectedDays.join(", ") || "<不适用>",
+      actual: actualTrigger?.weekdays.join(", ") || "<不适用>",
+    },
+    {
+      field: "Trigger.WeeksInterval",
+      expected: definition.job === "monthly" ? "<不适用>" : "1",
+      actual: definition.job === "monthly" ? "<不适用>" : (actualTrigger?.weeksInterval ?? "1"),
+    },
+    {
+      field: "Trigger.MonthDays",
+      expected: expectedMonthDays.join(", ") || "<不适用>",
+      actual: actualTrigger?.monthDays.join(", ") || "<不适用>",
+    },
+    {
+      field: "Trigger.Months",
+      expected: expectedMonths.join(", ") || "<不适用>",
+      actual: actualTrigger?.months.join(", ") || "<不适用>",
+    },
+  ];
+  for (const comparison of triggerComparisons) {
+    if (normalizedField(comparison.expected) !== normalizedField(comparison.actual)) differences.push(comparison);
+  }
+  return differences;
 }
 
 export function windowsTaskMatches(actualXml: string, definition: WindowsTaskDefinition): boolean {
-  const actual = normalizedXml(actualXml);
-  const expected = normalizedXml(buildWindowsTaskXml(definition));
-  const required = [
-    `<userid>${escapeXml(definition.userId).toLowerCase()}</userid>`,
-    "<logontype>interactivetoken</logontype>",
-    "<runlevel>leastprivilege</runlevel>",
-    `<command>${escapeXml(definition.executablePath).toLowerCase()}</command>`,
-    `<arguments>${escapeXml(`--run-job "${definition.projectPath}" ${definition.job}`).toLowerCase()}</arguments>`,
-    `<workingdirectory>${escapeXml(definition.projectPath).toLowerCase()}</workingdirectory>`,
-    `<startwhenavailable>${definition.options.run_if_missed ? "true" : "false"}</startwhenavailable>`,
-    `<waketorun>${definition.options.wake_to_run ? "true" : "false"}</waketorun>`,
-    "<multipleinstancespolicy>ignorenew</multipleinstancespolicy>",
-    "<executiontimelimit>pt2h</executiontimelimit>",
-    definition.job === "monthly" ? "<schedulebymonth>" : "<schedulebyweek>",
-  ];
-  const expectedSchedule = normalizedSchedule(expected);
-  return (
-    required.every((fragment) => actual.includes(fragment)) &&
-    Boolean(expectedSchedule && normalizedSchedule(actualXml)?.includes(expectedSchedule))
-  );
+  return windowsTaskDifferences(actualXml, definition).length === 0;
 }
 
 function buildElevatedScript(operations: WindowsTaskOperation[], resultPath: string): string {
@@ -443,11 +651,24 @@ export function createWindowsTaskRegistrar(options: WindowsTaskRegistrarOptions 
 
       const userId = options.userId ?? (await runner("whoami.exe", [])).trim();
       if (!/^[^\\/\r\n]+\\[^\\/\r\n]+$/.test(userId)) throw new Error("whoami 未返回计算机名\\用户名格式的当前用户。");
+      let currentSid: Promise<string | null> | null = null;
       const createOperations: WindowsTaskOperation[] = [];
       for (const [name, definition] of definitions) {
         try {
           const existingXml = await runner("schtasks.exe", ["/Query", "/TN", name, "/XML"]);
-          if (!windowsTaskMatches(existingXml, { ...definition, userId })) {
+          let taskUserId: string | null = null;
+          try {
+            taskUserId = windowsTaskUserId(existingXml);
+          } catch {
+            // 非法 XML 会由 windowsTaskMatches 报为字段差异并触发重新注册。
+          }
+          let userSid: string | undefined;
+          if (isWindowsUserSid(taskUserId)) {
+            currentSid ??= runner("whoami.exe", ["/user", "/fo", "csv", "/nh"]).then(parseWindowsUserSid);
+            userSid = (await currentSid) ?? undefined;
+          }
+          const currentDefinition = { ...definition, userId, userSid };
+          if (!windowsTaskMatches(existingXml, currentDefinition)) {
             createOperations.push({ action: "create", name, xml: buildWindowsTaskXml({ ...definition, userId }) });
           }
         } catch (error) {

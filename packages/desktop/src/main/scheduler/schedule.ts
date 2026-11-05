@@ -8,8 +8,11 @@ import {
   createWindowsTaskRegistrar,
   windowsRootTaskName,
   windowsTaskName,
+  windowsTaskDifferences,
+  windowsTaskUserId,
+  parseWindowsUserSid,
+  isWindowsUserSid,
   isWindowsTaskMissing,
-  windowsTaskMatches,
   WINDOWS_SCHEDULED_JOBS,
   type WindowsTaskDefinition,
   type WindowsTaskRegistrar,
@@ -457,7 +460,12 @@ export function createSystemScheduler(options: {
         return { state: "orphaned", message: "项目目录不存在，计划任务可能仍指向旧路径。" };
       }
       if (platform === "win32") {
+        const runtimeStatus = await getRuntimeStatus();
+        if (runtimeStatus.mode === "resident") {
+          return { state: "ok", message: "当前为软件驻留调度，无系统任务。" };
+        }
         const userId = (await runCommand("whoami.exe", [])).trim();
+        let currentSid: Promise<string | null> | null = null;
         for (const job of WINDOWS_SCHEDULED_JOBS) {
           const expected = project.isThisDevice && project.config[job].enabled;
           const names = [windowsTaskName(project.projectId, job), windowsRootTaskName(project.projectId, job)];
@@ -476,25 +484,39 @@ export function createSystemScheduler(options: {
             }
           }
           if (!foundXml) {
-            if (expected) return { state: "unregistered", message: `缺少 ${job} 系统计划任务。` };
+            if (expected) return { state: "unregistered", message: `${job} 任务：期望存在系统计划任务，实际缺失。` };
             continue;
           }
           if (!expected) return { state: "error", message: `禁用的 ${job} 计划任务仍然存在。` };
           const actualPath = projectPathFromWindowsTaskXml(foundXml);
           if (!actualPath || !sameWindowsPath(actualPath, project.projectPath)) {
-            return { state: "path_mismatch", message: `${job} 任务使用的项目路径与当前路径不一致。` };
+            return {
+              state: "path_mismatch",
+              message: `${job} 任务项目路径不一致：期望 ${project.projectPath}，实际 ${actualPath ?? "<缺失>"}。`,
+            };
+          }
+          const taskUserId = windowsTaskUserId(foundXml);
+          let userSid: string | undefined;
+          if (isWindowsUserSid(taskUserId)) {
+            currentSid ??= runCommand("whoami.exe", ["/user", "/fo", "csv", "/nh"]).then(parseWindowsUserSid);
+            userSid = (await currentSid) ?? undefined;
           }
           const definition: WindowsTaskDefinition = {
             projectId: project.projectId,
             projectPath: project.projectPath,
             executablePath: options.executablePath,
             userId,
+            userSid,
             job,
             schedule: project.config[job],
             options: project.config.options,
           };
-          if (!windowsTaskMatches(foundXml, definition)) {
-            return { state: "error", message: `${job} 任务的触发时间或设置与项目配置不一致。` };
+          const differences = windowsTaskDifferences(foundXml, definition);
+          if (differences.length > 0) {
+            const details = differences
+              .map(({ field, expected, actual }) => `${field}：期望 ${expected}，实际 ${actual}`)
+              .join("；");
+            return { state: "error", message: `${job} 任务配置不一致：${details}。` };
           }
         }
         return { state: "ok" };
