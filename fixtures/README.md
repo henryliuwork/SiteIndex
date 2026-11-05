@@ -34,3 +34,6 @@ Kingsyard 风格喂鸟器站点，16 个产品（2 个带颜色变体），见 `
 
 ## 重新生成
 修改场景后：`python3 fixtures/generate.py && bash fixtures/build_expected.sh`（需 Python ≥ 3.10 与 jsonschema）。
+
+## 产品详情变体 fixture
+- `inputs/v030-product-detail-variants.json` 是纯虚构的产品与库存样本，覆盖跨 URL 的父子 SKU 变体和同一 handle 的多 SKU 库存。
