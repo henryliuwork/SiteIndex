@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HashRouter, Route, Routes, type RouteObject } from "react-router-dom";
 import { api } from "./api";
 import { projectQueryKeys, subscribeToProjectChanges, subscribeToProjectJobCompletion } from "./project-queries";
-import { SideNav, WindowChrome } from "./components";
+import { SideNav, ToastProvider, WindowChrome } from "./components";
 import { WizardDraftProvider } from "./pages/wizard-state";
 
 const pageRoutes = Object.values(import.meta.glob<RouteObject>("./pages/*/route.tsx", { eager: true, import: "route" }));
@@ -34,7 +34,7 @@ function AppShell() {
 export default function App() {
   return (
     <HashRouter>
-      <AppShell />
+      <ToastProvider><AppShell /></ToastProvider>
     </HashRouter>
   );
 }

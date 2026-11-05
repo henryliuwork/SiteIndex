@@ -25,6 +25,8 @@
   --color-chart-feeders: #1E6B52;
   --color-chart-baths: #D9822B;
   --color-chart-houses: #7FB2E5;
+  --color-overlay: rgba(16, 22, 19, 0.28);
+  --color-focus: rgba(30, 107, 82, 0.12);
 
   --font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
   --font-mono: "Geist Mono Variable", Consolas, monospace;
