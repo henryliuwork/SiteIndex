@@ -127,6 +127,12 @@
 - [x] A0a：以可选 `sku` 命名空间声明 `previewGrouping`，并登记 IPC invoke 与 pending handler 清单
 - [x] A0b：单独扩大 `inventory.summary` 范围参数，保留 14 并支持 `30 | 60 | 90 | "all"`（#204）
 
+### v0.3.1 · 产品 SKU 视图
+- [x] A-2：按 `sku_grouping` 规则为 `products.list` 生成临时父行；父行统计子 SKU 总数与有货数，子行计数返回 `null`；支持 `parent_only`、独立 SKU 和碰撞回退，不改写旧黄金视图
+- [ ] A-3：EDM 图片表支持 `parent_only`
+- [ ] A-4：产品详情返回父子 SKU 的库存 `variants[]`
+- [ ] A-6：Core 实现 `seo.getRuleSettings`
+
 ## 本机运行测试的注意事项
 - 全仓测试前先运行 `pnpm typecheck`：UI 的 `pretypecheck` 会从 fixture 生成本地 mock 数据，随后再运行 `pnpm test`。直接先运行 Vitest 可能因缺少该生成文件而使 UI 测试无法加载。
 - Windows 本机在高负载下若出现临时目录 `EBUSY` 或测试超时，可用 `pnpm exec vitest run --maxWorkers=2 --minWorkers=1` 降低并发后复跑；待测试进程退出后再清理系统临时目录。本轮 4 worker 全仓运行通过，未复现 Core 测试清理或锁释放问题。
