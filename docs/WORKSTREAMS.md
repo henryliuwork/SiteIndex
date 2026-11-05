@@ -1,6 +1,6 @@
 # SiteIndex · 并行开发分工（A / B / C / D / E）
 
-> 所有开发 agent 开工前必读：本文件 → `AGENTS.md` → 最新执行快照 `docs/plan/2026-10-30-v020-wave2-execution.md` → 收敛总计划 `docs/plan/2026-10-29-v020-convergence.md` → A/B/C 各自任务清单（若适用）→ PRD / ARCHITECTURE / DATA_SPEC / DESIGN 中相关章节。
+> 所有开发 agent 开工前必读：本文件 → `AGENTS.md` → 最新执行计划 `docs/plan/2026-11-05-v030-roadmap.md`（v0.3.x，含界面规范与表格标准）→ 历史快照 `docs/plan/2026-10-30-v020-wave2-execution.md` → 收敛总计划 `docs/plan/2026-10-29-v020-convergence.md` → A/B/C 各自任务清单（若适用）→ PRD / ARCHITECTURE / DATA_SPEC / DESIGN 中相关章节。
 
 ## 1. 五个工作流
 
