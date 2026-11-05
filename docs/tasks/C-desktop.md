@@ -70,6 +70,7 @@
 - [ ] 运行页显示“系统计划任务”/“软件常驻（关闭软件后不执行）”模式；提供“重新授权注册”按钮（等待 contract PR 与 B 的 UI 更新）
 - [x] macOS：launchd plist（StartCalendarInterval 数组）→ `launchctl bootstrap gui/$UID`
 - [x] `schedule.save`：写 site.json（core）→ 本机是执行设备时注册/更新系统任务；遇到权限错误时提示一次 UAC，根据授权结果继续系统任务或切换常驻；不是执行设备时只保存并提示
+- [x] 添加已有项目在项目登记与摘要读取完成后立即返回；系统任务 reconcile 进入后台串行队列，项目中心已有的任务核验状态等待后台注册完成；注册器先比较现有配置、批量读取候选旧任务、并发执行独立任务操作，只对确实失败的变更发起一次 UAC
 - [x] 软件启动时校正：执行设备上的项目，系统任务与 site.json 不一致时自动修正；如需提权，仅在运行页显示授权待更新，不自动弹出 UAC
 - [x] XML 与 plist 生成快照测试（覆盖 Windows 用户身份、权限级别、UTF-16LE、唤醒和补跑设置）
 - [x] **验收**：本机 Windows 实测工作日 17:44 计划经 UAC 保存，任务计划程序于 17:44 触发，`runs.jsonl` 在 17:44:03 写入 `trigger=schedule`。另一次在应用完全退出后，系统任务于 17:26 触发。合成项目没有 Feed 快照，Job 按预期记录为失败；计划触发验收通过。运行页与运行历史截图见 `packages/desktop/docs/screenshots/c7-windows-scheduler.png` 和 `packages/desktop/docs/screenshots/c7-windows-run-record.png`。

@@ -14,6 +14,7 @@ import { parseRunJobArguments } from "./run-job-args.js";
 import { createWindowThenReconcileInBackground } from "./startup-reconciliation.js";
 import { createResidentScheduler, type ResidentScheduler } from "./scheduler/resident-scheduler.js";
 import { createSystemScheduler, type ScheduleRuntimeStatus } from "./scheduler/schedule.js";
+import { createScheduleReconciliationQueue } from "./scheduler/reconciliation-queue.js";
 import { createSkillService } from "./skill-service.js";
 import { createDesktopIntegrations } from "./desktop-integrations.js";
 import { createSettingsStore } from "./settings-store.js";
@@ -206,7 +207,10 @@ if (!hasSingleInstanceLock) {
       systemTray?.destroy();
       systemTray = null;
     };
-    const reconcileSchedules = async (
+    const traceAddExisting =
+      process.env.SITEINDEX_TRACE === "1" ? createAddExistingTraceWriter(app.getPath("logs")) : undefined;
+    const scheduleReconciliationQueue = createScheduleReconciliationQueue();
+    const reconcileSchedulesNow = async (
       allowElevation: boolean,
       knownEntries?: Awaited<ReturnType<typeof catalog.refresh>>,
       onTiming?: AddExistingTimingCallback,
@@ -223,10 +227,38 @@ if (!hasSingleInstanceLock) {
         }),
       );
       const status = await measureAddExistingPhase("scheduler.reconcile", onTiming, () =>
-        scheduler.reconcile(definitions, allowElevation, removedProjectIds),
+        scheduler.reconcile(definitions, allowElevation, removedProjectIds, onTiming),
       );
       await applyScheduleMode(status);
       return status;
+    };
+    const reconcileSchedules = (
+      allowElevation: boolean,
+      knownEntries?: Awaited<ReturnType<typeof catalog.refresh>>,
+      onTiming?: AddExistingTimingCallback,
+      removedProjectIds?: string[],
+    ): Promise<ScheduleRuntimeStatus> =>
+      scheduleReconciliationQueue.enqueue(() =>
+        reconcileSchedulesNow(allowElevation, knownEntries, onTiming, removedProjectIds),
+      );
+    const reconcileProjectScheduleInBackground = (projectId: ProjectId): void => {
+      void scheduleReconciliationQueue
+        .enqueueForProject(projectId, async () => {
+          // 先让添加项目的 IPC 响应返回，避免注册授权对话框挡住添加反馈。
+          await new Promise<void>((resolveNextTurn) => setImmediate(resolveNextTurn));
+          const timings: { phase: AddExistingTracePhase; durationMs: number }[] = [];
+          try {
+            await reconcileSchedulesNow(true, undefined, (phase, durationMs) => {
+              timings.push({ phase, durationMs });
+            });
+          } finally {
+            await traceAddExisting?.(timings);
+          }
+        })
+        .catch(() => {
+          // 注册错误会在项目中心的后台核验状态中显示；日志不输出项目路径或任务内容。
+          console.warn("添加已有项目后的后台计划任务注册失败。");
+        });
     };
     finalizeInit = (result, projectPath, emitProgress) =>
       completeInitSchedule(result, projectPath, {
@@ -290,9 +322,9 @@ if (!hasSingleInstanceLock) {
       jobs,
       scheduler,
       reconcileSchedules,
-      ...(process.env.SITEINDEX_TRACE === "1"
-        ? { traceAddExisting: createAddExistingTraceWriter(app.getPath("logs")) }
-        : {}),
+      reconcileProjectScheduleInBackground,
+      waitForProjectScheduleReconciliation: (id) => scheduleReconciliationQueue.waitForProject(id),
+      ...(traceAddExisting ? { traceAddExisting } : {}),
       onRunnerClaimed: async () => {
         await reconcileSchedules(true);
       },
