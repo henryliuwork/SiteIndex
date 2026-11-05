@@ -136,3 +136,6 @@
 ## 本机运行测试的注意事项
 - 全仓测试前先运行 `pnpm typecheck`：UI 的 `pretypecheck` 会从 fixture 生成本地 mock 数据，随后再运行 `pnpm test`。直接先运行 Vitest 可能因缺少该生成文件而使 UI 测试无法加载。
 - Windows 本机在高负载下若出现临时目录 `EBUSY` 或测试超时，可用 `pnpm exec vitest run --maxWorkers=2 --minWorkers=1` 降低并发后复跑；待测试进程退出后再清理系统临时目录。本轮 4 worker 全仓运行通过，未复现 Core 测试清理或锁释放问题。
+
+### v0.3.1 · EDM 图片表
+- [x] A-3：EDM 图片表按 SKU 分组规则返回父行和未归组 SKU；父行搜索包含子 SKU，父行图片编辑同步到该组子 SKU

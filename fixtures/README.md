@@ -27,6 +27,9 @@ Kingsyard 风格喂鸟器站点，16 个产品（2 个带颜色变体），见 `
 - `sku-grouping/193-skus.json` 是纯虚构的 193 条 SKU 样本，用于验证父子 SKU 规则的稳定分组与未匹配计数。
 - `inputs/v030-products-parent-view.json` 是纯虚构的 Magento 风格产品数据，覆盖多 URL 子 SKU、缺货父组、独立 SKU 和 feed SKU 碰撞，用于验证产品列表父子行与 `parent_only`。
 
+## EDM 图片筛选 fixture
+- `inputs/v030-edm-parent-only.json` 是纯虚构的图片与库存样本，覆盖父子 SKU、手动图片、独立 SKU 和 feed SKU 碰撞，用于验证 EDM 图片表 `parent_only`。
+
 ## 运行黄金测试时
 1. 用 http 服务在 `http://127.0.0.1:8765/` 提供 `www/`（URL 已写死在 feed 与页面里）
 2. 把"今天"固定为 **2026-10-21**（时区 America/Los_Angeles）。影响：`days_since_featured`、`last_crawled`、categories 的 `last_seen`、weekly 的 run_id、sale_price 有效期判断
