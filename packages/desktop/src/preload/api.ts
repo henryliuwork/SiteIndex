@@ -176,6 +176,9 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       verify: (...args) => invoke<NonNullable<SiteIndexApi["schedule"]["verify"]>>("schedule.verify", ...args),
       status: () => invoke<NonNullable<SiteIndexApi["schedule"]["status"]>>("schedule.status"),
       reauthorize: () => invoke<NonNullable<SiteIndexApi["schedule"]["reauthorize"]>>("schedule.reauthorize"),
+      listOrphans: () => invoke<NonNullable<SiteIndexApi["schedule"]["listOrphans"]>>("schedule.listOrphans"),
+      removeOrphan: (...args) =>
+        invoke<NonNullable<SiteIndexApi["schedule"]["removeOrphan"]>>("schedule.removeOrphan", ...args),
     },
     runner: {
       get: (...args) => invoke<SiteIndexApi["runner"]["get"]>("runner.get", ...args),
