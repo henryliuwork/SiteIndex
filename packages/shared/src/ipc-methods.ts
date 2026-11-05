@@ -45,6 +45,7 @@ export const API_INVOKE_METHODS = [
   "seo.listLinks",
   "seo.orphanPages",
   "seo.getPage",
+  "seo.getRuleSettings",
   "seo.googleSiteUrl",
   "seo.checkIndex",
   "content.summary",
@@ -101,6 +102,7 @@ export const API_EVENT_METHODS = [
 ] as const;
 
 export const PENDING_HANDLERS: readonly string[] = [
+  "seo.getRuleSettings",
 ];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];

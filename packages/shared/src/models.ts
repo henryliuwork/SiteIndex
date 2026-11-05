@@ -311,6 +311,17 @@ export interface SeoIssue {
   status: "open" | "fixed" | "ignored";
   first_seen: ISODate;
   last_seen: ISODate;
+  handled_at?: ISODateTime | null;
+}
+
+export interface SeoRuleSetting {
+  rule: SeoRule;
+  name: string;
+  description: string;
+  severity: Severity;
+  pending_count: number;
+  ignored: boolean;
+  ignored_urls: Url[];
 }
 
 export interface SeoLink {
@@ -438,9 +449,11 @@ export interface ProductView {
   image_source: "feed" | "manual" | "none";
   feed_image_url: Url | null;
   manual_image_url: Url | null;
-  variant_count: number;
+  variant_count: number | null;
   skus: string[];
-  in_stock_variants: number;
+  in_stock_variants: number | null;
+  row_kind?: "parent" | "child" | "single";
+  parent_sku?: string | null;
   stock_status: StockStatus;
   stock_since: ISODate | null;
   tags: string[];
@@ -487,6 +500,11 @@ export interface SkuStockView {
   children_count?: number;
   in_stock_children_count?: number;
 }
+
+export type ProductVariantStock = Pick<
+  SkuStockView,
+  "sku" | "title" | "stock_status" | "since" | "days_in_status" | "price" | "history_30d" | "online_rate_30d"
+>;
 
 // ---------- 日志与校验 ----------
 

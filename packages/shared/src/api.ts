@@ -19,12 +19,14 @@ import type {
   PageType,
   Platform,
   ProductDetails,
+  ProductVariantStock,
   ProductView,
   RepairAction,
   RunLog,
   RunnerInfo,
   ScheduleConfig,
   SeoIssue,
+  SeoRuleSetting,
   SeoLink,
   SeoPage,
   Severity,
@@ -44,11 +46,13 @@ export type Unsubscribe = () => void;
 
 export interface ListQuery<F = Record<string, unknown>> {
   page: number; // 从 1 开始
-  pageSize: number; // 20 / 50 / 100；传 0 表示不分页（导出用）
+  pageSize: number; // 标准表格选项为 20 / 50 / 100 / 200；传 0 表示不分页（表格与导出）；保留 number 兼容旧页长调用
   search?: string;
   sort?: { field: string; dir: "asc" | "desc" };
   filters?: F;
 }
+
+export type PageSize = 0 | 20 | 50 | 100 | 200;
 
 export interface PageResult<T> {
   rows: T[];
@@ -235,6 +239,7 @@ export interface ProductFilters {
   stock?: "in" | "out" | "other";
   tag?: string;
   category?: string;
+  parent_only?: boolean;
 }
 
 export interface ProductFull {
@@ -242,6 +247,7 @@ export interface ProductFull {
   skus: SkuRecord[];
   details: ProductDetails | null;
   seo: Pick<SeoPage, "url" | "title" | "robots_meta" | "schema_types" | "google_indexed"> | null;
+  variants?: ProductVariantStock[];
 }
 
 export interface TagStat {
@@ -308,6 +314,7 @@ export interface SkuImageRow {
 
 export interface SkuImageFilters {
   view?: "in_stock" | "no_feed" | "has_manual" | "none";
+  parent_only?: boolean;
 }
 
 export interface EdmCommandInput {
@@ -463,6 +470,8 @@ export interface SiteIndexApi {
     setIssueStatus?(id: ProjectId, input: { targets: { url: string; rule: SeoIssue["rule"] }[]; status: SeoIssue["status"] }): Promise<{ updated: number }>;
     /** 整类规则忽略状态；落盘与下次 weekly 的状态继承由 Core 实现。 */
     setRuleIgnored?(id: ProjectId, rule: SeoIssue["rule"], ignored: boolean): Promise<{ updated: number }>;
+    /** 返回 SEO 规则说明、严重级别、待处理数及忽略状态。 */
+    getRuleSettings?(id: ProjectId): Promise<SeoRuleSetting[]>;
     listPages(id: ProjectId, q: ListQuery<SeoPageFilters>): Promise<PageResult<SeoPage>>;
     listLinks(id: ProjectId, q: ListQuery): Promise<PageResult<SeoLink>>;
     orphanPages(id: ProjectId): Promise<string[]>;
