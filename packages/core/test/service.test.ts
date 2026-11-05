@@ -2,7 +2,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { CSV_HEADERS, PATHS, type BlogPost, type Category, type SeoIssue, type SkuStockView, type StockStatus } from "@siteindex/shared";
+import { CSV_HEADERS, PATHS, type BlogPost, type Category, type ProductView, type SeoIssue, type SkuRecord, type SkuStockView, type StockStatus } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
 import { readCsv, writeCsv } from "../src/io/csv";
@@ -308,6 +308,120 @@ describe("createCoreService initial namespaces", () => {
       page: 1, pageSize: 0, filters: { stock: "in", tag: "fall", category: "bird-houses" },
     });
     expect(products.rows.map((row) => row.handle)).toEqual(["feeder-2"]);
+  }, 20_000);
+
+  it("groups product rows by configured parent SKU rules without changing persisted views", async () => {
+    const { projectPath } = await makeProject();
+    const fixture = JSON.parse(await readFile(path.resolve(process.cwd(), "fixtures/inputs/v030-products-parent-view.json"), "utf8")) as {
+      rule: { type: "regex"; value: string };
+      base_url: string;
+      rows: { sku: string; handle: string; title: string; stock_status: StockStatus }[];
+    };
+    const sitePath = path.join(projectPath, PATHS.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8"));
+    site.sku_grouping = { enabled: true, rule: fixture.rule };
+    await writeFile(sitePath, JSON.stringify(site));
+
+    const skuRows: SkuRecord[] = fixture.rows.map((row, index) => ({
+      sku: row.sku,
+      product_id: row.sku,
+      handle: row.handle,
+      title: row.title,
+      variant_title: null,
+      url: `${fixture.base_url}/products/${row.handle}`,
+      category: "demo-catalog",
+      category_source: "feed",
+      price: 10 + index,
+      compare_at_price: null,
+      currency: "USD",
+      image_url: null,
+      status: "active",
+      first_seen: "2026-11-01",
+      last_seen: "2026-11-05",
+      updated_at: "2026-11-05",
+    }));
+    const stockRows = fixture.rows.map((row) => ({ ...stockRow(row.sku, row.title, row.stock_status), category: "demo-catalog" }));
+    const products: ProductView[] = fixture.rows.map((row, index) => ({
+      handle: row.handle,
+      product_id: row.sku,
+      title: row.title,
+      url: `${fixture.base_url}/products/${row.handle}`,
+      category: "demo-catalog",
+      categories: ["demo-catalog"],
+      price_min: 10 + index,
+      price_max: 10 + index,
+      compare_at_max: null,
+      currency: "USD",
+      on_sale: false,
+      image_url: null,
+      image_source: "none",
+      feed_image_url: null,
+      manual_image_url: null,
+      variant_count: 1,
+      skus: [row.sku],
+      in_stock_variants: row.stock_status === "in_stock" ? 1 : 0,
+      stock_status: row.stock_status,
+      stock_since: "2026-11-01",
+      tags: [],
+      priority: null,
+      exclude_edm: 0,
+      last_featured: null,
+      days_since_featured: null,
+      first_seen: "2026-11-01",
+      status: "active",
+    }));
+    await writeJsonl(path.join(projectPath, PATHS.skus), skuRows as unknown as JsonRecord[], { primaryKey: ["sku"] });
+    await writeJsonl(path.join(projectPath, PATHS.skuStockView), stockRows as unknown as JsonRecord[], { primaryKey: ["sku"] });
+    const productViewPath = path.join(projectPath, PATHS.productsView);
+    await writeJsonl(productViewPath, products as unknown as JsonRecord[], { primaryKey: ["handle"] });
+    const persistedBefore = await readFile(productViewPath);
+    const api = service(projectPath);
+
+    const parentRows = await api.products.list("fixture", {
+      page: 1, pageSize: 0, filters: { parent_only: true },
+    });
+    expect(parentRows.total).toBe(6);
+    expect(parentRows.rows.filter((row) => row.row_kind === "parent").map((row) => row.product_id)).toEqual([
+      "DEMO001A", "DEMO002B",
+    ]);
+    expect(parentRows.rows.filter((row) => row.row_kind === "single").map((row) => row.product_id)).toEqual([
+      "DEMO003C01", "DEMO003C02", "DEMO003C", "DEMO004D",
+    ]);
+    expect(parentRows.rows.find((row) => row.product_id === "DEMO001A")).toMatchObject({
+      row_kind: "parent", parent_sku: null, variant_count: 3, in_stock_variants: 2, stock_status: "in_stock",
+      skus: ["DEMO001A01", "DEMO001A02", "DEMO001A03"],
+    });
+    expect(parentRows.rows.find((row) => row.product_id === "DEMO002B")).toMatchObject({
+      row_kind: "parent", variant_count: 2, in_stock_variants: 0, stock_status: "out_of_stock",
+    });
+    expect((await api.products.list("fixture", {
+      page: 1, pageSize: 10, search: "DEMO001A02", filters: { parent_only: true },
+    })).rows.map((row) => row.product_id)).toEqual(["DEMO001A"]);
+    expect((await api.products.list("fixture", {
+      page: 1, pageSize: 2, filters: { parent_only: true },
+    })).total).toBe(6);
+
+    const fullRows = await api.products.list("fixture", { page: 1, pageSize: 0 });
+    expect(fullRows.total).toBe(products.length);
+    for (const childSku of ["DEMO001A01", "DEMO001A02", "DEMO001A03", "DEMO002B01", "DEMO002B02"]) {
+      expect(fullRows.rows.find((row) => row.skus.includes(childSku))).toMatchObject({
+        row_kind: "child", parent_sku: childSku.startsWith("DEMO001A") ? "DEMO001A" : "DEMO002B",
+        variant_count: null, in_stock_variants: null,
+      });
+    }
+    expect(fullRows.rows.filter((row) => row.row_kind === "single").map((row) => row.product_id)).toEqual([
+      "DEMO003C01", "DEMO003C02", "DEMO003C", "DEMO004D",
+    ]);
+    expect(await readFile(productViewPath)).toEqual(persistedBefore);
+
+    site.sku_grouping.enabled = false;
+    await writeFile(sitePath, JSON.stringify(site));
+    api.invalidate(projectPath);
+    const disabled = await api.products.list("fixture", {
+      page: 1, pageSize: 0, filters: { parent_only: true },
+    });
+    expect(disabled.total).toBe(products.length);
+    expect(disabled.rows.every((row) => row.row_kind === undefined)).toBe(true);
   }, 20_000);
 
   it("builds deterministic parent display rows without persisting or counting them as stock", async () => {

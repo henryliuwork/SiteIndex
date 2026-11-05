@@ -85,6 +85,7 @@ import {
 } from "../projects/create-guard";
 import { hasPriceChangeWithin } from "../inventory/price-history";
 import { parentStockRows } from "../inventory/parent-stock-view";
+import { groupProductRows } from "../products/parent-view";
 import { runDaily } from "../jobs/daily";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
@@ -1639,7 +1640,22 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   const products: CoreService["products"] = {
     list: async (id, query) => {
       const snapshot = await load(resolve(id));
-      const rows = filterProducts(snapshot.products, query.filters);
+      let sourceRows = snapshot.products;
+      if (snapshot.config.sku_grouping?.enabled) {
+        try {
+          sourceRows = groupProductRows(
+            snapshot.products,
+            snapshot.skus,
+            snapshot.skuStock,
+            snapshot.config.sku_grouping.rule,
+            Boolean(query.filters?.parent_only),
+          );
+        } catch (error) {
+          if (error instanceof SkuGroupingRuleError) throw siteError(error.code, error.message, error.detail);
+          throw error;
+        }
+      }
+      const rows = filterProducts(sourceRows, query.filters);
       return paginate(rows, query, (row) => [row.handle, row.title, row.product_id, row.skus, row.category, row.categories, row.tags], "handle", (row) => row.handle);
     },
     get: async (id, handle): Promise<ProductFull> => {

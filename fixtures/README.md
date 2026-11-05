@@ -25,6 +25,7 @@ Kingsyard 风格喂鸟器站点，16 个产品（2 个带颜色变体），见 `
 
 ## SKU 分组 fixture
 - `sku-grouping/193-skus.json` 是纯虚构的 193 条 SKU 样本，用于验证父子 SKU 规则的稳定分组与未匹配计数。
+- `inputs/v030-products-parent-view.json` 是纯虚构的 Magento 风格产品数据，覆盖多 URL 子 SKU、缺货父组、独立 SKU 和 feed SKU 碰撞，用于验证产品列表父子行与 `parent_only`。
 
 ## 运行黄金测试时
 1. 用 http 服务在 `http://127.0.0.1:8765/` 提供 `www/`（URL 已写死在 feed 与页面里）
