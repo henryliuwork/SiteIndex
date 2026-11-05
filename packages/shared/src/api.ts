@@ -37,7 +37,7 @@ import type {
   StockStatus,
   ValidationReport,
 } from "./models";
-import type { JobProgress, JobRequest, JobResult } from "./jobs";
+import type { JobProgress, JobRequest, JobResult, SchedulableJob } from "./jobs";
 
 // ---------- 通用 ----------
 
@@ -361,6 +361,38 @@ export interface ScheduleState {
   next_runs: { job: string; at: ISODateTime | null }[];
 }
 
+export interface ScheduleVerificationDetail {
+  job: SchedulableJob;
+  state: string;
+  message: string;
+  expected?: string;
+  actual?: string;
+}
+
+export interface ScheduleVerification {
+  state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error";
+  message?: string;
+  repaired?: boolean;
+  details?: ScheduleVerificationDetail[];
+}
+
+export interface SystemTaskRow {
+  taskName: string;
+  /** null 表示任务未关联到当前登记项目。 */
+  projectId: ProjectId | null;
+  orphaned: boolean;
+  job: SchedulableJob;
+  systemState: "Ready" | "Running" | "Disabled";
+  lastRunAt: ISODateTime | null;
+  lastResult: string | null;
+  nextRunAt: ISODateTime | null;
+  triggerSummary: string;
+  commandPath: string | null;
+  /** null 表示孤立任务没有可供比较的项目配置。 */
+  configMatches: boolean | null;
+  differences: string[];
+}
+
 export interface ScheduleRuntimeStatus {
   mode: "system" | "resident";
   authorization_required: boolean;
@@ -528,9 +560,10 @@ export interface SiteIndexApi {
   schedule: {
     get(id: ProjectId): Promise<ScheduleState>;
     save(id: ProjectId, config: ScheduleConfig): Promise<ScheduleState>;
-    verify?(id: ProjectId, opts?: { repair?: boolean }): Promise<{ state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error"; message?: string; repaired?: boolean }>;
+    verify?(id: ProjectId, opts?: { repair?: boolean }): Promise<ScheduleVerification>;
     listOrphans?(): Promise<{ taskName: string; path: string; reason: string }[]>;
     removeOrphan?(taskName: string): Promise<void>;
+    listSystemTasks?(): Promise<SystemTaskRow[]>;
     status?(): Promise<ScheduleRuntimeStatus>;
     reauthorize?(): Promise<ScheduleRuntimeStatus>;
   };
