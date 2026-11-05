@@ -101,10 +101,6 @@ export const API_EVENT_METHODS = [
 ] as const;
 
 export const PENDING_HANDLERS: readonly string[] = [
-  "sku.previewGrouping",
-  "projects.remove",
-  "schedule.listOrphans",
-  "schedule.removeOrphan",
 ];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];

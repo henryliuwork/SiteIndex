@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiBridge } from "./api.js";
 
 describe("createApiBridge IPC errors", () => {
+  it("forwards listing and removal of orphaned system tasks", async () => {
+    const orphan = {
+      taskName: "\\SiteIndex\\sample-store-daily",
+      path: "C:\\Fixture\\sample-store",
+      reason: "missing",
+    };
+    const invoke = vi.fn(async (channel: string) => (channel === "si:schedule.listOrphans" ? [orphan] : undefined));
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+
+    await expect(bridge.schedule.listOrphans?.()).resolves.toEqual([
+      { taskName: "\\SiteIndex\\sample-store-daily", path: "C:\\Fixture\\sample-store", reason: "missing" },
+    ]);
+    await expect(bridge.schedule.removeOrphan?.("\\SiteIndex\\sample-store-daily")).resolves.toBeUndefined();
+    expect(invoke.mock.calls).toEqual([
+      ["si:schedule.listOrphans"],
+      ["si:schedule.removeOrphan", "\\SiteIndex\\sample-store-daily"],
+    ]);
+  });
+
   it("forwards project removal and restores a task cleanup warning", async () => {
     const invoke = vi.fn(async () => {
       throw new Error(
