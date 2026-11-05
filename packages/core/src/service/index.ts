@@ -75,7 +75,7 @@ import { readCsv, writeCsv, type CsvRow } from "../io/csv";
 import { compareKeys } from "../io/compare";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
-import { previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
+import { groupSkuIds, previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
 import { selectInventoryDates, type InventorySummaryRange } from "../inventory/history-range";
 import {
   assertSiteNotRegistered,
@@ -878,6 +878,63 @@ function aggregateTags(skus: readonly SkuRecord[], tagRows: readonly CsvRow[], h
     if (row?.exclude_edm === "1") excludeEdm = 1;
   }
   return { tags: [...tags].sort(codeUnitCompare), priority, exclude_edm: excludeEdm };
+}
+
+function selectedImageSource(
+  feedImage: string | null,
+  manualImage: string | null,
+  priority: readonly ("feed" | "manual")[],
+): SkuImageRow["used"] {
+  return priority.find((source) => source === "feed" ? Boolean(feedImage) : Boolean(manualImage)) ?? "none";
+}
+
+function imageRowForSku(
+  sku: SkuRecord,
+  latestBySku: ReadonlyMap<string, InventoryLatest>,
+  manualBySku: ReadonlyMap<string, string | null>,
+  priority: readonly ("feed" | "manual")[],
+): SkuImageRow {
+  const feedImage = sku.image_url ?? null;
+  const manualImage = manualBySku.get(sku.sku) ?? null;
+  return {
+    sku: sku.sku,
+    title: sku.title,
+    variant_title: sku.variant_title,
+    stock_status: latestBySku.get(sku.sku)?.stock_status ?? "unknown",
+    feed_image_url: feedImage,
+    manual_image_url: manualImage,
+    used: selectedImageSource(feedImage, manualImage, priority),
+  };
+}
+
+function parentImageRow(
+  parent: string,
+  children: readonly string[],
+  skuById: ReadonlyMap<string, SkuRecord>,
+  latestBySku: ReadonlyMap<string, InventoryLatest>,
+  manualBySku: ReadonlyMap<string, string | null>,
+  priority: readonly ("feed" | "manual")[],
+): SkuImageRow | null {
+  const representative = children.flatMap((sku) => {
+    const record = skuById.get(sku);
+    return record ? [record] : [];
+  })[0];
+  if (!representative) return null;
+  const statuses = children.map((sku) => latestBySku.get(sku)?.stock_status ?? "unknown");
+  const stockStatus: StockStatus = statuses.includes("in_stock") ? "in_stock"
+    : statuses.length > 0 && statuses.every((status) => status === "out_of_stock") ? "out_of_stock"
+      : statuses.includes("preorder") ? "preorder" : "unknown";
+  const feedImage = children.map((sku) => skuById.get(sku)?.image_url ?? null).find((value) => value !== null) ?? null;
+  const manualImage = children.map((sku) => manualBySku.get(sku) ?? null).find((value) => value !== null) ?? null;
+  return {
+    sku: parent,
+    title: representative.title,
+    variant_title: null,
+    stock_status: stockStatus,
+    feed_image_url: feedImage,
+    manual_image_url: manualImage,
+    used: selectedImageSource(feedImage, manualImage, priority),
+  };
 }
 
 function setError(error: unknown): SiteIndexError {
@@ -1971,36 +2028,56 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
     listImages: async (id, query) => {
       const snapshot = await load(resolve(id));
-      const manual = new Map(snapshot.skuMedia.filter((row) => row.image_role === "main")
+      const activeSkus = snapshot.skus.filter((sku) => sku.status === "active");
+      const skuById = new Map(activeSkus.map((sku) => [sku.sku, sku]));
+      const latestBySku = new Map(snapshot.latest.map((row) => [row.sku, row]));
+      const manualBySku = new Map(snapshot.skuMedia.filter((row) => row.image_role === "main")
         .map((row) => [String(row.sku ?? ""), typeof row.image_url === "string" ? row.image_url : null]));
-      const rows: SkuImageRow[] = snapshot.skus.filter((sku) => sku.status === "active").map((sku) => {
-        const manualImage = manual.get(sku.sku) ?? null;
-        const feedImage = sku.image_url ?? null;
-        const priority: readonly ("feed" | "manual")[] = snapshot.config.edm?.image_priority ?? ["feed", "manual"];
-        const used: SkuImageRow["used"] = priority.find((source) => source === "feed" ? !!feedImage : !!manualImage) ?? "none";
-        return {
-          sku: sku.sku,
-          title: sku.title,
-          variant_title: sku.variant_title,
-          stock_status: snapshot.latest.find((row) => row.sku === sku.sku)?.stock_status ?? "unknown",
-          feed_image_url: feedImage,
-          manual_image_url: manualImage,
-          used,
-        };
-      }).filter((row) => {
+      const priority: readonly ("feed" | "manual")[] = snapshot.config.edm?.image_priority ?? ["feed", "manual"];
+      const groupingConfig = snapshot.config.sku_grouping;
+      const parentOnly = Boolean(query.filters?.parent_only && groupingConfig?.enabled);
+      const childrenByParent = new Map<string, string[]>();
+      let sourceRows: SkuImageRow[];
+      if (parentOnly && groupingConfig) {
+        const grouping = groupSkuIds(activeSkus.map((sku) => sku.sku), groupingConfig.rule);
+        for (const group of grouping.groups) childrenByParent.set(group.parent, group.children);
+        const parents = grouping.groups.flatMap(({ parent, children }) => {
+          const row = parentImageRow(parent, children, skuById, latestBySku, manualBySku, priority);
+          return row ? [row] : [];
+        });
+        const groupedChildren = new Set([...childrenByParent.values()].flat());
+        const singles = activeSkus.filter((sku) => !groupedChildren.has(sku.sku))
+          .map((sku) => imageRowForSku(sku, latestBySku, manualBySku, priority));
+        sourceRows = [...parents, ...singles].sort((left, right) => compareKeys(left.sku, right.sku));
+      } else {
+        sourceRows = activeSkus.map((sku) => imageRowForSku(sku, latestBySku, manualBySku, priority));
+      }
+      const rows = sourceRows.filter((row) => {
         if (query.filters?.view === "in_stock") return row.stock_status === "in_stock";
         if (query.filters?.view === "no_feed") return row.feed_image_url === null;
         if (query.filters?.view === "has_manual") return row.manual_image_url !== null;
         if (query.filters?.view === "none") return row.feed_image_url === null && row.manual_image_url === null;
         return true;
       });
-      return paginate(rows, query, (row) => [row.sku, row.title, row.variant_title], "sku", (row) => row.sku);
+      return paginate(rows, query, (row) => [row.sku, row.title, row.variant_title, ...(childrenByParent.get(row.sku) ?? [])], "sku", (row) => row.sku);
     },
     setManualImage: async (id, sku, imageUrl) => {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
       const record = snapshot.skus.find((row) => row.sku === sku);
-      if (!record) throw siteError("UNKNOWN", "找不到指定 SKU。", sku);
+      const activeSkus = snapshot.skus.filter((row) => row.status === "active");
+      let parentGroup: { parent: string; children: string[] } | undefined;
+      if (!record && snapshot.config.sku_grouping?.enabled) {
+        try {
+          parentGroup = groupSkuIds(activeSkus.map((row) => row.sku), snapshot.config.sku_grouping.rule)
+            .groups.find((group) => group.parent === sku);
+        } catch (error) {
+          if (error instanceof SkuGroupingRuleError) throw siteError(error.code, error.message, error.detail);
+          throw error;
+        }
+      }
+      const targetSkus = parentGroup?.children ?? (record ? [record.sku] : []);
+      if (targetSkus.length === 0) throw siteError("UNKNOWN", "找不到指定 SKU。", sku);
       let normalizedUrl: string | null = null;
       if (imageUrl !== null) {
         try {
@@ -2010,9 +2087,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         } catch { throw siteError("UNKNOWN", "图片地址必须是有效的 HTTP 或 HTTPS URL。", imageUrl); }
       }
       const updatedAt = localDate(snapshot.config.timezone);
-      const rows = snapshot.skuMedia.filter((row) => !(row.sku === sku && row.image_role === "main"));
-      if (normalizedUrl) rows.push({
-        sku, image_role: "main", image_url: normalizedUrl, alt_text: null,
+      const targetSet = new Set(targetSkus);
+      const rows = snapshot.skuMedia.filter((row) => !(targetSet.has(String(row.sku ?? "")) && row.image_role === "main"));
+      if (normalizedUrl) for (const targetSku of targetSkus) rows.push({
+        sku: targetSku, image_role: "main", image_url: normalizedUrl, alt_text: null,
         source: /mailchimp|mcusercontent\.com/i.test(normalizedUrl) ? "mailchimp" : "cdn",
         width: null, height: null, updated_at: updatedAt,
       });
@@ -2020,15 +2098,18 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       await buildViews(projectPath, { date: snapshot.asOf });
       invalidate(projectPath);
       const after = await load(projectPath);
-      const manualImage = normalizedUrl;
-      const feedImage = record.image_url ?? null;
-      const priority = after.config.edm?.image_priority ?? ["feed", "manual"];
-      const used = priority.find((source) => source === "feed" ? !!feedImage : !!manualImage) ?? "none";
-      return {
-        sku, title: record.title, variant_title: record.variant_title,
-        stock_status: after.latest.find((row) => row.sku === sku)?.stock_status ?? "unknown",
-        feed_image_url: feedImage, manual_image_url: manualImage, used,
-      };
+      const afterManual = new Map(after.skuMedia.filter((row) => row.image_role === "main")
+        .map((row) => [String(row.sku ?? ""), typeof row.image_url === "string" ? row.image_url : null]));
+      const afterPriority: readonly ("feed" | "manual")[] = after.config.edm?.image_priority ?? ["feed", "manual"];
+      if (parentGroup) {
+        const afterSkuById = new Map(after.skus.filter((row) => row.status === "active").map((row) => [row.sku, row]));
+        const afterLatestBySku = new Map(after.latest.map((row) => [row.sku, row]));
+        const parentRow = parentImageRow(parentGroup.parent, parentGroup.children, afterSkuById, afterLatestBySku, afterManual, afterPriority);
+        if (parentRow) return parentRow;
+      }
+      const afterRecord = after.skus.find((row) => row.sku === sku);
+      if (!afterRecord) throw siteError("UNKNOWN", "找不到指定 SKU。", sku);
+      return imageRowForSku(afterRecord, new Map(after.latest.map((row) => [row.sku, row])), afterManual, afterPriority);
     },
     buildCommand: async (id, input: EdmCommandInput) => {
       const quote = (value: string) => `"${value.replace(/"/g, '\\"')}"`;
