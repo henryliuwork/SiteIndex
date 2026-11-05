@@ -1,10 +1,18 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { promisify } from "node:util";
 import { DOMParser } from "@xmldom/xmldom";
 import type { JobSchedule, ScheduleConfig, Weekday } from "@siteindex/shared";
+import type { AddExistingTimingCallback, AddExistingTracePhase } from "../add-existing-trace.js";
+import { mapWithConcurrency } from "./concurrency.js";
+
+type SchedulerDiagnosticPhase = Extract<
+  AddExistingTracePhase,
+  "scheduler.task_list" | "scheduler.task_query" | "scheduler.task_apply" | "scheduler.elevation_wait"
+>;
 
 export const WINDOWS_SCHEDULED_JOBS = ["daily", "validate", "weekly", "readme", "monthly"] as const;
 export type WindowsScheduledJob = (typeof WINDOWS_SCHEDULED_JOBS)[number];
@@ -42,6 +50,7 @@ export interface WindowsTaskRegistrar {
     previousNames: string[],
     allowElevation: boolean,
     previousMode?: WindowsScheduleResult["mode"],
+    onTiming?: AddExistingTimingCallback,
   ): Promise<WindowsScheduleResult>;
 }
 
@@ -61,6 +70,20 @@ interface CommandError extends Error {
   detail?: string;
   stdout?: string;
   stderr?: string;
+}
+
+async function measureSchedulerPhase<T>(
+  onTiming: AddExistingTimingCallback | undefined,
+  phase: SchedulerDiagnosticPhase,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!onTiming) return operation();
+  const startedAt = performance.now();
+  try {
+    return await operation();
+  } finally {
+    onTiming(phase, performance.now() - startedAt);
+  }
 }
 
 const execFileAsync = promisify(execFile);
@@ -566,20 +589,41 @@ async function applyNormalOperations(
   operations: WindowsTaskOperation[],
   temporaryDirectory: string,
   runner: CommandRunner,
-): Promise<void> {
-  for (let index = 0; index < operations.length; index += 1) {
-    const operation = operations[index]!;
-    if (operation.action === "delete") {
-      await runner("schtasks.exe", ["/Delete", "/TN", operation.name, "/F"]).catch((error: unknown) => {
-        if (!isWindowsTaskMissing(error)) throw error;
-      });
-      continue;
-    }
-    if (!operation.xml) throw new Error(`任务 ${operation.name} 缺少 XML。`);
-    const xmlPath = path.join(temporaryDirectory, `task-${index}.xml`);
-    await writeFile(xmlPath, windowsTaskXmlBytes(operation.xml));
-    await runner("schtasks.exe", ["/Create", "/TN", operation.name, "/XML", xmlPath, "/F"]);
+): Promise<WindowsTaskOperation[]> {
+  const creates = operations.filter((operation) => operation.action === "create");
+  const deletes = operations.filter((operation) => operation.action === "delete");
+  const accessDenied: WindowsTaskOperation[] = [];
+  let firstFailure: unknown;
+  let hasFailure = false;
+
+  for (const [group, action] of [
+    [creates, "create"],
+    [deletes, "delete"],
+  ] as const) {
+    await mapWithConcurrency(group, 4, async (operation, index) => {
+      try {
+        if (action === "delete") {
+          await runner("schtasks.exe", ["/Delete", "/TN", operation.name, "/F"]).catch((error: unknown) => {
+            if (!isWindowsTaskMissing(error)) throw error;
+          });
+          return;
+        }
+        if (!operation.xml) throw new Error(`任务 ${operation.name} 缺少 XML。`);
+        const xmlPath = path.join(temporaryDirectory, `task-${index}.xml`);
+        await writeFile(xmlPath, windowsTaskXmlBytes(operation.xml));
+        await runner("schtasks.exe", ["/Create", "/TN", operation.name, "/XML", xmlPath, "/F"]);
+      } catch (error) {
+        if (isAccessDenied(error)) accessDenied.push(operation);
+        else if (!hasFailure) {
+          hasFailure = true;
+          firstFailure = error;
+        }
+      }
+    });
+    if (hasFailure) throw firstFailure;
   }
+
+  return accessDenied;
 }
 
 async function taskExists(name: string, runner: CommandRunner): Promise<boolean> {
@@ -589,6 +633,58 @@ async function taskExists(name: string, runner: CommandRunner): Promise<boolean>
   } catch (error) {
     if (isWindowsTaskMissing(error)) return false;
     throw error;
+  }
+}
+
+function taskNameKey(taskName: string): string {
+  return taskName.replace(/^\\+/, "").toLowerCase();
+}
+
+export function parseWindowsTaskNamesCsv(output: string): string[] {
+  const rows: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let index = 0; index < output.length; index += 1) {
+    const character = output[index]!;
+    if (character === '"') {
+      if (inQuotes && output[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else inQuotes = !inQuotes;
+    } else if (character === "," && !inQuotes) {
+      rows.push(field);
+      field = "";
+      while (index + 1 < output.length && output[index + 1] !== "\n" && output[index + 1] !== "\r") index += 1;
+    } else if ((character === "\n" || character === "\r") && !inQuotes) {
+      if (field.trim()) rows.push(field.trim());
+      field = "";
+      while (index + 1 < output.length && (output[index + 1] === "\n" || output[index + 1] === "\r")) index += 1;
+    } else field += character;
+  }
+  if (field.trim()) rows.push(field.trim());
+  return rows
+    .map((name) => name.replace(/^\uFEFF/, ""))
+    .filter((name) => name.replace(/^\\+/, "").toLowerCase().startsWith("siteindex"));
+}
+
+async function existingTaskNames(names: string[], runner: CommandRunner): Promise<Set<string>> {
+  if (names.length === 0) return new Set();
+  try {
+    const output = await runner("schtasks.exe", ["/Query", "/FO", "CSV", "/NH"]);
+    const existing = new Set(parseWindowsTaskNamesCsv(output).map(taskNameKey));
+    return new Set(names.filter((name) => existing.has(taskNameKey(name))));
+  } catch (error) {
+    if (isWindowsTaskMissing(error)) return new Set();
+    if (!isAccessDenied(error)) throw error;
+    const results = await mapWithConcurrency(names, 4, async (name) => {
+      try {
+        return await taskExists(name, runner);
+      } catch (queryError) {
+        if (isAccessDenied(queryError)) return true;
+        throw queryError;
+      }
+    });
+    return new Set(names.filter((_name, index) => results[index]));
   }
 }
 
@@ -630,92 +726,89 @@ export function createWindowsTaskRegistrar(options: WindowsTaskRegistrarOptions 
   }
 
   return {
-    async reconcile(desired, obsoleteNames, previousNames, allowElevation, previousMode) {
+    async reconcile(desired, obsoleteNames, previousNames, allowElevation, previousMode, onTiming) {
       const definitions = new Map(
         desired.map((definition) => [windowsTaskName(definition.projectId, definition.job), definition]),
       );
       const desiredNames = [...definitions.keys()].sort();
+      const desiredNameKeys = new Set(desiredNames.map(taskNameKey));
       const deleteNames = [...new Set([...previousNames, ...obsoleteNames])]
-        .filter((name) => !definitions.has(name))
+        .filter((name) => !desiredNameKeys.has(taskNameKey(name)))
         .sort();
-      const operations: WindowsTaskOperation[] = [];
-
-      for (const name of deleteNames) {
-        try {
-          if (await taskExists(name, runner)) operations.push({ action: "delete", name });
-        } catch (error) {
-          if (!isAccessDenied(error)) throw error;
-          operations.push({ action: "delete", name });
-        }
+      const namesInSystem = await measureSchedulerPhase(onTiming, "scheduler.task_list", () =>
+        existingTaskNames(deleteNames, runner),
+      );
+      const operations: WindowsTaskOperation[] = [...namesInSystem].map((name) => ({ action: "delete", name }));
+      const userId = definitions.size > 0 ? (options.userId ?? (await runner("whoami.exe", [])).trim()) : "";
+      if (userId && !/^[^\\/\r\n]+\\[^\\/\r\n]+$/.test(userId)) {
+        throw new Error("whoami 未返回计算机名\\用户名格式的当前用户。");
       }
-
-      const userId = options.userId ?? (await runner("whoami.exe", [])).trim();
-      if (!/^[^\\/\r\n]+\\[^\\/\r\n]+$/.test(userId)) throw new Error("whoami 未返回计算机名\\用户名格式的当前用户。");
-      let currentSid: Promise<string | null> | null = null;
       const createOperations: WindowsTaskOperation[] = [];
-      for (const [name, definition] of definitions) {
-        try {
-          const existingXml = await runner("schtasks.exe", ["/Query", "/TN", name, "/XML"]);
-          let taskUserId: string | null = null;
+      const existingQueries = await measureSchedulerPhase(onTiming, "scheduler.task_query", () =>
+        mapWithConcurrency([...definitions], 4, async ([name, definition]) => {
           try {
-            taskUserId = windowsTaskUserId(existingXml);
-          } catch {
-            // 非法 XML 会由 windowsTaskMatches 报为字段差异并触发重新注册。
+            const existingXml = await runner("schtasks.exe", ["/Query", "/TN", name, "/XML"]);
+            return { name, definition, existingXml };
+          } catch (error) {
+            if (isWindowsTaskMissing(error) || isAccessDenied(error)) return { name, definition, existingXml: null };
+            throw error;
           }
-          let userSid: string | undefined;
-          if (isWindowsUserSid(taskUserId)) {
-            currentSid ??= runner("whoami.exe", ["/user", "/fo", "csv", "/nh"]).then(parseWindowsUserSid);
-            userSid = (await currentSid) ?? undefined;
-          }
-          const currentDefinition = { ...definition, userId, userSid };
-          if (!windowsTaskMatches(existingXml, currentDefinition)) {
-            createOperations.push({ action: "create", name, xml: buildWindowsTaskXml({ ...definition, userId }) });
-          }
-        } catch (error) {
-          if (isWindowsTaskMissing(error)) {
-            createOperations.push({ action: "create", name, xml: buildWindowsTaskXml({ ...definition, userId }) });
-          } else if (isAccessDenied(error)) {
-            createOperations.push({ action: "create", name, xml: buildWindowsTaskXml({ ...definition, userId }) });
-          } else throw error;
+        }),
+      );
+      const queryUserIds = existingQueries.map(({ existingXml }) => {
+        if (!existingXml) return null;
+        let taskUserId: string | null = null;
+        try {
+          taskUserId = windowsTaskUserId(existingXml);
+        } catch {
+          // 非法 XML 会由 windowsTaskMatches 报为字段差异并触发重新注册。
+        }
+        return taskUserId;
+      });
+      const hasSidTask = queryUserIds.some(isWindowsUserSid);
+      const currentSid = hasSidTask
+        ? (parseWindowsUserSid(await runner("whoami.exe", ["/user", "/fo", "csv", "/nh"])) ?? undefined)
+        : undefined;
+      for (let index = 0; index < existingQueries.length; index += 1) {
+        const { name, definition, existingXml } = existingQueries[index]!;
+        if (!existingXml || !windowsTaskMatches(existingXml, { ...definition, userId, userSid: currentSid })) {
+          createOperations.push({ action: "create", name, xml: buildWindowsTaskXml({ ...definition, userId }) });
         }
       }
 
-      const normalOperations: WindowsTaskOperation[] = [
-        ...createOperations,
-        ...operations.filter((operation) => operation.action === "delete"),
-      ];
-      const elevatedOperations: WindowsTaskOperation[] = [
-        ...[...definitions].map(([name, definition]) => ({
-          action: "create" as const,
-          name,
-          xml: buildWindowsTaskXml({ ...definition, userId }),
-        })),
-        ...deleteNames.map((name) => ({ action: "delete" as const, name })),
-      ];
-
+      const normalOperations: WindowsTaskOperation[] = [...createOperations, ...operations];
+      let elevationOperations: WindowsTaskOperation[] = [];
       if (normalOperations.length > 0) {
         const directory = await mkdtemp(path.join(temporaryDirectory, "siteindex-schedule-"));
         try {
-          await applyNormalOperations(normalOperations, directory, runner);
+          elevationOperations = await measureSchedulerPhase(onTiming, "scheduler.task_apply", () =>
+            applyNormalOperations(normalOperations, directory, runner),
+          );
         } catch (error) {
           if (!isAccessDenied(error)) throw error;
-          if (!allowElevation) {
-            return {
-              mode: previousMode ?? "system",
-              authorization_required: true,
-              registered_task_names: previousNames,
-            };
-          }
-          try {
-            await options.beforeElevation?.();
-          } catch {
-            return { mode: "resident", authorization_required: true, registered_task_names: previousNames };
-          }
-          const success = await applyElevated(elevatedOperations);
-          if (!success) return { mode: "resident", authorization_required: true, registered_task_names: previousNames };
+          elevationOperations = normalOperations;
         } finally {
           await rm(directory, { recursive: true, force: true });
         }
+      }
+
+      if (elevationOperations.length > 0) {
+        if (!allowElevation) {
+          return {
+            mode: previousMode ?? "system",
+            authorization_required: true,
+            registered_task_names: previousNames,
+          };
+        }
+        const success = await measureSchedulerPhase(onTiming, "scheduler.elevation_wait", async () => {
+          try {
+            await options.beforeElevation?.();
+          } catch {
+            return false;
+          }
+          return applyElevated(elevationOperations);
+        });
+        if (!success) return { mode: "resident", authorization_required: true, registered_task_names: previousNames };
       }
 
       return { mode: "system", authorization_required: false, registered_task_names: desiredNames };

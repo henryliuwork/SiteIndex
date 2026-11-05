@@ -10,6 +10,10 @@ export const ADD_EXISTING_TRACE_PHASES = [
   "core.runner.get",
   "core.projects.get",
   "scheduler.reconcile",
+  "scheduler.task_list",
+  "scheduler.task_query",
+  "scheduler.task_apply",
+  "scheduler.elevation_wait",
   "handler.total",
 ] as const;
 

@@ -103,12 +103,16 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
           }
           return { current, updated, registeredAsExtra };
         });
-        if (updated !== current) await context.settingsChanged(updated, true, timingCallback);
+        if (updated !== current) await context.settingsChanged(updated, false, timingCallback);
         else await context.projects.refresh(current, timingCallback);
         const id = path.basename(projectPath);
         await context.projects.ensureProject(id, updated, timingCallback);
-        await context.reconcileSchedules(true, undefined, timingCallback);
         const project = await measure("core.projects.get", async () => context.core.projects.get(id));
+        if (context.reconcileProjectScheduleInBackground) {
+          context.reconcileProjectScheduleInBackground(id);
+        } else {
+          void context.reconcileSchedules(true).catch(() => undefined);
+        }
         return project.summary;
       } finally {
         if (timings) {

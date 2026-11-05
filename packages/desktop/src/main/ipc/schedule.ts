@@ -30,6 +30,7 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
       }),
     "schedule.verify": async (id, options) =>
       context.withProject(id, async (projectId) => {
+        await context.waitForProjectScheduleReconciliation?.(projectId);
         const [schedule, runner] = await Promise.all([
           context.core.schedule.get(projectId),
           context.core.runner.get(projectId),

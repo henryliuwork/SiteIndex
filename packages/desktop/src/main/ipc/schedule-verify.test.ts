@@ -25,6 +25,7 @@ function context(verification: ReturnType<typeof vi.fn>, authorizationRequired =
     projects: { resolveProject: vi.fn(() => "C:\\Synthetic\\project") },
     scheduler: { verify: verification },
     reconcileSchedules,
+    waitForProjectScheduleReconciliation: vi.fn(async () => undefined),
     withProject: async <T>(_id: unknown, run: (id: string) => Promise<T>) => run("synthetic-project"),
   } as unknown as IpcContext;
   return { value, reconcileSchedules };
@@ -58,5 +59,33 @@ describe("schedule.verify IPC", () => {
     });
     expect(reconcileSchedules).toHaveBeenCalledOnce();
     expect(verify).toHaveBeenCalledOnce();
+  });
+
+  it("waits for background registration before returning verification to the project center", async () => {
+    let finishRegistration!: () => void;
+    const registration = new Promise<void>((resolve) => {
+      finishRegistration = resolve;
+    });
+    const order: string[] = [];
+    const verify = vi.fn(async () => {
+      order.push("verify");
+      return { state: "ok" as const };
+    });
+    const { value } = context(verify);
+    value.waitForProjectScheduleReconciliation = vi.fn(async () => {
+      order.push("registration-start");
+      await registration;
+      order.push("registration-finished");
+    });
+    const handler = createScheduleHandlers(value)["schedule.verify"];
+    const verification = handler?.("synthetic-project");
+
+    await Promise.resolve();
+    expect(order).toEqual(["registration-start"]);
+    expect(verify).not.toHaveBeenCalled();
+
+    finishRegistration();
+    await expect(verification).resolves.toMatchObject({ state: "ok" });
+    expect(order).toEqual(["registration-start", "registration-finished", "verify"]);
   });
 });

@@ -25,6 +25,8 @@ export interface IpcDependencies {
     onTiming?: AddExistingTimingCallback,
     removedProjectIds?: string[],
   ) => Promise<ScheduleRuntimeStatus>;
+  reconcileProjectScheduleInBackground?: (id: ProjectId) => void;
+  waitForProjectScheduleReconciliation?: (id: ProjectId) => Promise<void>;
   traceAddExisting?: AddExistingTraceWriter;
   onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>;
   skills: SkillService;

@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { access, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import type { AddExistingTimingCallback } from "../add-existing-trace.js";
+import { mapWithConcurrency } from "./concurrency.js";
 import {
   createWindowsTaskRegistrar,
   windowsRootTaskName,
@@ -13,6 +15,7 @@ import {
   parseWindowsUserSid,
   isWindowsUserSid,
   isWindowsTaskMissing,
+  parseWindowsTaskNamesCsv,
   WINDOWS_SCHEDULED_JOBS,
   type WindowsTaskDefinition,
   type WindowsTaskRegistrar,
@@ -41,6 +44,7 @@ export interface SystemScheduler {
     projects: ScheduleProjectDefinition[],
     allowElevation: boolean,
     removedProjectIds?: string[],
+    onTiming?: AddExistingTimingCallback,
   ): Promise<ScheduleRuntimeStatus>;
   reauthorize(projects: ScheduleProjectDefinition[]): Promise<ScheduleRuntimeStatus>;
 }
@@ -117,30 +121,7 @@ function isSiteIndexTaskName(taskName: string): boolean {
   return taskName.replace(/^\\+/, "").toLowerCase().startsWith("siteindex");
 }
 
-export function parseWindowsTaskNamesCsv(output: string): string[] {
-  const rows: string[] = [];
-  let field = "";
-  let inQuotes = false;
-  for (let index = 0; index < output.length; index += 1) {
-    const character = output[index]!;
-    if (character === '"') {
-      if (inQuotes && output[index + 1] === '"') {
-        field += '"';
-        index += 1;
-      } else inQuotes = !inQuotes;
-    } else if (character === "," && !inQuotes) {
-      rows.push(field);
-      field = "";
-      while (index + 1 < output.length && output[index + 1] !== "\n" && output[index + 1] !== "\r") index += 1;
-    } else if ((character === "\n" || character === "\r") && !inQuotes) {
-      if (field.trim()) rows.push(field.trim());
-      field = "";
-      while (index + 1 < output.length && (output[index + 1] === "\n" || output[index + 1] === "\r")) index += 1;
-    } else field += character;
-  }
-  if (field.trim()) rows.push(field.trim());
-  return rows.map((name) => name.replace(/^\uFEFF/, "")).filter(isSiteIndexTaskName);
-}
+export { parseWindowsTaskNamesCsv } from "./windows-tasks.js";
 
 function pathKey(value: string): string {
   const normalized = path.win32.resolve(value);
@@ -562,13 +543,21 @@ export function createSystemScheduler(options: {
     projects: ScheduleProjectDefinition[],
     allowElevation: boolean,
     removedProjectIds: string[] = [],
+    onTiming?: AddExistingTimingCallback,
   ): Promise<ScheduleRuntimeStatus> {
     if (platform === "win32") {
       const state = await loadRuntimeState();
       const projectPaths = { ...state.project_paths };
-      for (const taskName of state.registered_task_names) {
-        const projectId = projectIdFromTaskName(taskName);
-        if (!projectId || projectPaths[projectId]) continue;
+      const unknownProjectIds = [
+        ...new Set(
+          state.registered_task_names
+            .map(projectIdFromTaskName)
+            .filter((projectId): projectId is string => Boolean(projectId)),
+        ),
+      ].filter((projectId) => !projectPaths[projectId]);
+      await mapWithConcurrency(unknownProjectIds, 4, async (projectId) => {
+        const taskName = state.registered_task_names.find((name) => projectIdFromTaskName(name) === projectId);
+        if (!taskName) return;
         try {
           const xml = await runCommand("schtasks.exe", ["/Query", "/TN", taskName, "/XML"]);
           const projectPath = projectPathFromWindowsTaskXml(xml);
@@ -576,7 +565,7 @@ export function createSystemScheduler(options: {
         } catch {
           // 已不存在或当前用户不可读时，后续注册器仍负责校正任务状态。
         }
-      }
+      });
       const desired: WindowsTaskDefinition[] = [];
       const obsoleteNames: string[] = [];
       for (const id of removedProjectIds) {
@@ -586,8 +575,11 @@ export function createSystemScheduler(options: {
         }
       }
       const existingProjectIds = new Set<string>();
-      for (const project of projects) {
-        if (await isDirectory(project.projectPath)) {
+      const projectAvailability = await Promise.all(
+        projects.map(async (project) => ({ project, exists: await isDirectory(project.projectPath) })),
+      );
+      for (const { project, exists } of projectAvailability) {
+        if (exists) {
           existingProjectIds.add(project.projectId);
         } else {
           console.warn("跳过不存在的项目计划任务。", { projectId: project.projectId });
@@ -621,6 +613,7 @@ export function createSystemScheduler(options: {
         state.registered_task_names,
         allowElevation,
         state.mode,
+        onTiming,
       );
       for (const [id, projectPath] of Object.entries(projectPaths)) {
         if (existingProjectIds.has(id)) continue;

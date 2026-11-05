@@ -10,6 +10,7 @@ import {
   parseCodePage,
   windowsTaskDifferences,
   windowsTaskMatches,
+  windowsTaskName,
   windowsTaskXmlBytes,
   type WindowsTaskDefinition,
 } from "./windows-tasks.js";
@@ -176,6 +177,127 @@ describe("Windows schedule registration", () => {
     expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Create")).toBe(false);
   });
 
+  it("lists obsolete tasks once and only deletes those present in the task scheduler", async () => {
+    const commands: { file: string; args: string[] }[] = [];
+    const timings: { phase: string; durationMs: number }[] = [];
+    const existing = new Set(["\\SiteIndex\\old-project-daily", "SiteIndex - old-project-weekly"]);
+    const csv = [...existing].map((name) => `"${name}","N/A","Ready"`).join("\r\n");
+    const scheduler = createWindowsTaskRegistrar({
+      userId: dailyDefinition.userId,
+      runCommand: async (file, args) => {
+        commands.push({ file, args });
+        if (file === "schtasks.exe" && args[0] === "/Query" && args.includes("/FO")) return csv;
+        if (file === "schtasks.exe" && args[0] === "/Query") return buildWindowsTaskXml(dailyDefinition);
+        return "SUCCESS";
+      },
+    });
+
+    await expect(
+      scheduler.reconcile(
+        [dailyDefinition],
+        ["SiteIndex - old-project-weekly", "\\SiteIndex\\missing-project-daily"],
+        ["\\SiteIndex\\old-project-daily"],
+        false,
+        undefined,
+        (phase, durationMs) => timings.push({ phase, durationMs }),
+      ),
+    ).resolves.toMatchObject({ mode: "system" });
+
+    expect(
+      commands.filter(({ file, args }) => file === "schtasks.exe" && args[0] === "/Query" && args.includes("/FO")),
+    ).toHaveLength(1);
+    expect(
+      commands.filter(({ file, args }) => file === "schtasks.exe" && args[0] === "/Query" && args.includes("/TN")),
+    ).toHaveLength(1);
+    expect(
+      commands
+        .filter(({ file, args }) => file === "schtasks.exe" && args[0] === "/Delete")
+        .map(({ args }) => args[2])
+        .sort(),
+    ).toEqual(["\\SiteIndex\\old-project-daily", "SiteIndex - old-project-weekly"].sort());
+    expect(commands.some(({ file, args }) => file === "schtasks.exe" && args[0] === "/Create")).toBe(false);
+    expect(timings.map(({ phase }) => phase)).toEqual(
+      expect.arrayContaining(["scheduler.task_list", "scheduler.task_query", "scheduler.task_apply"]),
+    );
+    expect(timings.every(({ durationMs }) => Number.isFinite(durationMs) && durationMs >= 0)).toBe(true);
+  });
+
+  it("queries existing task XML concurrently with a bounded worker count", async () => {
+    const jobs = ["daily", "validate", "weekly", "readme", "monthly"] as const;
+    const definitions = jobs.map((job, index) => ({
+      ...dailyDefinition,
+      projectId: `fictional-${index}`,
+      job,
+      schedule: config[job],
+      userId: "TEST-PC\\tester",
+    }));
+    const xmlByName = new Map(
+      definitions.map((definition) => [
+        windowsTaskName(definition.projectId, definition.job),
+        buildWindowsTaskXml(definition),
+      ]),
+    );
+    let activeQueries = 0;
+    let maximumActiveQueries = 0;
+    const scheduler = createWindowsTaskRegistrar({
+      userId: "TEST-PC\\tester",
+      runCommand: async (file, args) => {
+        if (file === "schtasks.exe" && args[0] === "/Query") {
+          activeQueries += 1;
+          maximumActiveQueries = Math.max(maximumActiveQueries, activeQueries);
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          activeQueries -= 1;
+          return xmlByName.get(args[2] ?? "") ?? "";
+        }
+        return "SUCCESS";
+      },
+    });
+
+    await scheduler.reconcile(definitions, [], [], false);
+
+    expect(maximumActiveQueries).toBeGreaterThan(1);
+    expect(maximumActiveQueries).toBeLessThanOrEqual(4);
+  });
+
+  it("does not recreate a matching task when an unrelated obsolete task needs elevation", async () => {
+    const directory = await temporaryDirectory();
+    let elevatedOperations: { action: string; name: string }[] = [];
+    const scheduler = createWindowsTaskRegistrar({
+      temporaryDirectory: directory,
+      userId: dailyDefinition.userId,
+      runCommand: async (file, args) => {
+        if (file === "schtasks.exe" && args[0] === "/Query" && args.includes("/FO")) {
+          return '"SiteIndex - old-project-daily","N/A","Ready"\r\n';
+        }
+        if (file === "schtasks.exe" && args[0] === "/Query") return buildWindowsTaskXml(dailyDefinition);
+        if (file === "schtasks.exe" && args[0] === "/Delete") throw accessDenied();
+        return "SUCCESS";
+      },
+      runElevatedScript: async (scriptPath, resultPath) => {
+        const script = await readFile(scriptPath, "utf8");
+        const operationPayload = /FromBase64String\('([^']+)'\)\)/.exec(script)?.[1];
+        const parsed = JSON.parse(
+          Buffer.from(operationPayload ?? "", "base64").toString("utf8"),
+        ) as typeof elevatedOperations;
+        elevatedOperations = parsed.map(({ action, name }) => ({ action, name }));
+        await writeFile(
+          resultPath,
+          JSON.stringify({
+            success: true,
+            results: elevatedOperations.map((operation) => ({ ...operation, success: true })),
+          }),
+          "utf8",
+        );
+      },
+    });
+
+    await expect(
+      scheduler.reconcile([dailyDefinition], ["SiteIndex - old-project-daily"], [], true),
+    ).resolves.toMatchObject({ mode: "system", authorization_required: false });
+
+    expect(elevatedOperations).toEqual([{ action: "delete", name: "SiteIndex - old-project-daily" }]);
+  });
+
   it("combines all project and job changes into one elevated PowerShell script after access denied", async () => {
     const directory = await temporaryDirectory();
     let script = "";
@@ -197,6 +319,7 @@ describe("Windows schedule registration", () => {
       );
     });
     const commands: { file: string; args: string[] }[] = [];
+    const timings: { phase: string; durationMs: number }[] = [];
     const scheduler = createWindowsTaskRegistrar({
       temporaryDirectory: directory,
       beforeElevation,
@@ -214,6 +337,8 @@ describe("Windows schedule registration", () => {
       ["SiteIndex - sample-store-daily", "SiteIndex - old-project-readme"],
       ["\\SiteIndex\\old-project-daily"],
       true,
+      undefined,
+      (phase, durationMs) => timings.push({ phase, durationMs }),
     );
 
     expect(result).toMatchObject({ mode: "system", authorization_required: false });
@@ -242,6 +367,7 @@ describe("Windows schedule registration", () => {
     expect(serialized).toContain("sample-store-monthly");
     expect(serialized).toContain("old-project-daily");
     expect(serialized).toContain("old-project-readme");
+    expect(timings.map(({ phase }) => phase)).toContain("scheduler.elevation_wait");
   });
 
   it("falls back when the elevated result omits any requested task operation", async () => {
