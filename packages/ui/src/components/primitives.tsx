@@ -5,7 +5,7 @@ import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Kpi, StockStatus } from "@siteindex/shared";
-import { getLengthGrade, getPaginationModel, nextFilterValue, type LengthKind } from "./utils";
+import { getLengthGrade, getPaginationModel, nextFilterValue, type LengthKind, type TablePageSize } from "./utils";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "default" | "quiet";
 
@@ -275,25 +275,25 @@ export function DetailPanel({ open, onClose, title, children }: { open: boolean;
 
 export function Pagination({ page, pageSize, total, onPageChange, onPageSizeChange }: {
   page: number;
-  pageSize: 20 | 50 | 100;
+  pageSize: TablePageSize;
   total: number;
   onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: 20 | 50 | 100) => void;
+  onPageSizeChange: (pageSize: TablePageSize) => void;
 }) {
   const model = getPaginationModel(page, pageSize, total);
   return (
     <div className="si-pagination" aria-label="分页">
       <span className="si-pagination-count">显示 {model.from}–{model.to} / {model.total}</span>
       <label className="si-page-size">每页
-        <select value={model.pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value) as 20 | 50 | 100)} aria-label="每页条数">
-          {[20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+        <select value={model.pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value) as TablePageSize)} aria-label="每页条数">
+          {[50, 100, 200, 0].map((size) => <option key={size} value={size}>{size === 0 ? "全部" : size}</option>)}
         </select>
       </label>
-      <div className="si-pagination-controls">
+      {model.pageSize !== 0 && <div className="si-pagination-controls">
         <button type="button" aria-label="上一页" disabled={model.page <= 1} onClick={() => onPageChange(model.page - 1)}><ChevronLeft size={16} /></button>
         <span>第 {model.page} / {model.pageCount} 页</span>
         <button type="button" aria-label="下一页" disabled={model.page >= model.pageCount} onClick={() => onPageChange(model.page + 1)}><ChevronRight size={16} /></button>
-      </div>
+      </div>}
     </div>
   );
 }
