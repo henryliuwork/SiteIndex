@@ -7,7 +7,7 @@ display: flex; min-width: 0; align-items: center; justify-content: space-between
 }
 
 .si-page-heading h1 {
-margin: 0; color: var(--color-ink); font-size: 23px; font-weight: 700; letter-spacing: -0.025em;
+margin: 0; color: var(--color-ink); font-size: var(--fs-page-title); font-weight: var(--fw-page-title); line-height: var(--lh-page-title);
 }
 
 .si-page-heading p {
@@ -59,15 +59,15 @@ margin: -14px 0 -8px; color: var(--color-brand-strong); font-size: 12px;
 }
 
 .si-field-label {
-display: block; margin: 0 0 6px; color: var(--color-ink-2); font-size: 12px; font-weight: 600;
+display: block; margin: 0 0 var(--space-2); color: var(--color-ink-2); font-size: var(--fs-body); font-weight: 600;
 }
 
 .si-text-field {
-width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink); font-size: 13px;
+width: 100%; height: 32px; padding: 0 var(--space-3); border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: var(--fs-body); line-height: var(--lh-body);
 }
 
 .si-text-field:focus {
-border-color: var(--color-brand); box-shadow: 0 0 0 2px rgba(30,107,82,.12);
+border-color: var(--color-brand); box-shadow: 0 0 0 2px var(--color-focus);
 }
 
 .si-form-error {

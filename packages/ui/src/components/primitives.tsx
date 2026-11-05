@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import type { Kpi, StockStatus } from "@siteindex/shared";
 import { getLengthGrade, getPaginationModel, nextFilterValue, type LengthKind } from "./utils";
 
-export type ButtonVariant = "default" | "primary" | "quiet" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "default" | "quiet";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -16,8 +16,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function Button({ variant = "default", size = "default", icon, className = "", children, ...props }: ButtonProps) {
+  const normalizedVariant = variant === "default" ? "secondary" : variant === "quiet" ? "ghost" : variant;
   return (
-    <button className={"si-button si-button-" + variant + (size === "small" ? " si-button-small" : "") + (className ? " " + className : "")} {...props}>
+    <button className={"si-button si-button-" + normalizedVariant + (size === "small" ? " si-button-small" : "") + (className ? " " + className : "")} {...props}>
       {icon && <span className="si-button-icon" aria-hidden="true">{icon}</span>}
       {children}
     </button>
