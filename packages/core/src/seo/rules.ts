@@ -1,4 +1,5 @@
-import type { SeoIssue, SeoRule, SeoSummary, Severity } from "@siteindex/shared";
+import { SEO_RULE_LABELS, type SeoIssue, type SeoRule, type SeoRuleSetting, type SeoSummary, type Severity } from "@siteindex/shared";
+import { compareKeys } from "../io/compare";
 
 interface SeoRuleDefinition {
   label: string;
@@ -34,6 +35,35 @@ const SEO_RULE_DEFINITIONS: Record<SeoRule, SeoRuleDefinition> = {
   orphan: { label: "孤立页面", severity: "low" },
 };
 
+const SEO_RULE_DESCRIPTIONS: Record<SeoRule, string> = {
+  http_4xx: "页面请求返回 4xx 状态码。",
+  http_5xx: "页面请求返回 5xx 状态码。",
+  redirect_chain: "页面请求经过两次或更多次跳转。",
+  noindex: "页面 robots meta 或 X-Robots-Tag 指示不收录。",
+  canonical_other: "页面 canonical 地址指向另一个 URL。",
+  canonical_missing: "页面没有 canonical 标签。",
+  not_in_sitemap: "页面有站内链接，但未出现在 Sitemap 中。",
+  title_missing: "页面缺少 Title。",
+  title_too_short: "Title 短于 site.json 中设置的最小长度。",
+  title_too_long: "Title 长于 site.json 中设置的最大长度。",
+  desc_missing: "页面缺少 Meta description。",
+  desc_too_short: "Meta description 短于 site.json 中设置的最小长度。",
+  desc_too_long: "Meta description 长于 site.json 中设置的最大长度。",
+  title_length: "兼容旧规则：Title 超出 site.json 配置的长度范围。",
+  desc_length: "兼容旧规则：Meta description 超出 site.json 配置的长度范围。",
+  title_duplicate: "多个页面使用了相同的 Title。",
+  desc_duplicate: "多个页面使用了相同的 Meta description。",
+  h1_missing: "页面缺少 H1 标题。",
+  h1_multiple: "页面包含多个 H1 标题。",
+  schema_missing: "产品页缺少 Product Schema，或博客页缺少 Article/BlogPosting Schema。",
+  schema_error: "页面 Schema 缺少必填属性或结构无效。",
+  img_alt_missing: "页面中有图片缺少 alt 文本。",
+  hreflang_invalid: "页面 hreflang 标签存在无效语言代码或重复语言。",
+  url_too_long: "页面 URL 超过建议长度。",
+  thin_content: "博客正文少于 300 词，或分类页介绍少于 50 词。",
+  orphan: "页面没有来自站内其他页面的入链。",
+};
+
 function isSeoRule(value: string): value is SeoRule {
   return Object.hasOwn(SEO_RULE_DEFINITIONS, value);
 }
@@ -49,4 +79,30 @@ export function buildSeoIssueCounts(issues: readonly SeoIssue[]): NonNullable<Se
     severity: SEO_RULE_DEFINITIONS[rule].severity,
     count: counts.get(rule) ?? 0,
   }));
+}
+
+/** Returns deterministic settings metadata and the active ignore state for every supported SEO rule. */
+export function buildSeoRuleSettings(
+  issues: readonly SeoIssue[],
+  ignoreRules: readonly { rule: SeoRule; url?: string }[],
+): SeoRuleSetting[] {
+  const rules = Object.keys(SEO_RULE_DEFINITIONS).filter(isSeoRule).sort(compareKeys);
+  const pendingCounts = new Map<SeoRule, number>(rules.map((rule) => [rule, 0]));
+  for (const issue of issues) {
+    if (issue.status === "open") pendingCounts.set(issue.rule, (pendingCounts.get(issue.rule) ?? 0) + 1);
+  }
+
+  return rules.map((rule) => {
+    const configured = ignoreRules.filter((entry) => entry.rule === rule);
+    const ignoredUrls = [...new Set(configured.flatMap((entry) => entry.url ? [entry.url] : []))].sort(compareKeys);
+    return {
+      rule,
+      name: SEO_RULE_LABELS[rule],
+      description: SEO_RULE_DESCRIPTIONS[rule],
+      severity: SEO_RULE_DEFINITIONS[rule].severity,
+      pending_count: pendingCounts.get(rule) ?? 0,
+      ignored: configured.some((entry) => !entry.url),
+      ignored_urls: ignoredUrls,
+    };
+  });
 }

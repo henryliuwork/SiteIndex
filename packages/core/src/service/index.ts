@@ -93,7 +93,7 @@ import { assertRunner, readRunner, withLock } from "../io/runner-lock";
 import { createProjectFiles } from "../projects/create";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
-import { buildSeoIssueCounts } from "../seo/rules";
+import { buildSeoIssueCounts, buildSeoRuleSettings } from "../seo/rules";
 import { runMonthly } from "../jobs/monthly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
 import { launchChromium, type BrowserLauncher } from "../browser/automation";
@@ -130,9 +130,10 @@ export interface CoreService {
   sku: NonNullable<SiteIndexApi["sku"]>;
   inventory: Pick<SiteIndexApi["inventory"], "summary" | "listSkus" | "dailyReport">;
   products: Pick<SiteIndexApi["products"], "list" | "get" | "setTags" | "listTags" | "createTag" | "deleteTag">;
-  seo: Omit<SiteIndexApi["seo"], "checkIndex" | "setIssueStatus" | "setRuleIgnored"> & {
+  seo: Omit<SiteIndexApi["seo"], "checkIndex" | "setIssueStatus" | "setRuleIgnored" | "getRuleSettings"> & {
     setIssueStatus: NonNullable<SiteIndexApi["seo"]["setIssueStatus"]>;
     setRuleIgnored: NonNullable<SiteIndexApi["seo"]["setRuleIgnored"]>;
+    getRuleSettings: NonNullable<SiteIndexApi["seo"]["getRuleSettings"]>;
   };
   content: SiteIndexApi["content"];
   edm: SiteIndexApi["edm"];
@@ -1906,6 +1907,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   };
 
   const seo: CoreService["seo"] = {
+    getRuleSettings: async (id) => {
+      const snapshot = await load(resolve(id));
+      return buildSeoRuleSettings(snapshot.seoIssues, snapshot.config.seo?.ignore_rules ?? []);
+    },
     summary: async (id): Promise<SeoSummary> => {
       const snapshot = await load(resolve(id));
       const open = snapshot.seoIssues.filter((issue) => issue.status === "open");
