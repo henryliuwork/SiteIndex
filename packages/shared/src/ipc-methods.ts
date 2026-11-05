@@ -82,6 +82,7 @@ export const API_INVOKE_METHODS = [
   "schedule.removeOrphan",
   "schedule.status",
   "schedule.reauthorize",
+  "schedule.listSystemTasks",
   "runner.get",
   "runner.claim",
   "skills.list",
@@ -103,6 +104,7 @@ export const API_EVENT_METHODS = [
 
 export const PENDING_HANDLERS: readonly string[] = [
   "seo.getRuleSettings",
+  "schedule.listSystemTasks",
 ];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
