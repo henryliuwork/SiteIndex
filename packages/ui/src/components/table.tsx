@@ -7,11 +7,11 @@ import {
   type RowData,
   type SortingState,
 } from "@tanstack/react-table";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ArrowUpDown, Columns3 } from "lucide-react";
 import type { ListQuery } from "@siteindex/shared";
 import { Button, ColumnCheckbox, Pagination, Popover } from "./primitives";
-import { useColumnPrefs } from "./utils";
+import { useColumnPrefs, useTablePageSize } from "./utils";
 import { assertCompatibleRowText, calculateColumnWidths, findColumnsWithoutWidthContract } from "./table-layout";
 
 const warnedWidthContracts = new Set<string>();
@@ -29,6 +29,8 @@ declare module "@tanstack/react-table" {
     align?: "start" | "end";
     /** single 单行省略，clamp2 两行省略，wrap 自由换行。 */
     text?: "single" | "clamp2" | "wrap";
+    /** 操作列固定在滚动区右侧；旧的 actions 列 ID 也会自动固定。 */
+    sticky?: "right";
   }
 }
 
@@ -41,12 +43,13 @@ export interface DataTableProps<T, F = Record<string, unknown>> {
   query: ListQuery<F>;
   onQueryChange: (query: ListQuery<F>) => void;
   onRowClick?: (row: T) => void;
+  selectable?: boolean;
+  onSelectionChange?: (rows: T[]) => void;
   getRowId?: (row: T, index: number) => string;
   height?: number | "fill";
-  /** @deprecated Use `height` instead. Kept for one compatibility version. */
-  maxHeight?: number;
   rowHeight?: number;
   showHeader?: boolean;
+  /** @deprecated DataTable v2 always renders the standard pagination footer. */
   showPagination?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
@@ -59,22 +62,22 @@ function getColumnId<T>(column: ColumnDef<T, unknown>, index: number): string {
   return "column-" + index;
 }
 
-function pageSizeValue(value: number): 20 | 50 | 100 {
-  return value === 50 ? 50 : value === 100 ? 100 : 20;
-}
-
 export function DataTable<T, F = Record<string, unknown>>({
   tableId, scopeId, rows, total, columns, query, onQueryChange, onRowClick, getRowId,
-  height, maxHeight, rowHeight = 44, showHeader = true, showPagination = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
+  height = "fill", rowHeight, selectable = false, onSelectionChange, showHeader = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
 }: DataTableProps<T, F>) {
-  const resolvedHeight = height ?? (maxHeight === undefined ? "fill" : maxHeight);
-  const isFill = resolvedHeight === "fill";
+  const isFill = height === "fill";
+  const resolvedRowHeight = rowHeight ?? (columns.some((column) => column.meta?.text === "clamp2") ? 52 : 40);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerSelectionRef = useRef<HTMLInputElement>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [pinnedActionRowIds, setPinnedActionRowIds] = useState<string[]>([]);
   const [availableWidth, setAvailableWidth] = useState(0);
   const columnIds = useMemo(() => columns.map(getColumnId), [columns]);
   const defaultVisible = useMemo(() => columns.flatMap((column, index) => column.meta?.defaultHidden ? [] : [getColumnId(column, index)]), [columns]);
   const columnPrefs = useColumnPrefs(tableId, scopeId);
+  const pageSizeState = useTablePageSize(tableId, scopeId);
   const columnIdsKey = columnIds.join("\u0000");
   const defaultsKey = defaultVisible.join("\u0000");
   useEffect(() => columnPrefs.configure(columnIds, defaultVisible), [columnPrefs.configure, columnIdsKey, defaultsKey]);
@@ -101,20 +104,69 @@ export function DataTable<T, F = Record<string, unknown>>({
     state: { columnVisibility, sorting },
   });
   const visibleColumns = table.getVisibleLeafColumns();
-  const columnWidths = calculateColumnWidths(visibleColumns.map((column) => column.columnDef.meta ?? {}), availableWidth);
-  const tableWidth = columnWidths.reduce((totalWidth, width) => totalWidth + width, 0);
   const rowModel = table.getRowModel();
+  const selectionWidth = selectable ? 40 : 0;
+  const columnWidths = calculateColumnWidths(visibleColumns.map((column) => column.columnDef.meta ?? {}), Math.max(0, availableWidth - selectionWidth));
+  const tableWidth = columnWidths.reduce((totalWidth, width) => totalWidth + width, selectionWidth);
+  const stickyRightOffsets = new Map<string, number>();
+  let stickyOffset = 0;
+  for (const { index, column } of visibleColumns.map((column, index) => ({ column, index })).reverse()) {
+    if (column.columnDef.meta?.sticky !== "right" && column.id !== "actions") continue;
+    stickyRightOffsets.set(column.id, stickyOffset);
+    stickyOffset += columnWidths[index] ?? 0;
+  }
+  const pinnedActionIndices = useMemo(
+    () => pinnedActionRowIds.map((id) => rowModel.rows.findIndex((row) => row.id === id)).filter((index) => index >= 0),
+    [pinnedActionRowIds, rowModel.rows],
+  );
   const virtualizer = useVirtualizer({
     count: rowModel.rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowHeight,
+    initialRect: { width: availableWidth || 800, height: 400 },
+    initialOffset: 0,
+    estimateSize: () => resolvedRowHeight,
     overscan: 2,
+    rangeExtractor: (range) => {
+      const indexes = new Set(defaultRangeExtractor(range));
+      for (const index of pinnedActionIndices) indexes.add(index);
+      return [...indexes].sort((left, right) => left - right);
+    },
   });
   const virtualRows = virtualizer.getVirtualItems();
-  const firstVirtualRow = virtualRows[0];
-  const lastVirtualRow = virtualRows[virtualRows.length - 1];
-  const visibleColumnCount = Math.max(1, visibleColumns.length);
-  const pageSize = pageSizeValue(query.pageSize);
+  const visibleColumnCount = Math.max(1, visibleColumns.length + (selectable ? 1 : 0));
+  const selectedIds = useMemo(() => new Set(selectedRowIds), [selectedRowIds]);
+  const selectedVisibleCount = rowModel.rows.filter((row) => selectedIds.has(row.id)).length;
+  const allVisibleSelected = rowModel.rows.length > 0 && selectedVisibleCount === rowModel.rows.length;
+  const pageSize = pageSizeState.pageSize;
+
+  useEffect(() => {
+    if (headerSelectionRef.current) headerSelectionRef.current.indeterminate = selectedVisibleCount > 0 && !allVisibleSelected;
+  }, [allVisibleSelected, selectedVisibleCount]);
+
+  useEffect(() => {
+    if (pageSizeState.ready && query.pageSize !== pageSize) onQueryChange({ ...query, page: 1, pageSize });
+  }, [onQueryChange, pageSize, pageSizeState.ready, query]);
+
+  const notifySelection = (next: Set<string>) => {
+    setSelectedRowIds([...next]);
+    onSelectionChange?.(rowModel.rows.filter((row) => next.has(row.id)).map((row) => row.original));
+  };
+
+  const toggleVisibleSelection = (rowId: string, checked: boolean) => {
+    const next = new Set(selectedRowIds);
+    if (checked) next.add(rowId);
+    else next.delete(rowId);
+    notifySelection(next);
+  };
+
+  const toggleAllVisibleSelection = (checked: boolean) => {
+    const next = new Set(selectedRowIds);
+    for (const row of rowModel.rows) {
+      if (checked) next.add(row.id);
+      else next.delete(row.id);
+    }
+    notifySelection(next);
+  };
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -126,8 +178,23 @@ export function DataTable<T, F = Record<string, unknown>>({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const updatePinnedRows = () => {
+      const ids = [...new Set(Array.from(element.querySelectorAll<HTMLDetailsElement>("tbody tr details[open]"))
+        .map((details) => details.closest<HTMLTableRowElement>("tr")?.dataset.rowId)
+        .filter((id): id is string => Boolean(id)))];
+      setPinnedActionRowIds((current) => current.length === ids.length && current.every((id, index) => id === ids[index]) ? current : ids);
+    };
+    const observer = new MutationObserver(updatePinnedRows);
+    observer.observe(element, { subtree: true, attributes: true, attributeFilter: ["open"] });
+    updatePinnedRows();
+    return () => observer.disconnect();
+  }, []);
+
   if (import.meta.env.DEV) {
-    assertCompatibleRowText(columns, rowHeight, true);
+    assertCompatibleRowText(columns, resolvedRowHeight, true);
   }
 
   const sortBy = (columnId: string) => {
@@ -155,6 +222,63 @@ export function DataTable<T, F = Record<string, unknown>>({
     </div>
   );
 
+  const virtualRowNodes: ReactNode[] = [];
+  let previousVirtualEnd = 0;
+  for (const virtualRow of virtualRows) {
+    const row = rowModel.rows[virtualRow.index];
+    if (!row) continue;
+    const gapHeight = Math.max(0, virtualRow.start - previousVirtualEnd);
+    if (gapHeight > 0) {
+      virtualRowNodes.push(<tr key={`space-${virtualRow.index}`} aria-hidden="true" className="si-virtual-space"><td colSpan={visibleColumnCount} style={{ height: gapHeight }} /></tr>);
+    }
+    previousVirtualEnd = virtualRow.end;
+    const selected = selectedIds.has(row.id);
+    virtualRowNodes.push(
+      <tr
+        key={row.id}
+        data-row-id={row.id}
+        style={{ height: virtualRow.size }}
+        className={(onRowClick ? "is-clickable " : "") + (selectedRowId === row.id || selected ? "is-selected" : "")}
+        aria-selected={selectedRowId === row.id || selected}
+        tabIndex={onRowClick ? 0 : undefined}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest("button,a,input")) return;
+          event.currentTarget.focus();
+          setSelectedRowId(row.id);
+          onRowClick?.(row.original);
+        }}
+        onKeyDown={(event) => {
+          if (onRowClick && (event.key === "Enter" || event.key === " ")) {
+            if ((event.target as HTMLElement).closest("button,a,input,select,textarea,[contenteditable=true]")) return;
+            event.preventDefault();
+            setSelectedRowId(row.id);
+            onRowClick(row.original);
+          }
+        }}
+      >
+        {selectable && <td className="si-table-selection-cell"><input type="checkbox" checked={selected} aria-label={`选择第 ${virtualRow.index + 1} 行`} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleVisibleSelection(row.id, event.currentTarget.checked)} /></td>}
+        {row.getVisibleCells().map((cell) => {
+          const meta = cell.column.columnDef.meta;
+          const text = meta?.text ?? "single";
+          const titleValue = cell.getValue();
+          const title = typeof titleValue === "string" || typeof titleValue === "number" ? String(titleValue) : undefined;
+          const textClass = text === "clamp2" ? "si-cell-2" : text === "wrap" ? "si-cell-wrap" : "si-cell-1";
+          const sticky = meta?.sticky === "right" || cell.column.id === "actions";
+          const className = [meta?.reserved && "is-reserved", sticky && "is-sticky-right"].filter(Boolean).join(" ");
+          const style = { ...(meta?.align ? { textAlign: meta.align === "end" ? "right" as const : "left" as const } : {}), ...(sticky ? { right: stickyRightOffsets.get(cell.column.id) ?? 0 } : {}) };
+          return (
+            <td key={cell.id} className={className} style={style}>
+              <div className={textClass} title={title}>
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </div>
+            </td>
+          );
+        })}
+      </tr>,
+    );
+  }
+  const trailingSpacerHeight = Math.max(0, virtualizer.getTotalSize() - previousVirtualEnd);
+
   return (
     <section className={`si-data-table${isFill ? " is-fill si-table-region" : ""}`} aria-label={tableId + " 数据表"}>
       <div className="si-table-toolbar">
@@ -165,9 +289,10 @@ export function DataTable<T, F = Record<string, unknown>>({
           </Popover>
         </div>
       </div>
-      <div className="si-table-scroll" ref={scrollRef} style={isFill ? undefined : { height: resolvedHeight }}>
+      <div className="si-table-scroll" ref={scrollRef} style={isFill ? undefined : { height }}>
         <table className="si-table" style={{ width: tableWidth }}>
           <colgroup>
+            {selectable && <col style={{ width: `${selectionWidth}px` }} />}
             {visibleColumns.map((column, index) => (
               <col
                 key={column.id}
@@ -178,12 +303,16 @@ export function DataTable<T, F = Record<string, unknown>>({
           {showHeader && <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
+                {selectable && <th className="si-table-selection-cell" aria-label="选择行"><input ref={headerSelectionRef} type="checkbox" checked={allVisibleSelected} aria-label="选择当前页全部行" onClick={(event) => event.stopPropagation()} onChange={(event) => toggleAllVisibleSelection(event.currentTarget.checked)} /></th>}
                 {headerGroup.headers.map((header) => {
                   const sorted = header.column.getIsSorted();
                   const reserved = Boolean(header.column.columnDef.meta?.reserved);
                   const align = header.column.columnDef.meta?.align;
+                  const sticky = header.column.columnDef.meta?.sticky === "right" || header.column.id === "actions";
+                  const className = [reserved && "is-reserved", sticky && "is-sticky-right"].filter(Boolean).join(" ");
+                  const style = { ...(align ? { textAlign: align === "end" ? "right" as const : "left" as const } : {}), ...(sticky ? { right: stickyRightOffsets.get(header.column.id) ?? 0 } : {}) };
                   return (
-                    <th key={header.id} className={reserved ? "is-reserved" : ""} style={align ? { textAlign: align === "end" ? "right" : "left" } : undefined} aria-sort={sorted ? sorted === "asc" ? "ascending" : "descending" : "none"}>
+                    <th key={header.id} className={className} style={style} aria-sort={sorted ? sorted === "asc" ? "ascending" : "descending" : "none"}>
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (
                         <button className="si-sort-button" type="button" onClick={() => sortBy(header.column.id)}>
                           {flexRender(header.column.columnDef.header, header.getContext())}
@@ -201,61 +330,23 @@ export function DataTable<T, F = Record<string, unknown>>({
               <tr><td colSpan={visibleColumnCount}><div className="si-table-empty"><strong>{emptyTitle}</strong><span>{emptyDescription}</span></div></td></tr>
             ) : (
               <>
-                {firstVirtualRow && firstVirtualRow.start > 0 && <tr aria-hidden="true" className="si-virtual-space"><td colSpan={visibleColumnCount} style={{ height: firstVirtualRow.start }} /></tr>}
-                {virtualRows.map((virtualRow) => {
-                  const row = rowModel.rows[virtualRow.index];
-                  if (!row) return null;
-                  return (
-                    <tr
-                      key={row.id}
-                      className={(onRowClick ? "is-clickable " : "") + (selectedRowId === row.id ? "is-selected" : "")}
-                      aria-selected={selectedRowId === row.id}
-                      tabIndex={onRowClick ? 0 : undefined}
-                      onClick={(event) => {
-                        if ((event.target as HTMLElement).closest("button,a,input")) return;
-                        event.currentTarget.focus();
-                        setSelectedRowId(row.id);
-                        onRowClick?.(row.original);
-                      }}
-                      onKeyDown={(event) => {
-                        if (onRowClick && (event.key === "Enter" || event.key === " ")) {
-                          if ((event.target as HTMLElement).closest("button,a,input,select,textarea,[contenteditable=true]")) return;
-                          event.preventDefault();
-                          setSelectedRowId(row.id);
-                          onRowClick(row.original);
-                        }
-                      }}
-                    >
-                      {row.getVisibleCells().map((cell) => {
-                        const meta = cell.column.columnDef.meta;
-                        const text = meta?.text ?? "single";
-                        const titleValue = cell.getValue();
-                        const title = typeof titleValue === "string" || typeof titleValue === "number" ? String(titleValue) : undefined;
-                        const textClass = text === "clamp2" ? "si-cell-2" : text === "wrap" ? "si-cell-wrap" : "si-cell-1";
-                        return (
-                          <td key={cell.id} className={meta?.reserved ? "is-reserved" : ""} style={meta?.align ? { textAlign: meta.align === "end" ? "right" : "left" } : undefined}>
-                            <div className={textClass} title={title}>
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-                {lastVirtualRow && lastVirtualRow.end < virtualizer.getTotalSize() && <tr aria-hidden="true" className="si-virtual-space"><td colSpan={visibleColumnCount} style={{ height: virtualizer.getTotalSize() - lastVirtualRow.end }} /></tr>}
+                {virtualRowNodes}
+                {trailingSpacerHeight > 0 && <tr aria-hidden="true" className="si-virtual-space"><td colSpan={visibleColumnCount} style={{ height: trailingSpacerHeight }} /></tr>}
               </>
             )}
           </tbody>
         </table>
       </div>
-      {showPagination && <Pagination
+      <Pagination
         page={query.page}
         pageSize={pageSize}
         total={total}
         onPageChange={(page) => onQueryChange({ ...query, page })}
-        onPageSizeChange={(nextSize) => onQueryChange({ ...query, page: 1, pageSize: nextSize })}
-      />}
+        onPageSizeChange={(nextSize) => {
+          pageSizeState.setPageSize(nextSize);
+          onQueryChange({ ...query, page: 1, pageSize: nextSize });
+        }}
+      />
     </section>
   );
 }

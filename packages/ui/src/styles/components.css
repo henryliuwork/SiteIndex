@@ -133,12 +133,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-search-input input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--color-ink); font-size: 13px; }
 .si-search-input input::placeholder { color: var(--color-faint); }
 
-.si-data-table { min-width: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.si-data-table { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
 .si-page-fill { display: flex; min-height: 0; flex-direction: column; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); }
-.si-page-fill > .si-table-region { min-height: var(--si-table-min-h, 320px); flex: 1 1 auto; }
-.si-data-table.is-fill { display: flex; min-height: 0; height: 100%; flex-direction: column; }
+.si-page-fill > .si-table-region { min-height: 416px; flex: 1 1 auto; }
+.si-data-table.is-fill { min-height: 416px; height: 100%; }
 .si-data-table.is-fill > .si-table-toolbar, .si-data-table.is-fill > .si-pagination { flex: none; }
-.si-data-table.is-fill > .si-table-scroll { min-height: 0; height: auto; max-height: none; flex: 1 1 auto; }
+.si-data-table.is-fill > .si-table-scroll { min-height: 320px; height: auto; max-height: none; flex: 1 1 auto; }
 .si-table-toolbar { display: flex; min-height: 48px; align-items: center; flex-wrap: wrap; gap: 12px; padding: 7px 12px; border-bottom: 1px solid var(--color-line); }
 .si-table-toolbar-content { display: flex; min-width: 0; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 8px; }
 .si-table-toolbar-settings { display: flex; flex: none; margin-left: auto; }
@@ -146,13 +146,19 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-filter-bar-items { display: flex; width: 100%; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--si-gap-2); padding: 3px; }
 .si-filter-bar.is-collapsed .si-filter-bar-items { max-height: calc(var(--si-filter-bar-collapse-height) + 3px); overflow: hidden; }
 .si-filter-bar-toggle { align-self: flex-start; flex: none; margin-left: 3px; padding-inline: 0; }
-.si-table-scroll { max-height: 560px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.si-table-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .si-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; text-align: left; }
-.si-table th { position: sticky; z-index: 2; top: 0; height: 38px; padding: 0 12px; border-bottom: 1px solid var(--color-line); background: var(--color-subtle); color: var(--color-ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.si-table th { position: sticky; z-index: 2; top: 0; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--color-line); background: var(--color-subtle); color: var(--color-ink-2); font-size: var(--fs-body); font-weight: 600; white-space: nowrap; }
+.si-table th.is-sticky-right { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-reserved { background: #F0F1F3; color: var(--color-faint); }
 .si-sort-button { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
 .si-sort-indicator { display: inline-grid; width: 12px; place-items: center; color: var(--color-faint); }
-.si-table td { height: 44px; padding: 0 12px; border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: 13px; white-space: nowrap; }
+.si-table td { height: 40px; padding: 0 12px; border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: var(--fs-body); white-space: nowrap; }
+.si-table td.is-sticky-right { position: sticky; z-index: 4; background: var(--color-surface); }
+.si-table tbody tr:has(td.is-sticky-right details[open]) td.is-sticky-right { z-index: 7; }
+.si-table td.is-sticky-right > div { overflow: visible; }
+.si-table-selection-cell { width: 40px; padding: 0 !important; text-align: center; }
+.si-table-selection-cell input { width: 14px; height: 14px; margin: 0; accent-color: var(--color-brand); vertical-align: middle; }
 .si-cell-1, .si-cell-2, .si-cell-wrap { min-width: 0; max-width: 100%; overflow: hidden; }
 .si-cell-1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .si-cell-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }

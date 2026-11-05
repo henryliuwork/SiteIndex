@@ -77,6 +77,10 @@
 ## v0.1.7 · 表格与规则
 - [x] B-T1：DataTable 列宽契约、可见列 colgroup 重算、文本截断类与虚拟行高断言；宽度档位已写入 DESIGN — 本 PR
 
+## v0.3.0 · 共享层收敛
+- [x] B-2：DataTable v2 默认 fill、内部滚动与固定分页、50/100/200/全部、按 tableId 持久化、行选择与右侧固定操作列；#300 Playwright 回归 — 本 PR
+- [ ] C 联动：ui-state 持久化支持 200 / 全部 — [issue #307](https://github.com/henryliuwork/SiteIndex/issues/307)
+
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码

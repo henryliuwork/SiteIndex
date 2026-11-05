@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getLengthGrade, getPaginationModel, nextFilterValue, readColumnPrefs, writeColumnPrefs } from "../utils";
+import { getLengthGrade, getPaginationModel, nextFilterValue, normalizeTablePageSize, readColumnPrefs, writeColumnPrefs } from "../utils";
 
 describe("筛选状态", () => {
   it("同一筛选再次点击时清除，切换到另一筛选时更新", () => {
@@ -12,7 +12,14 @@ describe("筛选状态", () => {
 describe("服务端分页", () => {
   it("计算当前范围、页数并夹紧非法页码", () => {
     expect(getPaginationModel(9, 50, 124)).toEqual({ page: 3, pageSize: 50, pageCount: 3, from: 101, to: 124, total: 124 });
-    expect(getPaginationModel(0, 20, 0)).toEqual({ page: 1, pageSize: 20, pageCount: 1, from: 0, to: 0, total: 0 });
+    expect(getPaginationModel(0, 50, 0)).toEqual({ page: 1, pageSize: 50, pageCount: 1, from: 0, to: 0, total: 0 });
+  });
+
+  it("supports 50/100/200/all and keeps all rows on a single virtualized page", () => {
+    expect(normalizeTablePageSize(200)).toBe(200);
+    expect(getPaginationModel(3, 200, 450)).toEqual({ page: 3, pageSize: 200, pageCount: 3, from: 401, to: 450, total: 450 });
+    expect(getPaginationModel(4, 0, 450)).toEqual({ page: 1, pageSize: 0, pageCount: 1, from: 1, to: 450, total: 450 });
+    expect(normalizeTablePageSize(20)).toBe(50);
   });
 });
 
