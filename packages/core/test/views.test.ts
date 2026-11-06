@@ -1,8 +1,8 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
-  PATHS,
+  pathsFor,
   type EdmCampaign,
   type InventoryEvent,
   type InventoryLatest,
@@ -12,10 +12,13 @@ import {
 } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { writeJsonl } from "../src/io/jsonl";
+import { resolveProjectLayout } from "../src/io/project-layout";
 import { buildProductViews, buildViews } from "../src/views/build";
 
 const TEMP_DIRS: string[] = [];
 const FIXTURE_PROJECT = path.resolve(process.cwd(), "fixtures/expected/project");
+const LEGACY_PATHS = pathsFor("legacy");
+const WORKSPACE_PATHS = pathsFor("workspace");
 
 function makeSku(sku: string, handle: string, image: string | null): SkuRecord {
   return {
@@ -62,10 +65,10 @@ describe("buildViews", () => {
 
     const result = await buildViews(projectPath, { date: "2026-10-21" });
     const [actualProducts, expectedProducts, actualStock, expectedStock] = await Promise.all([
-      readFile(path.join(projectPath, PATHS.productsView)),
-      readFile(path.join(FIXTURE_PROJECT, PATHS.productsView)),
-      readFile(path.join(projectPath, PATHS.skuStockView)),
-      readFile(path.join(FIXTURE_PROJECT, PATHS.skuStockView)),
+      readFile(path.join(projectPath, LEGACY_PATHS.productsView)),
+      readFile(path.join(FIXTURE_PROJECT, LEGACY_PATHS.productsView)),
+      readFile(path.join(projectPath, LEGACY_PATHS.skuStockView)),
+      readFile(path.join(FIXTURE_PROJECT, LEGACY_PATHS.skuStockView)),
     ]);
     expect(actualProducts.equals(expectedProducts)).toBe(true);
     expect(actualStock.equals(expectedStock)).toBe(true);
@@ -93,6 +96,28 @@ describe("buildViews", () => {
     expect(sku000).not.toHaveProperty("price_history");
   }, 20_000);
 
+  it("matches both view goldens byte for byte and writes workspace output under _site-index", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "siteindex-views-workspace-"));
+    TEMP_DIRS.push(tempRoot);
+    const projectPath = path.join(tempRoot, "project");
+    await cp(FIXTURE_PROJECT, projectPath, { recursive: true });
+    await rename(path.join(projectPath, LEGACY_PATHS.index), path.join(projectPath, WORKSPACE_PATHS.index));
+
+    expect(await resolveProjectLayout(projectPath)).toBe("workspace");
+    const result = await buildViews(projectPath, { date: "2026-10-21" });
+    const [actualProducts, expectedProducts, actualStock, expectedStock] = await Promise.all([
+      readFile(path.join(projectPath, WORKSPACE_PATHS.productsView)),
+      readFile(path.join(FIXTURE_PROJECT, LEGACY_PATHS.productsView)),
+      readFile(path.join(projectPath, WORKSPACE_PATHS.skuStockView)),
+      readFile(path.join(FIXTURE_PROJECT, LEGACY_PATHS.skuStockView)),
+    ]);
+    expect(actualProducts.equals(expectedProducts)).toBe(true);
+    expect(actualStock.equals(expectedStock)).toBe(true);
+    expect(result).toEqual({ products: 17, skuStock: 19 });
+    await expect(readFile(path.join(projectPath, LEGACY_PATHS.productsView))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(projectPath, LEGACY_PATHS.skuStockView))).rejects.toMatchObject({ code: "ENOENT" });
+  }, 20_000);
+
   it("builds price history from every recorded event month without backfilling current prices", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "siteindex-views-price-history-"));
     TEMP_DIRS.push(tempRoot);
@@ -106,10 +131,10 @@ describe("buildViews", () => {
       { date: "2026-08-03", sku: "KYBF003", type: "price_change", from: 20, to: "21", category: "bird-baths", title: "Bath" },
       { date: "2026-08-04", sku: "KYBF004-R", type: "price_change", from: 20, to: -1, category: "bird-baths", title: "Bath" },
     ];
-    await writeFile(path.join(projectPath, PATHS.eventsDir, "2026-08.jsonl"), `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
+    await writeFile(path.join(projectPath, LEGACY_PATHS.eventsDir, "2026-08.jsonl"), `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
 
     await buildViews(projectPath, { date: "2026-10-21" });
-    const stockRows = (await readFile(path.join(projectPath, PATHS.skuStockView), "utf8"))
+    const stockRows = (await readFile(path.join(projectPath, LEGACY_PATHS.skuStockView), "utf8"))
       .trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
     expect(stockRows.find((row) => row.sku === "KYBF001")?.price_history).toEqual([
       { date: "2026-08-01", price: 11 },
@@ -126,18 +151,18 @@ describe("buildViews", () => {
     const projectPath = path.join(tempRoot, "project");
     await cp(FIXTURE_PROJECT, projectPath, { recursive: true });
 
-    const sitePath = path.join(projectPath, PATHS.site);
+    const sitePath = path.join(projectPath, LEGACY_PATHS.site);
     const site = JSON.parse(await readFile(sitePath, "utf8")) as Record<string, unknown>;
     site.sku_grouping = { enabled: true, rule: { type: "regex", value: "^(.+)-[A-Z]+$" } };
     await writeFile(sitePath, `${JSON.stringify(site, null, 2)}\n`, "utf8");
 
     const skus = [makeSku("FAMILY-RED", "family", null), makeSku("FAMILY-BLUE", "family", null)];
     const latestRows = [latest("FAMILY-RED", "in_stock"), latest("FAMILY-BLUE", "out_of_stock")];
-    await writeJsonl(path.join(projectPath, PATHS.skus), skus as unknown as Record<string, unknown>[], { primaryKey: ["sku"] });
-    await writeJsonl(path.join(projectPath, PATHS.inventoryLatest), latestRows as unknown as Record<string, unknown>[], { primaryKey: ["sku"] });
+    await writeJsonl(path.join(projectPath, LEGACY_PATHS.skus), skus as unknown as Record<string, unknown>[], { primaryKey: ["sku"] });
+    await writeJsonl(path.join(projectPath, LEGACY_PATHS.inventoryLatest), latestRows as unknown as Record<string, unknown>[], { primaryKey: ["sku"] });
 
     const result = await buildViews(projectPath, { date: "2026-10-21" });
-    const stockRows = (await readFile(path.join(projectPath, PATHS.skuStockView), "utf8"))
+    const stockRows = (await readFile(path.join(projectPath, LEGACY_PATHS.skuStockView), "utf8"))
       .trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
     expect(result.skuStock).toBe(2);
     expect(stockRows).toHaveLength(2);
