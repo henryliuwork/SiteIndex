@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "layout": "workspace",
+  "sections": [
+    { "id": "brand", "dir": "01-brand" },
+    { "id": "products", "dir": "02-products" },
+    { "id": "seo", "dir": "03-seo" },
+    { "id": "edm", "dir": "04-edm" },
+    { "id": "affiliate", "dir": "05-affiliate" },
+    { "id": "site-updates", "dir": "06-site-updates" },
+    { "id": "reports", "dir": "07-reports" }
+  ],
+  "paths": {
+    "edm.templates": "04-edm/templates",
+    "edm.planner": "04-edm/planner",
+    "edm.strategy": "04-edm/strategy",
+    "edm.emails": "04-edm/emails",
+    "edm.profile": "_site-index/edm/edm-profile.md",
+    "edm.sku_index": "_site-index/edm/sku-index.md",
+    "edm.raw_reports": "_site-index/edm/reports",
+    "brand.facts": "01-brand",
+    "products.stock_reports": "02-products/stock",
+    "seo.audit": "03-seo/audit",
+    "seo.blog": "03-seo/blog",
+    "reports.inbox": "07-reports",
+    "outputs": "_outputs",
+    "archive": "_archive",
+    "tmp": "_tmp"
+  },
+  "esp_presets": ["mailchimp"]
+}

@@ -1,0 +1,12 @@
+_tmp/
+.env
+*.key
+*.pem
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+_site-index/logs/
+_site-index/.lock
+_site-index/.runner.json
