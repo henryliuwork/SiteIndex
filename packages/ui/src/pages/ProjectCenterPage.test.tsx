@@ -66,15 +66,17 @@ describe("ProjectCenterPage add existing project flow", () => {
           ? error.message
           : fallback,
     }));
-    const { ProjectCenterPage } = await import("./ProjectCenterPage");
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
-          <ProjectCenterPage />
-          <LocationProbe />
-        </MemoryRouter>
-      </QueryClientProvider>,
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <ProjectCenterPage />
+            <LocationProbe />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </ToastProvider>,
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "添加已有项目" }));
@@ -172,13 +174,15 @@ describe("ProjectCenterPage attention list", () => {
           ? error.message
           : fallback,
     }));
-    const { ProjectCenterPage } = await import("./ProjectCenterPage");
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient.setQueryData(["seo", "summary", sourceProjects[0]!.id], await mockApi.seo.summary(sourceProjects[0]!.id));
     render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter><ProjectCenterPage /></MemoryRouter>
-      </QueryClientProvider>,
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter><ProjectCenterPage /></MemoryRouter>
+        </QueryClientProvider>
+      </ToastProvider>,
     );
     return { mockApi, projects, reminders, queryClient, listIssues, setIssueStatus, rejectPending };
   }
@@ -279,9 +283,9 @@ describe("ProjectCenterPage project removal", () => {
           ? error.message
           : fallback,
     }));
-    const { ProjectCenterPage } = await import("./ProjectCenterPage");
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider>);
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "Demo Catalog更多操作" }));
     fireEvent.click(screen.getByRole("button", { name: "移除项目" }));
@@ -306,9 +310,9 @@ describe("ProjectCenterPage project removal", () => {
           ? error.message
           : fallback,
     }));
-    const { ProjectCenterPage } = await import("./ProjectCenterPage");
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider>);
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
 
     await screen.findByRole("link", { name: "Demo Catalog" });
     expect(screen.queryByRole("button", { name: "Demo Catalog更多操作" })).toBeNull();

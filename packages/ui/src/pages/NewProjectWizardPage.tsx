@@ -5,17 +5,11 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, EmptyState, Notice, PageHeader, useToast } from "../components";
 import { useWizardDraft } from "./wizard-state";
 import { applyInitProgress, applyInitResult, finalInitProgressPercent, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
 import { findExistingProject, type ExistingProject } from "./new-project/duplicate-check";
-
-const steps = [
-  { path: "/new/url", label: "网址" },
-  { path: "/new/source", label: "数据源" },
-  { path: "/new/brand", label: "品牌配置" },
-  { path: "/new/done", label: "完成" },
-];
+import { visibleWizardSteps as steps } from "./new-project/wizard-steps";
 const platformNames: Record<Platform, string> = { magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台" };
 const progressSteps: Record<InitStepKey, { name: string; detail: string }> = {
   folders: { name: "创建数据目录", detail: "index/ 网站数据索引" },
@@ -79,9 +73,10 @@ function DetectSummary({ result }: { result: DetectResult }) {
 }
 
 function DuplicateProjectNotice({ project }: { project: ExistingProject }) {
-  return <div className="si-wizard-duplicate-warning" role="alert">
-    <span>这个网站已登记为“{project.name}”，不能重复创建。</span>
-    <Link className="si-button si-button-primary" to={"/p/" + project.id}>打开已有项目</Link>
+  return <div className="si-wizard-duplicate-alert" role="alert">
+    <Notice className="si-wizard-duplicate-warning" tone="warn" title="网站已登记" action={<Link className="si-button si-button-primary" to={"/p/" + project.id}>打开已有项目</Link>}>
+      这个网站已登记为“{project.name}”，不能重复创建。
+    </Notice>
   </div>;
 }
 
@@ -117,7 +112,7 @@ export function NewProjectWizardPage() {
   const [error, setError] = useState("");
   const [feedError, setFeedError] = useState("");
   const [canRetryFeed, setCanRetryFeed] = useState(false);
-  const [feedback, setFeedback] = useState("");
+  const toast = useToast();
   const [uspDraft, setUspDraft] = useState("");
   const [stepStates, setStepStates] = useState<InitStepStates>({});
   const [retryStates, setRetryStates] = useState<InitStepStates>({});
@@ -127,7 +122,7 @@ export function NewProjectWizardPage() {
   const active = Math.max(0, steps.findIndex((step) => pathname.endsWith(step.path)));
   const createdRunId = draft.created?.runId;
 
-  useEffect(() => { setError(""); setFeedError(""); setCanRetryFeed(false); setFeedback(""); }, [pathname]);
+  useEffect(() => { setError(""); setFeedError(""); setCanRetryFeed(false); }, [pathname]);
   useEffect(() => {
     if (settings.data?.projects_root && !draft.projectsRoot) update({ projectsRoot: settings.data.projects_root });
   }, [settings.data, draft.projectsRoot, update]);
@@ -166,7 +161,7 @@ export function NewProjectWizardPage() {
   }, [active, createdRunId]);
 
   const detectSite = async (event: FormEvent) => {
-    event.preventDefault(); setBusy(true); setError(""); setFeedback("");
+    event.preventDefault(); setBusy(true); setError("");
     try {
       const projects = await queryClient.fetchQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list(), staleTime: 0 });
       if (findExistingProject(projects, draft.url)) {
@@ -229,18 +224,18 @@ export function NewProjectWizardPage() {
   const openFolder = async () => {
     const path = draft.created?.path;
     if (!path) { setError("尚未读取到项目的实际路径，请先重试读取路径。"); return; }
-    try { await api.shell.openPath(path); setFeedback("已打开项目文件夹。"); }
+    try { await api.shell.openPath(path); toast.success("已打开项目文件夹。"); }
     catch (cause) { setError(apiErrorMessage(cause, "打开文件夹失败。")); }
   };
 
   const retryReadCreatedPath = async () => {
     if (!draft.created) return;
-    setBusy(true); setError(""); setFeedback("");
+    setBusy(true); setError("");
     try {
       const path = await readCreatedProjectPath(draft.created.id);
       if (!path) { setError("项目详情没有返回实际路径，请稍后重试。"); return; }
       update({ created: { ...draft.created, path } });
-      setFeedback("已读取项目实际路径。");
+      toast.success("已读取项目实际路径。");
     } catch (cause) { setError(apiErrorMessage(cause, "读取项目实际路径失败，请重试。")); }
     finally { setBusy(false); }
   };
@@ -282,22 +277,22 @@ export function NewProjectWizardPage() {
     : completionStatus === "incomplete" ? finished?.errors?.join("；") || finished?.summary || "未收到全部步骤的完成结果。" : "";
 
   return <div className="si-page si-wizard-page">
-    <div className="si-wizard-breadcrumb"><Link to="/">项目中心</Link><span>/</span><strong>新建项目</strong></div>
+    <PageHeader title="新建项目" meta={<span><Link to="/">项目中心</Link> · 第 {active + 1} 步：{steps[active]?.label}</span>} />
     <WizardSteps active={active} />
 
-    {active === 0 && <section className="si-wizard-card si-wizard-url-card">
-      <header><h1>输入网站地址</h1><p>SiteIndex 会自动检测跳转、robots.txt、sitemap、建站平台、语言和币种。</p></header>
+    {active === 0 && <Card className="si-wizard-card si-wizard-url-card">
+      <header><h2>输入网站地址</h2><p>SiteIndex 会自动检测跳转、robots.txt、sitemap、建站平台、语言和币种。</p></header>
       <form className="si-wizard-url-form" onSubmit={(event) => void detectSite(event)}>
         <label className="si-sr-only" htmlFor="site-url">网站地址</label>
         <input id="site-url" className="si-text-field si-mono" value={draft.url} onChange={(event) => update({ url: event.target.value, detect: null, feedResult: null })} placeholder="https://example.com" />
         <Button type="submit" variant="primary" disabled={busy}>{busy ? "正在检测…" : "检测"}</Button>
       </form>
-      {detection ? <DetectSummary result={detection} /> : <div className="si-wizard-empty"><CircleAlert size={18} />输入网址后检测站点信息。</div>}
+      {detection ? <DetectSummary result={detection} /> : <EmptyState icon={<CircleAlert size={18} />}>输入网址后检测站点信息。</EmptyState>}
       {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
       {registeredProjects.isError && <ApiErrorNotice label="已登记项目清单读取失败，无法检查重复网站。" error={registeredProjects.error} onRetry={() => void registeredProjects.refetch()} />}
-      {error && <p className="si-form-error" role="alert">{error}</p>}{feedback && <p className="si-feedback" role="status">{feedback}</p>}
+      {error && <p className="si-form-error" role="alert">{error}</p>}
       <footer className="si-wizard-actions"><Button onClick={() => { reset(); navigate("/"); }}>取消</Button><Button variant="primary" disabled={!detection || Boolean(duplicateProject)} onClick={() => navigate("/new/source")}>下一步：数据源</Button></footer>
-    </section>}
+    </Card>}
 
     {active === 1 && detection && <div className="si-wizard-source-layout">
       <section className="si-wizard-card si-wizard-site-summary"><h2>网址检测结果</h2><dl>
@@ -315,7 +310,7 @@ export function NewProjectWizardPage() {
             <div className="si-wizard-feed-actions"><span>可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。</span></div>
             {draft.feedResult && <FeedStats result={draft.feedResult} />}
           </div>
-          {error && <p className="si-form-error" role="alert">{error}</p>}{feedback && <p className="si-feedback" role="status">{feedback}</p>}
+          {error && <p className="si-form-error" role="alert">{error}</p>}
         </section>
         {draft.feedResult && <FeedInspection result={draft.feedResult} settings={<section className="si-wizard-subpanel"><h2>解析设置</h2><div className="si-wizard-config-grid">
             <label className="si-wizard-field">SKU 字段<input className="si-text-field" value={draft.skuField} onChange={(event) => update({ skuField: event.target.value, feedResult: null })} /></label>
