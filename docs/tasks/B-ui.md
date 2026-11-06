@@ -79,6 +79,7 @@
 
 ## v0.3.0 · 共享层收敛
 - [x] B-2：DataTable v2 默认 fill、内部滚动与固定分页、50/100/200/全部、按 tableId 持久化、行选择与右侧固定操作列；#300 Playwright 回归 — 本 PR
+- [x] B-3：`packages/ui/visual/` 的 `ui:check`，遍历所有路由并输出双视口布局/样式检查报告；基线问题转 [#314](https://github.com/henryliuwork/SiteIndex/issues/314) / [#315](https://github.com/henryliuwork/SiteIndex/issues/315) — 本 PR
 - [ ] C 联动：ui-state 持久化支持 200 / 全部 — [issue #307](https://github.com/henryliuwork/SiteIndex/issues/307)
 
 ## 交付给其他工作流
