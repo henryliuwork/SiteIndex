@@ -1,9 +1,10 @@
-import type { JobSchedule, ScheduleConfig, ScheduleState, Weekday } from "@siteindex/shared";
+import type { JobSchedule, ScheduleConfig, ScheduleState, SystemTaskRow, Weekday } from "@siteindex/shared";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { DOMParser } from "@xmldom/xmldom";
 import type { AddExistingTimingCallback } from "../add-existing-trace.js";
 import { mapWithConcurrency } from "./concurrency.js";
 import {
@@ -12,10 +13,12 @@ import {
   windowsTaskName,
   windowsTaskDifferences,
   windowsTaskUserId,
+  inspectWindowsTaskXml,
   parseWindowsUserSid,
   isWindowsUserSid,
   isWindowsTaskMissing,
   parseWindowsTaskNamesCsv,
+  parseWindowsTaskRuntimeCsv,
   WINDOWS_SCHEDULED_JOBS,
   type WindowsTaskDefinition,
   type WindowsTaskRegistrar,
@@ -25,6 +28,7 @@ export { buildWindowsTaskXml, windowsRootTaskName, windowsTaskName } from "./win
 
 export const SCHEDULED_JOBS = ["daily", "validate", "weekly", "readme", "monthly"] as const;
 export type ScheduledJob = (typeof SCHEDULED_JOBS)[number];
+type XmlElement = NonNullable<ReturnType<DOMParser["parseFromString"]>["documentElement"]>;
 
 export interface LaunchAgentDefinition {
   projectId: string;
@@ -40,6 +44,7 @@ export interface SystemScheduler {
   verify(project: ScheduleProjectDefinition): Promise<ScheduleVerification>;
   listOrphans(projects: { projectPath: string }[]): Promise<{ taskName: string; path: string; reason: string }[]>;
   removeOrphan(taskName: string): Promise<void>;
+  listSystemTasks(projects: SystemTaskProjectDefinition[]): Promise<SystemTaskRow[]>;
   reconcile(
     projects: ScheduleProjectDefinition[],
     allowElevation: boolean,
@@ -64,6 +69,12 @@ export interface ScheduleProjectDefinition {
   projectPath: string;
   config: ScheduleConfig;
   isThisDevice: boolean;
+}
+
+export interface SystemTaskProjectDefinition {
+  projectId: string;
+  projectPath: string;
+  config: ScheduleConfig | null;
 }
 
 interface PersistedWindowsScheduleState extends ScheduleRuntimeStatus {
@@ -129,12 +140,146 @@ function pathKey(value: string): string {
 }
 
 function taskIdentity(taskName: string): string | null {
-  const normalized = taskName
-    .replace(/^\\+/, "")
-    .replace(/^siteindex\\/i, "")
-    .replace(/^siteindex\s*-\s*/i, "");
-  const match = /^(.*)-(daily|validate|weekly|readme|monthly)$/i.exec(normalized);
-  return match ? `${match[1]!.toLowerCase()}-${match[2]!.toLowerCase()}` : null;
+  const parsed = parseWindowsTaskName(taskName);
+  return parsed ? `${parsed.projectId.toLowerCase()}-${parsed.job}` : null;
+}
+
+function parseWindowsTaskName(taskName: string): { projectId: string; job: ScheduledJob } | null {
+  const normalized = taskName.replace(/^\\+/, "");
+  const lower = normalized.toLowerCase();
+  const suffix = lower.startsWith("siteindex\\")
+    ? normalized.slice("siteindex\\".length)
+    : lower.startsWith("siteindex - ")
+      ? normalized.slice("siteindex - ".length)
+      : null;
+  if (suffix === null) return null;
+  for (const job of SCHEDULED_JOBS) {
+    const ending = `-${job}`;
+    if (suffix.toLowerCase().endsWith(ending)) return { projectId: suffix.slice(0, -ending.length), job };
+  }
+  return null;
+}
+
+function sameProjectPath(left: string, right: string, platform: NodeJS.Platform): boolean {
+  if (platform === "win32") return path.win32.resolve(left).toLowerCase() === path.win32.resolve(right).toLowerCase();
+  return path.resolve(left) === path.resolve(right);
+}
+
+function normalizeTaskDateTime(value: string | null): string | null {
+  const raw = value?.trim();
+  if (!raw || /^(n\/a|never|not yet run|none)$/i.test(raw)) return null;
+  const localized = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})\s*(上午|下午)\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(raw);
+  if (localized) {
+    const [, year, month, day, period, rawHour, minute, second = "0"] = localized;
+    const hour = (Number(rawHour) % 12) + (period === "下午" ? 12 : 0);
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day), hour, Number(minute), Number(second));
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function windowsTriggerSummary(trigger: ReturnType<typeof inspectWindowsTaskXml>["trigger"]): string {
+  if (!trigger) return "未识别触发器";
+  const time = trigger.startTime ?? "时间未知";
+  if (trigger.kind === "monthly") return `每月 ${trigger.monthDays.join("、") || "日期未知"} 日 ${time}`;
+  if (trigger.kind === "weekly") {
+    const days: Record<string, string> = {
+      Monday: "一",
+      Tuesday: "二",
+      Wednesday: "三",
+      Thursday: "四",
+      Friday: "五",
+      Saturday: "六",
+      Sunday: "日",
+    };
+    const ordered = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+      .filter((day) => trigger.weekdays.includes(day))
+      .map((day) => days[day]);
+    return `每周 ${ordered.length > 0 ? ordered.join("、") : "日期未知"} ${time}`;
+  }
+  return `未知频率 ${time}`;
+}
+
+interface LaunchCalendarInterval {
+  day: number | null;
+  weekday: number | null;
+  hour: number | null;
+  minute: number | null;
+}
+
+interface ParsedLaunchAgent {
+  label: string | null;
+  programArguments: string[];
+  intervals: LaunchCalendarInterval[];
+  runAtLoad: boolean | null;
+}
+
+function parseLaunchAgentPlist(xml: string): ParsedLaunchAgent {
+  const errors: string[] = [];
+  const document = new DOMParser({
+    onError: (level, message) => {
+      if (level !== "warning") errors.push(message);
+    },
+  }).parseFromString(xml.replace(/^\uFEFF/, ""), "application/xml");
+  const root = document.documentElement;
+  const rootDict =
+    root?.localName === "plist" ? Array.from(root.children).find((child) => child.localName === "dict") : null;
+  if (errors.length || !rootDict) throw new Error(errors[0] ?? "plist 根元素无效。");
+
+  const dictValue = (dict: XmlElement, key: string): XmlElement | null => {
+    const children = Array.from(dict.children);
+    for (let index = 0; index < children.length - 1; index += 1) {
+      if (children[index]?.localName === "key" && children[index]?.textContent === key)
+        return children[index + 1] ?? null;
+    }
+    return null;
+  };
+  const textValue = (dict: XmlElement, key: string): string | null => dictValue(dict, key)?.textContent?.trim() || null;
+  const numberValue = (dict: XmlElement, key: string): number | null => {
+    const value = textValue(dict, key);
+    if (value === null) return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
+  const programArguments = Array.from(dictValue(rootDict, "ProgramArguments")?.children ?? [])
+    .filter((element) => element.localName === "string")
+    .map((element) => element.textContent ?? "");
+  const intervalArray = dictValue(rootDict, "StartCalendarInterval");
+  const intervals = Array.from(intervalArray?.children ?? [])
+    .filter((element) => element.localName === "dict")
+    .map((dict) => ({
+      day: numberValue(dict, "Day"),
+      weekday: numberValue(dict, "Weekday"),
+      hour: numberValue(dict, "Hour"),
+      minute: numberValue(dict, "Minute"),
+    }));
+  const runAtLoadElement = dictValue(rootDict, "RunAtLoad");
+  const runAtLoad =
+    runAtLoadElement?.localName === "true" ? true : runAtLoadElement?.localName === "false" ? false : null;
+  return { label: textValue(rootDict, "Label"), programArguments, intervals, runAtLoad };
+}
+
+function launchIntervalsSchedule(job: ScheduledJob, intervals: LaunchCalendarInterval[]): JobSchedule | null {
+  const first = intervals[0];
+  if (!first || first.hour === null || first.minute === null) return null;
+  const time = `${String(first.hour).padStart(2, "0")}:${String(first.minute).padStart(2, "0")}`;
+  if (job === "monthly") {
+    if (first.day === null) return null;
+    return { enabled: true, day_of_month: first.day, time };
+  }
+  const days = [
+    ...new Set(intervals.flatMap(({ weekday }) => (weekday === null ? [] : [weekday === 0 ? 7 : weekday]))),
+  ].sort((left, right) => left - right) as Weekday[];
+  return days.length ? { enabled: true, days, time } : null;
+}
+
+function launchTriggerSummary(job: ScheduledJob, intervals: LaunchCalendarInterval[]): string {
+  const schedule = launchIntervalsSchedule(job, intervals);
+  if (!schedule) return "未识别触发器";
+  if (job === "monthly") return `每月 ${schedule.day_of_month} 日 ${schedule.time}`;
+  const labels = ["一", "二", "三", "四", "五", "六", "日"];
+  return `每周 ${schedule.days?.map((day) => labels[day - 1]).join("、")} ${schedule.time}`;
 }
 
 function parseTime(time: string): { hour: number; minute: number } {
@@ -539,6 +684,193 @@ export function createSystemScheduler(options: {
     }
   }
 
+  async function listWindowsSystemTasks(projects: SystemTaskProjectDefinition[]): Promise<SystemTaskRow[]> {
+    const output = await runCommand("schtasks.exe", ["/Query", "/FO", "CSV", "/V", "/NH"]);
+    const projectById = new Map(projects.map((project) => [project.projectId.toLowerCase(), project]));
+    const runtimeRows = parseWindowsTaskRuntimeCsv(output);
+    return mapWithConcurrency(runtimeRows, 4, async (runtime): Promise<SystemTaskRow | null> => {
+      let xml: string | null = null;
+      let inspection: ReturnType<typeof inspectWindowsTaskXml> | null = null;
+      let xmlError: string | null = null;
+      try {
+        xml = await runCommand("schtasks.exe", ["/Query", "/TN", runtime.taskName, "/XML"]);
+        inspection = inspectWindowsTaskXml(xml);
+      } catch (error) {
+        xmlError = error instanceof Error ? error.message : String(error);
+      }
+      const namedTask = parseWindowsTaskName(runtime.taskName);
+      const argsMatch = inspection?.arguments
+        ? /--run-job\s+(?:"([^"]+)"|(\S+))\s+([a-z-]+)/i.exec(inspection.arguments)
+        : null;
+      const taskPath = argsMatch?.[1] ?? argsMatch?.[2] ?? null;
+      const argumentJob = SCHEDULED_JOBS.find((job) => job === argsMatch?.[3]?.toLowerCase());
+      const job = namedTask?.job ?? argumentJob;
+      if (!job) return null;
+      const project =
+        (namedTask ? projectById.get(namedTask.projectId.toLowerCase()) : undefined) ??
+        (taskPath ? projects.find((entry) => sameProjectPath(entry.projectPath, taskPath, platform)) : undefined) ??
+        null;
+      const differences: string[] = [];
+      if (!inspection || !xml) {
+        differences.push(`无法读取任务 XML${xmlError ? `：${xmlError}` : "。"}`);
+      } else if (!project) {
+        differences.push("任务未关联到当前登记项目。");
+      } else if (!project.config) {
+        differences.push("无法读取项目计划配置。");
+      } else if (!project.config[job].enabled) {
+        differences.push("项目配置已停用此任务，但系统任务仍存在。");
+      } else {
+        const definition: WindowsTaskDefinition = {
+          projectId: project.projectId,
+          projectPath: project.projectPath,
+          executablePath: inspection.commandPath ?? options.executablePath,
+          userId: windowsTaskUserId(xml) ?? "",
+          job,
+          schedule: project.config[job],
+          options: project.config.options,
+        };
+        for (const difference of windowsTaskDifferences(xml, definition)) {
+          if (["UserId", "LogonType", "RunLevel", "Command"].includes(difference.field)) continue;
+          differences.push(`${difference.field}：期望 ${difference.expected}，实际 ${difference.actual}`);
+        }
+      }
+      const rawStatus = runtime.status?.toLowerCase() ?? "";
+      const systemState: SystemTaskRow["systemState"] =
+        rawStatus.includes("disabled") || rawStatus.includes("禁用")
+          ? "Disabled"
+          : rawStatus.includes("running") || rawStatus.includes("运行")
+            ? "Running"
+            : "Ready";
+      return {
+        taskName: runtime.taskName,
+        projectId: project?.projectId ?? null,
+        orphaned: project === null,
+        job,
+        systemState,
+        lastRunAt: normalizeTaskDateTime(runtime.lastRunTime),
+        lastResult: runtime.lastResult,
+        nextRunAt: normalizeTaskDateTime(runtime.nextRunTime),
+        triggerSummary: inspection ? windowsTriggerSummary(inspection.trigger) : "无法读取触发器",
+        commandPath: inspection?.commandPath ?? null,
+        configMatches: project?.config ? differences.length === 0 : null,
+        differences,
+      };
+    }).then((rows) =>
+      rows
+        .filter((row): row is SystemTaskRow => row !== null)
+        .sort((left, right) => {
+          const leftName = left.taskName.toLowerCase();
+          const rightName = right.taskName.toLowerCase();
+          return leftName < rightName ? -1 : leftName > rightName ? 1 : 0;
+        }),
+    );
+  }
+
+  async function listMacSystemTasks(projects: SystemTaskProjectDefinition[]): Promise<SystemTaskRow[]> {
+    let files: string[];
+    try {
+      files = await readdir(agentDirectory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    const plistFiles = files.filter(
+      (file) => file.toLowerCase().startsWith("com.siteindex.") && file.toLowerCase().endsWith(".plist"),
+    );
+    return mapWithConcurrency(plistFiles, 4, async (fileName): Promise<SystemTaskRow | null> => {
+      const taskName = fileName.slice(0, -".plist".length);
+      let parsed: ParsedLaunchAgent | null = null;
+      let plistError: string | null = null;
+      try {
+        parsed = parseLaunchAgentPlist(await readFile(path.join(agentDirectory, fileName), "utf8"));
+      } catch (error) {
+        plistError = error instanceof Error ? error.message : String(error);
+      }
+      const label = parsed?.label ?? taskName;
+      const job = SCHEDULED_JOBS.find((candidate) => label.toLowerCase().endsWith(`.${candidate}`));
+      if (!job) return null;
+      const taskPath = parsed?.programArguments[2] ?? null;
+      const projectByLabel = projects.find((entry) => launchAgentLabel(entry.projectId, job) === label);
+      const project =
+        projectByLabel ??
+        (taskPath ? projects.find((entry) => sameProjectPath(entry.projectPath, taskPath, platform)) : undefined) ??
+        null;
+      let launchOutput = "";
+      let loaded = false;
+      try {
+        launchOutput = await runCommand("launchctl", ["print", `gui/${uid}/${label}`]);
+        loaded = true;
+      } catch {
+        // plist 可能留在磁盘但尚未由 launchd 加载。
+      }
+      const differences: string[] = [];
+      if (!parsed) {
+        differences.push(`无法解析 plist${plistError ? `：${plistError}` : "。"}`);
+      } else if (!project) {
+        differences.push("任务未关联到当前登记项目。");
+      } else if (!project.config) {
+        differences.push("无法读取项目计划配置。");
+      } else if (!project.config[job].enabled) {
+        differences.push("项目配置已停用此任务，但 LaunchAgent 仍存在。");
+      } else {
+        const expected = parseLaunchAgentPlist(
+          buildLaunchAgentPlist({
+            projectId: project.projectId,
+            projectPath: project.projectPath,
+            executablePath: parsed.programArguments[0] ?? options.executablePath,
+            job,
+            schedule: project.config[job],
+          }),
+        );
+        if (parsed.label !== expected.label)
+          differences.push(`Label：期望 ${expected.label}，实际 ${parsed.label ?? "<缺失>"}`);
+        if (JSON.stringify(parsed.programArguments) !== JSON.stringify(expected.programArguments)) {
+          differences.push(
+            `ProgramArguments：期望 ${expected.programArguments.join(" ")}，实际 ${parsed.programArguments.join(" ") || "<缺失>"}`,
+          );
+        }
+        if (JSON.stringify(parsed.intervals) !== JSON.stringify(expected.intervals)) {
+          differences.push(
+            `StartCalendarInterval：期望 ${JSON.stringify(expected.intervals)}，实际 ${JSON.stringify(parsed.intervals)}`,
+          );
+        }
+        if (parsed.runAtLoad !== false) differences.push(`RunAtLoad：期望 false，实际 ${String(parsed.runAtLoad)}`);
+      }
+      const actualSchedule = parsed ? launchIntervalsSchedule(job, parsed.intervals) : null;
+      const lastResultMatch = /last exit code\s*=\s*(-?\d+)/i.exec(launchOutput);
+      const launchState = launchOutput.toLowerCase();
+      const systemState: SystemTaskRow["systemState"] =
+        !loaded || /\bdisabled\s*=\s*(?:true|1)\b/i.test(launchState)
+          ? "Disabled"
+          : /\bstate\s*=\s*running\b/i.test(launchState)
+            ? "Running"
+            : "Ready";
+      return {
+        taskName: label,
+        projectId: project?.projectId ?? null,
+        orphaned: project === null,
+        job,
+        systemState,
+        // launchctl print 不包含上次启动时间。
+        lastRunAt: null,
+        lastResult: lastResultMatch?.[1] ?? null,
+        nextRunAt: actualSchedule ? nextRunFor(job, actualSchedule, new Date()) : null,
+        triggerSummary: parsed ? launchTriggerSummary(job, parsed.intervals) : "无法读取触发器",
+        commandPath: parsed?.programArguments[0] ?? null,
+        configMatches: project?.config ? differences.length === 0 : null,
+        differences,
+      };
+    }).then((rows) =>
+      rows
+        .filter((row): row is SystemTaskRow => row !== null)
+        .sort((left, right) => {
+          const leftName = left.taskName.toLowerCase();
+          const rightName = right.taskName.toLowerCase();
+          return leftName < rightName ? -1 : leftName > rightName ? 1 : 0;
+        }),
+    );
+  }
+
   async function reconcile(
     projects: ScheduleProjectDefinition[],
     allowElevation: boolean,
@@ -734,6 +1066,11 @@ export function createSystemScheduler(options: {
         authorization_required: result.authorization_required,
         registered_task_names: registeredNames,
       });
+    },
+    async listSystemTasks(projects) {
+      if (platform === "win32") return listWindowsSystemTasks(projects);
+      if (platform === "darwin") return listMacSystemTasks(projects);
+      return [];
     },
     async getState(projectId, _projectPath, config) {
       if (platform === "win32") {
