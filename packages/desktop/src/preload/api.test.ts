@@ -2,6 +2,30 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiBridge } from "./api.js";
 
 describe("createApiBridge IPC errors", () => {
+  it("forwards read-only system task listing through the API bridge", async () => {
+    const rows = [
+      {
+        taskName: "\\SiteIndex\\fixture-store-daily",
+        projectId: "fixture-store",
+        orphaned: false,
+        job: "daily",
+        systemState: "Ready",
+        lastRunAt: null,
+        lastResult: "0",
+        nextRunAt: "2026-11-06T02:00:00+08:00",
+        triggerSummary: "每个工作日 02:00",
+        commandPath: "C:\\Fixture\\SiteIndex.exe",
+        configMatches: true,
+        differences: [],
+      },
+    ];
+    const invoke = vi.fn(async (channel: string) => (channel === "si:schedule.listSystemTasks" ? rows : undefined));
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+
+    await expect(bridge.schedule.listSystemTasks?.()).resolves.toEqual(rows);
+    expect(invoke).toHaveBeenCalledWith("si:schedule.listSystemTasks");
+  });
+
   it("forwards listing and removal of orphaned system tasks", async () => {
     const orphan = {
       taskName: "\\SiteIndex\\sample-store-daily",
