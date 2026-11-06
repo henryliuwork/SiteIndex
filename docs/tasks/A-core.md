@@ -141,3 +141,6 @@
 
 ### v0.3.1 · EDM 图片表
 - [x] A-3：EDM 图片表按 SKU 分组规则返回父行和未归组 SKU；父行搜索包含子 SKU，父行图片编辑同步到该组子 SKU
+
+### v0.3.2 · Design Token v2
+- [x] A-5：设计采样按颜色角色写入 value/source/confidence，无法识别的角色保留 null；采集 h1–h6/body/small/caption 与 heading/body/mono 字体、primary/secondary/outline 按钮；spacing/radius/shadow 按频率归一化并限制最多 6 项；更新 `index/design/brand.md` 摘要并用本地虚构静态页回归
