@@ -263,6 +263,64 @@ describe("ProjectCenterPage attention list", () => {
   });
 });
 
+describe("ProjectCenterPage create empty workspace flow", () => {
+  it("creates and opens a workspace-only project when the optional API exists", async () => {
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    const createWorkspaceOnly = vi.spyOn(mockApi.projects, "createWorkspaceOnly");
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      apiErrorMessage: (error: unknown, fallback: string) =>
+        typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+          ? error.message
+          : fallback,
+    }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <ProjectCenterPage />
+            <LocationProbe />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </ToastProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "创建空工作区" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "网站地址" }), { target: { value: "empty-workspace.example.test" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "品牌名" }), { target: { value: "Empty Workspace" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "项目根目录" }), { target: { value: "D:/Projects" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "项目文件夹名" }), { target: { value: "empty-workspace" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "创建空工作区" }).at(-1)!);
+
+    await waitFor(() => expect(createWorkspaceOnly).toHaveBeenCalledWith(expect.objectContaining({
+      url: "https://empty-workspace.example.test",
+      projects_root: "D:/Projects",
+      folder_name: "empty-workspace",
+      workspace: { enabled: true, platform: "other", esp_presets: ["esp.mailchimp"] },
+    })));
+    await waitFor(() => expect(screen.getByTestId("current-route").textContent).toMatch(/^\/p\/mock-/));
+    expect(await screen.findByRole("link", { name: "Empty Workspace" })).toBeTruthy();
+    const created = await mockApi.projects.list();
+    expect(created.some(({ path }) => path === "D:/Projects/empty-workspace")).toBe(true);
+  }, 25_000);
+
+  it("hides the empty workspace action when the optional API is absent", async () => {
+    const mockApi = createMockApi();
+    delete mockApi.projects.createWorkspaceOnly;
+    mockApi.jobs.history = vi.fn(async () => []);
+    vi.doMock("../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    await screen.findByRole("button", { name: "添加已有项目" });
+    expect(screen.queryByRole("button", { name: "创建空工作区" })).toBeNull();
+  }, 25_000);
+});
+
 describe("ProjectCenterPage project removal", () => {
   it("confirms unregistering without deleting files and refreshes the center", async () => {
     vi.stubGlobal("ResizeObserver", class {
