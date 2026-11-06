@@ -1,19 +1,18 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import * as Dialog from "@radix-ui/react-dialog";
-import { Download, FileText, RefreshCw } from "lucide-react";
+import { Download, FileText, RefreshCw, Settings2, TrendingUp } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
+import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuGroupingRule, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, StatusCells, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, FilterBar, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, StatusCells, stockTone, useToast } from "../components";
 import { selectInventoryCategoryRates } from "./inventory/categories";
 import { DEFAULT_TREND_CATEGORY_LIMIT, MAX_TREND_CATEGORY_LIMIT, defaultTrendCategories, toggleTrendCategory, trendPoints } from "./inventory/trend";
-import { readOverviewPanelsExpanded, saveOverviewPanelsExpanded } from "./inventory/overview-panels";
+import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",
@@ -23,8 +22,8 @@ const stockOptions = [
   { value: "out_of_stock", label: "缺货" }, { value: "preorder", label: "预售" },
   { value: "unknown", label: "未知" }, { value: "today", label: "今日有变化" },
 ] as const;
-const lineColors = ["#1E6B52", "#E57920", "#78AEEB", "#8C68C5", "#4BA6A1"];
-const INITIAL_QUERY: ListQuery<SkuStockFilters> = { page: 1, pageSize: 20, filters: {} };
+const lineColors = ["var(--color-chart-feeders)", "var(--color-chart-baths)", "var(--color-chart-houses)", "var(--color-info)", "var(--color-stock-preorder)"];
+const INITIAL_QUERY: ListQuery<SkuStockFilters> = { page: 1, pageSize: 50, filters: {} };
 const historyRanges: { value: HistoryRange; label: string }[] = [
   { value: 30, label: "30 天" }, { value: 60, label: "60 天" }, { value: 90, label: "90 天" }, { value: "all", label: "全部" },
 ];
@@ -91,7 +90,7 @@ const TrendChart = memo(function TrendChart({ summary, range, onRangeChange, sel
       <div className="si-panel-heading si-inventory-chart-heading">
         <h2>分类在线率趋势 · {rangeLabel(range)}</h2>
         <div className="si-inventory-chart-controls">
-          <select className="si-text-field" aria-label="在线率趋势范围" value={String(range)} onChange={(event) => onRangeChange(event.target.value === "all" ? "all" : Number(event.target.value) as 30 | 60 | 90)}>{historyRanges.map((item) => <option key={item.value} value={item.value} disabled={!isMockApi && item.value !== 30}>{item.label}{!isMockApi && item.value !== 30 ? "（接口更新后开放）" : ""}</option>)}</select>
+          <Select ariaLabel="在线率趋势范围" value={String(range)} onValueChange={(value) => onRangeChange(value === "all" ? "all" : Number(value) as 30 | 60 | 90)} options={historyRanges.map((item) => ({ value: String(item.value), label: item.label + (!isMockApi && item.value !== 30 ? "（接口更新后开放）" : ""), disabled: !isMockApi && item.value !== 30 }))} />
           <details className="si-inventory-trend-picker">
             <summary>选择分类 <span>{visibleSeries.length} / {MAX_TREND_CATEGORY_LIMIT}</span></summary>
             <div className="si-inventory-trend-picker-content">
@@ -102,7 +101,7 @@ const TrendChart = memo(function TrendChart({ summary, range, onRangeChange, sel
                   return <label key={category}><input type="checkbox" checked={checked} disabled={!checked && visibleSeries.length >= MAX_TREND_CATEGORY_LIMIT} onChange={() => onSelectedCategoriesChange(toggleTrendCategory(selection, category))} /><span>{category}</span></label>;
                 })}
               </div> : <p className="si-inventory-trend-empty">没有匹配的分类。</p>}
-              <div className="si-inventory-trend-actions"><button type="button" disabled={visibleSeries.length === 0} onClick={() => onSelectedCategoriesChange([])}>清除</button><button type="button" disabled={visibleSeries.length === defaults.length && visibleSeries.every((series, index) => series.category === defaults[index])} onClick={() => onSelectedCategoriesChange(defaults)}>重置默认</button><small>默认最多 {DEFAULT_TREND_CATEGORY_LIMIT} 类，最多选择 {MAX_TREND_CATEGORY_LIMIT} 类</small></div>
+              <div className="si-inventory-trend-actions"><Button size="small" disabled={visibleSeries.length === 0} onClick={() => onSelectedCategoriesChange([])}>清除</Button><Button size="small" disabled={visibleSeries.length === defaults.length && visibleSeries.every((series, index) => series.category === defaults[index])} onClick={() => onSelectedCategoriesChange(defaults)}>重置默认</Button><small>默认最多 {DEFAULT_TREND_CATEGORY_LIMIT} 类，最多选择 {MAX_TREND_CATEGORY_LIMIT} 类</small></div>
             </div>
           </details>
         </div>
@@ -112,9 +111,9 @@ const TrendChart = memo(function TrendChart({ summary, range, onRangeChange, sel
       {hasNoDates ? <p className="si-inventory-trend-empty" role="status">暂无历史数据。</p> : visibleSeries.length === 0 ? <p className="si-inventory-trend-empty" role="status">请选择至少一个有历史数据的分类。</p> : <div className="si-inventory-trend-plot">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points} margin={{ top: 10, right: 12, bottom: 4, left: 0 }}>
-            <CartesianGrid stroke="#E8EBEF" vertical={false} />
-            <XAxis dataKey="day" tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} interval={Math.max(0, Math.floor(points.length / 5) - 1)} />
-            <YAxis domain={[0, 1]} ticks={[0, 0.25, 0.5, 0.75, 1]} tickFormatter={(value: number) => Math.round(value * 100) + "%"} tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} width={40} />
+            <CartesianGrid stroke="var(--color-line-soft)" vertical={false} />
+            <XAxis dataKey="day" tick={{ fill: "var(--color-muted)", fontSize: "var(--fs-caption)" }} tickLine={false} axisLine={false} interval={Math.max(0, Math.floor(points.length / 5) - 1)} />
+            <YAxis domain={[0, 1]} ticks={[0, 0.25, 0.5, 0.75, 1]} tickFormatter={(value: number) => Math.round(value * 100) + "%"} tick={{ fill: "var(--color-muted)", fontSize: "var(--fs-caption)" }} tickLine={false} axisLine={false} width={40} />
             <Tooltip formatter={(value) => [formatRate(typeof value === "number" ? value : null), "在线率"]} labelFormatter={(label) => "日期 " + label} />
             {visibleSeries.map((series, index) => (
               <Line key={series.category} type="monotone" dataKey={series.category} name={series.category} stroke={lineColors[index % lineColors.length]} strokeWidth={2.4} dot={hasOneDate ? { r: 3 } : false} activeDot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
@@ -149,7 +148,7 @@ const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCat
     <aside className="si-category-panel si-panel">
       <div className="si-panel-heading">
         <h2>分类在线率</h2>
-        <button type="button" onClick={onManage}>设置关注分类</button>
+        <Button size="small" onClick={onManage}>设置关注分类</Button>
       </div>
       <label className="si-category-default-toggle"><input type="checkbox" checked={showDefaultCategories} onChange={(event) => onShowDefaultCategories(event.target.checked)} /><span>展示默认分类</span></label>
       <p className="si-category-source">分类来源：{categorySourceLabel(summary, project)} · 未归类 {summary.uncategorized.toLocaleString("zh-CN")}</p>
@@ -166,7 +165,7 @@ const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCat
         {categories.length === 0 && <p className="si-empty-note">暂无分类数据。可设置关注分类。</p>}
         {categories.length > 0 && categories.every((item) => item.total === 0) && <p className="si-empty-note">这些分类暂时没有库存数据；完成一次同步后会显示库存指标。</p>}
       </div>
-      {categories.length > 8 && <button type="button" className="si-category-expand" onClick={onToggleExpanded}>{expanded ? "收起分类" : `展开全部 ${categories.length} 个分类`}</button>}
+      {categories.length > 8 && <Button variant="ghost" size="small" className="si-category-expand" onClick={onToggleExpanded}>{expanded ? "收起分类" : "展开全部 " + categories.length + " 个分类"}</Button>}
       <div className="si-today-changes">
         <h3>今日变化</h3>
         {summary.today.length > 0 ? summary.today.slice(0, 4).map((item, index) => {
@@ -178,6 +177,27 @@ const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCat
     </aside>
   );
 });
+
+function GroupingPreview({ projectId, rule, enabled }: { projectId: string; rule: SkuGroupingRule; enabled: boolean }) {
+  const previewQuery = useQuery({
+    queryKey: skuGroupingPreviewQueryKey(projectId, rule),
+    queryFn: () => fetchSkuGroupingPreview(api, projectId, rule),
+    enabled,
+    staleTime: 60_000,
+  });
+  const preview = previewQuery.data;
+  return <div className="si-inventory-grouping-preview">
+    <div className="si-inventory-grouping-rule"><span>当前规则</span><code>{rule.type} · {rule.value}</code></div>
+    {previewQuery.isLoading ? <p role="status">正在通过 Core 计算 SKU 分组预览…</p>
+      : previewQuery.isError ? <ApiErrorNotice label="SKU 分组预览加载失败。" error={previewQuery.error} onRetry={() => void previewQuery.refetch()} />
+        : preview ? <>
+          <div className="si-inventory-grouping-stats"><span><strong>{preview.parents}</strong> 个父 SKU</span><span>已匹配 <strong>{preview.children}</strong> 个子 SKU</span><span>未匹配 <strong>{preview.unmatched}</strong> 个</span></div>
+          {preview.samples.length > 0 ? <ul>{preview.samples.slice(0, 6).map((sample) => <li key={sample.parent}><code>{sample.parent}</code><span>{sample.children.length} 个：{sample.children.slice(0, 4).join("、")}{sample.children.length > 4 ? " …" : ""}</span></li>)}</ul> : <p>当前规则没有可展示的分组样例。</p>}
+          {preview.collisions?.length ? <details><summary>有 {preview.collisions.length} 组父 SKU 本身也在售，已跳过分组</summary><ul>{preview.collisions.map((collision) => <li key={collision.parent}><code>{collision.parent}</code><span>子 SKU：{collision.children.length ? collision.children.join("、") : "未提供明细"}</span></li>)}</ul></details> : null}
+          <small>这是 Core 的规则预览，不代表父 SKU 的库存或在线率。</small>
+        </> : <p role="status">正在准备 SKU 分组预览…</p>}
+  </div>;
+}
 
 function StockDetail({ row }: { row: InventoryTableRow }) {
   const [range, setRange] = useState<HistoryRange>(30);
@@ -203,28 +223,12 @@ function StockDetail({ row }: { row: InventoryTableRow }) {
       </dl>
       {!row.is_parent && <>
         <section className="si-stock-price-chart">
-          <div className="si-stock-chart-heading"><h3>价格趋势</h3><select className="si-text-field" aria-label="价格趋势范围" value={String(range)} onChange={(event) => setRange(event.target.value === "all" ? "all" : Number(event.target.value) as 30 | 60 | 90)}>{historyRanges.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-          {visiblePrices.length > 0 ? <div className="si-stock-price-plot"><ResponsiveContainer width="100%" height="100%"><LineChart data={visiblePrices} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}><CartesianGrid stroke="#E8EBEF" vertical={false} /><XAxis dataKey="date" tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} /><YAxis width={48} tick={{ fill: "#68737E", fontSize: 12 }} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [typeof value === "number" ? value.toFixed(2) : "—", "价格"]} /><Line type="monotone" dataKey="price" name="价格" stroke="#1E6B52" strokeWidth={2} dot={visiblePrices.length === 1 ? { r: 3 } : false} activeDot={{ r: 3 }} isAnimationActive={false} /></LineChart></ResponsiveContainer></div> : <p className="si-muted">暂无价格历史。</p>}
+          <div className="si-stock-chart-heading"><h3>价格趋势</h3><Select ariaLabel="价格趋势范围" value={String(range)} onValueChange={(value) => setRange(value === "all" ? "all" : Number(value) as 30 | 60 | 90)} options={historyRanges.map((item) => ({ value: String(item.value), label: item.label }))} /></div>
+          {visiblePrices.length > 0 ? <div className="si-stock-price-plot"><ResponsiveContainer width="100%" height="100%"><LineChart data={visiblePrices} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}><CartesianGrid stroke="var(--color-line-soft)" vertical={false} /><XAxis dataKey="date" tick={{ fill: "var(--color-muted)", fontSize: "var(--fs-caption)" }} tickLine={false} axisLine={false} /><YAxis width={48} tick={{ fill: "var(--color-muted)", fontSize: "var(--fs-caption)" }} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [typeof value === "number" ? value.toFixed(2) : "—", "价格"]} /><Line type="monotone" dataKey="price" name="价格" stroke="var(--color-chart-feeders)" strokeWidth={2} dot={visiblePrices.length === 1 ? { r: 3 } : false} activeDot={{ r: 3 }} isAnimationActive={false} /></LineChart></ResponsiveContainer></div> : <p className="si-muted">暂无价格历史。</p>}
         </section>
         <section className="si-stock-detail-history"><h3>近 30 天库存状态</h3><StatusCells history={row.history_30d} /></section>
       </>}
     </div>
-  );
-}
-
-function DailyReportDialog({ report, onOpenChange }: { report: string | null | undefined; onOpenChange: (open: boolean) => void }) {
-  return (
-    <Dialog.Root open={report !== undefined} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="si-dialog-overlay" />
-        <Dialog.Content className="si-confirm-dialog si-report-dialog">
-          <Dialog.Title className="si-dialog-title">今日日报</Dialog.Title>
-          <Dialog.Description className="si-dialog-description">库存变化与需要关注的 SKU。</Dialog.Description>
-          <pre>{report || "暂无今日日报。"}</pre>
-          <div className="si-dialog-actions"><Button onClick={() => onOpenChange(false)}>关闭</Button></div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
   );
 }
 
@@ -246,21 +250,25 @@ export function InventoryPage() {
   const { id = "demo" } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [query, setQuery] = useState<ListQuery<SkuStockFilters>>(INITIAL_QUERY);
   const [selectedRow, setSelectedRow] = useState<InventoryTableRow | null>(null);
   const [historyRange, setHistoryRange] = useState<HistoryRange>(30);
   const [trendSelection, setTrendSelection] = useState<{ projectId: string; categories: string[] } | null>(null);
   const [showDefaultCategories, setShowDefaultCategories] = useState<boolean | null>(null);
   const [categoriesExpanded, setCategoriesExpanded] = useState(false);
-  const [overviewPanelsExpanded, setOverviewPanelsExpanded] = useState(false);
-  const [report, setReport] = useState<string | null | undefined>(undefined);
-  const [feedback, setFeedback] = useState("");
+  const [trendDrawerOpen, setTrendDrawerOpen] = useState(false);
+  const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [report, setReport] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<unknown>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
 
   useEffect(() => {
     setQuery(INITIAL_QUERY); setSelectedRow(null); setShowDefaultCategories(null); setCategoriesExpanded(false); setHistoryRange(30);
-    setOverviewPanelsExpanded(readOverviewPanelsExpanded(id));
+    setTrendSelection(null); setTrendDrawerOpen(false); setGroupingDrawerOpen(false); setReportOpen(false);
   }, [id]);
   useEffect(() => {
     if (!activeRunId) return;
@@ -269,14 +277,15 @@ export function InventoryPage() {
     });
     const unsubscribeFinished = api.jobs.onFinished((result) => {
       if (result.runId !== activeRunId) return;
-      setSyncMessage(result.summary);
-      setFeedback(result.status === "ok" ? "库存同步已完成。" : result.summary);
+      setSyncMessage("");
       setActiveRunId(null);
       void queryClient.invalidateQueries({ queryKey: ["inventory-summary", id] });
       void queryClient.invalidateQueries({ queryKey: ["inventory-skus", id] });
+      if (result.status === "ok") toast.success("库存同步已完成。");
+      else toast.error(result.summary || "库存同步失败。");
     });
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
-  }, [activeRunId, id, queryClient]);
+  }, [activeRunId, id, queryClient, toast]);
 
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["inventory-summary", id, historyRange], queryFn: () => requestInventorySummary(id, historyRange) });
@@ -285,47 +294,63 @@ export function InventoryPage() {
   const summary = summaryQuery.data;
   const project = projectQuery.data?.summary;
   const watchedCategories = projectQuery.data?.config.categories.watched ?? [];
+  const groupingConfig = projectQuery.data?.config.sku_grouping;
+  const groupingEnabled = groupingConfig?.enabled === true;
+  const groupingRule: SkuGroupingRule = groupingConfig?.rule ?? { type: "separator", value: "-" };
   const selectedTrendCategories = trendSelection?.projectId === id ? trendSelection.categories : null;
   const displayDefaultCategories = showDefaultCategories ?? watchedCategories.length === 0;
   const skuRows = (skuQuery.data?.rows ?? []) as InventoryTableRow[];
-  const hasParentGroupingData = skuRows.some((row) => row.parent_sku != null || row.is_parent === true);
-  const groupingEnabled = Boolean(projectQuery.data?.config.sku_grouping?.enabled) && hasParentGroupingData;
   const kpis: Kpi[] = summary?.kpis ?? [];
   const statusFilter = query.filters?.status ?? "all";
   const categoryFilter = query.filters?.category ?? "all";
   const watchedOnly = Boolean(query.filters?.watched_only);
-  const toggleOverviewPanels = () => setOverviewPanelsExpanded((expanded) => {
-    const nextExpanded = !expanded;
-    saveOverviewPanelsExpanded(id, nextExpanded);
-    return nextExpanded;
-  });
-
   const onSearch = useCallback((search: string) => setQuery((current) => ({ ...current, page: 1, search: search || undefined })), []);
   const onStatusChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: !value || value === "all" ? undefined : value as SkuStockFilters["status"] } }));
   const onCategoryChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, category: !value || value === "all" ? undefined : value } }));
   const onWatchedOnlyChange = (checked: boolean) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, watched_only: checked || undefined } }));
   const onPriceChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, price_changed_within: !value || value === "none" ? undefined : value === "all" ? "all" : Number(value) as 30 | 60 | 90 } }));
-  const onParentOnlyChange = (checked: boolean) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: checked || undefined } }));
+  const onParentOnlyChange = (checked: boolean) => {
+    if (!groupingEnabled) {
+      if (checked) setGroupingDrawerOpen(true);
+      return;
+    }
+    setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: checked || undefined } }));
+  };
   const sortByRate = () => setQuery((current) => ({ ...current, page: 1, sort: { field: "online_rate_30d", dir: current.sort?.field === "online_rate_30d" && current.sort.dir === "asc" ? "desc" : "asc" } }));
 
   const exportCsv = async () => {
     try {
       const path = await api.inventory.exportCsv(id, query);
       await api.shell.openPath(path);
-      setFeedback("CSV 已导出。");
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "导出失败。")); }
+      toast.success("CSV 已导出。");
+    } catch (cause) { toast.error(apiErrorMessage(cause, "导出失败。")); }
+  };
+  const loadReport = async () => {
+    setReportLoading(true);
+    setReportError(null);
+    try { setReport(await api.inventory.dailyReport(id, summary?.as_of ?? new Date().toISOString().slice(0, 10))); }
+    catch (cause) { setReportError(cause); }
+    finally { setReportLoading(false); }
   };
   const openReport = async () => {
-    try { setReport(await api.inventory.dailyReport(id, summary?.as_of ?? new Date().toISOString().slice(0, 10))); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "今日日报读取失败。")); }
+    setReportOpen(true);
+    await loadReport();
   };
   const runSync = async () => {
     if (!project) return;
     try {
-      setFeedback(""); setSyncMessage("正在启动库存同步…");
+      setSyncMessage("正在启动库存同步…");
       const run = await api.jobs.run({ projectPath: project.path, job: "daily" });
       setActiveRunId(run.runId);
-    } catch (cause) { setSyncMessage(""); setFeedback(apiErrorMessage(cause, "同步任务启动失败。")); }
+    } catch (cause) { setSyncMessage(""); toast.error(apiErrorMessage(cause, "同步任务启动失败。")); }
+  };
+  const openGroupingSettings = () => {
+    setGroupingDrawerOpen(false);
+    navigate("/p/" + id + "/settings/config?section=sku-grouping");
+  };
+  const openCategorySettings = () => {
+    setTrendDrawerOpen(false);
+    navigate("/p/" + id + "/settings/config?section=watched-categories");
   };
 
   const tableToolbar = (
@@ -334,21 +359,35 @@ export function InventoryPage() {
         <h2>SKU 库存明细</h2>
         <SearchInput value={query.search ?? ""} onSearch={onSearch} label="搜索 SKU 库存" placeholder="搜索 SKU、标题、变体" />
         <Button size="small" onClick={sortByRate}>按在线率排序</Button>
-        <span className="si-table-total">显示 {skuRows.length} / {skuQuery.data?.total.toLocaleString("zh-CN") ?? "—"} 个{query.filters?.parent_only ? "父 SKU" : " SKU"}</span>
+        <span className="si-table-total">显示 {skuRows.length} / {skuQuery.data?.total.toLocaleString("zh-CN") ?? "—"} 个{query.filters?.parent_only && groupingEnabled ? "父 SKU" : " SKU"}</span>
       </div>
       <FilterBar className="si-inventory-filters">
-        <span className="si-filter-label">状态</span>
-        {stockOptions.map((option) => <FilterPill key={option.value} currentValue={statusFilter} value={option.value} onValueChange={onStatusChange}>{option.label}</FilterPill>)}
-        <span className="si-filter-label si-filter-category-label">分类</span>
-        <FilterPill currentValue={categoryFilter} value="all" onValueChange={onCategoryChange}>全部</FilterPill>
-        {(summary?.category_rates ?? []).map((category) => <FilterPill key={category.category} currentValue={categoryFilter} value={category.category} onValueChange={onCategoryChange}>{category.category}</FilterPill>)}
-        <span className="si-filter-label si-filter-category-label">价格变动</span>
-        {[
+        <Select
+          ariaLabel="库存状态筛选"
+          className="si-inventory-filter-select"
+          value={statusFilter}
+          onValueChange={onStatusChange}
+          options={stockOptions}
+        />
+        <Select
+          ariaLabel="库存分类筛选"
+          className="si-inventory-filter-select si-inventory-filter-category"
+          value={categoryFilter}
+          onValueChange={onCategoryChange}
+          options={[{ value: "all", label: "全部分类" }, ...(summary?.category_rates ?? []).map((category) => ({ value: category.category, label: category.category }))]}
+        />
+        <Select
+          ariaLabel="价格变动筛选"
+          className="si-inventory-filter-select"
+          value={query.filters?.price_changed_within?.toString() ?? "none"}
+          onValueChange={onPriceChange}
+          options={[
           { value: "none", label: "全部价格" }, { value: "30", label: "近 30 天" },
           { value: "60", label: "近 60 天" }, { value: "90", label: "近 90 天" }, { value: "all", label: "有历史变动" },
-        ].map((option) => <FilterPill key={option.value} currentValue={query.filters?.price_changed_within?.toString() ?? "none"} value={option.value} onValueChange={onPriceChange}>{option.label}</FilterPill>)}
-        <label className="si-inventory-parent-toggle si-inventory-watched-toggle"><input type="checkbox" checked={watchedOnly} onChange={(event) => onWatchedOnlyChange(event.target.checked)} /><span>仅关注分类</span></label>
-        {groupingEnabled && <label className="si-inventory-parent-toggle"><input type="checkbox" checked={Boolean(query.filters?.parent_only)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>}
+          ]}
+        />
+        <label className="si-inventory-parent-toggle si-inventory-watched-toggle"><input type="checkbox" aria-label="仅关注分类" checked={watchedOnly} onChange={(event) => onWatchedOnlyChange(event.target.checked)} /><span>仅关注分类</span></label>
+        <label className="si-inventory-parent-toggle"><input type="checkbox" aria-label="仅展示父 SKU" checked={Boolean(query.filters?.parent_only && groupingEnabled)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>
       </FilterBar>
     </div>
   );
@@ -363,44 +402,25 @@ export function InventoryPage() {
         activeTab="inventory"
         hasTabPanel
         status={project.sync.state === "ok" ? <Chip tone="ok">{dateTime(project.sync.at)} 同步成功</Chip> : <Chip tone={project.sync.state === "failed" ? "danger" : "warn"}>{project.sync.state === "failed" ? "同步失败" : project.sync.state === "running" ? "同步中" : "待处理"}</Chip>}
-        actions={
-          <>
-          <Button icon={<Download size={15} />} onClick={() => void exportCsv()}>导出 CSV</Button>
-          <Button icon={<FileText size={15} />} onClick={() => void openReport()}>查看今日日报</Button>
-          <Button variant="primary" icon={<RefreshCw size={15} />} disabled={Boolean(activeRunId)} onClick={() => void runSync()}>{activeRunId ? "同步中…" : "立即同步"}</Button>
-          </>
-        }
       />
       <ProjectTabPanel projectId={project.id} tab="inventory">
-      {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <>
-        <div className="si-inventory-kpis">{kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-        <section className="si-inventory-overview" aria-label="库存趋势与分类概览">
-          <div className="si-inventory-overview-summary">
-            <div><strong>库存趋势与分类在线率</strong><span>趋势数据 {summary.trend.dates.length} 个业务日期 · {summary.category_rates.length} 个分类</span></div>
-            <button type="button" aria-expanded={overviewPanelsExpanded} aria-controls={`si-inventory-overview-grid-${id}`} onClick={toggleOverviewPanels}>{overviewPanelsExpanded ? "收起" : "展开趋势与分类面板"}</button>
-          </div>
-          <div className="si-inventory-overview-grid" id={`si-inventory-overview-grid-${id}`} hidden={!overviewPanelsExpanded}>
-            {overviewPanelsExpanded && <>
-            <TrendChart summary={summary} range={historyRange} onRangeChange={setHistoryRange} selectedCategories={selectedTrendCategories} onSelectedCategoriesChange={(categories) => setTrendSelection({ projectId: id, categories })} />
-            <CategoryPanel
-              summary={summary}
-              project={project}
-              watchedCategories={watchedCategories}
-              showDefaultCategories={displayDefaultCategories}
-              onShowDefaultCategories={setShowDefaultCategories}
-              expanded={categoriesExpanded}
-              onToggleExpanded={() => setCategoriesExpanded((value) => !value)}
-              onManage={() => navigate(`/p/${id}/settings/config?section=watched-categories`)}
-              onSelectCategory={(category) => onCategoryChange(category)}
-            />
-            </>}
-          </div>
-        </section>
-      </>}
-      {syncMessage && <div className="si-sync-progress" role="status"><span>{syncMessage}</span>{activeRunId && <span>同步任务运行中</span>}</div>}
-      {feedback && <p className="si-feedback" role="status">{feedback}</p>}
-      {skuQuery.isFetching && <p className="si-inventory-query-state" role="status">正在更新 SKU 列表…</p>}
-      {skuQuery.isError && <ApiErrorNotice className="si-inventory-query-state is-error" label={`SKU 列表更新失败${skuQuery.data ? "，当前保留上次结果。" : "。"}`} error={skuQuery.error} onRetry={() => void skuQuery.refetch()} />}
+      <PageHeader
+        title="库存"
+        meta={<Chip tone="neutral">{summary?.as_of ? "数据日期：" + summary.as_of : "库存数据"}</Chip>}
+        actions={<>
+          <Button variant="primary" icon={<TrendingUp size={14} />} onClick={() => setTrendDrawerOpen(true)}>趋势与分类在线率</Button>
+          <Button icon={<Download size={14} />} onClick={() => void exportCsv()}>导出 CSV</Button>
+          <Button icon={<RefreshCw size={14} />} disabled={Boolean(activeRunId)} onClick={() => void runSync()}>{activeRunId ? "同步中…" : "立即同步"}</Button>
+        </>}
+        overflow={[
+          { label: "SKU 父子规则设置", onSelect: openGroupingSettings, icon: <Settings2 size={14} /> },
+          { label: "查看今日日报", onSelect: () => void openReport(), icon: <FileText size={14} /> },
+        ]}
+      />
+      {syncMessage && <Notice tone="info" title="库存同步进行中">{syncMessage}</Notice>}
+      {skuQuery.isFetching && skuQuery.data && <div className="si-inventory-query-state" role="status">正在更新 SKU 列表…</div>}
+      {skuQuery.isError && <ApiErrorNotice className="si-inventory-query-state" label={"SKU 列表更新失败" + (skuQuery.data ? "，当前保留上次结果。" : "。")} error={skuQuery.error} onRetry={() => void skuQuery.refetch()} />}
+      <div className="si-inventory-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
       <DataTable
         tableId="inventory.skus"
         scopeId={id}
@@ -421,11 +441,33 @@ export function InventoryPage() {
         <span><i className="si-status-in" />有货</span><span><i className="si-status-out" />缺货</span><span><i className="si-status-preorder" />预售</span><span><i className="si-status-unknown" />未知 / 未上架</span>
         <span>数据：index/views/sku_stock.jsonl</span>
       </div>
-      <DetailPanel open={Boolean(selectedRow)} onClose={() => setSelectedRow(null)} title={selectedRow?.sku ?? "SKU 详情"}>
-        {selectedRow && <StockDetail row={selectedRow} />}
-      </DetailPanel>
-      <DailyReportDialog report={report} onOpenChange={(open) => { if (!open) setReport(undefined); }} />
       </ProjectTabPanel>
+      <Drawer open={Boolean(selectedRow)} onOpenChange={(open) => { if (!open) setSelectedRow(null); }} title={selectedRow?.sku ?? "SKU 详情"}>
+        {selectedRow && <StockDetail row={selectedRow} />}
+      </Drawer>
+      <Drawer open={trendDrawerOpen} onOpenChange={setTrendDrawerOpen} title="库存趋势与分类在线率" description="趋势仅使用 Core 返回的真实业务日期。单个日期显示单点，不补造历史。" width="wide">
+        {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <div className="si-inventory-overview-grid">
+          <TrendChart summary={summary} range={historyRange} onRangeChange={setHistoryRange} selectedCategories={selectedTrendCategories} onSelectedCategoriesChange={(categories) => setTrendSelection({ projectId: id, categories })} />
+          <CategoryPanel
+            summary={summary}
+            project={project}
+            watchedCategories={watchedCategories}
+            showDefaultCategories={displayDefaultCategories}
+            onShowDefaultCategories={setShowDefaultCategories}
+            expanded={categoriesExpanded}
+            onToggleExpanded={() => setCategoriesExpanded((value) => !value)}
+            onManage={openCategorySettings}
+            onSelectCategory={onCategoryChange}
+          />
+        </div>}
+      </Drawer>
+      <Drawer open={groupingDrawerOpen} onOpenChange={setGroupingDrawerOpen} title="配置父子 SKU 规则" description="仅当项目启用分组后，库存列表才会筛选父 SKU。预览由 Core 计算。" footer={<div className="si-inventory-drawer-actions"><Button onClick={() => setGroupingDrawerOpen(false)}>关闭</Button><Button variant="primary" onClick={openGroupingSettings}>前往项目设置</Button></div>}>
+        <Notice tone="warn" title="当前未启用父子 SKU 分组">“仅展示父 SKU”暂时不会改变库存列表。先在项目设置中启用规则，再返回这里筛选。</Notice>
+        <GroupingPreview projectId={id} rule={groupingRule} enabled={groupingDrawerOpen} />
+      </Drawer>
+      <Drawer open={reportOpen} onOpenChange={setReportOpen} title="今日日报" description="库存变化与需要关注的 SKU。">
+        {reportLoading ? <div className="si-query-loading" role="status">正在读取今日日报…</div> : reportError ? <ApiErrorNotice label="今日日报读取失败。" error={reportError} onRetry={() => void loadReport()} /> : <pre className="si-inventory-report">{report || "暂无今日日报。"}</pre>}
+      </Drawer>
     </div>
   );
 }
