@@ -80,8 +80,10 @@
 ## v0.3.0 · 共享层收敛
 - [x] B-2：DataTable v2 默认 fill、内部滚动与固定分页、50/100/200/全部、按 tableId 持久化、行选择与右侧固定操作列；#300 Playwright 回归 — 本 PR
 - [x] B-3：`packages/ui/visual/` 的 `ui:check`，遍历所有路由并输出双视口布局/样式检查报告；基线问题转 [#314](https://github.com/henryliuwork/SiteIndex/issues/314) / [#315](https://github.com/henryliuwork/SiteIndex/issues/315) — 本 PR
-- [x] B-4a 应用页迁移：项目中心与新建向导使用 PageHeader、Card、EmptyState、Notice、Drawer、Toast；向导步骤采用可插入数组并预留隐藏的 Agent 工作区插槽 — 本 PR
-- [x] B-4（第 2 组）：Skill 中心与软件设置迁移到 PageHeader、Card、EmptyState、Notice、Toast 和设计 token — 本 PR
+- [x] B-4a 应用页迁移：项目中心与新建向导使用 PageHeader、Card、EmptyState、Notice、Drawer、Toast；向导步骤采用可插入数组并预留隐藏的 Agent 工作区插槽 — [PR #324](https://github.com/henryliuwork/SiteIndex/pull/324)
+- [x] B-4b 应用页迁移：Skill 中心与软件设置使用 PageHeader、Card、EmptyState、Notice、Toast 和设计 token — [PR #327](https://github.com/henryliuwork/SiteIndex/pull/327)
+- [x] B-4c 应用页迁移：README 与定时任务汇总页使用共享组件和 DataTable v2，页面字号、间距和颜色使用设计 token — 本 PR
+- [x] B-5：`schedule.listSystemTasks` 只读区块，展示刷新状态、下次运行、配置一致性与差异；孤立任务继续调用 #291 的清理确认流程 — 本 PR
 - [ ] C 联动：ui-state 持久化支持 200 / 全部 — [issue #307](https://github.com/henryliuwork/SiteIndex/issues/307)
 
 ## 交付给其他工作流
