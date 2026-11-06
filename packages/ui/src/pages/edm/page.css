@@ -1,162 +1,329 @@
 .si-edm-page {
---si-table-min-h: 720px;
-display: flex; min-height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); flex-direction: column; gap: var(--si-gap-4);
+  --si-table-min-h: 416px;
+  display: flex;
+  min-height: 0;
+  height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2);
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .si-edm-page > .si-tab-panel {
-display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--si-gap-4);
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .si-edm-page > .si-tab-panel > .si-data-table.is-fill {
-min-height: var(--si-table-min-h); flex: 1 1 auto;
+  min-height: var(--si-table-min-h);
+  flex: 1 1 auto;
+}
+
+.si-edm-page > .si-tab-panel > .si-data-table.is-fill > .si-table-scroll {
+  min-height: 0;
 }
 
 .si-edm-kpis {
-display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: var(--si-gap-3);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
 .si-edm-kpis .si-kpi-card {
-min-height: 90px; padding: 12px 16px;
+  min-height: 90px;
+  padding: var(--space-3) var(--space-4);
 }
 
 .si-edm-toolbar {
-display: grid; width: 100%; gap: var(--si-gap-2);
+  display: grid;
+  width: 100%;
+  gap: var(--space-2);
 }
 
 .si-edm-toolbar-top {
-display: flex; min-width: 0; align-items: center; gap: var(--si-gap-2);
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .si-edm-toolbar-top h2 {
-flex: none; margin: 0 4px 0 0; color: var(--color-ink); font-size: 14px;
+  flex: none;
+  margin: 0;
+  color: var(--color-ink);
+  font-size: var(--fs-section-title);
+  line-height: var(--lh-section-title);
 }
 
 .si-edm-toolbar-top .si-search-input {
-width: min(260px,32vw);
+  width: min(260px, 32vw);
 }
 
-.si-edm-toolbar-top {
-flex-wrap: wrap;
+.si-edm-parent-toggle {
+  display: inline-flex;
+  min-height: 32px;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-ink-2);
+  font-size: var(--fs-body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.si-edm-parent-toggle input {
+  accent-color: var(--color-brand);
 }
 
 .si-edm-feed-cell {
-display: grid; min-width: 230px; grid-template-columns: 42px minmax(0,1fr); align-items: center; gap: 8px;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .si-edm-feed-cell code {
-display: block; max-width: 330px; overflow: hidden; color: var(--color-muted); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap;
+  display: block;
+  max-width: 330px;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .si-edm-page .si-table td {
-height: 48px; padding-right: 9px; padding-left: 9px;
+  padding-right: var(--space-2);
+  padding-left: var(--space-2);
 }
 
 .si-edm-sku {
-color: var(--color-ink); font-family: var(--font-mono); font-size: 12px;
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
 }
 
 .si-edm-product {
-display: grid; min-width: 135px; gap: 3px;
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
 }
 
 .si-edm-product strong {
-max-width: 210px; overflow: hidden; color: var(--color-ink); font-size: 12px; text-overflow: ellipsis;
+  max-width: 210px;
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: var(--fs-body);
+  text-overflow: ellipsis;
 }
 
 .si-edm-product small {
-color: var(--color-muted); font-size: 12px;
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
 }
 
 .si-edm-thumbnail {
-width: 42px; height: 36px; border: 1px solid var(--color-line); border-radius: 5px; background: var(--color-subtle); object-fit: cover;
+  width: 42px;
+  height: 36px;
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  background: var(--color-subtle);
+  object-fit: cover;
 }
 
 .si-edm-thumbnail-empty {
-display: inline-flex; width: 42px; height: 36px; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 1px dashed var(--color-line); border-radius: 5px; color: var(--color-faint); font-size: 12px;
+  display: inline-flex;
+  width: 42px;
+  height: 36px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border: 1px dashed var(--color-line);
+  border-radius: 6px;
+  color: var(--color-faint);
+  font-size: var(--fs-caption);
 }
 
 .si-edm-manual-cell {
-display: grid; width: 100%; min-width: 0; grid-template-columns: minmax(100px,1fr) auto; align-items: center; gap: var(--si-gap-1);
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .si-edm-manual-cell input {
-width: 100%; height: 30px; min-width: 0; padding: 0 7px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink); font-size: 12px;
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: var(--fs-body);
 }
 
 .si-edm-manual-cell input:focus {
-border-color: var(--color-brand); outline: 2px solid rgba(30,107,82,.12);
+  border-color: var(--color-brand);
+  outline: 2px solid var(--color-focus);
 }
 
 .si-edm-manual-cell .si-button {
-grid-column: 2; grid-row: 1; height: 30px; padding: 0 8px; font-size: 12px; white-space: nowrap;
+  grid-column: 2;
+  grid-row: 1;
+  height: 32px;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-body);
+  white-space: nowrap;
 }
 
 .si-edm-save-status {
-grid-column: 1/-1; color: var(--color-brand-strong); font-size: 12px;
+  grid-column: 1 / -1;
+  color: var(--color-brand-strong);
+  font-size: var(--fs-caption);
 }
 
 .si-edm-error {
-grid-column: 1/-1; max-width: 100%; color: var(--color-danger); font-size: 12px; white-space: normal; overflow-wrap: anywhere;
+  grid-column: 1 / -1;
+  max-width: 100%;
+  color: var(--color-danger);
+  font-size: var(--fs-caption);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .si-edm-rule-note {
-display: flex; flex-wrap: wrap; gap: 4px; margin: -5px 0 0; padding: 9px 12px; border: 1px solid #E5D8B7; border-radius: 6px; background: #FFFBF1; color: #7A6D55; font-size: 12px; line-height: 1.5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warn-soft);
+  border-radius: 6px;
+  background: var(--color-warn-soft);
+  color: var(--color-warn);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
 }
 
-.si-edm-rule-note strong {
-color: #79520E;
+.si-edm-rule-note strong,
+.si-edm-rule-note code {
+  color: var(--color-warn);
 }
 
 .si-edm-rule-note code {
-color: #79520E; font-family: var(--font-mono); font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
 }
 
 .si-edm-detail {
-display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--space-4);
 }
 
-.si-edm-detail>div {
-display: grid; gap: 4px; align-content: center; min-height: 50px; padding: 7px 0; border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: 12px; overflow-wrap: anywhere;
+.si-edm-detail > div {
+  display: grid;
+  min-height: 50px;
+  align-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-line-soft);
+  color: var(--color-ink-2);
+  font-size: var(--fs-body);
+  overflow-wrap: anywhere;
 }
 
-.si-edm-detail>div>span {
-color: var(--color-muted); font-size: 12px;
+.si-edm-detail > div > span {
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
 }
 
-.si-edm-detail .full,.si-edm-detail>.si-button,.si-edm-detail>.si-edm-thumbnail {
-grid-column: 1/-1;
+.si-edm-detail .full,
+.si-edm-detail > .si-button,
+.si-edm-detail > .si-edm-thumbnail {
+  grid-column: 1 / -1;
 }
 
-.si-edm-detail>.si-button {
-justify-self: start; margin-top: 10px;
+.si-edm-detail > .si-button {
+  justify-self: start;
+  margin-top: var(--space-3);
+}
+
+.si-edm-grouping-preview {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  color: var(--color-ink-2);
+  font-size: var(--fs-body);
+}
+
+.si-edm-grouping-rule,
+.si-edm-grouping-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.si-edm-grouping-preview ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.si-edm-grouping-preview li {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line-soft);
+  border-radius: 6px;
+  background: var(--color-subtle);
+}
+
+.si-edm-grouping-preview li span {
+  min-width: 0;
+  text-align: right;
+}
+
+.si-edm-grouping-preview small {
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
+}
+
+.si-edm-drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 @media (max-width: 900px) {
-.si-edm-kpis {
-grid-template-columns: repeat(2,minmax(0,1fr));
-}
-}
+  .si-edm-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-@media (max-width: 900px) {
-.si-edm-toolbar-top {
-flex-wrap: wrap;
-}
-}
-
-@media (max-width: 900px) {
-.si-edm-toolbar-top .si-search-input {
-width: min(100%,360px);
-}
+  .si-edm-toolbar-top .si-search-input {
+    width: min(100%, 360px);
+  }
 }
 
 @media (max-width: 760px) {
-.si-edm-toolbar-top {
-align-items: stretch;
-}
-}
+  .si-edm-toolbar-top {
+    align-items: stretch;
+  }
 
-@media (max-width: 760px) {
-.si-edm-toolbar-top .si-search-input {
-width: 100%;
-}
+  .si-edm-toolbar-top .si-search-input {
+    width: 100%;
+  }
 }
