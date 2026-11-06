@@ -1,0 +1,77 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`project validation and repair > matches the legacy layout validation golden > legacy layout 1`] = `
+{
+  "checked_at": "2026-10-22T05:00:00-07:00",
+  "files": [
+    "README.md | doc | missing | missing | regenerate:readme |  | 文件不存在。",
+    "AGENTS.md | doc | missing | missing |  |  | 文件不存在。",
+    "CLAUDE.md | doc | missing | missing |  |  | 文件不存在。",
+    "index/site.json | config | ok |  | autofix | 1 | ",
+    "index/catalog/skus.jsonl | sync | error | schema | regenerate:daily | 19 | 第 1 行 / must have required property 'category_source'",
+    "index/catalog/product_details.jsonl | sync | missing | missing | regenerate:weekly.product_details |  | 文件不存在。",
+    "index/catalog/categories.json | sync | error | schema | regenerate:weekly.categories | 5 | 第 1 行 / must have required property 'source'",
+    "index/inventory/latest.jsonl | sync | ok |  | regenerate:daily | 19 | ",
+    "index/inventory/daily_summary.csv | sync | ok |  | regenerate:daily | 12 | ",
+    "index/seo/pages.jsonl | sync | missing | missing | regenerate:weekly.pages |  | 文件不存在。",
+    "index/seo/issues.jsonl | sync | missing | missing | regenerate:weekly.issues |  | 文件不存在。",
+    "index/seo/links.jsonl | sync | missing | missing | regenerate:weekly.links |  | 文件不存在。",
+    "index/content/blog_index.jsonl | sync | ok |  | regenerate:weekly.blog | 2 | ",
+    "index/content/keywords.jsonl | ledger | ok |  | autofix | 2 | ",
+    "index/ledgers/sku_media.csv | ledger | error | header | restore_archive | 0 | CSV 表头应为 sku,image_role,image_url,alt_text,source,width,height,updated_at",
+    "index/ledgers/sku_tags.csv | ledger | error | header | restore_archive | 0 | CSV 表头应为 sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at",
+    "index/ledgers/edm_campaigns.jsonl | ledger | ok |  | autofix | 1 | ",
+    "index/ledgers/outreach.jsonl | ledger | ok |  | autofix | 2 | ",
+    "index/views/products.jsonl | view | ok |  | regenerate:views | 17 | ",
+    "index/views/sku_stock.jsonl | view | ok |  | regenerate:views | 19 | ",
+    "index/logs/runs.jsonl | sync | ok |  | autofix | 5 | ",
+    "index/inventory/events/2026-10.jsonl | sync | ok |  | regenerate:daily | 5 | ",
+  ],
+  "summary": {
+    "conflict_copy": 0,
+    "error": 4,
+    "missing": 7,
+    "ok": 11,
+    "total": 22,
+  },
+  "trigger": "manual",
+}
+`;
+
+exports[`project validation and repair > matches the workspace layout validation golden and writes under _site-index > workspace layout 1`] = `
+{
+  "checked_at": "2026-10-22T05:00:00-07:00",
+  "files": [
+    "README.md | doc | missing | missing | regenerate:readme |  | 文件不存在。",
+    "AGENTS.md | doc | missing | missing |  |  | 文件不存在。",
+    "CLAUDE.md | doc | missing | missing |  |  | 文件不存在。",
+    "_site-index/site.json | config | ok |  | autofix | 1 | ",
+    "_site-index/catalog/skus.jsonl | sync | error | schema | regenerate:daily | 19 | 第 1 行 / must have required property 'category_source'",
+    "_site-index/catalog/product_details.jsonl | sync | missing | missing | regenerate:weekly.product_details |  | 文件不存在。",
+    "_site-index/catalog/categories.json | sync | error | schema | regenerate:weekly.categories | 5 | 第 1 行 / must have required property 'source'",
+    "_site-index/inventory/latest.jsonl | sync | ok |  | regenerate:daily | 19 | ",
+    "_site-index/inventory/daily_summary.csv | sync | ok |  | regenerate:daily | 12 | ",
+    "_site-index/seo/pages.jsonl | sync | missing | missing | regenerate:weekly.pages |  | 文件不存在。",
+    "_site-index/seo/issues.jsonl | sync | missing | missing | regenerate:weekly.issues |  | 文件不存在。",
+    "_site-index/seo/links.jsonl | sync | missing | missing | regenerate:weekly.links |  | 文件不存在。",
+    "_site-index/content/blog_index.jsonl | sync | ok |  | regenerate:weekly.blog | 2 | ",
+    "_site-index/content/keywords.jsonl | ledger | ok |  | autofix | 2 | ",
+    "_site-index/ledgers/sku_media.csv | ledger | error | header | restore_archive | 0 | CSV 表头应为 sku,image_role,image_url,alt_text,source,width,height,updated_at",
+    "_site-index/ledgers/sku_tags.csv | ledger | error | header | restore_archive | 0 | CSV 表头应为 sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at",
+    "_site-index/ledgers/edm_campaigns.jsonl | ledger | ok |  | autofix | 1 | ",
+    "_site-index/ledgers/outreach.jsonl | ledger | ok |  | autofix | 2 | ",
+    "_site-index/views/products.jsonl | view | ok |  | regenerate:views | 17 | ",
+    "_site-index/views/sku_stock.jsonl | view | ok |  | regenerate:views | 19 | ",
+    "_site-index/logs/runs.jsonl | sync | ok |  | autofix | 5 | ",
+    "_site-index/inventory/events/2026-10.jsonl | sync | ok |  | regenerate:daily | 5 | ",
+  ],
+  "summary": {
+    "conflict_copy": 0,
+    "error": 4,
+    "missing": 7,
+    "ok": 11,
+    "total": 22,
+  },
+  "trigger": "manual",
+}
+`;

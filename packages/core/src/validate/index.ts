@@ -4,11 +4,12 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import Ajv2020, { type AnySchema, type ErrorObject } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { CSV_HEADERS, PATHS, type FileCheck, type FileKind, type JobName, type RepairAction, type SiteConfig, type ValidationReport } from "@siteindex/shared";
+import { CSV_HEADERS, pathsFor, type FileCheck, type FileKind, type JobName, type ProjectPaths, type RepairAction, type SiteConfig, type ValidationReport } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { readCsv, writeCsv } from "../io/csv";
 import { readJsonl, writeJsonl } from "../io/jsonl";
+import { resolveProjectLayout } from "../io/project-layout";
 import { findConflictCopies, isConflictCopy } from "../io/runner-lock";
 
 type Format = "json" | "jsonl" | "csv" | "text";
@@ -31,29 +32,31 @@ export interface RepairOptions {
   runJob: (job: JobName, only?: string) => Promise<{ status: string; summary: string; errors?: string[] }>;
 }
 
-const SPECS: FileSpec[] = [
-  { path: PATHS.readme, kind: "doc", format: "text", repair: "regenerate:readme" },
-  { path: PATHS.agentsMd, kind: "doc", format: "text" },
-  { path: PATHS.claudeMd, kind: "doc", format: "text" },
-  { path: PATHS.site, kind: "config", format: "json", schema: "site", repair: "autofix" },
-  { path: PATHS.skus, kind: "sync", format: "jsonl", schema: "sku", key: ["sku"], repair: "regenerate:daily" },
-  { path: PATHS.productDetails, kind: "sync", format: "jsonl", schema: "product_details", repair: "regenerate:weekly.product_details" },
-  { path: PATHS.categories, kind: "sync", format: "json", arraySchema: "category", key: ["slug"], repair: "regenerate:weekly.categories" },
-  { path: PATHS.inventoryLatest, kind: "sync", format: "jsonl", schema: "inventory_latest", key: ["sku"], repair: "regenerate:daily" },
-  { path: PATHS.dailySummary, kind: "sync", format: "csv", headers: CSV_HEADERS.dailySummary, key: ["date", "category"], repair: "regenerate:daily" },
-  { path: PATHS.seoPages, kind: "sync", format: "jsonl", schema: "seo_page", repair: "regenerate:weekly.pages" },
-  { path: PATHS.seoIssues, kind: "sync", format: "jsonl", schema: "seo_issue", repair: "regenerate:weekly.issues" },
-  { path: PATHS.seoLinks, kind: "sync", format: "jsonl", schema: "seo_link", repair: "regenerate:weekly.links" },
-  { path: PATHS.blogIndex, kind: "sync", format: "jsonl", schema: "blog_post", repair: "regenerate:weekly.blog" },
-  { path: PATHS.keywords, kind: "ledger", format: "jsonl", schema: "keyword", repair: "autofix" },
-  { path: PATHS.skuMedia, kind: "ledger", format: "csv", schema: "sku_media", headers: CSV_HEADERS.skuMedia, key: ["sku", "image_role"], repair: "autofix" },
-  { path: PATHS.skuTags, kind: "ledger", format: "csv", schema: "sku_tags", headers: CSV_HEADERS.skuTags, key: ["sku"], repair: "autofix" },
-  { path: PATHS.edmCampaigns, kind: "ledger", format: "jsonl", schema: "edm_campaign", repair: "autofix" },
-  { path: PATHS.outreach, kind: "ledger", format: "jsonl", schema: "outreach_contact", repair: "autofix" },
-  { path: PATHS.productsView, kind: "view", format: "jsonl", key: ["handle"], repair: "regenerate:views" },
-  { path: PATHS.skuStockView, kind: "view", format: "jsonl", schema: "sku_stock", repair: "regenerate:views" },
-  { path: PATHS.runs, kind: "sync", format: "jsonl", schema: "run_log", repair: "autofix" },
-];
+function specsFor(paths: ProjectPaths): FileSpec[] {
+  return [
+    { path: paths.readme, kind: "doc", format: "text", repair: "regenerate:readme" },
+    { path: paths.agentsMd, kind: "doc", format: "text" },
+    { path: paths.claudeMd, kind: "doc", format: "text" },
+    { path: paths.site, kind: "config", format: "json", schema: "site", repair: "autofix" },
+    { path: paths.skus, kind: "sync", format: "jsonl", schema: "sku", key: ["sku"], repair: "regenerate:daily" },
+    { path: paths.productDetails, kind: "sync", format: "jsonl", schema: "product_details", repair: "regenerate:weekly.product_details" },
+    { path: paths.categories, kind: "sync", format: "json", arraySchema: "category", key: ["slug"], repair: "regenerate:weekly.categories" },
+    { path: paths.inventoryLatest, kind: "sync", format: "jsonl", schema: "inventory_latest", key: ["sku"], repair: "regenerate:daily" },
+    { path: paths.dailySummary, kind: "sync", format: "csv", headers: CSV_HEADERS.dailySummary, key: ["date", "category"], repair: "regenerate:daily" },
+    { path: paths.seoPages, kind: "sync", format: "jsonl", schema: "seo_page", repair: "regenerate:weekly.pages" },
+    { path: paths.seoIssues, kind: "sync", format: "jsonl", schema: "seo_issue", repair: "regenerate:weekly.issues" },
+    { path: paths.seoLinks, kind: "sync", format: "jsonl", schema: "seo_link", repair: "regenerate:weekly.links" },
+    { path: paths.blogIndex, kind: "sync", format: "jsonl", schema: "blog_post", repair: "regenerate:weekly.blog" },
+    { path: paths.keywords, kind: "ledger", format: "jsonl", schema: "keyword", repair: "autofix" },
+    { path: paths.skuMedia, kind: "ledger", format: "csv", schema: "sku_media", headers: CSV_HEADERS.skuMedia, key: ["sku", "image_role"], repair: "autofix" },
+    { path: paths.skuTags, kind: "ledger", format: "csv", schema: "sku_tags", headers: CSV_HEADERS.skuTags, key: ["sku"], repair: "autofix" },
+    { path: paths.edmCampaigns, kind: "ledger", format: "jsonl", schema: "edm_campaign", repair: "autofix" },
+    { path: paths.outreach, kind: "ledger", format: "jsonl", schema: "outreach_contact", repair: "autofix" },
+    { path: paths.productsView, kind: "view", format: "jsonl", key: ["handle"], repair: "regenerate:views" },
+    { path: paths.skuStockView, kind: "view", format: "jsonl", schema: "sku_stock", repair: "regenerate:views" },
+    { path: paths.runs, kind: "sync", format: "jsonl", schema: "run_log", repair: "autofix" },
+  ];
+}
 const ajv = new Ajv2020({ allErrors: true, strict: false, coerceTypes: true, validateFormats: true });
 addFormats(ajv);
 const schemaCache = new Map<string, Promise<{ schema: AnySchema; validate: ReturnType<typeof ajv.compile> }>>();
@@ -103,8 +106,9 @@ function rowSortCompare(a: Record<string, unknown>, b: Record<string, unknown>, 
   }
   return 0;
 }
-function firstRule(checks: FileCheck[], pathName: string, rule: FileCheck["rule"], message: string): void {
-  checks.push({ path: pathName, kind: SPECS.find((spec) => spec.path === pathName)?.kind ?? "sync", status: "error", rule, message, repair: SPECS.find((spec) => spec.path === pathName)?.repair ?? null });
+function firstRule(checks: FileCheck[], pathName: string, rule: FileCheck["rule"], message: string, specs: FileSpec[]): void {
+  const spec = specs.find((item) => item.path === pathName);
+  checks.push({ path: pathName, kind: spec?.kind ?? "sync", status: "error", rule, message, repair: spec?.repair ?? null });
 }
 function repairFor(spec: FileSpec, rule: FileCheck["rule"]): RepairAction | null {
   if (spec.kind === "ledger" && (rule === "parse" || rule === "schema" || rule === "header" || rule === "missing")) return "restore_archive";
@@ -118,7 +122,7 @@ async function validateRows(schemaName: string, rows: Record<string, unknown>[])
   }
   return null;
 }
-async function checkData(spec: FileSpec, absolute: string): Promise<{ rows: Record<string, unknown>[]; count: number; schemaError?: string; headerError?: string; line?: number }> {
+async function checkData(spec: FileSpec, absolute: string, paths: ProjectPaths): Promise<{ rows: Record<string, unknown>[]; count: number; schemaError?: string; headerError?: string; line?: number }> {
   if (spec.format === "text") return { rows: [], count: 1 };
   if (spec.format === "json") {
     const value: unknown = JSON.parse(await readFile(absolute, "utf8"));
@@ -129,7 +133,7 @@ async function checkData(spec: FileSpec, absolute: string): Promise<{ rows: Reco
       return { rows, count: rows.length, ...(schemaError ? { schemaError } : {}) };
     }
     const rows = value && typeof value === "object" && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
-    if (spec.path === PATHS.site && rows[0]) delete rows[0].workspace_folders;
+    if (spec.path === paths.site && rows[0]) delete rows[0].workspace_folders;
     const schemaError = spec.schema ? await validateRows(spec.schema, rows) : null;
     return { rows, count: rows.length, ...(schemaError ? { schemaError } : {}) };
   }
@@ -156,19 +160,22 @@ async function checkData(spec: FileSpec, absolute: string): Promise<{ rows: Reco
 
 export async function validateProjectFiles(projectPath: string, options: ValidateOptions = {}): Promise<ValidationReport> {
   const project = path.resolve(projectPath);
-  const siteFile = path.join(project, PATHS.site);
+  const layout = await resolveProjectLayout(project);
+  const paths = pathsFor(layout);
+  const allSpecs = specsFor(paths);
+  const siteFile = path.join(project, paths.site);
   let timezone = "UTC";
   try {
     const config = JSON.parse(await readFile(siteFile, "utf8")) as Partial<SiteConfig>;
     if (typeof config.timezone === "string") timezone = config.timezone;
   } catch { /* the site file check below records a missing or malformed configuration */ }
   const selected = options.selectedPath ? insideProject(project, options.selectedPath).relative : "";
-  const specs = SPECS.filter((spec) => !selected || spec.path === selected || spec.path.startsWith(selected + "/"));
-  if (!selected || selected === PATHS.eventsDir || selected.startsWith(PATHS.eventsDir + "/")) {
-    const eventDirectory = path.join(project, PATHS.eventsDir);
+  const specs = allSpecs.filter((spec) => !selected || spec.path === selected || spec.path.startsWith(selected + "/"));
+  if (!selected || selected === paths.eventsDir || selected.startsWith(paths.eventsDir + "/")) {
+    const eventDirectory = path.join(project, paths.eventsDir);
     const eventFiles = await readdir(eventDirectory).catch(() => []);
     for (const name of eventFiles.filter((item) => /^\d{4}-\d{2}\.jsonl$/.test(item))) {
-      const relative = PATHS.eventsDir + "/" + name;
+      const relative = path.posix.join(paths.eventsDir, name);
       if (!selected || relative === selected || relative.startsWith(selected + "/")) {
         specs.push({ path: relative, kind: "sync", format: "jsonl", schema: "inventory_event", key: ["date", "sku", "type"], repair: "regenerate:daily" });
       }
@@ -181,12 +188,12 @@ export async function validateProjectFiles(projectPath: string, options: Validat
     try {
       const info = await stat(absolute);
       try {
-        const data = await checkData(spec, absolute);
+        const data = await checkData(spec, absolute, paths);
         if (data.headerError) {
           checks.push({ path: spec.path, kind: spec.kind, status: "error", rule: "header", message: data.headerError, records: data.count, size: info.size, modified_at: info.mtime.toISOString(), repair: repairFor(spec, "header") });
           continue;
         }
-        if (spec.path.startsWith(PATHS.eventsDir + "/")) {
+        if (spec.path.startsWith(paths.eventsDir + "/")) {
           const month = path.posix.basename(spec.path, ".jsonl");
           if (data.rows.some((row) => typeof row.date !== "string" || !row.date.startsWith(month))) {
             checks.push({ path: spec.path, kind: spec.kind, status: "error", rule: "schema", message: "事件日期必须属于文件月份 " + month,
@@ -232,34 +239,34 @@ export async function validateProjectFiles(projectPath: string, options: Validat
       else checks.push({ path: spec.path, kind: spec.kind, status: "error", rule: "parse", message: error instanceof Error ? error.message : String(error), repair: repairFor(spec, "parse") });
     }
   }
-  const skuPath = PATHS.skus;
+  const skuPath = paths.skus;
   const skuRows = validRows.get(skuPath) ?? [];
   const skus = new Set(skuRows.map((row) => String(row.sku ?? "")));
-  for (const relative of [PATHS.inventoryLatest, PATHS.skuMedia, PATHS.skuTags]) {
+  for (const relative of [paths.inventoryLatest, paths.skuMedia, paths.skuTags]) {
     const bad = (validRows.get(relative) ?? []).filter((row) => row.sku && !skus.has(String(row.sku)));
-    if (bad.length) firstRule(checks, relative, "ref", bad.length + " 个 SKU 不存在，例如 " + String(bad[0]!.sku));
+    if (bad.length) firstRule(checks, relative, "ref", bad.length + " 个 SKU 不存在，例如 " + String(bad[0]!.sku), allSpecs);
   }
-  const keywords = validRows.get(PATHS.keywords) ?? [];
+  const keywords = validRows.get(paths.keywords) ?? [];
   const primaryTargets = new Map<string, number>();
   for (const row of keywords) if (row.role === "primary" && typeof row.target_url === "string" && row.target_url) {
     primaryTargets.set(row.target_url, (primaryTargets.get(row.target_url) ?? 0) + 1);
   }
   const duplicateTargets = [...primaryTargets].filter(([, count]) => count > 1);
-  if (duplicateTargets.length) firstRule(checks, PATHS.keywords, "schema", "同一目标 URL 有多个 primary 关键词，例如 " + duplicateTargets[0]![0]);
-  const readme = checks.find((check) => check.path === PATHS.readme);
+  if (duplicateTargets.length) firstRule(checks, paths.keywords, "schema", "同一目标 URL 有多个 primary 关键词，例如 " + duplicateTargets[0]![0], allSpecs);
+  const readme = checks.find((check) => check.path === paths.readme);
   if (readme?.status === "ok") {
-    const contents = await readFile(path.join(project, PATHS.readme), "utf8");
+    const contents = await readFile(path.join(project, paths.readme), "utf8");
     const markers = [...contents.matchAll(/<!-- siteindex:auto:(start|end) id="([^"]+)" -->/g)]
       .filter((match) => match[2] !== "folder-map");
     const starts = markers.filter((match) => match[1] === "start").length;
     const ends = markers.length - starts;
-    if (starts !== ends) firstRule(checks, PATHS.readme, "readme_markers", "README 自动区块标记未成对。");
+    if (starts !== ends) firstRule(checks, paths.readme, "readme_markers", "README 自动区块标记未成对。", allSpecs);
   }
-  const runs = validRows.get(PATHS.runs) ?? [];
+  const runs = validRows.get(paths.runs) ?? [];
   const successfulDaily = runs.filter((row) => row.job === "daily" && row.status === "ok")
     .map((row) => Date.parse(String(row.finished_at ?? row.started_at ?? ""))).filter(Number.isFinite).sort((a, b) => b - a)[0];
   if (successfulDaily !== undefined && (options.now ?? new Date()).getTime() - successfulDaily > 36 * 60 * 60 * 1000) {
-    firstRule(checks, PATHS.runs, "stale", "最近一次成功 daily 超过 36 小时。");
+    firstRule(checks, paths.runs, "stale", "最近一次成功 daily 超过 36 小时。", allSpecs);
   }
   const report: ValidationReport = {
     checked_at: localTimestamp(timezone, options.now),
@@ -273,23 +280,24 @@ export async function validateProjectFiles(projectPath: string, options: Validat
     },
     files: checks,
   };
-  await atomicWrite(path.join(project, PATHS.validation), JSON.stringify(report, null, 2) + "\n");
+  await atomicWrite(path.join(project, paths.validation), JSON.stringify(report, null, 2) + "\n");
   return report;
 }
 
-function repairSchema(pathName: string): { schema?: string; headers?: readonly string[]; key?: readonly string[] } {
-  const spec = SPECS.find((item) => item.path === pathName);
+function repairSchema(pathName: string, specs: FileSpec[], paths: ProjectPaths): { schema?: string; headers?: readonly string[]; key?: readonly string[] } {
+  const spec = specs.find((item) => item.path === pathName);
   if (!spec) return {};
-  if (spec.path === PATHS.categories) return { key: ["slug"] };
+  if (spec.path === paths.categories) return { key: ["slug"] };
   const schema = spec.schema;
   const schemaKey = spec.key ?? (schema ? undefined : undefined);
   return { ...(schema ? { schema } : {}), ...(spec.headers ? { headers: spec.headers } : {}), ...(schemaKey ? { key: schemaKey } : {}) };
 }
 function stableKey(row: Record<string, unknown>, keys: readonly string[]): string { return keys.map((key) => String(row[key] ?? "")).join("\u0000"); }
-async function autofix(projectPath: string, relative: string, absolute: string): Promise<void> {
-  const spec = SPECS.find((item) => item.path === relative);
+async function autofix(projectPath: string, relative: string, absolute: string, paths: ProjectPaths): Promise<void> {
+  const specs = specsFor(paths);
+  const spec = specs.find((item) => item.path === relative);
   if (!spec) throw new Error("此文件暂不支持自动整理：" + relative);
-  const settings = repairSchema(relative);
+  const settings = repairSchema(relative, specs, paths);
   if (spec.format === "jsonl") {
     const rows = await readJsonl(absolute);
     let keys = settings.key;
@@ -320,15 +328,15 @@ async function autofix(projectPath: string, relative: string, absolute: string):
   }
   if (spec.format === "json") {
     const value = JSON.parse(await readFile(absolute, "utf8")) as Record<string, unknown>;
-    if (relative === PATHS.site && value && typeof value === "object") delete value.workspace_folders;
+    if (relative === paths.site && value && typeof value === "object") delete value.workspace_folders;
     await atomicWrite(absolute, JSON.stringify(value, null, 2) + "\n");
     return;
   }
   const contents = await readFile(absolute, "utf8");
   await atomicWrite(absolute, contents.replace(/\r\n?/g, "\n").replace(/\n*$/, "\n"));
 }
-async function restoreArchive(projectPath: string, relative: string, absolute: string): Promise<void> {
-  const archiveRoot = path.join(projectPath, PATHS.archiveDir);
+async function restoreArchive(projectPath: string, relative: string, absolute: string, paths: ProjectPaths): Promise<void> {
+  const archiveRoot = path.join(projectPath, paths.archiveDir);
   const months = await readdir(archiveRoot, { withFileTypes: true }).catch(() => []);
   const candidates: { month: string; file: string }[] = [];
   for (const month of months.filter((item) => item.isDirectory()).map((item) => item.name).sort().reverse()) {
@@ -354,16 +362,18 @@ async function restoreArchive(projectPath: string, relative: string, absolute: s
 
 export async function repairProjectFile(projectPath: string, relativePath: string, action: RepairAction, options: RepairOptions): Promise<void> {
   const project = path.resolve(projectPath);
+  const layout = await resolveProjectLayout(project);
+  const paths = pathsFor(layout);
   const target = insideProject(project, relativePath);
   if (action === "delete_copy") {
     if (!isConflictCopy(path.basename(target.absolute))) throw new Error("指定文件不是已识别的冲突副本：" + relativePath);
-    const archive = path.join(project, PATHS.archiveDir, "quarantine", new Date().toISOString().slice(0, 10), path.basename(target.absolute) + "." + randomUUID());
+    const archive = path.join(project, paths.archiveDir, "quarantine", new Date().toISOString().slice(0, 10), path.basename(target.absolute) + "." + randomUUID());
     await mkdir(path.dirname(archive), { recursive: true });
     await rename(target.absolute, archive);
     return;
   }
-  if (action === "autofix") { await autofix(project, target.relative, target.absolute); return; }
-  if (action === "restore_archive") { await restoreArchive(project, target.relative, target.absolute); return; }
+  if (action === "autofix") { await autofix(project, target.relative, target.absolute, paths); return; }
+  if (action === "restore_archive") { await restoreArchive(project, target.relative, target.absolute, paths); return; }
   if (action.startsWith("regenerate:")) {
     const task = action.slice("regenerate:".length);
     const parts = task.split(".", 2);

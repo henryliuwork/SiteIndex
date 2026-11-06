@@ -1,8 +1,8 @@
 import { createServer, type Server } from "node:http";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PATHS, type SiteConfig } from "@siteindex/shared";
+import { pathsFor, type SiteConfig } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { readJsonl, writeJsonl } from "../src/io/jsonl";
 import { runWeekly } from "../src/jobs/weekly";
@@ -130,13 +130,15 @@ describe("weekly SEO rule fixture", () => {
     const baseUrl = await seoRuleFixtureServer();
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-seo-rules-"));
     temporaryRoots.push(root);
+    const paths = pathsFor("legacy");
     for (const relative of [
-      PATHS.seoPages, PATHS.seoIssues, PATHS.seoLinks, PATHS.blogIndex,
-      PATHS.productDetails, PATHS.skus, PATHS.categories,
+      paths.site,
+      paths.seoPages, paths.seoIssues, paths.seoLinks, paths.blogIndex,
+      paths.productDetails, paths.skus, paths.categories,
     ]) {
       await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
     }
-    await writeJsonl(path.join(root, PATHS.skus), [], "sku");
+    await writeJsonl(path.join(root, paths.skus), [], "sku");
     const source = JSON.parse(await readFile(path.join(process.cwd(), "fixtures/inputs/site.json"), "utf8")) as SiteConfig;
     const config = {
       ...source,
@@ -145,17 +147,18 @@ describe("weekly SEO rule fixture", () => {
       crawl: { ...source.crawl, rate_limit_ms: 0, max_pages: 32 },
       categories: { mode: "manual", manual: [{ slug: "fixture", name: "Fixture", url: baseUrl + "/fixture", match: [] }] },
     } as SiteConfig;
+    await writeFile(path.join(root, paths.site), JSON.stringify(config, null, 2) + "\n");
 
     const result = await runWeekly(root, config, { date: "2026-10-30" });
     expect(result.errors).toEqual([]);
     expect(result.status).toBe("ok");
 
-    const issues = await readJsonl(path.join(root, PATHS.seoIssues));
+    const issues = await readJsonl(path.join(root, paths.seoIssues));
     const validation = await validateProjectFiles(root, {
-      selectedPath: PATHS.seoIssues,
+      selectedPath: paths.seoIssues,
       now: new Date("2026-10-30T12:00:00Z"),
     });
-    expect(validation.files.find((file) => file.path === PATHS.seoIssues)).toMatchObject({ status: "ok" });
+    expect(validation.files.find((file) => file.path === paths.seoIssues)).toMatchObject({ status: "ok" });
     const rules = new Set(issues.map((issue) => String(issue.rule)));
     expect([...rules]).toEqual(expect.arrayContaining([
       "http_4xx", "http_5xx", "redirect_chain", "noindex", "canonical_other", "canonical_missing",
@@ -173,15 +176,15 @@ describe("weekly SEO rule fixture", () => {
     expect(issues.find((issue) => issue.rule === "hreflang_invalid")?.detail).toContain("Invalid hreflang language");
     expect(issues.find((issue) => issue.rule === "hreflang_invalid")?.detail).toContain("Duplicate hreflang language");
 
-    await writeJsonl(path.join(root, PATHS.seoIssues), [
+    await writeJsonl(path.join(root, paths.seoIssues), [
       ...issues,
       { url: baseUrl + "/legacy-title-length", rule: "title_length", severity: "low", detail: "legacy fixture", status: "fixed", first_seen: "2026-10-29", last_seen: "2026-10-30" },
       { url: baseUrl + "/legacy-desc-length", rule: "desc_length", severity: "low", detail: "legacy fixture", status: "fixed", first_seen: "2026-10-29", last_seen: "2026-10-30" },
     ], "seo_issue");
     const legacyValidation = await validateProjectFiles(root, {
-      selectedPath: PATHS.seoIssues,
+      selectedPath: paths.seoIssues,
       now: new Date("2026-10-30T12:00:00Z"),
     });
-    expect(legacyValidation.files.find((file) => file.path === PATHS.seoIssues)).toMatchObject({ status: "ok" });
+    expect(legacyValidation.files.find((file) => file.path === paths.seoIssues)).toMatchObject({ status: "ok" });
   }, 30_000);
 });

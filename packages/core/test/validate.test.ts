@@ -1,14 +1,16 @@
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { PATHS } from "@siteindex/shared";
+import { pathsFor } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { validateProjectFiles, repairProjectFile } from "../src/validate";
+import { resolveProjectLayout } from "../src/io/project-layout";
 import { readJsonl } from "../src/io/jsonl";
 
 const fixture = path.resolve(process.cwd(), "fixtures/expected/project");
 const fixtureInput = path.resolve(process.cwd(), "fixtures/inputs/site.json");
+const legacyPaths = pathsFor("legacy");
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
@@ -19,21 +21,103 @@ async function projectCopy(): Promise<string> {
   await cp(fixture, project, { recursive: true });
   return project;
 }
+async function workspaceProjectCopy(): Promise<string> {
+  const project = await projectCopy();
+  const legacy = pathsFor("legacy");
+  const workspace = pathsFor("workspace");
+  await rename(path.join(project, legacy.index), path.join(project, workspace.index));
+  return project;
+}
 async function minimalProject(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-validate-minimal-"));
   roots.push(root);
   const project = path.join(root, "project");
-  await mkdir(path.dirname(path.join(project, PATHS.site)), { recursive: true });
-  await mkdir(path.dirname(path.join(project, PATHS.skus)), { recursive: true });
-  await writeFile(path.join(project, PATHS.site), await readFile(fixtureInput));
-  await writeFile(path.join(project, PATHS.skus), await readFile(path.join(fixture, PATHS.skus)));
+  await mkdir(path.dirname(path.join(project, legacyPaths.site)), { recursive: true });
+  await mkdir(path.dirname(path.join(project, legacyPaths.skus)), { recursive: true });
+  await writeFile(path.join(project, legacyPaths.site), await readFile(fixtureInput));
+  await writeFile(path.join(project, legacyPaths.skus), await readFile(path.join(fixture, legacyPaths.skus)));
   return project;
 }
 
+function validationGolden(report: Awaited<ReturnType<typeof validateProjectFiles>>) {
+  return {
+    checked_at: report.checked_at,
+    trigger: report.trigger,
+    summary: report.summary,
+    files: report.files.map(({ path: filePath, kind, status, rule, repair, records, message }) =>
+      [filePath, kind, status, rule ?? "", repair ?? "", records === undefined ? "" : String(records), message ?? ""].join(" | ")),
+  };
+}
+
 describe("project validation and repair", () => {
+  it("prefers workspace config when both layout config files exist", async () => {
+    const project = await projectCopy();
+    const workspaceConfig = path.join(project, pathsFor("workspace").site);
+    await mkdir(path.dirname(workspaceConfig), { recursive: true });
+    await cp(path.join(project, pathsFor("legacy").site), workspaceConfig);
+
+    expect(await resolveProjectLayout(project)).toBe("workspace");
+  });
+
+  it("returns a structured project-not-found error when neither config exists", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-layout-missing-"));
+    roots.push(root);
+
+    await expect(resolveProjectLayout(root)).rejects.toMatchObject({ code: "PROJECT_NOT_FOUND" });
+  });
+
+  it("matches the legacy layout validation golden", async () => {
+    const project = await projectCopy();
+    expect(await resolveProjectLayout(project)).toBe("legacy");
+    const report = await validateProjectFiles(project, { trigger: "manual", now: new Date("2026-10-22T12:00:00Z") });
+
+    expect(validationGolden(report)).toMatchSnapshot("legacy layout");
+    expect(await readFile(path.join(project, pathsFor("legacy").validation), "utf8")).toBe(JSON.stringify(report, null, 2) + "\n");
+  }, 20_000);
+
+  it("matches the workspace layout validation golden and writes under _site-index", async () => {
+    const project = await workspaceProjectCopy();
+    expect(await resolveProjectLayout(project)).toBe("workspace");
+    const report = await validateProjectFiles(project, { trigger: "manual", now: new Date("2026-10-22T12:00:00Z") });
+
+    expect(validationGolden(report)).toMatchSnapshot("workspace layout");
+    expect(await readFile(path.join(project, pathsFor("workspace").validation), "utf8")).toBe(JSON.stringify(report, null, 2) + "\n");
+    expect(report.files.some((check) => check.path.startsWith(legacyPaths.index + "/"))).toBe(false);
+    expect(report.files.some((check) => check.path.startsWith(pathsFor("workspace").index + "/"))).toBe(true);
+  }, 20_000);
+
+  it("applies autofix, archive restore, and conflict quarantine inside workspace paths", async () => {
+    const project = await workspaceProjectCopy();
+    const paths = pathsFor("workspace");
+    const productsFile = path.join(project, paths.productsView);
+    const original = await readJsonl(productsFile);
+    await writeFile(productsFile, [original[1]!, original[0]!, original[0]!].map((row) => JSON.stringify(row)).join("\n") + "\n");
+    await repairProjectFile(project, paths.productsView, "autofix", { runJob: async () => ({ status: "ok", summary: "ok" }) });
+    const sorted = await readJsonl(productsFile);
+    expect(sorted).toHaveLength(2);
+    expect(sorted.map((row) => row.handle)).toEqual([...sorted.map((row) => row.handle)].sort());
+
+    const relative = paths.keywords;
+    const contents = "{\"keyword\":\"restored\"}\n";
+    const archive = path.join(project, paths.archiveDir, "2026-10", relative + ".gz");
+    await mkdir(path.dirname(archive), { recursive: true });
+    await writeFile(archive, gzipSync(contents));
+    await repairProjectFile(project, relative, "restore_archive", { runJob: async () => ({ status: "ok", summary: "ok" }) });
+    expect(await readFile(path.join(project, relative), "utf8")).toBe(contents);
+
+    const copyRelative = path.posix.join(path.posix.dirname(paths.seoPages), "pages (1).jsonl");
+    const copy = path.join(project, copyRelative);
+    await mkdir(path.dirname(copy), { recursive: true });
+    await writeFile(copy, "conflict copy\n");
+    await repairProjectFile(project, copyRelative, "delete_copy", { runJob: async () => ({ status: "ok", summary: "ok" }) });
+    await expect(readFile(copy, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const quarantine = path.join(project, paths.archiveDir, "quarantine", new Date().toISOString().slice(0, 10));
+    expect(await readdir(quarantine)).toEqual(expect.arrayContaining([expect.stringContaining("pages (1).jsonl")]));
+  }, 20_000);
+
   it("reports schema errors for malformed SEO rows and writes a report", async () => {
     const project = await projectCopy();
-    const file = path.join(project, PATHS.seoPages);
+    const file = path.join(project, legacyPaths.seoPages);
     const rows = await readJsonl(file);
     if (!rows.length) rows.push({ url: "https://example.com/", page_type: "home", status_code: 200, title: "Home", title_length: 4,
       meta_description: "Description", description_length: 11, h1: "Home", h1_count: 1, canonical: "https://example.com/",
@@ -43,8 +127,8 @@ describe("project validation and repair", () => {
     await writeFile(file, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
     const report = await validateProjectFiles(project, { trigger: "manual", now: new Date("2026-10-22T12:00:00Z") });
     expect(report.summary.error).toBeGreaterThan(0);
-    expect(report.files.find((item) => item.path === PATHS.seoPages)).toMatchObject({ status: "error", rule: "schema" });
-    expect(JSON.parse(await readFile(path.join(project, PATHS.validation), "utf8"))).toEqual(report);
+    expect(report.files.find((item) => item.path === legacyPaths.seoPages)).toMatchObject({ status: "error", rule: "schema" });
+    expect(JSON.parse(await readFile(path.join(project, legacyPaths.validation), "utf8"))).toEqual(report);
   }, 20_000);
 
   it("covers the expected rule types in every invalid fixture", async () => {
@@ -71,10 +155,10 @@ describe("project validation and repair", () => {
 
   it("autofix sorts and deduplicates rows while keeping paths inside the project", async () => {
     const project = await projectCopy();
-    const file = path.join(project, PATHS.productsView);
+    const file = path.join(project, legacyPaths.productsView);
     const original = await readJsonl(file);
     await writeFile(file, [original[1]!, original[0]!, original[0]!].map((row) => JSON.stringify(row)).join("\n") + "\n");
-    await repairProjectFile(project, PATHS.productsView, "autofix", { runJob: async () => ({ status: "ok", summary: "ok" }) });
+    await repairProjectFile(project, legacyPaths.productsView, "autofix", { runJob: async () => ({ status: "ok", summary: "ok" }) });
     const sorted = await readJsonl(file);
     expect(sorted).toHaveLength(2);
     expect(sorted.map((row) => row.handle)).toEqual([...sorted.map((row) => row.handle)].sort());
@@ -85,20 +169,21 @@ describe("project validation and repair", () => {
 
   it("restores the newest compressed archive and moves conflict copies to quarantine", async () => {
     const project = await projectCopy();
-    const relative = PATHS.keywords;
+    const relative = legacyPaths.keywords;
     const contents = "{\"keyword\":\"restored\"}\n";
-    const archive = path.join(project, PATHS.archiveDir, "2026-10", relative + ".gz");
+    const archive = path.join(project, legacyPaths.archiveDir, "2026-10", relative + ".gz");
     await mkdir(path.dirname(archive), { recursive: true });
     await writeFile(archive, gzipSync(contents));
     await repairProjectFile(project, relative, "restore_archive", { runJob: async () => ({ status: "ok", summary: "ok" }) });
     expect(await readFile(path.join(project, relative), "utf8")).toBe(contents);
 
-    const copy = path.join(project, "index/seo/pages (1).jsonl");
+    const copyRelative = path.posix.join(path.posix.dirname(legacyPaths.seoPages), "pages (1).jsonl");
+    const copy = path.join(project, copyRelative);
     await mkdir(path.dirname(copy), { recursive: true });
     await writeFile(copy, "conflict copy\n");
-    await repairProjectFile(project, "index/seo/pages (1).jsonl", "delete_copy", { runJob: async () => ({ status: "ok", summary: "ok" }) });
+    await repairProjectFile(project, copyRelative, "delete_copy", { runJob: async () => ({ status: "ok", summary: "ok" }) });
     await expect(readFile(copy, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    const quarantine = path.join(project, PATHS.archiveDir, "quarantine", new Date().toISOString().slice(0, 10));
+    const quarantine = path.join(project, legacyPaths.archiveDir, "quarantine", new Date().toISOString().slice(0, 10));
     expect(await readdir(quarantine)).toEqual(expect.arrayContaining([expect.stringContaining("pages (1).jsonl")]));
   }, 20_000);
 });
