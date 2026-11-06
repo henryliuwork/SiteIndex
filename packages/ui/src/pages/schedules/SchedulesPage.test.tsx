@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
@@ -8,15 +8,31 @@ import { createMockApi } from "../../mock";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.doUnmock("../../api");
   vi.resetModules();
+});
+
+beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element): void {
+      this.callback([{ target, contentRect: { width: 800, height: 400 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  });
+  localStorage.clear();
 });
 
 function LocationProbe() {
   return <output data-testid="current-route">{useLocation().pathname}</output>;
 }
 
-async function renderSchedules(options: { failProjectList?: boolean; failScheduleFor?: string; withoutVerify?: boolean; withoutOrphanListing?: boolean; withoutOrphanRemoval?: boolean } = {}) {
+async function renderSchedules(options: { failProjectList?: boolean; failScheduleFor?: string; withoutVerify?: boolean; withoutOrphanListing?: boolean; withoutOrphanRemoval?: boolean; withoutSystemTasks?: boolean } = {}) {
   const mockApi = createMockApi();
   const sourceProjects = await mockApi.projects.list();
   const projects: ProjectSummary[] = sourceProjects.map((project, index) => ({
@@ -39,9 +55,13 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
   const removeOrphan = mockApi.schedule.removeOrphan;
   const removeOrphanSpy = removeOrphan ? vi.fn(removeOrphan) : undefined;
   if (removeOrphanSpy) mockApi.schedule.removeOrphan = removeOrphanSpy;
+  const listSystemTasks = mockApi.schedule.listSystemTasks;
+  const listSystemTasksSpy = listSystemTasks ? vi.fn(listSystemTasks) : undefined;
+  if (listSystemTasksSpy) mockApi.schedule.listSystemTasks = listSystemTasksSpy;
   if (options.withoutVerify) delete mockApi.schedule.verify;
   if (options.withoutOrphanListing) delete mockApi.schedule.listOrphans;
   if (options.withoutOrphanRemoval) delete mockApi.schedule.removeOrphan;
+  if (options.withoutSystemTasks) delete mockApi.schedule.listSystemTasks;
   mockApi.jobs.history = vi.fn(async () => []);
 
   vi.doMock("../../api", () => ({
@@ -54,7 +74,7 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
   const { SchedulesPage } = await import("../SchedulesPage");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={queryClient}><MemoryRouter><SchedulesPage /><LocationProbe /></MemoryRouter></QueryClientProvider>);
-  return { mockApi, projects, verifySpy, removeOrphanSpy };
+  return { mockApi, projects, verifySpy, removeOrphanSpy, listSystemTasksSpy };
 }
 
 describe("SchedulesPage", () => {
@@ -63,7 +83,8 @@ describe("SchedulesPage", () => {
     expect(await screen.findByRole("row", { name: /Cedar Shop/ })).toBeTruthy();
     expect(screen.getByRole("row", { name: /Maple Shop/ })).toBeTruthy();
 
-    fireEvent.change(screen.getByRole("combobox", { name: "按项目筛选" }), { target: { value: "maple" } });
+    fireEvent.click(screen.getByRole("combobox", { name: "按项目筛选" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Maple Shop" }));
 
     expect(screen.getByRole("row", { name: /Maple Shop/ })).toBeTruthy();
     expect(screen.queryByRole("row", { name: /Cedar Shop/ })).toBeNull();
@@ -102,11 +123,14 @@ describe("SchedulesPage", () => {
     const row = await screen.findByRole("row", { name: /Cedar Shop/ });
 
     fireEvent.click(within(row).getByRole("button", { name: "校验" }));
-    expect(await within(row).findByText("路径不一致")).toBeTruthy();
-
-    fireEvent.click(within(row).getByRole("button", { name: "修复" }));
-    expect(await within(row).findByText("已注册")).toBeTruthy();
     if (!verifySpy) throw new Error("schedule verification mock is missing");
+    await waitFor(() => expect(verifySpy).toHaveBeenNthCalledWith(1, "cedar", undefined));
+    await expect(verifySpy.mock.results[0]!.value).resolves.toMatchObject({ state: "path_mismatch" });
+    const mismatch = await screen.findByText("路径不一致");
+    expect(mismatch).toBeTruthy();
+
+    fireEvent.click(within(mismatch.closest("tr")!).getByRole("button", { name: "修复" }));
+    expect(await screen.findByText("系统计划任务路径已修复。")).toBeTruthy();
     expect(verifySpy).toHaveBeenNthCalledWith(1, "cedar", undefined);
     expect(verifySpy).toHaveBeenNthCalledWith(2, "cedar", { repair: true });
   });
@@ -114,11 +138,13 @@ describe("SchedulesPage", () => {
   it("lists orphaned system tasks and cleans them up", async () => {
     const { removeOrphanSpy } = await renderSchedules();
     const region = await screen.findByRole("region", { name: "孤立任务" });
+    const systemTaskRegion = await screen.findByRole("region", { name: "系统计划任务" });
     expect(await within(region).findByText("SiteIndex-demo-orphan")).toBeTruthy();
 
     fireEvent.click(within(region).getByRole("button", { name: "清理" }));
 
-    expect(await within(region).findByText("没有孤立任务。")).toBeTruthy();
+    expect(await within(region).findByText("没有孤立任务")).toBeTruthy();
+    await waitFor(() => expect(within(systemTaskRegion).queryByText("SiteIndex-demo-orphan")).toBeNull());
     if (!removeOrphanSpy) throw new Error("orphan removal mock is missing");
     expect(removeOrphanSpy).toHaveBeenCalledWith("SiteIndex-demo-orphan");
   });
@@ -132,12 +158,28 @@ describe("SchedulesPage", () => {
   });
 
   it("hides verification controls and the orphan section when optional methods are absent", async () => {
-    await renderSchedules({ withoutVerify: true, withoutOrphanListing: true });
+    await renderSchedules({ withoutVerify: true, withoutOrphanListing: true, withoutSystemTasks: true });
     const row = await screen.findByRole("row", { name: /Cedar Shop/ });
 
     expect(within(row).queryByRole("button", { name: "校验" })).toBeNull();
     expect(within(row).queryByRole("button", { name: "修复" })).toBeNull();
     expect(screen.queryByRole("region", { name: "孤立任务" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "系统计划任务" })).toBeNull();
+  });
+
+  it("shows read-only system task state, next run, configuration differences, and refresh", async () => {
+    const { listSystemTasksSpy } = await renderSchedules();
+    const region = await screen.findByRole("region", { name: "系统计划任务" });
+
+    expect(await within(region).findByText("SiteIndex-demo-daily")).toBeTruthy();
+    expect(within(region).getByText("就绪")).toBeTruthy();
+    expect(within(region).getByText("与配置不一致")).toBeTruthy();
+    expect(within(region).getByText("触发时间：系统 02:30，项目配置 02:00。")).toBeTruthy();
+    expect(within(region).getAllByText(/下次运行：/).length).toBeGreaterThan(0);
+    if (!listSystemTasksSpy) throw new Error("system task mock is missing");
+
+    fireEvent.click(within(region).getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(listSystemTasksSpy).toHaveBeenCalledTimes(2));
   });
 
   it("hides the cleanup button when optional orphan removal is unavailable", async () => {

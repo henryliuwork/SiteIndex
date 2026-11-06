@@ -1,38 +1,33 @@
-.si-schedules-page { width: min(100%, 1320px); gap: 18px; }
-.si-schedules-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-.si-schedules-heading h1 { margin: 0; color: var(--color-ink); font-size: 23px; font-weight: 700; letter-spacing: -.025em; }
-.si-schedules-mode { margin: 6px 0 0; color: var(--color-muted); font-size: 12px; }
-.si-schedule-filter { display: flex; align-items: center; gap: 10px; color: var(--color-ink-2); font-size: 13px; }
-.si-schedule-filter select { min-width: 180px; height: 36px; padding: 0 10px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink); font: inherit; }
-.si-schedule-filter select:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
-.si-schedules-table-wrap { min-width: 0; overflow: auto; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
-.si-schedules-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-.si-schedules-table th, .si-schedules-table td { padding: 12px 14px; border-bottom: 1px solid var(--color-line-soft); text-align: left; vertical-align: middle; }
-.si-schedules-table thead th { position: sticky; top: 0; z-index: 1; background: var(--color-subtle); color: var(--color-muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
-.si-schedules-table tbody tr:last-child > * { border-bottom: 0; }
-.si-schedules-row { cursor: pointer; }
-.si-schedules-row:hover { background: #F7FAF8; }
-.si-schedules-row:focus-visible { position: relative; outline: 2px solid var(--color-brand); outline-offset: -2px; }
-.si-schedules-table tbody th { min-width: 160px; font-weight: 600; }
-.si-schedule-project-name, .si-schedules-table tbody th small { display: block; }
-.si-schedules-table tbody th small { margin-top: 4px; color: var(--color-muted); font-size: 11px; font-weight: 400; }
-.si-schedule-cadence, .si-schedule-last-run { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-.si-schedule-cadence time, .si-schedule-last-run time { color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; }
-.si-schedules-state { margin: 0; padding: 28px 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); text-align: center; }
-@media (max-width: 760px) { .si-schedules-heading { flex-direction: column; } .si-schedule-filter { width: 100%; justify-content: space-between; } .si-schedule-filter select { flex: 1; } }
-.si-schedule-status-column { min-width: 240px; }
-.si-schedule-status-cell { display: grid; justify-items: start; gap: 7px; }
-.si-schedule-status-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.si-schedule-status-message, .si-schedule-status-error { color: var(--color-muted); font-size: 11px; line-height: 1.4; white-space: normal; }
+.si-schedules-page { width: min(100%,1320px); gap: var(--space-4); }
+.si-schedule-filter { display: flex; align-items: center; gap: var(--space-2); color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-schedule-filter .si-select-trigger { min-width: 180px; height: 36px; }
+.si-schedule-project { display: grid; min-width: 0; gap: var(--space-1); }
+.si-schedule-project strong { overflow: hidden; color: var(--color-ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.si-schedule-project small { overflow: hidden; color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); text-overflow: ellipsis; white-space: nowrap; }
+.si-schedule-cadence, .si-schedule-last-run { display: flex; min-width: 0; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.si-schedule-cadence time, .si-schedule-last-run time { color: var(--color-ink-2); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); }
+.si-schedule-status-cell { display: grid; justify-items: start; gap: var(--space-1); }
+.si-schedule-status-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.si-schedule-status-message, .si-schedule-status-error { color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); white-space: normal; }
 .si-schedule-status-error, .si-schedule-cleanup-error { color: var(--color-danger); }
-.si-orphan-schedules { display: grid; gap: 12px; padding: 18px 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
-.si-orphan-schedules-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.si-orphan-schedules-heading h2 { margin: 0; color: var(--color-ink); font-size: 15px; }
-.si-orphan-schedules-heading p { margin: 5px 0 0; color: var(--color-muted); font-size: 12px; }
-.si-orphan-schedule-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.si-orphan-schedule-list li { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--color-line-soft); }
-.si-orphan-schedule-list li > div { display: grid; min-width: 0; gap: 3px; color: var(--color-ink-2); font-size: 12px; }
-.si-orphan-schedule-list strong { color: var(--color-ink); font-size: 13px; }
-.si-orphan-schedule-list code { overflow-wrap: anywhere; color: var(--color-muted); font: 11px var(--font-mono); }
-.si-schedule-cleanup-error { margin: 0; font-size: 12px; }
-@media (max-width: 760px) { .si-orphan-schedule-list li { align-items: flex-start; flex-direction: column; } }
+.si-system-tasks { display: grid; min-width: 0; gap: var(--space-3); }
+.si-system-tasks-heading, .si-orphan-schedules-heading { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.si-system-tasks-heading h2, .si-orphan-schedules-heading h2 { margin: 0; color: var(--color-ink); font-size: var(--fs-section-title); font-weight: var(--fw-section-title); line-height: var(--lh-section-title); }
+.si-system-tasks-heading p, .si-orphan-schedules-heading p { margin: var(--space-1) 0 0; color: var(--color-muted); font-size: var(--fs-body); line-height: var(--lh-body); }
+.si-system-task-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.si-system-task-row { display: grid; min-width: 0; grid-template-columns: minmax(180px,1fr) minmax(150px,.8fr) minmax(220px,1.3fr); align-items: start; gap: var(--space-3); padding: var(--space-3) 0; border-top: 1px solid var(--color-line-soft); }
+.si-system-task-main { display: grid; min-width: 0; gap: var(--space-1); }
+.si-system-task-main strong { overflow-wrap: anywhere; color: var(--color-ink); font-size: var(--fs-body); font-weight: 600; }
+.si-system-task-main span, .si-system-task-main small, .si-system-task-status > span { color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.si-system-task-status, .si-system-task-consistency { display: grid; justify-items: start; align-content: start; gap: var(--space-2); }
+.si-system-task-consistency > ul { display: grid; gap: var(--space-1); margin: 0; padding-left: var(--space-4); color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.si-system-task-consistency > small { color: var(--color-muted); font-size: var(--fs-caption); }
+.si-orphan-schedules { display: grid; min-width: 0; gap: var(--space-3); padding: var(--space-5); }
+.si-orphan-schedule-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.si-orphan-schedule-list li { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; border-top: 1px solid var(--color-line-soft); }
+.si-orphan-schedule-list li > div { display: grid; min-width: 0; gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-orphan-schedule-list strong { color: var(--color-ink); font-size: var(--fs-sub-title); font-weight: var(--fw-sub-title); }
+.si-orphan-schedule-list code { overflow-wrap: anywhere; color: var(--color-muted); font: var(--fw-mono) var(--fs-caption)/var(--lh-caption) var(--font-mono); }
+.si-schedule-cleanup-error { margin: 0; }
+@media (max-width: 900px) { .si-system-task-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .si-system-task-consistency { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .si-schedule-filter { width: 100%; justify-content: space-between; } .si-schedule-filter .si-select-trigger { flex: 1; } .si-system-task-row { grid-template-columns: 1fr; } .si-system-task-consistency { grid-column: auto; } .si-orphan-schedule-list li { align-items: flex-start; flex-direction: column; } }

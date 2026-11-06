@@ -1,5 +1,5 @@
 .si-readme-page {
-gap: 18px;
+gap: var(--space-5);
 }
 
 .si-readme-title-line {
@@ -11,23 +11,23 @@ font-family: var(--font-mono);
 }
 
 .si-readme-layout {
-display: grid; grid-template-columns: minmax(390px, .75fr) minmax(0, 1fr); align-items: start; gap: 20px;
+display: grid; grid-template-columns: minmax(390px, .75fr) minmax(0, 1fr); align-items: start; gap: var(--space-5);
 }
 
 .si-readme-card {
-display: grid; min-width: 0; padding: 20px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
+display: grid; min-width: 0; padding: var(--space-5); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
 }
 
 .si-readme-user-card {
-gap: 14px;
+gap: var(--space-4);
 }
 
 .si-readme-card-heading {
-display: flex; min-height: 22px; align-items: center; justify-content: space-between; gap: 12px;
+display: flex; min-height: 22px; align-items: center; justify-content: space-between; gap: var(--space-3);
 }
 
 .si-readme-card-heading h2 {
-margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 700;
+margin: 0; color: var(--color-ink); font-size: var(--fs-section-title); font-weight: var(--fw-section-title); line-height: var(--lh-section-title);
 }
 
 .si-readme-card-heading .si-chip {
@@ -35,23 +35,23 @@ flex: none;
 }
 
 .si-readme-field {
-display: grid; min-width: 0; gap: 6px; color: var(--color-ink); font-size: 13px; font-weight: 600;
+display: grid; min-width: 0; gap: var(--space-2); color: var(--color-ink); font-size: var(--fs-sub-title); font-weight: var(--fw-sub-title); line-height: var(--lh-sub-title);
 }
 
 .si-readme-textarea {
-width: 100%; min-height: 76px; padding: 11px 12px; border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink-2); font-family: var(--font-sans); font-size: 13px; font-weight: 400; line-height: 1.55; resize: vertical;
+width: 100%; min-height: 76px; padding: var(--space-3); border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink-2); font: var(--fw-body) var(--fs-sub-title)/1.55 var(--font-sans); resize: vertical;
 }
 
 .si-readme-textarea:focus {
-border-color: var(--color-brand); box-shadow: 0 0 0 2px rgba(30,107,82,.12);
+border-color: var(--color-brand); box-shadow: 0 0 0 2px var(--color-focus);
 }
 
 .si-readme-rules-display {
-display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-neutral-soft);
+display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-neutral-soft);
 }
 
 .si-readme-rules-display p {
-min-width: 0; margin: 0; color: var(--color-ink-2); font-size: 13px; font-weight: 400; line-height: 1.55; white-space: pre-wrap;
+min-width: 0; margin: 0; color: var(--color-ink-2); font-size: var(--fs-sub-title); font-weight: var(--fw-body); line-height: 1.55; white-space: pre-wrap;
 }
 
 .si-readme-rules-actions {
@@ -59,63 +59,63 @@ display: flex; justify-content: flex-end;
 }
 
 .si-readme-edit-actions {
-display: flex; justify-content: flex-end; gap: 10px;
+display: flex; justify-content: flex-end; gap: var(--space-2);
 }
 
 .si-readme-auto-card {
-gap: 4px;
+gap: var(--space-1);
 }
 
 .si-readme-auto-card > .si-readme-card-heading {
-padding-bottom: 8px;
+padding-bottom: var(--space-2);
 }
 
 .si-readme-auto-row {
-display: flex; min-width: 0; min-height: 46px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--color-line-soft);
+display: flex; min-width: 0; min-height: 46px; align-items: center; justify-content: space-between; gap: var(--space-4); border-bottom: 1px solid var(--color-line-soft);
 }
 
 .si-readme-auto-label {
-display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; column-gap: 5px; row-gap: 2px; color: var(--color-ink-2); font-size: 12px;
+display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; column-gap: var(--space-1); row-gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-body); line-height: var(--lh-body);
 }
 
 .si-readme-auto-label strong {
-color: var(--color-ink); font-size: 13px;
+color: var(--color-ink); font-size: var(--fs-sub-title); font-weight: var(--fw-sub-title);
 }
 
 .si-readme-auto-label code, .si-readme-auto-label > span, .si-readme-auto-row > span {
-color: var(--color-muted); font-family: var(--font-mono); font-size: 12px;
+color: var(--color-muted); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono);
 }
 
 .si-readme-auto-row > span {
-flex: none; font-family: var(--font-sans); font-size: 12px;
+flex: none; font: var(--fw-body) var(--fs-body)/var(--lh-body) var(--font-sans);
 }
 
 .si-readme-block {
-display: grid; min-width: 0; gap: 8px; padding: 7px 0 10px; border-bottom: 1px solid var(--color-line-soft);
+display: grid; min-width: 0; gap: var(--space-2); padding: var(--space-2) 0 var(--space-3); border-bottom: 1px solid var(--color-line-soft);
 }
 
 .si-readme-block-heading {
-display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px;
+display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3);
 }
 
 .si-readme-block-heading > div {
-display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; gap: 5px; font-size: 12px;
+display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; gap: var(--space-1); font-size: var(--fs-body); line-height: var(--lh-body);
 }
 
 .si-readme-block-heading strong {
-color: var(--color-ink); font-size: 13px;
+color: var(--color-ink); font-size: var(--fs-sub-title); font-weight: var(--fw-sub-title);
 }
 
 .si-readme-block-heading code, .si-readme-block-heading > div > span {
-color: var(--color-muted); font-family: var(--font-mono); font-size: 12px;
+color: var(--color-muted); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono);
 }
 
 .si-readme-block-heading .si-button {
-height: 34px; flex: none; padding: 0 12px; font-size: 12px; text-decoration: none;
+height: 34px; flex: none; padding: 0 var(--space-3); font-size: var(--fs-body); text-decoration: none;
 }
 
 .si-readme-auto-note {
-margin: 8px 0 0; color: var(--color-muted); font-size: 12px;
+margin: var(--space-2) 0 0; color: var(--color-muted); font-size: var(--fs-body); line-height: var(--lh-body);
 }
 
 @media (max-width: 980px) {
@@ -126,13 +126,13 @@ grid-template-columns: minmax(0, 1fr);
 
 @media (max-width: 760px) {
 .si-readme-layout {
-gap: 14px;
+gap: var(--space-3);
 }
 }
 
 @media (max-width: 760px) {
 .si-readme-card {
-padding: 16px;
+padding: var(--space-4);
 }
 }
 
@@ -144,6 +144,6 @@ align-items: flex-start; flex-direction: column;
 
 @media (max-width: 760px) {
 .si-readme-auto-row {
-align-items: flex-start; flex-direction: column; justify-content: center; gap: 3px; padding: 9px 0;
+align-items: flex-start; flex-direction: column; justify-content: center; gap: var(--space-1); padding: var(--space-2) 0;
 }
 }
