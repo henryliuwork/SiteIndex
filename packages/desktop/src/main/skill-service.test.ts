@@ -49,9 +49,12 @@ describe("desktop skill service", () => {
       [],
     );
     const skills = await service.list();
-    expect(skills).toHaveLength(8);
-    expect(skills.every((skill) => skill.version === "1.1.0" && skill.reads.length > 0)).toBe(true);
+    expect(skills).toHaveLength(11);
+    expect(skills.every((skill) => skill.reads.length > 0)).toBe(true);
     expect(skills.find((skill) => skill.name === "siteindex-data")?.version).toBe("1.1.0");
+    for (const name of ["siteindex-edm-plan", "siteindex-edm-build", "siteindex-edm-mc-send"]) {
+      expect(skills.find((skill) => skill.name === name)?.version).toBe("1.0.0");
+    }
     expect(skills.find((skill) => skill.name === "stock-report")?.writes).toEqual([]);
     const edm = await service.get("edm-builder");
     expect(edm.body).toContain("写哪些台账");

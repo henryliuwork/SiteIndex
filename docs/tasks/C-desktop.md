@@ -132,3 +132,9 @@
 
 - 给 B：Electron 里的真实 `window.siteindex`；`uiState` 存储
 - 给 A：浏览器路径、device_id、cacheDir 通过 `createCoreService(ctx)` 与 `runJob` 参数传入
+
+## v0.4 · C4-0
+
+- [x] 新增三个脱敏 EDM skill：`siteindex-edm-plan`、`siteindex-edm-build`、`siteindex-edm-mc-send`，版本为 `1.0.0`；逐行检查敏感信息，路径通过 `workspace.json` 逻辑键解析。
+- [ ] 增加公开安全扫描脚本；初始仅告警。
+- [ ] 按模板草案新增 `templates/workspace/`。
