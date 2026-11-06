@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, FileDown } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, JobProgress, JobResult, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, useToast } from "../components";
 import { blogIndexNotice, blogRecognitionCounts, blogRecognitionNeedsRecrawl, getBlogRecognitionConfigUpdatedAt, hasBlogRecognitionConfig } from "./content/blog-recognition";
 
 type ContentView = "blog" | "keywords";
@@ -66,15 +66,16 @@ function keywordColumns(): ColumnDef<Keyword, unknown>[] {
 
 export function ContentPage() {
   const { id = "demo" } = useParams();
+  const navigate = useNavigate();
   const [view, setView] = useState<ContentView>("blog");
   const [blogQuery, setBlogQuery] = useState(initialBlogQuery);
   const [keywordQuery, setKeywordQuery] = useState(initialKeywordQuery);
   const [selected, setSelected] = useState<BlogPost | Keyword | null>(null);
-  const [feedback, setFeedback] = useState("");
   const [recrawlRunId, setRecrawlRunId] = useState<string | null>(null);
   const [recrawlStarting, setRecrawlStarting] = useState(false);
   const [recrawlProgress, setRecrawlProgress] = useState("");
   const queryClient = useQueryClient();
+  const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["content", "summary", id], queryFn: () => api.content.summary(id) });
   const seoSummaryQuery = useQuery({ queryKey: ["seo", "summary", id], queryFn: () => api.seo.summary(id) });
@@ -123,7 +124,7 @@ export function ContentPage() {
       if (result.runId !== recrawlRunId) return;
       setRecrawlRunId(null);
       setRecrawlProgress("");
-      setFeedback(result.status === "ok" ? "博客内容已重新抓取。" : result.summary);
+      result.status === "ok" ? toast.success("博客内容已重新抓取。") : toast.error(result.summary);
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["content", "summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["content", "blogs", id] }),
@@ -133,11 +134,10 @@ export function ContentPage() {
       ]);
     });
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
-  }, [recrawlRunId, id, queryClient]);
+  }, [recrawlRunId, id, queryClient, toast]);
 
   const recrawlBlogs = async () => {
     if (!project?.path || recrawlStarting || recrawlRunId) return;
-    setFeedback("");
     setRecrawlStarting(true);
     setRecrawlProgress("正在启动 SEO 抓取…");
     try {
@@ -145,7 +145,7 @@ export function ContentPage() {
       setRecrawlRunId(run.runId);
     } catch (cause) {
       setRecrawlProgress("");
-      setFeedback(apiErrorMessage(cause, "重新抓取启动失败。"));
+      toast.error(apiErrorMessage(cause, "重新抓取启动失败。"));
     } finally {
       setRecrawlStarting(false);
     }
@@ -169,27 +169,23 @@ export function ContentPage() {
         const result = await api.content.listKeywords(id, { ...keywordQuery, page: 1, pageSize: 0 });
         downloadCsv(id + "-content-keywords.csv", ["关键词", "类型", "意图", "主题簇", "目标页面", "状态", "搜索量", "当前排名"], result.rows.map((row) => [row.keyword, row.role, row.intent, row.cluster, row.target_url, row.status, row.search_volume, row.current_rank]));
       }
-      setFeedback("当前列表已导出 CSV。");
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "导出失败。")); }
+      toast.success("当前列表已导出 CSV。");
+    } catch (cause) { toast.error(apiErrorMessage(cause, "导出失败。")); }
   };
   const openProjectFolder = async () => {
     try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开项目文件夹。")); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "无法打开项目文件夹。")); }
   };
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目内容加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-content-page">
-    <ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button></>} />
+    <ProjectHeader project={project} activeTab="content" hasTabPanel status={<Chip tone={lastRecognizedDate ? "neutral" : "warn"}>{seoSummaryQuery.isLoading ? "最近识别：读取中" : seoSummaryQuery.isError ? "最近识别：读取失败" : `最近识别：${lastRecognizedDate ?? "尚未记录"}`}</Chip>} actions={<><Button size="small" variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button><Button size="small" onClick={() => navigate(`/p/${id}/settings/config?section=blog-recognition`)}>识别设置</Button><Button size="small" onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="content">
     <div className="si-content-recognition-summary" role="status">
-      <span>博客 Sitemap {blogConfigCounts.sitemaps} 条 · URL 规则 {blogConfigCounts.rules} 条 · 最近识别于 {seoSummaryQuery.isLoading ? "读取中" : seoSummaryQuery.isError ? "读取失败" : lastRecognizedDate ?? "尚未记录"}</span>
-      <div className="si-content-recognition-actions">
-        <Link to={`/p/${id}/settings/config?section=blog-recognition`}>去设置</Link>
-        {view === "blog" && <Button size="small" variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button>}
-        {view === "blog" && recrawlProgress && <small className="si-content-recognition-progress" role="status">{recrawlProgress}</small>}
-      </div>
+      <span>博客识别配置：Sitemap {blogConfigCounts.sitemaps} 条 · URL 规则 {blogConfigCounts.rules} 条</span>
     </div>
+    {recrawlProgress && <Notice tone="info" title="博客抓取进行中">{recrawlProgress}</Notice>}
     {view === "blog" && blogListNotice && <p className="si-content-blog-notice" role="status">{blogListNotice}</p>}
     <div className="si-content-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载内容概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="内容概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className="si-content-toolbar si-content-toolbar-table">
@@ -199,16 +195,16 @@ export function ContentPage() {
       {view === "keywords" && <FilterBar className="si-content-filterbar">{roleOptions.map((item) => <FilterPill key={item.value} currentValue={keywordQuery.filters?.role ?? "all"} value={item.value} onValueChange={(value) => setKeywordQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, role: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}{statusOptions.map((item) => <FilterPill key={item.value} currentValue={keywordQuery.filters?.status ?? "all"} value={item.value} onValueChange={(value) => setKeywordQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}</FilterBar>}
       {view === "blog" && <span className="si-content-total">共 {blogs?.total ?? 0} 篇</span>}
       {view === "keywords" && <span className="si-content-total">共 {keywords?.total ?? 0} 个</span>}
+      <Button size="small" onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
     </div>
-    {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-content-table-frame">
       {activeQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "blog" ? "博客文章" : "关键词映射"}…</div> : activeQuery.isError ? <ApiErrorNotice label={`${view === "blog" ? "博客文章" : "关键词映射"}加载失败。`} error={activeQuery.error} onRetry={() => void activeQuery.refetch()} /> : <>
         {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "unconfigured" && <div className="si-content-blog-empty"><strong>尚未配置博客识别</strong><p>请添加博客 Sitemap 或 URL 规则，设置后系统会在 SEO 抓取中识别博客文章。</p><Link to={`/p/${id}/settings/config?section=blog-recognition`}>去设置</Link></div>}
         {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "checking" && <div className="si-content-blog-empty"><p role="status">正在确认最近一次 SEO 抓取是否使用了当前博客配置…</p></div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "stale" && <div className="si-content-blog-empty"><strong>博客识别配置已更新，需重新抓取后才会识别。</strong><p>最近识别于 {lastRecognizedDate ?? "尚无记录"}；重新抓取会使用当前博客 Sitemap 和 URL 规则。</p><Button variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button>{recrawlProgress && <small role="status">{recrawlProgress}</small>}</div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "never-crawled" && <div className="si-content-blog-empty"><strong>已配置博客识别，但尚无成功的 SEO 抓取记录。</strong><p>重新抓取后，系统会按当前博客 Sitemap 和 URL 规则识别文章。</p><Button variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button>{recrawlProgress && <small role="status">{recrawlProgress}</small>}</div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "history-error" && <div className="si-content-blog-empty"><strong>已配置博客识别，但暂时无法读取最近抓取记录。</strong><p>可重新抓取以确认当前配置对应的博客数据。</p><Button variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button>{recrawlProgress && <small role="status">{recrawlProgress}</small>}</div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "no-match" && <div className="si-content-blog-empty"><strong>已配置博客识别，最近抓取未发现符合规则的文章。</strong><p>最近识别于 {lastRecognizedDate ?? "尚无记录"}。</p><Button disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button>{recrawlProgress && <small role="status">{recrawlProgress}</small>}</div>}
+        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "stale" && <div className="si-content-blog-empty"><strong>博客识别配置已更新，需重新抓取后才会识别。</strong><p>最近识别于 {lastRecognizedDate ?? "尚无记录"}；重新抓取会使用当前博客 Sitemap 和 URL 规则。</p></div>}
+        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "never-crawled" && <div className="si-content-blog-empty"><strong>已配置博客识别，但尚无成功的 SEO 抓取记录。</strong><p>重新抓取后，系统会按当前博客 Sitemap 和 URL 规则识别文章。</p></div>}
+        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "history-error" && <div className="si-content-blog-empty"><strong>已配置博客识别，但暂时无法读取最近抓取记录。</strong><p>可重新抓取以确认当前配置对应的博客数据。</p></div>}
+        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "no-match" && <div className="si-content-blog-empty"><strong>已配置博客识别，最近抓取未发现符合规则的文章。</strong><p>最近识别于 {lastRecognizedDate ?? "尚无记录"}。</p></div>}
         {view === "blog" && !showBlogRecognitionEmpty && <DataTable tableId="content.blog" rows={blogs?.rows ?? []} total={blogs?.total ?? 0} columns={blogColumnDefs} query={blogQuery} onQueryChange={setBlogQuery} onRowClick={setSelected} getRowId={(row) => row.slug} height="fill" rowHeight={52} showPagination emptyTitle="没有博客文章" emptyDescription="调整筛选条件或检查内容目录。" />}
         {view === "keywords" && <DataTable tableId="content.keywords" rows={keywords?.rows ?? []} total={keywords?.total ?? 0} columns={keywordColumnDefs} query={keywordQuery} onQueryChange={setKeywordQuery} onRowClick={setSelected} getRowId={(row) => row.keyword} height="fill" rowHeight={52} showPagination emptyTitle="没有关键词" emptyDescription="在关键词台账中添加目标关键词。" />}
       </>}
