@@ -1,0 +1,97 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { createMockApi } from "../mock";
+
+afterEach(() => {
+  cleanup();
+  vi.doUnmock("../api");
+  vi.resetModules();
+});
+
+function LocationProbe() {
+  return <output data-testid="current-route">{useLocation().pathname}</output>;
+}
+
+describe("NewProjectWizardPage workspace step", () => {
+  it("checks the selected destination and sends the workspace options with project creation", async () => {
+    const mockApi = createMockApi();
+    const createProject = vi.spyOn(mockApi.projects, "create");
+    const checkWorkspace = vi.spyOn(mockApi.workspace!, "check");
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      apiErrorMessage: (error: unknown, fallback: string) =>
+        typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+          ? error.message
+          : fallback,
+    }));
+    const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
+      import("./NewProjectWizardPage"), import("./wizard-state"), import("../components/overlays"),
+    ]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <WizardDraftProvider>
+            <MemoryRouter initialEntries={["/new/url"]}>
+              <Routes><Route path="/new/*" element={<NewProjectWizardPage />} /></Routes>
+              <LocationProbe />
+            </MemoryRouter>
+          </WizardDraftProvider>
+        </QueryClientProvider>
+      </ToastProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "检测" }));
+    const nextToSource = await screen.findByRole("button", { name: "下一步：数据源" });
+    await waitFor(() => expect((nextToSource as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(nextToSource);
+    fireEvent.click(await screen.findByRole("button", { name: "检测 Feed" }));
+    await screen.findByText("可用 SKU");
+    const nextToBrand = screen.getByRole("button", { name: "下一步：品牌配置" });
+    await waitFor(() => expect((nextToBrand as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(nextToBrand);
+    fireEvent.click(await screen.findByRole("button", { name: "下一步：Agent 工作区" }));
+
+    expect((await screen.findByRole("checkbox", { name: /创建 Agent 工作区/ }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Mailchimp" }) as HTMLInputElement).checked).toBe(true);
+    await screen.findByText("目标目录为空，可以继续。");
+    await waitFor(() => expect(checkWorkspace).toHaveBeenCalledWith("D:/云盘/projects/kingsyard"));
+    expect(screen.getByRole("heading", { name: "将生成的目录树" })).toBeTruthy();
+    const preview = screen.getByText((_content, element) => element?.tagName === "PRE");
+    expect(preview.textContent).toContain("_site-index/");
+    expect(preview.textContent).toContain("esp.mailchimp.md");
+
+    fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
+    await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({
+      workspace: { enabled: true, platform: "shopify", esp_presets: ["esp.mailchimp"] },
+    })));
+    await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/new/done"));
+  }, 30_000);
+
+  it("keeps the workspace step hidden when the optional API is absent", async () => {
+    const mockApi = createMockApi();
+    mockApi.workspace = undefined;
+    vi.doMock("../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
+      import("./NewProjectWizardPage"), import("./wizard-state"), import("../components/overlays"),
+    ]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><WizardDraftProvider><MemoryRouter initialEntries={["/new/url"]}><Routes><Route path="/new/*" element={<NewProjectWizardPage />} /></Routes></MemoryRouter></WizardDraftProvider></QueryClientProvider></ToastProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "检测" }));
+    const nextToSource = await screen.findByRole("button", { name: "下一步：数据源" });
+    await waitFor(() => expect((nextToSource as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(nextToSource);
+    fireEvent.click(await screen.findByRole("button", { name: "检测 Feed" }));
+    await screen.findByText("可用 SKU");
+    const nextToBrand = screen.getByRole("button", { name: "下一步：品牌配置" });
+    await waitFor(() => expect((nextToBrand as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(nextToBrand);
+
+    expect(await screen.findByRole("button", { name: "创建项目" })).toBeTruthy();
+    expect(screen.queryByText("Agent 工作区")).toBeNull();
+  }, 30_000);
+});

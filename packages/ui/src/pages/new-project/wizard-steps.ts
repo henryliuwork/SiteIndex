@@ -20,4 +20,8 @@ export const wizardStepDefinitions: readonly WizardStepDefinition[] = [
   { key: "done", path: "/new/done", label: "完成", visible: true },
 ];
 
-export const visibleWizardSteps = wizardStepDefinitions.filter((step) => step.visible);
+export function getVisibleWizardSteps(workspaceAvailable: boolean): WizardStepDefinition[] {
+  return wizardStepDefinitions.filter((step) => step.visible || (workspaceAvailable && step.key === "agent-workspace"));
+}
+
+export const visibleWizardSteps = getVisibleWizardSteps(false);

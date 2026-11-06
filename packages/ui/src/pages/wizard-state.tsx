@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import type { DetectResult, FeedInspectResult, SiteConfig } from "@siteindex/shared";
+import type { DetectResult, FeedInspectResult, SiteConfig, WorkspaceCreateInput } from "@siteindex/shared";
 
 export interface WizardDraft {
   url: string;
@@ -13,6 +13,9 @@ export interface WizardDraft {
   market: string;
   projectsRoot: string;
   folderName: string;
+  workspaceEnabled: boolean;
+  workspacePlatform: WorkspaceCreateInput["platform"];
+  workspaceEspPresets: string[];
   created: { id: string; runId: string; path: string | null } | null;
 }
 
@@ -28,6 +31,9 @@ const initialDraft: WizardDraft = {
   market: "US",
   projectsRoot: "",
   folderName: "",
+  workspaceEnabled: true,
+  workspacePlatform: "other",
+  workspaceEspPresets: ["esp.mailchimp"],
   created: null,
 };
 

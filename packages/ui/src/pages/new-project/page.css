@@ -298,6 +298,66 @@ display:grid; gap:4px; padding:10px 12px; border-radius:8px; background:var(--co
 overflow-wrap:anywhere; font-size: var(--fs-body);
 }
 
+.si-wizard-workspace-layout {
+display:grid; grid-template-columns:minmax(280px,.8fr) minmax(0,1.2fr); align-items:start; gap:16px;
+}
+
+.si-wizard-workspace-settings,.si-wizard-workspace-tree {
+display:grid; align-content:start; gap:16px;
+}
+
+.si-wizard-workspace-toggle {
+display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--color-line); border-radius:8px; background:var(--color-subtle);
+}
+
+.si-wizard-workspace-toggle input,.si-wizard-workspace-presets input {
+width:16px; height:16px; flex:none; margin:2px 0 0; accent-color:var(--color-brand);
+}
+
+.si-wizard-workspace-toggle span {
+display:grid; gap:4px;
+}
+
+.si-wizard-workspace-toggle strong,.si-wizard-workspace-presets legend {
+color:var(--color-ink); font-size:var(--fs-body); font-weight:600;
+}
+
+.si-wizard-workspace-toggle small {
+color:var(--color-muted); font-size:var(--fs-caption);
+}
+
+.si-wizard-workspace-presets {
+display:grid; gap:10px; margin:0; padding:0; border:0;
+}
+
+.si-wizard-workspace-presets legend {
+margin-bottom:8px; padding:0;
+}
+
+.si-wizard-workspace-presets label {
+display:flex; align-items:center; gap:8px; color:var(--color-ink-2); font-size:var(--fs-body);
+}
+
+.si-wizard-workspace-check {
+display:flex; min-height:36px; align-items:center; justify-content:space-between; gap:10px; padding:9px 12px; border-radius:6px; background:var(--color-subtle); color:var(--color-muted); font-size:var(--fs-body);
+}
+
+.si-wizard-workspace-check.is-empty {
+background:var(--color-brand-soft); color:var(--color-brand-strong);
+}
+
+.si-wizard-workspace-check.is-not-empty,.si-wizard-workspace-check.is-error {
+background:var(--color-danger-soft); color:var(--color-danger);
+}
+
+.si-wizard-workspace-tree>code {
+overflow-wrap:anywhere; color:var(--color-muted); font-size:var(--fs-body);
+}
+
+.si-wizard-workspace-tree pre {
+max-height:360px; margin:0; overflow:auto; color:var(--color-ink-2); font-size:var(--fs-caption); line-height:1.65; white-space:pre;
+}
+
 .si-wizard-done-layout {
 display:grid; grid-template-columns:minmax(0,1.3fr) minmax(300px,.7fr); align-items:start; gap:18px;
 }
@@ -378,7 +438,7 @@ margin:0; overflow:auto; color:var(--color-ink-2); font-size: var(--fs-body); li
 }
 
 @media (max-width:1050px) {
-.si-wizard-source-layout,.si-wizard-brand-layout,.si-wizard-done-layout {
+.si-wizard-source-layout,.si-wizard-brand-layout,.si-wizard-workspace-layout,.si-wizard-done-layout {
 grid-template-columns:minmax(0,1fr);
 }
 }
