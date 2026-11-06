@@ -150,5 +150,5 @@
 - [x] A4-1：准备 K4 契约 PR 描述草稿；等待 C 的契约清理合并及协调者通知后再开 PR
 - [ ] A4-2：K4 合并后重构 `resolveProjectLayout` / `pathsFor` 并为 legacy、workspace 两种布局分别补黄金测试
   - [x] validate：按布局生成校验路径，覆盖两套黄金输出与修复路径
-  - [ ] views：按布局生成视图路径并覆盖两套黄金输出
+  - [x] views：按布局生成视图路径并覆盖两套黄金输出
   - [ ] Jobs / readme：按布局生成读写路径并覆盖两套黄金输出
