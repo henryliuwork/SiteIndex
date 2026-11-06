@@ -39,6 +39,6 @@ describe("schedule system task contract", () => {
     expect(row).toMatchObject({ taskName: "SiteIndex-fixture-daily", systemState: "Ready", configMatches: true });
     expect(legacyApi.listSystemTasks).toBeUndefined();
     expect(API_INVOKE_METHODS.filter((method) => method === "schedule.listSystemTasks")).toHaveLength(1);
-    expect(PENDING_HANDLERS).toContain("schedule.listSystemTasks");
+    expect(PENDING_HANDLERS).not.toContain("schedule.listSystemTasks");
   });
 });

@@ -102,10 +102,7 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = [
-  "seo.getRuleSettings",
-  "schedule.listSystemTasks",
-];
+export const PENDING_HANDLERS: readonly string[] = ["seo.getRuleSettings"];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 
