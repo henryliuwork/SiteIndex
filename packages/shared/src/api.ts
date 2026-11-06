@@ -88,7 +88,7 @@ export interface Kpi {
 // ---------- 软件设置 ----------
 
 export interface SkillPlatform {
-  id: string; // "claude-code" | "codex" | 自定义
+  id: string; // 内置包括 "claude-code"、"codex"、"agents-dir"，也允许自定义
   name: string;
   dir: string;
   detected: boolean;
@@ -101,6 +101,8 @@ export interface AppSettings {
   extra_projects: string[];
   /** 仅用于本机项目中心隐藏；项目文件保持不变。 */
   hidden_projects?: string[];
+  close_to_tray?: boolean;
+  launch_at_login?: boolean;
   cache_dir: string;
   browser: { channel: "msedge" | "chrome" | "custom"; executable_path: string | null };
   notify: { on_failure: boolean; on_success: boolean; oos_threshold: number | null; dingtalk_webhook: string | null };
@@ -193,7 +195,50 @@ export interface CreateProjectInput {
   folder_name: string;
   /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
   workspace_folders: string[];
+  workspace?: {
+    enabled: boolean;
+    platform: "magento2" | "woocommerce" | "shopify" | "other";
+    esp_presets: string[];
+  };
 }
+
+export interface WorkspaceCheckResult {
+  ok: boolean;
+  invalid_entries: string[];
+}
+
+export interface WorkspaceCreateInput {
+  targetDir: string;
+  domain: string;
+  brand: SiteConfig["brand"];
+  platform: "magento2" | "woocommerce" | "shopify" | "other";
+  markets?: string[];
+  esp_presets: string[];
+}
+
+export interface WorkspaceCreateResult {
+  path: string;
+  created: string[];
+}
+
+export interface WorkspaceImportIssue {
+  path: string;
+  code: string;
+  message: string;
+  auto_fixable: boolean;
+}
+
+export interface WorkspaceImportCheckResult {
+  issues: WorkspaceImportIssue[];
+  repaired: string[];
+}
+
+export type CreateWorkspaceOnlyInput = Pick<
+  CreateProjectInput,
+  "url" | "brand" | "markets" | "projects_root" | "folder_name"
+> & {
+  workspace: NonNullable<CreateProjectInput["workspace"]>;
+};
 
 // ---------- 概览 ----------
 
@@ -467,11 +512,18 @@ export interface SiteIndexApi {
     detect(url: string): Promise<DetectResult>;
     inspectFeed(feedUrls: string[], opts: { sku_field: string; category_depth: number }): Promise<FeedInspectResult>;
     create(input: CreateProjectInput): Promise<{ id: ProjectId; runId: string }>;
+    createWorkspaceOnly?(input: CreateWorkspaceOnlyInput): Promise<{ id: ProjectId }>;
     addExisting(path: string): Promise<ProjectSummary>;
     /** 仅取消本机登记，不删除项目目录中的任何文件。 */
     remove?(id: ProjectId): Promise<void>;
     updateConfig(id: ProjectId, patch: Partial<SiteConfig>): Promise<SiteConfig>;
     onChanged(cb: (id: ProjectId) => void): Unsubscribe;
+  };
+  /** v0.4.0 workspace API；可选以兼容尚未升级的旧 bridge 与 mock。 */
+  workspace?: {
+    check(targetDir: string): Promise<WorkspaceCheckResult>;
+    create(input: WorkspaceCreateInput): Promise<WorkspaceCreateResult>;
+    importCheck(id: ProjectId, opts?: { apply?: boolean }): Promise<WorkspaceImportCheckResult>;
   };
   overview: {
     get(id: ProjectId): Promise<OverviewData>;

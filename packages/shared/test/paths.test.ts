@@ -10,6 +10,7 @@ import {
   gradeDescriptionLength,
   gradeTitleLength,
   googleSiteSearchUrl,
+  pathsFor,
 } from "../src";
 
 describe("shared contracts", () => {
@@ -20,6 +21,19 @@ describe("shared contracts", () => {
     }
     expect(eventsFile("2026-10")).toBe("index/inventory/events/2026-10.jsonl");
     expect(dailyReportFile("2026-10-22")).toMatch(/2026-10-22/);
+  });
+
+  it("keeps legacy paths intact and maps workspace data under _site-index", () => {
+    const workspacePaths = pathsFor("workspace");
+
+    expect(pathsFor("legacy")).toEqual(PATHS);
+    expect(Object.keys(workspacePaths).sort()).toEqual(Object.keys(PATHS).sort());
+    expect(workspacePaths.site).toBe("_site-index/site.json");
+    expect(workspacePaths.skillsDir).toBe("_site-index/skills");
+    expect(workspacePaths.skillsManifest).toBe("_site-index/skills/manifest.json");
+    expect(workspacePaths.seoIssues).toBe("_site-index/seo/issues.jsonl");
+    expect(workspacePaths.readme).toBe(PATHS.readme);
+    expect(Object.values(workspacePaths).some((path) => path.startsWith("index/"))).toBe(false);
   });
 
   it("schema version and defaults", () => {

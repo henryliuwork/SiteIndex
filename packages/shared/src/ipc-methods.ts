@@ -21,9 +21,13 @@ export const API_INVOKE_METHODS = [
   "projects.detect",
   "projects.inspectFeed",
   "projects.create",
+  "projects.createWorkspaceOnly",
   "projects.addExisting",
   "projects.remove",
   "projects.updateConfig",
+  "workspace.check",
+  "workspace.create",
+  "workspace.importCheck",
   "overview.get",
   "inventory.summary",
   "inventory.listSkus",
@@ -102,7 +106,13 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = ["seo.getRuleSettings"];
+export const PENDING_HANDLERS: readonly string[] = [
+  "seo.getRuleSettings",
+  "projects.createWorkspaceOnly",
+  "workspace.check",
+  "workspace.create",
+  "workspace.importCheck",
+];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 
