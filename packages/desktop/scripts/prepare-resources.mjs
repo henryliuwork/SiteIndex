@@ -46,13 +46,13 @@ for (const directory of ["skills", "templates", "schemas"]) {
 }
 
 const uiDist = join(repositoryRoot, "packages/ui/dist");
-if (await exists(join(uiDist, "index.html"))) {
-  await copyDirectory(uiDist, join(buildResources, "ui"));
-} else {
-  const fallback = join(desktopRoot, "out/renderer/fallback.html");
-  await mkdir(join(buildResources, "ui"), { recursive: true });
-  await cp(fallback, join(buildResources, "ui/index.html"));
+if (!(await exists(join(uiDist, "index.html")))) {
+  throw new Error("UI build is missing. Run `pnpm --filter @siteindex/ui build` before preparing Desktop resources.");
 }
+await copyDirectory(uiDist, join(buildResources, "ui"));
 
 const fontFiles = await copyFontAssets(uiDist, join(buildResources, "fonts"));
+if (fontFiles.length === 0) {
+  throw new Error("UI build did not emit any font assets; refusing to prepare an incomplete Desktop package.");
+}
 console.info(`Packaged ${fontFiles.length} UI font assets.`);

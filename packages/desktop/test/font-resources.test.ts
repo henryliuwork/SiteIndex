@@ -15,6 +15,18 @@ describe("Desktop font resources", () => {
     await rm(temporaryDirectory, { recursive: true, force: true });
   });
 
+  it("builds the UI before preparing packaged resources", async () => {
+    const desktopPackage = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const prepareDist = desktopPackage.scripts["prepare:dist"] ?? "";
+    const uiBuildIndex = prepareDist.indexOf("pnpm --filter @siteindex/ui build");
+    const resourcePreparationIndex = prepareDist.indexOf("node scripts/prepare-resources.mjs");
+
+    expect(uiBuildIndex).toBeGreaterThanOrEqual(0);
+    expect(uiBuildIndex).toBeLessThan(resourcePreparationIndex);
+  });
+
   it("copies Geist and Geist Mono web font assets from the UI build", async () => {
     const uiAssets = join(temporaryDirectory, "ui", "assets");
     const resourceFonts = join(temporaryDirectory, "resources", "fonts");

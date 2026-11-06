@@ -10,7 +10,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "prepare:dist": "pnpm --filter @siteindex/cli build && pnpm build && node scripts/prepare-resources.mjs",
+    "prepare:dist": "pnpm --filter @siteindex/ui build && pnpm --filter @siteindex/cli build && pnpm build && node scripts/prepare-resources.mjs",
     "dist:win": "pnpm prepare:dist && electron-builder --win nsis --publish never",
     "dist:mac": "pnpm prepare:dist && electron-builder --mac dmg zip --universal --publish never",
     "dist:win:release": "pnpm prepare:dist && electron-builder --win nsis --publish always",
