@@ -49,16 +49,15 @@ describe("desktop skill service", () => {
       [],
     );
     const skills = await service.list();
-    expect(skills).toHaveLength(11);
+    expect(skills).toHaveLength(10);
     expect(skills.every((skill) => skill.reads.length > 0)).toBe(true);
     expect(skills.find((skill) => skill.name === "siteindex-data")?.version).toBe("1.1.0");
     for (const name of ["siteindex-edm-plan", "siteindex-edm-build", "siteindex-edm-mc-send"]) {
       expect(skills.find((skill) => skill.name === name)?.version).toBe("1.0.0");
     }
     expect(skills.find((skill) => skill.name === "stock-report")?.writes).toEqual([]);
-    const edm = await service.get("edm-builder");
-    expect(edm.body).toContain("写哪些台账");
-    expect(edm.body).toContain("默认 feed 首图优先，其次手动首图");
+    expect(skills.some((skill) => skill.name === "edm-builder")).toBe(false);
+    await expect(service.get("edm-builder")).rejects.toMatchObject({ code: "CONFIG_INVALID" });
     const data = await service.get("siteindex-data");
     expect(data.body).toContain("UTF-8 无 BOM、LF 换行");
     expect(data.body).toContain("不得编造 SKU、价格、库存状态或数量、图片 URL");
@@ -111,12 +110,19 @@ describe("desktop skill service", () => {
     const service = skillService(sourceDirectory, homeDirectory, [firstProject, secondProject], [customPlatform]);
 
     await expect(service.install("blog-writer", "codex")).resolves.toMatchObject({ status: "latest" });
+    await expect(service.install("blog-writer", "agents-dir")).resolves.toMatchObject({
+      target_id: "agents-dir",
+      status: "latest",
+    });
     await expect(service.install("blog-writer", "qwenpaw")).resolves.toMatchObject({ status: "latest" });
     await expect(
       readFile(path.join(homeDirectory, ".codex", "skills", "blog-writer", "SKILL.md"), "utf8"),
     ).resolves.toContain("name: blog-writer");
     await expect(
       readFile(path.join(homeDirectory, ".qwenpaw", "skills", "blog-writer", "SKILL.md"), "utf8"),
+    ).resolves.toContain("name: blog-writer");
+    await expect(
+      readFile(path.join(homeDirectory, ".agents", "skills", "blog-writer", "SKILL.md"), "utf8"),
     ).resolves.toContain("name: blog-writer");
     await service.syncAllProjects();
     for (const project of [firstProject, secondProject]) {
@@ -141,5 +147,50 @@ describe("desktop skill service", () => {
 
     await expect(service.get("../blog-writer")).rejects.toMatchObject({ code: "CONFIG_INVALID" });
     await expect(service.install("blog-writer", "missing-target")).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+  });
+
+  it("keeps newer local copies and reports their version without overwriting them", async () => {
+    const root = await temporaryDirectory("siteindex-skill-newer-");
+    const sourceDirectory = path.join(root, "bundled");
+    const projectPath = path.join(root, "project");
+    await writeSkill(sourceDirectory, "blog-writer", "1.1.0");
+    await writeSkill(path.join(projectPath, "_agent", "skills"), "blog-writer", "2.0.0", "\n# User copy\n");
+    const service = skillService(
+      sourceDirectory,
+      path.join(root, "home"),
+      [{ id: "sample-store" as ProjectId, path: projectPath }],
+    );
+
+    await service.syncAllProjects();
+
+    await expect(
+      readFile(path.join(projectPath, "_agent", "skills", "blog-writer", "SKILL.md"), "utf8"),
+    ).resolves.toContain("# User copy");
+    await expect(service.targets("blog-writer")).resolves.toContainEqual(
+      expect.objectContaining({ target_id: "project:sample-store", status: "latest", local_newer: true }),
+    );
+  });
+
+  it("shows installed edm-builder copies as retired without deleting or reinstalling them", async () => {
+    const root = await temporaryDirectory("siteindex-skill-retired-");
+    const sourceDirectory = path.join(root, "bundled");
+    const homeDirectory = path.join(root, "home");
+    const installedPath = path.join(homeDirectory, ".agents", "skills", "edm-builder", "SKILL.md");
+    await writeSkill(sourceDirectory, "siteindex-edm-plan", "1.0.0");
+    await writeSkill(path.join(homeDirectory, ".agents", "skills"), "edm-builder", "1.1.0", "\n# Local copy\n");
+    const service = skillService(sourceDirectory, homeDirectory, []);
+    const original = await readFile(installedPath, "utf8");
+
+    await expect(service.list()).resolves.toContainEqual(expect.objectContaining({ name: "edm-builder", retired: true }));
+    await expect(service.get("edm-builder")).resolves.toMatchObject({
+      info: { name: "edm-builder", retired: true },
+      body: expect.stringContaining("已退役"),
+    });
+    await expect(service.targets("edm-builder")).resolves.toContainEqual(
+      expect.objectContaining({ target_id: "agents-dir", retired: true }),
+    );
+    await expect(service.install("edm-builder", "agents-dir")).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    await service.syncAllProjects();
+    await expect(readFile(installedPath, "utf8")).resolves.toBe(original);
   });
 });
