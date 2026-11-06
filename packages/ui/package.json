@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "pretest": "tsx scripts/build-mock-data.ts",
     "test": "vitest run",
-    "mock:build": "tsx scripts/build-mock-data.ts"
+    "mock:build": "tsx scripts/build-mock-data.ts",
+    "ui:check": "tsx visual/check.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
