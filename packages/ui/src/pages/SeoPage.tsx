@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { AlertTriangle, ExternalLink, FileDown, Globe2, RefreshCw } from "lucide-react";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
+import { AlertTriangle, ExternalLink, FileDown, Globe2, MoreHorizontal, RefreshCw, Settings2 } from "lucide-react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { gradeDescriptionLength, gradeTitleLength } from "@siteindex/shared";
+import { SEO_RULE_LABELS, gradeDescriptionLength, gradeTitleLength } from "@siteindex/shared";
 import type {
   JobProgress, JobResult, ListQuery, PageType, SeoIssue, SeoIssueFilters, SeoLink,
-  SeoPage as SeoRecord, SeoPageFilters, Severity,
+  SeoPage as SeoRecord, SeoPageFilters, SeoRuleSetting, Severity,
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, KpiCard, LengthBadge, ProjectHeader, ProjectTabPanel, SearchInput, Segmented } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, KpiCard, LengthBadge, Notice, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, useToast } from "../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./seo/filters";
 import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams, type SeoSearchParamPatch, type SeoView } from "./seo/query-params";
 
@@ -22,21 +23,14 @@ const severityOptions: { value: Severity | "all"; label: string }[] = [
   { value: "all", label: "全部" }, { value: "high", label: "高" }, { value: "mid", label: "中" }, { value: "low", label: "低" },
 ];
 const pageTypeLabels: Record<PageType, string> = { home: "首页", collection: "分类", product: "产品", blog: "博客", page: "页面", other: "其他" };
-const issueLabels: Record<string, string> = {
-  http_4xx: "页面 4xx", http_5xx: "页面 5xx", redirect_chain: "重定向链", noindex: "noindex",
-  canonical_other: "Canonical 指向其他页面", canonical_missing: "Canonical 缺失", not_in_sitemap: "未在 Sitemap 中",
-  title_missing: "Title 缺失", desc_missing: "Meta description 缺失", title_length: "Title 长度异常",
-  desc_length: "Description 长度异常", title_duplicate: "Title 重复", desc_duplicate: "Description 重复",
-  h1_missing: "H1 缺失", h1_multiple: "H1 多个", schema_missing: "Schema 缺失", schema_error: "Schema 错误",
-  img_alt_missing: "图片 Alt 缺失", thin_content: "内容过短", orphan: "孤立页面",
-  title_too_short: "Title 过短", title_too_long: "Title 过长", desc_too_short: "Description 过短",
-  desc_too_long: "Description 过长", hreflang_mismatch: "hreflang 异常", url_too_long: "URL 过长",
-};
+const issueLabels: Record<string, string> = SEO_RULE_LABELS;
 const severityLabels: Record<Severity, string> = { high: "高", mid: "中", low: "低" };
 const severityTones: Record<Severity, "danger" | "warn" | "neutral"> = { high: "danger", mid: "warn", low: "neutral" };
-const initialIssueQuery: ListQuery<SeoIssueFilters> = { page: 1, pageSize: 100, filters: {} };
-const initialPageQuery: ListQuery<SeoPageFilters> = { page: 1, pageSize: 100, filters: {} };
-const initialLinkQuery: ListQuery = { page: 1, pageSize: 100, filters: {} };
+const statusLabels: Record<SeoIssue["status"], string> = { open: "待处理", fixed: "已处理", ignored: "已忽略" };
+const statusTones: Record<SeoIssue["status"], "warn" | "ok" | "neutral"> = { open: "warn", fixed: "ok", ignored: "neutral" };
+const initialIssueQuery: ListQuery<SeoIssueFilters> = { page: 1, pageSize: 50, filters: {} };
+const initialPageQuery: ListQuery<SeoPageFilters> = { page: 1, pageSize: 50, filters: {} };
+const initialLinkQuery: ListQuery = { page: 1, pageSize: 50, filters: {} };
 
 function displayPath(url: string): string {
   try { const parsed = new URL(url); return parsed.pathname + parsed.search; }
@@ -56,38 +50,44 @@ interface IssueActionHandlers {
   markFixed?: (issue: SeoIssue) => void;
   ignoreIssue?: (issue: SeoIssue) => void;
   ignoreRule?: (issue: SeoIssue) => void;
+  restore?: (issue: SeoIssue) => void;
 }
 
 function IssueActionMenu({ issue, handlers }: { issue: SeoIssue; handlers: IssueActionHandlers }) {
   const label = issueLabels[issue.rule] ?? issue.rule;
-  const menuItems = [
+  const [open, setOpen] = useState(false);
+  const menuItems = (issue.status === "open" ? [
     handlers.markFixed && { label: "标记已处理", action: handlers.markFixed },
     handlers.ignoreIssue && { label: "忽略此页面此问题", action: handlers.ignoreIssue },
     handlers.ignoreRule && { label: "忽略此类问题", action: handlers.ignoreRule },
-  ].filter((item): item is { label: string; action: (issue: SeoIssue) => void } => Boolean(item));
+  ] : [handlers.restore && { label: "恢复为待处理", action: handlers.restore }])
+    .filter((item): item is { label: string; action: (issue: SeoIssue) => void } => Boolean(item));
   if (!menuItems.length) return null;
 
-  return <details className="si-seo-issue-actions" onClick={(event) => event.stopPropagation()}>
-    <summary aria-label={`问题操作：${label}`}>⋯</summary>
-    <div role="menu" aria-label={`问题操作：${label}`}>
-      {menuItems.map(({ label: itemLabel, action }) => <button key={itemLabel} type="button" role="menuitem" onClick={(event) => {
-        event.stopPropagation();
-        event.currentTarget.closest("details")?.removeAttribute("open");
-        action(issue);
-      }}>{itemLabel}</button>)}
-    </div>
-  </details>;
+  return <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+    <PopoverPrimitive.Trigger asChild>
+      <Button variant="ghost" size="small" className="si-seo-row-action" aria-label={`问题操作：${label}`} title="问题操作" onClick={(event) => event.stopPropagation()}>
+        <MoreHorizontal size={16} aria-hidden="true" />
+      </Button>
+    </PopoverPrimitive.Trigger>
+    <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Content className="si-seo-issue-menu" role="menu" aria-label={`问题操作：${label}`} align="end" sideOffset={4} onClick={(event) => event.stopPropagation()}>
+        {menuItems.map(({ label: itemLabel, action }) => <button key={itemLabel} type="button" role="menuitem" onClick={() => { setOpen(false); action(issue); }}>{itemLabel}</button>)}
+      </PopoverPrimitive.Content>
+    </PopoverPrimitive.Portal>
+  </PopoverPrimitive.Root>;
 }
 
 function issueColumns(actions?: IssueActionHandlers): ColumnDef<SeoIssue, unknown>[] {
   const columns: ColumnDef<SeoIssue, unknown>[] = [
     { id: "severity", accessorKey: "severity", header: "级别", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={severityTones[row.original.severity]}>{severityLabels[row.original.severity]}</Chip>, enableSorting: true },
     { id: "url", accessorKey: "url", header: "页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <code className="si-seo-url" title={row.original.url}>{displayPath(row.original.url)}</code>, enableSorting: true },
-    { id: "problem", accessorKey: "detail", header: "问题", meta: { width: 220, grow: 1, minWidth: 160, text: "single" }, cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span title={row.original.detail}>{row.original.detail}</span></span>, enableSorting: false },
+    { id: "problem", accessorKey: "detail", header: "问题", meta: { width: 220, grow: 1, minWidth: 160, text: "clamp2" }, cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span title={row.original.detail}>{row.original.detail}</span></span>, enableSorting: false },
     { id: "last_seen", accessorKey: "last_seen", header: "发现于", meta: { width: 100, grow: 0, minWidth: 92, text: "single" }, cell: ({ row }) => <code className="si-seo-date">{row.original.last_seen.slice(5)}</code>, enableSorting: true },
+    { id: "status", accessorKey: "status", header: "状态", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={statusTones[row.original.status]}>{statusLabels[row.original.status]}</Chip>, enableSorting: true },
   ];
   if (actions && Object.values(actions).some(Boolean)) columns.push({
-    id: "actions", header: "操作", meta: { width: 68, grow: 0, minWidth: 68, text: "single" },
+    id: "actions", header: "操作", meta: { width: 68, grow: 0, minWidth: 68, text: "single", sticky: "right" },
     cell: ({ row }) => <IssueActionMenu issue={row.original} handlers={actions} />,
     enableSorting: false,
   });
@@ -171,17 +171,20 @@ export function SeoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialRouteFilters = seoRouteFiltersFromSearchParams(searchParams);
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [view, setView] = useState<SeoView>(() => initialRouteFilters.view);
   const [issueQuery, setIssueQuery] = useState<ListQuery<SeoIssueFilters>>(() => ({ ...initialIssueQuery, filters: initialRouteFilters.issues, search: searchTextFromSearchParams(searchParams) || undefined }));
   const [pageQuery, setPageQuery] = useState<ListQuery<SeoPageFilters>>(() => ({ ...initialPageQuery, filters: initialRouteFilters.pages, search: searchTextFromSearchParams(searchParams) || undefined }));
   const [linkQuery, setLinkQuery] = useState<ListQuery>(() => ({ ...initialLinkQuery, search: searchTextFromSearchParams(searchParams) || undefined }));
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [selectedLink, setSelectedLink] = useState<SeoLink | null>(null);
+  const [selectedIssues, setSelectedIssues] = useState<SeoIssue[]>([]);
+  const [selectionReset, setSelectionReset] = useState(0);
+  const [ruleSettingsOpen, setRuleSettingsOpen] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [runKind, setRunKind] = useState<"crawl" | null>(null);
+  const [runKind, setRunKind] = useState<"crawl" | "index-check" | null>(null);
   const [progressText, setProgressText] = useState("");
   const [progressPct, setProgressPct] = useState<number | null>(null);
-  const [feedback, setFeedback] = useState("");
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["seo", "summary", id], queryFn: () => api.seo.summary(id) });
   const issuesQuery = useQuery({ queryKey: ["seo", "issues", id, issueQuery], queryFn: () => api.seo.listIssues(id, issueQuery) });
@@ -189,6 +192,12 @@ export function SeoPage() {
   const linksQuery = useQuery({ queryKey: ["seo", "links", id, linkQuery], queryFn: () => api.seo.listLinks(id, linkQuery) });
   const orphansQuery = useQuery({ queryKey: ["seo", "orphans", id], queryFn: () => api.seo.orphanPages(id) });
   const detailQuery = useQuery({ queryKey: ["seo", "page", id, selectedUrl], queryFn: () => api.seo.getPage(id, selectedUrl ?? ""), enabled: Boolean(selectedUrl) });
+  const getRuleSettings = api.seo.getRuleSettings;
+  const ruleSettingsQuery = useQuery({
+    queryKey: ["seo", "rule-settings", id],
+    queryFn: () => getRuleSettings ? getRuleSettings(id) : Promise.reject(new Error("当前桌面版本暂不支持 SEO 规则设置。")),
+    enabled: ruleSettingsOpen && Boolean(getRuleSettings),
+  });
   const summary = summaryQuery.data;
   const project = projectQuery.data?.summary;
   const titleRange = summary?.title_range ?? [30, 60];
@@ -232,12 +241,14 @@ export function SeoPage() {
   const filteredIssueCount = issueList?.total ?? 0;
   const setIssueStatus = api.seo.setIssueStatus;
   const setRuleIgnored = api.seo.setRuleIgnored;
+  const selectionScope = JSON.stringify({ page: issueQuery.page, search: issueQuery.search, filters: issueQuery.filters, sort: issueQuery.sort });
   const writeSearchParams = (patch: SeoSearchParamPatch) => setSearchParams((current) => updateSeoSearchParams(current, patch), { replace: true });
 
   const refreshIssueData = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
+      queryClient.invalidateQueries({ queryKey: ["seo", "rule-settings", id] }),
       queryClient.invalidateQueries({ queryKey: ["overview", id] }),
     ]);
   }, [id, queryClient]);
@@ -248,24 +259,24 @@ export function SeoPage() {
     confirmation: string,
   ) => {
     if (!setIssueStatus || !window.confirm(confirmation)) return;
-    setFeedback("");
     try {
       const result = await setIssueStatus(id, { targets, status });
       await refreshIssueData();
-      setFeedback(`已更新 ${result.updated} 条`);
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "SEO 问题更新失败。")); }
-  }, [id, refreshIssueData, setIssueStatus]);
+      toast.success(`已更新 ${result.updated} 条`);
+      setSelectedIssues([]);
+      setSelectionReset((value) => value + 1);
+    } catch (cause) { toast.error(apiErrorMessage(cause, "SEO 问题更新失败。")); }
+  }, [id, refreshIssueData, setIssueStatus, toast]);
 
-  const ignoreIssueRule = useCallback(async (rule: SeoIssue["rule"]) => {
+  const ignoreIssueRule = useCallback(async (rule: SeoIssue["rule"], ignored: boolean) => {
     const label = issueLabels[rule] ?? rule;
-    if (!setRuleIgnored || !window.confirm(`忽略“${label}”规则？\n影响范围：全站同一规则。`)) return;
-    setFeedback("");
+    if (!setRuleIgnored || !window.confirm(`${ignored ? "忽略" : "恢复"}“${label}”规则？\n影响范围：全站同一规则。`)) return;
     try {
-      const result = await setRuleIgnored(id, rule, true);
+      const result = await setRuleIgnored(id, rule, ignored);
       await refreshIssueData();
-      setFeedback(`已更新 ${result.updated} 条`);
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "SEO 规则忽略失败。")); }
-  }, [id, refreshIssueData, setRuleIgnored]);
+      toast.success(`已更新 ${result.updated} 条`);
+    } catch (cause) { toast.error(apiErrorMessage(cause, "SEO 规则设置失败。")); }
+  }, [id, refreshIssueData, setRuleIgnored, toast]);
 
   const issueActionHandlers = useMemo<IssueActionHandlers>(() => ({
     ...(setIssueStatus ? {
@@ -277,8 +288,12 @@ export function SeoPage() {
         [{ url: issue.url, rule: issue.rule }], "ignored",
         `忽略此页面此问题？\n影响范围：此页面的这条 SEO 问题（${displayPath(issue.url)}）。`,
       ),
+      restore: (issue: SeoIssue) => void updateIssueStatus(
+        [{ url: issue.url, rule: issue.rule }], "open",
+        `恢复“${issueLabels[issue.rule] ?? issue.rule}”问题？\n影响范围：单条 SEO 问题（${displayPath(issue.url)}）。`,
+      ),
     } : {}),
-    ...(setRuleIgnored ? { ignoreRule: (issue: SeoIssue) => void ignoreIssueRule(issue.rule) } : {}),
+    ...(setRuleIgnored ? { ignoreRule: (issue: SeoIssue) => void ignoreIssueRule(issue.rule, true) } : {}),
   }), [ignoreIssueRule, setIssueStatus, setRuleIgnored, updateIssueStatus]);
   const issueColumnDefs = useMemo(() => issueColumns(issueActionHandlers), [issueActionHandlers]);
 
@@ -292,7 +307,12 @@ export function SeoPage() {
   }, [id, searchParams]);
 
   useEffect(() => {
-    setSelectedUrl(null); setSelectedLink(null); setFeedback("");
+    setSelectedIssues([]);
+    setSelectionReset((value) => value + 1);
+  }, [selectionScope]);
+
+  useEffect(() => {
+    setSelectedUrl(null); setSelectedLink(null); setSelectedIssues([]);
   }, [id]);
 
   const setStatusFilter = (value: "all" | SeoIssue["status"]) => {
@@ -302,9 +322,8 @@ export function SeoPage() {
   };
 
   const handleBulkResolve = async () => {
-    if (!setIssueStatus || filteredIssueCount === 0) return;
-    if (!window.confirm(`将当前筛选结果中的 ${filteredIssueCount} 条 SEO 问题标记为已处理？\n影响范围：当前筛选命中的所有页面。`)) return;
-    setFeedback("");
+    if (!setIssueStatus || issueQuery.filters?.status !== "open" || filteredIssueCount === 0) return;
+    if (!window.confirm(`将当前筛选结果中的 ${filteredIssueCount} 条待处理 SEO 问题标记为已处理？\n影响范围：当前筛选命中的所有页面。`)) return;
     try {
       const result = await api.seo.listIssues(id, { ...issueQuery, page: 1, pageSize: 0 });
       const updated = await setIssueStatus(id, {
@@ -312,8 +331,25 @@ export function SeoPage() {
         status: "fixed",
       });
       await refreshIssueData();
-      setFeedback(`已更新 ${updated.updated} 条`);
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "批量处理 SEO 问题失败。")); }
+      toast.success(`已更新 ${updated.updated} 条`);
+    } catch (cause) { toast.error(apiErrorMessage(cause, "批量处理 SEO 问题失败。")); }
+  };
+
+  const handleSelectedIssues = async (status: "fixed" | "ignored") => {
+    if (!setIssueStatus || selectedIssues.length === 0) return;
+    const count = selectedIssues.length;
+    const action = status === "fixed" ? "标记为已处理" : "忽略";
+    if (!window.confirm(`将已选择的 ${count} 条 SEO 问题${action}？\n影响范围：所选问题。`)) return;
+    try {
+      const result = await setIssueStatus(id, {
+        targets: selectedIssues.map(({ url, rule }) => ({ url, rule })),
+        status,
+      });
+      await refreshIssueData();
+      toast.success(`已更新 ${result.updated} 条`);
+      setSelectedIssues([]);
+      setSelectionReset((value) => value + 1);
+    } catch (cause) { toast.error(apiErrorMessage(cause, "批量处理 SEO 问题失败。")); }
   };
 
   useEffect(() => {
@@ -325,17 +361,19 @@ export function SeoPage() {
     const unsubscribeFinished = api.jobs.onFinished((result: JobResult) => {
       if (result.runId !== activeRunId) return;
       setActiveRunId(null); setRunKind(null); setProgressPct(null); setProgressText("");
-      setFeedback(result.status === "ok" ? "SEO 页面已重新抓取。" : result.summary);
+      if (result.status === "ok") toast.success(runKind === "index-check" ? "收录检查已完成。" : "SEO 页面已重新抓取。");
+      else toast.error(result.summary);
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
+        queryClient.invalidateQueries({ queryKey: ["seo", "rule-settings", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "pages", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "links", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "orphans", id] }),
       ]);
     });
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
-  }, [activeRunId, id, queryClient]);
+  }, [activeRunId, id, queryClient, runKind, toast]);
 
   const changeView = (next: SeoView) => {
     setView(next);
@@ -386,32 +424,37 @@ export function SeoPage() {
 
   const openPage = async (url: string) => {
     try { await api.shell.openExternal(url); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开页面。")); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "无法打开页面。")); }
   };
   const checkSingleIndex = async (url: string) => {
     try { const searchUrl = await api.seo.googleSiteUrl(url); await api.shell.openExternal(searchUrl); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开 Google 收录检查。")); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "无法打开 Google 收录检查。")); }
   };
   const recrawl = async () => {
     if (!project || busy) return;
-    setFeedback(""); setProgressText("正在启动 SEO 页面抓取…"); setRunKind("crawl");
+    setProgressText("正在启动 SEO 页面抓取…"); setRunKind("crawl");
     try { const run = await api.jobs.run({ projectPath: project.path, job: "weekly" }); setActiveRunId(run.runId); }
-    catch (cause) { setRunKind(null); setProgressText(""); setFeedback(apiErrorMessage(cause, "重新抓取启动失败。")); }
+    catch (cause) { setRunKind(null); setProgressText(""); toast.error(apiErrorMessage(cause, "重新抓取启动失败。")); }
+  };
+  const checkIndex = async () => {
+    if (busy) return;
+    setProgressText("正在启动收录检查…"); setRunKind("index-check");
+    try { const run = await api.seo.checkIndex(id); setActiveRunId(run.runId); }
+    catch (cause) { setRunKind(null); setProgressText(""); toast.error(apiErrorMessage(cause, "收录检查启动失败。")); }
   };
   const exportIssues = async () => {
-    setFeedback("");
     try {
       const result = await api.seo.listIssues(id, { ...issueQuery, page: 1, pageSize: 0 });
-      const lines = [["级别", "页面", "问题", "说明", "状态", "首次发现", "最近发现"].join(",")];
+      const lines = [["级别", "页面", "问题", "说明", "状态", "首次发现", "最近发现", "处理时间"].join(",")];
       result.rows.forEach((issue) => lines.push([
-        severityLabels[issue.severity], issue.url, issueLabels[issue.rule] ?? issue.rule, issue.detail, issue.status, issue.first_seen, issue.last_seen,
+        severityLabels[issue.severity], issue.url, issueLabels[issue.rule] ?? issue.rule, issue.detail, statusLabels[issue.status], issue.first_seen, issue.last_seen, issue.handled_at ?? "",
       ].map(csvCell).join(",")));
       const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = id + "-seo-issues.csv"; anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      setFeedback("问题清单已导出。");
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "问题清单导出失败。")); }
+      toast.success("问题清单已导出。");
+    } catch (cause) { toast.error(apiErrorMessage(cause, "问题清单导出失败。")); }
   };
   const showPageDetail = (url: string, link: SeoLink | null = null) => { setSelectedUrl(url); setSelectedLink(link); };
 
@@ -419,63 +462,92 @@ export function SeoPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 SEO 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-seo-page">
-    <ProjectHeader project={project} activeTab="seo" hasTabPanel status={<Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip>} actions={
-      <>
-        <Button onClick={() => void exportIssues()}><FileDown size={14} />导出问题清单</Button>
-        <Button variant="primary" icon={<RefreshCw size={14} />} disabled={busy || !project.path} onClick={() => void recrawl()}>{runKind === "crawl" ? "抓取中…" : "重新抓取"}</Button>
-      </>
-    } />
+    <ProjectHeader project={project} activeTab="seo" hasTabPanel status={<Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip>} />
     <ProjectTabPanel projectId={project.id} tab="seo">
-    <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-    <div className="si-seo-controls" data-view={view}>
-      <Segmented value={view} options={views} onChange={changeView} ariaLabel="SEO 视图" />
-      {view !== "links" && <FilterBar className="si-seo-filterbar">
-        {view === "issues" ? <>
-          <SeoSingleFilter label="严重级别" value={issueQuery.filters?.severity ?? "all"} options={severityOptions} onChange={setSeverity} />
-          <SeoSingleFilter label="状态" value={issueQuery.filters?.status ?? "all"} options={[
-            { value: "all", label: "全部状态" }, { value: "open", label: "待处理" }, { value: "fixed", label: "已处理" }, { value: "ignored", label: "已忽略" },
-          ]} onChange={setStatusFilter} />
-          <SeoMultiFilter label="问题类型" values={selectedRules} options={ruleFilters.map(({ rule, label, count }) => ({ value: rule, label, count }))} onChange={setRules} />
-          {setIssueStatus && <Button size="small" className="si-seo-bulk-resolve" disabled={filteredIssueCount === 0} onClick={() => void handleBulkResolve()}>
-            批量处理当前筛选结果（{filteredIssueCount} 条）
-          </Button>}
-        </> : <>
-          <SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} />
-          <SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[
-            { value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" },
-          ]} onChange={setIndexed} />
+      <PageHeader
+        title="SEO"
+        meta={<Chip tone="neutral">最近抓取：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}</Chip>}
+        actions={<>
+          <Button variant="primary" icon={<Settings2 size={14} />} onClick={() => setRuleSettingsOpen(true)}>规则设置</Button>
+          <Button disabled={busy} icon={<Globe2 size={14} />} onClick={() => void checkIndex()}>{runKind === "index-check" ? "检查中…" : "重新检查收录"}</Button>
+          <Button icon={<FileDown size={14} />} onClick={() => void exportIssues()}>导出</Button>
         </>}
-      </FilterBar>}
-      <SearchInput value={(view === "issues" ? issueQuery : view === "pages" ? pageQuery : linkQuery).search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" />
-    </div>
-    {selectedConditions.length > 0 && <div className="si-seo-selected-filters" aria-label="已选筛选条件">
-      {selectedConditions.map((condition) => <SeoFilterChip key={condition.label} label={condition.label} onRemove={condition.onRemove} />)}
-    </div>}
-    {progressText && <div className="si-seo-progress" role="status"><span>{progressText}</span>{progressPct != null && <strong>{progressPct}%</strong>}</div>}
-    {feedback && <p className="si-feedback" role="status">{feedback}</p>}
-    <div className={`si-seo-table-frame si-table-region si-seo-table-${view}`}>
-      {activeListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "issues" ? "问题清单" : view === "pages" ? "页面列表" : "内链列表"}…</div> : activeListQuery.isError ? <ApiErrorNotice label={`${view === "issues" ? "SEO 问题清单" : view === "pages" ? "SEO 页面列表" : "SEO 内链列表"}加载失败。`} error={activeListQuery.error} onRetry={() => void activeListQuery.refetch()} /> : <>
-        {view === "issues" && <DataTable tableId="seo.issues.v2" rows={issueList?.rows ?? []} total={issueList?.total ?? 0} columns={issueColumnDefs} query={issueQuery} onQueryChange={setIssueQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url + ":" + row.rule} height="fill" rowHeight={52} showPagination={false} emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。" />}
-        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={52} showPagination={false} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" />}
-        {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} showPagination={false} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" />}
-        {view === "issues" && <div className="si-seo-length-legend"><span>长度：</span><LengthBadge length={50} kind="title" range={titleRange} /><span>最佳</span><LengthBadge length={25} kind="title" range={titleRange} /><span>可接受</span><LengthBadge length={10} kind="title" range={titleRange} /><span>需修改</span><span>· Title {titleRange[0]}–{titleRange[1]} · Description {descriptionRange[0]}–{descriptionRange[1]}</span></div>}
-      </>}
-    </div>
-    {view === "links" && <details className="si-seo-orphans">
-      <summary><AlertTriangle size={14} />孤立页面 {orphansQuery.data?.length ?? "—"} 个</summary>
-      <div className="si-seo-orphans-list">
-        {orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}
+        overflow={[{ label: runKind === "crawl" ? "正在重新抓取…" : "重新抓取 SEO 数据", onSelect: () => void recrawl(), disabled: busy, icon: <RefreshCw size={14} /> }]}
+      />
+      <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+      <div className="si-seo-controls" data-view={view}>
+        <Segmented value={view} options={views} onChange={changeView} ariaLabel="SEO 视图" />
+        {view !== "links" && <FilterBar className="si-seo-filterbar">
+          {view === "issues" ? <>
+            <SeoSingleFilter label="严重级别" value={issueQuery.filters?.severity ?? "all"} options={severityOptions} onChange={setSeverity} />
+            <SeoSingleFilter label="状态" value={issueQuery.filters?.status ?? "all"} options={[
+              { value: "all", label: "全部状态" }, { value: "open", label: "待处理" }, { value: "fixed", label: "已处理" }, { value: "ignored", label: "已忽略" },
+            ]} onChange={setStatusFilter} />
+            <SeoMultiFilter label="问题类型" values={selectedRules} options={ruleFilters.map(({ rule, label, count }) => ({ value: rule, label, count }))} onChange={setRules} />
+            {setIssueStatus && issueQuery.filters?.status === "open" && <Button size="small" className="si-seo-bulk-resolve" disabled={filteredIssueCount === 0} onClick={() => void handleBulkResolve()}>
+              批量处理当前筛选结果（{filteredIssueCount} 条）
+            </Button>}
+          </> : <>
+            <SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} />
+            <SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[
+              { value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" },
+            ]} onChange={setIndexed} />
+          </>}
+        </FilterBar>}
+        <SearchInput value={(view === "issues" ? issueQuery : view === "pages" ? pageQuery : linkQuery).search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" />
       </div>
-    </details>}
-    <p className="si-seo-disclaimer">Google site: 检查结果仅供参考，以 Search Console 为准。收录数据最后检查：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}。</p>
-    <DetailPanel open={Boolean(selectedUrl)} onClose={() => { setSelectedUrl(null); setSelectedLink(null); }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
+      {selectedConditions.length > 0 && <div className="si-seo-selected-filters" aria-label="已选筛选条件">
+        {selectedConditions.map((condition) => <SeoFilterChip key={condition.label} label={condition.label} onRemove={condition.onRemove} />)}
+      </div>}
+      {progressText && <Notice className="si-seo-progress" tone="info">{progressText}{progressPct != null && ` · ${progressPct}%`}</Notice>}
+      {activeListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "issues" ? "问题清单" : view === "pages" ? "页面列表" : "内链列表"}…</div> : activeListQuery.isError ? <ApiErrorNotice label={`${view === "issues" ? "SEO 问题清单" : view === "pages" ? "SEO 页面列表" : "SEO 内链列表"}加载失败。`} error={activeListQuery.error} onRetry={() => void activeListQuery.refetch()} /> : <>
+        {view === "issues" && <DataTable
+          key={selectionReset}
+          tableId="seo.issues.v2" rows={issueList?.rows ?? []} total={issueList?.total ?? 0} columns={issueColumnDefs}
+          query={issueQuery} onQueryChange={setIssueQuery} onRowClick={(row) => showPageDetail(row.url)}
+          getRowId={(row) => row.url + ":" + row.rule} height="fill" rowHeight={52}
+          selectable={Boolean(setIssueStatus && issueQuery.filters?.status === "open")}
+          onSelectionChange={setSelectedIssues}
+          toolbar={selectedIssues.length > 0 ? <div className="si-seo-selection-toolbar"><span>已选择 {selectedIssues.length} 条待处理问题</span>
+            <Button size="small" onClick={() => void handleSelectedIssues("fixed")}>标记已处理</Button>
+            <Button size="small" onClick={() => void handleSelectedIssues("ignored")}>忽略所选</Button>
+          </div> : <div className="si-seo-length-legend"><span>Title / Description 长度：</span><LengthBadge length={50} kind="title" range={titleRange} /><span>最佳</span><LengthBadge length={25} kind="title" range={titleRange} /><span>可接受</span><LengthBadge length={10} kind="title" range={titleRange} /><span>需修改</span></div>}
+          emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。"
+        />}
+        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={52} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" />}
+        {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" />}
+      </>}
+      {view === "links" && <details className="si-seo-orphans">
+        <summary><AlertTriangle size={14} />孤立页面 {orphansQuery.data?.length ?? "—"} 个</summary>
+        <div className="si-seo-orphans-list">
+          {orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}
+        </div>
+      </details>}
+      <p className="si-seo-disclaimer">Google site: 检查结果仅供参考，以 Search Console 为准。收录数据最后检查：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}。</p>
+    </ProjectTabPanel>
+    <Drawer open={Boolean(selectedUrl)} onOpenChange={(open) => { if (!open) { setSelectedUrl(null); setSelectedLink(null); } }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
       {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}
       {detailQuery.isLoading ? <div className="si-query-loading" role="status">正在加载页面详情…</div> : detailQuery.isError ? <ApiErrorNotice label="页面详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : detailQuery.data ? <SeoDetail
         page={detailQuery.data} titleRange={titleRange} descriptionRange={descriptionRange}
         onOpen={() => void openPage(detailQuery.data!.url)} onCheckIndex={() => void checkSingleIndex(detailQuery.data!.url)}
-      /> : <div className="si-empty-state">没有找到该页面的 SEO 数据。</div>}
-    </DetailPanel>
-    </ProjectTabPanel>
+      /> : selectedUrl ? <EmptyState>没有找到该页面的 SEO 数据。</EmptyState> : null}
+    </Drawer>
+    <Drawer open={ruleSettingsOpen} onOpenChange={setRuleSettingsOpen} title="SEO 规则设置" description="查看规则说明与待处理数量，并设置全站规则忽略。">
+      {!getRuleSettings ? <Notice tone="warn" title="当前环境暂不支持规则设置">当前桌面版本尚未接入 seo.getRuleSettings，请更新后重试。</Notice>
+        : ruleSettingsQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 规则…</div>
+          : ruleSettingsQuery.isError ? <ApiErrorNotice label="SEO 规则加载失败。" error={ruleSettingsQuery.error} onRetry={() => void ruleSettingsQuery.refetch()} />
+            : ruleSettingsQuery.data?.length ? <div className="si-seo-rule-settings">
+              {ruleSettingsQuery.data.map((setting) => <section key={setting.rule} className="si-seo-rule-setting">
+                <div className="si-seo-rule-setting-heading"><div><strong>{setting.name}</strong><Chip tone={severityTones[setting.severity]}>{severityLabels[setting.severity]}</Chip></div><span>待处理 {setting.pending_count} 条</span></div>
+                <p>{setting.description}</p>
+                {setting.ignored_urls.length > 0 && <div className="si-seo-rule-setting-urls">
+                  <strong>按页面忽略（{setting.ignored_urls.length}）</strong>
+                  <ul>{setting.ignored_urls.map((url) => <li key={url}><code title={url}>{displayPath(url)}</code></li>)}</ul>
+                </div>}
+                {setRuleIgnored && <Button size="small" variant={setting.ignored ? "quiet" : "secondary"} onClick={() => void ignoreIssueRule(setting.rule, !setting.ignored)}>{setting.ignored ? "恢复此规则" : "忽略此规则"}</Button>}
+              </section>)}
+            </div> : <EmptyState title="没有 SEO 规则">当前环境没有返回规则设置。</EmptyState>}
+    </Drawer>
   </div>;
 }
 import "./seo/page.css";

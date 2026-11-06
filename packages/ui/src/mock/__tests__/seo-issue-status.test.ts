@@ -1,17 +1,21 @@
 import type { ProjectId, SeoIssue } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { clone, projectSummaries, projectsChanged, seoIssues } from "../context";
+import { clone, projectConfigs, projectSummaries, projectsChanged, seoIssues } from "../context";
 import { createProjectsMock } from "../projects";
 import { createSeoMock } from "../seo";
 
 const originalStatuses = seoIssues.map((issue) => issue.status);
 const originalDemoSummary = clone(projectSummaries.demo);
 const originalDemo2Summary = clone(projectSummaries.demo2);
+const originalDemoConfig = clone(projectConfigs.demo);
+const originalDemo2Config = clone(projectConfigs.demo2);
 
 afterEach(() => {
   seoIssues.forEach((issue, index) => { issue.status = originalStatuses[index]!; });
   projectSummaries.demo = clone(originalDemoSummary);
   projectSummaries.demo2 = clone(originalDemo2Summary);
+  projectConfigs.demo = clone(originalDemoConfig);
+  projectConfigs.demo2 = clone(originalDemo2Config);
   projectsChanged.clear();
 });
 
@@ -43,5 +47,21 @@ describe("SEO issue status mock", () => {
     expect(afterProject.attention).toBe(beforeProject.attention - 1);
     expect(changes).toContain("demo");
     unsubscribe();
+  });
+
+  it("loads rule settings and toggles the site-wide ignore rule", async () => {
+    const seo = createSeoMock();
+    const before = await seo.getRuleSettings!("demo");
+    const setting = before.find(({ rule }) => rule === "desc_missing")!;
+    expect(setting).toMatchObject({ name: "Meta description 缺失", pending_count: 1, ignored: false, ignored_urls: [] });
+
+    await expect(seo.setRuleIgnored!("demo", "desc_missing", true)).resolves.toEqual({ updated: 1 });
+    const ignored = await seo.getRuleSettings!("demo");
+    expect(ignored.find(({ rule }) => rule === "desc_missing")).toMatchObject({ pending_count: 0, ignored: true });
+    expect((await seo.listIssues("demo", { page: 1, pageSize: 0, filters: { status: "ignored", rules: ["desc_missing"] } })).total).toBe(1);
+
+    await expect(seo.setRuleIgnored!("demo", "desc_missing", false)).resolves.toEqual({ updated: 1 });
+    const restored = await seo.getRuleSettings!("demo");
+    expect(restored.find(({ rule }) => rule === "desc_missing")).toMatchObject({ pending_count: 1, ignored: false });
   });
 });

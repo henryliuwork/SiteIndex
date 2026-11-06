@@ -1,6 +1,38 @@
-import { beginRun, delay, orphanSeoPages, reply, seoIssuesForProject, seoLinks, seoPages, selectRows, syncProjectSeoAttention } from "./context";
-import type { ListQuery, SeoIssue, SeoPageFilters, SiteIndexApi } from "@siteindex/shared";
-import { googleSiteSearchUrl } from "@siteindex/shared";
+import { beginRun, delay, orphanSeoPages, projectConfigs, projectKey, reply, seoIssuesForProject, seoLinks, seoPages, selectRows, syncProjectSeoAttention } from "./context";
+import type { ListQuery, SeoIssue, SeoPageFilters, SeoRule, SeoRuleSetting, SiteIndexApi } from "@siteindex/shared";
+import { googleSiteSearchUrl, SEO_RULE_LABELS } from "@siteindex/shared";
+
+const ruleSeverities: Record<SeoRule, SeoIssue["severity"]> = {
+  http_4xx: "high", http_5xx: "high", redirect_chain: "mid", noindex: "low", canonical_other: "mid", canonical_missing: "low",
+  not_in_sitemap: "low", title_missing: "mid", title_too_short: "low", title_too_long: "low", desc_missing: "mid",
+  desc_too_short: "low", desc_too_long: "low", title_length: "low", desc_length: "low", title_duplicate: "mid",
+  desc_duplicate: "mid", h1_missing: "low", h1_multiple: "low", schema_missing: "mid", schema_error: "mid",
+  img_alt_missing: "low", hreflang_invalid: "mid", url_too_long: "low", thin_content: "low", orphan: "low",
+};
+
+const ruleDescriptions: Record<SeoRule, string> = {
+  http_4xx: "页面请求返回 4xx 状态码。", http_5xx: "页面请求返回 5xx 状态码。", redirect_chain: "页面请求经过两次或更多次跳转。",
+  noindex: "页面 robots meta 或 X-Robots-Tag 指示不收录。", canonical_other: "页面 canonical 地址指向另一个 URL。",
+  canonical_missing: "页面没有 canonical 标签。", not_in_sitemap: "页面有站内链接，但未出现在 Sitemap 中。",
+  title_missing: "页面缺少 Title。", title_too_short: "Title 短于 site.json 中设置的最小长度。",
+  title_too_long: "Title 长于 site.json 中设置的最大长度。", desc_missing: "页面缺少 Meta description。",
+  desc_too_short: "Meta description 短于 site.json 中设置的最小长度。", desc_too_long: "Meta description 长于 site.json 中设置的最大长度。",
+  title_length: "兼容旧规则：Title 超出 site.json 配置的长度范围。", desc_length: "兼容旧规则：Meta description 超出 site.json 配置的长度范围。",
+  title_duplicate: "多个页面使用了相同的 Title。", desc_duplicate: "多个页面使用了相同的 Meta description。",
+  h1_missing: "页面缺少 H1 标题。", h1_multiple: "页面包含多个 H1 标题。", schema_missing: "产品页缺少 Product Schema，或博客页缺少 Article/BlogPosting Schema。",
+  schema_error: "页面 Schema 缺少必填属性或结构无效。", img_alt_missing: "页面中有图片缺少 alt 文本。",
+  hreflang_invalid: "页面 hreflang 标签存在无效语言代码或重复语言。", url_too_long: "页面 URL 超过建议长度。",
+  thin_content: "博客正文少于 300 词，或分类页介绍少于 50 词。", orphan: "页面没有来自站内其他页面的入链。",
+};
+
+function normalizeIgnoreRules(rules: readonly { rule: SeoRule; url?: string }[]) {
+  const unique = new Map<string, { rule: SeoRule; url?: string }>();
+  for (const entry of rules) {
+    const url = entry.url || undefined;
+    unique.set(`${entry.rule}\n${url ?? ""}`, url ? { url, rule: entry.rule } : { rule: entry.rule });
+  }
+  return [...unique.values()].sort((left, right) => left.rule.localeCompare(right.rule) || (left.url ?? "").localeCompare(right.url ?? ""));
+}
 
 export function createSeoMock(): SiteIndexApi["seo"] {
   return {
@@ -44,8 +76,14 @@ export function createSeoMock(): SiteIndexApi["seo"] {
       "severity", (row) => `${row.url}\u0000${row.rule}`,
     )),
     setIssueStatus: (id, input) => reply(() => {
+      const config = projectConfigs[projectKey(id)];
       const issues = seoIssuesForProject(id);
       const targets = new Set(input.targets.map(({ url, rule }) => `${url}\u0000${rule}`));
+      const currentRules = config.seo?.ignore_rules ?? [];
+      const nextRules = normalizeIgnoreRules(input.status === "ignored"
+        ? [...currentRules, ...input.targets.map(({ url, rule }) => ({ url, rule }))]
+        : currentRules.filter((entry) => !entry.url || !targets.has(`${entry.url}\u0000${entry.rule}`)));
+      projectConfigs[projectKey(id)] = { ...config, seo: { ...config.seo, ignore_rules: nextRules } };
       let updated = 0;
       for (const issue of issues) {
         if (!targets.has(`${issue.url}\u0000${issue.rule}`) || issue.status === input.status) continue;
@@ -54,6 +92,41 @@ export function createSeoMock(): SiteIndexApi["seo"] {
       }
       if (updated > 0) syncProjectSeoAttention(id);
       return { updated };
+    }),
+    setRuleIgnored: (id, rule, ignored) => reply(() => {
+      const config = projectConfigs[projectKey(id)];
+      const issues = seoIssuesForProject(id);
+      const currentRules = config.seo?.ignore_rules ?? [];
+      const nextRules = normalizeIgnoreRules(ignored
+        ? [...currentRules.filter((entry) => entry.rule !== rule || entry.url), { rule }]
+        : currentRules.filter((entry) => entry.rule !== rule || Boolean(entry.url)));
+      projectConfigs[projectKey(id)] = { ...config, seo: { ...config.seo, ignore_rules: nextRules } };
+      let updated = 0;
+      for (const issue of issues) {
+        if (issue.rule !== rule) continue;
+        const nextStatus = ignored && issue.status === "open" ? "ignored"
+          : !ignored && issue.status === "ignored" && !nextRules.some((entry) => entry.rule === rule && entry.url === issue.url) ? "open"
+            : issue.status;
+        if (issue.status !== nextStatus) { issue.status = nextStatus; updated += 1; }
+      }
+      if (updated > 0) syncProjectSeoAttention(id);
+      return { updated };
+    }),
+    getRuleSettings: (id) => reply(() => {
+      const issues = seoIssuesForProject(id);
+      const ignoreRules = projectConfigs[projectKey(id)].seo?.ignore_rules ?? [];
+      return (Object.keys(SEO_RULE_LABELS) as SeoRule[]).sort().map((rule): SeoRuleSetting => {
+        const configured = ignoreRules.filter((entry) => entry.rule === rule);
+        return {
+          rule,
+          name: SEO_RULE_LABELS[rule],
+          description: ruleDescriptions[rule],
+          severity: ruleSeverities[rule],
+          pending_count: issues.filter((issue) => issue.rule === rule && issue.status === "open").length,
+          ignored: configured.some((entry) => !entry.url),
+          ignored_urls: [...new Set(configured.flatMap((entry) => entry.url ? [entry.url] : []))].sort(),
+        };
+      });
     }),
     listPages: (_id, query: ListQuery<SeoPageFilters>) => reply(() => selectRows(
       seoPages, query, (row) => [row.url, row.title, row.meta_description, row.page_type].join(" "),
