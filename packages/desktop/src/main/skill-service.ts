@@ -49,7 +49,26 @@ interface SkillTarget {
 }
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
-const RESERVED_TARGET_IDS = new Set(["claude-code", "codex"]);
+const RESERVED_TARGET_IDS = new Set(["claude-code", "codex", "agents-dir"]);
+
+interface SkillInfoState extends SkillInfo {
+  retired?: boolean;
+}
+
+interface SkillTargetState extends SkillTargetStatus {
+  local_newer?: boolean;
+  retired?: boolean;
+}
+
+const RETIRED_SKILLS: Record<string, Omit<SkillInfoState, "retired" | "has_update">> = {
+  "edm-builder": {
+    name: "edm-builder",
+    version: "1.1.0",
+    description: "此 EDM Skill 已退役；已安装的副本保留，由用户自行管理。",
+    reads: [],
+    writes: [],
+  },
+};
 
 function skillError(code: SiteIndexError["code"], message: string, detail?: string): SiteIndexError {
   return { code, message, ...(detail ? { detail } : {}) };
@@ -242,6 +261,11 @@ export function createSkillService(options: SkillServiceOptions): SkillService {
         name: "Codex",
         directory: path.join(homeDirectory, ".codex", "skills"),
       },
+      {
+        targetId: "agents-dir",
+        name: "Agents 通用目录",
+        directory: path.join(homeDirectory, ".agents", "skills"),
+      },
     ];
     const seenCustomTargetIds = new Set<string>();
     const configuredTargets: SkillTarget[] = customPlatforms
@@ -261,7 +285,7 @@ export function createSkillService(options: SkillServiceOptions): SkillService {
     }));
   }
 
-  async function statusFor(name: string, version: string, target: SkillTarget): Promise<SkillTargetStatus> {
+  async function statusFor(name: string, version: string, target: SkillTarget): Promise<SkillTargetState> {
     const targetDirectory = target.directory;
     if (!targetDirectory) {
       return { target_id: target.targetId, name: target.name, dir: targetDirectory, status: "unknown_path" };
@@ -276,7 +300,20 @@ export function createSkillService(options: SkillServiceOptions): SkillService {
       name: target.name,
       dir: targetDirectory,
       status: comparison !== null && comparison >= 0 ? "latest" : "outdated",
+      ...(comparison !== null && comparison > 0 ? { local_newer: true } : {}),
     };
+  }
+
+  async function retiredStatuses(name: string): Promise<SkillTargetState[]> {
+    const metadata = RETIRED_SKILLS[name];
+    if (!metadata) return [];
+    const statuses = await Promise.all(
+      (await targetsFor(name)).map(async (target) => ({
+        ...(await statusFor(name, metadata.version, target)),
+        retired: true,
+      })),
+    );
+    return statuses.filter((status) => status.status !== "not_installed" && status.status !== "unknown_path");
   }
 
   async function resolveTarget(targetId: string, name: string): Promise<SkillTarget> {
@@ -329,6 +366,11 @@ export function createSkillService(options: SkillServiceOptions): SkillService {
   async function installDocument(document: SkillDocument, target: SkillTarget): Promise<SkillTargetStatus> {
     const targetDirectory = target.directory;
     if (!targetDirectory) throw skillError("CONFIG_INVALID", "skill 安装位置无效。", target.targetId);
+    const currentVersion = await installedVersion(path.dirname(targetDirectory), document.info.name);
+    const comparison = currentVersion === null ? null : compareVersions(currentVersion, document.info.version);
+    if (comparison !== null && comparison > 0) {
+      return statusFor(document.info.name, document.info.version, target);
+    }
     await atomicWrite(path.join(targetDirectory, "SKILL.md"), document.content);
     if (target.projectPath) await updateProjectManifest(target.projectPath, document.info.name, document.info.version);
     return statusFor(document.info.name, document.info.version, target);
@@ -337,14 +379,34 @@ export function createSkillService(options: SkillServiceOptions): SkillService {
   return {
     async list() {
       const [documents, projects] = await Promise.all([readSkills(), projectEntries()]);
-      return Promise.all(documents.map((document) => infoWithUpdate(document, projects)));
+      const activeSkills = await Promise.all(documents.map((document) => infoWithUpdate(document, projects)));
+      const retiredSkills: SkillInfoState[] = [];
+      for (const [name, metadata] of Object.entries(RETIRED_SKILLS)) {
+        if ((await retiredStatuses(name)).length === 0) continue;
+        retiredSkills.push({ ...metadata, has_update: false, retired: true });
+      }
+      return [...activeSkills, ...retiredSkills].sort((left, right) =>
+        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+      );
     },
     async get(nameValue) {
+      const name = validateSkillName(nameValue);
+      if (RETIRED_SKILLS[name]) {
+        if ((await retiredStatuses(name)).length === 0) {
+          throw skillError("CONFIG_INVALID", "此 Skill 已退役且没有已安装副本。", name);
+        }
+        return {
+          info: { ...RETIRED_SKILLS[name], has_update: false, retired: true },
+          body: "此 Skill 已退役。SiteIndex 不会删除或改写已安装的副本；如需继续使用，请由用户自行管理该目录。",
+        };
+      }
       const document = await readSkill(nameValue);
       const info = await infoWithUpdate(document, await projectEntries());
       return { info, body: document.content.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "") };
     },
     async targets(nameValue) {
+      const name = validateSkillName(nameValue);
+      if (RETIRED_SKILLS[name]) return retiredStatuses(name);
       const document = await readSkill(nameValue);
       return Promise.all(
         (await targetsFor(document.info.name)).map((target) =>
@@ -353,6 +415,8 @@ export function createSkillService(options: SkillServiceOptions): SkillService {
       );
     },
     async install(nameValue, targetIdValue) {
+      const name = validateSkillName(nameValue);
+      if (RETIRED_SKILLS[name]) throw skillError("CONFIG_INVALID", "此 Skill 已退役，不能重新安装。", name);
       const document = await readSkill(nameValue);
       if (typeof targetIdValue !== "string" || !targetIdValue.trim()) {
         throw skillError("CONFIG_INVALID", "请选择 skill 安装位置。", String(targetIdValue));

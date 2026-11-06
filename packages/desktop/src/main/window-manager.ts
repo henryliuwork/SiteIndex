@@ -18,6 +18,7 @@ export interface WindowManagerOptions {
   initiallyHidden: boolean;
   shouldHideOnClose: () => boolean;
   isShuttingDown: () => boolean;
+  requestQuit: () => void;
 }
 
 export function createWindowManager(options: WindowManagerOptions) {
@@ -171,10 +172,10 @@ export function createWindowManager(options: WindowManagerOptions) {
     });
     window.on("close", (event) => {
       saveWindowBounds(window);
-      if (options.shouldHideOnClose() && !options.isShuttingDown()) {
-        event.preventDefault();
-        window.hide();
-      }
+      if (options.isShuttingDown()) return;
+      event.preventDefault();
+      if (options.shouldHideOnClose()) window.hide();
+      else options.requestQuit();
     });
     window.webContents.setWindowOpenHandler(({ url }) => {
       if (isHttpUrl(url)) void shell.openExternal(url);

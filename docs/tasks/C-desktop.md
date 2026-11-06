@@ -138,3 +138,11 @@
 - [x] 新增三个脱敏 EDM skill：`siteindex-edm-plan`、`siteindex-edm-build`、`siteindex-edm-mc-send`，版本为 `1.0.0`；逐行检查敏感信息，路径通过 `workspace.json` 逻辑键解析。
 - [ ] 增加公开安全扫描脚本；初始仅告警。
 - [ ] 按模板草案新增 `templates/workspace/`。
+
+## v0.4 · C4-1（不依赖 A4-3 的部分）
+
+- [x] `close_to_tray` 默认开、`launch_at_login` 默认关；保存与旧设置迁移已接入。
+- [x] 托盘支持打开、下次计划、立即同步和退出；退出时有运行中 Job 会确认。
+- [x] 技能目标新增 `agents-dir`（`~/.agents/skills`）；同步时保留版本高于内置版本的本地副本。
+- [x] 从内置分发移除 `edm-builder`；发现已安装副本时返回退役状态，不自动删除或重装。
+- [ ] A4-3 合并后接入 workspace、importCheck 与相关打包资源。
