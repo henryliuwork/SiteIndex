@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip, TabPanel, Tabs } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, PageHeader, TabPanel, Tabs, useToast } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
 import "./app-settings/page.css";
 
@@ -19,6 +19,7 @@ type SettingsTab = (typeof settingsTabs)[number]["value"];
 
 export function AppSettingsPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<SettingsTab>("basic");
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
   const browserQuery = useQuery({ queryKey: ["settings", "browser"], queryFn: () => api.settings.detectBrowser(), enabled: activeTab === "environment" });
@@ -34,7 +35,6 @@ export function AppSettingsPage() {
   const [installingCli, setInstallingCli] = useState(false);
   const [sendingTestNotification, setSendingTestNotification] = useState(false);
   const [openingLogs, setOpeningLogs] = useState(false);
-  const [feedback, setFeedback] = useState("");
 
   useEffect(() => {
     if (settingsQuery.data) setDraft(settingsQuery.data);
@@ -43,17 +43,15 @@ export function AppSettingsPage() {
   const saveSettings = async (patch: Partial<AppSettings>, message = "已保存") => {
     if (saving) return;
     setSaving(true);
-    setFeedback("");
     try {
       const saved = await api.settings.set(patch);
       queryClient.setQueryData(["settings"], saved);
       setDraft(saved);
-      setFeedback(message);
+      toast.success(message);
     } catch (error) {
-      setFeedback("保存失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("保存失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setSaving(false);
-      window.setTimeout(() => setFeedback(""), 2600);
     }
   };
 
@@ -74,71 +72,65 @@ export function AppSettingsPage() {
       const selected = await api.settings.chooseDirectory(draft.projects_root);
       if (selected) await saveSettings({ projects_root: selected });
     } catch (error) {
-      setFeedback("选择目录失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("选择目录失败：" + apiErrorMessage(error, "请稍后重试"));
     }
   };
 
   const testBrowser = async () => {
     if (!draft || testingBrowser) return;
     setTestingBrowser(true);
-    setFeedback("");
     try {
       const saved = await api.settings.set({ browser: draft.browser });
       queryClient.setQueryData(["settings"], saved);
       setDraft(saved);
       const result = await browserQuery.refetch();
-      setFeedback(result.data?.available ? `检测到 ${result.data.name ?? "可用浏览器"}` : "未检测到可用浏览器，请检查自定义路径");
+      result.data?.available
+        ? toast.success(`检测到 ${result.data.name ?? "可用浏览器"}`)
+        : toast.info("未检测到可用浏览器，请检查自定义路径");
     } catch (error) {
-      setFeedback("浏览器检测失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("浏览器检测失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setTestingBrowser(false);
-      window.setTimeout(() => setFeedback(""), 3000);
     }
   };
 
   const installCli = async () => {
     if (installingCli) return;
     setInstallingCli(true);
-    setFeedback("");
     try {
       const status = await api.settings.installCli();
       queryClient.setQueryData(["settings", "cli"], status);
-      setFeedback(status.installed ? "siteindex 命令已安装" : "安装未完成");
+      status.installed ? toast.success("siteindex 命令已安装") : toast.info("安装未完成");
     } catch (error) {
-      setFeedback("安装失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("安装失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setInstallingCli(false);
-      window.setTimeout(() => setFeedback(""), 2600);
     }
   };
 
   const sendTestNotification = async () => {
     if (!api.settings.sendTestNotification || sendingTestNotification) return;
     setSendingTestNotification(true);
-    setFeedback("");
     try {
       await api.settings.sendTestNotification();
-      setFeedback("测试通知已发送");
+      toast.success("测试通知已发送");
     } catch (error) {
-      setFeedback("发送测试通知失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("发送测试通知失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setSendingTestNotification(false);
-      window.setTimeout(() => setFeedback(""), 3000);
     }
   };
 
   const openLogs = async () => {
     if (!api.settings.openLogs || openingLogs) return;
     setOpeningLogs(true);
-    setFeedback("");
     try {
       await api.settings.openLogs();
-      setFeedback("已打开日志目录");
+      toast.success("已打开日志目录");
     } catch (error) {
-      setFeedback("打开日志目录失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("打开日志目录失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setOpeningLogs(false);
-      window.setTimeout(() => setFeedback(""), 3000);
     }
   };
 
@@ -148,12 +140,12 @@ export function AppSettingsPage() {
       return;
     }
     try { await api.shell.openExternal(RELEASES_URL); }
-    catch (error) { setFeedback("无法打开下载页面：" + apiErrorMessage(error, "请稍后重试")); }
+    catch (error) { toast.error("无法打开下载页面：" + apiErrorMessage(error, "请稍后重试")); }
   };
 
   const openManualUpdate = async (url: string) => {
     try { await api.shell.openExternal(url); }
-    catch (error) { setFeedback("无法打开下载页面：" + apiErrorMessage(error, "请稍后重试")); }
+    catch (error) { toast.error("无法打开下载页面：" + apiErrorMessage(error, "请稍后重试")); }
   };
 
   const savePlatforms = (skillPlatforms: SkillPlatform[]) => {
@@ -177,13 +169,12 @@ export function AppSettingsPage() {
 
   return (
     <div className="si-page si-app-settings-page">
-      <header className="si-app-settings-heading"><h1>设置</h1><code>{settingsPath} · 只对本机生效</code></header>
+      <PageHeader title="设置" meta={<code>{settingsPath} · 只对本机生效</code>} />
       <Tabs value={activeTab} options={settingsTabs} onChange={setActiveTab} ariaLabel="软件设置分区" tabIdPrefix="app-settings-tab" panelIdPrefix="app-settings-panel" />
       {platformQuery.isError && <ApiErrorNotice label="系统平台信息读取失败。" error={platformQuery.error} onRetry={() => void platformQuery.refetch()} />}
-      {feedback && <p className="si-feedback" role="status">{feedback}</p>}
 
-      <TabPanel id={`app-settings-panel-${activeTab}`} labelledBy={`app-settings-tab-${activeTab}`}>
-      {activeTab === "basic" && <section className="si-app-settings-card">
+      <TabPanel className="si-app-settings-panel" id={`app-settings-panel-${activeTab}`} labelledBy={`app-settings-tab-${activeTab}`}>
+      {activeTab === "basic" && <Card className="si-app-settings-card">
         <h2>常规</h2>
         <div className="si-app-setting-row">
           <label htmlFor="si-projects-root">项目根目录</label>
@@ -203,9 +194,9 @@ export function AppSettingsPage() {
           <input id="si-cache-dir" className="si-setting-input si-setting-mono" value={draft.cache_dir} onChange={(event) => setDraft({ ...draft, cache_dir: event.target.value })} onBlur={() => void saveSettings({ cache_dir: draft.cache_dir })} />
           <span className="si-setting-hint">数据库等不进云盘</span>
         </div>
-      </section>}
+      </Card>}
 
-      {activeTab === "basic" && <section className="si-app-settings-card si-project-migration-card">
+      {activeTab === "basic" && <Card className="si-app-settings-card si-project-migration-card">
         <h2>移动或重新添加项目</h2>
         <ol className="si-project-migration-steps">
           <li><span aria-hidden="true">①</span><span className="si-sr-only">第 1 步：</span>先在文件管理器里把项目文件夹移到新位置。</li>
@@ -213,10 +204,10 @@ export function AppSettingsPage() {
           <li><span aria-hidden="true">③</span><span className="si-sr-only">第 3 步：</span>在项目中心点击“添加已有项目”，选择新位置。添加完成后，到“定时任务”页点“校验”，确认系统计划任务指向新位置；如果提示路径不一致，点“修复”。</li>
           <li><span aria-hidden="true">④</span><span className="si-sr-only">第 4 步：</span>在“定时任务”页确认计划任务已重新启用。</li>
         </ol>
-      </section>}
+      </Card>}
 
       {activeTab === "environment" && <>
-      <section className="si-app-settings-card">
+      <Card className="si-app-settings-card">
         <h2>浏览器（设计规范提取）</h2>
         <div className="si-app-setting-row si-browser-detected">
           <strong>检测到的浏览器</strong>
@@ -228,9 +219,9 @@ export function AppSettingsPage() {
           <input id="si-browser-path" className="si-setting-input si-setting-mono" placeholder="留空则自动使用 Edge / Chrome" value={draft.browser.executable_path ?? ""} onChange={(event) => setDraft({ ...draft, browser: { ...draft.browser, channel: event.target.value ? "custom" : "msedge", executable_path: event.target.value || null } })} onBlur={saveBrowserPath} />
           <Button disabled={testingBrowser} onClick={() => void testBrowser()}>{testingBrowser ? "检测中…" : "测试"}</Button>
         </div>
-      </section>
+      </Card>
 
-      <section className="si-app-settings-card">
+      <Card className="si-app-settings-card">
         <h2>命令行</h2>
         <div className="si-app-setting-row">
           <strong>siteindex 命令</strong>
@@ -242,10 +233,10 @@ export function AppSettingsPage() {
           {cliQuery.isLoading ? <span className="si-setting-hint" role="status">正在检查…</span> : cliQuery.isError ? <ApiErrorNotice className="si-setting-error" label="命令行状态读取失败" error={cliQuery.error} onRetry={() => void cliQuery.refetch()} /> : <code className="si-setting-hint si-setting-mono">{cliStatus?.path ?? "尚未安装"}</code>}
           <Chip tone={cliStatus?.installed ? "ok" : "warn"}>{cliStatus?.installed ? "已安装" : "未安装"}</Chip>
         </div>
-      </section>
+      </Card>
       </>}
 
-      {activeTab === "notifications" && <section className="si-app-settings-card">
+      {activeTab === "notifications" && <Card className="si-app-settings-card">
         <h2>通知</h2>
         <div className="si-app-setting-row si-notify-row">
           <strong>系统通知</strong>
@@ -262,9 +253,9 @@ export function AppSettingsPage() {
           <input id="si-dingtalk-webhook" className="si-setting-input si-setting-mono" type="password" autoComplete="new-password" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…" value={draft.notify.dingtalk_webhook ?? ""} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, dingtalk_webhook: event.target.value || null } })} onBlur={() => void saveSettings({ notify: draft.notify })} />
           {api.settings.sendTestNotification && <Button disabled={sendingTestNotification} onClick={() => void sendTestNotification()}>{sendingTestNotification ? "发送中…" : "发送测试"}</Button>}
         </div>
-      </section>}
+      </Card>}
 
-      {activeTab === "skills" && <section className="si-app-settings-card">
+      {activeTab === "skills" && <Card className="si-app-settings-card">
         <h2>Agent 平台 Skill 目录</h2>
         {draft.skill_platforms.map((platform, index) => {
           const detectedPlatform = platform.id === "claude-code" && platform.detected;
@@ -278,9 +269,9 @@ export function AppSettingsPage() {
           </div>;
         })}
         <div className="si-platform-add-row"><Button icon={<Plus size={15} />} onClick={() => savePlatforms([...draft.skill_platforms, { id: `custom-${Date.now()}`, name: "新平台", dir: "", detected: false }])}>添加平台目录</Button></div>
-      </section>}
+      </Card>}
 
-      {activeTab === "about" && <section className="si-app-settings-card">
+      {activeTab === "about" && <Card className="si-app-settings-card">
         <h2>关于</h2>
         <div className="si-app-setting-row">
           <strong>版本</strong>
@@ -312,7 +303,7 @@ export function AppSettingsPage() {
           <code className="si-setting-hint si-setting-mono">{logsPath}</code>
           {api.settings.openLogs && <Button disabled={openingLogs} onClick={() => void openLogs()}>{openingLogs ? "打开中…" : "打开"}</Button>}
         </div>
-      </section>}
+      </Card>}
       </TabPanel>
       {saving && <span className="si-sr-only" role="status">正在保存软件设置…</span>}
     </div>

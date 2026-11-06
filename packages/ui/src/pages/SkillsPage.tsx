@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Check, Copy, RefreshCw } from "lucide-react";
 import type { SkillInfo, SkillTargetStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Chip } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, EmptyState, Notice, PageHeader, useToast } from "../components";
 import "./skills/page.css";
 
 function statusLabel(status: SkillTargetStatus["status"]): string {
@@ -29,10 +29,10 @@ function versionTone(skill: SkillInfo): "warn" | "neutral" {
 export function SkillsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [busyTarget, setBusyTarget] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [feedback, setFeedback] = useState("");
 
   const skillsQuery = useQuery({ queryKey: ["skills"], queryFn: () => api.skills.list() });
   const activeName = selectedName ?? skillsQuery.data?.[0]?.name ?? "";
@@ -51,27 +51,24 @@ export function SkillsPage() {
   const handleSyncAll = async () => {
     if (syncing) return;
     setSyncing(true);
-    setFeedback("");
     try {
       await api.skills.syncAllProjects();
       await queryClient.invalidateQueries({ queryKey: ["skills"] });
-      setFeedback("已同步到所有项目");
+      toast.success("已同步到所有项目");
     } catch (error) {
-      setFeedback("同步失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("同步失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setSyncing(false);
-      window.setTimeout(() => setFeedback(""), 2600);
     }
   };
 
   const handleCopy = async (text: string, success: string) => {
     try {
       await api.shell.copyText(text);
-      setFeedback(success);
+      toast.success(success);
     } catch (error) {
-      setFeedback("复制失败：" + (apiErrorMessage(error, "请检查剪贴板权限")));
+      toast.error("复制失败：" + apiErrorMessage(error, "请检查剪贴板权限"));
     }
-    window.setTimeout(() => setFeedback(""), 2600);
   };
 
   const handleInstall = async (target: SkillTargetStatus) => {
@@ -81,22 +78,20 @@ export function SkillsPage() {
       return;
     }
     setBusyTarget(target.target_id);
-    setFeedback("");
     try {
       await api.skills.install(activeName, target.target_id);
       await queryClient.invalidateQueries({ queryKey: ["skills", "targets", activeName] });
-      setFeedback(`${target.name} 已更新`);
+      toast.success(`${target.name} 已更新`);
     } catch (error) {
-      setFeedback("安装失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("安装失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setBusyTarget(null);
-      window.setTimeout(() => setFeedback(""), 2600);
     }
   };
 
   if (skillsQuery.isLoading) return <div className="si-page-loading" role="status">正在加载 Skill…</div>;
   if (skillsQuery.isError) return <ApiErrorNotice page label="Skill 列表加载失败。" error={skillsQuery.error} onRetry={() => void skillsQuery.refetch()} />;
-  if (!skillsQuery.data?.length) return <div className="si-page-loading"><strong>当前没有可用的 Skill</strong><span>检查软件 Skill 清单或安装目录后重试。</span><button type="button" onClick={() => void skillsQuery.refetch()}>重新检查</button></div>;
+  if (!skillsQuery.data?.length) return <EmptyState title="当前没有可用的 Skill" action={<Button onClick={() => void skillsQuery.refetch()}>重新检查</Button>}>检查软件 Skill 清单或安装目录后重试。</EmptyState>;
 
   const detail = detailQuery.data;
   const installText = detail
@@ -105,31 +100,24 @@ export function SkillsPage() {
 
   return (
     <div className="si-page si-skills-page">
-      <header className="si-skills-heading">
-        <div>
-          <h1>Skill 中心</h1>
-          <p>内置 {skillsQuery.data.length} 个 Skill · 版本随 SiteIndex 更新 · {skillsQuery.data.filter((skill) => skill.has_update).length} 个有更新未同步到项目</p>
-        </div>
-        <Button variant="primary" disabled={syncing} icon={syncing ? <RefreshCw size={15} className="si-skills-spin" /> : undefined} onClick={() => void handleSyncAll()}>
+      <PageHeader title="Skill 中心" meta={<>内置 {skillsQuery.data.length} 个 Skill · 版本随 SiteIndex 更新 · {skillsQuery.data.filter((skill) => skill.has_update).length} 个有更新未同步到项目</>} actions={<Button variant="primary" disabled={syncing} icon={syncing ? <RefreshCw size={15} className="si-skills-spin" /> : undefined} onClick={() => void handleSyncAll()}>
           {syncing ? "同步中…" : "同步到所有项目"}
-        </Button>
-      </header>
-      {feedback && <p className="si-feedback" role="status">{feedback}</p>}
+        </Button>} />
 
       <div className="si-skills-layout">
-        <section className="si-skills-list si-skills-card" aria-label="Skill 列表">
+        <Card className="si-skills-list" label="Skill 列表">
           {skillsQuery.data.map((skill) => (
             <button key={skill.name} type="button" className={`si-skill-choice${skill.name === activeName ? " active" : ""}`} aria-pressed={skill.name === activeName} onClick={() => setSelectedName(skill.name)}>
               <span className="si-skill-choice-top"><code>{skill.name}</code><Chip tone={versionTone(skill)}>{skill.version}{skill.has_update ? " 有更新" : ""}</Chip></span>
               <span className="si-skill-choice-description">{skill.description}</span>
             </button>
           ))}
-        </section>
+        </Card>
 
         <div className="si-skills-detail-column">
           {detailQuery.isLoading && <div className="si-page-loading" role="status">正在加载 Skill 详情…</div>}
           {detailQuery.isError && <ApiErrorNotice label="Skill 详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} />}
-          {detail && activeSkill && <section className="si-skill-detail si-skills-card" aria-label={`${detail.info.name} 详情`}>
+          {detail && activeSkill && <Card className="si-skill-detail" label={`${detail.info.name} 详情`}>
             <header className="si-skill-detail-heading">
               <div>
                 <div className="si-skill-title"><code>{detail.info.name}</code><Chip tone={versionTone(activeSkill)}>{detail.info.version}</Chip></div>
@@ -145,9 +133,9 @@ export function SkillsPage() {
               <div><span>写入</span><code>{detail.info.writes.length ? detail.info.writes.join("\n") : "（无）"}</code></div>
             </div>
             <pre className="si-skill-body"><code>{detail.body}</code></pre>
-          </section>}
+          </Card>}
 
-          <section className="si-skills-targets si-skills-card" aria-label="Skill 安装位置">
+          <Card className="si-skills-targets" label="Skill 安装位置">
             <header><strong>安装位置 · {detail?.info.name ?? activeName}</strong></header>
             {targetsQuery.isLoading && <p className="si-skills-inline-state" role="status">正在检查安装位置…</p>}
             {targetsQuery.isError && <ApiErrorNotice className="si-skills-inline-error" label="安装位置加载失败。" error={targetsQuery.error} onRetry={() => void targetsQuery.refetch()} />}
@@ -162,9 +150,9 @@ export function SkillsPage() {
                   <Button disabled={busyTarget !== null} onClick={() => void handleInstall(target)}>{busyTarget === target.target_id ? "处理中…" : action}</Button>
                 </div>;
               })}
-            </div> : !targetsQuery.isLoading && !targetsQuery.isError && <p className="si-skills-inline-state">尚未检测到安装位置，可在软件设置中添加平台目录。</p>}
+            </div> : !targetsQuery.isLoading && !targetsQuery.isError && <Notice tone="info" className="si-skills-target-empty" action={<Button onClick={() => navigate("/settings")}>管理平台目录</Button>}>尚未检测到安装位置，可在软件设置中添加平台目录。</Notice>}
             <footer><span>项目内的 Skill 写在 <code>_agent/skills/</code>，README 的任务路由指向它们，任何 agent 读 README 即可找到。</span><Button onClick={() => navigate("/settings")}>管理平台目录</Button></footer>
-          </section>
+          </Card>
         </div>
       </div>
     </div>
