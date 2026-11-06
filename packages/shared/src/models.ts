@@ -77,6 +77,11 @@ export interface SiteConfig {
     blog_sitemaps?: Url[];
     blog_url_patterns?: string[];
   };
+  workspace?: {
+    version: string;
+    sections: string[];
+    esp_presets: string[];
+  };
   sku_grouping?: {
     enabled: boolean;
     rule: SkuGroupingRule;
@@ -89,6 +94,8 @@ export interface SiteConfig {
     missing_as?: "out_of_stock" | "removed";
     missing_removed_after_days?: number;
     max_removed_ratio?: number;
+    stock_verify?: { enabled: boolean; graphql_url?: string; max_per_run?: number };
+    stock_rules?: { in_stock: string[]; out_of_stock: string[]; preorder?: string[] };
     feed_generated_at?: string;
     blog_url_patterns?: string[];
     exclude_url_patterns?: string[];
@@ -118,6 +125,8 @@ export interface SiteConfig {
     cooldown_days?: number;
     utm?: { source?: string; medium?: string };
     image_priority?: ("feed" | "manual")[];
+    image_host?: { type: "wordpress" };
+    discount_tiers?: number[];
   };
   /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
   workspace_folders: WorkspaceFolder[];
