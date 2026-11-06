@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import type { Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, KpiCard } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, KpiCard, PageHeader, useToast } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
 
 type ScheduleVerification = {
@@ -129,7 +129,7 @@ function ProjectCard({
     ["上新", project.today.new], ["移除", project.today.removed],
   ] as const;
   return (
-    <article className={"si-project-card" + (showWarning ? " is-warning" : "")}>
+    <Card className={"si-project-card" + (showWarning ? " is-warning" : "")}>
       <div className="si-project-card-heading">
         <div className="si-project-heading-copy">
           <Link to={"/p/" + project.id + "/inventory"} className="si-project-title">{project.name}</Link>
@@ -165,7 +165,7 @@ function ProjectCard({
         <span>最近同步 {formatSyncTime(project.sync.at)}</span>
         <span>执行设备 {project.runner_device ?? "—"}</span>
       </footer>
-    </article>
+    </Card>
   );
 }
 
@@ -306,8 +306,7 @@ export function ProjectCenterPage() {
   const scheduleQuery = useQuery({ queryKey: ["schedule", primary?.id], queryFn: () => api.schedule.get(primary!.id), enabled: Boolean(primary) });
   const runsQuery = useQuery({ queryKey: ["runs", primary?.id, "recent"], queryFn: () => api.jobs.history(primary!.id, 3), enabled: Boolean(primary) });
   const [addExistingOpen, setAddExistingOpen] = useState(false);
-  const [feedback, setFeedback] = useState("");
-  const [rootSetupFeedback, setRootSetupFeedback] = useState("");
+  const toast = useToast();
   const [settingRoot, setSettingRoot] = useState(false);
   const [selectedRun, setSelectedRun] = useState<RunLog | null>(null);
   const [runQuery, setRunQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
@@ -343,7 +342,6 @@ export function ProjectCenterPage() {
   const chooseProjectsRoot = async () => {
     if (settingRoot) return;
     setSettingRoot(true);
-    setRootSetupFeedback("");
     try {
       const selected = await api.settings.chooseDirectory(configuredRoot || undefined);
       if (!selected) return;
@@ -353,17 +351,17 @@ export function ProjectCenterPage() {
         queryClient.invalidateQueries({ queryKey: ["settings"] }),
         queryClient.invalidateQueries({ queryKey: projectQueryKeys.list, exact: true }),
       ]);
-      setRootSetupFeedback("项目根目录已保存。");
+      toast.success("项目根目录已保存。");
     } catch (cause) {
-      setRootSetupFeedback("设置项目根目录失败：" + (cause instanceof Error ? cause.message : "请稍后重试"));
+      toast.error("设置项目根目录失败：" + apiErrorMessage(cause, "请稍后重试"));
     } finally {
       setSettingRoot(false);
     }
   };
 
   const openFolder = async (path: string) => {
-    try { await api.shell.openPath(path); setFeedback("已打开项目文件夹。"); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "打开文件夹失败。")); }
+    try { await api.shell.openPath(path); toast.success("已打开项目文件夹。"); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "打开文件夹失败。")); }
   };
   const handleAdded = async (project: ProjectSummary) => {
     const verify = api.schedule.verify;
@@ -376,7 +374,7 @@ export function ProjectCenterPage() {
       });
     }
     await invalidateProjectSummary(queryClient, project.id);
-    setFeedback("已添加项目：" + project.name);
+    toast.success("已添加项目：" + project.name);
   };
 
   const removeProject = async () => {
@@ -391,9 +389,9 @@ export function ProjectCenterPage() {
       queryClient.removeQueries({ queryKey: projectQueryKeys.detail(project.id), exact: true });
       queryClient.removeQueries({ queryKey: ["schedule", project.id] });
       queryClient.removeQueries({ queryKey: ["runs", project.id] });
-      setFeedback("已从项目中心移除：" + project.name);
+      toast.success("已从项目中心移除：" + project.name);
     } catch (cause) {
-      setFeedback(apiErrorMessage(cause, "移除项目失败，请重试。"));
+      toast.error(apiErrorMessage(cause, "移除项目失败，请重试。"));
     } finally {
       setRemovingProject(false);
     }
@@ -408,21 +406,15 @@ export function ProjectCenterPage() {
 
   return (
     <div className="si-page si-project-center">
-      <header className="si-page-heading si-center-heading">
-        <div>
-          <h1>项目中心</h1>
-          <p className="si-project-root-line">
-            <span>项目根目录 <code>{projectRoot}</code></span>
-            {needsRootSetup && <Button size="small" variant="primary" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}
-          </p>
-          {settingsQuery.isError && <ApiErrorNotice className="si-center-query-error" label="项目根目录读取失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
-          {rootSetupFeedback && <p className="si-project-root-feedback" role="status">{rootSetupFeedback}</p>}
-        </div>
-        <div className="si-page-actions">
+      <PageHeader
+        title="项目中心"
+        meta={<div className="si-project-root-line"><span>项目根目录 <code>{projectRoot}</code></span>{needsRootSetup && <Button size="small" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}</div>}
+        actions={<>
           <Button icon={<FolderOpen size={15} />} onClick={() => setAddExistingOpen(true)}>添加已有项目</Button>
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
-        </div>
-      </header>
+        </>}
+      />
+      {settingsQuery.isError && <ApiErrorNotice className="si-center-query-error" label="项目根目录读取失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
       {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : <>
         <div className="si-center-kpis">
           {metrics.slice(0, 3).map((metric) => metric.key === "attention"
@@ -435,11 +427,7 @@ export function ProjectCenterPage() {
         </div>
         {attentionExpanded && <AttentionList projects={projects} />}
         <section className="si-project-grid" aria-label="项目列表">
-          {projects.length === 0 ? <div className="si-project-empty" role="status">
-            <FolderOpen size={22} aria-hidden="true" />
-            <strong>还没有项目</strong>
-            <span>新建项目，或添加云盘中已有的 SiteIndex 项目文件夹。</span>
-          </div> : <>
+          {projects.length === 0 ? <div className="si-project-empty"><EmptyState icon={<FolderOpen size={22} />} title="还没有项目">新建项目，或添加云盘中已有的 SiteIndex 项目文件夹。</EmptyState></div> : <>
             {projects.map((project) => <ProjectCard
               key={project.id}
               project={project}
@@ -450,7 +438,6 @@ export function ProjectCenterPage() {
             <Link className="si-new-project-card" to="/new/url"><Plus size={22} /><strong>新建项目</strong><span>输入网址，3 分钟生成工作区</span></Link>
           </>}
         </section>
-        {feedback && <p className="si-feedback" role="status">{feedback}</p>}
         <section className="si-recent-runs" aria-label="最近运行">
           {runsQuery.isLoading ? <>
             <div className="si-recent-heading"><h2>最近运行</h2><span className="si-muted" role="status">正在读取…</span></div>
@@ -489,9 +476,9 @@ export function ProjectCenterPage() {
         confirmLabel={removingProject ? "移除中…" : "移除项目"}
         onConfirm={removeProject}
       />
-      <DetailPanel open={Boolean(selectedRun)} onClose={() => setSelectedRun(null)} title="运行详情">
+      <Drawer open={Boolean(selectedRun)} onOpenChange={(open) => { if (!open) setSelectedRun(null); }} title="运行详情">
         {selectedRun && <RunDetail run={selectedRun} />}
-      </DetailPanel>
+      </Drawer>
     </div>
   );
 }
