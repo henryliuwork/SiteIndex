@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
-import { useParams } from "react-router-dom";
-import type { EdmCommandInput, Kpi, ListQuery, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
+import { useNavigate, useParams } from "react-router-dom";
+import type { EdmCommandInput, Kpi, ListQuery, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterPill, KpiCard, ProjectHeader, ProjectTabPanel, SearchInput, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, stockTone } from "../components";
+import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
@@ -14,6 +15,27 @@ const viewOptions: { value: ImageView; label: string }[] = [
   { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "no_feed", label: "未抓取到首图" },
   { value: "has_manual", label: "已填手动图" }, { value: "none", label: "缺图" },
 ];
+
+function EdmGroupingPreview({ projectId, rule, enabled }: { projectId: string; rule: SkuGroupingRule; enabled: boolean }) {
+  const previewQuery = useQuery({
+    queryKey: skuGroupingPreviewQueryKey(projectId, rule),
+    queryFn: () => fetchSkuGroupingPreview(api, projectId, rule),
+    enabled,
+    staleTime: 60_000,
+  });
+  const preview = previewQuery.data;
+  return <div className="si-edm-grouping-preview">
+    <div className="si-edm-grouping-rule"><span>当前规则</span><code>{rule.type} · {rule.value}</code></div>
+    {previewQuery.isLoading ? <p role="status">正在通过 Core 计算 SKU 分组预览…</p>
+      : previewQuery.isError ? <ApiErrorNotice label="SKU 分组预览加载失败。" error={previewQuery.error} onRetry={() => void previewQuery.refetch()} />
+        : preview ? <>
+          <div className="si-edm-grouping-stats"><span><strong>{preview.parents}</strong> 个父 SKU</span><span>已匹配 <strong>{preview.children}</strong> 个子 SKU</span><span>未匹配 <strong>{preview.unmatched}</strong> 个</span></div>
+          {preview.samples.length > 0 ? <ul>{preview.samples.slice(0, 6).map((sample) => <li key={sample.parent}><code>{sample.parent}</code><span>{sample.children.length} 个：{sample.children.slice(0, 4).join("、")}{sample.children.length > 4 ? " …" : ""}</span></li>)}</ul> : <p>当前规则没有可展示的分组样例。</p>}
+          {preview.collisions?.length ? <details><summary>有 {preview.collisions.length} 组父 SKU 本身也在售，已跳过分组</summary><ul>{preview.collisions.map((collision) => <li key={collision.parent}><code>{collision.parent}</code><span>子 SKU：{collision.children.length ? collision.children.join("、") : "未提供明细"}</span></li>)}</ul></details> : null}
+          <small>规则预览不代表父 SKU 的库存或在线率。</small>
+        </> : <p role="status">正在准备 SKU 分组预览…</p>}
+  </div>;
+}
 
 function ImageThumbnail({ src, label }: { src: string | null; label: string }) {
   const [failed, setFailed] = useState(false);
@@ -65,13 +87,18 @@ function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
 
 export function EdmPage() {
   const { id = "demo" } = useParams();
-  const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 20, filters: {} });
+  const navigate = useNavigate();
+  const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 50, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
+  const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["edm", "summary", id], queryFn: () => api.edm.summary(id) });
   const listQuery = useQuery({ queryKey: ["edm", "images", id, query], queryFn: () => api.edm.listImages(id, query) });
   const project = projectQuery.data?.summary;
+  const skuGrouping = projectQuery.data?.config.sku_grouping;
+  const groupingEnabled = skuGrouping?.enabled === true;
+  const groupingRule: SkuGroupingRule = skuGrouping?.rule ?? { type: "separator", value: "-" };
   const summary = summaryQuery.data;
   const columns = useMemo(() => imageColumns(id), [id]);
   const currentView: ImageView = query.filters?.view ?? "all";
@@ -83,6 +110,18 @@ export function EdmPage() {
   ] : [];
 
   const setSearch = (search: string) => setQuery((current) => ({ ...current, page: 1, search: search || undefined }));
+  const onParentOnlyChange = (checked: boolean) => {
+    if (!groupingEnabled) {
+      setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: undefined } }));
+      if (checked) setGroupingDrawerOpen(true);
+      return;
+    }
+    setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: checked || undefined } }));
+  };
+  const openGroupingSettings = () => {
+    setGroupingDrawerOpen(false);
+    navigate("/p/" + id + "/settings/config?section=sku-grouping");
+  };
   const copyCommand = async () => {
     try {
       const input: EdmCommandInput = { theme: "当前 EDM 活动", count: summary?.total ?? 1 };
@@ -106,9 +145,10 @@ export function EdmPage() {
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
-      showPagination={false} emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
+      emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-top"><h2>SKU 宣传图</h2><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />
+          <label className="si-edm-parent-toggle"><input type="checkbox" aria-label="仅展示父 SKU" checked={Boolean(query.filters?.parent_only && groupingEnabled)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>
           <div className="si-content-filter-row">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, view: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}</div>
           <span className="si-content-total">显示 {listQuery.data?.total ?? 0} 个</span>
         </div>
@@ -129,6 +169,10 @@ export function EdmPage() {
         }}><ExternalLink size={13} />打开图片</Button>}
       </div>}
     </DetailPanel>
+    <Drawer open={groupingDrawerOpen} onOpenChange={setGroupingDrawerOpen} title="配置父子 SKU 规则" description="仅当项目启用分组后，EDM 图片列表才会筛选父 SKU。预览由 Core 计算。" footer={<div className="si-edm-drawer-actions"><Button onClick={() => setGroupingDrawerOpen(false)}>关闭</Button><Button variant="primary" onClick={openGroupingSettings}>前往项目设置</Button></div>}>
+      <Notice tone="warn" title="当前未启用父子 SKU 分组">“仅展示父 SKU”暂时不会改变 EDM 图片列表。先在项目设置中启用规则，再返回这里筛选。</Notice>
+      <EdmGroupingPreview projectId={id} rule={groupingRule} enabled={groupingDrawerOpen} />
+    </Drawer>
     </ProjectTabPanel>
   </div>;
 }
