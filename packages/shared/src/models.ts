@@ -567,6 +567,42 @@ export interface ValidationReport {
 
 // ---------- 设计规范 ----------
 
+export type DesignColorRole = "primary" | "secondary" | "text" | "text_muted" | "background" | "surface" | "border" | "sale" | "link";
+
+/** v2 颜色角色；无法可靠识别的角色由角色映射设为 null。confidence 范围为 0 到 1。 */
+export interface DesignColorRoleValue {
+  value: string;
+  source: string;
+  confidence: number;
+}
+
+export type DesignColorRoles = Record<DesignColorRole, DesignColorRoleValue | null>;
+
+/** v2 字号阶层名称；保留通用 string 键，以兼容已有 tokens.json 中的其他字号键。 */
+export type DesignTypographyScaleKey = "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "body" | "small" | "caption";
+
+export interface DesignTypographyScaleValue {
+  size: string;
+  weight: number;
+  line_height: string;
+  letter_spacing?: string;
+}
+
+export type DesignButtonVariant = "primary" | "secondary" | "outline";
+
+export interface DesignButtonTokens {
+  background: string | null;
+  text_color: string | null;
+  border: string | null;
+  border_radius: string | null;
+  padding: string | null;
+  font_size: string | null;
+  font_weight: number | null;
+  hover_background?: string | null;
+}
+
+export type DesignButtons = Record<DesignButtonVariant, DesignButtonTokens | null>;
+
 export interface DesignTokens {
   extracted_at: ISODateTime;
   source_pages: Url[];
@@ -581,19 +617,26 @@ export interface DesignTokens {
     border?: string | null;
     sale?: string | null;
     palette: { value: string; count: number }[];
+    /** v2 按用途提取颜色，未取得可信值时对应角色为 null。 */
+    roles?: DesignColorRoles;
   };
   typography: {
-    font_families: { heading?: string; body?: string };
-    scale: Record<string, { size: string; weight: number; line_height: string }>;
+    font_families: { heading?: string; body?: string; mono?: string };
+    /** v2 使用 h1–h6、body、small、caption 键；旧的其他键继续兼容。 */
+    scale: Record<string, DesignTypographyScaleValue>;
   };
+  /** v2 写入按频率归一化后的最多 6 个值；旧文件仍按原数组读取。 */
   spacing: string[];
+  /** v2 写入按频率归一化后的最多 6 个值；旧文件仍按原数组读取。 */
   radius: string[];
+  /** v2 写入按频率归一化后的最多 6 个值；旧文件仍按原数组读取。 */
   shadow: string[];
   components: Record<string, Record<string, string | number>>;
   assets: { logo?: Url | null; favicon?: Url | null };
   email_safe?: { font_stack?: string; button_color?: string };
+  /** v2 按钮规范；暂未识别的按钮变体为 null。 */
+  buttons?: DesignButtons;
 }
-
 // ---------- README ----------
 
 export type ReadmeBlockId = "index-summary" | "folder-map" | "task-routing" | "data-guide" | "design-summary" | "changelog";
