@@ -1,10 +1,11 @@
 import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { CSV_HEADERS, EXIT, PATHS, dailyReportFile, eventsFile, type CategoryMode } from "@siteindex/shared";
+import { CSV_HEADERS, EXIT, pathsFor, type CategoryMode } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { readCsv, writeCsv } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
+import { resolveProjectLayout } from "../io/project-layout";
 
 type StockStatus = "in_stock" | "out_of_stock" | "preorder" | "unknown";
 type EventType = "stock_change" | "price_change" | "new_sku" | "removed_sku" | "restored_sku";
@@ -220,8 +221,8 @@ function addCounts(map: Map<string, StockCounts>, category: string, status: Stoc
   counts[status] += 1;
   map.set(category, counts);
 }
-async function appendRun(project: string, record: JsonRecord): Promise<void> {
-  const pathToRuns = path.join(project, PATHS.runs);
+async function appendRun(project: string, relativePath: string, record: JsonRecord): Promise<void> {
+  const pathToRuns = path.join(project, relativePath);
   const rows = await readJsonl(pathToRuns);
   const next = rows.filter((row) => row.run_id !== record.run_id);
   next.push(record);
@@ -230,7 +231,8 @@ async function appendRun(project: string, record: JsonRecord): Promise<void> {
 
 /** 合并一份解析后的 feed 快照，输出每日 SKU、库存、事件、汇总、日报与 runs。 */
 export async function runDaily(project: string, snapshot: readonly DailySnapshot[], options: DailyOptions = {}): Promise<DailyResult> {
-  const sitePath = path.join(project, PATHS.site);
+  const paths = pathsFor(await resolveProjectLayout(project));
+  const sitePath = path.join(project, paths.site);
   const site = JSON.parse(await readFile(sitePath, "utf8")) as DailySite;
   const now = nowDate(options.now);
   const timezone = site.timezone ?? "UTC";
@@ -239,7 +241,7 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
   const finishedAt = isoInZone(nowDate(options.now), timezone);
   const runId = `${day}-daily`;
   const fail = async (exitCode: number, message: string, counts: Record<string, number> = {}): Promise<DailyResult> => {
-    await appendRun(project, { run_id: runId, job: "daily", started_at: startedAt, finished_at: finishedAt,
+    await appendRun(project, paths.runs, { run_id: runId, job: "daily", started_at: startedAt, finished_at: finishedAt,
       status: "failed", counts, errors: [message] });
     return { exitCode, status: "failed", counts, errors: [message] };
   };
@@ -260,8 +262,8 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
     snapBy.set(row.sku, row);
   }
 
-  const skuRows = await readJsonl(path.join(project, PATHS.skus));
-  const latestRows = await readJsonl(path.join(project, PATHS.inventoryLatest));
+  const skuRows = await readJsonl(path.join(project, paths.skus));
+  const latestRows = await readJsonl(path.join(project, paths.inventoryLatest));
   const skus = new Map(skuRows.map((row) => [String(row.sku), row]));
   const latest = new Map(latestRows.map((row) => [String(row.sku), row]));
   const events: JsonRecord[] = [];
@@ -351,7 +353,7 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
     addCounts(aggregate, String(row.category || "uncategorized"), status);
     addCounts(aggregate, "_all", status);
   }
-  const summaryPath = path.join(project, PATHS.dailySummary);
+  const summaryPath = path.join(project, paths.dailySummary);
   const oldSummary = await readCsv(summaryPath);
   const summaryWithoutCurrent = oldSummary.filter((row) => row.date !== day);
   const previousDate = summaryWithoutCurrent.map((row) => String(row.date ?? "")).sort(compareKeys).at(-1);
@@ -377,9 +379,9 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
   const errors = status === "partial" ? [`unknown 库存占比过高: ${counts.unknown}/${counts.active}，请检查 feed 的 availability 字段或 stock_rules`] : [];
   const report = renderReport(site, day, aggregate, previous, events, skus, latest);
 
-  await writeJsonl(path.join(project, PATHS.skus), [...skus.values()], "sku");
-  await writeJsonl(path.join(project, PATHS.inventoryLatest), [...latest.values()], "inventory_latest");
-  const eventPath = path.join(project, eventsFile(day.slice(0, 7)));
+  await writeJsonl(path.join(project, paths.skus), [...skus.values()], "sku");
+  await writeJsonl(path.join(project, paths.inventoryLatest), [...latest.values()], "inventory_latest");
+  const eventPath = path.join(project, paths.eventsDir, `${day.slice(0, 7)}.jsonl`);
   const existingEvents = await readJsonl(eventPath);
   const eventKeys = new Set(existingEvents.map((event) => [event.date, event.sku, event.type].join("\u0000")));
   const appended = events.filter((event) => {
@@ -390,9 +392,9 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
   });
   await writeJsonl(eventPath, [...existingEvents, ...appended], "inventory_event");
   await writeCsv(summaryPath, summary, CSV_HEADERS.dailySummary, ["date", "category"]);
-  await mkdir(path.join(project, PATHS.dailyReportsDir), { recursive: true });
-  await atomicWrite(path.join(project, dailyReportFile(day)), report);
-  await appendRun(project, { run_id: runId, job: "daily", started_at: startedAt, finished_at: finishedAt,
+  await mkdir(path.join(project, paths.dailyReportsDir), { recursive: true });
+  await atomicWrite(path.join(project, paths.dailyReportsDir, `${day}.md`), report);
+  await appendRun(project, paths.runs, { run_id: runId, job: "daily", started_at: startedAt, finished_at: finishedAt,
     status, counts, errors });
   return { exitCode: EXIT.OK, status, counts, errors };
 }

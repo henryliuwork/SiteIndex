@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { EXIT, PATHS, type SeoPage, type SiteConfig } from "@siteindex/shared";
+import { EXIT, PATHS, pathsFor, type SeoPage, type SiteConfig } from "@siteindex/shared";
 import { createCoreService } from "../src/service";
 import type { BrowserLauncher, BrowserPage, BrowserSession } from "../src/browser/automation";
 import { launchChromium } from "../src/browser/automation";
@@ -264,6 +264,29 @@ describe("core browser jobs", () => {
     expect(saved.find((page) => page.url.endsWith("one"))).toMatchObject({ google_indexed: true, index_checked_at: "2026-10-26" });
     expect(saved.find((page) => page.url.endsWith("two"))).not.toHaveProperty("google_indexed");
     expect(saved.find((page) => page.url.endsWith("three"))).not.toHaveProperty("google_indexed");
+  });
+
+  it("writes index-check results under the workspace SEO directory", async () => {
+    const projectPath = await tempProject();
+    const paths = pathsFor("workspace");
+    await mkdir(path.join(projectPath, paths.index), { recursive: true });
+    await writeFile(path.join(projectPath, paths.site), JSON.stringify({ domain: "store.test" }), "utf8");
+    const session = fakeSession();
+
+    const result = await runIndexCheck({
+      projectPath,
+      pages: [{ url: "https://store.test/page", page_type: "page" }] as SeoPage[],
+      executablePath: "/usr/bin/chromium",
+      launchBrowser: async () => session.browser,
+      checkedAt: "2026-10-26",
+      wait: async () => undefined,
+    });
+
+    expect(result.checked).toBe(1);
+    const saved = (await readFile(path.join(projectPath, paths.seoPages), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line) as SeoPage);
+    expect(saved[0]).toMatchObject({ url: "https://store.test/page", google_indexed: false, index_checked_at: "2026-10-26" });
+    await expect(readFile(path.join(projectPath, PATHS.seoPages))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("returns EXIT 7 for design and index-check when the caller supplies no browser path", async () => {
