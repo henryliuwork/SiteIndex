@@ -21,15 +21,17 @@ import { createRunnerMock } from "./runner";
 import { createSkillsMock } from "./skills";
 import { createShellMock } from "./shell";
 import { createUpdatesMock } from "./updates";
+import { createWorkspaceMock } from "./workspace";
 
 export function createMockApi(options: { seoIssueStatus?: boolean } = {}): SiteIndexApi {
   const seo = createSeoMock();
+  const workspace = createWorkspaceMock();
   if (!options.seoIssueStatus) delete seo.setIssueStatus;
   return Object.assign({
     app: createAppMock(),
     uiState: createUiStateMock(),
     settings: createSettingsMock(),
-    projects: createProjectsMock(),
+    projects: createProjectsMock(workspace),
     sku: createSkuMock(),
     overview: createOverviewMock(),
     inventory: createInventoryMock(),
@@ -47,5 +49,5 @@ export function createMockApi(options: { seoIssueStatus?: boolean } = {}): SiteI
     runner: createRunnerMock(),
     skills: createSkillsMock(),
     shell: createShellMock(),
-  }, { updates: createUpdatesMock() });
+  }, { updates: createUpdatesMock(), workspace: workspace.api });
 }

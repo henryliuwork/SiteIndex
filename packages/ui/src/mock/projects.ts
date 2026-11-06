@@ -1,5 +1,6 @@
-import type { ProjectDetail, SiteIndexApi, SiteIndexError } from "@siteindex/shared";
+import type { CreateWorkspaceOnlyInput, ProjectDetail, ProjectSummary, SiteIndexApi, SiteIndexError, WorkspaceCreateInput } from "@siteindex/shared";
 import { beginRun, categorySeeds, clone, fixtures, mockMode, notifyProjectChanged, projectConfigs, projectIds, projectKey, projectSummaries, projectsChanged, reply, runners, stockSeeds, type MockProjectId } from "./context";
+import { createWorkspaceMock, type WorkspaceMock } from "./workspace";
 
 export const mockProjectNonFeedWarnings: Record<MockProjectId, string[]> = { demo: [], demo2: [] };
 const demoStoreHost = "demo-store.example.test";
@@ -20,7 +21,7 @@ function mockProjectIdForPath(normalizedPath: string): string {
   return "mock-" + (hash >>> 0).toString(36);
 }
 
-export function createProjectsMock(): SiteIndexApi["projects"] {
+export function createProjectsMock(workspaceMock: WorkspaceMock = createWorkspaceMock()): SiteIndexApi["projects"] {
   const createdPaths = new Map<string, string>();
   const addedProjects = new Map<string, ProjectDetail>();
   const removedProjectIds = new Set<string>();
@@ -102,8 +103,67 @@ export function createProjectsMock(): SiteIndexApi["projects"] {
     create: (input) => reply(() => {
       const id = input.folder_name || "new-project";
       const path = joinPath(input.projects_root, input.folder_name);
+      if (input.workspace?.enabled) {
+        workspaceMock.createNow({
+          targetDir: path,
+          domain: new URL(/^https?:\/\//i.test(input.url) ? input.url : "https://" + input.url).hostname,
+          brand: input.brand,
+          platform: input.workspace.platform,
+          markets: input.markets,
+          esp_presets: input.workspace.esp_presets,
+        });
+      }
       createdPaths.set(id, path);
       return { id, runId: beginRun(path, "init") };
+    }),
+    createWorkspaceOnly: (input: CreateWorkspaceOnlyInput) => reply(() => {
+      const path = joinPath(input.projects_root, input.folder_name);
+      const normalizedPath = normalizeProjectPath(path);
+      const duplicate = registeredProjects().find((project) => normalizeProjectPath(project.path) === normalizedPath);
+      if (duplicate) throw { code: "FOLDER_EXISTS", message: "该位置已经登记了一个项目。" } satisfies SiteIndexError;
+      const domain = (() => {
+        try { return new URL(/^https?:\/\//i.test(input.url) ? input.url : "https://" + input.url).hostname.toLowerCase(); }
+        catch { throw { code: "UNKNOWN", message: "请输入有效的网站地址。" } satisfies SiteIndexError; }
+      })();
+      const workspaceInput: WorkspaceCreateInput = {
+        targetDir: path,
+        domain,
+        brand: input.brand,
+        platform: input.workspace.platform,
+        markets: input.markets,
+        esp_presets: input.workspace.esp_presets,
+      };
+      workspaceMock.createNow(workspaceInput);
+      const id = mockProjectIdForPath(normalizedPath);
+      const source = projectSummaries.demo2;
+      const platform: ProjectSummary["platform"] = input.workspace.platform === "magento2" ? "magento" : input.workspace.platform;
+      const summary = {
+        ...source,
+        id,
+        name: input.brand.name.trim() || input.folder_name,
+        domain,
+        platform,
+        path,
+        sku_count: 0,
+        product_count: 0,
+        online_rate: null,
+        blog_count: 0,
+        attention: 0,
+        warnings: [],
+        sync: { state: "never" as const, at: null, job: null },
+        today: { restock: 0, oos: 0, price: 0, new: 0, removed: 0 },
+        runner_device: null,
+      };
+      const config = clone(projectConfigs.demo2);
+      config.base_url = /^https?:\/\//i.test(input.url) ? input.url : "https://" + input.url;
+      config.domain = domain;
+      config.platform = platform;
+      config.brand = clone(input.brand);
+      config.markets = clone(input.markets);
+      addedProjects.set(normalizedPath, { summary, config, runner: runners.demo2 });
+      removedProjectIds.delete(id);
+      notifyProjectChanged(id);
+      return { id };
     }),
     addExisting: (path) => reply<ProjectDetail["summary"]>(() => {
       const trimmedPath = path.trim();

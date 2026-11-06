@@ -9,7 +9,8 @@ import { ApiErrorNotice, Button, Card, Chip, EmptyState, Notice, PageHeader, use
 import { useWizardDraft } from "./wizard-state";
 import { applyInitProgress, applyInitResult, finalInitProgressPercent, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
 import { findExistingProject, type ExistingProject } from "./new-project/duplicate-check";
-import { visibleWizardSteps as steps } from "./new-project/wizard-steps";
+import { getVisibleWizardSteps } from "./new-project/wizard-steps";
+import { workspaceDirectoryTree, workspacePathJoin, workspacePlatformFromDetected } from "./new-project/workspace-preview";
 const platformNames: Record<Platform, string> = { magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台" };
 const progressSteps: Record<InitStepKey, { name: string; detail: string }> = {
   folders: { name: "创建数据目录", detail: "index/ 网站数据索引" },
@@ -50,7 +51,7 @@ async function readCreatedProjectPath(id: string): Promise<string | null> {
   return typeof path === "string" && path.trim() ? path : null;
 }
 
-function WizardSteps({ active }: { active: number }) {
+function WizardSteps({ active, steps }: { active: number; steps: ReturnType<typeof getVisibleWizardSteps> }) {
   return <ol className="si-wizard-steps" aria-label="新建项目步骤">{steps.map((step, index) => <li key={step.path} className={index === active ? "active" : index < active ? "complete" : ""}>
     {index < active ? <Link to={step.path}><Check size={13} aria-hidden="true" />{index + 1} {step.label}</Link> : <span>{index + 1} {step.label}</span>}
   </li>)}</ol>;
@@ -108,6 +109,8 @@ export function NewProjectWizardPage() {
   const { draft, update, reset } = useWizardDraft();
   const registeredProjects = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
+  const workspaceApiAvailable = typeof api.workspace?.check === "function" && typeof api.workspace?.create === "function";
+  const steps = getVisibleWizardSteps(workspaceApiAvailable);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [feedError, setFeedError] = useState("");
@@ -118,17 +121,24 @@ export function NewProjectWizardPage() {
   const [retryStates, setRetryStates] = useState<InitStepStates>({});
   const [progressPct, setProgressPct] = useState(0);
   const [finished, setFinished] = useState<JobResult | null>(null);
+  const [workspaceCheck, setWorkspaceCheck] = useState<{ state: "idle" | "checking" | "empty" | "not-empty" | "error"; message?: string }>({ state: "idle" });
+  const [workspaceCheckAttempt, setWorkspaceCheckAttempt] = useState(0);
   const retryRunIds = useRef(new Map<string, RetryableStep>());
-  const active = Math.max(0, steps.findIndex((step) => pathname.endsWith(step.path)));
+  const checkRequestId = useRef(0);
+  const matchedStepIndex = steps.findIndex((step) => pathname.endsWith(step.path));
+  const active = Math.max(0, matchedStepIndex);
+  const activeStepKey = matchedStepIndex >= 0 ? steps[matchedStepIndex]?.key : null;
   const createdRunId = draft.created?.runId;
+  const projectRoot = draft.projectsRoot || settings.data?.projects_root || "";
+  const targetWorkspacePath = workspacePathJoin(projectRoot, draft.folderName);
 
   useEffect(() => { setError(""); setFeedError(""); setCanRetryFeed(false); }, [pathname]);
   useEffect(() => {
     if (settings.data?.projects_root && !draft.projectsRoot) update({ projectsRoot: settings.data.projects_root });
   }, [settings.data, draft.projectsRoot, update]);
   useEffect(() => {
-    if (active > 0 && active < 3 && !draft.detect) navigate("/new/url", { replace: true });
-  }, [active, draft.detect, navigate]);
+    if (activeStepKey && activeStepKey !== "url" && activeStepKey !== "done" && !draft.detect) navigate("/new/url", { replace: true });
+  }, [activeStepKey, draft.detect, navigate]);
   useEffect(() => {
     if (active === 0 && draft.created) reset();
   }, [active, draft.created, reset]);
@@ -136,7 +146,7 @@ export function NewProjectWizardPage() {
     setStepStates({}); setRetryStates({}); setProgressPct(0); setFinished(null); retryRunIds.current.clear();
   }, [createdRunId]);
   useEffect(() => {
-    if (active !== 3 || !createdRunId) return;
+    if (activeStepKey !== "done" || !createdRunId) return;
     const onProgress = api.jobs.onProgress((event) => {
       if (event.runId === createdRunId && event.job === "init") {
         setStepStates((current) => applyInitProgress(current, event));
@@ -158,7 +168,36 @@ export function NewProjectWizardPage() {
       }
     });
     return () => { onProgress(); onFinished(); };
-  }, [active, createdRunId]);
+  }, [activeStepKey, createdRunId]);
+
+  useEffect(() => {
+    const check = api.workspace?.check;
+    if (activeStepKey !== "agent-workspace" || !workspaceApiAvailable || !draft.workspaceEnabled || !check) {
+      setWorkspaceCheck({ state: "idle" });
+      return;
+    }
+    if (!projectRoot.trim() || !draft.folderName.trim()) {
+      setWorkspaceCheck({ state: "idle", message: "请先填写项目根目录和文件夹名。" });
+      return;
+    }
+    const requestId = ++checkRequestId.current;
+    let cancelled = false;
+    setWorkspaceCheck({ state: "checking" });
+    const timer = window.setTimeout(() => {
+      void check(targetWorkspacePath).then((result) => {
+        if (cancelled || requestId !== checkRequestId.current) return;
+        setWorkspaceCheck(result.ok
+          ? { state: "empty", message: "目标目录为空，可以继续。" }
+          : { state: "not-empty", message: result.invalid_entries.length
+            ? "目标目录不是空目录：" + result.invalid_entries.slice(0, 10).join("、")
+            : "目标目录不是空目录，请选择一个空目录。" });
+      }).catch((cause: unknown) => {
+        if (cancelled || requestId !== checkRequestId.current) return;
+        setWorkspaceCheck({ state: "error", message: apiErrorMessage(cause, "检查目标目录失败，请重试。") });
+      });
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [activeStepKey, draft.workspaceEnabled, draft.folderName, projectRoot, targetWorkspacePath, workspaceApiAvailable, workspaceCheckAttempt]);
 
   const detectSite = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError("");
@@ -170,7 +209,7 @@ export function NewProjectWizardPage() {
       }
       const result = await api.projects.detect(draft.url.trim());
       const brandName = draft.brand.name || slugFor(draft.url).replace(/(^|-)([a-z])/g, (_match, _dash, letter: string) => letter.toUpperCase());
-      update({ detect: result, feedUrls: result.feed_candidates, feedResult: null, folderName: draft.folderName || slugFor(draft.url), brand: { ...draft.brand, name: brandName } });
+      update({ detect: result, feedUrls: result.feed_candidates, feedResult: null, folderName: draft.folderName || slugFor(draft.url), brand: { ...draft.brand, name: brandName }, workspacePlatform: workspacePlatformFromDetected(result.platform) });
     } catch (cause) { setError(apiErrorMessage(cause, "网站检测或重复项目检查失败，请重试。")); }
     finally { setBusy(false); }
   };
@@ -190,6 +229,10 @@ export function NewProjectWizardPage() {
     const root = draft.projectsRoot || settings.data?.projects_root || "";
     if (!draft.feedResult) { setError("请先返回数据源步骤并检测 Feed。"); return; }
     if (!draft.brand.name.trim() || !draft.folderName.trim() || !root.trim()) { setError("请填写品牌名、项目文件夹名和项目根目录。"); return; }
+    if (workspaceApiAvailable && draft.workspaceEnabled && workspaceCheck.state !== "empty") {
+      setError(workspaceCheck.message || "请先确认 Agent 工作区目标目录为空。");
+      return;
+    }
     setBusy(true); setError("");
     try {
       const projects = await queryClient.fetchQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list(), staleTime: 0 });
@@ -208,6 +251,11 @@ export function NewProjectWizardPage() {
         projects_root: root.trim(),
         folder_name: draft.folderName.trim(),
         workspace_folders: [],
+        ...(workspaceApiAvailable ? { workspace: {
+          enabled: draft.workspaceEnabled,
+          platform: draft.workspacePlatform,
+          esp_presets: draft.workspaceEspPresets,
+        } } : {}),
       });
       let actualPath = pathFromCreateResponse(created);
       if (!actualPath) {
@@ -240,6 +288,15 @@ export function NewProjectWizardPage() {
     finally { setBusy(false); }
   };
 
+  const chooseProjectsRoot = async () => {
+    try {
+      const selected = await api.settings.chooseDirectory(projectRoot || undefined);
+      if (selected) update({ projectsRoot: selected });
+    } catch (cause) {
+      setError(apiErrorMessage(cause, "选择项目根目录失败，请重试。"));
+    }
+  };
+
   const retryStep = async (key: RetryableStep) => {
     if (!draft.created) return;
     const projectId = draft.created.id;
@@ -260,10 +317,11 @@ export function NewProjectWizardPage() {
     }
   };
 
-  if (active === 3 && !draft.created) return <Navigate to="/new/brand" replace />;
+  if (pathname.endsWith("/agent-workspace") && !workspaceApiAvailable) return <Navigate to="/new/brand" replace />;
+  if (activeStepKey === "done" && !draft.created) return <Navigate to="/new/brand" replace />;
   const detection = draft.detect;
   const duplicateProject = findExistingProject(registeredProjects.data ?? [], draft.url, detection?.final_url ?? "");
-  const previewPath = pathJoin(draft.projectsRoot || settings.data?.projects_root || "D:/SiteIndex/projects", draft.folderName || "[文件夹名]");
+  const previewPath = pathJoin(projectRoot || "D:/SiteIndex/projects", draft.folderName || "[文件夹名]");
   const states: InitStepStates = { ...stepStates, ...retryStates };
   const stateFor = (key: InitStepKey): InitStepState => states[key] ?? { status: "waiting" };
   const completionStatus = getInitCompletionStatus(finished, states);
@@ -278,7 +336,7 @@ export function NewProjectWizardPage() {
 
   return <div className="si-page si-wizard-page">
     <PageHeader title="新建项目" meta={<span><Link to="/">项目中心</Link> · 第 {active + 1} 步：{steps[active]?.label}</span>} />
-    <WizardSteps active={active} />
+    <WizardSteps active={active} steps={steps} />
 
     {active === 0 && <Card className="si-wizard-card si-wizard-url-card">
       <header><h2>输入网站地址</h2><p>SiteIndex 会自动检测跳转、robots.txt、sitemap、建站平台、语言和币种。</p></header>
@@ -341,17 +399,48 @@ export function NewProjectWizardPage() {
         </section>
         <section className="si-wizard-card si-wizard-location-card">
           <h2>项目位置</h2>
-          <label className="si-wizard-field">项目根目录<div className="si-wizard-directory"><input className="si-text-field si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /><Button onClick={async () => { const selected = await api.settings.chooseDirectory(draft.projectsRoot || settings.data?.projects_root); if (selected) update({ projectsRoot: selected }); }}>更改</Button></div><small>默认取自软件设置</small></label>
+          <label className="si-wizard-field">项目根目录<div className="si-wizard-directory"><input className="si-text-field si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /><Button onClick={() => void chooseProjectsRoot()}>更改</Button></div><small>默认取自软件设置，可选择其他存储位置。</small></label>
           {settings.isError && <ApiErrorNotice label="项目根目录设置读取失败。" error={settings.error} onRetry={() => void settings.refetch()} />}
           <label className="si-wizard-field">项目文件夹名<input className="si-text-field si-mono" value={draft.folderName} onChange={(event) => update({ folderName: event.target.value })} /></label>
           <div className="si-wizard-path"><span>将创建</span><code>{previewPath}</code></div>
         </section>
       </div>
       {error && <p className="si-form-error" role="alert">{error}</p>}
-      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/source")}>上一步</Button><Button variant="primary" onClick={() => void createProject()} disabled={busy || Boolean(duplicateProject)}>{busy ? "正在创建…" : "创建项目"}</Button></footer>
+      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/source")}>上一步</Button><Button variant="primary" onClick={() => workspaceApiAvailable ? navigate("/new/agent-workspace") : void createProject()} disabled={busy || !draft.feedResult || Boolean(duplicateProject)}>{busy ? "正在创建…" : workspaceApiAvailable ? "下一步：Agent 工作区" : "创建项目"}</Button></footer>
     </>}
 
-    {active === 3 && draft.created && <div className="si-wizard-done-layout">
+    {activeStepKey === "agent-workspace" && detection && <>
+      {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
+      <div className="si-wizard-workspace-layout">
+        <section className="si-wizard-card si-wizard-workspace-settings">
+          <header className="si-wizard-card-heading"><div><h2>Agent 工作区</h2><p>为 Agent 生成可直接开始工作的目录、说明和平台预设。</p></div></header>
+          <label className="si-wizard-workspace-toggle"><input type="checkbox" checked={draft.workspaceEnabled} onChange={(event) => update({ workspaceEnabled: event.target.checked })} /><span><strong>创建 Agent 工作区</strong><small>默认启用；关闭后只创建 SiteIndex 项目数据。</small></span></label>
+          <label className="si-wizard-field">电商平台
+            <select className="si-text-field" value={draft.workspacePlatform} disabled={!draft.workspaceEnabled} onChange={(event) => update({ workspacePlatform: event.target.value as typeof draft.workspacePlatform })}>
+              <option value="magento2">Magento 2</option><option value="woocommerce">WooCommerce</option><option value="shopify">Shopify</option><option value="other">其他平台</option>
+            </select>
+          </label>
+          <fieldset className="si-wizard-workspace-presets" disabled={!draft.workspaceEnabled}>
+            <legend>启用的渠道预设</legend>
+            <label><input type="checkbox" checked={draft.workspaceEspPresets.includes("esp.mailchimp")} onChange={(event) => update({ workspaceEspPresets: event.target.checked ? [...new Set([...draft.workspaceEspPresets, "esp.mailchimp"])] : draft.workspaceEspPresets.filter((preset) => preset !== "esp.mailchimp") })} />Mailchimp</label>
+          </fieldset>
+          <div className={`si-wizard-workspace-check is-${workspaceCheck.state}`} role={workspaceCheck.state === "not-empty" || workspaceCheck.state === "error" ? "alert" : "status"} aria-live="polite">
+            {!draft.workspaceEnabled ? "Agent 工作区已关闭，不会创建预览中的目录。" : workspaceCheck.state === "checking" ? "正在检查目标目录是否为空…" : workspaceCheck.message ?? "等待检查目标目录。"}
+            {draft.workspaceEnabled && workspaceCheck.state === "error" && <Button size="small" onClick={() => setWorkspaceCheckAttempt((attempt) => attempt + 1)}>重试</Button>}
+          </div>
+          {draft.workspaceEnabled && workspaceCheck.state === "not-empty" && <p className="si-form-error" role="alert">{workspaceCheck.message}</p>}
+          {error && <p className="si-form-error" role="alert">{error}</p>}
+        </section>
+        <section className="si-wizard-card si-wizard-workspace-tree">
+          <h2>将生成的目录树</h2>
+          <code className="si-mono">{targetWorkspacePath || previewPath}</code>
+          <pre>{workspaceDirectoryTree(draft.folderName || "[项目文件夹]")}</pre>
+        </section>
+      </div>
+      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/brand")}>上一步</Button><Button variant="primary" onClick={() => void createProject()} disabled={busy || !draft.feedResult || Boolean(duplicateProject) || (draft.workspaceEnabled && workspaceCheck.state !== "empty")}>{busy ? "正在创建…" : "创建项目"}</Button></footer>
+    </>}
+
+    {activeStepKey === "done" && draft.created && <div className="si-wizard-done-layout">
       {draft.created.path ? null : <p className="si-form-error" role="alert">项目已创建，但暂时无法读取实际路径。请重试读取，路径读取成功后即可打开文件夹。</p>}
       <section className="si-wizard-card si-wizard-progress-card">
         <header className="si-wizard-progress-heading"><h1>{allSucceeded ? "项目创建完成" : hasFinishedFailures ? "创建完成，但有步骤失败" : completionStatus === "skipped" ? "创建完成，部分步骤已跳过" : completionStatus === "incomplete" ? "项目创建未完成" : "正在创建 " + draft.brand.name}</h1><Chip tone={hasFinishedFailures ? "danger" : allSucceeded ? "ok" : completionStatus === "skipped" || completionStatus === "incomplete" ? "warn" : "info"}>{hasFinishedFailures ? "需处理" : allSucceeded ? "完成" : completionStatus === "skipped" ? "有步骤跳过" : completionStatus === "incomplete" ? "未完成" : completedCount + " / " + INIT_STEPS.length}</Chip></header>
