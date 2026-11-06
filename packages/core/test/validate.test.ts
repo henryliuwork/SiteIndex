@@ -26,6 +26,8 @@ async function workspaceProjectCopy(): Promise<string> {
   const legacy = pathsFor("legacy");
   const workspace = pathsFor("workspace");
   await rename(path.join(project, legacy.index), path.join(project, workspace.index));
+  await writeFile(path.join(project, ".gitignore"), ".env\n_tmp/\n", "utf8");
+  await writeFile(path.join(project, ".env"), "", "utf8");
   return project;
 }
 async function minimalProject(): Promise<string> {
@@ -84,6 +86,32 @@ describe("project validation and repair", () => {
     expect(await readFile(path.join(project, pathsFor("workspace").validation), "utf8")).toBe(JSON.stringify(report, null, 2) + "\n");
     expect(report.files.some((check) => check.path.startsWith(legacyPaths.index + "/"))).toBe(false);
     expect(report.files.some((check) => check.path.startsWith(pathsFor("workspace").index + "/"))).toBe(true);
+  }, 20_000);
+
+  it("requires workspace .gitignore to exclude .env and accepts glob/negation ordering", async () => {
+    const project = await workspaceProjectCopy();
+    const gitignore = path.join(project, ".gitignore");
+    const valid = await validateProjectFiles(project, { now: new Date("2026-10-22T12:00:00Z") });
+    expect(valid.files.find((check) => check.path === ".gitignore")).toMatchObject({ status: "ok" });
+
+    await writeFile(gitignore, "*.env\n!/.env\n", "utf8");
+    const invalid = await validateProjectFiles(project, { now: new Date("2026-10-22T12:00:00Z") });
+    expect(invalid.files.find((check) => check.path === ".gitignore")).toMatchObject({ status: "error", rule: "schema" });
+
+    await writeFile(gitignore, "*.env\n", "utf8");
+    const globbed = await validateProjectFiles(project, { now: new Date("2026-10-22T12:00:00Z") });
+    expect(globbed.files.find((check) => check.path === ".gitignore")).toMatchObject({ status: "ok" });
+  }, 20_000);
+
+  it("does not inspect or reject files in the workspace EDM skill-owned whitelist", async () => {
+    const project = await workspaceProjectCopy();
+    const edmOwnedFile = path.join(project, pathsFor("workspace").index, "edm", "skill-owned.md");
+    await mkdir(path.dirname(edmOwnedFile), { recursive: true });
+    await writeFile(edmOwnedFile, "skill-owned fictional content\n", "utf8");
+
+    const report = await validateProjectFiles(project, { now: new Date("2026-10-22T12:00:00Z") });
+    expect(report.files.some((check) => check.path.startsWith(pathsFor("workspace").index + "/edm/"))).toBe(false);
+    expect(report.files.some((check) => check.path === ".gitignore" && check.status === "error")).toBe(false);
   }, 20_000);
 
   it("applies autofix, archive restore, and conflict quarantine inside workspace paths", async () => {

@@ -152,3 +152,10 @@
   - [x] validate：按布局生成校验路径，覆盖两套黄金输出与修复路径
   - [x] views：按布局生成视图路径并覆盖两套黄金输出
   - [x] Jobs / readme：按布局生成读写路径并覆盖两套黄金输出
+
+### v0.4.0 · A4-3 工作区 Core 能力
+- [ ] A4-3：工作区检查、生成、空项目创建、导入检查、README/AGENTS.md 自动区块与布局校验
+  - [ ] `workspace.check` / `workspace.create` 与 `projects.createWorkspaceOnly`
+  - [ ] workspace 导入检查与只补缺、不覆盖
+  - [ ] README 与 AGENTS.md 双文件自动区块
+  - [x] workspace `validate` 检查 `.env` 被 `.gitignore` 忽略，并保留 `_site-index/edm/` 技能白名单
