@@ -2,9 +2,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { JobProgress, JobResult } from "@siteindex/shared";
 import { createMockApi } from "../../mock";
+import { ToastProvider } from "../../components";
+
+function SettingsRouteMarker() {
+  const location = useLocation();
+  return <output data-testid="settings-location">{location.pathname + location.search}</output>;
+}
 
 afterEach(() => {
   cleanup();
@@ -40,15 +46,24 @@ describe("ContentPage 博客重新抓取", () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={["/p/demo/content"]}>
-          <Routes><Route path="/p/:id/content" element={<ContentPage />} /></Routes>
-        </MemoryRouter>
+        <ToastProvider>
+          <MemoryRouter initialEntries={["/p/demo/content"]}>
+            <Routes>
+              <Route path="/p/:id/content" element={<ContentPage />} />
+              <Route path="/p/:id/settings/config" element={<SettingsRouteMarker />} />
+            </Routes>
+          </MemoryRouter>
+        </ToastProvider>
       </QueryClientProvider>,
     );
 
     await waitFor(() => expect(listKeywords).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: /关键词映射/ })).toBeNull();
+    const settingsButton = await screen.findByRole("button", { name: "识别设置" });
     const refreshButton = await screen.findByRole("button", { name: "重新抓取" });
+    expect(await screen.findByText(/最近识别：/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /关键词映射/ })).toBeNull();
+    expect(settingsButton).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "重新抓取" })).toHaveLength(1);
     fireEvent.click(refreshButton);
     await waitFor(() => expect(run).toHaveBeenCalledWith({ projectPath: expect.any(String), job: "weekly" }));
     const runningButton = await screen.findByRole("button", { name: "抓取中…" });
@@ -61,6 +76,11 @@ describe("ContentPage 博客重新抓取", () => {
     await waitFor(() => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ["content", "summary", "demo"] });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ["content", "blogs", "demo"] });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["seo", "summary", "demo"] });
     });
+    expect(await screen.findByText("博客内容已重新抓取。")).toBeTruthy();
+    fireEvent.click(settingsButton);
+    const settingsLocation = await screen.findByTestId("settings-location");
+    expect(settingsLocation.textContent).toBe("/p/demo/settings/config?section=blog-recognition");
   }, 25_000);
 });

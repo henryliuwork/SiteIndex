@@ -75,7 +75,8 @@
   color: var(--color-ink-2); font: inherit; text-align: left; cursor: pointer; white-space: nowrap;
 }
 .si-seo-issue-menu [role="menuitem"]:hover, .si-seo-issue-menu [role="menuitem"]:focus-visible { outline: 0; background: var(--color-subtle); }
-.si-seo-page .si-data-table.is-fill { min-height: var(--si-table-min-h, 320px); flex: 1 1 auto; }
+.si-seo-page .si-data-table.is-fill { min-height: 0; flex: 1 1 auto; }
+.si-seo-page .si-data-table.is-fill > .si-table-scroll { min-height: 0; }
 .si-seo-url {
   display: block; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; color: var(--color-ink-2);
   font-family: var(--font-mono); font-size: var(--fs-mono); text-overflow: ellipsis; white-space: nowrap;
