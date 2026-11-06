@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import type { AttentionItem } from "@siteindex/shared";
+import type { AttentionItem, JobResult } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 beforeEach(() => {
@@ -30,11 +30,71 @@ async function renderOverview(mockApi: ReturnType<typeof createMockApi>) {
         ? error.message
         : fallback,
   }));
-  const { OverviewPage } = await import("./OverviewPage");
+  const [{ OverviewPage }, { ToastProvider }] = await Promise.all([import("./OverviewPage"), import("../components")]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={queryClient}><MemoryRouter><OverviewPage /></MemoryRouter></QueryClientProvider>);
+  render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><OverviewPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
   return queryClient;
 }
+
+describe("OverviewPage 布局和操作", () => {
+  it("按 KPI、关注、README 摘要、变更记录排列，并把快捷操作放进页面操作区", async () => {
+    await renderOverview(createMockApi());
+
+    expect(await screen.findByRole("heading", { name: "需要关注" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "快捷操作" })).toBeNull();
+    expect(screen.getByRole("button", { name: "立即同步" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "打开项目文件夹" })).toBeTruthy();
+
+    const sections = [...document.querySelectorAll(".si-overview-content > section")];
+    expect(sections.map((section) => section.classList[0])).toEqual([
+      "si-overview-kpis", "si-overview-attention", "si-overview-readme", "si-overview-changelog",
+    ]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    expect(await screen.findByRole("menuitem", { name: "校验本地数据文件" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "复制 agent 接入指令" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "打开 README" })).toBeTruthy();
+  });
+
+  it("把快捷操作结果显示为 Toast", async () => {
+    const mockApi = createMockApi();
+    const overview = await mockApi.overview.get("demo");
+    mockApi.overview.get = vi.fn(async () => ({ ...overview, agent_instruction: "Use the demo project index." }));
+    mockApi.shell.copyText = vi.fn(async () => undefined);
+    await renderOverview(mockApi);
+
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "复制 agent 接入指令" }));
+
+    expect(mockApi.shell.copyText).toHaveBeenCalledOnce();
+    expect(await screen.findByText("已复制 agent 接入指令。")).toBeTruthy();
+  });
+
+  it("同步期间显示 Notice，完成后刷新项目和概览缓存并显示 Toast", async () => {
+    const mockApi = createMockApi();
+    mockApi.jobs.run = vi.fn(async () => ({ runId: "run-1" }));
+    let finish: ((result: JobResult) => void) | undefined;
+    mockApi.jobs.onFinished = vi.fn((callback) => {
+      finish = callback;
+      return () => undefined;
+    });
+    const queryClient = await renderOverview(mockApi);
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    const syncButton = await screen.findByRole("button", { name: "立即同步" });
+
+    fireEvent.click(syncButton);
+
+    expect(await screen.findByText("正在启动每日同步…")).toBeTruthy();
+    expect(syncButton.hasAttribute("disabled")).toBe(true);
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    finish?.({ runId: "run-1", job: "daily", status: "ok", exitCode: 0, summary: "每日同步已完成" });
+
+    expect(await screen.findByText("每日同步已完成。")).toBeTruthy();
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["overview", "demo"] })));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["projects", "demo"], exact: true }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["projects"], exact: true }));
+  });
+});
 
 describe("OverviewPage SEO 规则忽略", () => {
   it("忽略按钮只在存在规则和可选 IPC 方法时显示", async () => {
