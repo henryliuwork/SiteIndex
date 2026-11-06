@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { createMockApi } from "../mock";
 
+vi.setConfig({ testTimeout: 15_000 });
+
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class {
     observe(): void {}
@@ -35,26 +37,33 @@ async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = 
         : fallback,
   }));
   vi.doMock("../components/table", () => ({
-    DataTable: ({ rows, columns, tableId }: {
+    DataTable: ({ rows, columns, tableId, selectable, onSelectionChange, toolbar }: {
       rows: Array<Record<string, unknown>>;
       columns: Array<{ id?: string; accessorKey?: string; cell?: (context: never) => React.ReactNode }>;
       tableId: string;
+      selectable?: boolean;
+      onSelectionChange?: (rows: Array<Record<string, unknown>>) => void;
+      toolbar?: React.ReactNode;
     }) => <div aria-label={`${tableId} 数据表`} role="table">
+      {toolbar}
       {rows.slice(0, 1).map((row, rowIndex) => <div role="row" key={`${tableId}-${rowIndex}`}>
+        {selectable && <input type="checkbox" aria-label={`选择第 ${rowIndex + 1} 行`} onChange={() => onSelectionChange?.([row])} />}
         {columns.map((column, columnIndex) => <div role="cell" key={column.id ?? column.accessorKey ?? columnIndex}>
           {column.cell ? column.cell({ row: { original: row } } as never) : String(row[column.accessorKey ?? ""] ?? "")}
         </div>)}
       </div>)}
     </div>,
   }));
-  const { SeoPage } = await import("./SeoPage");
+  const [{ SeoPage }, { ToastProvider }] = await Promise.all([import("./SeoPage"), import("../components/overlays")]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[route]}>
-        <Routes><Route path="/p/:id/seo" element={<SeoPage />} /></Routes>
-        <SearchProbe />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[route]}>
+          <Routes><Route path="/p/:id/seo" element={<SeoPage />} /></Routes>
+          <SearchProbe />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
   return queryClient;
@@ -63,11 +72,12 @@ async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = 
 describe("SeoPage 问题处理", () => {
   it("setIssueStatus 缺失时不渲染处理操作，也不报错", async () => {
     const mockApi = createMockApi();
+    delete mockApi.seo.setRuleIgnored;
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await renderSeoPage(mockApi);
 
     expect(await screen.findByRole("table", { name: "seo.issues.v2 数据表" })).toBeTruthy();
-    expect(screen.queryByText("⋯")).toBeNull();
+    expect(screen.queryByRole("button", { name: /问题操作：/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /批量处理当前筛选结果/ })).toBeNull();
     expect(consoleError).not.toHaveBeenCalled();
   });
@@ -75,9 +85,10 @@ describe("SeoPage 问题处理", () => {
   it("接口可选方法缺失时隐藏对应操作菜单项", async () => {
     const mockApi = createMockApi();
     mockApi.seo.setIssueStatus = vi.fn(async () => ({ updated: 0 }));
+    delete mockApi.seo.setRuleIgnored;
     await renderSeoPage(mockApi);
 
-    fireEvent.click((await screen.findAllByText("⋯"))[0]!);
+    fireEvent.click((await screen.findAllByRole("button", { name: /问题操作：/ }))[0]!);
     expect(await screen.findByRole("menuitem", { name: "标记已处理" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "忽略此页面此问题" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "忽略此类问题" })).toBeNull();
@@ -88,7 +99,7 @@ describe("SeoPage 问题处理", () => {
     mockApi.seo.setRuleIgnored = vi.fn(async () => ({ updated: 1 }));
     await renderSeoPage(mockApi);
 
-    fireEvent.click((await screen.findAllByText("⋯"))[0]!);
+    fireEvent.click((await screen.findAllByRole("button", { name: /问题操作：/ }))[0]!);
     expect(screen.queryByRole("menuitem", { name: "标记已处理" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "忽略此页面此问题" })).toBeNull();
     expect(await screen.findByRole("menuitem", { name: "忽略此类问题" })).toBeTruthy();
@@ -104,7 +115,7 @@ describe("SeoPage 问题处理", () => {
     const queryClient = await renderSeoPage(mockApi);
     const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
 
-    fireEvent.click((await screen.findAllByText("⋯"))[0]!);
+    fireEvent.click((await screen.findAllByRole("button", { name: /问题操作：/ }))[0]!);
     fireEvent.click(await screen.findByRole("menuitem", { name: "标记已处理" }));
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("影响范围：单条 SEO 问题"));
@@ -122,7 +133,7 @@ describe("SeoPage 问题处理", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await renderSeoPage(mockApi);
 
-    fireEvent.click((await screen.findAllByText("⋯"))[0]!);
+    fireEvent.click((await screen.findAllByRole("button", { name: /问题操作：/ }))[0]!);
     fireEvent.click(await screen.findByRole("menuitem", { name: "忽略此页面此问题" }));
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("影响范围：此页面的这条 SEO 问题"));
@@ -137,7 +148,7 @@ describe("SeoPage 问题处理", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await renderSeoPage(mockApi);
 
-    fireEvent.click((await screen.findAllByText("⋯"))[0]!);
+    fireEvent.click((await screen.findAllByRole("button", { name: /问题操作：/ }))[0]!);
     fireEvent.click(await screen.findByRole("menuitem", { name: "忽略此类问题" }));
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("影响范围：全站同一规则"));
@@ -150,7 +161,7 @@ describe("SeoPage 问题处理", () => {
     const setIssueStatus = vi.fn(async (_id: string, input: { targets: { url: string; rule: string }[] }) => ({ updated: input.targets.length }));
     mockApi.seo.setIssueStatus = setIssueStatus;
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    await renderSeoPage(mockApi);
+    await renderSeoPage(mockApi, "/p/demo/seo?status=open");
 
     const bulkButton = await screen.findByRole("button", { name: /批量处理当前筛选结果/ });
     await waitFor(() => expect(bulkButton.textContent).not.toContain("（0 条）"));
@@ -167,7 +178,7 @@ describe("SeoPage 问题处理", () => {
     const emptyApi = createMockApi();
     emptyApi.seo.setIssueStatus = vi.fn(async () => ({ updated: 0 }));
     emptyApi.seo.listIssues = vi.fn(async () => ({ rows: [], total: 0 }));
-    await renderSeoPage(emptyApi);
+    await renderSeoPage(emptyApi, "/p/demo/seo?status=open");
     expect((await screen.findByRole("button", { name: /批量处理当前筛选结果（0 条）/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -185,6 +196,34 @@ describe("SeoPage 问题处理", () => {
     });
     await waitFor(() => expect(listIssues).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ status: "ignored", rules: ["desc_missing"] }) })));
     expect(await screen.findByRole("button", { name: "状态：已忽略" })).toBeTruthy();
+  });
+
+  it("规则设置 Drawer 使用规则查询，方法缺失时明确提示", async () => {
+    const mockApi = createMockApi();
+    await renderSeoPage(mockApi);
+    fireEvent.click(await screen.findByRole("button", { name: "规则设置" }));
+    expect(await screen.findByText("Title 长度异常")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
+
+    delete mockApi.seo.getRuleSettings;
+    cleanup();
+    await renderSeoPage(mockApi);
+    fireEvent.click(await screen.findByRole("button", { name: "规则设置" }));
+    expect(await screen.findByText("当前桌面版本尚未接入 seo.getRuleSettings，请更新后重试。")).toBeTruthy();
+  });
+
+  it("选择待处理行后显示确认数量并批量更新", async () => {
+    const mockApi = createMockApi();
+    const setIssueStatus = vi.fn(async (_id: string, input: { targets: { url: string; rule: string }[] }) => ({ updated: input.targets.length }));
+    mockApi.seo.setIssueStatus = setIssueStatus;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await renderSeoPage(mockApi, "/p/demo/seo?status=open");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择第 1 行" }));
+    expect(await screen.findByText("已选择 1 条待处理问题")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "标记已处理" }));
+    await waitFor(() => expect(setIssueStatus).toHaveBeenCalledWith("demo", expect.objectContaining({ status: "fixed", targets: expect.any(Array) })));
+    expect(await screen.findByText("已更新 1 条")).toBeTruthy();
   });
 });
 

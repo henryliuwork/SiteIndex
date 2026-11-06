@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import type { FeedInspectResult, SeoRule, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
+import type { FeedInspectResult, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
@@ -341,10 +341,6 @@ export function ProjectSettingsConfigPage() {
           <TextAreaField label="竞品域名（每行一个）" value={asLines(draft.seo?.competitors)} onChange={(value) => patchSeo("competitors", fromLines(value))} mono rows={3} />
           <div className="si-config-range"><span>Title 长度范围</span><div><input aria-label="Title 最短长度" className="si-text-field" type="number" value={draft.seo?.title_range?.[0] ?? 30} onChange={(event) => patchSeo("title_range", [Number(event.target.value), draft.seo?.title_range?.[1] ?? 60])} /><span>至</span><input aria-label="Title 最长长度" className="si-text-field" type="number" value={draft.seo?.title_range?.[1] ?? 60} onChange={(event) => patchSeo("title_range", [draft.seo?.title_range?.[0] ?? 30, Number(event.target.value)])} /></div></div>
           <div className="si-config-range"><span>Description 长度范围</span><div><input aria-label="Description 最短长度" className="si-text-field" type="number" value={draft.seo?.description_range?.[0] ?? 70} onChange={(event) => patchSeo("description_range", [Number(event.target.value), draft.seo?.description_range?.[1] ?? 155])} /><span>至</span><input aria-label="Description 最长长度" className="si-text-field" type="number" value={draft.seo?.description_range?.[1] ?? 155} onChange={(event) => patchSeo("description_range", [draft.seo?.description_range?.[0] ?? 70, Number(event.target.value)])} /></div></div>
-          <TextAreaField label="忽略的检查规则（每行 URL | 规则）" value={(draft.seo?.ignore_rules ?? []).map((item) => item.url + " | " + item.rule).join("\n")} onChange={(value) => {
-            const rules = value.split("\n").map((line) => line.split("|").map((part) => part.trim())).filter((parts) => parts[0] && parts[1]);
-            patchSeo("ignore_rules", rules.map(([url, rule]) => ({ url: url!, rule: rule! as SeoRule })));
-          }} mono rows={2} />
         </div></ConfigCard>
 
         <ConfigCard id="edm" title="EDM"><div className="si-config-grid si-config-grid-3">
