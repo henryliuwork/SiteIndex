@@ -41,3 +41,7 @@ Kingsyard 风格喂鸟器站点，16 个产品（2 个带颜色变体），见 `
 
 ## 产品详情变体 fixture
 - `inputs/v030-product-detail-variants.json` 是纯虚构的产品与库存样本，覆盖跨 URL 的父子 SKU 变体和同一 handle 的多 SKU 库存。
+
+## Design Token v2 fixture
+- `www/design-v2/` 是纯虚构的本地静态站点，覆盖颜色角色 CSS 变量、h1–h6/body/small/caption 字号、等宽字体、三类按钮与高频 spacing/radius/shadow。
+- Core 的浏览器测试只通过本地静态服务访问此目录；不会请求真实站点。设置 `SITEINDEX_TEST_BROWSER` 可启用真实浏览器回归测试。

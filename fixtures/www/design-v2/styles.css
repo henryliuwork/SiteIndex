@@ -1,0 +1,42 @@
+:root {
+  --color-primary: #186b55;
+  --color-secondary: #d18a22;
+  --color-text: #18211f;
+  --color-text-muted: #6c7773;
+  --color-background: #ffffff;
+  --color-surface: #f4f6f3;
+  --color-border: #d8dfdb;
+  --color-sale: #c02a35;
+  --color-link: #08765d;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  font-family: Inter, Arial, sans-serif;
+  color: var(--color-text);
+  background: var(--color-background);
+}
+body { margin: 0; padding: 16px; color: var(--color-text); background: var(--color-background); font: 400 16px/24px Inter, Arial, sans-serif; }
+header { margin-bottom: 24px; }
+.brand, h1, h2, h3, h4, h5, h6 { font-family: Lora, Georgia, serif; }
+.surface { margin: 16px; padding: 24px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 2px 4px rgb(0 0 0 / 12%); }
+h1 { font-size: 32px; font-weight: 700; line-height: 40px; letter-spacing: -0.5px; }
+h2 { font-size: 28px; font-weight: 700; line-height: 36px; }
+h3 { font-size: 24px; font-weight: 600; line-height: 32px; }
+h4 { font-size: 20px; font-weight: 600; line-height: 28px; }
+h5 { font-size: 18px; font-weight: 600; line-height: 26px; }
+h6 { font-size: 16px; font-weight: 600; line-height: 24px; }
+p { margin: 12px 0; }
+.muted, small, .caption { color: var(--color-text-muted); }
+.caption { font-size: 12px; line-height: 18px; letter-spacing: 0.1px; }
+.sale { color: var(--color-sale); }
+a { color: var(--color-link); }
+code { font-family: ui-monospace, SFMono-Regular, monospace; }
+button { padding: 8px 16px; border-radius: 4px; font: 600 14px/20px Inter, Arial, sans-serif; }
+button.primary { color: #fff; background: var(--color-primary); border: 0; }
+button.primary:hover { background: #125b48; }
+button.secondary { color: var(--color-text); background: var(--color-secondary); border: 1px solid var(--color-secondary); }
+button.outline { color: var(--color-primary); background: transparent; border: 1px solid var(--color-primary); }
+.space-sample { margin: 32px; padding: 8px; border-radius: 12px; box-shadow: 0 4px 8px rgb(0 0 0 / 10%); }
