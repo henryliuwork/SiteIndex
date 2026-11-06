@@ -14,7 +14,7 @@ describe("orphan scheduled tasks", () => {
   it("parses CSV names while retaining only the SiteIndex namespace", () => {
     expect(
       parseWindowsTaskNamesCsv(
-        '"\\SiteIndex\\old-store-daily","N/A","Ready"\r\n"\\Other\\backup","N/A","Ready"\r\n"SiteIndex - removed-weekly","N/A","Ready"',
+        '"FIXTURE-PC","\\SiteIndex\\old-store-daily","N/A","Ready"\r\n"FIXTURE-PC","\\Other\\backup","N/A","Ready"\r\n"SiteIndex - removed-weekly","N/A","Ready"',
       ),
     ).toEqual(["\\SiteIndex\\old-store-daily", "SiteIndex - removed-weekly"]);
   });

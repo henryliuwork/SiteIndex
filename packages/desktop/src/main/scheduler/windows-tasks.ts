@@ -324,6 +324,28 @@ interface ParsedWindowsTask {
   trigger: ParsedTaskTrigger | null;
 }
 
+export interface WindowsTaskInspection {
+  commandPath: string | null;
+  arguments: string | null;
+  workingDirectory: string | null;
+  enabled: boolean;
+  trigger: {
+    kind: "weekly" | "monthly" | "unknown";
+    enabled: boolean;
+    startTime: string | null;
+    weekdays: string[];
+    monthDays: string[];
+  } | null;
+}
+
+export interface WindowsTaskRuntimeRow {
+  taskName: string;
+  nextRunTime: string | null;
+  status: string | null;
+  lastRunTime: string | null;
+  lastResult: string | null;
+}
+
 function taskXmlDocument(xml: string): XmlDocument {
   const errors: string[] = [];
   const document = new DOMParser({
@@ -395,6 +417,25 @@ function parseWindowsTask(xml: string): ParsedWindowsTask {
     triggerCount: elements(document, "CalendarTrigger").length,
     actionCount: elements(document, "Actions")[0]?.children.length ?? 0,
     trigger,
+  };
+}
+
+export function inspectWindowsTaskXml(xml: string): WindowsTaskInspection {
+  const task = parseWindowsTask(xml);
+  return {
+    commandPath: task.command,
+    arguments: task.arguments,
+    workingDirectory: task.workingDirectory,
+    enabled: task.enabled.toLowerCase() === "true",
+    trigger: task.trigger
+      ? {
+          kind: task.trigger.kind,
+          enabled: task.trigger.enabled.toLowerCase() === "true",
+          startTime: task.trigger.startTime,
+          weekdays: task.trigger.weekdays,
+          monthDays: task.trigger.monthDays,
+        }
+      : null,
   };
 }
 
@@ -640,8 +681,9 @@ function taskNameKey(taskName: string): string {
   return taskName.replace(/^\\+/, "").toLowerCase();
 }
 
-export function parseWindowsTaskNamesCsv(output: string): string[] {
-  const rows: string[] = [];
+function parseWindowsCsvRows(output: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
   let field = "";
   let inQuotes = false;
   for (let index = 0; index < output.length; index += 1) {
@@ -652,19 +694,50 @@ export function parseWindowsTaskNamesCsv(output: string): string[] {
         index += 1;
       } else inQuotes = !inQuotes;
     } else if (character === "," && !inQuotes) {
-      rows.push(field);
+      row.push(field);
       field = "";
-      while (index + 1 < output.length && output[index + 1] !== "\n" && output[index + 1] !== "\r") index += 1;
-    } else if ((character === "\n" || character === "\r") && !inQuotes) {
-      if (field.trim()) rows.push(field.trim());
+    } else if (character === "\n" && !inQuotes) {
+      row.push(field);
+      if (row.some((value) => value.trim())) rows.push(row);
+      row = [];
       field = "";
-      while (index + 1 < output.length && (output[index + 1] === "\n" || output[index + 1] === "\r")) index += 1;
-    } else field += character;
+    } else if (character !== "\r" || inQuotes) field += character;
   }
-  if (field.trim()) rows.push(field.trim());
-  return rows
-    .map((name) => name.replace(/^\uFEFF/, ""))
-    .filter((name) => name.replace(/^\\+/, "").toLowerCase().startsWith("siteindex"));
+  row.push(field);
+  if (row.some((value) => value.trim())) rows.push(row);
+  return rows.map((values) => values.map((value, index) => (index === 0 ? value.replace(/^\uFEFF/, "") : value)));
+}
+
+function isSiteIndexTaskName(name: string): boolean {
+  return name.replace(/^\\+/, "").toLowerCase().startsWith("siteindex");
+}
+
+function taskNameColumn(row: string[]): number {
+  // schtasks /V may prepend HostName before TaskName. Prefer the scheduler's
+  // generated names, which have an explicit namespace separator.
+  const generatedName = row.findIndex((value) => /^\\*siteindex(?:\\|\s+-\s+)/i.test(value.trim()));
+  if (generatedName >= 0) return generatedName;
+  return row.findIndex(isSiteIndexTaskName);
+}
+
+export function parseWindowsTaskNamesCsv(output: string): string[] {
+  return parseWindowsCsvRows(output)
+    .map((row) => row[taskNameColumn(row)]?.trim() ?? "")
+    .filter(Boolean)
+    .filter(isSiteIndexTaskName);
+}
+
+export function parseWindowsTaskRuntimeCsv(output: string): WindowsTaskRuntimeRow[] {
+  return parseWindowsCsvRows(output)
+    .map((row) => ({ row, nameIndex: taskNameColumn(row) }))
+    .filter(({ row, nameIndex }) => nameIndex >= 0 && row[nameIndex]?.trim())
+    .map(({ row, nameIndex }) => ({
+      taskName: row[nameIndex]!.trim(),
+      nextRunTime: row[nameIndex + 1]?.trim() || null,
+      status: row[nameIndex + 2]?.trim() || null,
+      lastRunTime: row[nameIndex + 4]?.trim() || null,
+      lastResult: row[nameIndex + 5]?.trim() || null,
+    }));
 }
 
 async function existingTaskNames(names: string[], runner: CommandRunner): Promise<Set<string>> {

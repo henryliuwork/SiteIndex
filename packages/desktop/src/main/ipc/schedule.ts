@@ -83,6 +83,20 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
       const entries = await context.projects.refresh(await context.settings.get());
       return context.scheduler.listOrphans(entries.map(({ path: projectPath }) => ({ projectPath })));
     },
+    "schedule.listSystemTasks": async () => {
+      const entries = await context.projects.refresh(await context.settings.get());
+      const projects = await Promise.all(
+        entries.map(async ({ id, path: projectPath }) => ({
+          projectId: id,
+          projectPath,
+          config: await context.core.schedule
+            .get(id)
+            .then(({ config }) => config)
+            .catch(() => null),
+        })),
+      );
+      return context.scheduler.listSystemTasks(projects);
+    },
     "schedule.removeOrphan": async (taskName) => {
       if (typeof taskName !== "string" || !taskName.replace(/^\\+/, "").toLowerCase().startsWith("siteindex")) {
         throw { code: "CONFIG_INVALID", message: "只能清理名称以 SiteIndex 开头的计划任务。" };
