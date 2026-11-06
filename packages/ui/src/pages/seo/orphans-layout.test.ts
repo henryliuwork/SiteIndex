@@ -10,7 +10,8 @@ describe("SEO 内链视图孤立页面布局", () => {
     expect(pageSource).toContain("孤立页面 {orphansQuery.data?.length ?? \"—\"} 个");
     expect(pageStyles).toMatch(/\.si-seo-orphans\s*\{[^}]*flex:\s*none/s);
     expect(pageStyles).toMatch(/\.si-seo-orphans-list\s*\{[^}]*max-height:\s*200px[^}]*overflow:\s*auto/s);
-    expect(pageStyles).toMatch(/\.si-seo-page \.si-data-table\.is-fill\s*\{[^}]*min-height:\s*var\(--si-table-min-h,\s*320px\)/s);
+    expect(pageStyles).toMatch(/\.si-seo-page \.si-data-table\.is-fill\s*\{[^}]*min-height:\s*0[^}]*flex:\s*1 1 auto/s);
+    expect(pageStyles).toMatch(/\.si-seo-page \.si-data-table\.is-fill > \.si-table-scroll\s*\{[^}]*min-height:\s*0/s);
   });
 
   it("mock 提供至少 60 条虚构孤立页面以复现长列表", () => {
