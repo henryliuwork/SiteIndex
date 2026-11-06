@@ -1,11 +1,12 @@
 import { gzipSync } from "node:zlib";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { PATHS, type SiteConfig } from "@siteindex/shared";
+import { pathsFor, type ProjectPaths, type SiteConfig } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import type { BrowserLauncher } from "../browser/automation";
 import { detectSiteDetailed } from "../projects/detect";
+import { resolveProjectLayoutOrLegacy } from "../io/project-layout";
 import { runDesign } from "./design";
 
 export type MonthlyStep = "metadata" | "design" | "archive";
@@ -36,9 +37,9 @@ function archiveMonth(date: string): string {
   return date.slice(0, 7);
 }
 
-async function archiveIndex(projectPath: string, month: string): Promise<{ files: number; bytes: number }> {
+async function archiveIndex(projectPath: string, month: string, paths: ProjectPaths): Promise<{ files: number; bytes: number }> {
   const root = path.resolve(projectPath);
-  const indexRoot = path.join(root, PATHS.index);
+  const indexRoot = path.join(root, paths.index);
   const files: { absolute: string; relative: string }[] = [];
 
   const visit = async (directory: string): Promise<void> => {
@@ -46,7 +47,7 @@ async function archiveIndex(projectPath: string, month: string): Promise<{ files
     for (const entry of entries) {
       const absolute = path.join(directory, entry.name);
       const relative = path.relative(root, absolute).split(path.sep).join("/");
-      if (relative === PATHS.lock || relative === PATHS.runner || relative === PATHS.archiveDir || relative.startsWith(`${PATHS.archiveDir}/`)) continue;
+      if (relative === paths.lock || relative === paths.runner || relative === paths.archiveDir || relative.startsWith(`${paths.archiveDir}/`)) continue;
       if (entry.isDirectory()) await visit(absolute);
       else if (entry.isFile()) files.push({ absolute, relative });
     }
@@ -57,7 +58,7 @@ async function archiveIndex(projectPath: string, month: string): Promise<{ files
   for (const file of files) {
     const contents = await readFile(file.absolute);
     bytes += contents.byteLength;
-    const archivePath = path.join(root, PATHS.archiveDir, month, `${file.relative}.gz`);
+    const archivePath = path.join(root, paths.archiveDir, month, `${file.relative}.gz`);
     await atomicWrite(archivePath, gzipSync(contents));
   }
   return { files: files.length, bytes };
@@ -65,6 +66,7 @@ async function archiveIndex(projectPath: string, month: string): Promise<{ files
 
 /** 每月刷新站点元信息、设计采样，并保存可供校验修复使用的压缩快照。 */
 export async function runMonthly(options: MonthlyJobOptions): Promise<MonthlyJobResult> {
+  const paths = pathsFor(await resolveProjectLayoutOrLegacy(options.projectPath));
   if (!options.executablePath.trim()) {
     throw siteError("BROWSER_UNAVAILABLE", "请由调用方提供 Chrome 或 Edge 的 executablePath。");
   }
@@ -76,13 +78,13 @@ export async function runMonthly(options: MonthlyJobOptions): Promise<MonthlyJob
     ? site.robots.sitemaps
     : options.config.sitemaps;
   await Promise.all([
-    atomicWrite(path.join(options.projectPath, PATHS.robots), detection.robotsText),
-    atomicWrite(path.join(options.projectPath, PATHS.sitemapsSummary), `${JSON.stringify({
+    atomicWrite(path.join(options.projectPath, paths.robots), detection.robotsText),
+    atomicWrite(path.join(options.projectPath, paths.sitemapsSummary), `${JSON.stringify({
       sitemaps: sitemapUrls,
       inspected: site.sitemaps,
       total_urls: site.total_urls,
     }, null, 2)}\n`),
-    atomicWrite(path.join(options.projectPath, PATHS.tech), `${JSON.stringify({
+    atomicWrite(path.join(options.projectPath, paths.tech), `${JSON.stringify({
       platform: site.platform,
       frontend: site.frontend,
     }, null, 2)}\n`),
@@ -97,7 +99,7 @@ export async function runMonthly(options: MonthlyJobOptions): Promise<MonthlyJob
   });
 
   options.onProgress?.("archive", "正在压缩归档项目索引数据");
-  const archive = await archiveIndex(options.projectPath, archiveMonth(options.date));
+  const archive = await archiveIndex(options.projectPath, archiveMonth(options.date), paths);
   return {
     sitemaps: sitemapUrls.length,
     total_urls: site.total_urls,

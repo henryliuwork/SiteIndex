@@ -1,10 +1,11 @@
 import path from "node:path";
 import { XMLParser } from "fast-xml-parser";
 import { parseDocument } from "htmlparser2";
-import { DEFAULT_DESCRIPTION_RANGE, DEFAULT_TITLE_RANGE, PATHS, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig } from "@siteindex/shared";
+import { DEFAULT_DESCRIPTION_RANGE, DEFAULT_TITLE_RANGE, pathsFor, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { readJsonl, writeJsonl } from "../io/jsonl";
+import { resolveProjectLayoutOrLegacy } from "../io/project-layout";
 
 type HtmlNode = { type: string; name?: string; data?: string; attribs?: Record<string, string>; children?: HtmlNode[] };
 type JsonObject = Record<string, unknown>;
@@ -571,10 +572,11 @@ function linkRows(rows: Parsed[], productUrls: ReadonlySet<string>, blog: BlogRe
 }
 
 export async function runWeekly(projectPath: string, config: SiteConfig, options: WeeklyOptions = {}): Promise<WeeklyResult> {
+  const paths = pathsFor(await resolveProjectLayoutOrLegacy(projectPath));
   const date = options.date ?? new Date().toISOString().slice(0, 10);
   if (options.only && !STEPS.includes(options.only as WeeklyStep)) return { status: "failed", counts: {}, errors: ["不支持的 weekly 步骤：" + options.only] };
   const selected = options.only ? [options.only as WeeklyStep] : [...STEPS];
-  const skuRows = await readJsonl(path.join(projectPath, PATHS.skus));
+  const skuRows = await readJsonl(path.join(projectPath, paths.skus));
   const productUrls = new Set(skuRows.map((row) => cleanUrl(String(row.url ?? ""))).filter((url): url is string => !!url));
   const categorySlugs = new Set(skuRows.flatMap((row) => [row.category, ...(Array.isArray(row.categories) ? row.categories : [])]).map(String));
   const crawlResult = await crawl(config, date, productUrls, categorySlugs);
@@ -587,7 +589,7 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
   const errors = [...crawlResult.errors];
   const denominator = rows.length + errors.length;
   if (!rows.length || (denominator > 0 && errors.length / denominator > 0.2)) return { status: "failed", counts: {}, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
-  const oldIssues = selected.includes("issues") ? await readJsonl(path.join(projectPath, PATHS.seoIssues)) as unknown as SeoIssue[] : [];
+  const oldIssues = selected.includes("issues") ? await readJsonl(path.join(projectPath, paths.seoIssues)) as unknown as SeoIssue[] : [];
   const issues = selected.includes("issues") ? makeIssues(rows, oldIssues, config, date) : [];
   const output = async (step: WeeklyStep, relative: string, data: object[], schema: string, counts: Record<string, number>) => {
     if (!selected.includes(step)) return;
@@ -597,16 +599,16 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     counts[step] = data.length;
   };
   const counts: Record<string, number> = {};
-  await output("pages", PATHS.seoPages, rows.map((row) => ({ ...row.page, links_internal_in: rows.reduce((n, candidate) => n + candidate.links.filter((link) => link.url === row.page.url).length, 0) })), "seo_page", counts);
-  await output("issues", PATHS.seoIssues, issues, "seo_issue", counts);
-  await output("links", PATHS.seoLinks, linkRows(rows, productUrls, blog), "seo_link", counts);
-  await output("blog", PATHS.blogIndex, blogs(rows, date, productUrls, skuRows), "blog_post", counts);
-  await output("product_details", PATHS.productDetails, productDetails(rows, date), "product_details", counts);
+  await output("pages", paths.seoPages, rows.map((row) => ({ ...row.page, links_internal_in: rows.reduce((n, candidate) => n + candidate.links.filter((link) => link.url === row.page.url).length, 0) })), "seo_page", counts);
+  await output("issues", paths.seoIssues, issues, "seo_issue", counts);
+  await output("links", paths.seoLinks, linkRows(rows, productUrls, blog), "seo_link", counts);
+  await output("blog", paths.blogIndex, blogs(rows, date, productUrls, skuRows), "blog_post", counts);
+  await output("product_details", paths.productDetails, productDetails(rows, date), "product_details", counts);
   if (selected.includes("categories")) {
     options.onProgress?.("categories", "正在生成 categories");
     const data = categories(config, rows, skuRows, date);
     if (!data.length) errors.push("categories 结果为空，未覆盖现有数据。");
-    else { await atomicWrite(path.join(projectPath, PATHS.categories), JSON.stringify(data, null, 2) + "\n"); counts.categories = data.length; }
+    else { await atomicWrite(path.join(projectPath, paths.categories), JSON.stringify(data, null, 2) + "\n"); counts.categories = data.length; }
   }
   const failed = crawlResult.attempts > 0 && errors.filter((error) => !error.endsWith("结果为空，未覆盖现有数据。")).length / Math.max(1, denominator) > 0.2;
   if (failed) return { status: "failed", counts: {}, errors };

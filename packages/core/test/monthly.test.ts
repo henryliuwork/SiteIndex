@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import os from "node:os";
 import path from "node:path";
-import { EXIT, PATHS, type SiteConfig } from "@siteindex/shared";
+import { EXIT, PATHS, pathsFor, type ProjectLayout, type SiteConfig } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
 import { repairProjectFile } from "../src/validate";
@@ -87,12 +87,14 @@ function fakeBrowser(): { launcher: BrowserLauncher; visits: string[] } {
   return { launcher: vi.fn(async () => browser), visits };
 }
 
-async function projectWithBaseUrl(baseUrl: string): Promise<{ projectPath: string; config: SiteConfig }> {
+async function projectWithBaseUrl(baseUrl: string, layout: ProjectLayout = "legacy"): Promise<{ projectPath: string; config: SiteConfig }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-monthly-"));
   TEMP_DIRS.push(root);
   const projectPath = path.join(root, "project");
   await cp(FIXTURE_PROJECT, projectPath, { recursive: true });
-  const sitePath = path.join(projectPath, PATHS.site);
+  const paths = pathsFor(layout);
+  if (layout === "workspace") await rename(path.join(projectPath, PATHS.index), path.join(projectPath, paths.index));
+  const sitePath = path.join(projectPath, paths.site);
   const config = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
   config.base_url = baseUrl;
   config.domain = new URL(baseUrl).hostname;
@@ -141,6 +143,28 @@ describe("monthly job", () => {
     expect(await readFile(keywordsPath, "utf8")).toBe(archivedContent);
     await expect(readFile(path.join(projectPath, PATHS.archiveDir, "2026-10", `${PATHS.lock}.gz`))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(path.join(projectPath, PATHS.archiveDir, "2026-10", `${PATHS.archiveDir}.gz`))).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("runs monthly metadata, design, and archive steps under the workspace data directory", async () => {
+    const { baseUrl, robots } = await makeServer();
+    const { projectPath } = await projectWithBaseUrl(baseUrl, "workspace");
+    const paths = pathsFor("workspace");
+    const browser = fakeBrowser();
+    const service = createCoreService({
+      resolveProject: () => projectPath, deviceId: "workspace-test",
+      cacheDir: path.join(path.dirname(projectPath), "cache"),
+      browserExecutablePath: "C:/Browser/chrome.exe", browserLauncher: browser.launcher,
+    });
+
+    const result = await service.runJob(
+      { projectPath, job: "monthly", trigger: "manual", date: "2026-10-26" }, () => undefined,
+    );
+
+    expect(result).toMatchObject({ job: "monthly", status: "ok", exitCode: EXIT.OK });
+    expect(await readFile(path.join(projectPath, paths.robots), "utf8")).toBe(robots);
+    expect(await readFile(path.join(projectPath, paths.designTokens), "utf8")).toContain('"extracted_at"');
+    await expect(readFile(path.join(projectPath, PATHS.robots))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(projectPath, paths.archiveDir, "2026-10", paths.keywords + ".gz"))).resolves.toBeTruthy();
   }, 30_000);
 
   it("returns browser unavailable before changing site files or creating an archive", async () => {

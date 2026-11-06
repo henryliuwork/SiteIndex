@@ -2,7 +2,7 @@ import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PATHS } from "@siteindex/shared";
+import { PATHS, pathsFor, type ProjectLayout } from "@siteindex/shared";
 import { renderEdm } from "../src";
 
 const FIXTURE_PROJECT = path.resolve(process.cwd(), "fixtures/expected/project");
@@ -10,15 +10,16 @@ const INPUT_CONTENT = path.resolve(process.cwd(), "fixtures/inputs/edm/2026-10-2
 const EXPECTED_CAMPAIGN = path.join(FIXTURE_PROJECT, "edm/2026-10-20-halloween");
 const TEMP_DIRS: string[] = [];
 
-async function makeProject(): Promise<{ projectPath: string; campaignDir: string }> {
+async function makeProject(layout: ProjectLayout = "legacy"): Promise<{ projectPath: string; campaignDir: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-edm-"));
   TEMP_DIRS.push(root);
   const projectPath = path.join(root, "project");
-  await mkdir(path.join(projectPath, PATHS.index, "views"), { recursive: true });
+  const paths = pathsFor(layout);
+  await mkdir(path.dirname(path.join(projectPath, paths.productsView)), { recursive: true });
   const campaignDir = path.join(projectPath, "edm/2026-10-20-halloween");
   await mkdir(campaignDir, { recursive: true });
-  await cp(path.join(FIXTURE_PROJECT, PATHS.site), path.join(projectPath, PATHS.site));
-  await cp(path.join(FIXTURE_PROJECT, PATHS.productsView), path.join(projectPath, PATHS.productsView));
+  await cp(path.join(FIXTURE_PROJECT, PATHS.site), path.join(projectPath, paths.site));
+  await cp(path.join(FIXTURE_PROJECT, PATHS.productsView), path.join(projectPath, paths.productsView));
   await cp(INPUT_CONTENT, path.join(campaignDir, "content.json"));
   return { projectPath, campaignDir };
 }
@@ -40,6 +41,21 @@ describe("EDM renderer", () => {
       .toBe(await readFile(path.join(EXPECTED_CAMPAIGN, "email.html"), "utf8"));
     expect(await readFile(path.join(campaignDir, "products.json"), "utf8"))
       .toBe(await readFile(path.join(EXPECTED_CAMPAIGN, "products.json"), "utf8"));
+  }, 15_000);
+
+  it("renders workspace projects from the workspace product view with identical fixture output", async () => {
+    const { projectPath, campaignDir } = await makeProject("workspace");
+    const paths = pathsFor("workspace");
+    const result = await renderEdm(projectPath, "edm/2026-10-20-halloween");
+
+    expect(result.included).toBe(3);
+    expect(await readFile(path.join(campaignDir, "email.html"), "utf8"))
+      .toBe(await readFile(path.join(EXPECTED_CAMPAIGN, "email.html"), "utf8"));
+    expect(await readFile(path.join(campaignDir, "products.json"), "utf8"))
+      .toBe(await readFile(path.join(EXPECTED_CAMPAIGN, "products.json"), "utf8"));
+    await expect(readFile(path.join(projectPath, PATHS.productsView))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(path.join(projectPath, paths.productsView), "utf8"))
+      .toBe(await readFile(path.join(FIXTURE_PROJECT, PATHS.productsView), "utf8"));
   }, 15_000);
 
   it("includes out-of-stock picks when explicitly allowed", async () => {

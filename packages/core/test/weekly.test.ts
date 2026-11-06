@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PATHS, type SiteConfig, type SkuRecord } from "@siteindex/shared";
+import { PATHS, pathsFor, type SiteConfig, type SkuRecord } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { readJsonl, writeJsonl } from "../src/io/jsonl";
 import { runWeekly } from "../src/jobs/weekly";
@@ -264,6 +264,44 @@ describe("weekly sync", () => {
     expect(pages.length).toBeGreaterThan(expectedPages.length);
     expect(await readJsonl(path.join(root, PATHS.seoIssues))).not.toHaveLength(0);
     expect(await readJsonl(path.join(root, PATHS.seoLinks))).not.toHaveLength(0);
+  }, 20_000);
+
+  it("writes weekly outputs to the workspace layout with fixture-backed content", async () => {
+    const base = await wwwFixtureServer();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-weekly-workspace-"));
+    roots.push(root);
+    const paths = pathsFor("workspace");
+    const expectedProject = path.join(process.cwd(), "fixtures/expected/project");
+    for (const relative of [paths.site, paths.seoPages, paths.seoIssues, paths.seoLinks, paths.blogIndex,
+      paths.productDetails, paths.skus, paths.categories]) {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    }
+    const skus = (await readJsonl(path.join(expectedProject, PATHS.skus))).map((row) => ({
+      ...row, url: String(row.url).replaceAll("http://127.0.0.1:8765", base),
+    }));
+    await writeJsonl(path.join(root, paths.skus), skus, "sku");
+    const source = JSON.parse(await readFile(path.join(process.cwd(), "fixtures/inputs/site.json"), "utf8")) as SiteConfig;
+    const config = { ...source, base_url: base, sitemaps: [base + "/sitemap.xml"],
+      crawl: { ...source.crawl, rate_limit_ms: 0, max_pages: 30 }, categories: { mode: "feed" } } as SiteConfig;
+    await writeFile(path.join(root, paths.site), JSON.stringify(config));
+
+    const result = await runWeekly(root, config, { date: "2026-10-21" });
+
+    expect(result.status).toBe("ok");
+    const pages = await readJsonl(path.join(root, paths.seoPages));
+    const expectedPages = await readJsonl(path.join(expectedProject, "index/catalog/pages.jsonl"));
+    const legacyPage = expectedPages[0]!;
+    const page = pages.find((row) => row.url === String(legacyPage.url).replace("http://127.0.0.1:8765", base));
+    expect(page).toMatchObject({
+      page_type: legacyPage.type, title: legacyPage.title, meta_description: legacyPage.meta_description,
+      canonical: String(legacyPage.canonical).replace("http://127.0.0.1:8765", base),
+    });
+    const expectedBlog = await readJsonl(path.join(expectedProject, PATHS.blogIndex));
+    const blogs = await readJsonl(path.join(root, paths.blogIndex));
+    for (const legacy of expectedBlog) {
+      expect(blogs.some((row) => row.url === String(legacy.url).replace("http://127.0.0.1:8765", base))).toBe(true);
+    }
+    expect(await readFile(path.join(root, PATHS.seoPages)).catch(() => null)).toBeNull();
   }, 20_000);
 
   it("keeps the existing output when no sitemap URLs are available", async () => {

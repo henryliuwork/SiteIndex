@@ -1,7 +1,8 @@
 /// <reference lib="dom" />
-import { PATHS, type SeoPage } from "@siteindex/shared";
+import { pathsFor, type SeoPage } from "@siteindex/shared";
 import path from "node:path";
 import { writeJsonl } from "../io/jsonl";
+import { resolveProjectLayoutOrLegacy } from "../io/project-layout";
 import type { BrowserLauncher, BrowserPage, BrowserSession } from "../browser/automation";
 
 const INDEX_CHECK_LIMIT = 50;
@@ -114,7 +115,8 @@ export async function runIndexCheck(options: IndexCheckOptions): Promise<IndexCh
 
   if (updated.size > 0) {
     const rows = options.pages.map((page) => updated.get(page.url) ?? page);
-    await writeJsonl(path.join(options.projectPath, PATHS.seoPages), rows as unknown as Record<string, unknown>[], "seo_page");
+    const paths = pathsFor(await resolveProjectLayoutOrLegacy(options.projectPath));
+    await writeJsonl(path.join(options.projectPath, paths.seoPages), rows as unknown as Record<string, unknown>[], "seo_page");
   }
   return {
     checked,

@@ -3,7 +3,7 @@ import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, utimes, writeFile
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CSV_HEADERS, EXIT, PATHS } from "@siteindex/shared";
+import { CSV_HEADERS, EXIT, PATHS, pathsFor } from "@siteindex/shared";
 import {
   assertRunner, atomicWrite, findConflictCopies, readCsv, readJsonl, readRunner,
   withLock, writeCsv, writeJsonl, writeRunner,
@@ -116,6 +116,26 @@ describe("core io", () => {
     expect(await readRunner(root)).toEqual({ device_id: "device-1", device_name: "Henry-PC", claimed_at: "2026-10-22T10:00:00Z" });
     await expect(assertRunner(root, "device-2", "schedule")).rejects.toMatchObject({ code: "NOT_RUNNER", exitCode: EXIT.NOT_RUNNER });
     await expect(assertRunner(root, "device-2", "manual")).resolves.toBeUndefined();
+  });
+
+  it("stores runner state and execution locks in the workspace data directory", async () => {
+    const root = await tempDir();
+    const paths = pathsFor("workspace");
+    await mkdir(path.join(root, paths.index), { recursive: true });
+    await writeFile(path.join(root, paths.site), "{}\n", "utf8");
+    const runner = { device_id: "device-workspace", device_name: "test", claimed_at: "2026-10-22T10:00:00Z" };
+
+    await writeRunner(root, runner);
+    expect(await readFile(path.join(root, paths.runner), "utf8")).toContain(runner.device_id);
+    expect(await readRunner(root)).toEqual(runner);
+    await expect(readFile(path.join(root, PATHS.runner))).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(withLock(root, async () => {
+      expect(await readFile(path.join(root, paths.lock), "utf8")).toContain('"device_id":"device-workspace"');
+      await expect(readFile(path.join(root, PATHS.lock))).rejects.toMatchObject({ code: "ENOENT" });
+      return "locked";
+    }, { deviceId: runner.device_id, heartbeatMs: 60_000 })).resolves.toBe("locked");
+    await expect(readFile(path.join(root, paths.lock))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("holds an exclusive lock, removes it after work, and reclaims stale locks", async () => {

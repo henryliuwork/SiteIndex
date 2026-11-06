@@ -2,7 +2,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  PATHS,
+  pathsFor,
   type DesignButtonVariant,
   type DesignButtons,
   type DesignColorRole,
@@ -17,6 +17,7 @@ import {
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { readJsonl, type JsonRecord } from "../io/jsonl";
+import { resolveProjectLayoutOrLegacy } from "../io/project-layout";
 import type { BrowserLauncher, BrowserPage, BrowserSession } from "../browser/automation";
 
 interface DesignTarget {
@@ -78,9 +79,9 @@ function isWithinSite(candidate: string, baseUrl: string): boolean {
   }
 }
 
-async function readCategories(projectPath: string): Promise<{ url?: string }[]> {
+async function readCategories(projectPath: string, relativePath: string): Promise<{ url?: string }[]> {
   try {
-    const data: unknown = JSON.parse(await readFile(path.join(projectPath, PATHS.categories), "utf8"));
+    const data: unknown = JSON.parse(await readFile(path.join(projectPath, relativePath), "utf8"));
     return Array.isArray(data) ? data.filter((row): row is { url?: string } => typeof row === "object" && row !== null) : [];
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
@@ -102,9 +103,10 @@ async function designTargets(projectPath: string, config: SiteConfig): Promise<D
   if (typeof baseUrl !== "string" || !isWithinSite(baseUrl, baseUrl)) {
     throw siteError("FEED_FETCH_FAILED", "site.json 中没有可用于设计采集的 base_url。");
   }
-  const pages = await readRows<{ url?: string; page_type?: string }>(projectPath, PATHS.seoPages);
-  const products = await readRows<ProductView & JsonRecord>(projectPath, PATHS.productsView);
-  const categories = await readCategories(projectPath);
+  const paths = pathsFor(await resolveProjectLayoutOrLegacy(projectPath));
+  const pages = await readRows<{ url?: string; page_type?: string }>(projectPath, paths.seoPages);
+  const products = await readRows<ProductView & JsonRecord>(projectPath, paths.productsView);
+  const categories = await readCategories(projectPath, paths.categories);
   const home = baseUrl;
   const categoryUrl = categories.find((row) => typeof row.url === "string" && isWithinSite(row.url, baseUrl))?.url
     ?? pages.find((row) => row.page_type === "collection" && typeof row.url === "string" && isWithinSite(row.url, baseUrl))?.url;
@@ -427,8 +429,9 @@ function brandMarkdown(name: string, tokens: DesignTokens): string {
 
 export async function runDesign(options: DesignJobOptions): Promise<{ targets: number; screenshots: number; tokens: DesignTokens }> {
   const targets = await designTargets(options.projectPath, options.config);
+  const paths = pathsFor(await resolveProjectLayoutOrLegacy(options.projectPath));
   if (!options.executablePath.trim()) throw siteError("BROWSER_UNAVAILABLE", "请由调用方提供 Chrome 或 Edge 的 executablePath。");
-  const screenshotsDir = path.join(options.projectPath, PATHS.designScreenshots);
+  const screenshotsDir = path.join(options.projectPath, paths.designScreenshots);
   await mkdir(screenshotsDir, { recursive: true });
   let browser: BrowserSession;
   try {
@@ -465,7 +468,7 @@ export async function runDesign(options: DesignJobOptions): Promise<{ targets: n
 
   const tokens = makeTokens(samples, targets, options.extractedAt ?? new Date().toISOString());
   const brandName = typeof options.config.brand?.name === "string" && options.config.brand.name ? options.config.brand.name : options.config.domain;
-  await atomicWrite(path.join(options.projectPath, PATHS.designTokens), `${JSON.stringify(tokens, null, 2)}\n`);
-  await atomicWrite(path.join(options.projectPath, PATHS.designBrand), brandMarkdown(brandName, tokens));
+  await atomicWrite(path.join(options.projectPath, paths.designTokens), `${JSON.stringify(tokens, null, 2)}\n`);
+  await atomicWrite(path.join(options.projectPath, paths.designBrand), brandMarkdown(brandName, tokens));
   return { targets: targets.length, screenshots: screenshotCount, tokens };
 }

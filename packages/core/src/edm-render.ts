@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { PATHS, type ProductView, type SiteConfig, type SiteIndexError } from "@siteindex/shared";
+import { pathsFor, type ProductView, type SiteConfig, type SiteIndexError } from "@siteindex/shared";
 import { atomicWrite } from "./io/atomic-write";
 import { readJsonl } from "./io/jsonl";
+import { resolveProjectLayout } from "./io/project-layout";
 
 export interface EdmRenderOptions {
   allowOos?: boolean;
@@ -228,7 +229,8 @@ export async function renderEdm(
 ): Promise<EdmRenderResult> {
   const project = path.resolve(projectPath);
   const campaign = path.resolve(project, campaignDir);
-  const sitePath = path.join(project, PATHS.site);
+  const paths = pathsFor(await resolveProjectLayout(project));
+  const sitePath = path.join(project, paths.site);
   const contentPath = path.join(campaign, "content.json");
   let site: EdmSite;
   try {
@@ -244,9 +246,9 @@ export async function renderEdm(
   }
   const content = parseContent(await readJsonFile(contentPath));
   const campaignId = content.campaign_id || path.basename(campaign);
-  const productViews = await readJsonl(path.join(project, PATHS.productsView)) as unknown as ProductView[];
+  const productViews = await readJsonl(path.join(project, paths.productsView)) as unknown as ProductView[];
   if (!productViews.length) {
-    throw edmError("PROJECT_UNREADABLE", `产品视图为空，先运行 views：${path.join(project, PATHS.productsView)}`);
+    throw edmError("PROJECT_UNREADABLE", `产品视图为空，先运行 views：${path.join(project, paths.productsView)}`);
   }
   const byHandle = new Map(productViews.map((product) => [product.handle, product]));
   const warnings: string[] = [];

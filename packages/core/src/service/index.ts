@@ -7,8 +7,7 @@ import {
   INIT_STEPS,
   JOB_NAMES,
   PATHS,
-  dailyReportFile,
-  eventsFile,
+  pathsFor,
   isSiteIndexError,
   type CreateProjectInput,
   type AttentionItem,
@@ -37,6 +36,7 @@ import {
   type ManualCategory,
   type OverviewData,
   type PageResult,
+  type PathKey,
   type ProgressReporter,
   type ProductDetails,
   type ProductFilters,
@@ -45,6 +45,7 @@ import {
   type ProductView,
   type ProjectDetail,
   type ProjectId,
+  type ProjectPaths,
   type ProjectSummary,
   type ReadmeData,
   type RunLog,
@@ -75,6 +76,7 @@ import { atomicWrite } from "../io/atomic-write";
 import { readCsv, writeCsv, type CsvRow } from "../io/csv";
 import { compareKeys } from "../io/compare";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
+import { pathsForProject, resolveProjectLayout } from "../io/project-layout";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
 import { groupSkuIds, previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
 import { selectInventoryDates, type InventorySummaryRange } from "../inventory/history-range";
@@ -351,21 +353,42 @@ function parseEvents(rows: JsonRecord[]): InventoryEvent[] {
   return rows as unknown as InventoryEvent[];
 }
 
-async function readJsonlAs<T>(projectPath: string, relativePath: string): Promise<T[]> {
-  return await readJsonl(path.join(projectPath, relativePath)) as unknown as T[];
+async function readJsonlAs<T>(projectPath: string, relativePath: string, paths?: ProjectPaths): Promise<T[]> {
+  const projectPaths = paths ?? await pathsForProject(projectPath);
+  return await readJsonl(absoluteProjectPath(projectPath, relativePath, projectPaths)) as unknown as T[];
 }
 
-async function readJsonAs<T>(projectPath: string, relativePath: string, fallback: T): Promise<T> {
+async function readJsonAs<T>(projectPath: string, relativePath: string, fallback: T, paths?: ProjectPaths): Promise<T> {
   try {
-    return JSON.parse(await readFile(path.join(projectPath, relativePath), "utf8")) as T;
+    const projectPaths = paths ?? await pathsForProject(projectPath);
+    return JSON.parse(await readFile(absoluteProjectPath(projectPath, relativePath, projectPaths), "utf8")) as T;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return fallback;
     throw error;
   }
 }
 
+const PATH_KEYS: readonly PathKey[] = Object.keys(PATHS)
+  .filter((key): key is PathKey => Object.hasOwn(PATHS, key))
+  .sort((left, right) => PATHS[right].length - PATHS[left].length);
+
+function absoluteProjectPath(projectPath: string, relativePath: string, paths: ProjectPaths): string {
+  for (const key of PATH_KEYS) {
+    const legacyPath = PATHS[key];
+    if (relativePath === legacyPath) return path.join(projectPath, paths[key]);
+    if (relativePath.startsWith(`${legacyPath}/`)) {
+      return path.join(projectPath, paths[key], relativePath.slice(legacyPath.length + 1));
+    }
+  }
+  return path.join(projectPath, relativePath);
+}
+
+async function projectFilePath(projectPath: string, relativePath: string): Promise<string> {
+  return absoluteProjectPath(projectPath, relativePath, await pathsForProject(projectPath));
+}
+
 async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
-  const configPath = path.join(projectPath, PATHS.site);
+  const configPath = await projectFilePath(projectPath, PATHS.site);
   let content: string;
   try {
     content = await readFile(configPath, "utf8");
@@ -422,11 +445,12 @@ function normalizeSeoIgnoreRules(rules: readonly SeoIgnoreRule[]): SeoIgnoreRule
 }
 
 async function snapshotFingerprint(projectPath: string, basePaths: readonly string[] = SNAPSHOT_FILE_PATHS): Promise<string> {
+  const paths = await pathsForProject(projectPath);
   let eventFiles: string[];
   try {
-    eventFiles = (await readdir(path.join(projectPath, PATHS.eventsDir)))
+    eventFiles = (await readdir(path.join(projectPath, paths.eventsDir)))
       .filter((name) => /^\d{4}-\d{2}\.jsonl$/.test(name))
-      .map((name) => path.join(PATHS.eventsDir, name));
+      .map((name) => `${PATHS.eventsDir}/${name}`);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     eventFiles = [];
@@ -435,7 +459,7 @@ async function snapshotFingerprint(projectPath: string, basePaths: readonly stri
   const filePaths = [...basePaths, ...eventFiles].sort(compareKeys);
   const entries = await Promise.all(filePaths.map(async (relativePath) => {
     try {
-      const file = await stat(path.join(projectPath, relativePath));
+      const file = await stat(absoluteProjectPath(projectPath, relativePath, paths));
       return `${relativePath}\u0000${file.dev}\u0000${file.ino}\u0000${file.size}\u0000${file.mtimeMs}\u0000${file.ctimeMs}`;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return `${relativePath}\u0000missing`;
@@ -447,29 +471,30 @@ async function snapshotFingerprint(projectPath: string, basePaths: readonly stri
 
 async function loadSnapshot(projectPath: string): Promise<ProjectSnapshot> {
   const config = await readSiteConfig(projectPath);
+  const paths = await pathsForProject(projectPath);
   try {
     const [runner, skus, latest, dailyCsv, products, skuStock, productDetails, seoPages, seoIssues, seoLinks, blogIndex, keywords, skuMedia, campaigns, categories, runs, skuTags] = await Promise.all([
       readRunner(projectPath),
-      readJsonlAs<SkuRecord>(projectPath, PATHS.skus),
-      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest),
-      readCsv(path.join(projectPath, PATHS.dailySummary)),
-      readJsonlAs<ProductView>(projectPath, PATHS.productsView),
-      readJsonlAs<SkuStockView>(projectPath, PATHS.skuStockView),
-      readJsonlAs<ProductDetails>(projectPath, PATHS.productDetails),
-      readJsonlAs<SeoPage>(projectPath, PATHS.seoPages),
-      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues),
-      readJsonlAs<SeoLink>(projectPath, PATHS.seoLinks),
-      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex),
-      readJsonlAs<Keyword>(projectPath, PATHS.keywords),
-      readCsv(path.join(projectPath, PATHS.skuMedia)),
-      readJsonlAs<EdmCampaign>(projectPath, PATHS.edmCampaigns),
-      readJsonAs<Category[]>(projectPath, PATHS.categories, []),
-      readJsonlAs<RunLog>(projectPath, PATHS.runs),
-      readCsv(path.join(projectPath, PATHS.skuTags)),
+      readJsonlAs<SkuRecord>(projectPath, PATHS.skus, paths),
+      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest, paths),
+      readCsv(path.join(projectPath, paths.dailySummary)),
+      readJsonlAs<ProductView>(projectPath, PATHS.productsView, paths),
+      readJsonlAs<SkuStockView>(projectPath, PATHS.skuStockView, paths),
+      readJsonlAs<ProductDetails>(projectPath, PATHS.productDetails, paths),
+      readJsonlAs<SeoPage>(projectPath, PATHS.seoPages, paths),
+      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues, paths),
+      readJsonlAs<SeoLink>(projectPath, PATHS.seoLinks, paths),
+      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex, paths),
+      readJsonlAs<Keyword>(projectPath, PATHS.keywords, paths),
+      readCsv(path.join(projectPath, paths.skuMedia)),
+      readJsonlAs<EdmCampaign>(projectPath, PATHS.edmCampaigns, paths),
+      readJsonAs<Category[]>(projectPath, PATHS.categories, [], paths),
+      readJsonlAs<RunLog>(projectPath, PATHS.runs, paths),
+      readCsv(path.join(projectPath, paths.skuTags)),
     ]);
     const dailySummary = parseDailySummary(dailyCsv);
     const asOf = dailySummary.map((row) => row.date).sort(codeUnitCompare).at(-1) ?? localDate(config.timezone);
-    const events = parseEvents(await readJsonl(path.join(projectPath, eventsFile(monthFor(asOf)))));
+    const events = parseEvents(await readJsonl(path.join(projectPath, paths.eventsDir, `${monthFor(asOf)}.jsonl`)));
     return {
       projectPath,
       config,
@@ -501,20 +526,21 @@ async function loadSnapshot(projectPath: string): Promise<ProjectSnapshot> {
 
 async function loadProjectSummarySnapshot(projectPath: string): Promise<ProjectSummarySnapshot> {
   const config = await readSiteConfig(projectPath);
+  const paths = await pathsForProject(projectPath);
   try {
     const [runner, skus, latest, dailyCsv, products, seoIssues, blogIndex, runs] = await Promise.all([
       readRunner(projectPath),
-      readJsonlAs<SkuRecord>(projectPath, PATHS.skus),
-      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest),
-      readCsv(path.join(projectPath, PATHS.dailySummary)),
-      readJsonlAs<ProductView>(projectPath, PATHS.productsView),
-      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues),
-      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex),
-      readJsonlAs<RunLog>(projectPath, PATHS.runs),
+      readJsonlAs<SkuRecord>(projectPath, PATHS.skus, paths),
+      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest, paths),
+      readCsv(path.join(projectPath, paths.dailySummary)),
+      readJsonlAs<ProductView>(projectPath, PATHS.productsView, paths),
+      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues, paths),
+      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex, paths),
+      readJsonlAs<RunLog>(projectPath, PATHS.runs, paths),
     ]);
     const dailySummary = parseDailySummary(dailyCsv);
     const asOf = dailySummary.map((row) => row.date).sort(codeUnitCompare).at(-1) ?? localDate(config.timezone);
-    const events = parseEvents(await readJsonl(path.join(projectPath, eventsFile(monthFor(asOf)))));
+    const events = parseEvents(await readJsonl(path.join(projectPath, paths.eventsDir, `${monthFor(asOf)}.jsonl`)));
     return { projectPath, config, runner, skus, latest, dailySummary, events, products, seoIssues, blogIndex, runs, asOf };
   } catch (error) {
     if (isSiteIndexError(error)) throw error;
@@ -1031,7 +1057,7 @@ function thrownExitCode(error: unknown): number {
 }
 
 async function appendRunLog(projectPath: string, record: RunLog): Promise<void> {
-  const filePath = path.join(projectPath, PATHS.runs);
+  const filePath = await projectFilePath(projectPath, PATHS.runs);
   const rows = await readJsonl(filePath);
   const next = rows.filter((row) => row.run_id !== record.run_id);
   next.push(record as unknown as JsonRecord);
@@ -1220,9 +1246,12 @@ function applyCategoryConfig(skus: SkuRecord[], config: CategoriesConfig): SkuRe
 }
 
 async function readmeAutoContent(snapshot: ProjectSnapshot) {
-  const designTokens = await readJsonAs<DesignTokens | null>(snapshot.projectPath, PATHS.designTokens, null);
+  const layout = await resolveProjectLayout(snapshot.projectPath);
+  const paths = pathsFor(layout);
+  const designTokens = await readJsonAs<DesignTokens | null>(snapshot.projectPath, paths.designTokens, null);
   return buildReadmeAutoContent({
     site: snapshot.config,
+    layout,
     asOf: snapshot.asOf,
     activeSkus: snapshot.skus.filter((sku) => sku.status === "active").length,
     activeProducts: snapshot.products.filter((product) => product.status === "active").length,
@@ -1236,8 +1265,9 @@ async function readmeAutoContent(snapshot: ProjectSnapshot) {
 }
 
 async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot): Promise<void> {
+  const paths = await pathsForProject(projectPath);
   let markdown: string;
-  try { markdown = await readFile(path.join(projectPath, PATHS.readme), "utf8"); }
+  try { markdown = await readFile(path.join(projectPath, paths.readme), "utf8"); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     markdown = "# 项目说明\n";
@@ -1245,7 +1275,7 @@ async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot)
   const blocks = await readmeAutoContent(snapshot);
   const disabled = new Set<string>(snapshot.config.readme?.disabled_blocks ?? []);
   markdown = replaceReadmeAutoBlocks(markdown, blocks, disabled);
-  await atomicWrite(path.join(projectPath, PATHS.readme), markdown);
+  await atomicWrite(path.join(projectPath, paths.readme), markdown);
 }
 
 export function createCoreService(ctx: CoreServiceContext): CoreService {
@@ -1338,6 +1368,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           executionPath = path.join(tempRoot, "project");
           await cp(projectPath, executionPath, { recursive: true, force: false, errorOnExist: false });
         }
+        const executionPaths = await pathsForProject(executionPath);
 
         let jobResult: JobResult;
         if (req.job === "init") {
@@ -1350,10 +1381,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             progress(pct, key, message, status === "failed" ? "error" : "info");
           };
           for (const [key, relative, label, pct] of [
-            ["folders", PATHS.index, "数据目录已创建", 5],
-            ["config", PATHS.site, "项目配置已创建", 10],
-            ["readme", PATHS.readme, "项目说明已创建", 15],
-            ["skills", PATHS.skillsManifest, "项目 skills 已安装", 20],
+            ["folders", executionPaths.index, "数据目录已创建", 5],
+            ["config", executionPaths.site, "项目配置已创建", 10],
+            ["readme", executionPaths.readme, "项目说明已创建", 15],
+            ["skills", executionPaths.skillsManifest, "项目 skills 已安装", 20],
           ] as const) {
             try { await access(path.join(executionPath, relative)); record(key, "ok", label, pct); }
             catch { record(key, "failed", `${label.replace("已", "未")}：${relative} 不存在。`, pct); }
@@ -1506,7 +1537,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           }
           const indexCheck = await runIndexCheck({
             projectPath: executionPath,
-            pages: await readJsonlAs<SeoPage>(executionPath, PATHS.seoPages),
+            pages: await readJsonlAs<SeoPage>(executionPath, executionPaths.seoPages),
             executablePath: ctx.browserExecutablePath,
             launchBrowser: ctx.browserLauncher ?? launchChromium,
           });
@@ -1546,7 +1577,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         }
 
         if (!req.dryRun) {
-          const existing = (await readJsonl(path.join(executionPath, PATHS.runs))).find((row) => row.run_id === runId);
+          const existing = (await readJsonl(path.join(executionPath, executionPaths.runs))).find((row) => row.run_id === runId);
           const record = {
             run_id: runId,
             job: req.job,
@@ -1621,7 +1652,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         workspace_folders: [],
       } as SiteConfig);
       try {
-        await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(config));
+        await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(config));
       } catch (error) {
         throw setError(error);
       }
@@ -1686,9 +1717,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
     dailyReport: async (id, date) => {
       const projectPath = resolve(id);
+      const paths = await pathsForProject(projectPath);
       await load(projectPath);
       try {
-        return await readFile(path.join(projectPath, dailyReportFile(date)), "utf8");
+        return await readFile(path.join(projectPath, paths.dailyReportsDir, date + ".md"), "utf8");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
         throw siteError("PROJECT_UNREADABLE", "无法读取库存日报", String(error));
@@ -1793,12 +1825,12 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       }
       const tagRows = [...bySku.values()];
       try {
-        await writeCsv(path.join(projectPath, PATHS.skuTags), tagRows, CSV_HEADERS.skuTags, ["sku"]);
-        const viewRows = await readJsonl(path.join(projectPath, PATHS.productsView));
+        await writeCsv(await projectFilePath(projectPath, PATHS.skuTags), tagRows, CSV_HEADERS.skuTags, ["sku"]);
+        const viewRows = await readJsonl(await projectFilePath(projectPath, PATHS.productsView));
         const view = viewRows.find((row) => row.handle === handle);
         if (view) {
           Object.assign(view, aggregateTags(snapshot.skus, tagRows, handle));
-          await writeJsonl(path.join(projectPath, PATHS.productsView), viewRows, {
+          await writeJsonl(await projectFilePath(projectPath, PATHS.productsView), viewRows, {
             primaryKey: ["handle"], fieldOrder: PRODUCT_FIELDS,
             floatFields: ["price_min", "price_max", "compare_at_max"],
           });
@@ -1844,12 +1876,12 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         row.tags = row.tags.split(";").map((value) => value.trim().toLowerCase()).filter((value) => value && value !== normalized).join(";") || null;
       }
       try {
-        await writeCsv(path.join(projectPath, PATHS.skuTags), changed, CSV_HEADERS.skuTags, ["sku"]);
-        const viewRows = await readJsonl(path.join(projectPath, PATHS.productsView));
+        await writeCsv(await projectFilePath(projectPath, PATHS.skuTags), changed, CSV_HEADERS.skuTags, ["sku"]);
+        const viewRows = await readJsonl(await projectFilePath(projectPath, PATHS.productsView));
         for (const view of viewRows) {
           if (typeof view.handle === "string") Object.assign(view, aggregateTags(snapshot.skus, changed, view.handle));
         }
-        await writeJsonl(path.join(projectPath, PATHS.productsView), viewRows, {
+        await writeJsonl(await projectFilePath(projectPath, PATHS.productsView), viewRows, {
           primaryKey: ["handle"], fieldOrder: PRODUCT_FIELDS,
           floatFields: ["price_min", "price_max", "compare_at_max"],
         });
@@ -1868,7 +1900,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     get: async (id): Promise<OverviewData> => {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
-      const readme = await readFile(path.join(projectPath, PATHS.readme), "utf8").catch(() => "");
+      const readme = await readFile(await projectFilePath(projectPath, PATHS.readme), "utf8").catch(() => "");
       const userBlocks = readmeUserBlocks(readme);
       const activeSkus = snapshot.skus.filter((row) => row.status === "active").length;
       const activeProducts = snapshot.products.filter((row) => row.status === "active").length;
@@ -1960,9 +1992,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           const updated = issues.reduce((count, issue, index) => count + (issue.status !== nextIssues[index]?.status ? 1 : 0), 0);
           if (rulesChanged) {
             const nextConfig: SiteConfig = { ...config, seo: { ...config.seo, ignore_rules: nextIgnoreRules } };
-            await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
+            await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
           }
-          if (updated) await writeJsonl(path.join(projectPath, PATHS.seoIssues), nextIssues as unknown as JsonRecord[], "seo_issue");
+          if (updated) await writeJsonl(await projectFilePath(projectPath, PATHS.seoIssues), nextIssues as unknown as JsonRecord[], "seo_issue");
           return { updated };
         } catch (error) {
           throw setError(error);
@@ -1997,9 +2029,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           const updated = issues.reduce((count, issue, index) => count + (issue.status !== nextIssues[index]?.status ? 1 : 0), 0);
           if (rulesChanged) {
             const nextConfig: SiteConfig = { ...config, seo: { ...config.seo, ignore_rules: nextIgnoreRules } };
-            await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
+            await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
           }
-          if (updated) await writeJsonl(path.join(projectPath, PATHS.seoIssues), nextIssues as unknown as JsonRecord[], "seo_issue");
+          if (updated) await writeJsonl(await projectFilePath(projectPath, PATHS.seoIssues), nextIssues as unknown as JsonRecord[], "seo_issue");
           return { updated };
         } catch (error) {
           throw setError(error);
@@ -2149,7 +2181,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         source: /mailchimp|mcusercontent\.com/i.test(normalizedUrl) ? "mailchimp" : "cdn",
         width: null, height: null, updated_at: updatedAt,
       });
-      await writeCsv(path.join(projectPath, PATHS.skuMedia), rows, CSV_HEADERS.skuMedia, ["sku", "image_role"]);
+      await writeCsv(await projectFilePath(projectPath, PATHS.skuMedia), rows, CSV_HEADERS.skuMedia, ["sku", "image_role"]);
       await buildViews(projectPath, { date: snapshot.asOf });
       invalidate(projectPath);
       const after = await load(projectPath);
@@ -2176,9 +2208,11 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   const design: CoreService["design"] = {
     get: async (id) => {
       const projectPath = resolve(id);
-      const tokens = await readJsonAs<DesignTokens | null>(projectPath, PATHS.designTokens, null);
-      const names = await readdir(path.join(projectPath, PATHS.designScreenshots)).catch(() => []);
-      return { tokens, screenshots: names.sort(codeUnitCompare).map((name) => ({ name, path: path.join(projectPath, PATHS.designScreenshots, name) })) };
+      const paths = await pathsForProject(projectPath);
+      const tokens = await readJsonAs<DesignTokens | null>(projectPath, paths.designTokens, null, paths);
+      const screenshotsPath = path.join(projectPath, paths.designScreenshots);
+      const names = await readdir(screenshotsPath).catch(() => []);
+      return { tokens, screenshots: names.sort(codeUnitCompare).map((name) => ({ name, path: path.join(screenshotsPath, name) })) };
     },
   };
 
@@ -2186,8 +2220,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     get: async (id): Promise<ReadmeData> => {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
-      const markdown = await readFile(path.join(projectPath, PATHS.readme), "utf8").catch(() => "");
-      const updatedAt = await stat(path.join(projectPath, PATHS.readme)).then((value) => value.mtime.toISOString()).catch(() => null);
+      const readmePath = await projectFilePath(projectPath, PATHS.readme);
+      const markdown = await readFile(readmePath, "utf8").catch(() => "");
+      const updatedAt = await stat(readmePath).then((value) => value.mtime.toISOString()).catch(() => null);
       const auto_blocks = parseReadmeAutoBlocks(markdown)
         .map(({ id }) => ({
           id,
@@ -2202,11 +2237,12 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
     saveUserBlocks: async (id, blocks) => {
       const projectPath = resolve(id);
-      let markdown = await readFile(path.join(projectPath, PATHS.readme), "utf8").catch(() => "# 项目说明\n");
+      const readmePath = await projectFilePath(projectPath, PATHS.readme);
+      let markdown = await readFile(readmePath, "utf8").catch(() => "# 项目说明\n");
       markdown = replaceReadmeSection(markdown, "项目概况", blocks.overview);
       markdown = replaceReadmeSection(markdown, "当前重点", blocks.focus);
       markdown = replaceReadmeSection(markdown, "工作规则与偏好", blocks.rules);
-      try { await atomicWrite(path.join(projectPath, PATHS.readme), markdown); }
+      try { await atomicWrite(readmePath, markdown); }
       catch (error) { throw setError(error); }
       invalidate(projectPath);
     },
@@ -2234,8 +2270,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const nextConfig: SiteConfig = { ...snapshot.config, categories: config };
       const skus = applyCategoryConfig(snapshot.skus, config);
       try {
-        await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
-        await writeJsonl(path.join(projectPath, PATHS.skus), skus as unknown as JsonRecord[], "sku");
+        await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
+        await writeJsonl(await projectFilePath(projectPath, PATHS.skus), skus as unknown as JsonRecord[], "sku");
         const latest = new Map(snapshot.latest.map((row) => [row.sku, row.stock_status]));
         const categoryRows: Category[] = preview.categories.map((category) => {
           const members = skus.filter((sku) => sku.status === "active" && (sku.category === category.slug || sku.categories?.includes(category.slug)));
@@ -2252,7 +2288,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             last_seen: snapshot.asOf,
           };
         });
-        await atomicWrite(path.join(projectPath, PATHS.categories), `${JSON.stringify(categoryRows, null, 2)}\n`);
+        await atomicWrite(await projectFilePath(projectPath, PATHS.categories), `${JSON.stringify(categoryRows, null, 2)}\n`);
         await buildViews(projectPath, { date: snapshot.asOf });
       } catch (error) {
         invalidate(projectPath);
@@ -2273,7 +2309,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const projectPath = resolve(id);
       const snapshot = await load(projectPath);
       const next: SiteConfig = { ...snapshot.config, schedule: config };
-      try { await atomicWrite(path.join(projectPath, PATHS.site), serializeSiteConfig(next)); }
+      try { await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(next)); }
       catch (error) { throw setError(error); }
       invalidate(projectPath);
       return { config, registered: false, next_runs: (["daily", "validate", "weekly", "readme", "monthly"] as const).map((job) => ({ job, at: null })) };

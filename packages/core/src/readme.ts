@@ -1,9 +1,10 @@
 import {
-  PATHS,
-  dailyReportFile,
+  pathsFor,
   type DailySummaryRow,
   type DesignTokens,
   type InventoryEvent,
+  type ProjectLayout,
+  type ProjectPaths,
   type RunLog,
   type SiteConfig,
 } from "@siteindex/shared";
@@ -27,6 +28,7 @@ interface AutoBlockRange {
 
 export interface ReadmeAutoContentInput {
   site: Pick<SiteConfig, "domain" | "platform">;
+  layout?: ProjectLayout;
   asOf: string;
   activeSkus: number;
   activeProducts: number;
@@ -143,49 +145,49 @@ function cell(value: string | number): string {
   return String(value).replaceAll("|", "\\|").replace(/\r?\n/g, "<br>");
 }
 
-function taskRouting(): string {
-  const skill = (name: string) => `\`${PATHS.skillsDir}/${name}/SKILL.md\``;
+function taskRouting(paths: ProjectPaths): string {
+  const skill = (name: string) => `\`${paths.skillsDir}/${name}/SKILL.md\``;
   return [
     "## 任务路由",
     "",
     "| 任务 | Skill | 读取 | 产出 |",
     "|---|---|---|---|",
-    `| 写 EDM | ${skill("edm-builder")} | \`${PATHS.productsView}\`、\`${PATHS.edmCampaigns}\` | 用户指定的目录 |`,
-    `| 录入图片 / 打标签 | ${skill("sku-media-enrich")} | \`${PATHS.skus}\` | \`${PATHS.skuMedia}\`、\`${PATHS.skuTags}\` |`,
-    `| 库存汇报 | ${skill("stock-report")} | \`${PATHS.dailyReportsDir}/\`、\`${PATHS.inventoryLatest}\` | 回复或用户指定的目录 |`,
-    `| 写博客 | ${skill("blog-writer")} | \`${PATHS.blogIndex}\`、\`${PATHS.productsView}\` | 用户指定的目录 |`,
-    `| 外链搜集 | ${skill("link-prospect")} | \`${PATHS.outreach}\` | LinkFlow + \`${PATHS.outreach}\` |`,
-    `| 页面 / 视觉设计 | ${skill("page-design")} | \`${PATHS.designTokens}\` | 用户指定的目录 |`,
+    `| 写 EDM | ${skill("edm-builder")} | \`${paths.productsView}\`、\`${paths.edmCampaigns}\` | 用户指定的目录 |`,
+    `| 录入图片 / 打标签 | ${skill("sku-media-enrich")} | \`${paths.skus}\` | \`${paths.skuMedia}\`、\`${paths.skuTags}\` |`,
+    `| 库存汇报 | ${skill("stock-report")} | \`${paths.dailyReportsDir}/\`、\`${paths.inventoryLatest}\` | 回复或用户指定的目录 |`,
+    `| 写博客 | ${skill("blog-writer")} | \`${paths.blogIndex}\`、\`${paths.productsView}\` | 用户指定的目录 |`,
+    `| 外链搜集 | ${skill("link-prospect")} | \`${paths.outreach}\` | LinkFlow + \`${paths.outreach}\` |`,
+    `| 页面 / 视觉设计 | ${skill("page-design")} | \`${paths.designTokens}\` | 用户指定的目录 |`,
     `| 补充项目说明 | ${skill("project-readme")} | README 用户区块 | README 用户区块 |`,
   ].join("\n");
 }
 
-function dataGuide(): string {
+function dataGuide(paths: ProjectPaths): string {
   const rows = [
-    [PATHS.site, "站点配置、品牌、抓取与 EDM 设置", "—", "用户 / SiteIndex"],
-    [PATHS.skus, "SKU 主表（一行一个变体）", "sku", "SiteIndex"],
-    [PATHS.productDetails, "产品详情、图集与相关产品", "handle", "SiteIndex"],
-    [PATHS.categories, "分类树", "slug", "SiteIndex"],
-    [PATHS.inventoryLatest, "当前库存与持续天数", "sku", "SiteIndex"],
-    [`${PATHS.eventsDir}/YYYY-MM.jsonl`, "到货、缺货、调价、上新、下架事件", "date+sku+type", "SiteIndex"],
-    [PATHS.dailySummary, "每日分类库存汇总", "date+category", "SiteIndex"],
-    [PATHS.seoPages, "SEO 页面", "url", "SiteIndex"],
-    [PATHS.seoIssues, "SEO 问题", "url+rule", "SiteIndex"],
-    [PATHS.seoLinks, "站内链接", "from+to+anchor", "SiteIndex"],
-    [PATHS.blogIndex, "博客索引与内链", "url", "SiteIndex"],
-    [PATHS.keywords, "关键词 → 目标页面", "keyword", "agent / 用户"],
-    [PATHS.skuMedia, "手动产品图片", "sku+image_role", "agent / 用户"],
-    [PATHS.skuTags, "主题标签、优先级、EDM 排除", "sku", "agent / 用户"],
-    [PATHS.edmCampaigns, "EDM 记录（推品冷却期）", "campaign_id", "agent / 用户"],
-    [PATHS.outreach, "外链去重名单", "domain", "agent / 用户"],
-    [PATHS.productsView, "产品级合并视图，选品首选", "handle", "SiteIndex"],
-    [PATHS.skuStockView, "SKU 库存视图与 30 天历史", "sku", "SiteIndex"],
-    [PATHS.designTokens, "设计规范 tokens", "—", "SiteIndex"],
-    [PATHS.designBrand, "品牌视觉规范说明", "—", "SiteIndex"],
-    [PATHS.designScreenshots, "首页、分类页与产品页截图", "—", "SiteIndex"],
+    [paths.site, "站点配置、品牌、抓取与 EDM 设置", "—", "用户 / SiteIndex"],
+    [paths.skus, "SKU 主表（一行一个变体）", "sku", "SiteIndex"],
+    [paths.productDetails, "产品详情、图集与相关产品", "handle", "SiteIndex"],
+    [paths.categories, "分类树", "slug", "SiteIndex"],
+    [paths.inventoryLatest, "当前库存与持续天数", "sku", "SiteIndex"],
+    [`${paths.eventsDir}/YYYY-MM.jsonl`, "到货、缺货、调价、上新、下架事件", "date+sku+type", "SiteIndex"],
+    [paths.dailySummary, "每日分类库存汇总", "date+category", "SiteIndex"],
+    [paths.seoPages, "SEO 页面", "url", "SiteIndex"],
+    [paths.seoIssues, "SEO 问题", "url+rule", "SiteIndex"],
+    [paths.seoLinks, "站内链接", "from+to+anchor", "SiteIndex"],
+    [paths.blogIndex, "博客索引与内链", "url", "SiteIndex"],
+    [paths.keywords, "关键词 → 目标页面", "keyword", "agent / 用户"],
+    [paths.skuMedia, "手动产品图片", "sku+image_role", "agent / 用户"],
+    [paths.skuTags, "主题标签、优先级、EDM 排除", "sku", "agent / 用户"],
+    [paths.edmCampaigns, "EDM 记录（推品冷却期）", "campaign_id", "agent / 用户"],
+    [paths.outreach, "外链去重名单", "domain", "agent / 用户"],
+    [paths.productsView, "产品级合并视图，选品首选", "handle", "SiteIndex"],
+    [paths.skuStockView, "SKU 库存视图与 30 天历史", "sku", "SiteIndex"],
+    [paths.designTokens, "设计规范 tokens", "—", "SiteIndex"],
+    [paths.designBrand, "品牌视觉规范说明", "—", "SiteIndex"],
+    [paths.designScreenshots, "首页、分类页与产品页截图", "—", "SiteIndex"],
   ];
   return [
-    `## 数据指南（${PATHS.index}/）`,
+    `## 数据指南（${paths.index}/）`,
     "",
     "| 路径 | 内容 | 主键 | 写入 |",
     "|---|---|---|---|",
@@ -193,12 +195,12 @@ function dataGuide(): string {
       `| \`${relativePath}\` | ${cell(description!)} | ${cell(key!)} | ${cell(writer!)} |`,
     ),
     "",
-    `写入台账：\`siteindex ledger upsert <project> <ledger> --rows <file|->\`。命令不可用时，严格按 \`${PATHS.index}/\` 现有文件的格式与排序手写。`,
+    `写入台账：\`siteindex ledger upsert <project> <ledger> --rows <file|->\`。命令不可用时，严格按 \`${paths.index}/\` 现有文件的格式与排序手写。`,
     `查询产品：\`siteindex query <project> products --in-stock --json\``,
   ].join("\n");
 }
 
-function designSummary(tokens: DesignTokens | null): string {
+function designSummary(tokens: DesignTokens | null, paths: ProjectPaths): string {
   if (!tokens) return "## 设计规范速览\n\n尚未提取设计规范。运行设计规范 Job 后，此处会显示品牌颜色和字体。";
   const date = tokens.extracted_at.slice(0, 10);
   const colors = [
@@ -215,7 +217,7 @@ function designSummary(tokens: DesignTokens | null): string {
     "",
     colors.length ? `- ${colors.join(" · ")}` : "- 尚无颜色数据",
     fonts.length ? `- 字体：${fonts.map((font) => `\`${font}\``).join(" · ")}` : "- 尚无字体数据",
-    `- 完整规范：\`${PATHS.designTokens}\`、\`${PATHS.designBrand}\``,
+    `- 完整规范：\`${paths.designTokens}\`、\`${paths.designBrand}\``,
   ].join("\n");
 }
 
@@ -240,6 +242,7 @@ function changelog(runs: readonly RunLog[]): string {
 }
 
 export function buildReadmeAutoContent(input: ReadmeAutoContentInput): ReadmeAutoContent {
+  const paths = pathsFor(input.layout ?? "legacy");
   const current = summaryForDate(input.dailySummary, input.asOf);
   const previousDate = dateOffset(input.asOf, -7);
   const previous = summaryForDate(input.dailySummary, previousDate);
@@ -253,7 +256,7 @@ export function buildReadmeAutoContent(input: ReadmeAutoContentInput): ReadmeAut
   const changes = eventCounts(input.events, input.asOf);
   const updatedAt = latestDaily?.started_at.slice(0, 16).replace("T", " ") ?? input.asOf;
   const dailyStatus: Record<RunLog["status"], string> = { ok: "成功", partial: "部分完成", failed: "失败", skipped: "跳过" };
-  const dailyReport = dailyReportFile(input.asOf);
+  const dailyReport = `${paths.dailyReportsDir}/${input.asOf}.md`;
   const indexSummary = [
     "## 网站数据速览",
     `_更新于 ${updatedAt} · 每日同步：${latestDaily ? dailyStatus[latestDaily.status] : "暂无记录"}_`,
@@ -272,9 +275,9 @@ export function buildReadmeAutoContent(input: ReadmeAutoContentInput): ReadmeAut
 
   return {
     "index-summary": indexSummary,
-    "task-routing": taskRouting(),
-    "data-guide": dataGuide(),
-    "design-summary": designSummary(input.designTokens),
+    "task-routing": taskRouting(paths),
+    "data-guide": dataGuide(paths),
+    "design-summary": designSummary(input.designTokens, paths),
     changelog: changelog(input.runs),
   };
 }
