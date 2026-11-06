@@ -1,15 +1,16 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { FolderOpen, MoreHorizontal, Plus } from "lucide-react";
-import { Link } from "react-router-dom";
-import type { Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue } from "@siteindex/shared";
+import { Link, useNavigate } from "react-router-dom";
+import type { CreateWorkspaceOnlyInput, Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue, WorkspaceCreateInput } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, KpiCard, PageHeader, useToast } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
+import { workspaceDirectoryTree, workspacePathJoin } from "./new-project/workspace-preview";
 
 type ScheduleVerification = {
   state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error";
@@ -217,6 +218,115 @@ function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onO
   );
 }
 
+function CreateWorkspaceDialog({
+  open, onOpenChange, defaultRoot, onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  defaultRoot: string;
+  onCreated: (id: string) => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [brandName, setBrandName] = useState("");
+  const [projectsRoot, setProjectsRoot] = useState("");
+  const [folderName, setFolderName] = useState("");
+  const [markets, setMarkets] = useState("US");
+  const [platform, setPlatform] = useState<WorkspaceCreateInput["platform"]>("other");
+  const [mailchimp, setMailchimp] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const targetPath = workspacePathJoin(projectsRoot, folderName);
+  const submitLock = useRef(false);
+
+  useEffect(() => {
+    if (open) {
+      setProjectsRoot(defaultRoot);
+      setError("");
+    }
+  }, [open, defaultRoot]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const createWorkspaceOnly = api.projects.createWorkspaceOnly;
+    if (!createWorkspaceOnly || submitLock.current) return;
+    const cleanUrl = url.trim();
+    const cleanRoot = projectsRoot.trim();
+    const cleanFolder = folderName.trim();
+    const cleanBrand = brandName.trim();
+    if (!cleanUrl || !cleanRoot || !cleanFolder || !cleanBrand) {
+      setError("请填写网站地址、品牌名、项目根目录和文件夹名。");
+      return;
+    }
+    submitLock.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      const normalizedUrl = /^https?:\/\//i.test(cleanUrl) ? cleanUrl : "https://" + cleanUrl;
+      const check = api.workspace?.check;
+      if (typeof check === "function") {
+        const result = await check(workspacePathJoin(cleanRoot, cleanFolder));
+        if (!result.ok) {
+          setError(result.invalid_entries.length
+            ? "目标目录不是空目录：" + result.invalid_entries.slice(0, 10).join("、")
+            : "目标目录不是空目录，请选择一个空目录。");
+          return;
+        }
+      }
+      const created = await createWorkspaceOnly({
+        url: normalizedUrl,
+        brand: { name: cleanBrand },
+        markets: markets.split(/[，,]/).map((market) => market.trim()).filter(Boolean),
+        projects_root: cleanRoot,
+        folder_name: cleanFolder,
+        workspace: { enabled: true, platform, esp_presets: mailchimp ? ["esp.mailchimp"] : [] },
+      } satisfies CreateWorkspaceOnlyInput);
+      onCreated(created.id);
+      onOpenChange(false);
+      setUrl(""); setBrandName(""); setFolderName(""); setMarkets("US"); setPlatform("other"); setMailchimp(true);
+    } catch (cause) {
+      setError(apiErrorMessage(cause, "创建空工作区失败，请重试。"));
+    } finally {
+      submitLock.current = false;
+      setSaving(false);
+    }
+  };
+
+  return <Dialog.Root open={open} onOpenChange={(nextOpen) => {
+    if (saving) return;
+    onOpenChange(nextOpen);
+  }}>
+    <Dialog.Portal>
+      <Dialog.Overlay className="si-dialog-overlay" />
+      <Dialog.Content className="si-confirm-dialog si-add-project-dialog si-workspace-create-dialog">
+        <Dialog.Title className="si-dialog-title">创建空工作区</Dialog.Title>
+        <Dialog.Description className="si-dialog-description">生成 Agent 工作区和 SiteIndex 数据目录，不执行抓取任务。</Dialog.Description>
+        <form onSubmit={(event) => void submit(event)} aria-busy={saving}>
+          <label className="si-field-label" htmlFor="workspace-site-url">网站地址</label>
+          <input id="workspace-site-url" className="si-text-field si-mono" value={url} disabled={saving} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com" />
+          <label className="si-field-label" htmlFor="workspace-brand-name">品牌名</label>
+          <input id="workspace-brand-name" className="si-text-field" value={brandName} disabled={saving} onChange={(event) => setBrandName(event.target.value)} />
+          <div className="si-workspace-create-grid">
+            <label className="si-field-label" htmlFor="workspace-market">目标市场<input id="workspace-market" className="si-text-field" value={markets} disabled={saving} onChange={(event) => setMarkets(event.target.value)} placeholder="US, CA" /></label>
+            <label className="si-field-label" htmlFor="workspace-platform">电商平台<select id="workspace-platform" className="si-text-field" value={platform} disabled={saving} onChange={(event) => setPlatform(event.target.value as WorkspaceCreateInput["platform"])}><option value="magento2">Magento 2</option><option value="woocommerce">WooCommerce</option><option value="shopify">Shopify</option><option value="other">其他平台</option></select></label>
+          </div>
+          <label className="si-workspace-create-checkbox"><input type="checkbox" checked={mailchimp} disabled={saving} onChange={(event) => setMailchimp(event.target.checked)} />Mailchimp 预设</label>
+          <label className="si-field-label" htmlFor="workspace-projects-root">项目根目录</label>
+          <div className="si-wizard-directory"><input id="workspace-projects-root" className="si-text-field si-mono" value={projectsRoot} disabled={saving} onChange={(event) => setProjectsRoot(event.target.value)} /><Button type="button" disabled={saving} onClick={async () => {
+            try { const selected = await api.settings.chooseDirectory(projectsRoot || undefined); if (selected) setProjectsRoot(selected); }
+            catch (cause) { setError(apiErrorMessage(cause, "选择项目根目录失败，请重试。")); }
+          }}>选择</Button></div>
+          <label className="si-field-label" htmlFor="workspace-folder-name">项目文件夹名</label>
+          <input id="workspace-folder-name" className="si-text-field si-mono" value={folderName} disabled={saving} onChange={(event) => setFolderName(event.target.value)} />
+          <div className="si-wizard-path"><span>将创建</span><code>{targetPath || "请填写项目根目录和文件夹名"}</code></div>
+          {error && <p className="si-form-error" role="alert">{error}</p>}
+          <section className="si-workspace-create-preview"><h3>目录预览</h3><pre>{workspaceDirectoryTree(folderName || "[项目文件夹]")}</pre></section>
+          <div className="si-dialog-actions"><Button type="button" disabled={saving} onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" variant="primary" disabled={saving}>{saving ? "正在创建…" : "创建空工作区"}</Button></div>
+        </form>
+      </Dialog.Content>
+    </Dialog.Portal>
+  </Dialog.Root>;
+}
+
 function CenterStatus({ status }: { status: ProjectSummary["sync"]["state"] }) {
   const tone = status === "failed" ? "danger" : status === "partial" || status === "never" ? "warn" : status === "ok" ? "ok" : "neutral";
   return <Chip tone={tone}>{status === "ok" ? "成功" : status === "failed" ? "失败" : status === "partial" ? "提醒" : status === "running" ? "运行中" : "待配置"}</Chip>;
@@ -298,6 +408,7 @@ function AttentionList({ projects }: { projects: ProjectSummary[] }) {
 }
 
 export function ProjectCenterPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectsQuery = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
@@ -306,6 +417,7 @@ export function ProjectCenterPage() {
   const scheduleQuery = useQuery({ queryKey: ["schedule", primary?.id], queryFn: () => api.schedule.get(primary!.id), enabled: Boolean(primary) });
   const runsQuery = useQuery({ queryKey: ["runs", primary?.id, "recent"], queryFn: () => api.jobs.history(primary!.id, 3), enabled: Boolean(primary) });
   const [addExistingOpen, setAddExistingOpen] = useState(false);
+  const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const toast = useToast();
   const [settingRoot, setSettingRoot] = useState(false);
   const [selectedRun, setSelectedRun] = useState<RunLog | null>(null);
@@ -377,6 +489,13 @@ export function ProjectCenterPage() {
     toast.success("已添加项目：" + project.name);
   };
 
+  const handleWorkspaceCreated = async (id: string) => {
+    setCreateWorkspaceOpen(false);
+    await invalidateProjectSummary(queryClient, id);
+    toast.success("空工作区已创建。");
+    navigate("/p/" + id);
+  };
+
   const removeProject = async () => {
     const project = projectToRemove;
     const remove = api.projects.remove;
@@ -411,6 +530,7 @@ export function ProjectCenterPage() {
         meta={<div className="si-project-root-line"><span>项目根目录 <code>{projectRoot}</code></span>{needsRootSetup && <Button size="small" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}</div>}
         actions={<>
           <Button icon={<FolderOpen size={15} />} onClick={() => setAddExistingOpen(true)}>添加已有项目</Button>
+          {typeof api.projects.createWorkspaceOnly === "function" && <Button icon={<FolderOpen size={15} />} onClick={() => setCreateWorkspaceOpen(true)}>创建空工作区</Button>}
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
         </>}
       />
@@ -468,6 +588,7 @@ export function ProjectCenterPage() {
         </section>
       </>}
       <AddExistingDialog open={addExistingOpen} onOpenChange={setAddExistingOpen} onAdded={(project) => void handleAdded(project)} />
+      {typeof api.projects.createWorkspaceOnly === "function" && <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} defaultRoot={configuredRoot ?? ""} onCreated={(id) => void handleWorkspaceCreated(id)} />}
       <ConfirmDialog
         open={Boolean(projectToRemove)}
         onOpenChange={(open) => { if (!open && !removingProject) setProjectToRemove(null); }}

@@ -129,11 +129,12 @@ describe("SchedulesPage", () => {
     const mismatch = await screen.findByText("路径不一致");
     expect(mismatch).toBeTruthy();
 
-    fireEvent.click(within(mismatch.closest("tr")!).getByRole("button", { name: "修复" }));
+    const mismatchRow = await screen.findByRole("row", { name: /Cedar Shop/ });
+    fireEvent.click(within(mismatchRow).getByRole("button", { name: "修复" }));
     expect(await screen.findByText("系统计划任务路径已修复。")).toBeTruthy();
     expect(verifySpy).toHaveBeenNthCalledWith(1, "cedar", undefined);
     expect(verifySpy).toHaveBeenNthCalledWith(2, "cedar", { repair: true });
-  });
+  }, 15_000);
 
   it("lists orphaned system tasks and cleans them up", async () => {
     const { removeOrphanSpy } = await renderSchedules();

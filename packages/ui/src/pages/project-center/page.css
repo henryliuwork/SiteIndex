@@ -271,6 +271,46 @@ margin-bottom: 18px;
 margin-top: 20px;
 }
 
+.si-workspace-create-dialog {
+width:min(35rem,calc(100vw - var(--space-8))); max-height:calc(100vh - var(--space-8)); overflow-y:auto;
+}
+
+.si-workspace-create-dialog form {
+display:grid; gap:var(--space-2);
+}
+
+.si-workspace-create-dialog .si-field-label {
+display:grid; gap:var(--space-1); margin:var(--space-1) 0 0;
+}
+
+.si-workspace-create-grid {
+display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-3);
+}
+
+.si-workspace-create-checkbox {
+display:flex; align-items:center; gap:var(--space-2); color:var(--color-ink-2); font-size:var(--fs-body);
+}
+
+.si-workspace-create-checkbox input {
+width:var(--space-4); height:var(--space-4); margin:0; accent-color:var(--color-brand);
+}
+
+.si-workspace-create-preview {
+display:grid; gap:var(--space-2); padding:var(--space-3); border-radius:8px; background:var(--color-subtle);
+}
+
+.si-workspace-create-preview h3 {
+margin:0; color:var(--color-ink); font-size:var(--fs-sub-title);
+}
+
+.si-workspace-create-preview pre {
+max-height:11.25rem; margin:0; overflow:auto; color:var(--color-ink-2); font-size:var(--fs-caption); line-height:1.6; white-space:pre;
+}
+
+@media (max-width:560px) {
+.si-workspace-create-grid { grid-template-columns:minmax(0,1fr); }
+}
+
 @media (max-width: 1280px) {
 .si-center-kpis {
 grid-template-columns: repeat(2, minmax(0, 1fr));
