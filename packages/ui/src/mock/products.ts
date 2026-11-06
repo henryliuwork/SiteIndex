@@ -1,5 +1,5 @@
 import type { ListQuery, ProductFilters, ProductFull, SiteIndexApi } from "@siteindex/shared";
-import { productRows, productsByProject, projectKey, recordsByProject, reply, seoPages, selectRows, tagNamesByProject, tagsByHandle } from "./context";
+import { productRows, productsByProject, projectKey, recordsByProject, reply, rowsByProject, seoPages, selectRows, tagNamesByProject, tagsByHandle } from "./context";
 
 export function createProductsMock(): SiteIndexApi["products"] {
   return {
@@ -20,10 +20,22 @@ export function createProductsMock(): SiteIndexApi["products"] {
       const rows = productRows(id);
       const product = rows.find((row) => row.handle === handle);
       if (!product) throw { code: "UNKNOWN", message: "找不到指定产品", detail: handle };
-      const skus = recordsByProject[projectKey(id)].filter((row) => row.handle === product.handle);
+      const key = projectKey(id);
+      const skus = recordsByProject[key].filter((row) => row.handle === product.handle);
+      const skuIds = new Set(product.skus);
+      const variants = rowsByProject[key].filter((row) => skuIds.has(row.sku)).sort((left, right) => left.sku < right.sku ? -1 : left.sku > right.sku ? 1 : 0).map((row) => ({
+        sku: row.sku,
+        title: row.title,
+        stock_status: row.stock_status,
+        since: row.since,
+        days_in_status: row.days_in_status,
+        price: row.price,
+        history_30d: row.history_30d,
+        online_rate_30d: row.online_rate_30d,
+      }));
       const seoPage = seoPages.find((page) => page.url === product.url);
       return {
-        product, skus, details: null,
+        product, skus, variants, details: null,
         seo: seoPage
           ? { url: seoPage.url, title: seoPage.title, robots_meta: seoPage.robots_meta, schema_types: seoPage.schema_types, google_indexed: seoPage.google_indexed ?? null }
           : null,
