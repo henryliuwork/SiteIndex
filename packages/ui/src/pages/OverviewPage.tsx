@@ -4,8 +4,8 @@ import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, Fo
 import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, ProjectDetail, SeoIssue, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, KpiCard, ProjectHeader, ProjectTabPanel } from "../components";
+import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
+import { ApiErrorNotice, Button, Chip, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
 const syncLabels: Record<SyncState, string> = {
@@ -45,15 +45,15 @@ export function OverviewPage() {
   const { id = "demo" } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const overviewQuery = useQuery({ queryKey: ["overview", id], queryFn: () => api.overview.get(id) });
-  const [feedback, setFeedback] = useState("");
   const [running, setRunning] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
 
   useEffect(() => {
-    setFeedback(""); setSyncMessage(""); setRunId(null); setRunning(false);
+    setSyncMessage(""); setRunId(null); setRunning(false);
   }, [id]);
 
   useEffect(() => {
@@ -64,26 +64,28 @@ export function OverviewPage() {
     const unsubscribeFinished = api.jobs.onFinished((result) => {
       if (result.runId !== runId) return;
       setRunId(null); setRunning(false); setSyncMessage("");
-      setFeedback(result.status === "ok" ? "每日同步已完成。" : result.summary);
-      void queryClient.invalidateQueries({ queryKey: ["overview", id] });
+      if (result.status === "ok") toast.success("每日同步已完成。");
+      else toast.error(result.summary);
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["overview", id] }),
+        invalidateProjectSummary(queryClient, id),
+      ]);
     });
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
-  }, [id, queryClient, runId]);
+  }, [id, queryClient, runId, toast]);
 
   const project = projectQuery.data;
   const overview: OverviewData | undefined = overviewQuery.data;
 
-  const withFeedback = async (action: () => Promise<void>, success: string) => {
-    setFeedback("");
-    try { await action(); setFeedback(success); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "操作失败，请重试。")); }
+  const withToast = async (action: () => Promise<void>, success: string, failure: string) => {
+    try { await action(); toast.success(success); }
+    catch (cause) { toast.error(apiErrorMessage(cause, failure)); }
   };
   const ignoreAttentionRule = async (rule: SeoIssue["rule"]) => {
     const setRuleIgnored = api.seo.setRuleIgnored;
     if (!setRuleIgnored) return;
     const label = labelAttentionText(rule);
     if (!window.confirm(`忽略“${label}”规则？\n影响范围：全站同一规则。`)) return;
-    setFeedback("");
     try {
       const result = await setRuleIgnored(id, rule, true);
       await Promise.all([
@@ -91,31 +93,32 @@ export function OverviewPage() {
         queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
       ]);
-      setFeedback(`已更新 ${result.updated} 条`);
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "SEO 规则忽略失败。")); }
+      toast.success(`已更新 ${result.updated} 条`);
+    } catch (cause) { toast.error(apiErrorMessage(cause, "SEO 规则忽略失败。")); }
   };
 
-  const copyInstruction = () => withFeedback(() => api.shell.copyText(overview?.agent_instruction ?? ""), "已复制 agent 接入指令。");
+  const copyInstruction = () => withToast(() => api.shell.copyText(overview?.agent_instruction ?? ""), "已复制 agent 接入指令。", "复制 agent 接入指令失败。");
   const validateFiles = async () => {
-    setFeedback("");
     try {
       const report = await api.files.validate(id);
       const { ok, error, missing } = report.summary;
-      setFeedback("校验完成：" + ok + " 个文件通过，" + error + " 个错误，" + missing + " 个缺失。");
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "本地数据校验失败。")); }
+      const message = "校验完成：" + ok + " 个文件通过，" + error + " 个错误，" + missing + " 个缺失。";
+      if (error || missing) toast.info(message);
+      else toast.success(message);
+    } catch (cause) { toast.error(apiErrorMessage(cause, "本地数据校验失败。")); }
   };
-  const openReadme = () => project && withFeedback(() => api.shell.openPath(projectPath(project.summary.path, "README.md")), "已打开 README。");
-  const openProjectFolder = () => project && withFeedback(() => api.shell.openPath(project.summary.path), "已打开项目文件夹。");
+  const openReadme = () => project && withToast(() => api.shell.openPath(projectPath(project.summary.path, "README.md")), "已打开 README。", "打开 README 失败。");
+  const openProjectFolder = () => project && withToast(() => api.shell.openPath(project.summary.path), "已打开项目文件夹。", "打开项目文件夹失败。");
 
   const runSync = async () => {
     if (!project || running) return;
-    setFeedback(""); setRunning(true); setSyncMessage("正在启动每日同步…");
+    setRunning(true); setSyncMessage("正在启动每日同步…");
     try {
       const run = await api.jobs.run({ projectPath: project.summary.path, job: "daily" });
       setRunId(run.runId);
     } catch (cause) {
       setRunning(false); setSyncMessage("");
-      setFeedback(apiErrorMessage(cause, "每日同步启动失败。"));
+      toast.error(apiErrorMessage(cause, "每日同步启动失败。"));
     }
   };
 
@@ -125,62 +128,57 @@ export function OverviewPage() {
   const summary = project.summary;
   const canIgnoreAttention = typeof api.seo.setRuleIgnored === "function";
   return <div className="si-page si-overview-page">
-    <ProjectHeader project={summary} activeTab="overview" hasTabPanel status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>} actions={
-      <>
+    <ProjectHeader project={summary} activeTab="overview" hasTabPanel status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>} />
+    <ProjectTabPanel projectId={summary.id} tab="overview">
+    <PageHeader
+      title="概览"
+      actions={<>
         <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={running} onClick={() => void runSync()}>{running ? "同步中…" : "立即同步"}</Button>
-      </>
-    } />
-    <ProjectTabPanel projectId={summary.id} tab="overview">
-
+      </>}
+      overflow={[
+        { label: "校验本地数据文件", onSelect: () => void validateFiles(), icon: <FileCheck2 size={14} /> },
+        { label: "复制 agent 接入指令", onSelect: () => void copyInstruction(), disabled: !overview?.agent_instruction, icon: <Clipboard size={14} /> },
+        { label: "打开 README", onSelect: () => void openReadme(), icon: <FileText size={14} /> },
+      ]}
+    />
+    <div className="si-overview-content">
+    {running && <Notice tone="info" title="每日同步进行中">{syncMessage || "正在同步项目数据…"}</Notice>}
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
     <section className="si-overview-kpis" aria-label="项目指标">
       {overview.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}
     </section>
 
-    <div className="si-overview-grid">
-      <div className="si-overview-main-column">
-        <section className="si-overview-attention si-panel">
-          <div className="si-panel-heading"><h2>需要关注</h2><span>来自今日同步与数据检查</span></div>
-          {overview.attention.length ? <ul>
-            {overview.attention.map((item, index) => {
-              const rule = attentionSeoRule(item.link, item.text);
-              return <li key={item.text + index}>
-              <Chip tone={severityTone(item.severity)}>{severityLabel(item.severity)}</Chip>
-              <span className="si-overview-attention-text">{labelAttentionText(item.text)}</span>
-              <div className="si-overview-attention-actions">
-                <a href={attentionDestination(item.link, id)} onClick={(event) => { event.preventDefault(); navigate(attentionDestination(item.link, id)); }}>{item.link_label}<ExternalLink size={12} aria-hidden="true" /></a>
-                {canIgnoreAttention && rule && <Button size="small" onClick={() => void ignoreAttentionRule(rule)}>忽略</Button>}
-              </div>
-            </li>;
-            })}
-          </ul> : <div className="si-empty-state"><Check size={16} />当前没有需要处理的事项。</div>}
-        </section>
+    <section className="si-overview-attention si-panel">
+      <div className="si-panel-heading"><h2>需要关注</h2><span>来自今日同步与数据检查</span></div>
+      {overview.attention.length ? <ul>
+        {overview.attention.map((item, index) => {
+          const rule = attentionSeoRule(item.link, item.text);
+          return <li key={item.text + index}>
+            <Chip tone={severityTone(item.severity)}>{severityLabel(item.severity)}</Chip>
+            <span className="si-overview-attention-text">{labelAttentionText(item.text)}</span>
+            <div className="si-overview-attention-actions">
+              <a href={attentionDestination(item.link, id)} onClick={(event) => { event.preventDefault(); navigate(attentionDestination(item.link, id)); }}>{item.link_label}<ExternalLink size={12} aria-hidden="true" /></a>
+              {canIgnoreAttention && rule && <Button size="small" onClick={() => void ignoreAttentionRule(rule)}>忽略</Button>}
+            </div>
+          </li>;
+        })}
+      </ul> : <div className="si-empty-state"><Check size={16} />当前没有需要处理的事项。</div>}
+    </section>
 
-        <section className="si-overview-readme si-panel">
-          <div className="si-panel-heading"><h2>README · 项目概况</h2><a href={"#/p/" + id + "/readme"} onClick={(event) => { event.preventDefault(); navigate("/p/" + id + "/readme"); }}>编辑 README</a></div>
-          <OverviewSummary markdown={overview.readme.overview} />
-          <div className="si-overview-focus"><span>当前重点</span><p>{overview.readme.focus}</p></div>
-        </section>
-      </div>
+    <section className="si-overview-readme si-panel">
+      <div className="si-panel-heading"><h2>README · 项目概况</h2><a href={"#/p/" + id + "/readme"} onClick={(event) => { event.preventDefault(); navigate("/p/" + id + "/readme"); }}>编辑 README</a></div>
+      <OverviewSummary markdown={overview.readme.overview} />
+      <div className="si-overview-focus"><span>当前重点</span><p>{overview.readme.focus}</p></div>
+      {overview.agent_instruction && <div className="si-overview-instruction"><strong>Agent 接入指令</strong><pre>{overview.agent_instruction}</pre></div>}
+    </section>
 
-      <aside className="si-overview-side-column">
-        <section className="si-overview-actions si-panel">
-          <h2>快捷操作</h2>
-          <Button icon={<Clipboard size={15} />} onClick={() => void copyInstruction()}>复制 agent 接入指令</Button>
-          {overview.agent_instruction && <p className="si-overview-instruction">{overview.agent_instruction}</p>}
-          <Button icon={<FileCheck2 size={15} />} onClick={() => void validateFiles()}>校验本地数据文件</Button>
-          <Button icon={<FileText size={15} />} onClick={() => void openReadme()}>打开 README</Button>
-          <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
-          {(feedback || syncMessage) && <p className="si-overview-feedback" role="status">{syncMessage || feedback}</p>}
-        </section>
-        <section className="si-overview-changelog si-panel">
-          <h2>变更记录</h2>
-          {overview.changelog.length ? <ul>{overview.changelog.map((entry, index) => <li key={entry.date + entry.text + index}><time dateTime={entry.date}>{entry.date.slice(5)}</time><span>{entry.text}</span></li>)}</ul> : <div className="si-empty-state"><AlertTriangle size={15} />暂无变更记录。</div>}
-        </section>
-      </aside>
-    </div>
+    <section className="si-overview-changelog si-panel">
+      <h2>变更记录</h2>
+      {overview.changelog.length ? <ul>{overview.changelog.map((entry, index) => <li key={entry.date + entry.text + index}><time dateTime={entry.date}>{entry.date.slice(5)}</time><span>{entry.text}</span></li>)}</ul> : <div className="si-empty-state"><AlertTriangle size={15} />暂无变更记录。</div>}
+    </section>
     </>}
+    </div>
     </ProjectTabPanel>
   </div>;
 }
