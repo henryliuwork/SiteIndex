@@ -1,8 +1,8 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PATHS, type DesignTokens } from "@siteindex/shared";
+import { PATHS, pathsFor, type DesignTokens, type ProjectLayout } from "@siteindex/shared";
 import {
   buildReadmeAutoContent,
   createCoreService,
@@ -15,11 +15,14 @@ import {
 const FIXTURE_PROJECT = path.resolve(process.cwd(), "fixtures/expected/project");
 const TEMP_DIRS: string[] = [];
 
-async function makeProject(): Promise<string> {
+async function makeProject(layout: ProjectLayout = "legacy"): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-readme-"));
   TEMP_DIRS.push(root);
   const projectPath = path.join(root, "project");
   await cp(FIXTURE_PROJECT, projectPath, { recursive: true });
+  if (layout === "workspace") {
+    await rename(path.join(projectPath, PATHS.index), path.join(projectPath, pathsFor(layout).index));
+  }
   return projectPath;
 }
 
@@ -122,5 +125,22 @@ describe("README automatic blocks", () => {
     expect(generated).toContain("## 数据指南（index/）");
     expect(generated).toContain("## 设计规范速览");
     expect((await api.readme.get("fixture")).auto_blocks.map(({ id }) => id)).toEqual(Object.keys(emptyContents));
+  }, 15_000);
+
+  it("reads workspace index data and resolves daily reports from _site-index", async () => {
+    const projectPath = await makeProject("workspace");
+    const paths = pathsFor("workspace");
+    const api = service(projectPath);
+
+    await api.readme.refresh("fixture");
+
+    const generated = await readFile(path.join(projectPath, PATHS.readme), "utf8");
+    expect(generated).toContain("## 数据指南（_site-index/）");
+    expect(generated).toContain(paths.skus);
+    expect(await api.inventory.dailyReport("fixture", "2026-10-19"))
+      .toBe(await readFile(path.join(projectPath, paths.dailyReportsDir, "2026-10-19.md"), "utf8"));
+    const before = await api.projects.get("fixture");
+    await api.projects.updateConfig("fixture", { brand: { ...before.config.brand, tagline: "workspace" } });
+    expect((await api.projects.get("fixture")).config.brand.tagline).toBe("workspace");
   }, 15_000);
 });

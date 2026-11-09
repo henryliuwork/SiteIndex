@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { open, readFile, rename, unlink, lstat, mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_CONFLICT_PATTERNS, EXIT, PATHS, type SiteIndexError, type SiteIndexErrorCode } from "@siteindex/shared";
+import { DEFAULT_CONFLICT_PATTERNS, EXIT, pathsFor, type SiteIndexError, type SiteIndexErrorCode } from "@siteindex/shared";
 import { atomicWrite } from "./atomic-write";
+import { resolveProjectLayoutOrLegacy } from "./project-layout";
 
 export interface RunnerConfig {
   device_id: string;
@@ -42,7 +43,8 @@ export class CoreIOError extends Error {
 
 export async function readRunner(project: string): Promise<RunnerConfig | null> {
   try {
-    const source = await readFile(path.join(project, PATHS.runner), "utf8");
+    const paths = pathsFor(await resolveProjectLayoutOrLegacy(project));
+    const source = await readFile(path.join(project, paths.runner), "utf8");
     const value: unknown = JSON.parse(source);
     if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
     const row = value as Record<string, unknown>;
@@ -55,8 +57,9 @@ export async function readRunner(project: string): Promise<RunnerConfig | null> 
 }
 
 export async function writeRunner(project: string, runner: RunnerConfig): Promise<void> {
+  const paths = pathsFor(await resolveProjectLayoutOrLegacy(project));
   const json = `${JSON.stringify(runner, null, 2)}\n`;
-  await atomicWrite(path.join(project, PATHS.runner), json);
+  await atomicWrite(path.join(project, paths.runner), json);
 }
 
 export async function assertRunner(project: string, deviceId: string, trigger: RunnerTrigger): Promise<void> {
@@ -183,7 +186,8 @@ export async function unlinkOwnedLock(
 }
 
 export async function withLock<T>(project: string, fn: () => Promise<T> | T, options: LockOptions = {}): Promise<T> {
-  const lockPath = path.join(project, PATHS.lock);
+  const paths = pathsFor(await resolveProjectLayoutOrLegacy(project));
+  const lockPath = path.join(project, paths.lock);
   const now = options.now ?? (() => new Date());
   const staleAfterMs = options.staleAfterMs ?? 10 * 60_000;
   const heartbeatMs = options.heartbeatMs ?? 30_000;

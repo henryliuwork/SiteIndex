@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PATHS } from "@siteindex/shared";
+import { pathsFor, type ProjectLayout } from "@siteindex/shared";
 import { readJsonl, runDaily, type DailySnapshot } from "../src";
 
 const roots: string[] = [];
@@ -13,11 +13,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function newProject(site: Record<string, unknown>) {
+async function newProject(site: Record<string, unknown>, layout: ProjectLayout = "legacy") {
   const project = await mkdtemp(path.join(os.tmpdir(), "siteindex-daily-"));
   roots.push(project);
-  await mkdir(path.join(project, "index"), { recursive: true });
-  await writeFile(path.join(project, PATHS.site), `${JSON.stringify(site, null, 2)}\n`, "utf8");
+  const paths = pathsFor(layout);
+  await mkdir(path.join(project, paths.index), { recursive: true });
+  await writeFile(path.join(project, paths.site), JSON.stringify(site, null, 2) + "\n", "utf8");
   return project;
 }
 
@@ -36,6 +37,7 @@ async function compareNormalizedJsonl(actualPath: string, expectedPath: string, 
 describe("daily sync", () => {
   it("matches golden files day1–4 and leaves sync data unchanged when the removal guard trips", async () => {
     const site = JSON.parse(await readFile(path.join(fixtureDir, "inputs", "site.json"), "utf8")) as Record<string, unknown>;
+    const paths = pathsFor("legacy");
     const project = await newProject(site);
     const days = [
       ["day1", "2026-10-19", 0],
@@ -67,7 +69,7 @@ describe("daily sync", () => {
         expect(report).toBe(await readFile(path.join(fixtureDir, "expected", "project", "index", "reports", "daily", `${day}.md`), "utf8"));
       }
     }
-    const actualRuns = (await readJsonl(path.join(project, PATHS.runs))).filter((row) => row.job === "daily");
+    const actualRuns = (await readJsonl(path.join(project, paths.runs))).filter((row) => row.job === "daily");
     const expectedRuns = (await readJsonl(path.join(fixtureDir, "expected", "project", "index", "logs", "runs.jsonl")))
       .filter((row) => row.job === "daily");
     const normalizeRuns = (rows: Record<string, unknown>[]) => rows.map((row) => ({
@@ -75,6 +77,23 @@ describe("daily sync", () => {
     }));
     expect(normalizeRuns(actualRuns)).toEqual(normalizeRuns(expectedRuns));
   }, 30_000);
+
+  it("writes workspace daily outputs byte-for-byte like the legacy golden files", async () => {
+    const site = JSON.parse(await readFile(path.join(fixtureDir, "inputs", "site.json"), "utf8")) as Record<string, unknown>;
+    const project = await newProject(site, "workspace");
+    const paths = pathsFor("workspace");
+    const snapshot = await readJsonl(path.join(fixtureDir, "expected", "snapshots", "day1.jsonl")) as DailySnapshot[];
+
+    const result = await runDaily(project, snapshot, { date: "2026-10-19", now: fixedNow });
+
+    expect(result.exitCode).toBe(0);
+    const expectedDir = path.join(fixtureDir, "expected", "steps", "day1");
+    expect(await readFile(path.join(project, paths.skus), "utf8")).toBe(await readFile(path.join(expectedDir, "skus.jsonl"), "utf8"));
+    expect(await readFile(path.join(project, paths.dailySummary), "utf8")).toBe(await readFile(path.join(expectedDir, "daily_summary.csv"), "utf8"));
+    expect(await readFile(path.join(project, paths.eventsDir, "2026-10.jsonl"), "utf8")).toBe(await readFile(path.join(expectedDir, "events.jsonl"), "utf8"));
+    await compareNormalizedJsonl(path.join(project, paths.inventoryLatest), path.join(expectedDir, "latest.jsonl"), ["checked_at"]);
+    expect(await readFile(path.join(project, "index", "catalog", "skus.jsonl")).catch(() => null)).toBeNull();
+  }, 20_000);
 
   it("writes the selected category and source for feed, URL-rule, and manual modes", async () => {
     const snapshot: DailySnapshot = {
@@ -92,9 +111,10 @@ describe("daily sync", () => {
 
     for (const { config, category, source } of cases) {
       const project = await newProject({ domain: "shop.example", timezone: "UTC", categories: config });
+      const paths = pathsFor("legacy");
       const result = await runDaily(project, [snapshot], { date: "2026-10-22", now: fixedNow });
       expect(result.exitCode).toBe(0);
-      const [row] = await readJsonl(path.join(project, PATHS.skus));
+      const [row] = await readJsonl(path.join(project, paths.skus));
       expect(row).toMatchObject({ category, category_source: source });
     }
   }, 30_000);
