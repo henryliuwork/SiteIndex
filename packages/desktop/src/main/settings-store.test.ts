@@ -26,6 +26,8 @@ describe("settings store", () => {
     expect(first.device_name).toBe("DESKTOP-01");
     expect(first.projects_root).toBe("");
     expect(first.hidden_projects).toEqual([]);
+    expect(first.close_to_tray).toBe(true);
+    expect(first.launch_at_login).toBe(false);
     expect(first.cache_dir).toBe(join(settingsDirectory, "cache"));
     expect(await store.exists()).toBe(true);
     expect(JSON.parse(await readFile(store.filePath, "utf8"))).toEqual(first);
@@ -38,12 +40,16 @@ describe("settings store", () => {
     const updated = await store.set({
       device_name: "运营电脑",
       projects_root: "C:\\Sites",
+      close_to_tray: false,
+      launch_at_login: true,
       notify: { ...initial.notify, on_success: true },
     });
 
     expect(updated.device_id).toBe(initial.device_id);
     expect(updated.device_name).toBe("运营电脑");
     expect(updated.projects_root).toBe("C:\\Sites");
+    expect(updated.close_to_tray).toBe(false);
+    expect(updated.launch_at_login).toBe(true);
     expect(updated.notify).toEqual({ ...initial.notify, on_success: true });
   });
 
@@ -97,6 +103,8 @@ describe("settings store", () => {
     await expect(store.set({ browser: { channel: "invalid", executable_path: null } as never })).rejects.toMatchObject({
       code: "CONFIG_INVALID",
     });
+    await expect(store.set({ close_to_tray: "yes" as never })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    await expect(store.set({ launch_at_login: 1 as never })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
   });
 
   it("persists hidden project paths and validates their shape", async () => {

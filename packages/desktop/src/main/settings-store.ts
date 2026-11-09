@@ -28,6 +28,8 @@ function createDefaults(settingsDirectory: string, deviceName: string): AppSetti
     projects_root: "",
     extra_projects: [],
     hidden_projects: [],
+    close_to_tray: true,
+    launch_at_login: false,
     cache_dir: join(settingsDirectory, "cache"),
     browser: { channel: "msedge", executable_path: null },
     notify: { on_failure: true, on_success: false, oos_threshold: null, dingtalk_webhook: null },
@@ -51,6 +53,8 @@ function normalizeSettings(value: unknown, defaults: AppSettings): AppSettings {
     hidden_projects: Array.isArray(value.hidden_projects)
       ? value.hidden_projects.filter((item): item is string => typeof item === "string")
       : defaults.hidden_projects,
+    close_to_tray: typeof value.close_to_tray === "boolean" ? value.close_to_tray : defaults.close_to_tray,
+    launch_at_login: typeof value.launch_at_login === "boolean" ? value.launch_at_login : defaults.launch_at_login,
     cache_dir: typeof value.cache_dir === "string" && value.cache_dir ? value.cache_dir : defaults.cache_dir,
     browser: {
       channel:
@@ -135,6 +139,8 @@ function validatePatch(patch: unknown): asserts patch is Partial<AppSettings> {
     "projects_root",
     "extra_projects",
     "hidden_projects",
+    "close_to_tray",
+    "launch_at_login",
     "cache_dir",
     "browser",
     "notify",
@@ -148,6 +154,9 @@ function validatePatch(patch: unknown): asserts patch is Partial<AppSettings> {
   const stringFields = ["device_id", "device_name", "projects_root", "cache_dir"] as const;
   for (const key of stringFields) {
     if (key in patch && typeof patch[key] !== "string") invalidSettings(`${key} 必须是字符串。`);
+  }
+  for (const key of ["close_to_tray", "launch_at_login"] as const) {
+    if (key in patch && typeof patch[key] !== "boolean") invalidSettings(`${key} 必须是布尔值。`);
   }
   for (const key of ["extra_projects", "hidden_projects", "conflict_patterns"] as const) {
     if (key in patch && (!Array.isArray(patch[key]) || !patch[key].every((item) => typeof item === "string"))) {

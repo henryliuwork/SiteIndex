@@ -1,4 +1,4 @@
-import { app, dialog, utilityProcess, type Tray } from "electron";
+import { app, dialog, Notification, utilityProcess } from "electron";
 import electronUpdater from "electron-updater";
 import { basename, dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -13,7 +13,7 @@ import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js"
 import { parseRunJobArguments } from "./run-job-args.js";
 import { createWindowThenReconcileInBackground } from "./startup-reconciliation.js";
 import { createResidentScheduler, type ResidentScheduler } from "./scheduler/resident-scheduler.js";
-import { createSystemScheduler, type ScheduleRuntimeStatus } from "./scheduler/schedule.js";
+import { calculateNextRuns, createSystemScheduler, type ScheduleRuntimeStatus } from "./scheduler/schedule.js";
 import { createScheduleReconciliationQueue } from "./scheduler/reconciliation-queue.js";
 import { createSkillService } from "./skill-service.js";
 import { createDesktopIntegrations } from "./desktop-integrations.js";
@@ -26,7 +26,8 @@ import {
 import { createUiStateStore } from "./ui-state-store.js";
 import { createUpdateService } from "./update-service.js";
 import { createWindowManager } from "./window-manager.js";
-import { backgroundSchedulerArgument, createWindowsTray, updateWindowsAutostart } from "./windows-background.js";
+import { backgroundPolicy, type BackgroundPolicy } from "./background-policy.js";
+import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type AppTray } from "./app-background.js";
 
 const isRunJob = process.argv.includes("--run-job");
 const hasSingleInstanceLock = isRunJob || app.requestSingleInstanceLock();
@@ -36,17 +37,20 @@ const devUiUrl = process.env.SITEINDEX_UI_URL ?? "http://localhost:5173";
 let projectCatalog: ProjectCatalog | null = null;
 let isShuttingDown = false;
 let launchHidden = process.platform === "win32" && process.argv.includes(backgroundSchedulerArgument);
-let systemTray: Tray | null = null;
+let systemTray: AppTray | null = null;
 let residentScheduler: ResidentScheduler | null = null;
 let scheduleMode: ScheduleRuntimeStatus["mode"] = "system";
 let startupScheduleReconciliation: Promise<ScheduleRuntimeStatus> | null = null;
+let currentBackgroundPolicy: BackgroundPolicy = backgroundPolicy({}, "system", process.platform, false);
+let requestQuit = (): void => app.quit();
 const windowManager = createWindowManager({
   mainDirectory,
   fallbackPath,
   devUiUrl,
   initiallyHidden: launchHidden,
-  shouldHideOnClose: () => process.platform === "win32" && scheduleMode === "resident" && Boolean(systemTray),
+  shouldHideOnClose: () => currentBackgroundPolicy.hideOnClose && Boolean(systemTray),
   isShuttingDown: () => isShuttingDown,
+  requestQuit: () => requestQuit(),
 });
 
 async function measureAddExistingPhase<T>(
@@ -112,6 +116,37 @@ if (!hasSingleInstanceLock) {
       finalizeInit: (result, projectPath, emitProgress) => finalizeInit(result, projectPath, emitProgress),
       notify: showJobNotification,
     });
+    let quitPromptOpen = false;
+    requestQuit = () => {
+      if (isShuttingDown) {
+        app.quit();
+        return;
+      }
+      if (quitPromptOpen) return;
+      if (jobs.activeCount === 0) {
+        app.quit();
+        return;
+      }
+      quitPromptOpen = true;
+      const prompt = {
+        type: "question" as const,
+        title: "退出 SiteIndex",
+        message: "有任务正在运行。退出会取消这些任务，确定退出吗？",
+        buttons: ["继续运行", "退出并取消任务"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      const window = windowManager.getMainWindow();
+      void (window && !window.isDestroyed() ? dialog.showMessageBox(window, prompt) : dialog.showMessageBox(prompt))
+        .then(({ response }) => {
+          if (response === 1) app.quit();
+        })
+        .catch(() => console.warn("退出确认对话框无法显示。"))
+        .finally(() => {
+          quitPromptOpen = false;
+        });
+    };
     app.on("before-quit", (event) => {
       if ((jobs.activeCount === 0 && !projectCatalog) || isShuttingDown) return;
       event.preventDefault();
@@ -148,6 +183,12 @@ if (!hasSingleInstanceLock) {
       const projectsRoot = await chooseDirectory();
       if (projectsRoot) currentSettings = await settingsStore.set({ projects_root: projectsRoot });
     }
+    currentBackgroundPolicy = backgroundPolicy(
+      currentSettings,
+      scheduleMode,
+      process.platform,
+      Boolean(currentSettings.projects_root.trim() || currentSettings.extra_projects.length),
+    );
 
     let core: CoreService | null = null;
     const catalog = createProjectCatalog(
@@ -191,21 +232,79 @@ if (!hasSingleInstanceLock) {
             runJob: async (project, job) => jobs.runAndWait({ projectPath: project.path, job }, "schedule"),
           })
         : null;
+    const getNextTrayRunLabel = async (): Promise<string> => {
+      const entries = await catalog.refresh(currentSettings);
+      const candidates = (
+        await Promise.all(
+          entries.map(async ({ id }) => {
+            const [schedule, runner] = await Promise.all([coreService.schedule.get(id), coreService.runner.get(id)]);
+            if (!runner.is_this_device) return [];
+            return calculateNextRuns(schedule.config)
+              .filter((run): run is typeof run & { at: string } => run.at !== null)
+              .map((run) => ({ id, job: run.job, at: run.at }));
+          }),
+        )
+      )
+        .flat()
+        .sort((left, right) => left.at.localeCompare(right.at));
+      const next = candidates[0];
+      if (!next) return "未配置";
+      const jobLabels: Record<string, string> = {
+        daily: "每日同步",
+        validate: "校验",
+        weekly: "每周抓取",
+        readme: "README 更新",
+        monthly: "每月任务",
+      };
+      const time = new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(next.at));
+      return `${time} · ${jobLabels[next.job] ?? next.job} · ${next.id}`;
+    };
+    const applyBackgroundPreferences = async (): Promise<void> => {
+      const hasProjects = Boolean(currentSettings.projects_root.trim() || currentSettings.extra_projects.length);
+      currentBackgroundPolicy = backgroundPolicy(currentSettings, scheduleMode, process.platform, hasProjects);
+      if (scheduleMode === "resident") residentScheduler?.start();
+      else residentScheduler?.stop();
+
+      if (currentBackgroundPolicy.keepTray) {
+        systemTray ??= await createAppTray({
+          onOpen: windowManager.showMainWindow,
+          onQuit: () => requestQuit(),
+          onSync: (id) => {
+            void jobs
+              .run({ projectPath: catalog.resolveProject(id as ProjectId), job: "daily" })
+              .then(() => {
+                if (Notification.isSupported()) new Notification({ title: "SiteIndex", body: "每日同步已开始。" }).show();
+              })
+              .catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : "请稍后重试。";
+                const window = windowManager.getMainWindow();
+                const options = { type: "error" as const, title: "无法启动同步", message };
+                void (window && !window.isDestroyed()
+                  ? dialog.showMessageBox(window, options)
+                  : dialog.showMessageBox(options));
+              });
+          },
+          listProjects: async () => (await catalog.refresh(currentSettings)).map(({ id }) => ({ id, name: id })),
+          nextRunLabel: getNextTrayRunLabel,
+        });
+        void systemTray?.refresh();
+      } else {
+        systemTray?.destroy();
+        systemTray = null;
+      }
+
+      if (!updateLoginAutostart(currentBackgroundPolicy.openAtLogin, currentBackgroundPolicy.backgroundAtLogin)) {
+        console.warn("用户登录自启设置未能应用。");
+      }
+    };
     const applyScheduleMode = async (status: ScheduleRuntimeStatus): Promise<void> => {
       scheduleMode = status.mode;
-      if (process.platform !== "win32") return;
-      if (scheduleMode === "resident") {
-        systemTray ??= await createWindowsTray(windowManager.showMainWindow, () => app.quit());
-        if (systemTray) {
-          residentScheduler?.start();
-          updateWindowsAutostart(Boolean(currentSettings.projects_root || currentSettings.extra_projects.length));
-        } else updateWindowsAutostart(false);
-        return;
-      }
-      residentScheduler?.stop();
-      updateWindowsAutostart(false);
-      systemTray?.destroy();
-      systemTray = null;
+      await applyBackgroundPreferences();
     };
     const traceAddExisting =
       process.env.SITEINDEX_TRACE === "1" ? createAddExistingTraceWriter(app.getPath("logs")) : undefined;
@@ -279,6 +378,8 @@ if (!hasSingleInstanceLock) {
         },
       });
     const initialProjects = await catalog.refresh(currentSettings);
+    currentBackgroundPolicy = backgroundPolicy(currentSettings, scheduleMode, process.platform, initialProjects.length > 0);
+    await applyBackgroundPreferences();
     if (launchHidden) await reconcileSchedules(false, initialProjects);
     if (launchHidden && scheduleMode === "system") {
       app.quit();
@@ -311,6 +412,9 @@ if (!hasSingleInstanceLock) {
       core: coreService,
       projects: catalog,
       settingsChanged: async (updated, reconcile = true, onTiming) => {
+        const backgroundSettingsChanged =
+          currentSettings.close_to_tray !== updated.close_to_tray ||
+          currentSettings.launch_at_login !== updated.launch_at_login;
         const projectsChanged =
           currentSettings.projects_root !== updated.projects_root ||
           JSON.stringify(currentSettings.hidden_projects ?? []) !== JSON.stringify(updated.hidden_projects ?? []) ||
@@ -318,6 +422,7 @@ if (!hasSingleInstanceLock) {
           currentSettings.extra_projects.some((entry, index) => entry !== updated.extra_projects[index]);
         currentSettings = updated;
         if (projectsChanged && reconcile) await reconcileSchedules(true, undefined, onTiming);
+        else if (backgroundSettingsChanged || projectsChanged) await applyBackgroundPreferences();
       },
       jobs,
       scheduler,
@@ -355,6 +460,5 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin" && !(process.platform === "win32" && scheduleMode === "resident" && systemTray))
-    app.quit();
+  if (!currentBackgroundPolicy.hideOnClose || !systemTray) requestQuit();
 });
