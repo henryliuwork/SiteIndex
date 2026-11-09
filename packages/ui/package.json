@@ -13,6 +13,7 @@
     "pretest": "tsx scripts/build-mock-data.ts",
     "test": "vitest run",
     "mock:build": "tsx scripts/build-mock-data.ts",
+    "preui:check": "tsx scripts/build-mock-data.ts",
     "ui:check": "tsx visual/check.ts"
   },
   "dependencies": {
