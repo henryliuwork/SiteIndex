@@ -157,7 +157,7 @@
 - [ ] A4-3：工作区检查、生成、空项目创建、导入检查、README/AGENTS.md 自动区块与布局校验
   - [x] workspace.check：忽略 .git 与系统元数据，稳定返回前 10 个冲突项
   - [x] workspace.create：按模板创建 workspace 目录、数据文件和 skills，初始化 README / AGENTS.md 自动区块；覆盖非空目录保护与失败回滚
-  - [ ] projects.createWorkspaceOnly
+  - [x] projects.createWorkspaceOnly：创建空 workspace，不触发抓取；同域查重同时识别 legacy 与 workspace 数据目录
   - [x] workspace.importCheck：校验 schema/表格格式；只补缺失台账、manifest、配置元数据与自动区块
   - [x] README 与 AGENTS.md 双文件自动区块；保留用户维护区，legacy 仍只刷新 README
   - [x] workspace validate 检查 .env 被 .gitignore 忽略，并保留 _site-index/edm/ 技能白名单
