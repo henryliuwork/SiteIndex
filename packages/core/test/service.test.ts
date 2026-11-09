@@ -432,13 +432,14 @@ describe("createCoreService initial namespaces", () => {
     await writeFile(sitePath, JSON.stringify(site));
     const skuStockPath = path.join(projectPath, PATHS.skuStockView);
     const rows = [
-      { ...stockRow("DEMO001A01", "Demo parent A", "in_stock", "z-category"), parent_sku: "DEMO001A", price: 30 },
+      { ...stockRow("DEMO001A01", "Demo parent A", "in_stock", "z-category"), parent_sku: "DEMO001A", price: 30,
+        history_30d: "i".repeat(30) },
       { ...stockRow("DEMO001A02", "Demo parent A", "out_of_stock", "a-category"), parent_sku: "DEMO001A", price: 20,
-        price_history: [{ date: "2026-10-20", price: 20 }] },
-      { ...stockRow("DEMO002B01", "Demo parent B", "out_of_stock"), parent_sku: "DEMO002B" },
-      { ...stockRow("DEMO002B02", "Demo parent B", "out_of_stock"), parent_sku: "DEMO002B" },
-      { ...stockRow("DEMO003C01", "Demo parent C", "unknown"), parent_sku: "DEMO003C" },
-      { ...stockRow("DEMO003C02", "Demo parent C", "preorder"), parent_sku: "DEMO003C" },
+        price_history: [{ date: "2026-10-20", price: 20 }], history_30d: "o".repeat(30) },
+      { ...stockRow("DEMO002B01", "Demo parent B", "out_of_stock"), parent_sku: "DEMO002B", history_30d: "o".repeat(30) },
+      { ...stockRow("DEMO002B02", "Demo parent B", "out_of_stock"), parent_sku: "DEMO002B", history_30d: "o".repeat(30) },
+      { ...stockRow("DEMO003C01", "Demo parent C", "unknown"), parent_sku: "DEMO003C", history_30d: "u".repeat(30) },
+      { ...stockRow("DEMO003C02", "Demo parent C", "preorder"), parent_sku: "DEMO003C", history_30d: "p".repeat(30) },
       stockRow("INDEPENDENT", "Independent", "in_stock"),
     ];
     await writeJsonl(skuStockPath, rows.map((row) => ({ ...row })), { primaryKey: ["sku"], fieldOrder: STOCK_FIELDS });
@@ -449,7 +450,8 @@ describe("createCoreService initial namespaces", () => {
     expect(parents.total).toBe(4);
     expect(parents.rows.map((row) => row.sku)).toEqual(["DEMO001A", "DEMO002B", "DEMO003C", "INDEPENDENT"]);
     expect(parents.rows[0]).toMatchObject({ is_parent: true, children_count: 2, in_stock_children_count: 1,
-      stock_status: "in_stock", category: "a-category", price: 20, online_rate_7d: null, online_rate_30d: null });
+      stock_status: "in_stock", category: "a-category", price: 20, history_30d: "i".repeat(30),
+      online_rate_7d: 1, online_rate_30d: 1, changes_30d: 0, last_change: null, last_change_at: null });
     expect(parents.rows[1]).toMatchObject({ stock_status: "out_of_stock", children_count: 2, in_stock_children_count: 0 });
     expect(parents.rows[2]).toMatchObject({ stock_status: "preorder", children_count: 2 });
     expect(parents.rows[3]?.is_parent).toBeUndefined();
