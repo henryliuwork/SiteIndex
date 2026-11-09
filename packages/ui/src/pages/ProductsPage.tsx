@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, Image as ImageIcon, Plus, Settings2, Tag, Trash2, X } from "lucide-react";
@@ -122,12 +122,18 @@ function ProductDetailContent({
 }) {
   const [existingTag, setExistingTag] = useState("");
   const [newTag, setNewTag] = useState("");
+  const toast = useToast();
   const product = detail.product;
   const image = product.manual_image_url ?? product.feed_image_url ?? product.image_url ?? detail.details?.gallery[0] ?? null;
   const schemas = detail.seo?.schema_types ?? [];
+  const openProductPage = async (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    try { await api.shell.openExternal(product.url); toast.success("已打开商品页。"); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "无法打开商品页。")); }
+  };
   return <div className="si-product-detail">
     <ProductPreview src={image} alt={product.title} />
-    <div className="si-product-detail-title"><span>{product.category || "未分类"}</span><a href={product.url} onClick={(event) => { event.preventDefault(); void api.shell.openExternal(product.url); }}>打开商品页 <ExternalLink size={12} /></a></div>
+    <div className="si-product-detail-title"><span>{product.category || "未分类"}</span><a href={product.url} onClick={(event) => void openProductPage(event)}>打开商品页 <ExternalLink size={12} /></a></div>
     <h3>{product.title}</h3>
     <p className="si-product-detail-handle"><code>{product.handle}</code> · 变体数 {product.variant_count ?? "—"}</p>
     <div className="si-product-detail-facts">

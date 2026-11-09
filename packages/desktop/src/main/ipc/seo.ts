@@ -16,6 +16,8 @@ export function createSeoHandlers(context: IpcContext): IpcHandlerImplementation
       context.withProject(args[0], (id) =>
         context.core.seo.setRuleIgnored(id, args[1] as Parameters<typeof context.core.seo.setRuleIgnored>[1], args[2] as boolean),
       ),
+    "seo.getRuleSettings": (id) =>
+      context.withProject(id, (projectId) => context.core.seo.getRuleSettings(projectId)),
     "seo.listPages": (...args) =>
       context.withProject(args[0], (id) =>
         context.core.seo.listPages(id, args[1] as Parameters<typeof context.core.seo.listPages>[1]),

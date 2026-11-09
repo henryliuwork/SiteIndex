@@ -7,6 +7,18 @@ export function nextFilterValue<T extends string>(current: T | undefined, candid
   return current === candidate ? undefined : candidate;
 }
 
+/** 格式化为本地时间；同年隐藏年份，跨年补全年份。 */
+export function formatDateTime(value: string | Date | null | undefined, now = new Date()): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const datePart = date.getFullYear() === now.getFullYear()
+    ? `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    : `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return `${datePart} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export interface PaginationModel {
   page: number;
   pageSize: TablePageSize;

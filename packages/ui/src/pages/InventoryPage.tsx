@@ -11,8 +11,10 @@ import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, Drawer, FilterBar, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, StatusCells, stockTone, useToast } from "../components";
 import { selectInventoryCategoryRates } from "./inventory/categories";
+import { InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { DEFAULT_TREND_CATEGORY_LIMIT, MAX_TREND_CATEGORY_LIMIT, defaultTrendCategories, toggleTrendCategory, trendPoints } from "./inventory/trend";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
+import { formatDateTime } from "./date-time";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",
@@ -56,8 +58,7 @@ function formatRate(value: number | null | undefined): string {
 
 function dateTime(value: string | null): string {
   if (!value) return "尚未同步";
-  const date = new Date(value);
-  return "今天 " + new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+  return formatDateTime(value);
 }
 
 function categorySourceLabel(summary: InventorySummary, project: ProjectSummary | undefined): string {
@@ -240,8 +241,8 @@ function inventoryColumns(): ColumnDef<InventoryTableRow, unknown>[] {
     { id: "price", accessorKey: "price", header: "价格", meta: { width: 96, grow: 0, minWidth: 88, align: "end", text: "single" }, cell: ({ row }) => <span className="si-mono">{row.original.price.toFixed(2)}</span>, enableSorting: true },
     { id: "stock_status", accessorKey: "stock_status", header: "当前状态", meta: { width: 104, grow: 0, minWidth: 94, text: "single" }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockNames[row.original.stock_status]}</Chip>, enableSorting: true },
     { id: "days_in_status", accessorKey: "days_in_status", header: "持续", meta: { width: 84, grow: 0, minWidth: 76, align: "end", text: "single" }, cell: ({ row }) => row.original.days_in_status >= 60 ? "60 天+" : row.original.days_in_status <= 1 ? "今天" : row.original.days_in_status + " 天", enableSorting: true },
-    { id: "online_rate_30d", accessorKey: "online_rate_30d", header: "30 天在线率", meta: { width: 140, grow: 0, minWidth: 128, align: "end", text: "single" }, cell: ({ row }) => row.original.is_parent ? <span className="si-muted">—</span> : <span className="si-rate-cell"><span className="si-rate-track"><span className={row.original.online_rate_30d !== null && row.original.online_rate_30d < 0.6 ? "is-low" : ""} style={{ width: (row.original.online_rate_30d ?? 0) * 100 + "%" }} /></span><span>{formatRate(row.original.online_rate_30d)}</span></span>, enableSorting: true },
-    { id: "history_30d", accessorKey: "history_30d", header: "近 30 天（左旧右新）", meta: { width: 184, grow: 0, minWidth: 168, text: "single" }, cell: ({ row }) => <StatusCells history={row.original.history_30d} />, enableSorting: false },
+    { id: "online_rate_30d", accessorKey: "online_rate_30d", header: "30 天在线率", meta: { width: 140, grow: 0, minWidth: 128, align: "end", text: "single" }, cell: ({ row }) => <InventoryRateCell value={row.original.online_rate_30d} />, enableSorting: true },
+    { id: "history_30d", accessorKey: "history_30d", header: "近 30 天（左旧右新）", meta: { width: 184, grow: 0, minWidth: 168, text: "single" }, cell: ({ row }) => <InventoryHistoryCell row={row.original} />, enableSorting: false },
     { id: "last_change", accessorKey: "last_change", header: "最近变化", meta: { width: 180, grow: 1, minWidth: 150, text: "clamp2" }, cell: ({ row }) => row.original.last_change ? <span className="si-last-change"><strong>{row.original.last_change_at ?? "近期"}</strong><small>{row.original.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
   ];
 }
@@ -401,7 +402,7 @@ export function InventoryPage() {
         project={project}
         activeTab="inventory"
         hasTabPanel
-        status={project.sync.state === "ok" ? <Chip tone="ok">{dateTime(project.sync.at)} 同步成功</Chip> : <Chip tone={project.sync.state === "failed" ? "danger" : "warn"}>{project.sync.state === "failed" ? "同步失败" : project.sync.state === "running" ? "同步中" : "待处理"}</Chip>}
+        status={project.sync.state === "ok" ? <Chip tone="ok">{project.sync.at ? `${dateTime(project.sync.at)} · 同步成功` : "同步成功 · 时间未知"}</Chip> : <Chip tone={project.sync.state === "failed" ? "danger" : "warn"}>{project.sync.state === "failed" ? "同步失败" : project.sync.state === "running" ? "同步中" : "待处理"}</Chip>}
       />
       <ProjectTabPanel projectId={project.id} tab="inventory">
       <PageHeader

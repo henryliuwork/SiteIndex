@@ -151,4 +151,23 @@ describe("createApiBridge IPC errors", () => {
       ["si:seo.setRuleIgnored", "demo", "desc_missing", false],
     ]);
   });
+
+  it("forwards SEO rule settings through the API bridge", async () => {
+    const settings = [
+      {
+        rule: "title_missing" as const,
+        name: "缺少标题",
+        description: "页面缺少标题。",
+        severity: "high" as const,
+        pending_count: 3,
+        ignored: false,
+        ignored_urls: [],
+      },
+    ];
+    const invoke = vi.fn(async () => settings);
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+
+    await expect(bridge.seo.getRuleSettings?.("demo")).resolves.toEqual(settings);
+    expect(invoke).toHaveBeenCalledWith("si:seo.getRuleSettings", "demo");
+  });
 });

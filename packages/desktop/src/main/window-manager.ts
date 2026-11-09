@@ -133,10 +133,13 @@ export function createWindowManager(options: WindowManagerOptions) {
       if (target.protocol !== "file:") {
         return !app.isPackaged && target.origin === new URL(options.devUiUrl).origin;
       }
-      const uiIndex = app.isPackaged
-        ? join(process.resourcesPath, "ui", "index.html")
-        : resolve(options.mainDirectory, "../../../ui/dist/index.html");
-      return fileURLToPath(target).toLowerCase() === uiIndex.toLowerCase();
+      const uiIndexes = app.isPackaged
+        ? [
+            join(process.resourcesPath, "ui", "index.html"),
+            join(app.getAppPath(), "build-resources", "ui", "index.html"),
+          ]
+        : [resolve(options.mainDirectory, "../../../ui/dist/index.html")];
+      return uiIndexes.some((uiIndex) => fileURLToPath(target).toLowerCase() === uiIndex.toLowerCase());
     } catch {
       return false;
     }
@@ -193,6 +196,7 @@ export function createWindowManager(options: WindowManagerOptions) {
       isPackaged: app.isPackaged,
       rendererUrl: process.env.ELECTRON_RENDERER_URL,
       resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
     });
     await readyToShow;
     return window;

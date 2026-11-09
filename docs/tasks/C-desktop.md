@@ -129,6 +129,7 @@
 - [x] `schedule.verify` 检查任务存在、Windows 触发时间/日期和命令路径；repair 调用统一校正与授权流程并复核。
 - [x] `schedule.listOrphans` 只枚举 SiteIndex 任务；`removeOrphan` 二次确认后仅删除所选孤立任务。
 - [x] Core SEO 状态方法已合并；Desktop IPC 直通 Core，覆盖单条/批量状态与整类规则忽略/取消忽略。`PENDING_HANDLERS` 清理按契约流程另开 PR。
+- [x] `seo.getRuleSettings` 通过 Desktop handler 与 preload bridge 转发到 Core；`PENDING_HANDLERS` 清理按契约流程另开 PR。
 
 - 给 B：Electron 里的真实 `window.siteindex`；`uiState` 存储
 - 给 A：浏览器路径、device_id、cacheDir 通过 `createCoreService(ctx)` 与 `runJob` 参数传入
@@ -151,3 +152,9 @@
 
 - [x] preload 暴露 Desktop-only `window.siteindexWindow.setTitleBarOverlayColor("#RRGGBB")`；主进程仅接受来自主窗口主 frame 的六位十六进制颜色，仅更新 Windows 原生标题栏背景，关闭窗口时移除监听。
 - [ ] B 在 Drawer 打开时设置遮罩混合色，关闭时恢复 `#FFFFFF`。
+## v0.3 · #345 Windows 安装资源
+
+- [x] Windows 自定义目录覆盖安装 v0.1.9 → v0.3.0；安装后两次重启均通过 CDP 确认加载 `resources/ui/index.html`。
+- [x] `dist:win` 与 `dist:win:release` 增加两次静默自定义目录安装检查；核对全部 UI 文件与本次构建产物的 SHA-256，缺失或不一致时失败。
+- [x] 将 UI 同时收进 `app.asar`；外置 `resources/ui` 缺失时主进程改载归档副本，双重加载都失败才进入 fallback。
+- [ ] issue #345 的间歇性资源缺失根因未复现；继续收集安装器异常退出与覆盖安装证据。

@@ -15,6 +15,7 @@ export interface RendererContentRuntime {
   isPackaged: boolean;
   rendererUrl: string | undefined;
   resourcesPath: string;
+  appPath: string;
 }
 
 function getFailureReason(error: unknown): string {
@@ -52,6 +53,23 @@ export async function loadAppContent(
   try {
     await window.loadFile(uiIndex);
   } catch (error) {
+    if (runtime.isPackaged) {
+      const asarUiIndex = join(runtime.appPath, "build-resources", "ui", "index.html");
+      try {
+        console.warn("外部 UI 资源加载失败，改用 app.asar 中的界面副本。", error);
+        await window.loadFile(asarUiIndex);
+        return;
+      } catch (asarError) {
+        await loadFallback(
+          window,
+          options.fallbackPath,
+          new Error(
+            `resources/ui/index.html: ${getFailureReason(error)}; app.asar UI: ${getFailureReason(asarError)}`,
+          ),
+        );
+        return;
+      }
+    }
     await loadFallback(window, options.fallbackPath, error);
   }
 }

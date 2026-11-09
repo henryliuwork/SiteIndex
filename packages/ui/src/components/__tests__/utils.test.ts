@@ -1,5 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getLengthGrade, getPaginationModel, nextFilterValue, normalizeTablePageSize, readColumnPrefs, writeColumnPrefs } from "../utils";
+import { formatDateTime, getLengthGrade, getPaginationModel, nextFilterValue, normalizeTablePageSize, readColumnPrefs, writeColumnPrefs } from "../utils";
+
+describe("日期和时间格式", () => {
+  const now = new Date(2026, 10, 9, 12, 0);
+
+  it("同年输出月日和本地时间，不添加今天前缀", () => {
+    expect(formatDateTime(new Date(2026, 10, 8, 17, 0), now)).toBe("11-08 17:00");
+  });
+
+  it("跨年时包含年份并处理空值和非法日期", () => {
+    expect(formatDateTime(new Date(2025, 11, 31, 23, 5), now)).toBe("2025-12-31 23:05");
+    expect(formatDateTime(null, now)).toBe("—");
+    expect(formatDateTime("bad-date", now)).toBe("—");
+  });
+});
 
 describe("筛选状态", () => {
   it("同一筛选再次点击时清除，切换到另一筛选时更新", () => {

@@ -45,15 +45,31 @@ describe("OverviewPage 布局和操作", () => {
     expect(screen.getByRole("button", { name: "立即同步" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "打开项目文件夹" })).toBeTruthy();
 
-    const sections = [...document.querySelectorAll(".si-overview-content > section")];
-    expect(sections.map((section) => section.classList[0])).toEqual([
-      "si-overview-kpis", "si-overview-attention", "si-overview-readme", "si-overview-changelog",
+    const content = document.querySelector(".si-overview-content");
+    expect([...content!.children].map((element) => element.classList[0] || element.tagName.toLowerCase())).toEqual([
+      "si-page-header", "si-overview-kpis", "si-overview-attention", "si-overview-secondary",
+    ]);
+    expect([...document.querySelectorAll(".si-overview-secondary > section")].map((section) => section.classList[0])).toEqual([
+      "si-overview-readme", "si-overview-changelog",
     ]);
 
     fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
     expect(await screen.findByRole("menuitem", { name: "校验本地数据文件" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "复制 agent 接入指令" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "打开 README" })).toBeTruthy();
+  });
+
+  it("项目同步状态使用具体月日与时间，不使用‘今天’", async () => {
+    const mockApi = createMockApi();
+    const project = await mockApi.projects.get("demo");
+    mockApi.projects.get = vi.fn(async () => ({
+      ...project,
+      summary: { ...project.summary, sync: { ...project.summary.sync, state: "ok" as const, at: new Date(2026, 10, 8, 17, 0).toISOString() } },
+    }));
+    await renderOverview(mockApi);
+
+    expect(await screen.findByText(/11-08 17:00 · 同步成功/)).toBeTruthy();
+    expect(screen.queryByText(/今天/)).toBeNull();
   });
 
   it("把快捷操作结果显示为 Toast", async () => {
