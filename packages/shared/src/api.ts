@@ -456,6 +456,8 @@ export interface SkillInfo {
   version: string;
   description: string;
   has_update: boolean; // 项目中的版本落后于软件内置
+  /** 内置分发已停止；已安装的副本由用户管理，不自动删除。 */
+  retired?: boolean;
   reads: string[];
   writes: string[];
 }
@@ -465,6 +467,8 @@ export interface SkillTargetStatus {
   name: string;
   dir: string | null;
   status: "latest" | "outdated" | "not_installed" | "unknown_path";
+  /** 本地版本高于内置版本；安装或同步时不覆盖。 */
+  local_newer?: boolean;
 }
 
 export interface UpdateStatus {
