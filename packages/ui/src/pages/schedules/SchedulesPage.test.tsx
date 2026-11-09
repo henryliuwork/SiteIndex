@@ -32,7 +32,11 @@ function LocationProbe() {
   return <output data-testid="current-route">{useLocation().pathname}</output>;
 }
 
-async function renderSchedules(options: { failProjectList?: boolean; failScheduleFor?: string; withoutVerify?: boolean; withoutOrphanListing?: boolean; withoutOrphanRemoval?: boolean; withoutSystemTasks?: boolean } = {}) {
+async function expectToast(message: string, tone: "success" | "error") {
+  await waitFor(() => expect([...document.querySelectorAll(`.si-toast-${tone}`)].some((toast) => toast.textContent?.includes(message))).toBe(true));
+}
+
+async function renderSchedules(options: { failProjectList?: boolean; failScheduleFor?: string; failVerify?: boolean; withoutVerify?: boolean; withoutOrphanListing?: boolean; withoutOrphanRemoval?: boolean; withoutSystemTasks?: boolean } = {}) {
   const mockApi = createMockApi();
   const sourceProjects = await mockApi.projects.list();
   const projects: ProjectSummary[] = sourceProjects.map((project, index) => ({
@@ -51,6 +55,7 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
   });
   const verify = mockApi.schedule.verify;
   const verifySpy = verify ? vi.fn(verify) : undefined;
+  if (verifySpy && options.failVerify) verifySpy.mockRejectedValue({ code: "UNKNOWN", message: "校验调用失败。" } satisfies SiteIndexError);
   if (verifySpy) mockApi.schedule.verify = verifySpy;
   const removeOrphan = mockApi.schedule.removeOrphan;
   const removeOrphanSpy = removeOrphan ? vi.fn(removeOrphan) : undefined;
@@ -71,9 +76,9 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
       : null,
     apiErrorMessage: (_error: unknown, fallback: string) => fallback,
   }));
-  const { SchedulesPage } = await import("../SchedulesPage");
+  const [{ SchedulesPage }, { ToastProvider }] = await Promise.all([import("../SchedulesPage"), import("../../components/overlays")]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={queryClient}><MemoryRouter><SchedulesPage /><LocationProbe /></MemoryRouter></QueryClientProvider>);
+  render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><SchedulesPage /><LocationProbe /></MemoryRouter></QueryClientProvider></ToastProvider>);
   return { mockApi, projects, verifySpy, removeOrphanSpy, listSystemTasksSpy };
 }
 
@@ -131,7 +136,8 @@ describe("SchedulesPage", () => {
 
     const mismatchRow = await screen.findByRole("row", { name: /Cedar Shop/ });
     fireEvent.click(within(mismatchRow).getByRole("button", { name: "修复" }));
-    expect(await screen.findByText("系统计划任务路径已修复。")).toBeTruthy();
+    expect(await within(mismatchRow).findByText("系统计划任务路径已修复。")).toBeTruthy();
+    await expectToast("系统计划任务已修复。", "success");
     expect(verifySpy).toHaveBeenNthCalledWith(1, "cedar", undefined);
     expect(verifySpy).toHaveBeenNthCalledWith(2, "cedar", { repair: true });
   }, 15_000);
@@ -148,6 +154,7 @@ describe("SchedulesPage", () => {
     await waitFor(() => expect(within(systemTaskRegion).queryByText("SiteIndex-demo-orphan")).toBeNull());
     if (!removeOrphanSpy) throw new Error("orphan removal mock is missing");
     expect(removeOrphanSpy).toHaveBeenCalledWith("SiteIndex-demo-orphan");
+    await expectToast("孤立计划任务已清理。", "success");
   });
 
   it("keeps orphan tasks available when the project list fails", async () => {
@@ -188,5 +195,13 @@ describe("SchedulesPage", () => {
     const region = await screen.findByRole("region", { name: "孤立任务" });
     expect(await within(region).findByText("SiteIndex-demo-orphan")).toBeTruthy();
     expect(within(region).queryByRole("button", { name: "清理" })).toBeNull();
+  });
+
+  it("shows a Toast when schedule verification fails", async () => {
+    await renderSchedules({ failVerify: true });
+    const row = await screen.findByRole("row", { name: /Cedar Shop/ });
+    fireEvent.click(within(row).getByRole("button", { name: "校验" }));
+
+    await expectToast("计划任务校验失败。", "error");
   });
 });

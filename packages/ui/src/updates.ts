@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiErrorMessage } from "./api";
 import { projectQueryKeys } from "./project-queries";
+import { useToast } from "./components/overlays";
 
 export type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "unsupported";
 
@@ -56,6 +57,7 @@ export function updateStatusLabel(status: UpdateStatus | undefined, loading = fa
 export function useUpdatesController() {
   const updates = getUpdatesApi();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [busy, setBusy] = useState<UpdateAction | null>(null);
   const query = useQuery({
     queryKey: ["updates", "status"],
@@ -78,17 +80,23 @@ export function useUpdatesController() {
       if (action === "check") {
         const result = await query.refetch();
         if (result.isError) throw result.error;
+        toast.success("更新状态已检查。");
       }
-      else await updates[action]();
+      else {
+        await updates[action]();
+        toast.info(action === "download" ? "更新下载已启动。" : "正在重启并安装更新。");
+      }
     } catch (cause) {
+      const message = apiErrorMessage(cause, "请稍后重试。");
       queryClient.setQueryData<UpdateStatus>(["updates", "status"], (previous) => ({
         state: "error",
         current: previous?.current ?? "",
         latest: previous?.latest,
         notes: previous?.notes,
         manual_url: previous?.manual_url,
-        error: apiErrorMessage(cause, "请稍后重试。"),
+        error: message,
       }));
+      toast.error("更新操作失败：" + message);
     } finally {
       setBusy(null);
     }

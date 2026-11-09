@@ -158,6 +158,8 @@ export function NewProjectWizardPage() {
         setFinished(result);
         setStepStates((current) => applyInitResult(current, result));
         setProgressPct(finalInitProgressPercent(result));
+        if (result.status === "ok") toast.success("项目初始化任务已完成，查看各步骤状态。");
+        else toast.error(result.summary || result.errors?.join("；") || "项目初始化任务未全部成功。");
       }
       const retryKey = retryRunIds.current.get(result.runId);
       if (retryKey) {
@@ -165,10 +167,11 @@ export function NewProjectWizardPage() {
         setRetryStates((current) => ({ ...current, [retryKey]: result.status === "ok"
           ? { status: "ok" }
           : { status: "failed", reason: result.errors?.join("；") || result.summary || "重试失败" } }));
+        result.status === "ok" ? toast.success(`${progressSteps[retryKey].name}重试完成。`) : toast.error(`${progressSteps[retryKey].name}重试失败：${result.summary || result.errors?.join("；") || "请重试。"}`);
       }
     });
     return () => { onProgress(); onFinished(); };
-  }, [activeStepKey, createdRunId]);
+  }, [activeStepKey, createdRunId, toast]);
 
   useEffect(() => {
     const check = api.workspace?.check;
@@ -205,12 +208,14 @@ export function NewProjectWizardPage() {
       const projects = await queryClient.fetchQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list(), staleTime: 0 });
       if (findExistingProject(projects, draft.url)) {
         update({ detect: null, feedResult: null });
+        toast.info("该网站已登记，请打开已有项目。");
         return;
       }
       const result = await api.projects.detect(draft.url.trim());
       const brandName = draft.brand.name || slugFor(draft.url).replace(/(^|-)([a-z])/g, (_match, _dash, letter: string) => letter.toUpperCase());
       update({ detect: result, feedUrls: result.feed_candidates, feedResult: null, folderName: draft.folderName || slugFor(draft.url), brand: { ...draft.brand, name: brandName }, workspacePlatform: workspacePlatformFromDetected(result.platform) });
-    } catch (cause) { setError(apiErrorMessage(cause, "网站检测或重复项目检查失败，请重试。")); }
+      toast.success("网站检测完成。");
+    } catch (cause) { const message = apiErrorMessage(cause, "网站检测或重复项目检查失败，请重试。"); setError(message); toast.error(message); }
     finally { setBusy(false); }
   };
 
@@ -220,8 +225,10 @@ export function NewProjectWizardPage() {
     setBusy(true); setError(""); setFeedError(""); setCanRetryFeed(false);
     try {
       const result = await api.projects.inspectFeed(feedUrls, { sku_field: draft.skuField, category_depth: draft.categoryDepth });
-      update({ feedUrls, feedResult: result }); return true;
-    } catch (cause) { setFeedError(apiErrorMessage(cause, "Feed 检测失败，请检查地址后重试。")); setCanRetryFeed(true); return false; }
+      update({ feedUrls, feedResult: result });
+      toast.success("Feed 检测完成。");
+      return true;
+    } catch (cause) { const message = apiErrorMessage(cause, "Feed 检测失败，请检查地址后重试。"); setFeedError(message); setCanRetryFeed(true); toast.error(message); return false; }
     finally { setBusy(false); }
   };
 
@@ -237,6 +244,7 @@ export function NewProjectWizardPage() {
     try {
       const projects = await queryClient.fetchQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list(), staleTime: 0 });
       if (findExistingProject(projects, draft.url, draft.detect?.final_url ?? "")) {
+        toast.info("该网站已登记，请打开已有项目。");
         navigate("/new/url");
         return;
       }
@@ -264,8 +272,9 @@ export function NewProjectWizardPage() {
       }
       update({ projectsRoot: root, created: { ...created, path: actualPath } });
       await invalidateProjectSummary(queryClient, created.id);
+      toast.success("项目已创建，正在初始化。");
       navigate("/new/done");
-    } catch (cause) { setError(apiErrorMessage(cause, "创建项目失败，请重试。")); }
+    } catch (cause) { const message = apiErrorMessage(cause, "创建项目失败，请重试。"); setError(message); toast.error(message); }
     finally { setBusy(false); }
   };
 
@@ -273,7 +282,7 @@ export function NewProjectWizardPage() {
     const path = draft.created?.path;
     if (!path) { setError("尚未读取到项目的实际路径，请先重试读取路径。"); return; }
     try { await api.shell.openPath(path); toast.success("已打开项目文件夹。"); }
-    catch (cause) { setError(apiErrorMessage(cause, "打开文件夹失败。")); }
+    catch (cause) { const message = apiErrorMessage(cause, "打开文件夹失败。"); setError(message); toast.error(message); }
   };
 
   const retryReadCreatedPath = async () => {
@@ -284,16 +293,18 @@ export function NewProjectWizardPage() {
       if (!path) { setError("项目详情没有返回实际路径，请稍后重试。"); return; }
       update({ created: { ...draft.created, path } });
       toast.success("已读取项目实际路径。");
-    } catch (cause) { setError(apiErrorMessage(cause, "读取项目实际路径失败，请重试。")); }
+    } catch (cause) { const message = apiErrorMessage(cause, "读取项目实际路径失败，请重试。"); setError(message); toast.error(message); }
     finally { setBusy(false); }
   };
 
   const chooseProjectsRoot = async () => {
     try {
       const selected = await api.settings.chooseDirectory(projectRoot || undefined);
-      if (selected) update({ projectsRoot: selected });
+      if (selected) { update({ projectsRoot: selected }); toast.success("项目根目录已选择。"); }
     } catch (cause) {
-      setError(apiErrorMessage(cause, "选择项目根目录失败，请重试。"));
+      const message = apiErrorMessage(cause, "选择项目根目录失败，请重试。");
+      setError(message);
+      toast.error(message);
     }
   };
 
@@ -307,13 +318,17 @@ export function NewProjectWizardPage() {
         const saved = await api.schedule.save(projectId, schedule.config);
         const reason = scheduleRetryFailure(saved.registered);
         setRetryStates((current) => ({ ...current, schedule: reason ? { status: "failed", reason } : { status: "ok" } }));
+        reason ? toast.error(reason) : toast.success("定时任务已重新注册。");
       } else {
         const project = await api.projects.get(projectId);
         const run = await api.jobs.run({ projectPath: project.summary.path, job: key });
         retryRunIds.current.set(run.runId, key);
+        toast.info(`${progressSteps[key].name}重试已启动。`);
       }
     } catch (cause) {
-      setRetryStates((current) => ({ ...current, [key]: { status: "failed", reason: apiErrorMessage(cause, "重试失败，请稍后再试。") } }));
+      const message = apiErrorMessage(cause, "重试失败，请稍后再试。");
+      setRetryStates((current) => ({ ...current, [key]: { status: "failed", reason: message } }));
+      toast.error(message);
     }
   };
 
