@@ -13,7 +13,7 @@ describe("workspace mock", () => {
       brand: { name: "Demo Brand" },
       platform: "shopify",
       markets: ["US"],
-      esp_presets: ["esp.mailchimp"],
+      esp_presets: ["mailchimp"],
     });
 
     expect(created?.path).toBe(targetDir);
@@ -33,7 +33,7 @@ describe("workspace mock", () => {
       markets: ["US"],
       projects_root: "D:/Projects",
       folder_name: "Empty Demo",
-      workspace: { enabled: true, platform: "shopify", esp_presets: ["esp.mailchimp"] },
+      workspace: { enabled: true, platform: "shopify", esp_presets: ["mailchimp"] },
     });
 
     expect(created?.id).toBeTruthy();

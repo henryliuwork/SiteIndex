@@ -22,6 +22,7 @@ describe("NewProjectWizardPage workspace step", () => {
     const checkWorkspace = vi.spyOn(mockApi.workspace!, "check");
     vi.doMock("../api", () => ({
       api: mockApi,
+      isMockApi: true,
       apiErrorMessage: (error: unknown, fallback: string) =>
         typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
           ? error.message
@@ -66,7 +67,7 @@ describe("NewProjectWizardPage workspace step", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({
-      workspace: { enabled: true, platform: "shopify", esp_presets: ["esp.mailchimp"] },
+      workspace: { enabled: true, platform: "shopify", esp_presets: ["mailchimp"] },
     })));
     await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/new/done"));
   }, 30_000);
@@ -74,7 +75,7 @@ describe("NewProjectWizardPage workspace step", () => {
   it("keeps the workspace step hidden when the optional API is absent", async () => {
     const mockApi = createMockApi();
     mockApi.workspace = undefined;
-    vi.doMock("../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
     const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
       import("./NewProjectWizardPage"), import("./wizard-state"), import("../components/overlays"),
     ]);
@@ -93,5 +94,30 @@ describe("NewProjectWizardPage workspace step", () => {
 
     expect(await screen.findByRole("button", { name: "创建项目" })).toBeTruthy();
     expect(screen.queryByText("Agent 工作区")).toBeNull();
+  }, 30_000);
+
+  it("keeps a pending Desktop workspace stub unavailable and explains the limitation", async () => {
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: false, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
+      import("./NewProjectWizardPage"), import("./wizard-state"), import("../components/overlays"),
+    ]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><WizardDraftProvider><MemoryRouter initialEntries={["/new/url"]}><Routes><Route path="/new/*" element={<NewProjectWizardPage />} /></Routes></MemoryRouter></WizardDraftProvider></QueryClientProvider></ToastProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "检测" }));
+    const nextToSource = await screen.findByRole("button", { name: "下一步：数据源" });
+    await waitFor(() => expect((nextToSource as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(nextToSource);
+    fireEvent.click(await screen.findByRole("button", { name: "检测 Feed" }));
+    await screen.findByText("可用 SKU");
+    const nextToBrand = screen.getByRole("button", { name: "下一步：品牌配置" });
+    await waitFor(() => expect((nextToBrand as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(nextToBrand);
+
+    expect(await screen.findByText("桌面端尚未接入工作区检查和创建操作；仍可继续创建并初始化 SiteIndex 项目。")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "下一步：Agent 工作区" })).toBeNull();
+    expect(screen.getByRole("button", { name: "创建项目" })).toBeTruthy();
   }, 30_000);
 });

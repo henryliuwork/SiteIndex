@@ -65,6 +65,7 @@ describe("ProjectCenterPage add existing project flow", () => {
 
     vi.doMock("../api", () => ({
       api: mockApi,
+      isMockApi: true,
       apiErrorMessage: (error: unknown, fallback: string) =>
         typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
           ? error.message
@@ -178,6 +179,7 @@ describe("ProjectCenterPage attention list", () => {
 
     vi.doMock("../api", () => ({
       api: mockApi,
+      isMockApi: true,
       apiErrorMessage: (error: unknown, fallback: string) =>
         typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
           ? error.message
@@ -282,6 +284,7 @@ describe("ProjectCenterPage create empty workspace flow", () => {
     const createWorkspaceOnly = vi.spyOn(mockApi.projects, "createWorkspaceOnly");
     vi.doMock("../api", () => ({
       api: mockApi,
+      isMockApi: true,
       apiErrorMessage: (error: unknown, fallback: string) =>
         typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
           ? error.message
@@ -311,7 +314,7 @@ describe("ProjectCenterPage create empty workspace flow", () => {
       url: "https://empty-workspace.example.test",
       projects_root: "D:/Projects",
       folder_name: "empty-workspace",
-      workspace: { enabled: true, platform: "other", esp_presets: ["esp.mailchimp"] },
+      workspace: { enabled: true, platform: "other", esp_presets: ["mailchimp"] },
     })));
     await waitFor(() => expect(screen.getByTestId("current-route").textContent).toMatch(/^\/p\/mock-/));
     expect(await screen.findByRole("link", { name: "Empty Workspace" })).toBeTruthy();
@@ -323,12 +326,24 @@ describe("ProjectCenterPage create empty workspace flow", () => {
     const mockApi = createMockApi();
     delete mockApi.projects.createWorkspaceOnly;
     mockApi.jobs.history = vi.fn(async () => []);
-    vi.doMock("../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
     const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
 
     await screen.findByRole("button", { name: "添加已有项目" });
+    expect(screen.queryByRole("button", { name: "创建空工作区" })).toBeNull();
+  }, 25_000);
+
+  it("hides a Desktop workspace stub while its handler is pending and explains why", async () => {
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: false, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    await screen.findByText("桌面端尚未接入空工作区创建和目录检查操作；现有项目添加与普通新建流程仍可使用。");
     expect(screen.queryByRole("button", { name: "创建空工作区" })).toBeNull();
   }, 25_000);
 });
@@ -348,6 +363,7 @@ describe("ProjectCenterPage project removal", () => {
     mockApi.jobs.history = vi.fn(async () => []);
     vi.doMock("../api", () => ({
       api: mockApi,
+      isMockApi: true,
       apiErrorMessage: (error: unknown, fallback: string) =>
         typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
           ? error.message
@@ -375,6 +391,7 @@ describe("ProjectCenterPage project removal", () => {
     mockApi.jobs.history = vi.fn(async () => []);
     vi.doMock("../api", () => ({
       api: mockApi,
+      isMockApi: true,
       apiErrorMessage: (error: unknown, fallback: string) =>
         typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
           ? error.message
