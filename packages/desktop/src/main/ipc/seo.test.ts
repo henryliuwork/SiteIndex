@@ -12,6 +12,7 @@ const batchTargets = [
 function createContext(
   setIssueStatus = vi.fn(async () => ({ updated: 1 })),
   setRuleIgnored = vi.fn(async () => ({ updated: 1 })),
+  getRuleSettings = vi.fn(async () => []),
 ): IpcContext {
   return {
     withProject: async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>) => {
@@ -20,11 +21,11 @@ function createContext(
       }
       return callback("demo" as ProjectId);
     },
-    core: { seo: { setIssueStatus, setRuleIgnored } },
+    core: { seo: { setIssueStatus, setRuleIgnored, getRuleSettings } },
   } as unknown as IpcContext;
 }
 
-function handler(context: IpcContext, method: "seo.setIssueStatus" | "seo.setRuleIgnored") {
+function handler(context: IpcContext, method: "seo.setIssueStatus" | "seo.setRuleIgnored" | "seo.getRuleSettings") {
   const implementation = createSeoHandlers(context)[method];
   if (!implementation) throw new Error(`${method} handler is missing`);
   return implementation;
@@ -57,5 +58,35 @@ describe("SEO issue status IPC handlers", () => {
       updated: 2,
     });
     expect(setRuleIgnored).toHaveBeenCalledWith("demo", "desc_missing", ignored);
+  });
+
+  it("forwards rule settings to Core for the selected project", async () => {
+    const settings = [
+      {
+        rule: "title_missing" as const,
+        name: "缺少标题",
+        description: "页面缺少标题。",
+        severity: "high" as const,
+        pending_count: 3,
+        ignored: false,
+        ignored_urls: [],
+      },
+    ];
+    const getRuleSettings = vi.fn(async () => settings);
+    const context = createContext(vi.fn(async () => ({ updated: 1 })), vi.fn(async () => ({ updated: 1 })), getRuleSettings);
+
+    await expect(handler(context, "seo.getRuleSettings")("demo")).resolves.toEqual(settings);
+    expect(getRuleSettings).toHaveBeenCalledWith("demo");
+  });
+
+  it("returns the project lookup error without calling Core", async () => {
+    const getRuleSettings = vi.fn(async () => []);
+    const context = createContext(vi.fn(async () => ({ updated: 1 })), vi.fn(async () => ({ updated: 1 })), getRuleSettings);
+
+    await expect(handler(context, "seo.getRuleSettings")("missing")).rejects.toMatchObject({
+      code: "PROJECT_NOT_FOUND",
+      message: "找不到指定项目。",
+    });
+    expect(getRuleSettings).not.toHaveBeenCalled();
   });
 });

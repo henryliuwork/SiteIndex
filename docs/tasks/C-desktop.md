@@ -129,6 +129,7 @@
 - [x] `schedule.verify` 检查任务存在、Windows 触发时间/日期和命令路径；repair 调用统一校正与授权流程并复核。
 - [x] `schedule.listOrphans` 只枚举 SiteIndex 任务；`removeOrphan` 二次确认后仅删除所选孤立任务。
 - [x] Core SEO 状态方法已合并；Desktop IPC 直通 Core，覆盖单条/批量状态与整类规则忽略/取消忽略。`PENDING_HANDLERS` 清理按契约流程另开 PR。
+- [x] `seo.getRuleSettings` 通过 Desktop handler 与 preload bridge 转发到 Core；`PENDING_HANDLERS` 清理按契约流程另开 PR。
 
 - 给 B：Electron 里的真实 `window.siteindex`；`uiState` 存储
 - 给 A：浏览器路径、device_id、cacheDir 通过 `createCoreService(ctx)` 与 `runJob` 参数传入
