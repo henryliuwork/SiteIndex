@@ -21,10 +21,11 @@ export function setTitleBarOverlayColor(
 export function bindTitleBarOverlayColor(
   ipcMain: Pick<IpcMain, "on" | "removeListener">,
   window: BrowserWindow,
+  platform: NodeJS.Platform = process.platform,
 ): void {
   const listener = (event: IpcMainEvent, color: unknown): void => {
     if (event.sender !== window.webContents || event.senderFrame !== event.sender.mainFrame) return;
-    setTitleBarOverlayColor(window, color);
+    setTitleBarOverlayColor(window, color, platform);
   };
 
   ipcMain.on(TITLE_BAR_OVERLAY_COLOR_CHANNEL, listener);

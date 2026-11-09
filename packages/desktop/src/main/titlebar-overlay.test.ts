@@ -39,7 +39,7 @@ describe("native title bar overlay colors", () => {
       removeListener: vi.fn(),
     } as unknown as Pick<IpcMain, "on" | "removeListener">;
 
-    bindTitleBarOverlayColor(ipcMain, window);
+    bindTitleBarOverlayColor(ipcMain, window, "win32");
     const update = listeners.get("si:window.setTitleBarOverlayColor");
     expect(update).toBeDefined();
     update?.({ sender: webContents, senderFrame: mainFrame } as unknown as IpcMainEvent, "#bcbdbd");
