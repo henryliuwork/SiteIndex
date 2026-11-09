@@ -11,9 +11,10 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "prepare:dist": "pnpm --filter @siteindex/ui build && pnpm --filter @siteindex/cli build && pnpm build && node scripts/prepare-resources.mjs",
-    "dist:win": "pnpm prepare:dist && electron-builder --win nsis --publish never",
+    "dist:win": "pnpm prepare:dist && electron-builder --win nsis --publish never && pnpm verify:win-installer",
     "dist:mac": "pnpm prepare:dist && electron-builder --mac dmg zip --universal --publish never",
-    "dist:win:release": "pnpm prepare:dist && electron-builder --win nsis --publish always",
+    "dist:win:release": "pnpm prepare:dist && electron-builder --win nsis --publish always && pnpm verify:win-installer",
+    "verify:win-installer": "node scripts/verify-windows-installer.mjs",
     "dist:mac:release": "pnpm prepare:dist && electron-builder --mac dmg zip --universal --publish always"
   },
   "dependencies": {
@@ -45,6 +46,7 @@
     },
     "files": [
       "out/**/*",
+      "build-resources/ui/**/*",
       "package.json"
     ],
     "extraResources": [
