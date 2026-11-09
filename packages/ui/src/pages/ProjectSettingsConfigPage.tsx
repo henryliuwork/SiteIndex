@@ -5,7 +5,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { FeedInspectResult, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
+import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { recommendedSkuGroupingPattern, skuGroupingExample, skuGroupingPresetForRule, skuGroupingPresetOptions, skuGroupingRuleForPreset, trailingNumberPattern, type SkuGroupingPreset } from "./project-settings-config/sku-grouping-presets";
 import { configSectionLinks, isConfigSectionId, scrollToConfigSection, type ConfigSectionId } from "./project-settings-config/section-navigation";
@@ -60,6 +60,7 @@ export function ProjectSettingsConfigPage() {
   const [searchParams] = useSearchParams();
   const requestedSection = searchParams.get("section");
   const queryClient = useQueryClient();
+  const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const [draft, setDraft] = useState<SiteConfig | null>(null);
   const grouping = draft?.sku_grouping ?? { enabled: false, rule: { type: "regex", value: recommendedSkuGroupingPattern } as SkuGroupingRule };
@@ -80,7 +81,6 @@ export function ProjectSettingsConfigPage() {
     enabled: Boolean(projectQuery.data && draft),
   });
   const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState("");
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState("");
@@ -134,10 +134,10 @@ export function ProjectSettingsConfigPage() {
   const addManualWatchedCategory = () => {
     if (!draft) return;
     const item = { name: watchedName.trim(), slug: watchedSlug.trim(), url: watchedUrl.trim(), manual: true };
-    if (!item.name || !item.slug || !item.url) { setFeedback("请填写分类名称、slug 和 URL"); return; }
-    if ((draft.categories.watched ?? []).some((current) => sameCategory(current, item))) { setFeedback("该分类已在关注列表中"); return; }
+    if (!item.name || !item.slug || !item.url) { toast.error("请填写分类名称、slug 和 URL。"); return; }
+    if ((draft.categories.watched ?? []).some((current) => sameCategory(current, item))) { toast.error("该分类已在关注列表中。"); return; }
     patch("categories", { ...draft.categories, watched: [...(draft.categories.watched ?? []), item] });
-    setWatchedName(""); setWatchedSlug(""); setWatchedUrl(""); setFeedback("");
+    setWatchedName(""); setWatchedSlug(""); setWatchedUrl("");
   };
 
   const removeWatchedCategory = (category: WatchedCategory) => {
@@ -153,13 +153,12 @@ export function ProjectSettingsConfigPage() {
       if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) throw new Error("数据修正必须是 JSON 对象");
       config = { ...next, crawl: { ...next.crawl, overrides: overrides as SiteConfig["crawl"]["overrides"] } };
     } catch (error) {
-      setFeedback("保存失败：" + (apiErrorMessage(error, "数据修正 JSON 格式无效")));
+      toast.error("保存失败：" + apiErrorMessage(error, "数据修正 JSON 格式无效"));
       return;
     }
     const previousCategories = projectQuery.data?.config.categories ?? config.categories;
     const previousBlogRecognition = projectQuery.data?.config.content;
     setSaving(true);
-    setFeedback("");
     try {
       const saved = await api.projects.updateConfig(id, config);
       if (didBlogRecognitionConfigChange(previousBlogRecognition, saved.content)) {
@@ -172,12 +171,11 @@ export function ProjectSettingsConfigPage() {
         queryClient.invalidateQueries({ queryKey: ["sku-grouping-preview", id] }),
         invalidateInventoryForCategoryChange(queryClient, id, previousCategories, saved.categories),
       ]);
-      setFeedback("已保存配置");
+      toast.success("配置已保存。");
     } catch (error) {
-      setFeedback("保存失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("保存失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setSaving(false);
-      window.setTimeout(() => setFeedback(""), 2400);
     }
   };
 
@@ -185,16 +183,15 @@ export function ProjectSettingsConfigPage() {
     if (!draft || inspectingFeed) return;
     const feedUrls = (Array.isArray(draft.crawl.feed_url) ? draft.crawl.feed_url : [draft.crawl.feed_url]).map((url) => url.trim()).filter(Boolean);
     if (!feedUrls.length) {
-      setFeedback("请先填写至少一个 Feed 地址");
+      toast.error("请先填写至少一个 Feed 地址。");
       return;
     }
     setInspectingFeed(true);
-    setFeedback("");
     try {
       setFeedResult(await api.projects.inspectFeed(feedUrls, { sku_field: draft.crawl.sku_field ?? "id", category_depth: draft.crawl.category_depth ?? 2 }));
-      setFeedback("Feed 检测完成");
+      toast.success("Feed 检测完成。");
     } catch (error) {
-      setFeedback("Feed 检测失败：" + (apiErrorMessage(error, "请检查地址后重试")));
+      toast.error("Feed 检测失败：" + apiErrorMessage(error, "请检查地址后重试"));
     } finally {
       setInspectingFeed(false);
     }
@@ -210,6 +207,7 @@ export function ProjectSettingsConfigPage() {
       setOverrideText(JSON.stringify(config.crawl.overrides ?? {}, null, 2));
       setJsonOpen(false);
       setJsonError("");
+      toast.info("配置 JSON 已载入草稿，请保存后生效。");
     } catch (error) {
       setJsonError(apiErrorMessage(error, "JSON 格式无效"));
     }
@@ -228,7 +226,6 @@ export function ProjectSettingsConfigPage() {
     <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle="index/site.json" actions={<><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="settings">
     <SettingsNav id={id} value="config" />
-    {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     <div className="si-config-layout">
       <nav className="si-config-outline" aria-label="配置目录">{configSectionLinks.map(([target, label]) => <button key={target} type="button" aria-controls={target} aria-current={activeSection === target ? "location" : undefined} className={activeSection === target ? "active" : undefined} onClick={() => selectSection(target)}>{label}</button>)}</nav>
       <div className="si-config-sections">

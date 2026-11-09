@@ -5,7 +5,7 @@ import { RefreshCw } from "lucide-react";
 import type { ProjectSummary, RunLog, ScheduleState, SystemTaskRow } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, DataTable, EmptyState, Notice, PageHeader, Select } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, DataTable, EmptyState, formatDateTime, Notice, PageHeader, Select, useToast } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./schedules/page.css";
 
@@ -34,19 +34,6 @@ const jobLabels: Record<string, string> = {
   "index-check": "检查收录",
   views: "更新视图",
 };
-
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
 
 function nextRun(schedule: ScheduleState): { job: string; at: string } | null {
   const next = schedule.next_runs
@@ -115,19 +102,24 @@ function SystemTaskConsistency(task: SystemTaskRow) {
 }
 
 function SystemTasksSection({ projects }: { projects: ProjectSummary[] }) {
+  const toast = useToast();
   const tasksQuery = useQuery({
     queryKey: ["schedule", "system-tasks"],
     queryFn: () => api.schedule.listSystemTasks!(),
     enabled: typeof api.schedule.listSystemTasks === "function",
     retry: false,
   });
+  const refreshTasks = async () => {
+    const result = await tasksQuery.refetch();
+    result.isError ? toast.error(apiErrorMessage(result.error, "系统计划任务刷新失败。")) : toast.success("系统计划任务已刷新。");
+  };
   if (typeof api.schedule.listSystemTasks !== "function") return null;
   const projectNames = new Map(projects.map((project) => [project.id, project.name]));
 
   return <Card className="si-system-tasks" label="系统计划任务">
     <div className="si-system-tasks-heading">
       <div><h2>系统计划任务</h2><p>只读核对系统中的任务状态及项目计划配置。</p></div>
-      <Button size="small" icon={<RefreshCw size={14} aria-hidden="true" />} disabled={tasksQuery.isFetching} onClick={() => void tasksQuery.refetch()}>{tasksQuery.isFetching ? "刷新中…" : "刷新"}</Button>
+      <Button size="small" icon={<RefreshCw size={14} aria-hidden="true" />} disabled={tasksQuery.isFetching} onClick={() => void refreshTasks()}>{tasksQuery.isFetching ? "刷新中…" : "刷新"}</Button>
     </div>
     {tasksQuery.isLoading ? <p className="si-schedules-state" role="status">正在读取系统计划任务…</p>
       : tasksQuery.isError ? <ApiErrorNotice label="系统计划任务加载失败。" error={tasksQuery.error} onRetry={() => void tasksQuery.refetch()} />
@@ -152,6 +144,7 @@ function SystemTasksSection({ projects }: { projects: ProjectSummary[] }) {
 
 function OrphanScheduleTasks() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [cleaningTask, setCleaningTask] = useState<string | null>(null);
   const [cleanupError, setCleanupError] = useState("");
   const orphansQuery = useQuery({
@@ -171,8 +164,11 @@ function OrphanScheduleTasks() {
         queryClient.invalidateQueries({ queryKey: ["schedule", "orphans"] }),
         queryClient.invalidateQueries({ queryKey: ["schedule", "system-tasks"] }),
       ]);
+      toast.success("孤立计划任务已清理。");
     } catch (cause) {
-      setCleanupError(apiErrorMessage(cause, "清理孤立任务失败。"));
+      const message = apiErrorMessage(cause, "清理孤立任务失败。");
+      setCleanupError(message);
+      toast.error(message);
     } finally {
       setCleaningTask(null);
     }
@@ -194,6 +190,7 @@ function OrphanScheduleTasks() {
 export function SchedulesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [selectedProject, setSelectedProject] = useState("all");
   const [query, setQuery] = useState({ page: 1, pageSize: 50 });
   const [verificationByProject, setVerificationByProject] = useState<Record<string, ScheduleVerificationUiState>>({});
@@ -231,15 +228,19 @@ export function SchedulesPage() {
       if (repair && result.state === "ok") {
         await queryClient.invalidateQueries({ queryKey: ["schedule", projectId] });
       }
+      if (result.state === "ok") toast.success(repair ? "系统计划任务已修复。" : "计划任务校验通过。");
+      else toast.info(result.message ?? (repair ? "计划任务修复未完成。" : "计划任务校验发现路径或注册状态不一致。"));
     } catch (cause) {
+      const message = apiErrorMessage(cause, "计划任务校验失败。");
       setVerificationByProject((current) => ({
         ...current,
         [projectId]: {
           result: current[projectId]?.result ?? null,
           checking: false,
-          error: apiErrorMessage(cause, "计划任务校验失败。"),
+          error: message,
         },
       }));
+      toast.error(message);
     }
   };
   const visibleProjects = selectedProject === "all" ? projects : projects.filter((project) => project.id === selectedProject);

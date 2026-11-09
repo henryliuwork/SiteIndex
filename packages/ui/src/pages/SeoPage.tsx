@@ -423,11 +423,11 @@ export function SeoPage() {
   ] : [];
 
   const openPage = async (url: string) => {
-    try { await api.shell.openExternal(url); }
+    try { await api.shell.openExternal(url); toast.success("已打开页面。"); }
     catch (cause) { toast.error(apiErrorMessage(cause, "无法打开页面。")); }
   };
   const checkSingleIndex = async (url: string) => {
-    try { const searchUrl = await api.seo.googleSiteUrl(url); await api.shell.openExternal(searchUrl); }
+    try { const searchUrl = await api.seo.googleSiteUrl(url); await api.shell.openExternal(searchUrl); toast.success("已打开 Google 收录检查。"); }
     catch (cause) { toast.error(apiErrorMessage(cause, "无法打开 Google 收录检查。")); }
   };
   const recrawl = async () => {

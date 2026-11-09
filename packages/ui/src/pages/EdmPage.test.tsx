@@ -56,9 +56,10 @@ async function renderEdmPage(groupingEnabled: boolean) {
         ? error.message
         : fallback,
   }));
-  const [{ EdmPage }] = await Promise.all([import("./EdmPage")]);
+  const [{ EdmPage }, { ToastProvider }] = await Promise.all([import("./EdmPage"), import("../components")]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
+    <ToastProvider>
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/p/demo/edm"]}>
         <Routes>
@@ -67,7 +68,8 @@ async function renderEdmPage(groupingEnabled: boolean) {
         </Routes>
         <LocationProbe />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
+    </ToastProvider>,
   );
   return { mockApi, listImages, previewGrouping };
 }

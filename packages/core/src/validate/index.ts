@@ -106,6 +106,67 @@ function rowSortCompare(a: Record<string, unknown>, b: Record<string, unknown>, 
   }
   return 0;
 }
+function gitignoreGlobMatches(pattern: string, target: string): boolean {
+  let source = "^";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index]!;
+    if (char === "\\" && index + 1 < pattern.length) {
+      source += pattern[++index]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    } else if (char === "*") {
+      if (pattern[index + 1] === "*") {
+        index += 1;
+        if (pattern[index + 1] === "/") {
+          index += 1;
+          source += "(?:.*/)?";
+        } else source += ".*";
+      } else source += "[^/]*";
+    } else if (char === "?") source += "[^/]";
+    else if (char === "[") {
+      const end = pattern.indexOf("]", index + 1);
+      if (end < 0) source += "\\[";
+      else {
+        source += pattern.slice(index, end + 1);
+        index = end;
+      }
+    } else source += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(source + "$", "u").test(target);
+}
+
+function rootFileIgnoredByGitignore(contents: string, fileName: string): boolean {
+  let ignored = false;
+  for (const rawLine of contents.split(/\r?\n/u)) {
+    const line = rawLine.replace(/\s+$/u, "");
+    if (!line || (line.startsWith("#") && !line.startsWith("\\#"))) continue;
+    const negated = line.startsWith("!");
+    const pattern = line.slice(negated ? 1 : 0).replace(/^\//u, "");
+    if (!pattern || pattern.endsWith("/")) continue;
+    if (gitignoreGlobMatches(pattern, fileName)) ignored = !negated;
+  }
+  return ignored;
+}
+
+async function appendWorkspaceIgnoreCheck(project: string, paths: ProjectPaths, checks: FileCheck[]): Promise<void> {
+  const gitignorePath = path.posix.join(path.posix.dirname(paths.readme), ".gitignore");
+  try {
+    const contents = await readFile(path.join(project, gitignorePath), "utf8");
+    if (!rootFileIgnoredByGitignore(contents, ".env")) {
+      checks.push({ path: gitignorePath, kind: "config", status: "error", rule: "schema",
+        message: "工作区 .gitignore 必须忽略根目录 .env，避免同步 WordPress 凭据。", repair: null });
+    } else {
+      checks.push({ path: gitignorePath, kind: "config", status: "ok", message: ".env 已被忽略。", repair: null });
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      checks.push({ path: gitignorePath, kind: "config", status: "missing", rule: "missing",
+        message: "工作区缺少 .gitignore，必须忽略根目录 .env。", repair: null });
+    } else {
+      checks.push({ path: gitignorePath, kind: "config", status: "error", rule: "parse",
+        message: error instanceof Error ? error.message : String(error), repair: null });
+    }
+  }
+}
+
 function firstRule(checks: FileCheck[], pathName: string, rule: FileCheck["rule"], message: string, specs: FileSpec[]): void {
   const spec = specs.find((item) => item.path === pathName);
   checks.push({ path: pathName, kind: spec?.kind ?? "sync", status: "error", rule, message, repair: spec?.repair ?? null });
@@ -267,6 +328,10 @@ export async function validateProjectFiles(projectPath: string, options: Validat
     .map((row) => Date.parse(String(row.finished_at ?? row.started_at ?? ""))).filter(Number.isFinite).sort((a, b) => b - a)[0];
   if (successfulDaily !== undefined && (options.now ?? new Date()).getTime() - successfulDaily > 36 * 60 * 60 * 1000) {
     firstRule(checks, paths.runs, "stale", "最近一次成功 daily 超过 36 小时。", allSpecs);
+  }
+  const gitignorePath = path.posix.join(path.posix.dirname(paths.readme), ".gitignore");
+  if (layout === "workspace" && (!selected || selected === gitignorePath)) {
+    await appendWorkspaceIgnoreCheck(project, paths, checks);
   }
   const report: ValidationReport = {
     checked_at: localTimestamp(timezone, options.now),

@@ -8,14 +8,14 @@ import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
+import { formatDateTime } from "./date-time";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
 };
 
 function syncLabel(project: ProjectDetail["summary"]): string {
-  if (!project.sync.at) return syncLabels[project.sync.state];
-  const time = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(project.sync.at));
-  return "今天 " + time + " " + syncLabels[project.sync.state];
+  if (!project.sync.at) return project.sync.state === "ok" ? "同步成功 · 时间未知" : syncLabels[project.sync.state];
+  return `${formatDateTime(project.sync.at)} · ${syncLabels[project.sync.state]}`;
 }
 
 function severityTone(severity: AttentionItem["severity"]): "danger" | "warn" | "neutral" {
@@ -130,6 +130,7 @@ export function OverviewPage() {
   return <div className="si-page si-overview-page">
     <ProjectHeader project={summary} activeTab="overview" hasTabPanel status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>} />
     <ProjectTabPanel projectId={summary.id} tab="overview">
+    <div className="si-overview-content">
     <PageHeader
       title="概览"
       actions={<>
@@ -142,7 +143,6 @@ export function OverviewPage() {
         { label: "打开 README", onSelect: () => void openReadme(), icon: <FileText size={14} /> },
       ]}
     />
-    <div className="si-overview-content">
     {running && <Notice tone="info" title="每日同步进行中">{syncMessage || "正在同步项目数据…"}</Notice>}
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
     <section className="si-overview-kpis" aria-label="项目指标">
@@ -166,6 +166,7 @@ export function OverviewPage() {
       </ul> : <div className="si-empty-state"><Check size={16} />当前没有需要处理的事项。</div>}
     </section>
 
+    <div className="si-overview-secondary">
     <section className="si-overview-readme si-panel">
       <div className="si-panel-heading"><h2>README · 项目概况</h2><a href={"#/p/" + id + "/readme"} onClick={(event) => { event.preventDefault(); navigate("/p/" + id + "/readme"); }}>编辑 README</a></div>
       <OverviewSummary markdown={overview.readme.overview} />
@@ -177,6 +178,7 @@ export function OverviewPage() {
       <h2>变更记录</h2>
       {overview.changelog.length ? <ul>{overview.changelog.map((entry, index) => <li key={entry.date + entry.text + index}><time dateTime={entry.date}>{entry.date.slice(5)}</time><span>{entry.text}</span></li>)}</ul> : <div className="si-empty-state"><AlertTriangle size={15} />暂无变更记录。</div>}
     </section>
+    </div>
     </>}
     </div>
     </ProjectTabPanel>

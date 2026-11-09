@@ -131,6 +131,7 @@
 
 ### v0.3.1 · 产品 SKU 视图
 - [x] A-2：按 `sku_grouping` 规则为 `products.list` 生成临时父行；父行统计子 SKU 总数与有货数，子行计数返回 `null`；支持 `parent_only`、独立 SKU 和碰撞回退，不改写旧黄金视图
+- [x] 父 SKU 库存历史按子 SKU 的每日状态确定性聚合；在线率与最近库存变化从聚合历史计算，不改持久化视图或黄金文件
 - [ ] A-3：EDM 图片表支持 `parent_only`
 - [ ] A-4：产品详情返回父子 SKU 的库存 `variants[]`
 - [ ] A-6：Core 实现 `seo.getRuleSettings`
@@ -152,6 +153,10 @@
   - [x] validate：按布局生成校验路径，覆盖两套黄金输出与修复路径
   - [x] views：按布局生成视图路径并覆盖两套黄金输出
   - [x] Jobs / readme：按布局生成读写路径并覆盖两套黄金输出
-
-### v0.4.0 · A4-3
-- [x] Workspace readme Job 同时刷新 README 与 AGENTS.md 自动区块；保留两份文档的用户维护区，并让 legacy 项目继续只更新 README
+### v0.4.0 · A4-3 工作区 Core 能力
+- [ ] A4-3：工作区检查、生成、空项目创建、导入检查、README/AGENTS.md 自动区块与布局校验
+  - [x] workspace.check：忽略 .git 与系统元数据，稳定返回前 10 个冲突项
+  - [ ] workspace.create 与 projects.createWorkspaceOnly
+  - [ ] workspace 导入检查与只补缺、不覆盖
+  - [x] README 与 AGENTS.md 双文件自动区块；保留用户维护区，legacy 仍只刷新 README
+  - [x] workspace validate 检查 .env 被 .gitignore 忽略，并保留 _site-index/edm/ 技能白名单

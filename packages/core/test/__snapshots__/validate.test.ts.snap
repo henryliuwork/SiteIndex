@@ -64,13 +64,14 @@ exports[`project validation and repair > matches the workspace layout validation
     "_site-index/views/sku_stock.jsonl | view | ok |  | regenerate:views | 19 | ",
     "_site-index/logs/runs.jsonl | sync | ok |  | autofix | 5 | ",
     "_site-index/inventory/events/2026-10.jsonl | sync | ok |  | regenerate:daily | 5 | ",
+    ".gitignore | config | ok |  |  |  | .env 已被忽略。",
   ],
   "summary": {
     "conflict_copy": 0,
     "error": 4,
     "missing": 7,
-    "ok": 11,
-    "total": 22,
+    "ok": 12,
+    "total": 23,
   },
   "trigger": "manual",
 }

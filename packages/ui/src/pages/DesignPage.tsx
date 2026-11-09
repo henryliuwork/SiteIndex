@@ -6,7 +6,7 @@ import type { DesignTokens } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
+import { ApiErrorNotice, Button, Chip, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 
 type ColorKey = "primary" | "text" | "text_muted" | "background" | "surface" | "border" | "sale";
 const colorItems: { key: ColorKey; label: string }[] = [
@@ -129,7 +129,7 @@ function ScreenshotsCard({ screenshots, onOpen }: { screenshots: { name: string;
 export function DesignPage() {
   const { id = "demo" } = useParams();
   const queryClient = useQueryClient();
-  const [feedback, setFeedback] = useState("");
+  const toast = useToast();
   const [copiedColor, setCopiedColor] = useState("");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState("");
@@ -148,39 +148,41 @@ export function DesignPage() {
       if (result.runId !== activeRunId) return;
       setActiveRunId(null);
       setRunMessage("");
-      setFeedback(result.status === "ok" ? "设计规范提取已完成。" : result.summary);
+      if (result.status === "ok") toast.success("设计规范提取已完成。");
+      else toast.error(result.summary);
       void queryClient.invalidateQueries({ queryKey: ["design", id] });
     });
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
-  }, [activeRunId, id, queryClient]);
+  }, [activeRunId, id, queryClient, toast]);
 
   const openTokens = async () => {
     if (!project) return;
-    try { await api.shell.openPath(project.path.replace(/[\\/]+$/, "") + "/" + PATHS.designTokens); setFeedback("已打开 tokens.json。"); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "打开 tokens.json 失败。")); }
+    try { await api.shell.openPath(project.path.replace(/[\\/]+$/, "") + "/" + PATHS.designTokens); toast.success("已打开 tokens.json。"); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "打开 tokens.json 失败。")); }
   };
   const copyInstruction = async () => {
     try {
       const { body } = await api.skills.get("page-design");
       await api.shell.copyText(body);
-      setFeedback("page-design 指令已复制。");
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "复制 page-design 指令失败。")); }
+      toast.success("page-design 指令已复制。");
+    } catch (cause) { toast.error(apiErrorMessage(cause, "复制 page-design 指令失败。")); }
   };
   const refresh = async () => {
     if (!project) return;
     try {
-      setFeedback(""); setRunMessage("正在启动设计规范提取…");
+      setRunMessage("正在启动设计规范提取…");
       const run = await api.jobs.run({ projectPath: project.path, job: "design" });
       setActiveRunId(run.runId);
-    } catch (cause) { setRunMessage(""); setFeedback(apiErrorMessage(cause, "启动设计规范提取失败。")); }
+      toast.info("设计规范提取已启动。");
+    } catch (cause) { setRunMessage(""); toast.error(apiErrorMessage(cause, "启动设计规范提取失败。")); }
   };
   const copyColor = async (value: string) => {
-    try { await api.shell.copyText(value); setCopiedColor(value); setFeedback(`${value} 已复制。`); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "复制色值失败。")); }
+    try { await api.shell.copyText(value); setCopiedColor(value); toast.success(`${value} 已复制。`); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "复制色值失败。")); }
   };
   const openScreenshot = async (path: string) => {
-    try { await api.shell.openPath(path); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "打开截图失败。")); }
+    try { await api.shell.openPath(path); toast.success("已打开页面截图。"); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "打开截图失败。")); }
   };
 
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
@@ -198,8 +200,7 @@ export function DesignPage() {
           </>
         } />
       <ProjectTabPanel projectId={project.id} tab="design">
-      {feedback && <p className="si-feedback" role="status">{feedback}</p>}
-      {runMessage && <div className="si-sync-progress" role="status">{runMessage}</div>}
+      {runMessage && <Notice tone="info" title={activeRunId ? "设计规范提取进行中" : "正在启动设计规范提取"}>{runMessage}</Notice>}
       {designQuery.isLoading ? <div className="si-page-loading" role="status">正在加载设计规范…</div> : designQuery.isError ? <ApiErrorNotice label="设计规范加载失败。" error={designQuery.error} onRetry={() => void designQuery.refetch()} /> : <div className="si-design-layout">
         <div className="si-design-main-column">
           <ColorCard tokens={tokens} onCopy={(value) => void copyColor(value)} copied={copiedColor} />
