@@ -126,6 +126,7 @@ export function ReadmePage() {
       setRunMessage("正在启动 README 刷新…");
       const run = await api.readme.refresh(id);
       setActiveRunId(run.runId);
+      toast.info("README 刷新已启动。");
     } catch (cause) { setRunMessage(""); toast.error(apiErrorMessage(cause, "启动 README 刷新失败。")); }
   };
   const onSave = async () => {

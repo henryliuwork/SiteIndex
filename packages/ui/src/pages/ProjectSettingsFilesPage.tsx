@@ -5,7 +5,8 @@ import type { FileCheck, FileKind, FileStatus, ListQuery, RepairAction, Validati
 import type { ColumnDef } from "@tanstack/react-table";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { formatDateTime } from "./date-time";
 import "./project-settings-files/page.css";
 
 const settingsTabs = [
@@ -60,11 +61,8 @@ function formatModified(value?: string | null): string {
 }
 
 function formatCheckedAt(value: string, trigger: ValidationReport["trigger"]): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const day = value.slice(0, 10) === today ? "今天" : value.slice(5, 10);
-  const time = value.split("T")[1]?.slice(0, 5) ?? "—";
   const source = trigger === "schedule" ? "定时任务" : trigger === "after_sync" ? "同步后" : trigger === "cli" ? "CLI" : "手动";
-  return `${day} ${time}（${source}）`;
+  return `${formatDateTime(value)}（${source}）`;
 }
 
 function repairLabel(action: RepairAction): string {
@@ -75,6 +73,7 @@ function repairLabel(action: RepairAction): string {
 export function ProjectSettingsFilesPage() {
   const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const reportQuery = useQuery({ queryKey: ["files", id], queryFn: () => api.files.lastReport(id) });
   const [tableQuery, setTableQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
@@ -83,15 +82,9 @@ export function ProjectSettingsFilesPage() {
   const [checkingPath, setCheckingPath] = useState<string | null>(null);
   const [validatingAll, setValidatingAll] = useState(false);
   const [repairingPath, setRepairingPath] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState("");
   const report = reportQuery.data;
   const files = report?.files ?? [];
   const rows = useMemo(() => makeTableRows(files), [files]);
-
-  const showFeedback = (message: string) => {
-    setFeedback(message);
-    window.setTimeout(() => setFeedback(""), 2800);
-  };
 
   const saveReport = (next: ValidationReport, path?: string) => {
     if (!path) { queryClient.setQueryData(["files", id], next); return; }
@@ -108,10 +101,13 @@ export function ProjectSettingsFilesPage() {
     if (validatingAll) return;
     setValidatingAll(true);
     try {
-      saveReport(await api.files.validate(id));
-      showFeedback("全部文件校验完成");
+      const result = await api.files.validate(id);
+      saveReport(result);
+      const issues = result.summary.error + result.summary.missing + result.summary.conflict_copy;
+      if (issues) toast.info(`文件校验完成：${result.summary.ok} 个正常，${issues} 个需要处理。`);
+      else toast.success("全部文件校验完成。");
     } catch (error) {
-      showFeedback("校验失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("校验失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally { setValidatingAll(false); }
   };
 
@@ -120,9 +116,11 @@ export function ProjectSettingsFilesPage() {
     try {
       const result = await api.files.validate(id, file.path);
       saveReport(result, file.path);
-      showFeedback(`已校验「${file.path}」`);
+      const checked = result.files.find((item) => item.path === file.path);
+      if (checked?.status === "ok") toast.success(`已校验「${file.path}」。`);
+      else toast.info(checked ? `「${file.path}」校验完成：${statusLabels[checked.status]}。` : `已校验「${file.path}」。`);
     } catch (error) {
-      showFeedback("校验失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("校验失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally { setCheckingPath(null); }
   };
 
@@ -144,15 +142,15 @@ export function ProjectSettingsFilesPage() {
         return { ...current, checked_at: new Date().toISOString(), trigger: "manual", files: nextFiles, summary: summarize(nextFiles) };
       });
       setPendingRepair(null);
-      showFeedback(action === "delete_copy" ? `已将「${file.path}」移入回收站` : `已完成「${file.path}」${repairLabel(action)}`);
+      toast.success(action === "delete_copy" ? `已将「${file.path}」移入回收站。` : `已完成「${file.path}」${repairLabel(action)}。`);
     } catch (error) {
-      showFeedback("修复失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("修复失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally { setRepairingPath(null); }
   };
 
   const openProjectFolder = async () => {
-    try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); showFeedback("已打开项目文件夹"); }
-    catch (error) { showFeedback("打开失败：" + (apiErrorMessage(error, "请稍后重试"))); }
+    try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); toast.success("已打开项目文件夹。"); }
+    catch (error) { toast.error("打开失败：" + apiErrorMessage(error, "请稍后重试")); }
   };
 
   const columns: ColumnDef<FileTableRow, unknown>[] = [
@@ -178,7 +176,6 @@ export function ProjectSettingsFilesPage() {
     <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle={project.path} actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="settings">
     <SettingsNav id={id} />
-    {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {reportQuery.isLoading ? <div className="si-query-loading" role="status">正在读取本地文件校验报告…</div> : reportQuery.isError ? <ApiErrorNotice label="本地文件校验报告加载失败。" error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : <>
       <section className="si-files-summary" aria-label="文件校验统计"><div><span>文件</span><strong>{summary.total}</strong></div><div><span>正常</span><strong className="is-ok">{summary.ok}</strong></div><div><span>错误</span><strong className="is-error">{summary.error}</strong></div><div><span>缺失</span><strong className="is-warn">{summary.missing}</strong></div><div><span>冲突副本</span><strong className="is-warn">{summary.conflict_copy}</strong></div><small>{report ? `上次全部校验：${formatCheckedAt(report.checked_at, report.trigger)}` : "尚无校验记录"}</small></section>
       <section className="si-files-table-card"><DataTable<FileTableRow> tableId="settings.files" scopeId={id} rows={rows} total={rows.length} columns={columns} query={tableQuery} onQueryChange={setTableQuery} onRowClick={(row) => { if (row.rowType === "file") setSelected(row.file); }} getRowId={(row) => row.rowId} height={610} rowHeight={48} showPagination={false} emptyTitle="还没有本地文件记录" emptyDescription="点击「一键校验全部」读取项目中的文件与数据状态。" /></section>
