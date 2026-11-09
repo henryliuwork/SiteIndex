@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./project-settings-categories/page.css";
 
@@ -44,13 +44,13 @@ function categorySlug(url: string): string {
 export function ProjectSettingsCategoriesPage() {
   const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const configQuery = useQuery({ queryKey: ["categories", id], queryFn: () => api.categories.get(id) });
   const [draft, setDraft] = useState<CategoriesConfig | null>(null);
   const [preview, setPreview] = useState<CategoryPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<{ message: string; type: "status" | "error" } | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [query, setQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
 
@@ -63,12 +63,12 @@ export function ProjectSettingsCategoriesPage() {
     void api.categories.preview(id, initial).then((result) => {
       if (current) setPreview(result);
     }).catch((error: unknown) => {
-      if (current) setFeedback({ message: "预览失败：" + (apiErrorMessage(error, "请稍后重试")), type: "error" });
+      if (current) toast.error("分类预览失败：" + apiErrorMessage(error, "请稍后重试"));
     }).finally(() => {
       if (current) setPreviewing(false);
     });
     return () => { current = false; };
-  }, [configQuery.data, id]);
+  }, [configQuery.data, id, toast]);
 
   const updateCategory = useCallback((index: number, patch: Partial<ManualCategory>) => {
     setDraft((current) => current ? {
@@ -101,15 +101,13 @@ export function ProjectSettingsCategoriesPage() {
   const previewConfig = async () => {
     if (!draft || previewing) return;
     setPreviewing(true);
-    setFeedback(null);
     try {
       setPreview(await api.categories.preview(id, draft));
-      setFeedback({ message: "预览结果已更新", type: "status" });
+      toast.success("分类预览结果已更新。");
     } catch (error) {
-      setFeedback({ message: "预览失败：" + (apiErrorMessage(error, "请稍后重试")), type: "error" });
+      toast.error("分类预览失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setPreviewing(false);
-      window.setTimeout(() => setFeedback(null), 2400);
     }
   };
 
@@ -117,11 +115,10 @@ export function ProjectSettingsCategoriesPage() {
     if (!draft || saving) return;
     const categories = draft.manual ?? [];
     if (draft.mode === "manual" && categories.some((category) => !category.name.trim() || !category.slug.trim() || !category.url.trim() || category.match.length === 0 || category.match.some((rule) => !rule.value.trim()))) {
-      setFeedback({ message: "请补齐分类名、slug、分类页 URL 和至少一条匹配规则。", type: "error" });
+      toast.error("请补齐分类名、slug、分类页 URL 和至少一条匹配规则。");
       return;
     }
     setSaving(true);
-    setFeedback(null);
     try {
       const result = await api.categories.save(id, draft);
       setPreview(result);
@@ -131,12 +128,11 @@ export function ProjectSettingsCategoriesPage() {
         queryClient.invalidateQueries({ queryKey: ["products", id] }),
         invalidateProjectSummary(queryClient, id),
       ]);
-      setFeedback({ message: "已保存并重新归类", type: "status" });
+      toast.success("分类配置已保存并重新归类。");
     } catch (error) {
-      setFeedback({ message: "保存失败：" + (apiErrorMessage(error, "请稍后重试")), type: "error" });
+      toast.error("分类配置保存失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setSaving(false);
-      window.setTimeout(() => setFeedback(null), 2400);
     }
   };
 
@@ -191,7 +187,6 @@ export function ProjectSettingsCategoriesPage() {
     <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle={`${project.domain} · ${modeDescription(draft.mode)}`} actions={<><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="settings">
     <SettingsNav id={id} />
-    {feedback && <p className={feedback.type === "error" ? "si-form-error" : "si-feedback"} role={feedback.type === "error" ? "alert" : "status"}>{feedback.message}</p>}
     <section className="si-category-mode-section"><h2>分类识别方式</h2><div className="si-category-mode-grid">{matchingModes.map((mode) => <button type="button" key={mode.value} className={`si-category-mode-card${draft.mode === mode.value ? " active" : ""}`} aria-pressed={draft.mode === mode.value} onClick={() => setDraft((current) => current ? { ...current, mode: mode.value } : current)}><span className="si-category-mode-title"><strong>{mode.title}</strong><Chip tone={draft.mode === mode.value ? "ok" : "neutral"}>{draft.mode === mode.value ? "当前" : mode.hint}</Chip></span><span>{mode.detail}</span></button>)}</div></section>
     {draft.mode === "url_rule" && <section className="si-category-url-rule"><label htmlFor="si-category-url-pattern">分类 URL 规则</label><input id="si-category-url-pattern" className="si-text-field si-category-mono" value={draft.url_pattern ?? "/collections/{slug} , /product-category/{slug}/"} onChange={(event) => setDraft((current) => current ? { ...current, url_pattern: event.target.value } : current)} /><p>用 <code>{"{slug}"}</code> 表示分类 slug；支持多个 URL 模式。</p></section>}
     {draft.mode === "feed" && <section className="si-category-feed-note"><strong>使用 Feed 分类字段</strong><span>分类层级读取当前项目配置中的主分类层级；可在「配置 → 数据源」中调整。</span></section>}
