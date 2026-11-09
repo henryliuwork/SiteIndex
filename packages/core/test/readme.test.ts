@@ -1,8 +1,8 @@
-import { cp, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PATHS, pathsFor, type DesignTokens, type ProjectLayout } from "@siteindex/shared";
+import { PATHS, pathsFor, type DesignTokens, type ProjectLayout, type SiteConfig } from "@siteindex/shared";
 import {
   buildReadmeAutoContent,
   createCoreService,
@@ -130,13 +130,44 @@ describe("README automatic blocks", () => {
   it("reads workspace index data and resolves daily reports from _site-index", async () => {
     const projectPath = await makeProject("workspace");
     const paths = pathsFor("workspace");
+    const sitePath = path.join(projectPath, paths.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
+    site.workspace = { version: "1.0", sections: ["01-brand", "03-seo"], esp_presets: ["mailchimp"] };
+    await writeFile(sitePath, JSON.stringify(site), "utf8");
+    await writeFile(path.join(projectPath, paths.index, "workspace.json"), JSON.stringify({
+      version: "1.0", layout: "workspace",
+      sections: [{ id: "brand", dir: "01-brand" }, { id: "seo", dir: "03-seo" }],
+      paths: { "catalog.skus": paths.skus, "seo.blog": "03-seo/blog" },
+      esp_presets: ["mailchimp"],
+    }), "utf8");
+    await mkdir(path.dirname(path.join(projectPath, paths.skillsManifest)), { recursive: true });
+    await writeFile(path.join(projectPath, paths.skillsManifest), JSON.stringify({
+      schema_version: "1.0", skills: [{ name: "demo-skill", version: "1.2.3" }],
+    }), "utf8");
+    const marker = (id: string) => '<!-- siteindex:auto:start id="' + id + '" -->\n旧自动内容\n<!-- siteindex:auto:end id="' + id + '" -->';
+    const readmePath = path.join(projectPath, PATHS.readme);
+    const agentsPath = path.join(projectPath, PATHS.agentsMd);
+    const userReadme = "# Workspace Demo\n\n用户维护的 README 内容。\n\n";
+    const userAgents = "# Agent 手册\n\n用户维护的工作规则。\n\n";
+    await writeFile(readmePath, userReadme + ["workspace-map", "index-summary", "changelog"].map(marker).join("\n\n") + "\n", "utf8");
+    await writeFile(agentsPath, userAgents + ["agents-core", "task-routing", "data-guide", "design-summary", "skills-installed", "esp-presets"].map(marker).join("\n\n") + "\n", "utf8");
     const api = service(projectPath);
 
     await api.readme.refresh("fixture");
 
-    const generated = await readFile(path.join(projectPath, PATHS.readme), "utf8");
-    expect(generated).toContain("## 数据指南（_site-index/）");
-    expect(generated).toContain(paths.skus);
+    const generated = await readFile(readmePath, "utf8");
+    const readmeBlocks = parseReadmeAutoBlocks(generated);
+    const generatedAgents = await readFile(agentsPath, "utf8");
+    const agentBlocks = parseReadmeAutoBlocks(generatedAgents);
+    expect(generated.startsWith(userReadme)).toBe(true);
+    expect(readmeBlocks.map(({ id }) => id)).toEqual(["workspace-map", "index-summary", "changelog"]);
+    expect(generated).toContain("_site-index/catalog/skus.jsonl");
+    expect(generated).not.toContain('id="task-routing"');
+    expect(generatedAgents.startsWith(userAgents)).toBe(true);
+    expect(agentBlocks.map(({ id }) => id)).toEqual(["agents-core", "task-routing", "data-guide", "design-summary", "skills-installed", "esp-presets"]);
+    expect(agentBlocks.find(({ id }) => id === "data-guide")?.content).toContain("数据指南（_site-index/）");
+    expect(agentBlocks.find(({ id }) => id === "skills-installed")?.content).toContain("demo-skill · 1.2.3");
+    expect(agentBlocks.find(({ id }) => id === "esp-presets")?.content).toContain("mailchimp");
     expect(await api.inventory.dailyReport("fixture", "2026-10-19"))
       .toBe(await readFile(path.join(projectPath, paths.dailyReportsDir, "2026-10-19.md"), "utf8"));
     const before = await api.projects.get("fixture");
