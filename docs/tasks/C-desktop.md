@@ -147,3 +147,10 @@
 - [x] 技能目标新增 `agents-dir`（`~/.agents/skills`）；同步时保留版本高于内置版本的本地副本。
 - [x] 从内置分发移除 `edm-builder`；发现已安装副本时返回退役状态，不自动删除或重装。
 - [ ] A4-3 合并后接入 workspace、importCheck 与相关打包资源。
+
+## v0.3 · #345 Windows 安装资源
+
+- [x] Windows 自定义目录覆盖安装 v0.1.9 → v0.3.0；安装后两次重启均通过 CDP 确认加载 `resources/ui/index.html`。
+- [x] `dist:win` 与 `dist:win:release` 增加两次静默自定义目录安装检查；核对全部 UI 文件与本次构建产物的 SHA-256，缺失或不一致时失败。
+- [x] 将 UI 同时收进 `app.asar`；外置 `resources/ui` 缺失时主进程改载归档副本，双重加载都失败才进入 fallback。
+- [ ] issue #345 的间歇性资源缺失根因未复现；继续收集安装器异常退出与覆盖安装证据。
