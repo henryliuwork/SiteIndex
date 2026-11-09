@@ -152,3 +152,6 @@
   - [x] validate：按布局生成校验路径，覆盖两套黄金输出与修复路径
   - [x] views：按布局生成视图路径并覆盖两套黄金输出
   - [x] Jobs / readme：按布局生成读写路径并覆盖两套黄金输出
+
+### v0.4.0 · A4-3
+- [x] Workspace readme Job 同时刷新 README 与 AGENTS.md 自动区块；保留两份文档的用户维护区，并让 legacy 项目继续只更新 README

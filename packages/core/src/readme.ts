@@ -79,9 +79,9 @@ export function parseReadmeAutoBlocks(markdown: string): { id: string; content: 
 }
 
 /** 只改自动区块标记之间的内容；缺少且未禁用的区块追加到文件末尾。 */
-export function replaceReadmeAutoBlocks(
+export function replaceAutoBlocks(
   markdown: string,
-  contents: ReadmeAutoContent,
+  contents: Readonly<Record<string, string>>,
   disabledBlocks: ReadonlySet<string> = new Set(),
 ): string {
   const blocks = locateAutoBlocks(markdown);
@@ -93,12 +93,20 @@ export function replaceReadmeAutoBlocks(
     output = `${output.slice(0, block.bodyStart)}\n${content}\n${output.slice(block.bodyEnd)}`;
   }
 
-  const appended = (Object.entries(contents) as [ReadmeAutoBlockId, string][])
+  const appended = Object.entries(contents)
     .filter(([id]) => !existing.has(id) && !disabledBlocks.has(id))
     .map(([id, content]) => `<!-- siteindex:auto:start id="${id}" -->\n${content.trim()}\n<!-- siteindex:auto:end id="${id}" -->`);
   if (!appended.length) return output;
   const separator = output.length === 0 ? "" : output.endsWith("\n\n") ? "" : output.endsWith("\n") ? "\n" : "\n\n";
   return `${output}${separator}${appended.join("\n\n")}\n`;
+}
+
+export function replaceReadmeAutoBlocks(
+  markdown: string,
+  contents: ReadmeAutoContent,
+  disabledBlocks: ReadonlySet<string> = new Set(),
+): string {
+  return replaceAutoBlocks(markdown, contents, disabledBlocks);
 }
 
 function formatPercent(value: number | null): string {

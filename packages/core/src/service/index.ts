@@ -105,6 +105,7 @@ import {
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,
   README_AUTO_BLOCK_TITLES,
+  replaceAutoBlocks,
   replaceReadmeAutoBlocks,
 } from "../readme";
 
@@ -1264,18 +1265,99 @@ async function readmeAutoContent(snapshot: ProjectSnapshot) {
   });
 }
 
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function unknownRecord(value: unknown): Record<string, unknown> | null {
+  return isUnknownRecord(value) ? value : null;
+}
+
+function workspaceMap(manifest: unknown, site: SiteConfig): string {
+  const value = unknownRecord(manifest);
+  const sections = Array.isArray(value?.sections)
+    ? value.sections.flatMap((section) => {
+      const entry = unknownRecord(section);
+      return typeof entry?.dir === "string" ? [entry.dir] : [];
+    })
+    : site.workspace?.sections ?? [];
+  const rawPaths = unknownRecord(value?.paths);
+  const entries = Object.entries(rawPaths ?? {})
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    .sort(([left], [right]) => compareKeys(left, right));
+  return [
+    "### 工作区板块",
+    ...sections.map((section) => "- " + section),
+    "",
+    "### 常用路径",
+    ...entries.map(([key, relativePath]) => "- " + key + " → " + relativePath),
+  ].join("\n");
+}
+
+function installedSkills(value: unknown): string {
+  const skillRecords = unknownRecord(value);
+  const skills = Array.isArray(skillRecords?.skills)
+    ? skillRecords.skills.flatMap((skill) => {
+      const entry = unknownRecord(skill);
+      return typeof entry?.name === "string" && typeof entry.version === "string"
+        ? [{ name: entry.name, version: entry.version }]
+        : [];
+    })
+    : [];
+  return skills.sort((left, right) => compareKeys(left.name, right.name))
+    .map((skill) => "- " + skill.name + " · " + skill.version).join("\n") || "暂无技能。";
+}
+
+async function workspaceReadmeBlocks(projectPath: string, snapshot: ProjectSnapshot, blocks: Awaited<ReturnType<typeof readmeAutoContent>>) {
+  const paths = pathsFor("workspace");
+  const manifest = await readJsonAs<unknown>(projectPath, path.posix.join(PATHS.index, "workspace.json"), null, paths);
+  const skills = await readJsonAs<unknown>(projectPath, paths.skillsManifest, null, paths);
+  const presets = snapshot.config.workspace?.esp_presets ?? [];
+  return {
+    readme: {
+      "workspace-map": workspaceMap(manifest, snapshot.config),
+      "index-summary": blocks["index-summary"],
+      changelog: blocks.changelog,
+    },
+    agents: {
+      "agents-core": "项目：" + snapshot.config.brand.name + "（" + snapshot.config.domain + "）。SiteIndex 数据统一位于 "
+        + paths.index + "/。不要读取或输出根目录 .env 内容。",
+      "task-routing": blocks["task-routing"],
+      "data-guide": blocks["data-guide"],
+      "design-summary": blocks["design-summary"],
+      "skills-installed": installedSkills(skills),
+      "esp-presets": presets.map((preset) => "- " + preset).join("\n") || "暂无渠道预设。",
+    },
+  };
+}
+
 async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot): Promise<void> {
-  const paths = await pathsForProject(projectPath);
+  const layout = await resolveProjectLayout(projectPath);
+  const paths = pathsFor(layout);
+  const readmePath = path.join(projectPath, paths.readme);
   let markdown: string;
-  try { markdown = await readFile(path.join(projectPath, paths.readme), "utf8"); }
+  try { markdown = await readFile(readmePath, "utf8"); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     markdown = "# 项目说明\n";
   }
   const blocks = await readmeAutoContent(snapshot);
   const disabled = new Set<string>(snapshot.config.readme?.disabled_blocks ?? []);
-  markdown = replaceReadmeAutoBlocks(markdown, blocks, disabled);
-  await atomicWrite(path.join(projectPath, paths.readme), markdown);
+  if (layout === "workspace") {
+    const generated = await workspaceReadmeBlocks(projectPath, snapshot, blocks);
+    markdown = replaceAutoBlocks(markdown, generated.readme, disabled);
+    const agentsPath = path.join(projectPath, paths.agentsMd);
+    let agents: string;
+    try { agents = await readFile(agentsPath, "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      agents = "# Agent 工作手册\n";
+    }
+    await atomicWrite(agentsPath, replaceAutoBlocks(agents, generated.agents));
+  } else {
+    markdown = replaceReadmeAutoBlocks(markdown, blocks, disabled);
+  }
+  await atomicWrite(readmePath, markdown);
 }
 
 export function createCoreService(ctx: CoreServiceContext): CoreService {
