@@ -6,7 +6,8 @@ import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, 
 import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel } from "../components";
+import { ApiErrorNotice, Button, Chip, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { formatDateTime as formatPageDateTime } from "./date-time";
 import "./runs/page.css";
 
 const jobLabels: Record<string, string> = {
@@ -44,7 +45,7 @@ const cloneSchedule = (schedule: ScheduleConfig): ScheduleConfig => JSON.parse(J
 
 function formatDateTime(value: string | null): string {
   if (!value) return "进行中";
-  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+  return formatPageDateTime(value);
 }
 
 function runDuration(run: RunLog): string {
@@ -99,6 +100,7 @@ function stepStatusTone(status: RunLogStep["status"]): "ok" | "danger" | "neutra
 export function RunsPage() {
   const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const scheduleQuery = useQuery({ queryKey: ["schedule", id], queryFn: () => api.schedule.get(id) });
   const scheduleRuntimeQuery = useQuery({ queryKey: ["schedule-runtime"], queryFn: () => api.schedule.status ? api.schedule.status() : Promise.resolve(null) });
@@ -116,7 +118,6 @@ export function RunsPage() {
   const [reauthorizingSchedule, setReauthorizingSchedule] = useState(false);
   const [claimingRunner, setClaimingRunner] = useState(false);
   const [startingJob, setStartingJob] = useState(false);
-  const [feedback, setFeedback] = useState("");
   const initializedRun = useRef(false);
 
   useEffect(() => { if (scheduleQuery.data) setDraft(cloneSchedule(scheduleQuery.data.config)); }, [scheduleQuery.data]);
@@ -139,41 +140,38 @@ export function RunsPage() {
       setActiveRun(null);
       setProgress(null);
       setStartingJob(false);
-      setFeedback(result.status === "ok" ? `${jobLabels[result.job]}已完成` : result.summary);
+      if (result.status === "ok") toast.success(`${jobLabels[result.job]}已完成。`);
+      else toast.error(result.summary);
       void queryClient.invalidateQueries({ queryKey: ["job-history", id] });
       void queryClient.invalidateQueries({ queryKey: ["running-job", id] });
     });
     return () => { stopProgress(); stopFinished(); };
-  }, [activeRun, id, queryClient]);
+  }, [activeRun, id, queryClient, toast]);
 
   const history = historyQuery.data ?? [];
   const lastByJob = useMemo(() => new Map(history.map((run) => [run.job, run])), [history]);
 
-  const announce = (message: string) => {
-    setFeedback(message);
-    window.setTimeout(() => setFeedback(""), 3000);
-  };
-
   const startJob = async (job: JobName) => {
     if (!projectQuery.data || activeRun || startingJob) return;
     setStartingJob(true);
-    setProgress(null); setRunResult(null); setLogs([]); setFeedback("");
+    setProgress(null); setRunResult(null); setLogs([]);
     try {
       const run = await api.jobs.run({ projectPath: projectQuery.data.summary.path, job });
       setActiveRun({ runId: run.runId, job });
       setLogs([{ runId: run.runId, projectPath: projectQuery.data.summary.path, job, pct: 0, step: "启动", level: "info", message: `${jobLabels[job]}已启动`, at: new Date().toISOString() }]);
       setStartingJob(false);
       void queryClient.invalidateQueries({ queryKey: ["running-job", id] });
+      toast.info(`${jobLabels[job]}已启动，正在执行。`);
     } catch (error) {
       setStartingJob(false);
-      announce("启动失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("启动失败：" + apiErrorMessage(error, "请稍后重试"));
     }
   };
 
   const stopJob = async () => {
     if (!activeRun) return;
-    try { await api.jobs.cancel(activeRun.runId); announce("已发送停止请求"); }
-    catch (error) { announce("停止失败：" + (apiErrorMessage(error, "请稍后重试"))); }
+    try { await api.jobs.cancel(activeRun.runId); toast.success("已发送停止请求。"); }
+    catch (error) { toast.error("停止失败：" + apiErrorMessage(error, "请稍后重试")); }
   };
 
   const openScheduleEditor = (key: SchedulableJob) => {
@@ -194,7 +192,7 @@ export function RunsPage() {
 
   const saveSchedule = async (nextDraft: ScheduleConfig | null = draft): Promise<boolean> => {
     if (!nextDraft || savingSchedule) return false;
-    if (nextDraft.monthly.day_of_month == null || nextDraft.monthly.day_of_month < 1 || nextDraft.monthly.day_of_month > 31) { announce("每月日期须在 1 到 31 之间"); return false; }
+    if (nextDraft.monthly.day_of_month == null || nextDraft.monthly.day_of_month < 1 || nextDraft.monthly.day_of_month > 31) { toast.error("每月日期须在 1 到 31 之间。"); return false; }
     setSavingSchedule(true);
     try {
       const saved = await api.schedule.save(id, nextDraft);
@@ -202,11 +200,13 @@ export function RunsPage() {
       setDraft(cloneSchedule(saved.config));
       const runner = queryClient.getQueryData<RunnerState>(["runner", id]);
       void queryClient.invalidateQueries({ queryKey: ["schedule-runtime"] });
-      announce(runner && !runner.is_this_device
+      const message = runner && !runner.is_this_device
         ? runner.runner ? `计划已保存，将在执行设备“${runner.runner.device_name}”上运行` : "计划已保存。尚未指定执行设备，点击“改为本机”后才会注册系统计划任务"
-        : saved.registered ? "计划已保存，系统计划任务已更新" : "计划已保存，系统计划任务尚未注册，请查看上方运行模式");
+        : saved.registered ? "计划已保存，系统计划任务已更新" : "计划已保存，系统计划任务尚未注册，请查看上方运行模式";
+      if (runner && !runner.is_this_device || !saved.registered) toast.info(message);
+      else toast.success(message);
       return true;
-    } catch (error) { announce("保存失败：" + (apiErrorMessage(error, "请稍后重试"))); return false; }
+    } catch (error) { toast.error("保存失败：" + apiErrorMessage(error, "请稍后重试")); return false; }
     finally { setSavingSchedule(false); }
   };
 
@@ -223,9 +223,10 @@ export function RunsPage() {
     try {
       const status = await api.schedule.reauthorize();
       queryClient.setQueryData<ScheduleRuntimeStatus>(["schedule-runtime"], status);
-      announce(status.authorization_required ? "授权尚未完成，请在系统提示中完成授权后重试" : "已重新授权注册");
+      if (status.authorization_required) toast.info("授权尚未完成，请在系统提示中完成授权后重试。");
+      else toast.success("已重新授权注册。");
     } catch (error) {
-      announce("重新授权失败：" + (apiErrorMessage(error, "请稍后重试")));
+      toast.error("重新授权失败：" + apiErrorMessage(error, "请稍后重试"));
     } finally {
       setReauthorizingSchedule(false);
     }
@@ -242,14 +243,14 @@ export function RunsPage() {
         queryClient.invalidateQueries({ queryKey: ["schedule-runtime"] }),
         invalidateProjectSummary(queryClient, id),
       ]);
-      announce("本机已设为此项目的执行设备");
+      toast.success("本机已设为此项目的执行设备。");
     } catch (error) {
       // 认领可能已写入、只是系统计划任务注册失败，刷新状态以显示真实结果
       void queryClient.invalidateQueries({ queryKey: ["runner", id] });
       void queryClient.invalidateQueries({ queryKey: ["schedule", id] });
       void queryClient.invalidateQueries({ queryKey: ["schedule-runtime"] });
       void invalidateProjectSummary(queryClient, id);
-      announce(apiErrorMessage(error, "设置执行设备失败，请稍后重试"));
+      toast.error(apiErrorMessage(error, "设置执行设备失败，请稍后重试"));
     }
     finally { setClaimingRunner(false); }
   };
@@ -265,7 +266,7 @@ export function RunsPage() {
     <div className="si-page si-runs-page si-runs-page-v2">
       <ProjectHeader project={project} activeTab="runs" hasTabPanel />
       <ProjectTabPanel projectId={project.id} tab="runs">
-      {feedback && <p className="si-feedback" role="status">{feedback}</p>}
+      {activeRun && progress && <Notice tone="info" title={`${jobLabels[activeRun.job]}进行中`}>{progress.pct}% · {progress.message}</Notice>}
 
       <section className="si-runs-block si-runs-execution">
         <div className="si-runs-block-heading"><div><h2>立即执行</h2><p>手动启动任务，查看当前步骤与进度。</p></div>

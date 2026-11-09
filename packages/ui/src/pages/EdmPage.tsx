@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { EdmCommandInput, Kpi, ListQuery, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
@@ -48,24 +48,23 @@ function ImageThumbnail({ src, label }: { src: string | null; label: string }) {
 
 function ManualImageCell({ projectId, row }: { projectId: string; row: SkuImageRow }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [url, setUrl] = useState(row.manual_image_url ?? "");
-  const [saved, setSaved] = useState(false);
-  useEffect(() => { setUrl(row.manual_image_url ?? ""); setSaved(false); }, [row.manual_image_url]);
+  useEffect(() => { setUrl(row.manual_image_url ?? ""); }, [row.manual_image_url]);
   const mutation = useMutation({
     mutationFn: () => api.edm.setManualImage(projectId, row.sku, url.trim() || null),
     onSuccess: async () => {
-      setSaved(true);
+      toast.success("手动首图已保存。");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["edm", "images", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["edm", "summary", projectId] }),
       ]);
     },
+    onError: (cause) => toast.error(apiErrorMessage(cause, "手动首图保存失败。")),
   });
   return <div className="si-edm-manual-cell">
-    <input type="url" aria-label={row.sku + " 手动首图地址"} value={url} placeholder="粘贴 Mailchimp 等图片地址" onChange={(event) => { setUrl(event.target.value); setSaved(false); }} />
-    <Button size="small" disabled={mutation.isPending} onClick={() => void mutation.mutateAsync().catch(() => undefined)}>{mutation.isPending ? "保存中" : "保存"}</Button>
-    {saved && <span className="si-edm-save-status" role="status">已保存</span>}
-    {mutation.isError && <span className="si-edm-error" role="alert">{apiErrorMessage(mutation.error, "保存失败")}</span>}
+    <input type="url" aria-label={row.sku + " 手动首图地址"} value={url} placeholder="粘贴 Mailchimp 等图片地址" onChange={(event) => setUrl(event.target.value)} />
+    <Button size="small" disabled={mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "保存中" : "保存"}</Button>
   </div>;
 }
 
@@ -88,10 +87,10 @@ function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
 export function EdmPage() {
   const { id = "demo" } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 50, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
-  const [feedback, setFeedback] = useState("");
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["edm", "summary", id], queryFn: () => api.edm.summary(id) });
   const listQuery = useQuery({ queryKey: ["edm", "images", id, query], queryFn: () => api.edm.listImages(id, query) });
@@ -127,12 +126,18 @@ export function EdmPage() {
       const input: EdmCommandInput = { theme: "当前 EDM 活动", count: summary?.total ?? 1 };
       const command = await api.edm.buildCommand(id, input);
       await api.shell.copyText(command);
-      setFeedback("edm-builder 指令已复制。可以粘贴给内容 agent 使用。");
-    } catch (cause) { setFeedback(apiErrorMessage(cause, "复制指令失败。")); }
+      toast.success("edm-builder 指令已复制。");
+    } catch (cause) { toast.error(apiErrorMessage(cause, "复制指令失败。")); }
   };
   const openProjectFolder = async () => {
-    try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); }
-    catch (cause) { setFeedback(apiErrorMessage(cause, "无法打开项目文件夹。")); }
+    try { await api.shell.openPath(projectQuery.data?.summary.path ?? ""); toast.success("已打开项目文件夹。"); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "无法打开项目文件夹。")); }
+  };
+  const openSelectedImage = async () => {
+    const url = [selected?.manual_image_url, selected?.feed_image_url].find((item) => item?.startsWith("http://") || item?.startsWith("https://"));
+    if (!url) return;
+    try { await api.shell.openExternal(url); toast.success("已打开图片地址。"); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "无法打开图片地址。")); }
   };
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
@@ -141,7 +146,6 @@ export function EdmPage() {
     <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="edm">
     <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-    {feedback && <p className="si-feedback" role="status">{feedback}</p>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
@@ -163,10 +167,7 @@ export function EdmPage() {
         <div><span>agent 使用</span>{selected.used === "manual" ? "手动首图" : selected.used === "feed" ? "抓取首图" : "缺图"}</div>
         <div className="full"><span>抓取到的首图 URL</span><code>{selected.feed_image_url || "未抓取"}</code></div>
         <div className="full"><span>手动输入的首图 URL</span><code>{selected.manual_image_url || "未设置"}</code></div>
-        {(selected.manual_image_url?.startsWith("http://") || selected.manual_image_url?.startsWith("https://") || selected.feed_image_url?.startsWith("http://") || selected.feed_image_url?.startsWith("https://")) && <Button size="small" onClick={() => {
-          const url = [selected.manual_image_url, selected.feed_image_url].find((item) => item?.startsWith("http://") || item?.startsWith("https://"));
-          if (url) void api.shell.openExternal(url);
-        }}><ExternalLink size={13} />打开图片</Button>}
+        {(selected.manual_image_url?.startsWith("http://") || selected.manual_image_url?.startsWith("https://") || selected.feed_image_url?.startsWith("http://") || selected.feed_image_url?.startsWith("https://")) && <Button size="small" onClick={() => void openSelectedImage()}><ExternalLink size={13} />打开图片</Button>}
       </div>}
     </DetailPanel>
     <Drawer open={groupingDrawerOpen} onOpenChange={setGroupingDrawerOpen} title="配置父子 SKU 规则" description="仅当项目启用分组后，EDM 图片列表才会筛选父 SKU。预览由 Core 计算。" footer={<div className="si-edm-drawer-actions"><Button onClick={() => setGroupingDrawerOpen(false)}>关闭</Button><Button variant="primary" onClick={openGroupingSettings}>前往项目设置</Button></div>}>
