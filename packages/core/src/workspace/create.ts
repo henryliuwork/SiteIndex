@@ -72,6 +72,14 @@ function isWorkspaceManifest(value: unknown): value is WorkspaceManifest {
     && value.esp_presets.every((item) => typeof item === "string");
 }
 
+function normalizePresetId(value: string, supportedIds: readonly string[]): string {
+  const canonical = value.startsWith("esp.") ? value.slice("esp.".length) : value;
+  if (!PRESET_PATTERN.test(canonical) || !supportedIds.includes(canonical)) {
+    throw workspaceError("CONFIG_INVALID", "所选 EDM 预设不受支持，或不在工作区模板清单中。", value);
+  }
+  return canonical;
+}
+
 function resolveTarget(targetDir: string): string {
   const target = path.resolve(targetDir);
   if (!targetDir.trim() || target === path.parse(target).root) {
@@ -464,9 +472,8 @@ export async function createWorkspaceFiles(
   await assertTargetEmpty(target);
   const templateDir = await findTemplate(options.templateDir);
   const sourceManifest = await loadManifest(templateDir);
-  const selectedPresets = [...new Set(input.esp_presets)].sort(compareKeys);
+  const selectedPresets = [...new Set(input.esp_presets.map((preset) => normalizePresetId(preset, sourceManifest.esp_presets)))].sort(compareKeys);
   for (const preset of selectedPresets) {
-    if (!PRESET_PATTERN.test(preset)) throw workspaceError("CONFIG_INVALID", "EDM 预设名称无效。", preset);
     try {
       await readFile(path.join(templateDir, "presets", "esp." + preset + ".md"), "utf8");
     } catch {

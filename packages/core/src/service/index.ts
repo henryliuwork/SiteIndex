@@ -92,7 +92,7 @@ import { groupProductRows } from "../products/parent-view";
 import { runDaily } from "../jobs/daily";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
-import { createProjectFiles } from "../projects/create";
+import { cleanFolderName, createConfig, createProjectFiles } from "../projects/create";
 import { checkWorkspaceTarget } from "../workspace/check";
 import { createWorkspaceFiles } from "../workspace/create";
 import { detectSite } from "../projects/detect";
@@ -1752,6 +1752,26 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       if (!domain) throw siteError("CONFIG_INVALID", "无法识别网站域名，暂不能创建项目。", detected.final_url);
       return withSiteCreateLock(domain, async () => {
         await assertSiteNotRegistered(domain, input.projects_root, ctx.listRegisteredProjects);
+        if (input.workspace?.enabled) {
+          const folderName = cleanFolderName(input.folder_name);
+          const projectsRoot = path.resolve(input.projects_root);
+          const targetDir = path.resolve(projectsRoot, folderName);
+          const relative = path.relative(projectsRoot, targetDir);
+          if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+            throw siteError("CONFIG_INVALID", "工作区目录必须位于 projects_root 内。", targetDir);
+          }
+          const config = createConfig(input, detected);
+          const created = await createWorkspaceFiles({
+            targetDir,
+            domain,
+            brand: input.brand,
+            platform: input.workspace.platform,
+            markets: input.markets,
+            esp_presets: input.workspace.esp_presets,
+          }, { templateDir: ctx.templateDir, siteConfig: config, baseUrl: detected.final_url });
+          invalidate(created.path);
+          return { id: folderName, runId: `${localDate(config.timezone)}-init` };
+        }
         const created = await createProjectFiles(input, detected, ctx.templateDir);
         invalidate(created.path);
         return { id: created.id, runId: `${localDate(created.config.timezone)}-init` };

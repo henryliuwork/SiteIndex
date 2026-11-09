@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { INIT_STEPS, PATHS, type CreateProjectInput, type DetectResult, type JobProgress, type SiteConfig } from "@siteindex/shared";
+import { INIT_STEPS, PATHS, pathsFor, type CreateProjectInput, type DetectResult, type JobProgress, type SiteConfig } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService, type CoreServiceContext } from "../src/service";
 import { createProjectFiles } from "../src/projects/create";
@@ -375,5 +375,29 @@ describe("project service", () => {
     expect(await readFile(path.join(projectPath, "user-file.txt"), "utf8")).toBe("根目录用户文件保持不变\n");
     expect(await readFile(path.join(projectPath, PATHS.readme), "utf8")).toBe(originalReadme);
     expect(await readdir(projectPath)).toContain(PATHS.index.split(path.sep)[0]);
+  }, 60_000);
+
+  it("creates a workspace from the New Project Wizard payload and canonicalizes esp.mailchimp", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-project-create-workspace-"));
+    TEMP_DIRS.push(root);
+    const workspacePaths = pathsFor("workspace");
+
+    const result = await makeService().projects.create({
+      ...createInput(root),
+      workspace: { enabled: true, platform: "woocommerce", esp_presets: ["esp.mailchimp"] },
+    });
+    const projectPath = path.join(root, "example-shop");
+    const config = JSON.parse(await readFile(path.join(projectPath, workspacePaths.site), "utf8")) as SiteConfig;
+    const manifest = JSON.parse(await readFile(path.join(projectPath, workspacePaths.index, "workspace.json"), "utf8")) as {
+      esp_presets: string[];
+    };
+
+    expect(result.id).toBe("example-shop");
+    expect(config.crawl.feed_url).toEqual([FEED_PATH]);
+    expect(config.workspace?.esp_presets).toEqual(["mailchimp"]);
+    expect(manifest.esp_presets).toEqual(["mailchimp"]);
+    expect(await readdir(projectPath)).toContain("_site-index");
+    expect(await readdir(projectPath)).not.toContain("index");
   }, 60_000);
 });

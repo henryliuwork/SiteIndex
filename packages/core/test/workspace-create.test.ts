@@ -80,6 +80,36 @@ describe("workspace.create", () => {
     expect(await readdir(target)).toContain("_archive");
   });
 
+  it("accepts the New Project Wizard ESP preset ID and persists its canonical manifest ID", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-preset-alias-"));
+    TEMP_DIRS.push(root);
+    const target = path.join(root, "project");
+    await mkdir(target);
+
+    await service().workspace.create({ ...input(target), esp_presets: ["esp.mailchimp"] });
+
+    const config = JSON.parse(await readFile(path.join(target, workspacePaths.site), "utf8")) as SiteConfig;
+    const manifest = JSON.parse(await readFile(path.join(target, workspacePaths.index, "workspace.json"), "utf8")) as {
+      esp_presets: string[];
+    };
+    expect(config.workspace?.esp_presets).toEqual(["mailchimp"]);
+    expect(manifest.esp_presets).toEqual(["mailchimp"]);
+    expect(await readFile(path.join(target, workspacePaths.skillsDir, "presets", "esp.mailchimp.md"), "utf8")).toBeTruthy();
+  });
+
+  it("rejects unsupported and path-like preset IDs before writing workspace files", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-invalid-preset-"));
+    TEMP_DIRS.push(root);
+    const target = path.join(root, "project");
+    await mkdir(target);
+
+    await expect(service().workspace.create({ ...input(target), esp_presets: ["esp.unknown"] }))
+      .rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    await expect(service().workspace.create({ ...input(target), esp_presets: ["../../outside"] }))
+      .rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    expect(await readdir(target)).toEqual([]);
+  });
+
   it("rejects a non-empty target without changing user files", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-nonempty-"));
     TEMP_DIRS.push(root);
