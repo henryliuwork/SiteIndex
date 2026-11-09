@@ -5,10 +5,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, ProjectDetail, SeoIssue, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, formatDateTime, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
-import { formatDateTime } from "./date-time";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
 };

@@ -5,8 +5,7 @@ import type { FileCheck, FileKind, FileStatus, ListQuery, RepairAction, Validati
 import type { ColumnDef } from "@tanstack/react-table";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel, useToast } from "../components";
-import { formatDateTime } from "./date-time";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, formatDateTime, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import "./project-settings-files/page.css";
 
 const settingsTabs = [

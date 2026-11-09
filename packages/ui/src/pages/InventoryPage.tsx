@@ -9,12 +9,11 @@ import {
 import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuGroupingRule, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, FilterBar, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, StatusCells, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, FilterBar, formatDateTime, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, StatusCells, stockTone, useToast } from "../components";
 import { selectInventoryCategoryRates } from "./inventory/categories";
 import { InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { DEFAULT_TREND_CATEGORY_LIMIT, MAX_TREND_CATEGORY_LIMIT, defaultTrendCategories, toggleTrendCategory, trendPoints } from "./inventory/trend";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
-import { formatDateTime } from "./date-time";
 
 const stockNames: Record<StockStatus, string> = {
   in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知",

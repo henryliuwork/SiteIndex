@@ -6,8 +6,7 @@ import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, 
 import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
-import { formatDateTime as formatPageDateTime } from "./date-time";
+import { ApiErrorNotice, Button, Chip, formatDateTime as formatSharedDateTime, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import "./runs/page.css";
 
 const jobLabels: Record<string, string> = {
@@ -45,7 +44,7 @@ const cloneSchedule = (schedule: ScheduleConfig): ScheduleConfig => JSON.parse(J
 
 function formatDateTime(value: string | null): string {
   if (!value) return "进行中";
-  return formatPageDateTime(value);
+  return formatSharedDateTime(value);
 }
 
 function runDuration(run: RunLog): string {
