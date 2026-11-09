@@ -94,6 +94,7 @@ import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
 import { createProjectFiles } from "../projects/create";
 import { checkWorkspaceTarget } from "../workspace/check";
+import { createWorkspaceFiles } from "../workspace/create";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
 import { buildSeoIssueCounts, buildSeoRuleSettings } from "../seo/rules";
@@ -130,7 +131,7 @@ export interface CoreServiceContext {
  */
 export interface CoreService {
   projects: Pick<SiteIndexApi["projects"], "get" | "updateConfig" | "detect" | "inspectFeed" | "create">;
-  workspace: Pick<NonNullable<SiteIndexApi["workspace"]>, "check">;
+  workspace: Pick<NonNullable<SiteIndexApi["workspace"]>, "check" | "create">;
   overview: SiteIndexApi["overview"];
   sku: NonNullable<SiteIndexApi["sku"]>;
   inventory: Pick<SiteIndexApi["inventory"], "summary" | "listSkus" | "dailyReport">;
@@ -1760,6 +1761,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
 
   const workspace: CoreService["workspace"] = {
     check: checkWorkspaceTarget,
+    create: (input) => createWorkspaceFiles(input, { templateDir: ctx.templateDir }),
   };
 
   const sku: CoreService["sku"] = {
