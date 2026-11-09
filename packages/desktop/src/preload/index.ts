@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { createApiBridge } from "./api.js";
+import { createWindowApi } from "./window-api.js";
 
 const siteindex = createApiBridge({
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
@@ -13,3 +14,7 @@ const siteindex = createApiBridge({
 });
 
 contextBridge.exposeInMainWorld("siteindex", siteindex);
+contextBridge.exposeInMainWorld(
+  "siteindexWindow",
+  createWindowApi((channel, payload) => ipcRenderer.send(channel, payload)),
+);

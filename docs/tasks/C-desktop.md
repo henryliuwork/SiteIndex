@@ -148,6 +148,10 @@
 - [x] 从内置分发移除 `edm-builder`；发现已安装副本时返回退役状态，不自动删除或重装。
 - [ ] A4-3 合并后接入 workspace、importCheck 与相关打包资源。
 
+## Windows 原生标题栏桥接
+
+- [x] preload 暴露 Desktop-only `window.siteindexWindow.setTitleBarOverlayColor("#RRGGBB")`；主进程仅接受来自主窗口主 frame 的六位十六进制颜色，仅更新 Windows 原生标题栏背景，关闭窗口时移除监听。
+- [ ] B 在 Drawer 打开时设置遮罩混合色，关闭时恢复 `#FFFFFF`。
 ## v0.3 · #345 Windows 安装资源
 
 - [x] Windows 自定义目录覆盖安装 v0.1.9 → v0.3.0；安装后两次重启均通过 CDP 确认加载 `resources/ui/index.html`。
