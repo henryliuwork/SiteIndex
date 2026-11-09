@@ -146,3 +146,8 @@
 - [x] 技能目标新增 `agents-dir`（`~/.agents/skills`）；同步时保留版本高于内置版本的本地副本。
 - [x] 从内置分发移除 `edm-builder`；发现已安装副本时返回退役状态，不自动删除或重装。
 - [ ] A4-3 合并后接入 workspace、importCheck 与相关打包资源。
+
+## Windows 原生标题栏桥接
+
+- [x] preload 暴露 Desktop-only `window.siteindexWindow.setTitleBarOverlayColor("#RRGGBB")`；主进程仅接受来自主窗口主 frame 的六位十六进制颜色，仅更新 Windows 原生标题栏背景，关闭窗口时移除监听。
+- [ ] B 在 Drawer 打开时设置遮罩混合色，关闭时恢复 `#FFFFFF`。

@@ -1,8 +1,9 @@
-import { app, BrowserWindow, screen, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, screen, session, shell } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAppContent } from "./renderer-loader.js";
+import { bindTitleBarOverlayColor } from "./titlebar-overlay.js";
 
 interface WindowBounds {
   x?: number;
@@ -162,6 +163,7 @@ export function createWindowManager(options: WindowManagerOptions) {
     });
     mainWindow = window;
     trackMainWindow(window);
+    bindTitleBarOverlayColor(ipcMain, window);
 
     const readyToShow = new Promise<void>((resolveReadyToShow) => {
       window.once("ready-to-show", () => {
