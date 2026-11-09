@@ -107,7 +107,6 @@ export const API_EVENT_METHODS = [
 ] as const;
 
 export const PENDING_HANDLERS: readonly string[] = [
-  "seo.getRuleSettings",
   "projects.createWorkspaceOnly",
   "workspace.check",
   "workspace.create",
