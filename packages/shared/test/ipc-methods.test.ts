@@ -25,7 +25,7 @@ describe("shared IPC method contract", () => {
     expect(legacyQuery.pageSize).toBe(10);
     expect(legacySeo.getRuleSettings).toBeUndefined();
     expect(API_INVOKE_METHODS).toContain("seo.getRuleSettings");
-    expect(PENDING_HANDLERS).toContain("seo.getRuleSettings");
+    expect(PENDING_HANDLERS).not.toContain("seo.getRuleSettings");
   });
 
   it("adds the K4 workspace invoke contracts while keeping old bridges assignable", () => {
