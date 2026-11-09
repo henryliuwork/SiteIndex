@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ProjectSummary } from "@siteindex/shared";
+import { PageHeaderActions, type PageHeaderOverflowAction } from "./layout-primitives";
 import { TabPanel, Tabs } from "./primitives";
 import "./project-header.css";
 
@@ -50,14 +51,22 @@ export function ProjectHeader({
   activeTab,
   subtitle,
   status,
+  pageTitle,
+  pageMeta,
   actions,
+  overflow,
   hasTabPanel = false,
 }: {
   project: HeaderProject;
   activeTab: ProjectTab;
   subtitle?: string;
   status?: ReactNode;
+  /** 页面标题移入标签栏右侧后，页面可删除单独的 PageHeader 行。 */
+  pageTitle?: ReactNode;
+  /** 页面标题的次要信息（例如数据日期或项目状态）。 */
+  pageMeta?: ReactNode;
   actions?: ReactNode;
+  overflow?: readonly PageHeaderOverflowAction[];
   hasTabPanel?: boolean;
 }) {
   const navigate = useNavigate();
@@ -70,15 +79,21 @@ export function ProjectHeader({
         <code title={projectSubtitle}>{projectSubtitle}</code>
         {status && <div className="si-project-header-status">{status}</div>}
       </div>
-      <div className="si-project-header-actions" aria-label="项目操作">{actions}</div>
     </header>
-    <Tabs
-      value={activeTab}
-      options={PROJECT_TABS}
-      ariaLabel="项目页面"
-      tabIdPrefix={`project-tab-${encodeURIComponent(project.id)}`}
-      panelIdPrefix={hasTabPanel ? `project-panel-${encodeURIComponent(project.id)}` : undefined}
-      onChange={(tab) => navigate(projectTabPath(project.id, tab))}
-    />
+    <div className="si-project-header-tabs-row">
+      <Tabs
+        value={activeTab}
+        options={PROJECT_TABS}
+        ariaLabel="项目页面"
+        tabIdPrefix={`project-tab-${encodeURIComponent(project.id)}`}
+        panelIdPrefix={hasTabPanel ? `project-panel-${encodeURIComponent(project.id)}` : undefined}
+        onChange={(tab) => navigate(projectTabPath(project.id, tab))}
+      />
+      {(pageTitle || pageMeta) && <div className="si-project-header-page-heading">
+        {pageTitle && <h2>{pageTitle}</h2>}
+        {pageMeta && <div className="si-project-header-page-meta">{pageMeta}</div>}
+      </div>}
+      <PageHeaderActions actions={actions} overflow={overflow} className="si-project-header-actions" />
+    </div>
   </div>;
 }

@@ -15,11 +15,10 @@ export interface PageHeaderOverflowAction {
   icon?: ReactNode;
 }
 
-export function PageHeader({ title, meta, actions, overflow = [] }: {
-  title: ReactNode;
-  meta?: ReactNode;
+export function PageHeaderActions({ actions, overflow = [], className = "si-page-header-actions" }: {
   actions?: ReactNode;
   overflow?: readonly PageHeaderOverflowAction[];
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const menuItems = useRef<Array<HTMLButtonElement | null>>([]);
@@ -35,38 +34,48 @@ export function PageHeader({ title, meta, actions, overflow = [] }: {
     event.preventDefault();
     menuItems.current[target]?.focus();
   };
+  if (!actions && overflow.length === 0) return null;
+  return <div className={className}>
+    {actions}
+    {overflow.length > 0 && <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <Button variant="ghost" size="small" className="si-page-header-more" aria-label="更多操作" title="更多操作" aria-haspopup="menu" aria-expanded={open}>
+          <MoreHorizontal size={16} aria-hidden="true" /><span>更多</span>
+        </Button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="si-page-header-menu" role="menu" aria-label="更多操作" align="end" sideOffset={4} onKeyDown={onMenuKeyDown}>
+          {overflow.map((item) => <button
+            key={item.label}
+            ref={(node) => { menuItems.current[overflow.indexOf(item)] = node; }}
+            type="button"
+            role="menuitem"
+            disabled={item.disabled}
+            className={"si-page-header-menu-item" + (item.danger ? " is-danger" : "")}
+            onClick={() => { item.onSelect(); setOpen(false); }}
+          >
+            {item.icon && <span aria-hidden="true">{item.icon}</span>}
+            {item.label}
+          </button>)}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>}
+  </div>;
+}
+
+export function PageHeader({ title, meta, actions, overflow = [] }: {
+  title: ReactNode;
+  meta?: ReactNode;
+  actions?: ReactNode;
+  overflow?: readonly PageHeaderOverflowAction[];
+}) {
   return (
     <header className="si-page-header">
       <div className="si-page-header-copy">
         <h1>{title}</h1>
         {meta && <div className="si-page-header-meta">{meta}</div>}
       </div>
-      {(actions || overflow.length > 0) && <div className="si-page-header-actions">
-        {actions}
-        {overflow.length > 0 && <Popover.Root open={open} onOpenChange={setOpen}>
-          <Popover.Trigger asChild>
-            <Button variant="ghost" size="small" className="si-page-header-more" aria-label="更多操作" title="更多操作" aria-haspopup="menu" aria-expanded={open}>
-              <MoreHorizontal size={16} aria-hidden="true" /><span>更多</span>
-            </Button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content className="si-page-header-menu" role="menu" aria-label="更多操作" align="end" sideOffset={4} onKeyDown={onMenuKeyDown}>
-              {overflow.map((item) => <button
-                key={item.label}
-                ref={(node) => { menuItems.current[overflow.indexOf(item)] = node; }}
-                type="button"
-                role="menuitem"
-                disabled={item.disabled}
-                className={"si-page-header-menu-item" + (item.danger ? " is-danger" : "")}
-                onClick={() => { item.onSelect(); setOpen(false); }}
-              >
-                {item.icon && <span aria-hidden="true">{item.icon}</span>}
-                {item.label}
-              </button>)}
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>}
-      </div>}
+      <PageHeaderActions actions={actions} overflow={overflow} />
     </header>
   );
 }

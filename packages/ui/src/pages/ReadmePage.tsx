@@ -5,7 +5,7 @@ import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, formatDateTime, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 const autoDescriptions: Record<string, string> = {
   "task-routing": "7 个任务 → _agent/skills/",
   "data-guide": "index/ 各表说明与写入规则",
@@ -23,9 +23,7 @@ const blockTitles: Record<string, string> = {
 function latestUpdate(data: ReadmeData | undefined): string {
   const value = data?.auto_blocks.find((block) => block.id === "index-summary")?.updated_at;
   if (!value) return "暂无自动区块更新时间";
-  const date = value.slice(5, 10);
-  const time = value.match(/[T ](\d{2}:\d{2})/)?.[1];
-  return `自动区块更新于 ${date}${time ? " " + time : ""}`;
+  return `更新于 ${formatDateTime(value)}`;
 }
 
 function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving, editingRules, onEditRules, onCancelRules }: {
@@ -144,7 +142,7 @@ export function ReadmePage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 README 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-readme-page">
-    <ProjectHeader project={project} activeTab="readme" hasTabPanel subtitle={`README.md · ${data ? latestUpdate(data) : "—"}`} actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />
+    <ProjectHeader project={project} activeTab="readme" hasTabPanel pageMeta={latestUpdate(data)} actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="readme">
     {runMessage && <Notice tone="info">{runMessage}</Notice>}
     {readmeQuery.isLoading ? <div className="si-page-loading" role="status">正在加载 README…</div> : readmeQuery.isError || !data ? <ApiErrorNotice label="README 内容加载失败。" error={readmeQuery.error} onRetry={() => void readmeQuery.refetch()} /> : <div className="si-readme-layout">

@@ -1,27 +1,133 @@
-.si-project-header { position: sticky; top: calc(0px - var(--si-content-top-padding, 0px)); z-index: 20; display: grid; min-width: 0; gap: 0; background: var(--color-canvas); }
+.si-project-header {
+  position: sticky;
+  top: calc(0px - var(--si-content-top-padding, 0px));
+  z-index: 20;
+  display: grid;
+  min-width: 0;
+  background: var(--color-canvas);
+}
+
 .si-project-header-row {
-  display: grid; width: 100%; height: 64px; min-width: 0;
-  grid-template-columns: minmax(0, 1fr) 420px; align-items: center; gap: 16px;
+  display: flex;
+  width: 100%;
+  height: 44px;
+  min-width: 0;
+  align-items: center;
 }
-.si-project-header-identity { display: flex; min-width: 0; align-items: center; gap: 12px; overflow: hidden; white-space: nowrap; }
+
+.si-project-header-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .si-project-header-identity h1 {
-  flex: 0 1 auto; min-width: 72px; max-width: 220px; margin: 0; overflow: hidden;
-  color: var(--color-ink); font-size: 23px; font-weight: 700; letter-spacing: -0.025em; text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 72px;
+  max-width: 220px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: var(--fs-section-title);
+  font-weight: var(--fw-section-title);
+  line-height: var(--lh-section-title);
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
 }
+
 .si-project-header-identity code {
-  min-width: 0; overflow: hidden; color: var(--color-ink-2); font-family: var(--font-mono); font-size: 12px; text-overflow: ellipsis;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
 }
-.si-project-header-status { display: flex; min-width: 0; flex: none; align-items: center; overflow: hidden; }
+
+.si-project-header-status {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  overflow: hidden;
+}
+
+.si-project-header-tabs-row {
+  display: flex;
+  width: 100%;
+  height: 44px;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.si-project-header .si-tabs {
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: var(--space-1);
+  overflow-x: auto;
+  border-bottom: 0;
+  scrollbar-width: none;
+}
+
+.si-project-header .si-tabs::-webkit-scrollbar { display: none; }
+.si-project-header .si-tabs button { flex: 0 0 auto; }
+
+.si-project-header-page-heading {
+  display: flex;
+  min-width: 0;
+  max-width: 180px;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.si-project-header-page-heading h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-strong);
+  line-height: var(--lh-body);
+  text-overflow: ellipsis;
+}
+
+.si-project-header-page-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  text-overflow: ellipsis;
+}
+
 .si-project-header-actions {
-  display: flex; width: 420px; min-width: 420px; min-height: 36px; align-items: center; justify-content: flex-end;
-  gap: 8px; overflow: hidden; white-space: nowrap;
+  display: flex;
+  min-width: 0;
+  max-width: 420px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
 }
+
+.si-project-header-actions::-webkit-scrollbar { display: none; }
 .si-project-header-actions > * { flex: 0 0 auto; }
-.si-project-header .si-tabs { flex: none; gap: 24px; }
+.si-project-header-actions .si-page-header-more { flex: none; }
 
 @media (max-width: 900px) {
-  .si-project-header-row { grid-template-columns: minmax(0, 1fr) 340px; }
-  .si-project-header-actions { width: 340px; min-width: 340px; gap: 5px; }
-  .si-project-header-identity { gap: 8px; }
-  .si-project-header-identity h1 { max-width: 150px; font-size: 20px; }
+  .si-project-header-identity { gap: var(--space-2); }
+  .si-project-header-identity h1 { max-width: 150px; }
+  .si-project-header-tabs-row { gap: var(--space-2); }
+  .si-project-header-page-heading { max-width: 140px; }
+  .si-project-header-actions { max-width: 320px; gap: var(--space-1); }
 }
