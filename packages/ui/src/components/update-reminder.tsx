@@ -1,7 +1,8 @@
 import { CheckCircle2, Download, RefreshCw } from "lucide-react";
-import { api } from "../api";
+import { api, apiErrorMessage } from "../api";
 import { ApiErrorNotice } from "./ApiErrorNotice";
 import { Button } from "./primitives";
+import { useToast } from "./overlays";
 import { displayVersion, useAnyRunningJob, useUpdatesController, type UpdateAction, type UpdateStatus } from "../updates";
 import "./update-reminder.css";
 
@@ -23,6 +24,7 @@ function buttonLabel(status: UpdateStatus): string {
 
 export function UpdateReminder({ collapsed }: { collapsed: boolean }) {
   const controller = useUpdatesController();
+  const toast = useToast();
   const runningQuery = useAnyRunningJob(controller.status?.state === "ready");
   const status = controller.status;
   const updates = controller.updates;
@@ -31,7 +33,8 @@ export function UpdateReminder({ collapsed }: { collapsed: boolean }) {
   const action = actionFor(status);
   const runAction = async () => {
     if (action === "manual" && status.state === "unsupported" && status.manual_url) {
-      await api.shell.openExternal(status.manual_url);
+      try { await api.shell.openExternal(status.manual_url); toast.success("已打开更新下载页面。"); }
+      catch (cause) { toast.error("无法打开下载页面：" + apiErrorMessage(cause, "请稍后重试。")); }
     } else if (action && action !== "manual") await controller.run(action);
   };
   const label = status.state === "downloading"

@@ -139,12 +139,12 @@ export function AppSettingsPage() {
       await updates.run("check");
       return;
     }
-    try { await api.shell.openExternal(RELEASES_URL); }
+    try { await api.shell.openExternal(RELEASES_URL); toast.success("已打开下载页面。"); }
     catch (error) { toast.error("无法打开下载页面：" + apiErrorMessage(error, "请稍后重试")); }
   };
 
   const openManualUpdate = async (url: string) => {
-    try { await api.shell.openExternal(url); }
+    try { await api.shell.openExternal(url); toast.success("已打开更新下载页面。"); }
     catch (error) { toast.error("无法打开下载页面：" + apiErrorMessage(error, "请稍后重试")); }
   };
 

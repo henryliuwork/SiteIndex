@@ -18,6 +18,10 @@ function LocationProbe() {
   return <output data-testid="current-route">{location.pathname}</output>;
 }
 
+async function expectToast(message: string, tone: "success" | "error") {
+  await waitFor(() => expect([...document.querySelectorAll(`.si-toast-${tone}`)].some((toast) => toast.textContent?.includes(message))).toBe(true));
+}
+
 describe("ProjectCenterPage add existing project flow", () => {
   it("adds a project, refreshes the center, opens its path, navigates by ID, and reports duplicates", async () => {
     const mockApi = createMockApi();
@@ -96,10 +100,13 @@ describe("ProjectCenterPage add existing project flow", () => {
     const projectLink = await screen.findByRole("link", { name: "Cedar Shop" });
     expect(projectLink.getAttribute("href")).toBe("/p/cedar-shop/inventory");
     expect(addExisting).toHaveBeenNthCalledWith(1, projectPath);
+    await expectToast("已添加项目：Cedar Shop", "success");
     await waitFor(() => expect(verify).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("正在校验系统计划任务…")).toBeTruthy();
     resolveVerification({ state: "path_mismatch", message: "系统任务指向旧路径。" });
-    expect(await screen.findByText(/系统计划任务：路径不一致/)).toBeTruthy();
+    const projectCard = document.querySelector(".si-project-card");
+    expect(projectCard).toBeTruthy();
+    expect(await within(projectCard as HTMLElement).findByText(/系统计划任务：路径不一致/)).toBeTruthy();
     await waitFor(() => expect(get).toHaveBeenCalledWith("cedar-shop"));
     expect((await mockApi.projects.list())[0]?.path).toBe(projectPath);
 
@@ -110,7 +117,9 @@ describe("ProjectCenterPage add existing project flow", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "项目文件夹路径" }), { target: { value: projectPath } });
     fireEvent.click(screen.getByRole("button", { name: "添加项目" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("这个项目已经添加。");
+    const addDialog = screen.getByRole("dialog", { name: "添加已有项目" });
+    expect(await within(addDialog).findByText("这个项目已经添加。", { selector: ".si-form-error" })).toBeTruthy();
+    await expectToast("这个项目已经添加。", "error");
     expect(registered).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(await screen.findAllByRole("link", { name: "Cedar Shop" })).toHaveLength(1);
@@ -215,6 +224,7 @@ describe("ProjectCenterPage attention list", () => {
     await waitFor(() => expect(mockApi.seo.setIssueStatus).toHaveBeenCalledWith("demo", {
       targets: [{ url: "https://demo.example.test/page-0", rule: "title_missing" }], status: "fixed",
     }));
+    await expectToast("提醒已标记为已处理。", "success");
     expect(await within(panel).findByText(reminders[3]!)).toBeTruthy();
     expect(within(panel).queryByText(reminders[0]!)).toBeNull();
     await waitFor(() => expect(within(screen.getByRole("button", { name: /待处理提醒/ })).getByText("3")).toBeTruthy());
@@ -233,6 +243,7 @@ describe("ProjectCenterPage attention list", () => {
     await waitFor(() => expect(mockApi.seo.setIssueStatus).toHaveBeenCalledWith("demo", {
       targets: [{ url: "https://demo.example.test/page-0", rule: "title_missing" }], status: "ignored",
     }));
+    await expectToast("提醒已忽略。", "success");
     expect(await within(panel).findByText(reminders[3]!)).toBeTruthy();
     expect(within(panel).queryByText(reminders[0]!)).toBeNull();
   });
@@ -250,6 +261,7 @@ describe("ProjectCenterPage attention list", () => {
     rejectPending({ code: "WRITE_FAILED", message: "提醒状态保存失败，请重试。" });
 
     expect(await within(row).findByRole("alert")).toHaveProperty("textContent", "提醒状态保存失败，请重试。");
+    await expectToast("提醒状态保存失败，请重试。", "error");
     expect(within(panel).getByText(reminders[0]!)).toBeTruthy();
   });
 

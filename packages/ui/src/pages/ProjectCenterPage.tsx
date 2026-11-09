@@ -8,7 +8,7 @@ import { Link, useNavigate } from "react-router-dom";
 import type { CreateWorkspaceOnlyInput, Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue, WorkspaceCreateInput } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, KpiCard, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, KpiCard, PageHeader, useToast } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
 import { workspaceDirectoryTree, workspacePathJoin } from "./new-project/workspace-preview";
 
@@ -49,15 +49,11 @@ function projectWarning(project: ProjectSummary): { tone: "warn" | "danger"; lin
 
 function formatSyncTime(value: string | null): string {
   if (!value) return "尚未同步";
-  const date = new Date(value);
-  const time = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
-  const today = new Date().toDateString() === date.toDateString();
-  return (today ? "今天 " : new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(date) + " ") + time;
+  return formatDateTime(value);
 }
 
 function formatRunTime(value: string): string {
-  const date = new Date(value);
-  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+  return formatDateTime(value);
 }
 
 function runSummary(run: RunLog): string {
@@ -72,8 +68,8 @@ function RunDetail({ run }: { run: RunLog }) {
   return (
     <dl className="si-detail-list">
       <div><dt>任务</dt><dd>{jobNames[run.job] ?? run.job}</dd></div>
-      <div><dt>开始时间</dt><dd>{new Date(run.started_at).toLocaleString("zh-CN")}</dd></div>
-      <div><dt>结束时间</dt><dd>{run.finished_at ? new Date(run.finished_at).toLocaleString("zh-CN") : "仍在运行"}</dd></div>
+      <div><dt>开始时间</dt><dd>{formatDateTime(run.started_at)}</dd></div>
+      <div><dt>结束时间</dt><dd>{run.finished_at ? formatDateTime(run.finished_at) : "仍在运行"}</dd></div>
       <div><dt>执行设备</dt><dd>{run.device_name ?? "本机"}</dd></div>
       <div><dt>结果</dt><dd>{run.status === "ok" ? "成功" : run.status === "partial" ? "部分完成" : run.status === "failed" ? "失败" : "已跳过"}</dd></div>
       {run.errors?.map((error, index) => <div key={index}><dt>错误</dt><dd>{error}</dd></div>)}
@@ -171,6 +167,7 @@ function ProjectCard({
 }
 
 function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onOpenChange: (open: boolean) => void; onAdded: (project: ProjectSummary) => void }) {
+  const toast = useToast();
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -184,9 +181,13 @@ function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onO
     setError("");
     try {
       const project = await api.projects.addExisting(path.trim());
-      onAdded(project); onOpenChange(false); setPath("");
+      onAdded(project);
+      toast.success("已添加项目：" + project.name);
+      onOpenChange(false); setPath("");
     } catch (cause) {
-      setError(apiErrorMessage(cause, "添加项目失败，请重试。"));
+      const message = apiErrorMessage(cause, "添加项目失败，请重试。");
+      setError(message);
+      toast.error(message);
     } finally {
       submitting.current = false;
       setSaving(false);
@@ -226,6 +227,7 @@ function CreateWorkspaceDialog({
   defaultRoot: string;
   onCreated: (id: string) => void;
 }) {
+  const toast = useToast();
   const [url, setUrl] = useState("");
   const [brandName, setBrandName] = useState("");
   const [projectsRoot, setProjectsRoot] = useState("");
@@ -266,9 +268,11 @@ function CreateWorkspaceDialog({
       if (typeof check === "function") {
         const result = await check(workspacePathJoin(cleanRoot, cleanFolder));
         if (!result.ok) {
-          setError(result.invalid_entries.length
+          const message = result.invalid_entries.length
             ? "目标目录不是空目录：" + result.invalid_entries.slice(0, 10).join("、")
-            : "目标目录不是空目录，请选择一个空目录。");
+            : "目标目录不是空目录，请选择一个空目录。";
+          setError(message);
+          toast.error(message);
           return;
         }
       }
@@ -281,10 +285,13 @@ function CreateWorkspaceDialog({
         workspace: { enabled: true, platform, esp_presets: mailchimp ? ["esp.mailchimp"] : [] },
       } satisfies CreateWorkspaceOnlyInput);
       onCreated(created.id);
+      toast.success("空工作区已创建。");
       onOpenChange(false);
       setUrl(""); setBrandName(""); setFolderName(""); setMarkets("US"); setPlatform("other"); setMailchimp(true);
     } catch (cause) {
-      setError(apiErrorMessage(cause, "创建空工作区失败，请重试。"));
+      const message = apiErrorMessage(cause, "创建空工作区失败，请重试。");
+      setError(message);
+      toast.error(message);
     } finally {
       submitLock.current = false;
       setSaving(false);
@@ -312,8 +319,8 @@ function CreateWorkspaceDialog({
           <label className="si-workspace-create-checkbox"><input type="checkbox" checked={mailchimp} disabled={saving} onChange={(event) => setMailchimp(event.target.checked)} />Mailchimp 预设</label>
           <label className="si-field-label" htmlFor="workspace-projects-root">项目根目录</label>
           <div className="si-wizard-directory"><input id="workspace-projects-root" className="si-text-field si-mono" value={projectsRoot} disabled={saving} onChange={(event) => setProjectsRoot(event.target.value)} /><Button type="button" disabled={saving} onClick={async () => {
-            try { const selected = await api.settings.chooseDirectory(projectsRoot || undefined); if (selected) setProjectsRoot(selected); }
-            catch (cause) { setError(apiErrorMessage(cause, "选择项目根目录失败，请重试。")); }
+            try { const selected = await api.settings.chooseDirectory(projectsRoot || undefined); if (selected) { setProjectsRoot(selected); toast.success("项目根目录已选择。"); } }
+            catch (cause) { const message = apiErrorMessage(cause, "选择项目根目录失败，请重试。"); setError(message); toast.error(message); }
           }}>选择</Button></div>
           <label className="si-field-label" htmlFor="workspace-folder-name">项目文件夹名</label>
           <input id="workspace-folder-name" className="si-text-field si-mono" value={folderName} disabled={saving} onChange={(event) => setFolderName(event.target.value)} />
@@ -348,19 +355,22 @@ function AttentionKpi({ count, expanded, onToggle }: { count: number; expanded: 
 
 function AttentionIssueRow({ project, issue }: { project: ProjectSummary; issue: SeoIssue }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const statusMutation = useMutation({
     mutationFn: (status: "fixed" | "ignored") => {
       if (!api.seo.setIssueStatus) throw new Error("该功能暂不可用。");
       return api.seo.setIssueStatus(project.id, { targets: [{ url: issue.url, rule: issue.rule }], status });
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, status) => {
       await Promise.all([
         invalidateProjectSummary(queryClient, project.id),
         queryClient.invalidateQueries({ queryKey: ["projects", project.id, "seo", "issues", "open", "recent"], exact: true }),
         queryClient.invalidateQueries({ queryKey: ["seo", "issues", project.id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "summary", project.id] }),
       ]);
+      toast.success(status === "fixed" ? "提醒已标记为已处理。" : "提醒已忽略。");
     },
+    onError: (cause) => toast.error(apiErrorMessage(cause, "更新提醒状态失败，请重试。")),
   });
   const canSetStatus = typeof api.seo.setIssueStatus === "function";
 
@@ -446,7 +456,7 @@ export function ProjectCenterPage() {
   const newOutOfStock = projects.reduce((sum, project) => sum + project.today.oos, 0);
   const nextRun = scheduleQuery.data?.next_runs[0];
   const nextJob = scheduleQuery.isLoading ? "正在读取计划" : scheduleQuery.isError ? "计划读取失败" : nextRun ? (jobNames[nextRun.job] ?? nextRun.job) : "暂无计划";
-  const nextTime = nextRun?.at ? new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(nextRun.at)) : "—";
+  const nextTime = nextRun?.at ? formatDateTime(nextRun.at) : "—";
   const configuredRoot = settingsQuery.data?.projects_root?.trim();
   const needsRootSetup = settingsQuery.isError || (!settingsQuery.isLoading && !configuredRoot);
   const projectRoot = settingsQuery.isLoading ? "正在读取项目根目录…" : settingsQuery.isError ? "项目根目录读取失败" : configuredRoot ? configuredRoot.replaceAll("/", "\\") : "尚未设置";
@@ -481,18 +491,21 @@ export function ProjectCenterPage() {
       setScheduleVerifications((current) => ({ ...current, [project.id]: { state: "pending" } }));
       void verify(project.id).then((result) => {
         setScheduleVerifications((current) => ({ ...current, [project.id]: { state: "complete", result } }));
+        toast.success("计划任务校验完成：" + scheduleVerificationLabel({ state: "complete", result }));
       }).catch((cause: unknown) => {
-        setScheduleVerifications((current) => ({ ...current, [project.id]: { state: "error", message: apiErrorMessage(cause, "校验失败，请稍后重试。") } }));
+        const message = apiErrorMessage(cause, "校验失败，请稍后重试。");
+        setScheduleVerifications((current) => ({ ...current, [project.id]: { state: "error", message } }));
+        toast.error(message);
       });
     }
-    await invalidateProjectSummary(queryClient, project.id);
-    toast.success("已添加项目：" + project.name);
+    try { await invalidateProjectSummary(queryClient, project.id); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "项目摘要刷新失败，请稍后重试。")); }
   };
 
   const handleWorkspaceCreated = async (id: string) => {
     setCreateWorkspaceOpen(false);
-    await invalidateProjectSummary(queryClient, id);
-    toast.success("空工作区已创建。");
+    try { await invalidateProjectSummary(queryClient, id); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "项目摘要刷新失败，请稍后重试。")); }
     navigate("/p/" + id);
   };
 

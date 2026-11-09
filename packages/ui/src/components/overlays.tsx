@@ -33,10 +33,12 @@ export function Drawer({ open, onOpenChange, title, description, children, foote
           }}
         >
           <div className="si-drawer-heading">
-            <Dialog.Title className="si-drawer-title">{title}</Dialog.Title>
+            <div className="si-drawer-heading-copy">
+              <Dialog.Title className="si-drawer-title">{title}</Dialog.Title>
+              {description && <Dialog.Description id={descriptionId} className="si-drawer-description">{description}</Dialog.Description>}
+            </div>
             <Dialog.Close asChild><button className="si-drawer-close" type="button" aria-label="关闭抽屉" title="关闭抽屉"><X size={16} aria-hidden="true" /></button></Dialog.Close>
           </div>
-          {description && <Dialog.Description id={descriptionId} className="si-drawer-description">{description}</Dialog.Description>}
           <div className="si-drawer-content">{children}</div>
           {footer && <div className="si-drawer-footer">{footer}</div>}
         </Dialog.Content>
