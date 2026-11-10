@@ -37,6 +37,7 @@ import type {
   StockStatus,
   ValidationReport,
 } from "./models";
+import type { ProjectPaths } from "./paths";
 import type { JobProgress, JobRequest, JobResult, SchedulableJob } from "./jobs";
 
 // ---------- 通用 ----------
@@ -580,7 +581,15 @@ export interface SiteIndexApi {
     buildCommand(id: ProjectId, input: EdmCommandInput): Promise<string>;
   };
   design: {
-    get(id: ProjectId): Promise<{ tokens: DesignTokens | null; screenshots: { name: string; path: string }[] }>;
+    get(id: ProjectId): Promise<{
+      tokens: DesignTokens | null;
+      screenshots: { name: string; path: string }[];
+      /** 由 pathsFor(layout) 解析的项目根目录相对路径；只包含规范文件，不接受任意用户路径。 */
+      artifact_paths?: {
+        tokens: ProjectPaths["designTokens"];
+        brand: ProjectPaths["designBrand"];
+      };
+    }>;
   };
   readme: {
     get(id: ProjectId): Promise<ReadmeData>;

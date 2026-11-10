@@ -3,6 +3,7 @@ import type { AppSettings, CreateProjectInput, ListQuery, PageSize, SiteIndexApi
 import type { SiteConfig } from "../src/models";
 import type { SiteIndexErrorCode } from "../src/errors";
 import { API_INVOKE_METHODS, PENDING_HANDLERS } from "../src/ipc-methods";
+import { pathsFor } from "../src/paths";
 
 describe("shared IPC method contract", () => {
   it("keeps the SKU preview method in the invoke contract after its Desktop handler is implemented", () => {
@@ -56,5 +57,26 @@ describe("shared IPC method contract", () => {
       expect(API_INVOKE_METHODS).toContain(method);
     }
     expect(PENDING_HANDLERS).toEqual([]);
+  });
+
+  it("adds optional layout-resolved design artifact paths without changing the invoke methods", () => {
+    type DesignResult = Awaited<ReturnType<SiteIndexApi["design"]["get"]>>;
+    const legacyDesignResult: DesignResult = { tokens: null, screenshots: [] };
+    const workspaceDesignResult: DesignResult = {
+      tokens: null,
+      screenshots: [],
+      artifact_paths: {
+        tokens: pathsFor("workspace").designTokens,
+        brand: pathsFor("workspace").designBrand,
+      },
+    };
+
+    expect(legacyDesignResult.artifact_paths).toBeUndefined();
+    expect(workspaceDesignResult.artifact_paths).toEqual({
+      tokens: "_site-index/design/tokens.json",
+      brand: "_site-index/design/brand.md",
+    });
+    expect(API_INVOKE_METHODS.filter((method) => method === "design.get")).toHaveLength(1);
+    expect(PENDING_HANDLERS).not.toContain("design.get");
   });
 });
