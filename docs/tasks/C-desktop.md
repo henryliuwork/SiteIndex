@@ -149,6 +149,7 @@
 - [x] `workspace.check/create`、`workspace.importCheck` 已接入 Desktop IPC；导入检查有修复文件时立即失效 Core 项目缓存，目录监听负责变更通知。`PENDING_HANDLERS` 清理单独走 contract PR。
 - [x] 打包资源脚本复制完整 `templates/` 与 `skills/`，Core 的 `templateDir` 相邻路径可解析 `templates/workspace/`；由 Desktop 资源测试覆盖。
 - [x] `projects.createWorkspaceOnly` Desktop IPC：只创建空工作区，不启动 Job；按 `projects_root` / `extra_projects` 注册，支持 legacy 与 workspace 项目扫描、去重、解析和变更监听；同域并发创建串行检查。`PENDING_HANDLERS` 仍需等 handler PR 合并后经独立 contract PR 清理。
+- [x] 空工作区创建后的设置登记写入失败时返回 `WRITE_FAILED`，说明已创建文件保留并指引“添加已有项目”恢复；Desktop 集成测试覆盖失败后恢复登记。
 
 ## Windows 原生标题栏桥接
 

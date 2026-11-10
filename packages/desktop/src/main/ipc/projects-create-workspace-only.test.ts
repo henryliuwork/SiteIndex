@@ -58,15 +58,17 @@ async function createHarness(root: string, projectsRoot: string) {
   const jobs = { run: vi.fn(async () => ({ runId: "should-not-run" })) };
   const notifyProjectChanged = vi.fn();
   const settingsChanged = vi.fn(async () => undefined);
+  const reconcileSchedules = vi.fn(async () => ({}));
   const context = {
     core,
     projects: catalog,
     settings: settingsStore,
     settingsChanged,
     notifyProjectChanged,
+    reconcileSchedules,
     jobs,
   } as unknown as IpcContext;
-  return { core, catalog, context, jobs, notifyProjectChanged, settingsChanged, settingsStore };
+  return { core, catalog, context, jobs, notifyProjectChanged, reconcileSchedules, settingsChanged, settingsStore };
 }
 
 function input(
@@ -128,6 +130,46 @@ describe("projects.createWorkspaceOnly Desktop flow", () => {
     ).resolves.toBeTruthy();
     expect(harness.notifyProjectChanged).toHaveBeenCalledWith("workspace-demo");
     expect(harness.settingsChanged).toHaveBeenCalledWith(await harness.settingsStore.get(), false);
+    expect(harness.jobs.run).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  }, 30_000);
+
+  it("explains settings registration failure and recovers the created workspace through addExisting", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "siteindex-workspace-only-recovery-"));
+    temporaryRoots.push(root);
+    const registeredRoot = path.join(root, "registered");
+    const selectedRoot = path.join(root, "selected");
+    await Promise.all([mkdir(registeredRoot), mkdir(selectedRoot)]);
+    const harness = await createHarness(root, registeredRoot);
+    const domain = fixtureDomain(root);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    harness.settingsStore.set.mockImplementationOnce(async () => {
+      throw new Error("fixture settings write failure");
+    });
+
+    const handlers = createProjectsHandlers(harness.context);
+    const workspacePath = path.join(selectedRoot, "workspace-recovery");
+    await expect(
+      handlers["projects.createWorkspaceOnly"]!(input(selectedRoot, "workspace-recovery", domain)),
+    ).rejects.toMatchObject({
+      code: "WRITE_FAILED",
+      message: expect.stringContaining("点击“添加已有项目”"),
+    });
+
+    await expect(readFile(path.join(workspacePath, pathsFor("workspace").site), "utf8")).resolves.toContain(
+      new URL(domain).hostname,
+    );
+    await expect(harness.catalog.refresh(await harness.settingsStore.get())).resolves.toEqual([]);
+
+    await expect(handlers["projects.addExisting"]!(workspacePath)).resolves.toBeTruthy();
+    const updatedSettings = await harness.settingsStore.get();
+    expect(updatedSettings.extra_projects).toEqual([await realpath(workspacePath)]);
+    expect(await harness.catalog.refresh(updatedSettings)).toEqual([
+      { id: "workspace-recovery", path: await realpath(workspacePath) },
+    ]);
+    expect(harness.catalog.resolveProject("workspace-recovery")).toBe(await realpath(workspacePath));
+    expect(harness.reconcileSchedules).toHaveBeenCalledWith(true);
     expect(harness.jobs.run).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   }, 30_000);
