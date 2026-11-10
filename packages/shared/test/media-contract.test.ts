@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   API_INVOKE_METHODS,
   CSV_HEADERS,
+  EXIT,
   JOB_NAMES,
   PENDING_HANDLERS,
   type InventoryEventType,
@@ -19,33 +20,35 @@ describe("K5 media and stock contracts", () => {
     const legacyApi: Pick<SiteIndexApi, "media"> = {};
     const prepare: NonNullable<SiteIndexApi["media"]>["prepare"] = async ({ project, skus }) => {
       expect(project).toBe("demo-project");
-      expect(skus).toEqual(["DEMO-WP-001", "DEMO-WP-002"]);
+      expect(skus).toEqual(["DEMO-WP-001", "DEMO-WP-002", "DEMO-WP-003", "DEMO-WP-004"]);
       return { runId: "demo-media-run" };
     };
     const request: JobRequest = {
       projectPath: "C:/fixture/demo-project",
       job: "media",
       trigger: "manual",
-      skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      skus: ["DEMO-WP-001", "DEMO-WP-002", "DEMO-WP-003", "DEMO-WP-004"],
     };
-    const item: MediaPrepareSkuResult = {
-      sku: "DEMO-WP-001",
-      status: "uploaded",
-      image_url: "https://example-shop.test/media/demo-wp-001-main.jpg",
-    };
+    const mediaResults: MediaPrepareSkuResult[] = [
+      { sku: "DEMO-WP-001", status: "uploaded", image_url: "https://example-shop.test/media/demo-wp-001-main.jpg" },
+      { sku: "DEMO-WP-002", status: "reused", image_url: "https://example-shop.test/media/demo-wp-002-main.jpg" },
+      { sku: "DEMO-WP-003", status: "skipped_has_url", image_url: "https://example-shop.test/media/demo-wp-003-main.jpg" },
+      { sku: "DEMO-WP-004", status: "failed", reason: "图片来源暂不可用。" },
+    ];
     const result: JobResult = {
       runId: "demo-media-run",
       job: "media",
       status: "partial",
-      exitCode: 0,
-      summary: "媒体准备完成。",
-      media_results: [item, { sku: "DEMO-WP-002", status: "skipped_has_url" }],
+      exitCode: EXIT.SOURCE_FAILED,
+      summary: "媒体准备部分完成。",
+      media_results: mediaResults,
     };
 
     expect(legacyApi.media).toBeUndefined();
     expect(await prepare({ project: "demo-project", skus: request.skus ?? [] })).toEqual({ runId: "demo-media-run" });
     expect(JOB_NAMES).toContain("media");
-    expect(result.media_results).toEqual([item, { sku: "DEMO-WP-002", status: "skipped_has_url" }]);
+    expect(result.media_results).toEqual(mediaResults);
+    expect(result.media_results?.map((entry) => entry.sku)).toEqual(request.skus);
     expect(API_INVOKE_METHODS.filter((method) => method === "media.prepare")).toHaveLength(1);
     expect(PENDING_HANDLERS).toContain("media.prepare");
   });

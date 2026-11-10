@@ -396,6 +396,7 @@ export interface SkuMedia {
   height?: number | null;
   updated_at: ISODate;
   media_id?: number | null;
+  /** 原始图片内容指纹；重试遇到同一 SKU 和指纹时应复用仍可用的已上传媒体。 */
   source_hash?: string | null;
 }
 

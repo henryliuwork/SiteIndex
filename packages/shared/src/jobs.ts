@@ -62,13 +62,17 @@ export interface JobResult {
   errors?: string[];
   /** init 任务逐步结果；schedule 由 Desktop 执行。 */
   steps?: { key: string; status: "ok" | "failed" | "skipped"; message?: string }[];
-  /** media Job 的逐 SKU 结果，经 jobs.onFinished 返回；不包含本机凭据。 */
+  /**
+   * media 正常完成时按请求顺序返回每个 SKU 的结果。取消或 worker 崩溃后可能仅包含已完成项；
+   * 缺失 SKU 表示结果未决，不能当成失败或成功。通过 jobs.onFinished 按 runId 关联，且不包含本机凭据。
+   */
   media_results?: MediaPrepareSkuResult[];
 }
 
 export interface MediaPrepareSkuResult {
   sku: string;
   status: "uploaded" | "reused" | "skipped_has_url" | "failed";
+  /** 脱敏后的原因；不得包含凭据、授权头或口令。 */
   reason?: string;
   image_url?: string;
 }
