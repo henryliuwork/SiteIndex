@@ -31,6 +31,23 @@ describe("createApiBridge IPC errors", () => {
     ]);
   });
 
+  it("forwards empty workspace project creation through the API bridge", async () => {
+    const created = { id: "fixture-workspace" };
+    const input = {
+      url: "https://fixture.example.test",
+      brand: { name: "Fixture Workspace" },
+      markets: ["US"],
+      projects_root: "C:/Fixture/projects",
+      folder_name: "fixture-workspace",
+      workspace: { enabled: true, platform: "woocommerce" as const, esp_presets: ["mailchimp"] },
+    };
+    const invoke = vi.fn(async () => created);
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+
+    await expect(bridge.projects.createWorkspaceOnly?.(input)).resolves.toEqual(created);
+    expect(invoke).toHaveBeenCalledWith("si:projects.createWorkspaceOnly", input);
+  });
+
   it("forwards read-only system task listing through the API bridge", async () => {
     const rows = [
       {

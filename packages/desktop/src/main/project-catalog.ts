@@ -2,7 +2,7 @@ import { access, readdir, realpath, stat } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { watch, type FSWatcher } from "chokidar";
-import { PATHS, type AppSettings, type ProjectId, type SiteIndexError } from "@siteindex/shared";
+import { PATHS, pathsFor, type AppSettings, type ProjectId, type SiteIndexError } from "@siteindex/shared";
 import type { AddExistingTimingCallback } from "./add-existing-trace.js";
 
 export interface ProjectPathEntry {
@@ -47,14 +47,25 @@ async function readProjectDirectory(value: string): Promise<string | null> {
   try {
     absolutePath = await realpath(path.resolve(value));
     if (!(await stat(absolutePath)).isDirectory()) return null;
-    if (!(await stat(path.join(absolutePath, PATHS.site))).isFile()) return null;
-    await access(path.join(absolutePath, PATHS.site));
-    return absolutePath;
   } catch (error) {
     const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
     if (code === "ENOENT" || code === "ENOTDIR") return null;
     throw catalogError("PROJECT_UNREADABLE", "无法读取项目目录。", `${value}: ${String(error)}`);
   }
+
+  for (const siteFile of [PATHS.site, pathsFor("workspace").site]) {
+    try {
+      if ((await stat(path.join(absolutePath, siteFile))).isFile()) {
+        await access(path.join(absolutePath, siteFile));
+        return absolutePath;
+      }
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+      if (code === "ENOENT" || code === "ENOTDIR") continue;
+      throw catalogError("PROJECT_UNREADABLE", "无法读取项目目录。", `${value}: ${String(error)}`);
+    }
+  }
+  return null;
 }
 
 export function createProjectCatalog(
@@ -74,10 +85,17 @@ export function createProjectCatalog(
     const key = pathKey(entry.path);
     if (watches.has(key)) return Promise.resolve();
 
-    const watcher = watch([path.join(entry.path, PATHS.index), path.join(entry.path, PATHS.readme)], {
-      ignoreInitial: true,
-      atomic: true,
-    });
+    const watcher = watch(
+      [
+        path.join(entry.path, PATHS.index),
+        path.join(entry.path, pathsFor("workspace").index),
+        path.join(entry.path, PATHS.readme),
+      ],
+      {
+        ignoreInitial: true,
+        atomic: true,
+      },
+    );
     const projectWatch: ProjectWatch = { entry, watcher, timer: null };
     watches.set(key, projectWatch);
 

@@ -29,6 +29,7 @@ export interface IpcDependencies {
   waitForProjectScheduleReconciliation?: (id: ProjectId) => Promise<void>;
   traceAddExisting?: AddExistingTraceWriter;
   onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>;
+  notifyProjectChanged?: (id: ProjectId) => void;
   skills: SkillService;
   desktopIntegrations: DesktopIntegrations;
 }

@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PATHS, type AppSettings } from "@siteindex/shared";
+import { PATHS, pathsFor, type AppSettings } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProjectCatalog, type ProjectCatalog } from "./project-catalog.js";
 
@@ -26,6 +26,15 @@ async function createProject(directory: string): Promise<string> {
   const projectPath = path.resolve(directory);
   await mkdir(path.join(projectPath, PATHS.index), { recursive: true });
   await writeFile(path.join(projectPath, PATHS.site), "{}\n", "utf8");
+  await writeFile(path.join(projectPath, PATHS.readme), "README\n", "utf8");
+  return realpath(projectPath);
+}
+
+async function createWorkspaceProject(directory: string): Promise<string> {
+  const projectPath = path.resolve(directory);
+  const workspacePaths = pathsFor("workspace");
+  await mkdir(path.join(projectPath, workspacePaths.index), { recursive: true });
+  await writeFile(path.join(projectPath, workspacePaths.site), "{}\n", "utf8");
   await writeFile(path.join(projectPath, PATHS.readme), "README\n", "utf8");
   return realpath(projectPath);
 }
@@ -59,6 +68,26 @@ describe("project catalog", () => {
     expect(() => catalogInstance.resolveProject("missing")).toThrowError("找不到指定项目。");
   });
 
+  it("discovers legacy and workspace projects from both registered roots and extra paths", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "siteindex-projects-layouts-"));
+    roots.push(root);
+    const projectsRoot = path.join(root, "projects");
+    const legacy = await createProject(path.join(projectsRoot, "legacy"));
+    const workspace = await createWorkspaceProject(path.join(root, "workspace", "workspace"));
+    const catalogInstance = createProjectCatalog(
+      () => undefined,
+      () => undefined,
+    );
+    catalog = catalogInstance;
+
+    const entries = await catalogInstance.refresh(settings(projectsRoot, [workspace]));
+
+    expect(entries.map(({ id }) => id)).toEqual(["legacy", "workspace"]);
+    expect(catalogInstance.resolveProject("legacy")).toBe(legacy);
+    expect(catalogInstance.resolveProject("workspace")).toBe(workspace);
+    await expect(catalogInstance.resolveExistingPath(workspace)).resolves.toBe(workspace);
+  });
+
   it("deduplicates the same project registered by projects_root and extra_projects", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "siteindex-projects-overlap-"));
     roots.push(root);
@@ -74,6 +103,23 @@ describe("project catalog", () => {
 
     expect(entries).toEqual([{ id: "alpha", path: alpha }]);
     expect(catalogInstance.resolveProject("alpha")).toBe(alpha);
+  });
+
+  it("deduplicates a workspace project registered in both projects_root and extra_projects", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "siteindex-workspace-project-overlap-"));
+    roots.push(root);
+    const projectsRoot = path.join(root, "projects");
+    const workspace = await createWorkspaceProject(path.join(projectsRoot, "workspace"));
+    const catalogInstance = createProjectCatalog(
+      () => undefined,
+      () => undefined,
+    );
+    catalog = catalogInstance;
+
+    const entries = await catalogInstance.refresh(settings(projectsRoot, [workspace]));
+
+    expect(entries).toEqual([{ id: "workspace", path: workspace }]);
+    expect(catalogInstance.resolveProject("workspace")).toBe(workspace);
   });
 
   it("hides a registered root project without changing its files, then restores it", async () => {
@@ -117,6 +163,33 @@ describe("project catalog", () => {
     await expect(changedEvent).resolves.toBe("alpha");
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
     expect(changed).toEqual(["alpha"]);
+    expect(invalidated).toEqual([projectPath]);
+  }, 5_000);
+
+  it("watches workspace data changes and emits the project id", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "siteindex-workspace-watch-"));
+    roots.push(root);
+    const projectPath = await createWorkspaceProject(path.join(root, "projects", "workspace"));
+    const changed: string[] = [];
+    const invalidated: string[] = [];
+    let resolveChanged!: (id: string) => void;
+    const changedEvent = new Promise<string>((resolve) => {
+      resolveChanged = resolve;
+    });
+    const catalogInstance = createProjectCatalog(
+      (project) => invalidated.push(project),
+      (id) => {
+        changed.push(id);
+        resolveChanged(id);
+      },
+    );
+    catalog = catalogInstance;
+    await catalogInstance.refresh(settings(path.join(root, "projects")));
+
+    await writeFile(path.join(projectPath, pathsFor("workspace").site), '{"domain":"fixture.example.test"}\n', "utf8");
+
+    await expect(changedEvent).resolves.toBe("workspace");
+    expect(changed).toEqual(["workspace"]);
     expect(invalidated).toEqual([projectPath]);
   }, 5_000);
 });
