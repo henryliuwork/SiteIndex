@@ -2,76 +2,87 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { useParams } from "react-router-dom";
-import type { DesignTokens } from "@siteindex/shared";
+import type { DesignColorRole, DesignTokens, DesignTypographyScaleKey } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, EmptyState, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 
-type ColorKey = "primary" | "text" | "text_muted" | "background" | "surface" | "border" | "sale";
-const colorItems: { key: ColorKey; label: string }[] = [
-  { key: "primary", label: "primary" }, { key: "text", label: "text" },
-  { key: "text_muted", label: "text_muted" }, { key: "background", label: "background" },
-  { key: "surface", label: "surface" }, { key: "border", label: "border" }, { key: "sale", label: "sale" },
+const colorRoles: { key: DesignColorRole; label: string }[] = [
+  { key: "primary", label: "主色" }, { key: "secondary", label: "辅助色" },
+  { key: "text", label: "正文文字" }, { key: "text_muted", label: "弱化文字" },
+  { key: "background", label: "页面背景" }, { key: "surface", label: "内容表面" },
+  { key: "border", label: "边框" }, { key: "sale", label: "促销" }, { key: "link", label: "链接" },
 ];
-const typeSamples: Record<string, string> = {
-  h1: "Example product guide", h2: "Designed for everyday use", h3: "Simple and practical",
-  body: "Fictional content used to preview the typography scale.", small: "Example label · no real store data",
-};
-const typographyNames: Record<string, string> = { h1: "h1", h2: "h2", h3: "h3", body: "body", small: "small" };
+const typographyItems: { key: DesignTypographyScaleKey; label: string; sample: string }[] = [
+  { key: "h1", label: "一级标题 H1", sample: "示例页面标题" },
+  { key: "h2", label: "二级标题 H2", sample: "示例区块标题" },
+  { key: "h3", label: "三级标题 H3", sample: "示例小节标题" },
+  { key: "h4", label: "四级标题 H4", sample: "示例内容标题" },
+  { key: "h5", label: "五级标题 H5", sample: "示例辅助标题" },
+  { key: "h6", label: "六级标题 H6", sample: "示例细分标题" },
+  { key: "body", label: "正文 Body", sample: "这是一段用于预览正文排版的虚构文本。" },
+  { key: "small", label: "小字 Small", sample: "用于辅助说明的示例文字" },
+  { key: "caption", label: "说明 Caption", sample: "图表与控件的补充说明" },
+];
 const textValue = (value: string | number | undefined, fallback = "—"): string => value === undefined || value === "" ? fallback : String(value);
-const foregroundFor = (hex: string | null | undefined): string => hex && /^#[0-9a-f]{6}$/i.test(hex) && Number.parseInt(hex.slice(1), 16) > 0x999999 ? "#222222" : "#FFFFFF";
 const formatExtracted = (value: string): string => {
   const [year, month, day] = value.slice(0, 10).split("-");
   return year && month && day ? `${month}-${day}` : value;
 };
 function ColorCard({ tokens, onCopy, copied }: { tokens: DesignTokens | null; onCopy: (value: string) => void; copied: string }) {
-  const colors = tokens?.color;
-  const palette = colors?.palette ?? [];
-  const paletteMax = Math.max(1, ...palette.map(({ count }) => count));
+  const roles = tokens?.color.roles;
   return (
     <section className="si-design-card si-design-colors">
-      <h2>颜色</h2>
-      <div className="si-design-swatches">
-        {colorItems.map(({ key, label }) => {
-          const value = colors?.[key] ?? null;
-          return (
-            <button className="si-design-swatch" type="button" key={key} disabled={!value} onClick={() => value && onCopy(value)} title={value ? `点击复制 ${value}` : "尚无色值"}>
-              <span className="si-design-swatch-color" style={{ background: value ?? "transparent", color: foregroundFor(value) }}>{!value && "—"}</span>
+      <h2>颜色角色</h2>
+      {roles ? <div className="si-design-role-grid">
+        {colorRoles.map(({ key, label }) => {
+          const role = roles[key];
+          return <article className="si-design-role" key={key}>
+            <div className="si-design-role-swatch" aria-hidden="true" style={role ? { backgroundColor: role.value } : undefined} />
+            <div className="si-design-role-content">
               <strong>{label}</strong>
-              <span className="si-design-hex">{value ? (copied === value ? "已复制" : value) : "—"}<Copy size={11} aria-hidden="true" /></span>
-            </button>
-          );
+              <span className="si-design-role-value">{role?.value ?? "未识别"}</span>
+              {role ? <>
+                <span className="si-design-role-meta">来源：<code>{role.source || "未提供"}</code></span>
+                <span className="si-design-role-meta">置信度：{Math.round(role.confidence * 100)}%</span>
+                <Button variant="ghost" size="small" className="si-design-copy-color" onClick={() => onCopy(role.value)}>
+                  {copied === role.value ? "已复制" : "复制色值"}<Copy size={12} aria-hidden="true" />
+                </Button>
+              </> : <span className="si-design-role-meta">当前页面未识别此颜色角色。</span>}
+            </div>
+          </article>;
         })}
-      </div>
-      <div className="si-design-palette-block">
-        <span className="si-design-caption">使用频率前 12（palette）</span>
-        {palette.length > 0
-          ? <div className="si-design-palette" role="img" aria-label="颜色使用频率色带">{palette.slice(0, 12).map((item, index) => <span key={item.value + index} style={{ background: item.value, flexGrow: item.count / paletteMax }} title={`${item.value} · ${item.count} 次`} />)}</div>
-          : <p className="si-design-empty">提取后显示颜色频率。</p>}
-      </div>
+      </div> : <EmptyState title="暂无颜色角色数据">当前 tokens.json 尚未提供 Token v2 颜色角色。</EmptyState>}
     </section>
   );
 }
 
 function TypographyCard({ tokens }: { tokens: DesignTokens | null }) {
   const scale = tokens?.typography.scale ?? {};
-  const headingFont = tokens?.typography.font_families.heading ?? "serif";
-  const bodyFont = tokens?.typography.font_families.body ?? "sans-serif";
-  const order = ["h1", "h2", "h3", "body", "small"];
-  const rows = order.filter((key) => scale[key]);
+  const fonts = tokens?.typography.font_families;
+  const hasScale = typographyItems.some(({ key }) => Boolean(scale[key]));
   return (
     <section className="si-design-card si-design-typography">
-      <div className="si-design-section-heading"><h2>字体</h2><span className="si-design-caption">标题 <code>{headingFont}</code> · 正文 <code>{bodyFont}</code></span></div>
-      {rows.length > 0 ? rows.map((key) => {
-        const style = scale[key];
-        if (!style) return null;
-        return <div className="si-design-type-row" key={key}>
-          <span className="si-design-caption si-design-type-name">{typographyNames[key] ?? key}</span>
-          <span className="si-design-type-sample" style={{ fontFamily: key === "body" || key === "small" ? bodyFont : headingFont, fontSize: style.size, fontWeight: style.weight, lineHeight: style.line_height }}>{typeSamples[key] ?? key}</span>
-          <span className="si-design-caption si-design-type-metrics">{style.size.replace(/px$/, "")} / {style.line_height.replace(/px$/, "")} · {style.weight}</span>
-        </div>;
-      }) : <p className="si-design-empty">提取后显示字体与字号阶梯。</p>}
+      <h2>字体与字号层级</h2>
+      <div className="si-design-font-families">
+        <span>标题：<code>{fonts?.heading ?? "未识别"}</code></span>
+        <span>正文：<code>{fonts?.body ?? "未识别"}</code></span>
+        <span>等宽：<code>{fonts?.mono ?? "未识别"}</code></span>
+      </div>
+      {hasScale ? <div className="si-design-type-list">
+        {typographyItems.map(({ key, label, sample }) => {
+          const style = scale[key];
+          const fontFamily = key === "body" || key === "small" || key === "caption" ? fonts?.body : fonts?.heading;
+          return <article className="si-design-type-row" key={key}>
+            <span className="si-design-type-name">{label}</span>
+            {style ? <>
+              <span className="si-design-type-sample" style={{ fontFamily: fontFamily || undefined, fontSize: style.size, fontWeight: style.weight, lineHeight: style.line_height, letterSpacing: style.letter_spacing }}>{sample}</span>
+              <span className="si-design-type-metrics">{style.size} · 字重 {style.weight} · 行高 {style.line_height} · 字距 {textValue(style.letter_spacing)}</span>
+            </> : <span className="si-design-type-missing">未识别此层级</span>}
+          </article>;
+        })}
+      </div> : <p className="si-design-empty">暂无字号层级。当前 tokens.json 尚未提供 Token v2 字号数据。</p>}
     </section>
   );
 }
