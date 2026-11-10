@@ -47,8 +47,9 @@ describe("OverviewPage 布局和操作", () => {
 
     const content = document.querySelector(".si-overview-content");
     expect([...content!.children].map((element) => element.classList[0] || element.tagName.toLowerCase())).toEqual([
-      "si-page-header", "si-overview-kpis", "si-overview-attention", "si-overview-secondary",
+      "si-overview-kpis", "si-overview-attention", "si-overview-secondary",
     ]);
+    expect(document.querySelector(".si-overview-content > .si-page-header")).toBeNull();
     expect([...document.querySelectorAll(".si-overview-secondary > section")].map((section) => section.classList[0])).toEqual([
       "si-overview-readme", "si-overview-changelog",
     ]);

@@ -8,10 +8,6 @@
   gap: var(--space-4);
 }
 
-.si-overview-content > .si-page-header {
-  margin-bottom: 0;
-}
-
 .si-overview-secondary {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
