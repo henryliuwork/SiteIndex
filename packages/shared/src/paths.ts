@@ -123,7 +123,21 @@ export const LEDGER_PATHS = {
 /** CSV 表头（固定顺序） */
 export const CSV_HEADERS = {
   dailySummary: ["date", "category", "total", "in_stock", "out_of_stock", "preorder", "unknown"],
+  /** 现行读取/校验表头；K5 迁移仅在首次写入旧台账时切换到 skuMediaV2。 */
   skuMedia: ["sku", "image_role", "image_url", "alt_text", "source", "width", "height", "updated_at"],
+  /** K5 WordPress 台账写入与迁移的目标表头，新增列追加在旧字段之后。 */
+  skuMediaV2: [
+    "sku",
+    "image_role",
+    "image_url",
+    "alt_text",
+    "source",
+    "width",
+    "height",
+    "updated_at",
+    "media_id",
+    "source_hash",
+  ],
   skuTags: ["sku", "tags", "priority", "exclude_edm", "email_blurb", "season", "note", "updated_at"],
 } as const;
 

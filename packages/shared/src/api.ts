@@ -580,6 +580,10 @@ export interface SiteIndexApi {
     setManualImage(id: ProjectId, sku: string, url: string | null): Promise<SkuImageRow>;
     buildCommand(id: ProjectId, input: EdmCommandInput): Promise<string>;
   };
+  /** WordPress 媒体准备以后台 Job 执行；旧 bridge 可不提供此命名空间。 */
+  media?: {
+    prepare(input: { project: ProjectId; skus: string[] }): Promise<{ runId: string }>;
+  };
   design: {
     get(id: ProjectId): Promise<{
       tokens: DesignTokens | null;

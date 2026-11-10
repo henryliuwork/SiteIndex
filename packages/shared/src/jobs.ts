@@ -1,6 +1,17 @@
 import type { JobName } from "./models";
 
-export const JOB_NAMES: readonly JobName[] = ["daily", "weekly", "monthly", "validate", "readme", "design", "index-check", "views", "init"];
+export const JOB_NAMES: readonly JobName[] = [
+  "daily",
+  "weekly",
+  "monthly",
+  "validate",
+  "readme",
+  "design",
+  "index-check",
+  "views",
+  "init",
+  "media",
+];
 
 /** 新建项目流程的进度步骤，由 Core 执行除 schedule 外的步骤。 */
 export const INIT_STEPS = ["folders", "config", "readme", "skills", "daily", "weekly", "views", "schedule"] as const;
@@ -22,6 +33,8 @@ export interface JobRequest {
   date?: string;
   force?: boolean;
   dryRun?: boolean;
+  /** media Job 选择处理的 SKU；其他 Job 忽略此字段。 */
+  skus?: string[];
 }
 
 export type JobLogLevel = "info" | "warn" | "error";
@@ -49,6 +62,15 @@ export interface JobResult {
   errors?: string[];
   /** init 任务逐步结果；schedule 由 Desktop 执行。 */
   steps?: { key: string; status: "ok" | "failed" | "skipped"; message?: string }[];
+  /** media Job 的逐 SKU 结果，经 jobs.onFinished 返回；不包含本机凭据。 */
+  media_results?: MediaPrepareSkuResult[];
+}
+
+export interface MediaPrepareSkuResult {
+  sku: string;
+  status: "uploaded" | "reused" | "skipped_has_url" | "failed";
+  reason?: string;
+  image_url?: string;
 }
 
 /** 进度回调：core 的每个 Job 接收它；desktop 转发为 IPC 事件，cli 打印到终端 */
