@@ -109,15 +109,26 @@
 
 .si-project-header-actions {
   display: flex;
+  width: max-content;
   min-width: 0;
-  max-width: 420px;
-  flex: 0 0 auto;
+  max-width: 100%;
+  flex: 0 1 auto;
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-2);
   overflow-x: auto;
   white-space: nowrap;
   scrollbar-width: none;
+}
+
+.si-project-header-action-slot {
+  display: flex;
+  width: 420px;
+  min-width: 420px;
+  flex: 0 0 420px;
+  height: 100%;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .si-project-header-actions::-webkit-scrollbar { display: none; }
@@ -129,5 +140,6 @@
   .si-project-header-identity h1 { max-width: 150px; }
   .si-project-header-tabs-row { gap: var(--space-2); }
   .si-project-header-page-heading { max-width: 140px; }
-  .si-project-header-actions { max-width: 320px; gap: var(--space-1); }
+  .si-project-header-action-slot { width: 340px; min-width: 340px; flex-basis: 340px; }
+  .si-project-header-actions { gap: var(--space-1); }
 }

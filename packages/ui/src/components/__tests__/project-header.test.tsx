@@ -36,6 +36,13 @@ describe("ProjectHeader compact layout", () => {
     expect(tabsRow?.textContent).toContain("11-08 17:00");
     expect(tabsRow?.textContent).toContain("导出 CSV");
     expect(container.querySelector(".si-project-header-tabs-row .si-tabs")).not.toBeNull();
+    expect(container.querySelector(".si-project-header-action-slot .si-project-header-actions")).not.toBeNull();
+  });
+
+  it("reserves the action slot when a tab has no visible actions", () => {
+    const { container } = render(<MemoryRouter><ProjectHeader project={project} activeTab="products" /></MemoryRouter>);
+    expect(container.querySelector(".si-project-header-action-slot")).not.toBeNull();
+    expect(container.querySelector(".si-project-header-action-slot .si-project-header-actions")).toBeNull();
   });
 
   it("routes overflow actions through the shared keyboard-accessible menu", () => {

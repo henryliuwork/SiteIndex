@@ -96,6 +96,7 @@
 - 不需要 A 的任何代码
 
 ### 给 D：项目页紧凑页头接入约定
+- Tab 行右侧操作槽在宽屏固定为 420px、窄屏（≤900px）固定为 340px；即使当前页没有操作也保留槽位，避免按钮数量变化时 Tab 可用宽度重新分配。
 - 项目身份行固定 44px，展示项目名、域名/平台和同步状态；Tab 行固定 44px。
 - 页名若与当前 Tab 相同就省略；域名若已在项目身份行展示也省略。确有用处的短标题/数据日期放 `pageTitle` / `pageMeta`，操作按钮与 `overflow` 放同一行。
 - D 页面移除独立 `PageHeader`，将它的 `title` / `meta` / `actions` / `overflow` props 合并到 `ProjectHeader`；`ProjectTabPanel` 的路由和 ARIA 关系保持原样。

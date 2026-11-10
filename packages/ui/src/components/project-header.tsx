@@ -93,7 +93,9 @@ export function ProjectHeader({
         {pageTitle && <h2>{pageTitle}</h2>}
         {pageMeta && <div className="si-project-header-page-meta">{pageMeta}</div>}
       </div>}
-      <PageHeaderActions actions={actions} overflow={overflow} className="si-project-header-actions" />
+      <div className="si-project-header-action-slot">
+        <PageHeaderActions actions={actions} overflow={overflow} className="si-project-header-actions" />
+      </div>
     </div>
   </div>;
 }
