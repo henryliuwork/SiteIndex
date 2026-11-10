@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -90,5 +90,24 @@ describe("core ledger mutations", () => {
       .rejects.toMatchObject({ code: "CONFIG_INVALID", message: expect.stringContaining("主键") });
     await expect(deleteLedger(projectPath, "sku_media", ["KYBF000-G"]))
       .rejects.toMatchObject({ code: "CONFIG_INVALID", message: expect.stringContaining("删除键") });
+  }, 15_000);
+
+  it("writes workspace ledgers under _site-index without creating legacy index paths", async () => {
+    const projectPath = await makeProject();
+    await rename(path.join(projectPath, "index"), path.join(projectPath, "_site-index"));
+
+    const now = new Date("2026-10-22T01:00:00.000Z");
+    await expect(upsertLedger(projectPath, "keywords", [{
+      keyword: " workspace keyword ", role: "secondary", intent: "commercial", cluster: "synthetic", status: "planned",
+    }], { now })).resolves.toMatchObject({ added: 1, total: expect.any(Number) });
+
+    const workspaceKeywords = path.join(projectPath, "_site-index/content/keywords.jsonl");
+    expect(await readJsonl(workspaceKeywords)).toContainEqual(expect.objectContaining({
+      keyword: "workspace keyword", updated_at: "2026-10-21",
+    }));
+    await expect(deleteLedger(projectPath, "keywords", ["workspace keyword"], { now }))
+      .resolves.toMatchObject({ deleted: 1 });
+    await expect(readJsonl(workspaceKeywords)).resolves.not.toContainEqual(expect.objectContaining({ keyword: "workspace keyword" }));
+    await expect(access(path.join(projectPath, "index"))).rejects.toMatchObject({ code: "ENOENT" });
   }, 15_000);
 });

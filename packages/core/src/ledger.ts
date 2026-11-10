@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { CSV_HEADERS, LEDGER_PATHS, PATHS, type SiteIndexError } from "@siteindex/shared";
+import { CSV_HEADERS, LEDGER_PATHS, pathsFor, type PathKey, type SiteIndexError } from "@siteindex/shared";
 import { readCsv, writeCsv } from "./io/csv";
 import { readJsonl, type JsonRecord, writeJsonl } from "./io/jsonl";
+import { resolveProjectLayout } from "./io/project-layout";
 
 export type LedgerName = keyof typeof LEDGER_PATHS;
 export type LedgerKey = string | readonly string[];
@@ -37,6 +38,14 @@ const LEDGER_SPECS: Record<LedgerName, LedgerSpec> = {
   edm_campaigns: { schema: "edm_campaign", format: "jsonl" },
   outreach: { schema: "outreach_contact", format: "jsonl" },
 };
+
+const LEDGER_PATH_KEYS = {
+  keywords: "keywords",
+  sku_media: "skuMedia",
+  sku_tags: "skuTags",
+  edm_campaigns: "edmCampaigns",
+  outreach: "outreach",
+} as const satisfies Record<LedgerName, PathKey>;
 
 const schemaCache = new Map<string, Promise<LedgerSchema>>();
 
@@ -79,11 +88,11 @@ function normalizeRow(ledger: LedgerName, input: JsonRecord, fields: readonly st
   return row;
 }
 
-async function todayForProject(projectPath: string, now: Date): Promise<string> {
+async function todayForProject(sitePath: string, now: Date): Promise<string> {
   let timezone: string | undefined;
   let configText: string;
   try {
-    configText = await readFile(path.join(projectPath, PATHS.site), "utf8");
+    configText = await readFile(sitePath, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw Object.assign(new Error("项目配置不存在。"), { code: "PROJECT_NOT_FOUND" as const });
@@ -125,7 +134,8 @@ async function mutateLedger(
   const primaryKey = schema["x-primary-key"] ?? [];
   if (!primaryKey.length) throw configError(`台账 ${ledger} 缺少主键定义。`);
 
-  const filePath = path.join(projectPath, LEDGER_PATHS[ledger]);
+  const paths = pathsFor(await resolveProjectLayout(projectPath));
+  const filePath = path.join(projectPath, paths[LEDGER_PATH_KEYS[ledger]]);
   const current = spec.format === "csv" ? await readCsv(filePath) : await readJsonl(filePath);
   const indexed = new Map<string, JsonRecord>();
   for (const row of current) indexed.set(rowKey(row, primaryKey), row);
@@ -140,7 +150,7 @@ async function mutateLedger(
     if (indexed.delete(key)) deleted += 1;
   }
 
-  const today = await todayForProject(projectPath, options.now ?? new Date());
+  const today = await todayForProject(path.join(projectPath, paths.site), options.now ?? new Date());
   let added = 0;
   let updated = 0;
   for (const input of rows) {

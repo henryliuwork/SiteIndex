@@ -13,6 +13,7 @@ import {
   atomicWrite,
   createCoreService,
   deleteLedger,
+  pathsForProject,
   renderEdm,
   upsertLedger,
   writeRunner,
@@ -24,7 +25,6 @@ import {
   CLI_BIN,
   CLI_COMMANDS,
   EXIT,
-  PATHS,
   QUERY_TARGETS,
   WRITABLE_LEDGERS,
   isSiteIndexError,
@@ -449,10 +449,11 @@ async function syncSkills(runtime: Runtime, project: string): Promise<{ skills: 
   const projectPath = resolveProjectPath(project, runtime.cwd, runtime.settings);
   const skills = await listSkills(runtime.skillsDir);
   if (!skills.length) throw new CliError("PROJECT_NOT_FOUND", "找不到软件内置 skills 目录。", EXIT.SOURCE_FAILED);
-  const targetRoot = path.join(projectPath, PATHS.skillsDir);
+  const paths = await pathsForProject(projectPath);
+  const targetRoot = path.join(projectPath, paths.skillsDir);
   await mkdir(targetRoot, { recursive: true });
   for (const skill of skills) await cp(skill.path, path.join(targetRoot, skill.info.name), { recursive: true, force: true });
-  const manifestPath = path.join(projectPath, PATHS.skillsManifest);
+  const manifestPath = path.join(projectPath, paths.skillsManifest);
   const manifest = { schema_version: "1.0", skills: skills.map(({ info }) => ({ name: info.name, version: info.version })) };
   await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
   return { skills: skills.map(({ info }) => info.name), manifest: manifestPath };
