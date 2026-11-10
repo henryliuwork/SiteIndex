@@ -158,6 +158,6 @@
   - [x] workspace.check：忽略 .git 与系统元数据，稳定返回前 10 个冲突项
   - [x] workspace.create：按模板创建 workspace 目录、数据文件和 skills，初始化 README / AGENTS.md 自动区块；覆盖非空目录保护与失败回滚
   - [ ] projects.createWorkspaceOnly
-  - [ ] workspace 导入检查与只补缺、不覆盖
+  - [x] workspace.importCheck：校验 schema/表格格式；只补缺失台账、manifest、配置元数据与自动区块
   - [x] README 与 AGENTS.md 双文件自动区块；保留用户维护区，legacy 仍只刷新 README
   - [x] workspace validate 检查 .env 被 .gitignore 忽略，并保留 _site-index/edm/ 技能白名单

@@ -27,6 +27,8 @@ export interface ValidateOptions {
   trigger?: ValidationReport["trigger"];
   selectedPath?: string;
   now?: Date;
+  /** Workspace 导入检查复用格式扫描时设为 false，避免写入校验报告。 */
+  writeReport?: boolean;
 }
 export interface RepairOptions {
   runJob: (job: JobName, only?: string) => Promise<{ status: string; summary: string; errors?: string[] }>;
@@ -345,7 +347,9 @@ export async function validateProjectFiles(projectPath: string, options: Validat
     },
     files: checks,
   };
-  await atomicWrite(path.join(project, paths.validation), JSON.stringify(report, null, 2) + "\n");
+  if (options.writeReport !== false) {
+    await atomicWrite(path.join(project, paths.validation), JSON.stringify(report, null, 2) + "\n");
+  }
   return report;
 }
 
