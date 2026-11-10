@@ -2,7 +2,6 @@ import { appendFile, mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CSV_HEADERS, PATHS, pathsFor, type SiteConfig, type WorkspaceImportCheckResult, type WorkspaceImportIssue } from "@siteindex/shared";
-import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { parseReadmeAutoBlocks } from "../readme";
 import { validateProjectFiles } from "../validate";
@@ -79,14 +78,6 @@ async function loadWorkspaceTemplate(templateDir?: string): Promise<{ root: stri
   throw new Error("找不到有效的 Agent 工作区模板。");
 }
 
-function metadataFromManifest(manifest: WorkspaceManifest): NonNullable<SiteConfig["workspace"]> {
-  return {
-    version: manifest.version,
-    sections: manifest.sections.map((section) => section.dir),
-    esp_presets: [...manifest.esp_presets],
-  };
-}
-
 function manifestForConfig(template: WorkspaceManifest, workspace: SiteConfig["workspace"]): WorkspaceManifest {
   if (!workspace) return template;
   const dirs = new Set(workspace.sections);
@@ -143,13 +134,12 @@ function emptyTemplateDoc(templateText: string, config: Record<string, unknown>)
 async function inspectWorkspace(projectPath: string): Promise<{
   issues: WorkspaceImportIssue[];
   config?: Record<string, unknown>;
-  configSource?: string;
   manifest?: WorkspaceManifest;
 }> {
   const paths = pathsFor("workspace");
   const configPath = path.join(projectPath, paths.site);
-  let configSource: string;
-  try { configSource = await readFile(configPath, "utf8"); }
+  let configText: string;
+  try { configText = await readFile(configPath, "utf8"); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return { issues: [{ path: paths.site, code: "workspace_config_missing", message: "找不到工作区数据目录中的 site.json。", auto_fixable: false }] };
@@ -158,7 +148,7 @@ async function inspectWorkspace(projectPath: string): Promise<{
   }
   let config: Record<string, unknown>;
   try {
-    const parsed: unknown = JSON.parse(configSource);
+    const parsed: unknown = JSON.parse(configText);
     if (!record(parsed)) throw new Error("site.json 顶层必须是对象。");
     config = parsed;
   } catch (error) {
@@ -181,7 +171,12 @@ async function inspectWorkspace(projectPath: string): Promise<{
   }
 
   if (config.workspace === undefined) {
-    issues.push({ path: paths.site, code: "workspace_metadata_missing", message: "site.json 缺少 workspace 元数据。", auto_fixable: true });
+    issues.push({
+      path: paths.site,
+      code: "workspace_metadata_missing",
+      message: "site.json 缺少 workspace 元数据。为避免覆盖用户配置，请根据 _site-index/workspace.json 手动补充 workspace.version、workspace.sections（目录名数组）和 workspace.esp_presets；若该文件缺失，请先运行自动修复，再重新检查。",
+      auto_fixable: false,
+    });
   } else if (!validWorkspaceConfig(config.workspace)) {
     issues.push({ path: paths.site, code: "workspace_metadata_invalid", message: "site.json 的 workspace 字段格式无效，请手动检查。", auto_fixable: false });
   }
@@ -217,7 +212,7 @@ async function inspectWorkspace(projectPath: string): Promise<{
     }
   }
   issues.sort((left, right) => compareKeys(left.path, right.path) || compareKeys(left.code, right.code));
-  return { issues, config, configSource, ...(manifest ? { manifest } : {}) };
+  return { issues, config, ...(manifest ? { manifest } : {}) };
 }
 
 async function appendMissingBlocks(filePath: string, markdown: string, required: readonly string[]): Promise<boolean> {
@@ -236,7 +231,6 @@ export async function checkWorkspaceImport(
 ): Promise<WorkspaceImportCheckResult> {
   const project = path.resolve(projectPath);
   const paths = pathsFor("workspace");
-  const configPath = path.join(project, paths.site);
   const first = await inspectWorkspace(project);
   if (first.issues.some((issue) => issue.code === "workspace_config_missing" || issue.code === "workspace_config_invalid") || !options.apply) {
     return { issues: first.issues, repaired: [] };
@@ -251,14 +245,6 @@ export async function checkWorkspaceImport(
   if (codes.has(`${manifestRelative}\0workspace_manifest_missing`)) {
     const created = await exclusiveWrite(path.join(project, manifestRelative), `${JSON.stringify(manifest, null, 2)}\n`);
     if (created) repaired.add(manifestRelative);
-  }
-
-  if (codes.has(`${paths.site}\0workspace_metadata_missing`) && first.config && first.configSource !== undefined) {
-    const latestSource = await readFile(configPath, "utf8");
-    if (latestSource !== first.configSource) throw new Error("site.json 在导入检查期间发生变化，请重新检查后再修复。");
-    const nextConfig = { ...first.config, workspace: metadataFromManifest(first.manifest ?? template.manifest) };
-    await atomicWrite(configPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
-    repaired.add(paths.site);
   }
 
   for (const issue of first.issues.filter((item) => item.code === "missing_ledger" && item.auto_fixable)) {
