@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { pathsFor, type SiteConfig, type WorkspaceCreateInput } from "@siteindex/shared";
+import { pathsFor, type WorkspaceCreateInput } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCoreService } from "../src/service";
 
@@ -47,8 +47,9 @@ describe("workspace.importCheck", () => {
     expect(await api.workspace.importCheck("demo")).toEqual({ issues: [], repaired: [] });
 
     const configPath = path.join(project, paths.site);
-    const config = JSON.parse(await readFile(configPath, "utf8")) as SiteConfig;
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
     delete config.workspace;
+    config.operator_note = "Keep existing project metadata.";
     await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
     const manifestPath = path.join(project, manifestRelative);
     await unlink(manifestPath);
@@ -70,7 +71,7 @@ describe("workspace.importCheck", () => {
 
     const beforeCheck = await api.workspace.importCheck("demo");
     expect(beforeCheck.issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: paths.site, code: "workspace_metadata_missing", auto_fixable: true }),
+      expect.objectContaining({ path: paths.site, code: "workspace_metadata_missing", auto_fixable: false }),
       expect.objectContaining({ path: manifestRelative, code: "workspace_manifest_missing", auto_fixable: true }),
       expect.objectContaining({ path: paths.keywords, code: "missing_ledger", auto_fixable: true }),
       expect.objectContaining({ path: paths.skuTags, code: "header", auto_fixable: false }),
@@ -80,28 +81,35 @@ describe("workspace.importCheck", () => {
     ]));
     await expect(readFile(path.join(project, paths.validation), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
+    const editedConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    editedConfig.operator_note = "Edited after the read-only report.";
+    const configAfterUserEdit = `${JSON.stringify(editedConfig, null, 2)}\n`;
+    await writeFile(configPath, configAfterUserEdit, "utf8");
+    await writeFile(readmePath, `${await readFile(readmePath, "utf8")}\n用户补充：检查后编辑也要保留。\n`, "utf8");
+
     const applied = await api.workspace.importCheck("demo", { apply: true });
     expect(applied.repaired).toEqual(expect.arrayContaining([
-      paths.site, manifestRelative, paths.keywords, paths.readme, paths.agentsMd,
+      manifestRelative, paths.keywords, paths.readme, paths.agentsMd,
     ]));
+    expect(applied.repaired).not.toContain(paths.site);
     expect(applied.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: paths.site, code: "workspace_metadata_missing", auto_fixable: false }),
       expect.objectContaining({ path: paths.skuTags, code: "header", auto_fixable: false }),
       expect.objectContaining({ path: paths.blogIndex, code: "parse", auto_fixable: false }),
     ]));
     expect(applied.issues).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "workspace_metadata_missing" }),
       expect.objectContaining({ code: "workspace_manifest_missing" }),
       expect.objectContaining({ path: paths.keywords, code: "missing_ledger" }),
       expect.objectContaining({ code: "missing_auto_block:workspace-map" }),
       expect.objectContaining({ code: "missing_auto_block:data-guide" }),
     ]));
-    expect(JSON.parse(await readFile(configPath, "utf8"))).toMatchObject({
-      workspace: { version: "1.0", sections: ["01-brand", "02-products", "03-seo", "04-edm", "05-affiliate", "06-site-updates", "07-reports"] },
-    });
+    expect(await readFile(configPath, "utf8")).toBe(configAfterUserEdit);
+    expect(JSON.parse(configAfterUserEdit)).not.toHaveProperty("workspace");
     expect(await readFile(path.join(project, paths.keywords), "utf8")).toBe("");
     expect(await readFile(malformedCsvPath, "utf8")).toBe(malformedCsv);
     expect(await readFile(malformedJsonlPath, "utf8")).toBe(malformedJsonl);
     expect(await readFile(readmePath, "utf8")).toContain("用户补充：保留这段内容。");
+    expect(await readFile(readmePath, "utf8")).toContain("用户补充：检查后编辑也要保留。");
     expect(await readFile(readmePath, "utf8")).toContain('id="workspace-map"');
     expect(await readFile(agentsPath, "utf8")).toContain('id="data-guide"');
   }, 30_000);
