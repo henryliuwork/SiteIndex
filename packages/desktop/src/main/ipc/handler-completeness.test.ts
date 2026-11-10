@@ -19,7 +19,9 @@ function testContext(): IpcContext {
       workspace: {
         check: vi.fn(async () => ({ ok: true, invalid_entries: [] })),
         create: vi.fn(async () => ({ path: "C:/projects/demo", created: ["README.md"] })),
+        importCheck: vi.fn(async () => ({ issues: [], repaired: [] })),
       },
+      invalidate: vi.fn(),
       design: { get: vi.fn(async () => ({ tokens: null, screenshots: [] })) },
       categories: {
         get: vi.fn(async () => ({ mode: "feed" })),
@@ -97,5 +99,25 @@ describe("IPC handler completeness", () => {
     });
     expect(context.core.workspace.check).toHaveBeenCalledWith("C:/Fixture/workspace");
     expect(context.core.workspace.create).toHaveBeenCalledWith(createInput);
+  });
+
+  it("forwards workspace import checks and invalidates Core after applied repairs", async () => {
+    const context = testContext();
+    const implementations = createIpcHandlerImplementations(context);
+    const handler = implementations["workspace.importCheck"];
+    const cleanResult = { issues: [], repaired: [] };
+    const repairedResult = { issues: [], repaired: ["_site-index/workspace.json"] };
+
+    vi.mocked(context.core.workspace.importCheck)
+      .mockResolvedValueOnce(cleanResult)
+      .mockResolvedValueOnce(repairedResult);
+
+    await expect(handler?.("demo")).resolves.toEqual(cleanResult);
+    expect(context.core.workspace.importCheck).toHaveBeenNthCalledWith(1, "demo", undefined);
+    expect(context.core.invalidate).not.toHaveBeenCalled();
+
+    await expect(handler?.("demo", { apply: true })).resolves.toEqual(repairedResult);
+    expect(context.core.workspace.importCheck).toHaveBeenNthCalledWith(2, "demo", { apply: true });
+    expect(context.core.invalidate).toHaveBeenCalledWith("C:/projects/demo");
   });
 });
