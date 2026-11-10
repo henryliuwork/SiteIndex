@@ -6,6 +6,7 @@
  */
 import { SCHEMA_VERSION } from "@siteindex/shared";
 export { atomicWrite } from "./io/atomic-write";
+export { pathsForProject, resolveProjectLayout } from "./io/project-layout";
 export { readCsv, writeCsv } from "./io/csv";
 export { compareKeys } from "./io/compare";
 export { readJsonl, writeJsonl } from "./io/jsonl";

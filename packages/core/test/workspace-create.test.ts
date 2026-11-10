@@ -44,12 +44,15 @@ describe("workspace.create", () => {
     const manifest = JSON.parse(await readFile(path.join(target, workspacePaths.index, "workspace.json"), "utf8")) as {
       esp_presets: string[];
       paths: Record<string, string>;
+      sections: { id: string; dir: string }[];
     };
     const skills = JSON.parse(await readFile(path.join(target, workspacePaths.skillsManifest), "utf8")) as {
       skills: { name: string; version: string }[];
     };
     const readme = await readFile(path.join(target, "README.md"), "utf8");
     const agents = await readFile(path.join(target, "AGENTS.md"), "utf8");
+    const claude = await readFile(path.join(target, "CLAUDE.md"), "utf8");
+    const projectEntries = await readdir(target);
 
     expect(result.path).toBe(target);
     expect(result.created).toContain("_site-index/site.json");
@@ -71,13 +74,14 @@ describe("workspace.create", () => {
     expect(readme).toContain("Example Shop");
     expect(agents).toContain('id="agents-core"');
     expect(agents).toContain('id="esp-presets"');
+    expect(claude).toBe("@AGENTS.md\n");
     expect(await readFile(path.join(target, workspacePaths.skus), "utf8")).toBe("");
     expect(await readFile(path.join(target, workspacePaths.dailySummary), "utf8")).toContain("date,category,total");
     expect(await readFile(path.join(target, workspacePaths.skillsDir, "presets", "esp.mailchimp.md"), "utf8")).toBeTruthy();
-    expect(await readdir(target)).toContain(".git");
-    expect(await readdir(target)).toContain("01-brand");
-    expect(await readdir(target)).toContain("_outputs");
-    expect(await readdir(target)).toContain("_archive");
+    expect(projectEntries).toContain(".git");
+    for (const section of manifest.sections) expect(projectEntries).toContain(section.dir);
+    expect(projectEntries).toContain("_outputs");
+    expect(projectEntries).toContain("_archive");
   });
 
   it("accepts the New Project Wizard ESP preset ID and persists its canonical manifest ID", async () => {

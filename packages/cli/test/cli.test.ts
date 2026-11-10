@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -247,6 +247,7 @@ describe("siteindex CLI", () => {
   }, 30000);
 
   it("lists, syncs and installs packaged skills", async () => {
+    await copyFixtureProject();
     const targetDir = path.join(tempRoot, "codex-skills");
     await mkdir(targetDir, { recursive: true });
     const t = collect(mockService().service, {
@@ -262,6 +263,14 @@ describe("siteindex CLI", () => {
     expect(list.length).toBeGreaterThan(0);
     expect(await main(["skills", "sync", projectPath, "--json"], t.io)).toBe(EXIT.OK);
     expect(await readFile(path.join(projectPath, PATHS.skillsManifest), "utf8")).toContain('"skills"');
+
+    const workspaceProject = path.join(tempRoot, "workspace-project");
+    await mkdir(path.join(workspaceProject, "_site-index"), { recursive: true });
+    await writeFile(path.join(workspaceProject, "_site-index", "site.json"), "{}\n", "utf8");
+    expect(await main(["skills", "sync", workspaceProject, "--json"], t.io)).toBe(EXIT.OK);
+    expect(await readFile(path.join(workspaceProject, "_site-index/skills/manifest.json"), "utf8")).toContain('"skills"');
+    await expect(access(path.join(workspaceProject, "_agent"))).rejects.toMatchObject({ code: "ENOENT" });
+
     expect(await main(["skills", "install", list[0]!.name, "--platform", "test-codex", "--json"], t.io)).toBe(EXIT.OK);
     expect(await readFile(path.join(targetDir, list[0]!.name, "SKILL.md"), "utf8")).toContain("name:");
   }, 30000);
