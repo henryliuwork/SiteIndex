@@ -150,7 +150,9 @@ async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
         return rowVisible;
       });
     });
-    const emptyElementVisible = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty]")).some((element) => {
+    const emptyElementVisible = Array.from(
+      document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty], .si-content-blog-empty"),
+    ).some((element) => {
       const rect = element.getBoundingClientRect();
       if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
       for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
@@ -173,7 +175,9 @@ async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
         }
         return true;
       }),
-      loading: mockRequestsPending || Array.from(document.querySelectorAll<HTMLElement>(".si-page-loading, .si-query-loading, .si-inventory-query-state")).some((element) => {
+      loading: mockRequestsPending || Array.from(
+        document.querySelectorAll<HTMLElement>(".si-page-loading, .si-query-loading, .si-inventory-query-state, .si-content-blog-empty [role='status']"),
+      ).some((element) => {
         const rect = element.getBoundingClientRect();
         if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
         for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
