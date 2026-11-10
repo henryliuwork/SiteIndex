@@ -10,6 +10,12 @@ import type {
 } from "@siteindex/shared";
 import rawFixtures from "./data.json";
 
+declare global {
+  interface Window {
+    __siteindexMockPendingRequests?: number;
+  }
+}
+
 export interface MockFixtures {
   generatedSkuCount: number;
   projects: { id: ProjectId; name: string; domain: string; source: string }[];
@@ -91,9 +97,18 @@ export const delay = async (): Promise<void> => {
   else if (!performanceMode) await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 201)));
   if (errorMode) throw mockApiError;
 };
+const trackMockRequest = (change: 1 | -1): void => {
+  if (typeof window === "undefined") return;
+  window.__siteindexMockPendingRequests = Math.max(0, (window.__siteindexMockPendingRequests ?? 0) + change);
+};
 export const reply = async <T,>(value: T | (() => T)): Promise<T> => {
-  await delay();
-  return clone(typeof value === "function" ? (value as () => T)() : value);
+  trackMockRequest(1);
+  try {
+    await delay();
+    return clone(typeof value === "function" ? (value as () => T)() : value);
+  } finally {
+    trackMockRequest(-1);
+  }
 };
 
 export const statusChars: Record<StockStatus, string> = { in_stock: "i", out_of_stock: "o", preorder: "p", unknown: "u" };
