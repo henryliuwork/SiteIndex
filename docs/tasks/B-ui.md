@@ -82,6 +82,7 @@
 ## v0.3.0 · 共享层收敛
 - [x] B-2：DataTable v2 默认 fill、内部滚动与固定分页、50/100/200/全部、按 tableId 持久化、行选择与右侧固定操作列；#300 Playwright 回归 — 本 PR
 - [x] B-3：`packages/ui/visual/` 的 `ui:check`，遍历所有路由并输出双视口布局/样式检查报告；干净工作树直接运行时自动生成 mock 数据（#347）— [PR #361](https://github.com/henryliuwork/SiteIndex/pull/361)。基线问题转 [#314](https://github.com/henryliuwork/SiteIndex/issues/314) / [#315](https://github.com/henryliuwork/SiteIndex/issues/315)
+- [ ] B-3 follow-up #360：表格页等待 DataTable、空态或错误态后才测量；慢响应、空态和超时有单测 — 本 PR
 - [x] B-4a 应用页迁移：项目中心与新建向导使用 PageHeader、Card、EmptyState、Notice、Drawer、Toast；向导步骤采用可插入数组并预留隐藏的 Agent 工作区插槽 — [PR #324](https://github.com/henryliuwork/SiteIndex/pull/324)
 - [x] B-4b 应用页迁移：Skill 中心与软件设置使用 PageHeader、Card、EmptyState、Notice、Toast 和设计 token — [PR #327](https://github.com/henryliuwork/SiteIndex/pull/327)
 - [x] B-4c 应用页迁移：README 与定时任务汇总页使用共享组件和 DataTable v2，页面字号、间距和颜色使用设计 token — 本 PR
@@ -102,4 +103,10 @@
 - 项目身份行固定 44px，展示项目名、域名/平台和同步状态；Tab 行固定 44px。
 - 页名若与当前 Tab 相同就省略；域名若已在项目身份行展示也省略。确有用处的短标题/数据日期放 `pageTitle` / `pageMeta`，操作按钮与 `overflow` 放同一行。
 - D 页面移除独立 `PageHeader`，将它的 `title` / `meta` / `actions` / `overflow` props 合并到 `ProjectHeader`；`ProjectTabPanel` 的路由和 ARIA 关系保持原样。
+- 接入时把主要且常用操作放入 `actions`；次要操作放 `overflow`，由共享键盘可达的“更多”菜单呈现，不要隐藏关键操作。例如：
+  ```tsx
+  <ProjectHeader project={project} activeTab="seo" hasTabPanel pageMeta={lastCrawlAt} actions={<Button onClick={refresh}>重新检查收录</Button>} overflow={[{ label: "导出 CSV", onSelect: exportCsv }]} />
+  <ProjectTabPanel projectId={project.id} tab="seo">...</ProjectTabPanel>
+  ```
+- 2026-11-10 mock 复核：1280×800 与 1920×1080 下 Tab 均完整可见；EDM 的两个右侧操作都在固定槽内可见。共享“更多”菜单的键盘路径由 `project-header.test.tsx` 覆盖。仍需 D 把 `OverviewPage`、`ProductsPage`、`SeoPage`、`InventoryPage` 的独立 `PageHeader` 并入 `ProjectHeader`；截图显示这些页面仍保留第三行标题/操作区，业务页不在本 PR 修改范围。
 - Products mock 在 1280×800 下，旧结构表格滚动区 320px；合并标题行并移除独立 `PageHeader` 后 417px，增加 97px。截图：[改造前](../../packages/ui/screenshots/compact-project-header-before-1280.png) / [改造后](../../packages/ui/screenshots/compact-project-header-after-1280.png)

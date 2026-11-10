@@ -1,14 +1,16 @@
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
+import { classifyDataSurface, waitForDataSurface, type DataSurfaceState } from "./readiness";
 
 type BrowserChannel = "msedge" | "chrome";
 
 interface RouteCase {
   name: string;
   path: string;
+  waitForDataSurface?: boolean;
 }
 
 interface Viewport {
@@ -72,10 +74,27 @@ async function discoverRoutes(server: ViteDevServer, projectId: string): Promise
     } else if (routePath === "*") {
       cases.push({ name: "not-found", path: "/__ui-check-not-found__" });
     } else {
-      cases.push({ name, path: routePath.replaceAll(":id", encodeURIComponent(projectId)) });
+      const path = routePath.replaceAll(":id", encodeURIComponent(projectId));
+      cases.push({ name, path, waitForDataSurface: isDataTableRoute(path) });
     }
   }
   return cases;
+}
+
+async function discoverMockProjectId(server: ViteDevServer): Promise<string> {
+  const mockContext = await server.ssrLoadModule("/src/mock/context.ts");
+  const fixtures = Reflect.get(mockContext, "fixtures");
+  const projects = fixtures && Reflect.get(fixtures, "projects");
+  const firstProject = Array.isArray(projects) ? projects[0] : undefined;
+  const projectId = firstProject && Reflect.get(firstProject, "id");
+  if (typeof projectId !== "string" || !projectId) {
+    throw new Error("Mock 数据没有提供项目 ID，无法生成项目级路由检查。");
+  }
+  return projectId;
+}
+
+function isDataTableRoute(routePath: string): boolean {
+  return /\/p\/[^/]+\/(?:seo|inventory|edm|settings\/categories)$/.test(routePath);
 }
 
 async function launchLocalBrowser(): Promise<Browser> {
@@ -97,11 +116,53 @@ async function launchLocalBrowser(): Promise<Browser> {
   throw new Error(`找不到本机 Edge 或 Chrome；不会下载浏览器。${errors.join(" | ")}`);
 }
 
-async function waitForRoute(page: Page): Promise<void> {
+async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
+  const snapshot = await page.evaluate(() => {
+    const tableScrollVisible = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-scroll")).some((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    });
+    const paginationReady = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-pagination [aria-label='每页条数']")).some((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    });
+    return {
+      table: tableScrollVisible,
+      pagination: paginationReady,
+      empty: Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty]")).some((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      }),
+      error: Array.from(document.querySelectorAll<HTMLElement>(".si-page .si-api-error-state, main .si-api-error-state")).some((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      }),
+      loading: Array.from(document.querySelectorAll<HTMLElement>(".si-page-loading, .si-query-loading")).some((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      }),
+    };
+  });
+  return classifyDataSurface(snapshot);
+}
+
+async function waitForRoute(page: Page, route: RouteCase): Promise<DataSurfaceState | undefined> {
   await page.locator(".si-page, .si-placeholder").first().waitFor({ state: "visible", timeout: 20_000 });
+  if (route.waitForDataSurface) {
+    const state = await waitForDataSurface(() => readDataSurfaceState(page));
+    await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined);
+    await page.evaluate(() => document.fonts.ready);
+    return state;
+  }
   await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(120);
+  return undefined;
 }
 
 async function inspectPage(page: Page): Promise<{
@@ -159,7 +220,7 @@ async function inspectPage(page: Page): Promise<{
     const clickMisses: string[] = [];
     const clickTargets = Array.from(document.querySelectorAll<HTMLElement>(
       ".si-table tbody button:not(:disabled), .si-table tbody a[href], .si-table tbody summary, .si-table tbody [role='button']",
-    ));
+    )).filter((target) => !target.closest("[data-radix-popper-content-wrapper], [role='menu']"));
     for (const target of clickTargets) {
       const rect = target.getBoundingClientRect();
       const style = getComputedStyle(target);
@@ -242,11 +303,17 @@ async function main(): Promise<void> {
   const allStyleWarnings = new Set<string>();
 
   try {
+    const linkedNodeModules = await realpath(path.resolve(uiRoot, "..", "..", "node_modules"));
     server = await createServer({
       root: uiRoot,
       configFile: path.join(uiRoot, "vite.config.ts"),
       cacheDir: path.join(uiRoot, "node_modules", ".vite", "ui-check"),
-      server: { host: "127.0.0.1", port: 0, strictPort: true },
+      server: {
+        host: "127.0.0.1",
+        port: 0,
+        strictPort: true,
+        fs: { allow: [uiRoot, path.resolve(uiRoot, "..", ".."), linkedNodeModules] },
+      },
     });
     await server.listen();
     const httpServer = server.httpServer;
@@ -258,13 +325,8 @@ async function main(): Promise<void> {
     await optimizer?.scanProcessing;
 
     browser = await launchLocalBrowser();
-    const bootstrap = await browser.newPage({ viewport: viewports[0] });
-    await bootstrap.goto(`${baseUrl}/#/`, { waitUntil: "domcontentloaded" });
-    await bootstrap.waitForFunction(() => Boolean(window.siteindex), { timeout: 15_000 });
-    const projectId = await bootstrap.evaluate(async () => (await window.siteindex?.projects.list())?.[0]?.id ?? null);
-    if (!projectId) throw new Error("Mock API did not return a project ID for dynamic route checks.");
+    const projectId = await discoverMockProjectId(server);
     const routes = await discoverRoutes(server, projectId);
-    await bootstrap.close();
 
     console.log(`ui:check: ${routes.length} routes × ${viewports.length} viewports; project=${projectId}`);
     for (const viewport of viewports) {
@@ -283,11 +345,11 @@ async function main(): Promise<void> {
         let metrics: Record<string, unknown> = {};
         currentConsoleErrors = consoleErrors;
         try {
-          await page.goto(`${baseUrl}/#${route.path}`, { waitUntil: "domcontentloaded", timeout: 20_000 });
-          await waitForRoute(page);
+          await page.goto(`${baseUrl}/#${route.path}`, { waitUntil: "commit", timeout: 20_000 });
+          const dataSurfaceState = await waitForRoute(page, route);
           const inspection = await inspectPage(page);
           heading = inspection.heading;
-          metrics = inspection.metrics;
+          metrics = dataSurfaceState ? { ...inspection.metrics, dataSurfaceState } : inspection.metrics;
           for (const warning of inspection.styleWarnings) allStyleWarnings.add(warning);
 
           const values = metrics as {
@@ -300,7 +362,14 @@ async function main(): Promise<void> {
             tables: Array<{ overflowY: string; bottomInViewport: boolean; checkViewport: boolean; hasPagination: boolean; hasPageSizeControl: boolean }>;
             clippedCells: string[];
             inlineClickMisses: string[];
+            dataSurfaceState?: DataSurfaceState;
           };
+          if (route.waitForDataSurface && values.dataSurfaceState === "table" && !values.tableCount) {
+            failures.push({ rule: "table-readiness-mismatch", message: "就绪判定为表格已加载，但截图测量没有可见表格滚动区。" });
+          }
+          if (route.waitForDataSurface && values.dataSurfaceState !== "table" && values.tableCount > 0) {
+            failures.push({ rule: "table-readiness-mismatch", message: `就绪判定为 ${values.dataSurfaceState}，但截图测量却包含可见表格。` });
+          }
           if (values.verticalOverflow) failures.push({ rule: "vertical-overflow", message: "窗口 document 有纵向滚动；内容应在应用内部滚动。" });
           if (values.horizontalOverflow) failures.push({ rule: "horizontal-overflow", message: "页面内容超出视口宽度。" });
           if (values.bodyFontSize !== "12px" || !values.bodyFirstFontIsGeist) {
@@ -329,7 +398,8 @@ async function main(): Promise<void> {
         });
         reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors });
         const state = failures.length ? `FAIL ${failures.length}` : "PASS";
-        console.log(`[${state}] ${route.path} @ ${viewport.width}×${viewport.height}`);
+        const terminalState = typeof metrics.dataSurfaceState === "string" ? ` (${metrics.dataSurfaceState})` : "";
+        console.log(`[${state}] ${route.path} @ ${viewport.width}×${viewport.height}${terminalState}`);
       }
       await context.close();
     }
