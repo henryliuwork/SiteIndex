@@ -582,7 +582,7 @@ async function exerciseW2Pagination(page, expectedTotal) {
 }
 
 async function packagedW2Baseline(page) {
-  return page.evaluate(async (projectId) => {
+  return page.evaluate(async ({ projectId, intentionalOrphanPath }) => {
     const api = window.siteindex;
     const [inventory, inventorySummary, products, edm, blogPage, blogSummary, issues, pages, links, overview] = await Promise.all([
       api.inventory.listSkus(projectId, { page: 1, pageSize: 0, filters: { parent_only: true } }),
@@ -607,6 +607,10 @@ async function packagedW2Baseline(page) {
     const parentHasThreeOfThree = parentProducts.some((row) => row.variant_count === 3 && row.in_stock_variants === 3);
     const edmParents = edm.rows.filter((row) => /^SYN-P\d{3}$/u.test(row.sku)).length;
     const edmSingles = edm.rows.filter((row) => row.sku.startsWith("SYN-SINGLE-")).length;
+    const orphanPages = pages.rows.filter((row) => row.links_internal_in === 0);
+    const intentionalOrphanPresent = orphanPages.length === 1
+      && orphanPages[0].page_type === "product"
+      && new URL(orphanPages[0].url).pathname === intentionalOrphanPath;
     const attentionRule = overview.attention.map((item) => {
       const query = item.link.split("?")[1] ?? "";
       return new URLSearchParams(query).get("rule");
@@ -641,10 +645,10 @@ async function packagedW2Baseline(page) {
         childrenLeaked: edm.rows.some((row) => /-CH-\d{2}$/u.test(row.sku)),
       },
       content: { blogs: blogPage.total, summaryBlogs: count("blogs"), summaryNoSchema: count("no_schema") },
-      seo: { issues: issues.total, pages: pages.total, links: links.total },
+      seo: { issues: issues.total, pages: pages.total, links: links.total, orphanPages: orphanPages.length, intentionalOrphanPresent },
       overview: { attentionCount: overview.attention.length, firstSeoRule: attentionRule },
     };
-  }, W2_PROJECT_ID);
+  }, { projectId: W2_PROJECT_ID, intentionalOrphanPath: W2_EXPECTED.intentionalOrphanPath });
 }
 
 async function attemptW2(name, evidenceType, action) {
@@ -714,6 +718,8 @@ async function testW2Pages(page, syntheticSite) {
       && baseline.seo.issues === W2_EXPECTED.issues
       && baseline.seo.pages === W2_EXPECTED.pages
       && baseline.seo.links === W2_EXPECTED.links
+      && baseline.seo.orphanPages === 1
+      && baseline.seo.intentionalOrphanPresent
       && baseline.overview.firstSeoRule === "title_missing";
     return { passed, evidence: baseline };
   });
@@ -808,7 +814,7 @@ async function testW2Pages(page, syntheticSite) {
     return { passed: pagination.passed, evidence: pagination };
   });
 
-  await attemptW2("Inventory parent-only UI shows parents plus ungrouped SKUs", "ui", async () => {
+  await attemptW2("Inventory parent-only UI renders the deterministic parent's 30-day trend and rate", "ui", async () => {
     const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
     await checkbox.check();
     await page.waitForFunction(() => document.querySelector(".si-pagination-count")?.textContent?.includes("/ 80"), null, { timeout: 10_000 });
@@ -816,9 +822,34 @@ async function testW2Pages(page, syntheticSite) {
     const toolbarText = await page.locator(".si-table-total").innerText();
     const rowIds = await page.locator(".si-data-table tbody tr[data-row-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id") ?? ""));
     const childrenVisible = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
+    const parentRow = page.locator('.si-data-table tbody tr[data-row-id="SYN-P001"]');
+    await parentRow.waitFor({ state: "visible", timeout: 10_000 });
+    const trendBar = parentRow.locator(".si-status-cells");
+    const trendLabel = await trendBar.getAttribute("aria-label") ?? "";
+    const trendStatuses = trendLabel.split("：")[1]?.split("、") ?? [];
+    const trendCounts = trendStatuses.reduce((counts, status) => {
+      counts[status] = (counts[status] ?? 0) + 1;
+      return counts;
+    }, {});
+    const rateCellTexts = (await parentRow.locator(".si-rate-cell").allInnerTexts()).map((value) => value.trim());
+    const onlineRateHeaders = (await page.locator(".si-data-table thead th").allInnerTexts())
+      .map((value) => value.trim())
+      .filter((value) => value.includes("在线率"));
+    const trendVisible = await trendBar.isVisible();
+    const rate30dVisible = onlineRateHeaders.some((value) => value.includes("30 天")) && rateCellTexts.includes("50%");
+    const rate7dVisibleInTable = onlineRateHeaders.some((value) => value.includes("7 天")) && rateCellTexts.includes("100%");
     const passed = metrics.total === W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus
-      && await checkbox.isChecked() && !childrenVisible && toolbarText.includes("父 SKU");
-    return { passed, evidence: { ...metrics, childrenVisible, toolbarShowsParentView: toolbarText.includes("父 SKU") } };
+      && await checkbox.isChecked() && !childrenVisible && toolbarText.includes("父 SKU")
+      && trendVisible && trendStatuses.length === 30
+      && trendCounts["缺货"] === 15 && trendCounts["有货"] === 15
+      && rate30dVisible;
+    return { passed, evidence: {
+      ...metrics,
+      childrenVisible,
+      toolbarShowsParentView: toolbarText.includes("父 SKU"),
+      parentTrend: { rowId: "SYN-P001", visible: trendVisible, statusCellCount: trendStatuses.length, outOfStockDays: trendCounts["缺货"] ?? 0, inStockDays: trendCounts["有货"] ?? 0 },
+      parentOnlineRates: { visibleColumns: onlineRateHeaders, visibleValues: rateCellTexts, expected30d: "50%", sevenDayRateVisibleInTable: rate7dVisibleInTable, expected7dViaPackagedIpc: "100%" },
+    } };
   });
 
   await attemptW2("Products parent-only UI shows grouped products and 3/3 in-stock variants", "ui", async () => {

@@ -135,6 +135,12 @@ describe("v0.4.0 W2 synthetic fixture integrity", () => {
       expect(page.links_internal_out).toBe(outgoing.get(page.url));
       if (page.page_type === "product") expect(productUrls.has(page.url)).toBe(true);
     }
+    // The directed chain intentionally starts at group-000; that entry page is the fixture's one orphan.
+    const intentionalOrphans = fixture.seoPages.filter((page) => page.links_internal_in === 0);
+    expect(intentionalOrphans).toHaveLength(1);
+    expect(intentionalOrphans[0].page_type).toBe("product");
+    expect(intentionalOrphans[0].links_internal_out).toBe(1);
+    expect(new URL(intentionalOrphans[0].url).pathname).toBe(expected.intentionalOrphanPath);
     for (const issue of fixture.seoIssues) {
       const page = pagesByUrl.get(issue.url);
       expect(page).toBeDefined();

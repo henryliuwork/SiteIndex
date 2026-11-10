@@ -13,6 +13,7 @@ export const W2_SYNTHETIC_EXPECTED = Object.freeze({
   issues: 66,
   pages: 145,
   links: 144,
+  intentionalOrphanPath: "/products/group-000",
   inStock: 101,
   outOfStock: 59,
   category: "synthetic-category",
