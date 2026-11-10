@@ -40,7 +40,7 @@ const pageCases = [
     normal: "si-design-layout",
     loading: "designQuery.isLoading",
     error: "designQuery.isError",
-    empty: "<SpacingCard tokens={tokens}",
+    empty: "<ButtonsCard tokens={tokens}",
   },
 ] as const;
 
@@ -69,7 +69,8 @@ describe("D 项目页面 tabpanel 接入", () => {
     expect(panelBody).toContain(page.error);
     expect(panelBody).toContain(page.empty);
     if (page.tab === "design") {
-      expect(source).toContain('!tokens && <p className="si-design-empty">');
+      expect(source).toContain('<EmptyState title="暂无按钮规范数据">');
+      expect(source).toContain("暂无 CSS 变量。完成设计规范提取后会在这里显示。");
     }
   });
 

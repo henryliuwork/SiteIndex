@@ -2,10 +2,6 @@
 gap: var(--space-4);
 }
 
-.si-design-title-line {
-flex-wrap: wrap;
-}
-
 .si-design-layout {
 display: grid; grid-template-columns: minmax(0, 2.16fr) minmax(300px, 1fr); align-items: start; gap: var(--space-5);
 }
@@ -70,64 +66,8 @@ color: var(--color-ink-2); font-family: var(--font-mono); font-size: var(--fs-ca
 display: grid;
 }
 
-.si-design-swatches {
-display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-3);
-}
-
-.si-design-swatch {
-display: grid; min-width: 0; gap: var(--space-1); padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer;
-}
-
-.si-design-swatch:disabled {
-cursor: default;
-}
-
-.si-design-swatch-color {
-display: grid; height: 64px; place-items: center; border: 1px solid var(--color-line); border-radius: 8px; font-family: var(--font-mono); font-size: var(--fs-caption); line-height: var(--lh-caption);
-}
-
-.si-design-swatch strong {
-overflow: hidden; color: var(--color-ink); font-size: var(--fs-body); text-overflow: ellipsis; white-space: nowrap;
-}
-
-.si-design-hex {
-display: inline-flex; min-width: 0; align-items: center; gap: var(--space-1); color: var(--color-muted); font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); white-space: nowrap;
-}
-
-.si-design-hex svg {
-flex: none;
-}
-
-.si-design-palette-block {
-display: grid; gap: var(--space-2);
-}
-
-.si-design-caption {
-color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption);
-}
-
-.si-design-caption code {
-color: var(--color-ink-2); font-family: var(--font-mono); font-size: var(--fs-caption); line-height: var(--lh-caption);
-}
-
-.si-design-palette {
-display: flex; height: 24px; overflow: hidden; border-radius: 6px;
-}
-
-.si-design-palette > span {
-min-width: 1px;
-}
-
 .si-design-empty {
 margin: 0; color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption);
-}
-
-.si-design-section-heading {
-display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-3); padding-bottom: var(--space-2);
-}
-
-.si-design-section-heading .si-design-caption {
-overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .si-design-type-row {
@@ -150,40 +90,84 @@ grid-column: 2; min-width: 0; overflow-wrap: anywhere; color: var(--color-muted)
 color: var(--color-ink-2);
 }
 
-.si-design-button-previews {
-display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
-}
-
-.si-design-button-previews > span {
-display: inline-flex; min-height: 44px; align-items: center; justify-content: center; font-family: var(--font-sans); font-size: var(--fs-sub-title); line-height: var(--lh-sub-title);
-}
-
-.si-design-spec, .si-design-shadow-values code {
-color: var(--color-muted); font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); overflow-wrap: anywhere;
-}
-
-.si-design-input-preview {
-display: flex; min-width: 0; align-items: center; font-family: var(--font-sans); font-size: var(--fs-body); line-height: var(--lh-body);
-}
-
-.si-design-spacing {
+.si-design-buttons {
 gap: var(--space-3);
 }
 
-.si-design-token-chips {
-display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+.si-design-button-list {
+display: grid; gap: var(--space-2);
 }
 
-.si-design-token-chips .si-chip {
-min-height: 20px; padding: 0 9px; background: var(--color-neutral-soft); color: var(--color-ink-2);
+.si-design-button-variant {
+display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2); border: 1px solid var(--color-line-soft); border-radius: 6px; background: var(--color-subtle);
 }
 
-.si-design-token-chips .si-design-mono {
-font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono);
+.si-design-button-variant h3 {
+min-width: 0; margin: 0; color: var(--color-ink); font-size: var(--fs-body); font-weight: var(--fw-page-title); line-height: var(--lh-body);
 }
 
-.si-design-shadow-values {
-display: grid; gap: var(--space-1);
+.si-design-button-variant > .si-design-empty {
+grid-column: 1 / -1;
+}
+
+.si-design-button-sample {
+grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-sans); line-height: var(--lh-body); white-space: nowrap;
+}
+
+.si-design-button-fields {
+display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1) var(--space-3); margin: 0;
+}
+
+.si-design-button-fields > div {
+display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2);
+}
+
+.si-design-button-fields dt, .si-design-button-fields dd {
+min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption);
+}
+
+.si-design-button-fields dd {
+color: var(--color-ink-2); font-family: var(--font-mono);
+}
+
+.si-design-variables {
+gap: var(--space-3);
+}
+
+.si-design-variables > summary {
+display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--color-ink); font-size: var(--fs-section-title); font-weight: var(--fw-section-title); line-height: var(--lh-section-title); list-style: none; cursor: pointer;
+}
+
+.si-design-variables > summary::-webkit-details-marker {
+display: none;
+}
+
+.si-design-variable-count {
+color: var(--color-muted); font-size: var(--fs-caption); font-weight: var(--fw-body); line-height: var(--lh-caption);
+}
+
+.si-design-variable-caret {
+flex: none; color: var(--color-muted); transition: transform 150ms ease;
+}
+
+.si-design-variables[open] .si-design-variable-caret {
+transform: rotate(180deg);
+}
+
+.si-design-variable-list {
+display: grid; max-height: 240px; gap: var(--space-1); overflow: auto; margin: 0;
+}
+
+.si-design-variable-list > div {
+display: grid; min-width: 0; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: var(--space-3); padding-block: var(--space-1); border-top: 1px solid var(--color-line-soft);
+}
+
+.si-design-variable-list dt, .si-design-variable-list dd {
+min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--color-ink-2); font-size: var(--fs-mono); line-height: var(--lh-mono);
+}
+
+.si-design-variable-list code {
+font-family: var(--font-mono);
 }
 
 .si-design-screenshots {
@@ -211,18 +195,6 @@ grid-template-columns: minmax(0, 1fr);
 @media (max-width: 760px) {
 .si-design-role-grid {
 grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-}
-
-@media (max-width: 760px) {
-.si-design-swatches {
-grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-}
-
-@media (max-width: 760px) {
-.si-design-section-heading {
-align-items: flex-start; flex-direction: column;
 }
 }
 
