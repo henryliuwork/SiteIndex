@@ -47,18 +47,17 @@ describe("OverviewPage 布局和操作", () => {
 
     const content = document.querySelector(".si-overview-content");
     expect([...content!.children].map((element) => element.classList[0] || element.tagName.toLowerCase())).toEqual([
-      "si-overview-kpis", "si-overview-attention", "si-overview-secondary",
+      "si-overview-kpis", "si-overview-attention", "si-overview-readme", "si-overview-changelog",
     ]);
     expect(document.querySelector(".si-overview-content > .si-page-header")).toBeNull();
-    expect([...document.querySelectorAll(".si-overview-secondary > section")].map((section) => section.classList[0])).toEqual([
-      "si-overview-readme", "si-overview-changelog",
-    ]);
+    expect(document.querySelector<HTMLDetailsElement>(".si-overview-instruction")?.open).toBe(false);
+    expect(document.querySelector(".si-overview-instruction")?.textContent).toContain("Agent 接入指令");
 
     fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
     expect(await screen.findByRole("menuitem", { name: "校验本地数据文件" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "复制 agent 接入指令" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "打开 README" })).toBeTruthy();
-  });
+  }, 10_000);
 
   it("项目同步状态使用具体月日与时间，不使用‘今天’", async () => {
     const mockApi = createMockApi();
