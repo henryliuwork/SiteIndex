@@ -28,6 +28,7 @@
 - [x] **DataTable**：最大高度内部滚动、sticky 表头、行点击选中、列设置弹层（持久化到 localStorage 键 `si.cols.{tableId}`；Electron 中 C 会改为 ui-state，接口保持 `useColumnPrefs(tableId)` 不变）、预留列灰色、服务端分页（`ListQuery`）、排序、空状态 — [PR #12](https://github.com/henryliuwork/SiteIndex/pull/12)、[PR #16](https://github.com/henryliuwork/SiteIndex/pull/16)、[PR #80](https://github.com/henryliuwork/SiteIndex/pull/80)
 - [x] DetailPanel（右侧 320–400，Esc 关闭）、Pagination（20/50/100）、StatusCells（30 格）、SearchInput（200ms 防抖）— [PR #12](https://github.com/henryliuwork/SiteIndex/pull/12)
 - [x] WindowChrome（标题栏 38，整条为拖动区域；Windows 右侧按 Window Controls Overlay CSS 变量留出原生按钮空间，mac 左侧留 78px —— 用 `api.app.platform()` 判断）、SideNav（宽 232，可折叠为图标栏）— [PR #7](https://github.com/henryliuwork/SiteIndex/pull/7)、[PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)
+- [x] ProjectHeader：项目身份行 44px、Tab/页面标题/操作行 44px；共享操作菜单用于窄宽度下收纳低频操作 — [PR #365](https://github.com/henryliuwork/SiteIndex/pull/365)
 - **验收**：组件有 vitest 单测（筛选、分页、长度标色、列设置持久化）
 - [x] Drawer 打开时按遮罩层数合成并同步 Windows 原生 titleBarOverlay 颜色；最后一层关闭或卸载后恢复白色，缺少 bridge 时安全降级 — [PR #364](https://github.com/henryliuwork/SiteIndex/pull/364)
 
@@ -94,3 +95,10 @@
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码
+
+### 给 D：项目页紧凑页头接入约定
+- Tab 行右侧操作槽在宽屏固定为 420px、窄屏（≤900px）固定为 340px；即使当前页没有操作也保留槽位，避免按钮数量变化时 Tab 可用宽度重新分配。
+- 项目身份行固定 44px，展示项目名、域名/平台和同步状态；Tab 行固定 44px。
+- 页名若与当前 Tab 相同就省略；域名若已在项目身份行展示也省略。确有用处的短标题/数据日期放 `pageTitle` / `pageMeta`，操作按钮与 `overflow` 放同一行。
+- D 页面移除独立 `PageHeader`，将它的 `title` / `meta` / `actions` / `overflow` props 合并到 `ProjectHeader`；`ProjectTabPanel` 的路由和 ARIA 关系保持原样。
+- Products mock 在 1280×800 下，旧结构表格滚动区 320px；合并标题行并移除独立 `PageHeader` 后 417px，增加 97px。截图：[改造前](../../packages/ui/screenshots/compact-project-header-before-1280.png) / [改造后](../../packages/ui/screenshots/compact-project-header-after-1280.png)
