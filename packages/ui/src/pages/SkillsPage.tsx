@@ -7,7 +7,8 @@ import { api, apiErrorMessage } from "../api";
 import { ApiErrorNotice, Button, Card, Chip, EmptyState, Notice, PageHeader, useToast } from "../components";
 import "./skills/page.css";
 
-function statusLabel(status: SkillTargetStatus["status"]): string {
+function statusLabel(status: SkillTargetStatus["status"], localNewer = false): string {
+  if (localNewer) return "本地版本较新（不覆盖）";
   switch (status) {
     case "latest": return "最新";
     case "outdated": return "旧版";
@@ -22,8 +23,12 @@ function statusTone(status: SkillTargetStatus["status"]): "ok" | "warn" | "neutr
   return "neutral";
 }
 
+function targetTone(target: SkillTargetStatus): "ok" | "warn" | "neutral" {
+  return target.local_newer ? "neutral" : statusTone(target.status);
+}
+
 function versionTone(skill: SkillInfo): "warn" | "neutral" {
-  return skill.has_update ? "warn" : "neutral";
+  return skill.has_update && !skill.retired ? "warn" : "neutral";
 }
 
 export function SkillsPage() {
@@ -72,7 +77,7 @@ export function SkillsPage() {
   };
 
   const handleInstall = async (target: SkillTargetStatus) => {
-    if (!activeName || busyTarget) return;
+    if (!activeName || busyTarget || activeSkill?.retired || target.local_newer) return;
     if (target.status === "unknown_path") {
       navigate("/settings");
       return;
@@ -94,9 +99,10 @@ export function SkillsPage() {
   if (!skillsQuery.data?.length) return <EmptyState title="当前没有可用的 Skill" action={<Button onClick={() => void skillsQuery.refetch()}>重新检查</Button>}>检查软件 Skill 清单或安装目录后重试。</EmptyState>;
 
   const detail = detailQuery.data;
-  const installText = detail
-    ? `# ${detail.info.name} 安装说明\n\n在 SiteIndex 的 Skill 中心选择此 Skill，然后选择要安装的平台或项目。\n\n${(targetsQuery.data ?? []).map((target) => `- ${target.name}：${target.dir ?? "尚未配置目录"}（${statusLabel(target.status)}）`).join("\n")}`
+  const installText = detail && !activeSkill?.retired
+    ? `# ${detail.info.name} 安装说明\n\n在 SiteIndex 的 Skill 中心选择此 Skill，然后选择要安装的平台或项目。\n\n${(targetsQuery.data ?? []).map((target) => `- ${target.name}：${target.dir ?? "尚未配置目录"}（${statusLabel(target.status, target.local_newer)}）`).join("\n")}`
     : "";
+  const isRetired = Boolean(activeSkill?.retired || detail?.info.retired);
 
   return (
     <div className="si-page si-skills-page">
@@ -108,7 +114,7 @@ export function SkillsPage() {
         <Card className="si-skills-list" label="Skill 列表">
           {skillsQuery.data.map((skill) => (
             <button key={skill.name} type="button" className={`si-skill-choice${skill.name === activeName ? " active" : ""}`} aria-pressed={skill.name === activeName} onClick={() => setSelectedName(skill.name)}>
-              <span className="si-skill-choice-top"><code>{skill.name}</code><Chip tone={versionTone(skill)}>{skill.version}{skill.has_update ? " 有更新" : ""}</Chip></span>
+              <span className="si-skill-choice-top"><code>{skill.name}</code><Chip tone={versionTone(skill)}>{skill.version}{skill.retired ? " · 已退役" : skill.has_update ? " 有更新" : ""}</Chip></span>
               <span className="si-skill-choice-description">{skill.description}</span>
             </button>
           ))}
@@ -120,14 +126,15 @@ export function SkillsPage() {
           {detail && activeSkill && <Card className="si-skill-detail" label={`${detail.info.name} 详情`}>
             <header className="si-skill-detail-heading">
               <div>
-                <div className="si-skill-title"><code>{detail.info.name}</code><Chip tone={versionTone(activeSkill)}>{detail.info.version}</Chip></div>
+                <div className="si-skill-title"><code>{detail.info.name}</code><Chip tone={versionTone(activeSkill)}>{activeSkill.retired ? "已退役" : detail.info.version}</Chip></div>
                 <p>{detail.info.description}</p>
               </div>
               <div className="si-skill-copy-actions">
                 <Button icon={<Copy size={14} />} onClick={() => void handleCopy(detail.body, "已复制全文")}>复制全文</Button>
-                <Button onClick={() => void handleCopy(installText, "已复制安装说明")}>复制安装说明</Button>
+                {!activeSkill.retired && <Button onClick={() => void handleCopy(installText, "已复制安装说明")}>复制安装说明</Button>}
               </div>
             </header>
+            {activeSkill.retired && <Notice tone="info" title="此 Skill 已退役">SiteIndex 不会删除或更新已安装副本；如需继续使用，请由用户自行管理。</Notice>}
             <div className="si-skill-io-grid">
               <div><span>读取</span><code>{detail.info.reads.length ? detail.info.reads.join("\n") : "（无）"}</code></div>
               <div><span>写入</span><code>{detail.info.writes.length ? detail.info.writes.join("\n") : "（无）"}</code></div>
@@ -146,12 +153,12 @@ export function SkillsPage() {
                 return <div className="si-skill-target" key={target.target_id}>
                   <strong>{target.name}</strong>
                   <code>{target.dir ?? "[首次使用时确认路径]"}</code>
-                  <Chip tone={statusTone(target.status)}>{statusLabel(target.status)}</Chip>
-                  <Button disabled={busyTarget !== null} onClick={() => void handleInstall(target)}>{busyTarget === target.target_id ? "处理中…" : action}</Button>
+                  {isRetired ? <Chip tone="neutral">已退役 · 保留副本</Chip> : <Chip tone={targetTone(target)}>{statusLabel(target.status, target.local_newer)}</Chip>}
+                  {!isRetired && !target.local_newer && <Button disabled={busyTarget !== null} onClick={() => void handleInstall(target)}>{busyTarget === target.target_id ? "处理中…" : action}</Button>}
                 </div>;
               })}
-            </div> : !targetsQuery.isLoading && !targetsQuery.isError && <Notice tone="info" className="si-skills-target-empty" action={<Button onClick={() => navigate("/settings")}>管理平台目录</Button>}>尚未检测到安装位置，可在软件设置中添加平台目录。</Notice>}
-            <footer><span>项目内的 Skill 写在 <code>_agent/skills/</code>，README 的任务路由指向它们，任何 agent 读 README 即可找到。</span><Button onClick={() => navigate("/settings")}>管理平台目录</Button></footer>
+            </div> : !targetsQuery.isLoading && !targetsQuery.isError && isRetired ? <Notice tone="info" className="si-skills-target-empty">没有发现已安装副本。</Notice> : !targetsQuery.isLoading && !targetsQuery.isError && <Notice tone="info" className="si-skills-target-empty" action={<Button onClick={() => navigate("/settings")}>管理平台目录</Button>}>尚未检测到安装位置，可在软件设置中添加平台目录。</Notice>}
+            <footer><span>项目 Skill 目录随项目布局变化：工作区使用 <code>_site-index/skills/</code>，传统项目使用 <code>_agent/skills/</code>；README 的任务路由会指向对应目录。</span><Button onClick={() => navigate("/settings")}>管理平台目录</Button></footer>
           </Card>
         </div>
       </div>

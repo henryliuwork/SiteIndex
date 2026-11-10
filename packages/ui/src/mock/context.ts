@@ -278,6 +278,7 @@ export const notifyProjectChanged = (id: ProjectId): void => projectsChanged.for
 
 export const settingsState: AppSettings = {
   device_id: "mock-device", device_name: "演示设备", projects_root: mockMode === "empty-root" ? "" : "D:/云盘/projects",
+  close_to_tray: true, launch_at_login: false,
   extra_projects: [], cache_dir: "C:/SiteIndex/Cache", browser: { channel: "msedge", executable_path: null },
   notify: { on_failure: true, on_success: false, oos_threshold: 0.12, dingtalk_webhook: null },
   skill_platforms: [
@@ -288,7 +289,7 @@ export const settingsState: AppSettings = {
   conflict_patterns: ["*.conflict-*", "*.copy"],
 };
 export const mockSkills: SkillInfo[] = [
-  { name: "edm-builder", version: "1.2.0", description: "按主题选品，生成可粘贴到 Mailchimp 的 EDM HTML，登记推品记录", has_update: true, reads: ["index/views/products.jsonl", "index/ledgers/edm_campaigns.jsonl", "index/ledgers/promotions.jsonl"], writes: ["edm/{date}-{slug}/", "index/ledgers/edm_campaigns.jsonl"] },
+  { name: "edm-builder", version: "1.1.0", description: "此 EDM Skill 已退役；已安装的副本保留，由用户自行管理。", has_update: false, retired: true, reads: [], writes: [] },
   { name: "stock-report", version: "1.0.0", description: "库存日报、周报、趋势分析（只读）", has_update: false, reads: ["index/reports/daily/", "index/inventory/", "index/logs/runs.jsonl"], writes: [] },
   { name: "blog-writer", version: "1.1.0", description: "选题、蚕食检查、brief、带内链正文、关键词登记", has_update: true, reads: ["index/content/*", "index/seo/pages.jsonl", "index/seo/links.jsonl", "index/views/products.jsonl"], writes: ["内容/drafts/{date}-{slug}/", "index/content/keywords.jsonl"] },
   { name: "link-prospect", version: "1.0.0", description: "外链搜集 → linkflow + 去重台账", has_update: false, reads: ["index/site.json", "index/ledgers/outreach.jsonl"], writes: ["linkflow（MCP）", "index/ledgers/outreach.jsonl"] },
@@ -297,7 +298,7 @@ export const mockSkills: SkillInfo[] = [
   { name: "project-readme", version: "1.0.0", description: "更新 README 用户区块并保留自动区块", has_update: false, reads: ["README.md"], writes: ["README.md 用户区块"] },
 ];
 export const mockSkillBodies: Record<string, string> = {
-  "edm-builder": "# edm-builder\n1. 确认主题、产品数、折扣码与 CTA。\n2. siteindex query · products --in-stock --tag {主题} --json\n   硬性条件：有货、未排除、过冷却期、有图片\n   排序：标签 +3 · 标题/分类 +2 · 优先级 / 2 · 参与活动 +1\n3. 写 brief.md、content.json（文案遵循品牌 voice）。\n4. siteindex edm render · edm/{campaign_id}\n5. siteindex ledger upsert · edm_campaigns --rows -",
+  "edm-builder": "# edm-builder 已退役\n\nSiteIndex 不会删除或更新已安装副本。如需继续使用，请由用户自行管理该目录。",
   "stock-report": "# stock-report\n先检查 runs.jsonl 最后一次 daily 是否成功。\n日报：结论 → 新到货/新缺货 → 需要行动。\n只读汇报，不修改项目数据。",
   "blog-writer": "# blog-writer\n1. 检查主关键词是否已有目标页面。\n2. 生成大纲与内链计划，只使用数据文件中的 URL。\n3. 写 draft.md 与 meta.json。\n4. 提供反向内链建议。",
   "link-prospect": "# link-prospect\n检查外链候选并排除台账重复项。\n联系方式必须来自页面实际内容。\n完成后更新去重台账。",
@@ -305,10 +306,13 @@ export const mockSkillBodies: Record<string, string> = {
   "page-design": "# page-design\n颜色只使用设计 token 与 palette。\n字体、字号、按钮、间距、圆角遵照项目设计规范。\n规范超过 60 天时提醒重新提取。",
   "project-readme": "# project-readme\n只编辑 README 用户区块，不修改自动区块、index/ 或 _agent/。\n编辑前先展示对比，保存后确认用户区块内容。",
 };
-export const mockSkillTargets: Record<string, SkillTargetStatus[]> = Object.fromEntries(mockSkills.map((skill) => [skill.name, [
+export const mockSkillTargets: Record<string, SkillTargetStatus[]> = Object.fromEntries(mockSkills.map((skill) => [skill.name, skill.retired ? [
+  { target_id: "agents-dir", name: "Agents 通用目录", dir: `~/.agents/skills/${skill.name}`, status: "latest" },
+] : [
   { target_id: "project:demo", name: "项目 Demo Store", dir: `D:/云盘/projects/demo/_agent/skills/${skill.name}`, status: skill.has_update ? "outdated" : "latest" },
   { target_id: "claude-code", name: "Claude Code", dir: `~/.claude/skills/${skill.name}`, status: "latest" },
-  { target_id: "codex", name: "Codex", dir: null, status: "not_installed" },
+  { target_id: "codex", name: "Codex", dir: skill.name === "stock-report" ? "~/.codex/skills/stock-report" : null, status: skill.name === "stock-report" ? "latest" : "not_installed", ...(skill.name === "stock-report" ? { local_newer: true } : {}) },
+  { target_id: "agents-dir", name: "Agents 通用目录", dir: `~/.agents/skills/${skill.name}`, status: "not_installed" },
   { target_id: "qwenpaw", name: "qwenpaw", dir: `D:/qwenpaw/workspace/ops-agent/skills/${skill.name}`, status: "not_installed" },
 ]]));
 export const folderRows: Record<MockProjectId, FolderRow[]> = {
