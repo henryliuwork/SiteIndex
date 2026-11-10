@@ -1,4 +1,4 @@
-import type { SiteIndexApi } from "@siteindex/shared";
+import { PATHS, type SiteIndexApi } from "@siteindex/shared";
 import type { DesignTokens } from "@siteindex/shared";
 import { clone, designScreenshots, designTokens as legacyDesignTokens, reply } from "./context";
 
@@ -46,5 +46,9 @@ const designTokens: DesignTokens = {
 };
 
 export function createDesignMock(): SiteIndexApi["design"] {
-  return { get: (id) => reply({ tokens: clone(designTokens), screenshots: designScreenshots(id) }) };
+  return { get: (id) => reply({
+    tokens: clone(designTokens),
+    screenshots: designScreenshots(id),
+    artifact_paths: { tokens: PATHS.designTokens, brand: PATHS.designBrand },
+  }) };
 }

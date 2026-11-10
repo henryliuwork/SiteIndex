@@ -61,15 +61,22 @@ afterEach(() => {
   vi.resetModules();
 });
 
-function createDesignApi(tokens: DesignTokens | null = tokensFixture) {
+function createDesignApi(
+  tokens: DesignTokens | null = tokensFixture,
+  artifactPaths: { tokens?: string; brand?: string } | undefined = {
+    tokens: "index/design/tokens.json",
+    brand: "index/design/brand.md",
+  },
+) {
   const copyText = vi.fn(async () => undefined);
+  const openPath = vi.fn(async (_path: string) => undefined);
   const api = {
     projects: { get: vi.fn(async () => ({ summary: { id: "demo", name: "演示项目", domain: "demo.example.test", platform: "other", path: "C:/demo" } })) },
-    design: { get: vi.fn(async () => ({ tokens, screenshots: [] })) },
+    design: { get: vi.fn(async () => ({ tokens, screenshots: [], ...(artifactPaths ? { artifact_paths: artifactPaths } : {}) })) },
     jobs: { onProgress: vi.fn(() => () => undefined), onFinished: vi.fn(() => () => undefined), run: vi.fn(async () => ({ runId: "run-1" })) },
-    shell: { copyText, openPath: vi.fn(async () => undefined) },
+    shell: { copyText, openPath },
   } as unknown as SiteIndexApi;
-  return { api, copyText };
+  return { api, copyText, openPath };
 }
 
 async function renderDesignPage(api: SiteIndexApi) {
@@ -107,7 +114,7 @@ describe("DesignPage Token v2", () => {
     expect(document.querySelector(".si-design-type-row .si-design-type-metrics")?.textContent).toContain("字距 -0.02em");
     expect(screen.getByRole("heading", { name: "按钮规范" })).toBeTruthy();
     expect(screen.getByText("描边按钮")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+    expect(screen.getByRole("button", { name: "更多操作" })).toBeTruthy();
 
     const variables = document.querySelector<HTMLDetailsElement>(".si-design-css-variables");
     expect(variables?.open).toBe(false);
@@ -141,5 +148,42 @@ describe("DesignPage Token v2", () => {
 
     expect(copyText).toHaveBeenCalledWith(JSON.stringify(tokensFixture, null, 2));
     expect(await screen.findByText("Token JSON 已复制，可交给 agent 使用。")).toBeTruthy();
+  });
+
+  it.each([
+    ["legacy", "index/design/tokens.json", "index/design/brand.md"],
+    ["workspace", "_site-index/design/tokens.json", "_site-index/design/brand.md"],
+  ])("只按 Core 返回的 %s 固定路径打开两个设计文件", async (_layout, tokensPath, brandPath) => {
+    const { api, openPath } = createDesignApi(tokensFixture, { tokens: tokensPath, brand: brandPath });
+    await renderDesignPage(api);
+
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开 tokens.json" }));
+    expect(openPath).toHaveBeenCalledWith(`C:/demo/${tokensPath}`);
+    expect(await screen.findByText("已打开 tokens.json。")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开 brand.md" }));
+    expect(openPath).toHaveBeenCalledWith(`C:/demo/${brandPath}`);
+  });
+
+  it("缺少或不支持 artifact_paths 时隐藏文件操作并说明原因", async () => {
+    const { api, openPath } = createDesignApi(tokensFixture, { tokens: "../secrets/tokens.json" });
+    await renderDesignPage(api);
+
+    expect(await screen.findByRole("heading", { name: "颜色角色" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+    expect(screen.getByText("Core 未提供受支持的固定相对路径：tokens.json、brand.md。请更新数据后重试。")).toBeTruthy();
+    expect(openPath).not.toHaveBeenCalled();
+  });
+
+  it("打开设计文件失败时显示错误 Toast", async () => {
+    const { api, openPath } = createDesignApi();
+    openPath.mockRejectedValueOnce(new Error("无法访问该文件"));
+    await renderDesignPage(api);
+
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开 tokens.json" }));
+    expect(await screen.findByText("无法访问该文件")).toBeTruthy();
   });
 });

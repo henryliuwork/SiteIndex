@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { useParams } from "react-router-dom";
-import type { DesignButtonVariant, DesignColorRole, DesignTokens, DesignTypographyScaleKey } from "@siteindex/shared";
+import { PATHS, pathsFor, type DesignButtonVariant, type DesignColorRole, type DesignTokens, type DesignTypographyScaleKey } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, EmptyState, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
@@ -31,6 +31,17 @@ const buttonVariants: { key: DesignButtonVariant; label: string; sample: string 
   { key: "secondary", label: "次要按钮", sample: "了解更多" },
   { key: "outline", label: "描边按钮", sample: "查看详情" },
 ];
+
+type DesignArtifact = "tokens" | "brand";
+
+function safeDesignArtifactPath(value: unknown): string | null {
+  const allowedPaths = [PATHS.designTokens, PATHS.designBrand, pathsFor("workspace").designTokens, pathsFor("workspace").designBrand];
+  return typeof value === "string" && allowedPaths.includes(value) ? value : null;
+}
+
+function projectArtifactPath(projectRoot: string, relativePath: string): string {
+  return `${projectRoot.replace(/[\\/]+$/, "")}/${relativePath}`;
+}
 
 const displayValue = (value: string | number | null | undefined): string =>
   value === null || value === undefined || value === "" ? "未识别" : String(value);
@@ -177,6 +188,14 @@ export function DesignPage() {
   const project = projectQuery.data?.summary;
   const tokens = designQuery.data?.tokens ?? null;
   const screenshots = useMemo(() => designQuery.data?.screenshots ?? [], [designQuery.data?.screenshots]);
+  const artifactPaths = designQuery.data?.artifact_paths;
+  const safeArtifactPaths: Record<DesignArtifact, string | null> = {
+    tokens: safeDesignArtifactPath(artifactPaths?.tokens),
+    brand: safeDesignArtifactPath(artifactPaths?.brand),
+  };
+  const missingArtifactLabels = (Object.entries({ tokens: "tokens.json", brand: "brand.md" }) as [DesignArtifact, string][])
+    .filter(([key]) => !safeArtifactPaths[key])
+    .map(([, label]) => label);
 
   useEffect(() => {
     if (!activeRunId) return;
@@ -218,6 +237,14 @@ export function DesignPage() {
     try { await api.shell.openPath(path); toast.success("已打开页面截图。"); }
     catch (cause) { toast.error(apiErrorMessage(cause, "打开截图失败。")); }
   };
+  const openDesignArtifact = async (artifact: DesignArtifact) => {
+    const relativePath = safeArtifactPaths[artifact];
+    if (!project || !relativePath) return;
+    try {
+      await api.shell.openPath(projectArtifactPath(project.path, relativePath));
+      toast.success(`已打开 ${artifact === "tokens" ? "tokens.json" : "brand.md"}。`);
+    } catch (cause) { toast.error(apiErrorMessage(cause, `打开 ${artifact === "tokens" ? "tokens.json" : "brand.md"} 失败。`)); }
+  };
 
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目设计规范页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
@@ -231,9 +258,15 @@ export function DesignPage() {
             <Button variant="secondary" disabled={!tokens} onClick={() => void copyTokens()}>复制 Token（JSON）</Button>
             <Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void refresh()}>{activeRunId ? "提取中…" : "重新提取"}</Button>
           </>
-        } />
+        } overflow={[
+          ...(safeArtifactPaths.tokens ? [{ label: "打开 tokens.json", onSelect: () => void openDesignArtifact("tokens") }] : []),
+          ...(safeArtifactPaths.brand ? [{ label: "打开 brand.md", onSelect: () => void openDesignArtifact("brand") }] : []),
+        ]} />
       <ProjectTabPanel projectId={project.id} tab="design">
         {runMessage && <Notice tone="info" title={activeRunId ? "设计规范提取进行中" : "正在启动设计规范提取"}>{runMessage}</Notice>}
+        {designQuery.data && missingArtifactLabels.length > 0 && <Notice tone="warn" title="部分设计文件无法打开">
+          Core 未提供受支持的固定相对路径：{missingArtifactLabels.join("、")}。请更新数据后重试。
+        </Notice>}
         {designQuery.isLoading ? <div className="si-page-loading" role="status">正在加载设计规范…</div>
           : designQuery.isError ? <ApiErrorNotice label="设计规范加载失败。" error={designQuery.error} onRetry={() => void designQuery.refetch()} />
             : <div className="si-design-layout">
