@@ -433,6 +433,7 @@ if (!hasSingleInstanceLock) {
       onRunnerClaimed: async () => {
         await reconcileSchedules(true);
       },
+      notifyProjectChanged: (id) => windowManager.sendToWindows("si:projects.onChanged", id),
       skills: skillService,
       desktopIntegrations,
     });

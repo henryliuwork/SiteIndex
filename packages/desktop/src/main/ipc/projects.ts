@@ -57,6 +57,57 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
         const { runId } = await context.jobs.run({ projectPath: registeredPath, job: "init" });
         return { id: created.id, runId };
       }),
+    "projects.createWorkspaceOnly": (...args) =>
+      enqueueCreate(async () => {
+        const input = args[0] as Parameters<typeof context.core.projects.createWorkspaceOnly>[0];
+        const current = await context.settings.get();
+        const existingProjects = await context.projects.refresh(current);
+        const requestedId = input.folder_name.trim();
+        const requestedIdKey = process.platform === "win32" ? requestedId.toLowerCase() : requestedId;
+        if (
+          existingProjects.some(
+            (entry) => (process.platform === "win32" ? entry.id.toLowerCase() : entry.id) === requestedIdKey,
+          )
+        ) {
+          throw {
+            code: "FOLDER_EXISTS",
+            message: "项目文件夹名称已被其他项目使用。",
+            detail: requestedId,
+          } satisfies SiteIndexError;
+        }
+
+        const created = await context.core.projects.createWorkspaceOnly(input);
+        const projectPath = path.resolve(input.projects_root, created.id);
+        const currentAfterCreate = await context.settings.get();
+        const projectKey = await pathKey(projectPath);
+        const nextExtraProjects = [...currentAfterCreate.extra_projects];
+        const extraProjectKeys = await Promise.all(currentAfterCreate.extra_projects.map((entry) => pathKey(entry)));
+        if (!(await isProjectInsideRoot(currentAfterCreate.projects_root, projectPath))) {
+          if (!extraProjectKeys.includes(projectKey)) nextExtraProjects.push(projectPath);
+        }
+        const nextHiddenProjects = (
+          await Promise.all(
+            (currentAfterCreate.hidden_projects ?? []).map(async (entry) => ({ entry, key: await pathKey(entry) })),
+          )
+        )
+          .filter(({ key }) => key !== projectKey)
+          .map(({ entry }) => entry);
+        const patch: Partial<AppSettings> = {};
+        if (nextExtraProjects.length !== currentAfterCreate.extra_projects.length) {
+          patch.extra_projects = nextExtraProjects;
+        }
+        if (nextHiddenProjects.length !== (currentAfterCreate.hidden_projects ?? []).length) {
+          patch.hidden_projects = nextHiddenProjects;
+        }
+        const updated = Object.keys(patch).length > 0 ? await context.settings.set(patch) : currentAfterCreate;
+        if (updated !== currentAfterCreate) await context.settingsChanged(updated, false);
+
+        await context.projects.refresh(updated);
+        const registeredPath = context.projects.resolveProject(created.id);
+        context.core.invalidate(registeredPath);
+        context.notifyProjectChanged?.(created.id);
+        return { id: created.id };
+      }),
     "projects.addExisting": async (value) => {
       const handlerStartedAt = context.traceAddExisting ? performance.now() : 0;
       const timings: AddExistingTiming[] | null = context.traceAddExisting ? [] : null;

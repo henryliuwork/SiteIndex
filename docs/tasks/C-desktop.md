@@ -146,14 +146,15 @@
 - [x] 托盘支持打开、下次计划、立即同步和退出；退出时有运行中 Job 会确认。
 - [x] 技能目标新增 `agents-dir`（`~/.agents/skills`）；同步时保留版本高于内置版本的本地副本。
 - [x] 从内置分发移除 `edm-builder`；发现已安装副本时返回退役状态，不自动删除或重装。
-- [x] `workspace.check/create`、`workspace.importCheck` 已接入 Desktop IPC；导入检查有修复文件时立即失效 Core 项目缓存，目录监听负责变更通知。`PENDING_HANDLERS` 清理需在 handler PR 合并后走独立 contract PR。
+- [x] `workspace.check/create`、`workspace.importCheck` 已接入 Desktop IPC；导入检查有修复文件时立即失效 Core 项目缓存，目录监听负责变更通知。`PENDING_HANDLERS` 清理单独走 contract PR。
 - [x] 打包资源脚本复制完整 `templates/` 与 `skills/`，Core 的 `templateDir` 相邻路径可解析 `templates/workspace/`；由 Desktop 资源测试覆盖。
-- [ ] `projects.createWorkspaceOnly` Desktop IPC：等待 A 对应的 Core 方法合并后接线。
+- [x] `projects.createWorkspaceOnly` Desktop IPC：只创建空工作区，不启动 Job；按 `projects_root` / `extra_projects` 注册，支持 legacy 与 workspace 项目扫描、去重、解析和变更监听；同域并发创建串行检查。`PENDING_HANDLERS` 仍需等 handler PR 合并后经独立 contract PR 清理。
 
 ## Windows 原生标题栏桥接
 
 - [x] preload 暴露 Desktop-only `window.siteindexWindow.setTitleBarOverlayColor("#RRGGBB")`；主进程仅接受来自主窗口主 frame 的六位十六进制颜色，仅更新 Windows 原生标题栏背景，关闭窗口时移除监听。
 - [ ] B 在 Drawer 打开时设置遮罩混合色，关闭时恢复 `#FFFFFF`。
+
 ## v0.3 · #345 Windows 安装资源
 
 - [x] Windows 自定义目录覆盖安装 v0.1.9 → v0.3.0；安装后两次重启均通过 CDP 确认加载 `resources/ui/index.html`。

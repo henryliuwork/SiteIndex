@@ -23,6 +23,10 @@ function testContext(): IpcContext {
       },
       invalidate: vi.fn(),
       design: { get: vi.fn(async () => ({ tokens: null, screenshots: [] })) },
+      projects: {
+        createWorkspaceOnly: vi.fn(async () => ({ id: "workspace-demo" })),
+        resolveProject: vi.fn(() => "C:/projects/demo"),
+      },
       categories: {
         get: vi.fn(async () => ({ mode: "feed" })),
         preview: vi.fn(async () => ({ categories: [], unmapped: 0 })),
@@ -66,8 +70,14 @@ describe("IPC handler completeness", () => {
 
     await expect(implementations["design.get"]?.("demo")).resolves.toEqual({ tokens: null, screenshots: [] });
     await expect(implementations["categories.get"]?.("demo")).resolves.toEqual({ mode: "feed" });
-    await expect(implementations["categories.preview"]?.("demo", { mode: "feed" })).resolves.toEqual({ categories: [], unmapped: 0 });
-    await expect(implementations["categories.save"]?.("demo", { mode: "feed" })).resolves.toEqual({ categories: [], unmapped: 0 });
+    await expect(implementations["categories.preview"]?.("demo", { mode: "feed" })).resolves.toEqual({
+      categories: [],
+      unmapped: 0,
+    });
+    await expect(implementations["categories.save"]?.("demo", { mode: "feed" })).resolves.toEqual({
+      categories: [],
+      unmapped: 0,
+    });
     await expect(implementations["sku.previewGrouping"]?.("demo", { type: "suffix", value: "-A" })).resolves.toEqual({
       parents: 1,
       children: 2,
@@ -119,5 +129,11 @@ describe("IPC handler completeness", () => {
     await expect(handler?.("demo", { apply: true })).resolves.toEqual(repairedResult);
     expect(context.core.workspace.importCheck).toHaveBeenNthCalledWith(2, "demo", { apply: true });
     expect(context.core.invalidate).toHaveBeenCalledWith("C:/projects/demo");
+  });
+
+  it("registers a workspace-only project handler", () => {
+    const context = testContext();
+    const implementations = createIpcHandlerImplementations(context);
+    expect(implementations["projects.createWorkspaceOnly"]).toBeTypeOf("function");
   });
 });

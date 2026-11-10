@@ -54,4 +54,23 @@ describe("workspace template contract", () => {
     expect(workspace.paths["edm.profile"]).toBe("_site-index/edm/edm-profile.md");
     expect(workspace.esp_presets).toEqual(["mailchimp"]);
   });
+
+  it("copies workspace templates and skills into the installer resources", async () => {
+    const desktopPackage = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as {
+      build: { extraResources: Array<{ from: string; to: string }> };
+    };
+    const prepareResources = await readFile(new URL("../scripts/prepare-resources.mjs", import.meta.url), "utf8");
+
+    expect(desktopPackage.build.extraResources).toEqual(
+      expect.arrayContaining([
+        { from: "build-resources/templates", to: "templates" },
+        { from: "build-resources/skills", to: "skills" },
+      ]),
+    );
+    expect(prepareResources).toContain('for (const directory of ["skills", "templates", "schemas"])');
+    await expect(readTemplate("_site-index/workspace.json")).resolves.toBeTruthy();
+    await expect(
+      readFile(join(fileURLToPath(new URL("../../../skills/", import.meta.url)), "siteindex-data", "SKILL.md"), "utf8"),
+    ).resolves.toContain("数据目录");
+  });
 });
