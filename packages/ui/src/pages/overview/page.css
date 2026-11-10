@@ -4,23 +4,15 @@
 
 .si-overview-content {
   display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.3fr) minmax(0, 1fr);
   min-width: 0;
-  gap: var(--space-4);
-}
-
-.si-overview-secondary {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   align-items: start;
   gap: var(--space-4);
 }
 
-.si-overview-secondary > * {
-  min-width: 0;
-}
-
 .si-overview-kpis {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: var(--space-3);
 }
@@ -192,6 +184,13 @@
   background: var(--color-subtle);
 }
 
+.si-overview-instruction summary {
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  cursor: pointer;
+}
+
 .si-overview-instruction pre {
   margin: 0;
   color: var(--color-ink-2);
@@ -224,11 +223,17 @@
   line-height: var(--lh-mono);
 }
 
-@media (max-width: 760px) {
-  .si-overview-secondary {
+@media (max-width: 1100px) {
+  .si-overview-content {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .si-overview-kpis {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 760px) {
   .si-overview-attention li {
     grid-template-columns: max-content minmax(0, 1fr);
     gap: var(--space-2);

@@ -167,19 +167,17 @@ export function OverviewPage() {
       </ul> : <div className="si-empty-state"><Check size={16} />当前没有需要处理的事项。</div>}
     </section>
 
-    <div className="si-overview-secondary">
     <section className="si-overview-readme si-panel">
       <div className="si-panel-heading"><h2>README · 项目概况</h2><a href={"#/p/" + id + "/readme"} onClick={(event) => { event.preventDefault(); navigate("/p/" + id + "/readme"); }}>编辑 README</a></div>
       <OverviewSummary markdown={overview.readme.overview} />
       <div className="si-overview-focus"><span>当前重点</span><p>{overview.readme.focus}</p></div>
-      {overview.agent_instruction && <div className="si-overview-instruction"><strong>Agent 接入指令</strong><pre>{overview.agent_instruction}</pre></div>}
+      {overview.agent_instruction && <details className="si-overview-instruction"><summary>Agent 接入指令</summary><pre>{overview.agent_instruction}</pre></details>}
     </section>
 
     <section className="si-overview-changelog si-panel">
       <h2>变更记录</h2>
       {overview.changelog.length ? <ul>{overview.changelog.map((entry, index) => <li key={entry.date + entry.text + index}><time dateTime={entry.date}>{entry.date.slice(5)}</time><span>{entry.text}</span></li>)}</ul> : <div className="si-empty-state"><AlertTriangle size={15} />暂无变更记录。</div>}
     </section>
-    </div>
     </>}
     </div>
     </ProjectTabPanel>
