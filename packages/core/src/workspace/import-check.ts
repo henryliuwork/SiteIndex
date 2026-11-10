@@ -1,4 +1,4 @@
-import { appendFile, mkdir, open, readFile, unlink } from "node:fs/promises";
+import { appendFile, lstat, mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CSV_HEADERS, PATHS, pathsFor, type SiteConfig, type WorkspaceImportCheckResult, type WorkspaceImportIssue } from "@siteindex/shared";
@@ -65,14 +65,15 @@ async function loadWorkspaceTemplate(templateDir?: string): Promise<{ root: stri
   const candidates = workspaceTemplateCandidates(templateDir);
   for (const root of candidates) {
     try {
-      const [manifestText, readme, agents] = await Promise.all([
+      const [manifestText, readme, agents, claude] = await Promise.all([
         readFile(path.join(root, "_site-index", "workspace.json"), "utf8"),
         readFile(path.join(root, PATHS.readme), "utf8"),
         readFile(path.join(root, PATHS.agentsMd), "utf8"),
+        readFile(path.join(root, PATHS.claudeMd), "utf8"),
       ]);
       const manifestValue: unknown = JSON.parse(manifestText);
       if (!validManifest(manifestValue)) continue;
-      return { root, manifest: manifestValue, files: new Map([[PATHS.readme, readme], [PATHS.agentsMd, agents]]) };
+      return { root, manifest: manifestValue, files: new Map([[PATHS.readme, readme], [PATHS.agentsMd, agents], [PATHS.claudeMd, claude]]) };
     } catch { /* 尝试源码树或安装包中的下一个模板位置。 */ }
   }
   throw new Error("找不到有效的 Agent 工作区模板。");
@@ -156,6 +157,16 @@ async function inspectWorkspace(projectPath: string): Promise<{
   }
 
   const issues: WorkspaceImportIssue[] = [];
+  try { await lstat(path.join(projectPath, paths.claudeMd)); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    issues.push({
+      path: paths.claudeMd,
+      code: "document_missing",
+      message: "缺少 CLAUDE.md，可从工作区模板恢复。",
+      auto_fixable: true,
+    });
+  }
   const manifestPath = path.posix.join(paths.index, "workspace.json");
   let manifest: WorkspaceManifest | undefined;
   try {
@@ -252,6 +263,13 @@ export async function checkWorkspaceImport(
     if (contents === undefined) continue;
     const created = await exclusiveWrite(path.join(project, issue.path), contents);
     if (created) repaired.add(issue.path);
+  }
+
+  const claudeMissing = first.issues.some((issue) => issue.path === paths.claudeMd && issue.code === "document_missing" && issue.auto_fixable);
+  const claudeTemplate = template.files.get(paths.claudeMd);
+  if (claudeMissing && claudeTemplate !== undefined
+    && await exclusiveWrite(path.join(project, paths.claudeMd), claudeTemplate)) {
+    repaired.add(paths.claudeMd);
   }
 
   for (const [file, required] of Object.entries(REQUIRED_BLOCKS)) {
