@@ -1,4 +1,4 @@
-name: E · Windows v0.4.0 packaged acceptance
+name: E · Windows packaged acceptance
 
 on:
   pull_request:
@@ -9,23 +9,45 @@ on:
   workflow_dispatch:
     inputs:
       expected_source_commit:
-        description: "完整源码 commit SHA；正式候选包复测时填写"
+        description: "验收脚本 checkout commit SHA；用于冻结本轮验收代码"
         required: false
         type: string
+      candidate_version:
+        description: "候选安装包版本；内部验收默认 0.4.0"
+        required: false
+        default: "0.4.0"
+        type: string
       candidate_installer_url:
-        description: "可选：正式 Windows 候选安装包下载地址"
+        description: "可选：候选 Windows 安装包 HTTPS 地址；与 artifact run 模式互斥"
         required: false
         type: string
       candidate_installer_sha256:
-        description: "提供正式候选安装包时必须填写其 SHA256"
+        description: "提供候选安装包 URL 时必须填写 EXE SHA256"
+        required: false
+        type: string
+      candidate_workflow_run_id:
+        description: "可选：上传候选 artifact 的 Release workflow run ID"
+        required: false
+        type: string
+      candidate_artifact_id:
+        description: "可选：Windows siteindex-win artifact ID"
+        required: false
+        type: string
+      candidate_artifact_sha256:
+        description: "候选 artifact ZIP 的 GitHub SHA256 digest"
+        required: false
+        type: string
+      candidate_source_commit:
+        description: "候选包 Release workflow 的完整 head commit SHA"
         required: false
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
-  group: e-windows-v040-${{ github.ref }}
+  group: e-windows-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -43,19 +65,42 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_SOURCE_COMMIT_INPUT: ${{ inputs.expected_source_commit }}
+          CANDIDATE_VERSION_INPUT: ${{ inputs.candidate_version }}
           CANDIDATE_SHA256_INPUT: ${{ inputs.candidate_installer_sha256 }}
           CANDIDATE_URL_INPUT: ${{ inputs.candidate_installer_url }}
+          CANDIDATE_RUN_ID_INPUT: ${{ inputs.candidate_workflow_run_id }}
+          CANDIDATE_ARTIFACT_ID_INPUT: ${{ inputs.candidate_artifact_id }}
+          CANDIDATE_ARTIFACT_SHA256_INPUT: ${{ inputs.candidate_artifact_sha256 }}
+          CANDIDATE_SOURCE_COMMIT_INPUT: ${{ inputs.candidate_source_commit }}
           PR_HEAD_SHA_INPUT: ${{ github.event.pull_request.head.sha }}
         run: |
-          $rawInputs = @($env:EXPECTED_SOURCE_COMMIT_INPUT, $env:CANDIDATE_SHA256_INPUT, $env:CANDIDATE_URL_INPUT)
+          $rawInputs = @(
+            $env:EXPECTED_SOURCE_COMMIT_INPUT,
+            $env:CANDIDATE_VERSION_INPUT,
+            $env:CANDIDATE_SHA256_INPUT,
+            $env:CANDIDATE_URL_INPUT,
+            $env:CANDIDATE_RUN_ID_INPUT,
+            $env:CANDIDATE_ARTIFACT_ID_INPUT,
+            $env:CANDIDATE_ARTIFACT_SHA256_INPUT,
+            $env:CANDIDATE_SOURCE_COMMIT_INPUT
+          )
           foreach ($value in $rawInputs) {
             if ($value -match '[\r\n]') { throw "Workflow inputs must be single-line values." }
           }
           $sourceCommit = $env:EXPECTED_SOURCE_COMMIT_INPUT.Trim()
+          $candidateVersion = $env:CANDIDATE_VERSION_INPUT.Trim()
+          if (-not $candidateVersion) { $candidateVersion = "0.4.0" }
           $candidateSha256 = $env:CANDIDATE_SHA256_INPUT.Trim()
           $candidateUrl = $env:CANDIDATE_URL_INPUT.Trim()
+          $candidateRunId = $env:CANDIDATE_RUN_ID_INPUT.Trim()
+          $candidateArtifactId = $env:CANDIDATE_ARTIFACT_ID_INPUT.Trim()
+          $candidateArtifactSha256 = $env:CANDIDATE_ARTIFACT_SHA256_INPUT.Trim().ToLowerInvariant()
+          $candidateSourceCommit = $env:CANDIDATE_SOURCE_COMMIT_INPUT.Trim().ToLowerInvariant()
           if ($sourceCommit -and $sourceCommit -notmatch '^[0-9a-fA-F]{40}$') {
             throw "The expected source commit must be a 40-character hexadecimal SHA."
+          }
+          if ($candidateVersion -notmatch '^\d+\.\d+\.\d+$') {
+            throw "The candidate version must use three numeric components."
           }
           if ($candidateSha256 -and $candidateSha256 -notmatch '^[0-9a-fA-F]{64}$') {
             throw "The candidate installer SHA256 must be a 64-character hexadecimal digest."
@@ -63,11 +108,23 @@ jobs:
           if ($candidateUrl -and $candidateUrl -notmatch '^https://\S{1,2040}$') {
             throw "The candidate installer URL must be a single-line HTTPS URL."
           }
-          if ($candidateUrl -and (-not $candidateSha256 -or -not $sourceCommit)) {
-            throw "A supplied candidate installer requires both its SHA256 and frozen source commit."
+          $artifactMode = $candidateRunId -or $candidateArtifactId -or $candidateArtifactSha256 -or $candidateSourceCommit
+          $candidateArtifactSource = if ($artifactMode) { "workflow-run-artifact" } elseif ($candidateUrl) { "candidate-installer-url" } else { "runner-built-internal-candidate" }
+          if ($candidateUrl -and $artifactMode) {
+            throw "Use either a candidate installer URL or a workflow-run artifact, not both."
           }
-          if (-not $candidateUrl -and $candidateSha256) {
-            throw "A candidate SHA256 requires a candidate installer URL."
+          if ($candidateUrl -and (-not $candidateSha256 -or -not $sourceCommit)) {
+            throw "A supplied candidate installer URL requires its EXE SHA256 and frozen acceptance-code commit."
+          }
+          if ($artifactMode) {
+            if (-not $sourceCommit) { throw "A workflow-run artifact requires the frozen acceptance-code commit." }
+            if (-not $candidateRunId -or $candidateRunId -notmatch '^\d{1,20}$') { throw "A workflow-run artifact requires a numeric source run ID." }
+            if (-not $candidateArtifactId -or $candidateArtifactId -notmatch '^\d{1,20}$') { throw "A workflow-run artifact requires a numeric artifact ID." }
+            if ($candidateArtifactSha256 -notmatch '^[0-9a-f]{64}$') { throw "A workflow-run artifact requires its 64-character SHA256 digest." }
+            if ($candidateSourceCommit -notmatch '^[0-9a-f]{40}$') { throw "A workflow-run artifact requires its 40-character source commit SHA." }
+            if ($candidateSha256) { throw "Do not supply candidate_installer_sha256 in workflow-run artifact mode; the artifact digest and EXE hash are recorded separately." }
+          } elseif ($candidateSha256 -and -not $candidateUrl) {
+            throw "A candidate installer SHA256 requires a candidate installer URL."
           }
           $os = Get-CimInstance Win32_OperatingSystem
           "SITEINDEX_WINDOWS_VERSION=$($os.Version)" >> $env:GITHUB_ENV
@@ -76,29 +133,36 @@ jobs:
           "SITEINDEX_PR_HEAD_SHA=$($env:PR_HEAD_SHA_INPUT)" >> $env:GITHUB_ENV
           "SITEINDEX_EXPECTED_SOURCE_COMMIT=$sourceCommit" >> $env:GITHUB_ENV
           "SITEINDEX_EXPECTED_CANDIDATE_SHA256=$candidateSha256" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_VERSION=$candidateVersion" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_ARTIFACT_SOURCE=$candidateArtifactSource" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_WORKFLOW_RUN_ID=$candidateRunId" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_ARTIFACT_ID=$candidateArtifactId" >> $env:GITHUB_ENV
+          "SITEINDEX_EXPECTED_CANDIDATE_ARTIFACT_SHA256=$candidateArtifactSha256" >> $env:GITHUB_ENV
+          "SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT=$candidateSourceCommit" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_INSTALLER_URL=$candidateUrl" >> $env:GITHUB_ENV
-          New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "siteindex-e-v040-results") -Force | Out-Null
-          "SITEINDEX_ACCEPTANCE_OUTPUT=$(Join-Path $env:RUNNER_TEMP 'siteindex-e-v040-results')" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "siteindex-e-windows-results") -Force | Out-Null
+          "SITEINDEX_ACCEPTANCE_OUTPUT=$(Join-Path $env:RUNNER_TEMP 'siteindex-e-windows-results')" >> $env:GITHUB_ENV
           Write-Output "Windows build recorded: $($os.Version) build $($os.BuildNumber)"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Set runner-only candidate version
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.candidate_installer_url == '' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.candidate_installer_url == '' && inputs.candidate_workflow_run_id == '') }}
         shell: pwsh
         run: |
           $packagePath = Join-Path $PWD "packages/desktop/package.json"
           $source = [System.IO.File]::ReadAllText($packagePath)
-          $version = [regex]::Match($source, '(?m)^\s*"version"\s*:\s*"([^"]+)"').Groups[1].Value
-          if ($version -eq "0.3.0") {
-            $candidate = $source.Replace('"version": "0.3.0"', '"version": "0.4.0"')
+          $versionMatch = [regex]::Match($source, '(?m)^\s*"version"\s*:\s*"([^"]+)"')
+          $version = $versionMatch.Groups[1].Value
+          $candidateVersion = $env:SITEINDEX_CANDIDATE_VERSION
+          if (-not $versionMatch.Success) { throw "Could not read Desktop package version." }
+          if ($version -ne $candidateVersion) {
+            $candidate = $source.Replace($versionMatch.Value, $versionMatch.Value.Replace('"' + $version + '"', '"' + $candidateVersion + '"'))
             if ($candidate -eq $source) { throw "Could not apply the runner-only version override." }
             [System.IO.File]::WriteAllText($packagePath, $candidate, [System.Text.UTF8Encoding]::new($false))
-            Write-Output "Runner checkout will package app version 0.4.0; repository manifest is unchanged."
-          } elseif ($version -ne "0.4.0") {
-            throw "Expected Desktop package version 0.3.0 or 0.4.0 for the internal candidate build."
+            Write-Output "Runner checkout will package app version $candidateVersion; repository manifest is unchanged."
           }
       - name: Build candidate Windows installer
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.candidate_installer_url == '' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.candidate_installer_url == '' && inputs.candidate_workflow_run_id == '') }}
         run: pnpm --filter @siteindex/desktop dist:win
       - name: Download and verify supplied official candidate installer
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_installer_url != '' }}
@@ -114,12 +178,78 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:EXPECTED_SOURCE_COMMIT)) {
             throw "The frozen source commit is required when testing a supplied candidate installer."
           }
-          $installer = Join-Path $env:RUNNER_TEMP "SiteIndex-Setup-0.4.0.exe"
+          $candidateVersion = $env:SITEINDEX_CANDIDATE_VERSION
+          $installer = Join-Path $env:RUNNER_TEMP "SiteIndex-Setup-$candidateVersion.exe"
           Invoke-WebRequest -Uri $env:CANDIDATE_URL -OutFile $installer
           $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $env:EXPECTED_SHA256.ToLowerInvariant()) { throw "Candidate installer SHA256 does not match the supplied digest." }
           "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
           Write-Output "Supplied official candidate installer SHA256 verified."
+      - name: Verify candidate workflow run and artifact provenance
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_workflow_run_id != '' }}
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $headers = @{
+            Accept = "application/vnd.github+json"
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $apiRoot = $env:GITHUB_API_URL.TrimEnd('/')
+          $repo = $env:GITHUB_REPOSITORY
+          $runId = [long]$env:SITEINDEX_CANDIDATE_WORKFLOW_RUN_ID
+          $artifactId = [long]$env:SITEINDEX_CANDIDATE_ARTIFACT_ID
+          $expectedSource = $env:SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT
+          $expectedDigest = $env:SITEINDEX_EXPECTED_CANDIDATE_ARTIFACT_SHA256
+          $version = $env:SITEINDEX_CANDIDATE_VERSION
+
+          $releaseWorkflow = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/actions/workflows/release.yml" -Headers $headers
+          $sourceRun = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/actions/runs/$runId" -Headers $headers
+          $artifact = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/actions/artifacts/$artifactId" -Headers $headers
+          $actualDigest = ([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant()
+
+          if ($sourceRun.workflow_id -ne $releaseWorkflow.id) { throw "Candidate run did not use the repository Release workflow." }
+          if ($sourceRun.event -ne "workflow_dispatch" -or $sourceRun.head_branch -ne "main") { throw "Candidate run must be a successful workflow_dispatch from main." }
+          if ($sourceRun.status -ne "completed" -or $sourceRun.conclusion -ne "success") { throw "Candidate Release workflow run did not complete successfully." }
+          if ($sourceRun.head_sha -ne $expectedSource) { throw "Candidate run source commit does not match the supplied commit." }
+          if ($artifact.id -ne $artifactId -or $artifact.name -ne "siteindex-win" -or $artifact.expired) { throw "The supplied artifact is not a live siteindex-win artifact." }
+          if ($artifact.workflow_run.id -ne $runId -or $artifact.workflow_run.head_sha -ne $expectedSource) { throw "Artifact provenance does not match the supplied run and source commit." }
+          if ($actualDigest -ne $expectedDigest) { throw "GitHub artifact SHA256 digest does not match the supplied digest." }
+
+          "SITEINDEX_CANDIDATE_ARTIFACT_SOURCE=workflow-run-artifact" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_ARTIFACT_RUN_ID=$runId" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_ARTIFACT_ID=$artifactId" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_ARTIFACT_NAME=$($artifact.name)" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_ARTIFACT_SHA256=$actualDigest" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_SOURCE_COMMIT=$($sourceRun.head_sha)" >> $env:GITHUB_ENV
+          Write-Output "Verified Release run $runId, artifact $artifactId, source $expectedSource, artifact SHA256 $actualDigest."
+      - name: Download exact candidate artifact from workflow run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_workflow_run_id != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ inputs.candidate_artifact_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_workflow_run_id }}
+          path: ${{ runner.temp }}/siteindex-candidate-artifact
+          digest-mismatch: error
+      - name: Verify candidate EXE from original artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_workflow_run_id != '' }}
+        shell: pwsh
+        run: |
+          $candidateVersion = $env:SITEINDEX_CANDIDATE_VERSION
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP "siteindex-candidate-artifact"
+          $installerName = "SiteIndex-Setup-$candidateVersion.exe"
+          $installer = Join-Path $artifactDirectory $installerName
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Candidate artifact is missing the expected installer filename." }
+          $installers = @(Get-ChildItem -LiteralPath $artifactDirectory -Filter "SiteIndex-Setup-*.exe" -File -Recurse)
+          if ($installers.Count -ne 1 -or $installers[0].FullName -ne $installer) { throw "Candidate artifact must contain exactly one installer for the requested version." }
+          $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
+          Write-Output "Verified original artifact EXE $installerName SHA256 $actual."
       - name: Download pinned official v0.3.0 installer
         shell: pwsh
         run: |
@@ -136,7 +266,8 @@ jobs:
           $candidateInstaller = if ($env:SITEINDEX_CANDIDATE_INSTALLER_PATH) {
             $env:SITEINDEX_CANDIDATE_INSTALLER_PATH
           } else {
-            Join-Path $PWD "release/SiteIndex-Setup-0.4.0.exe"
+            $candidateVersion = $env:SITEINDEX_CANDIDATE_VERSION
+            Join-Path $PWD "release/SiteIndex-Setup-$candidateVersion.exe"
           }
           node packages/desktop/scripts/e-windows-v040-acceptance.mjs $oldInstaller $candidateInstaller
       - name: Add acceptance summary to workflow
@@ -149,7 +280,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: siteindex-e-v040-windows-acceptance
-          path: ${{ runner.temp }}/siteindex-e-v040-results/
+          name: siteindex-e-windows-acceptance
+          path: ${{ runner.temp }}/siteindex-e-windows-results/
           if-no-files-found: warn
           retention-days: 14
