@@ -106,12 +106,7 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = [
-  "projects.createWorkspaceOnly",
-  "workspace.check",
-  "workspace.create",
-  "workspace.importCheck",
-];
+export const PENDING_HANDLERS: readonly string[] = [];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 
