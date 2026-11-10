@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
 import { classifyDataSurface, waitForDataSurface, type DataSurfaceState } from "./readiness";
+import { isDataTableRoute } from "./routes";
 
 type BrowserChannel = "msedge" | "chrome";
 
@@ -93,10 +94,6 @@ async function discoverMockProjectId(server: ViteDevServer): Promise<string> {
   return projectId;
 }
 
-function isDataTableRoute(routePath: string): boolean {
-  return /\/p\/[^/]+\/(?:seo|inventory|edm|settings\/categories)$/.test(routePath);
-}
-
 async function launchLocalBrowser(): Promise<Browser> {
   const configured = process.env.SITEINDEX_BROWSER_CHANNEL;
   if (configured && configured !== "msedge" && configured !== "chrome") {
@@ -120,31 +117,70 @@ async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
   const snapshot = await page.evaluate(() => {
     const tableScrollVisible = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-scroll")).some((element) => {
       const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
     });
     const paginationReady = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-pagination [aria-label='每页条数']")).some((element) => {
       const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
     });
+    const hasVisibleRows = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table")).some((table) => {
+      const tableRect = table.getBoundingClientRect();
+      let tableVisible = tableRect.width > 0 && tableRect.height > 0;
+      for (let current: HTMLElement | null = table; tableVisible && current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") tableVisible = false;
+      }
+      return tableVisible && Array.from(table.querySelectorAll<HTMLElement>(".si-table tbody tr[data-row-id]")).some((row) => {
+        const rect = row.getBoundingClientRect();
+        let rowVisible = rect.width > 0 && rect.height > 0;
+        for (let current: HTMLElement | null = row; rowVisible && current && current !== document.documentElement; current = current.parentElement) {
+          const style = getComputedStyle(current);
+          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") rowVisible = false;
+        }
+        return rowVisible;
+      });
+    });
+    const emptyElementVisible = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty]")).some((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const mockRequestsPending = (window.__siteindexMockPendingRequests ?? 0) > 0;
     return {
       table: tableScrollVisible,
       pagination: paginationReady,
-      empty: Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty]")).some((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-      }),
+      empty: emptyElementVisible && !hasVisibleRows,
       error: Array.from(document.querySelectorAll<HTMLElement>(".si-page .si-api-error-state, main .si-api-error-state")).some((element) => {
         const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+        for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+          const style = getComputedStyle(current);
+          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+        }
+        return true;
       }),
-      loading: Array.from(document.querySelectorAll<HTMLElement>(".si-page-loading, .si-query-loading")).some((element) => {
+      loading: mockRequestsPending || Array.from(document.querySelectorAll<HTMLElement>(".si-page-loading, .si-query-loading, .si-inventory-query-state")).some((element) => {
         const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+        for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+          const style = getComputedStyle(current);
+          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+        }
+        return true;
       }),
     };
   });
@@ -154,8 +190,8 @@ async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
 async function waitForRoute(page: Page, route: RouteCase): Promise<DataSurfaceState | undefined> {
   await page.locator(".si-page, .si-placeholder").first().waitFor({ state: "visible", timeout: 20_000 });
   if (route.waitForDataSurface) {
+    await page.waitForLoadState("networkidle", { timeout: 20_000 });
     const state = await waitForDataSurface(() => readDataSurfaceState(page));
-    await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined);
     await page.evaluate(() => document.fonts.ready);
     return state;
   }
@@ -199,27 +235,67 @@ async function inspectPage(page: Page): Promise<{
 
     const tables = Array.from(document.querySelectorAll<HTMLElement>(".si-table-scroll")).filter((element) => {
       const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 && getComputedStyle(element).display !== "none";
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const hasVisibleRows = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table tbody tr[data-row-id]")).some((row) => {
+      const rect = row.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = row; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const emptySurface = !hasVisibleRows && Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty]")).some((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const errorSurface = Array.from(document.querySelectorAll<HTMLElement>(".si-page .si-api-error-state, main .si-api-error-state")).some((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
     });
     const tableMetrics = tables.map((scrollArea) => {
       const rect = scrollArea.getBoundingClientRect();
       const table = scrollArea.closest<HTMLElement>(".si-data-table");
       const footer = table?.querySelector<HTMLElement>(".si-pagination") ?? null;
+      const footerRect = footer?.getBoundingClientRect() ?? null;
       const pageSize = footer?.querySelector<HTMLElement>('[aria-label="每页条数"]') ?? null;
       const checkViewport = Boolean(table?.classList.contains("is-fill") || scrollArea.closest(".si-table-region"));
+      let footerVisible = Boolean(footer && footerRect && footerRect.width > 0 && footerRect.height > 0);
+      for (let current: HTMLElement | null = footer; footerVisible && current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") footerVisible = false;
+      }
       return {
         overflowY: getComputedStyle(scrollArea).overflowY,
         bottom: Math.round(rect.bottom),
         bottomInViewport: rect.bottom <= window.innerHeight + 1 && rect.bottom > 0,
         checkViewport,
         hasPagination: Boolean(footer),
+        paginationBottom: footerRect ? Math.round(footerRect.bottom) : null,
+        paginationInViewport: Boolean(footerVisible && footerRect && footerRect.top >= 0 && footerRect.bottom <= window.innerHeight + 1),
         hasPageSizeControl: Boolean(pageSize),
       };
     });
 
     const clickMisses: string[] = [];
     const clickTargets = Array.from(document.querySelectorAll<HTMLElement>(
-      ".si-table tbody button:not(:disabled), .si-table tbody a[href], .si-table tbody summary, .si-table tbody [role='button']",
+      ".si-table tbody button:not(:disabled), .si-table tbody a[href], .si-table tbody summary, .si-table tbody [role='button'], .si-table tbody tr.is-clickable",
     )).filter((target) => !target.closest("[data-radix-popper-content-wrapper], [role='menu']"));
     for (const target of clickTargets) {
       const rect = target.getBoundingClientRect();
@@ -280,6 +356,8 @@ async function inspectPage(page: Page): Promise<{
         bodyFontFamily: bodyStyle.fontFamily,
         bodyFirstFontIsGeist: /geist/i.test(firstFont),
         tableCount: tables.length,
+        emptySurface,
+        errorSurface,
         scheduleTableMissingStandardScroll: Boolean(document.querySelector(".si-schedules-page table")) && !tables.length,
         tables: tableMetrics,
         clippedCells: clippedCells.slice(0, 12),
@@ -358,8 +436,10 @@ async function main(): Promise<void> {
             bodyFontSize: string;
             bodyFirstFontIsGeist: boolean;
             tableCount: number;
+            emptySurface: boolean;
+            errorSurface: boolean;
             scheduleTableMissingStandardScroll: boolean;
-            tables: Array<{ overflowY: string; bottomInViewport: boolean; checkViewport: boolean; hasPagination: boolean; hasPageSizeControl: boolean }>;
+            tables: Array<{ overflowY: string; bottomInViewport: boolean; checkViewport: boolean; hasPagination: boolean; paginationBottom: number | null; paginationInViewport: boolean; hasPageSizeControl: boolean }>;
             clippedCells: string[];
             inlineClickMisses: string[];
             dataSurfaceState?: DataSurfaceState;
@@ -367,8 +447,11 @@ async function main(): Promise<void> {
           if (route.waitForDataSurface && values.dataSurfaceState === "table" && !values.tableCount) {
             failures.push({ rule: "table-readiness-mismatch", message: "就绪判定为表格已加载，但截图测量没有可见表格滚动区。" });
           }
-          if (route.waitForDataSurface && values.dataSurfaceState !== "table" && values.tableCount > 0) {
-            failures.push({ rule: "table-readiness-mismatch", message: `就绪判定为 ${values.dataSurfaceState}，但截图测量却包含可见表格。` });
+          if (route.waitForDataSurface && values.dataSurfaceState === "empty" && !values.emptySurface) {
+            failures.push({ rule: "table-readiness-mismatch", message: "就绪判定为空态，但截图测量没有可见空态。" });
+          }
+          if (route.waitForDataSurface && values.dataSurfaceState === "error" && !values.errorSurface) {
+            failures.push({ rule: "table-readiness-mismatch", message: "就绪判定为错误态，但截图测量没有可见错误。" });
           }
           if (values.verticalOverflow) failures.push({ rule: "vertical-overflow", message: "窗口 document 有纵向滚动；内容应在应用内部滚动。" });
           if (values.horizontalOverflow) failures.push({ rule: "horizontal-overflow", message: "页面内容超出视口宽度。" });
@@ -381,6 +464,7 @@ async function main(): Promise<void> {
             failures.push({ rule: "table-scroll", message: "表格滚动区的 overflow-y 不是 auto/scroll。" });
           }
           if (values.tables.some((table) => table.checkViewport && !table.bottomInViewport)) failures.push({ rule: "table-viewport", message: "表格滚动区底部超出窗口视口。" });
+          if (values.tables.some((table) => table.checkViewport && table.hasPagination && !table.paginationInViewport)) failures.push({ rule: "table-pagination-viewport", message: "表格分页栏未完整显示在窗口视口内。" });
           if (values.tables.some((table) => !table.hasPagination || !table.hasPageSizeControl)) {
             failures.push({ rule: "table-pagination", message: "表格没有分页条或每页条数控件。" });
           }

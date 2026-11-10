@@ -14,6 +14,10 @@ function normalizeTarget(path: string): string {
   return path.trim().replaceAll("/", "\\").replace(/\\+/g, "\\").replace(/\\$/, "").toLocaleLowerCase();
 }
 
+function sortedEntries(entries: readonly string[]): string[] {
+  return [...entries].sort((left, right) => left < right ? -1 : left > right ? 1 : 0).slice(0, 10);
+}
+
 export interface WorkspaceMock {
   api: NonNullable<SiteIndexApi["workspace"]>;
   createNow(input: WorkspaceCreateInput): WorkspaceCreateResult;
@@ -27,10 +31,13 @@ export function createWorkspaceMock(): WorkspaceMock {
     const key = normalizeTarget(path);
     const existing = createdByTarget.get(key);
     if (existing?.length) {
-      const names = existing.slice(0, 10).join("、");
-      throw { code: "WORKSPACE_NOT_EMPTY", message: `目标目录不是空目录：${names}` } satisfies SiteIndexError;
+      throw {
+        code: "WORKSPACE_NOT_EMPTY",
+        message: "目标目录不是空目录。请改选空目录；未覆盖任何已有内容。",
+        detail: sortedEntries(existing).join(", "),
+      } satisfies SiteIndexError;
     }
-    if (!key) throw { code: "UNKNOWN", message: "请选择工作区目录。" } satisfies SiteIndexError;
+    if (!key) throw { code: "CONFIG_INVALID", message: "工作区目录无效，请选择一个项目文件夹。" } satisfies SiteIndexError;
     const created = [...generatedWorkspaceFiles];
     createdByTarget.set(key, created);
     return { path, created };
@@ -39,8 +46,8 @@ export function createWorkspaceMock(): WorkspaceMock {
   const api: NonNullable<SiteIndexApi["workspace"]> = {
     check: (targetDir) => reply(() => {
       const key = normalizeTarget(targetDir);
-      if (!key) return { ok: false, invalid_entries: ["请选择工作区目录。"] };
-      const invalid = createdByTarget.get(key)?.slice(0, 10) ?? [];
+      if (!key) throw { code: "CONFIG_INVALID", message: "工作区目录无效，请选择一个项目文件夹。" } satisfies SiteIndexError;
+      const invalid = sortedEntries(createdByTarget.get(key) ?? []);
       return { ok: invalid.length === 0, invalid_entries: invalid };
     }),
     create: (input) => reply(() => createNow(input)),

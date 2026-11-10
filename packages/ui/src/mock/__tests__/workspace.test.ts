@@ -21,7 +21,7 @@ describe("workspace mock", () => {
     expect(created?.created).toContain("_site-index/skills/presets/esp.mailchimp.md");
     const checkedAgain = await api.workspace?.check(targetDir);
     expect(checkedAgain?.ok).toBe(false);
-    expect(checkedAgain?.invalid_entries).toContain("README.md");
+    expect(checkedAgain?.invalid_entries).toContain(".env");
   });
 
   it("registers a project after creating an empty workspace without running initialization jobs", async () => {
@@ -42,5 +42,28 @@ describe("workspace mock", () => {
     expect(listed?.path).toBe(target);
     expect(listed?.sync.state).toBe("never");
     expect(await api.workspace?.check(target)).toMatchObject({ ok: false });
+  });
+
+  it("matches Core error codes and messages for invalid and occupied targets", async () => {
+    const api = createMockApi();
+    await expect(api.workspace?.check("")).rejects.toMatchObject({
+      code: "CONFIG_INVALID",
+      message: "工作区目录无效，请选择一个项目文件夹。",
+    });
+
+    const input = {
+      targetDir: "C:/SiteIndex/Projects/occupied",
+      domain: "demo.example.test",
+      brand: { name: "Demo Brand" },
+      platform: "shopify" as const,
+      markets: ["US"],
+      esp_presets: ["mailchimp"],
+    };
+    await api.workspace?.create(input);
+    await expect(api.workspace?.create(input)).rejects.toMatchObject({
+      code: "WORKSPACE_NOT_EMPTY",
+      message: "目标目录不是空目录。请改选空目录；未覆盖任何已有内容。",
+      detail: expect.stringContaining("AGENTS.md"),
+    });
   });
 });

@@ -82,17 +82,18 @@
 ## v0.3.0 · 共享层收敛
 - [x] B-2：DataTable v2 默认 fill、内部滚动与固定分页、50/100/200/全部、按 tableId 持久化、行选择与右侧固定操作列；#300 Playwright 回归 — 本 PR
 - [x] B-3：`packages/ui/visual/` 的 `ui:check`，遍历所有路由并输出双视口布局/样式检查报告；干净工作树直接运行时自动生成 mock 数据（#347）— [PR #361](https://github.com/henryliuwork/SiteIndex/pull/361)。基线问题转 [#314](https://github.com/henryliuwork/SiteIndex/issues/314) / [#315](https://github.com/henryliuwork/SiteIndex/issues/315)
-- [ ] B-3 follow-up #360：表格页等待 DataTable、空态或错误态后才测量；慢响应、空态和超时有单测 — 本 PR
+- [x] B-3 follow-up #360：表格页等网络请求完成后，再等待 DataTable、空态或错误态；加载状态优先于残留表格；Products、Inventory、EDM、SEO、分类页纳入双视口检查，填充表格同时检查表体与分页栏可见性。慢响应、空态、错误态和超时有单测 — [PR #369](https://github.com/henryliuwork/SiteIndex/pull/369)；路由与分页边界扩展 — 本 PR
 - [x] B-4a 应用页迁移：项目中心与新建向导使用 PageHeader、Card、EmptyState、Notice、Drawer、Toast；向导步骤采用可插入数组并预留隐藏的 Agent 工作区插槽 — [PR #324](https://github.com/henryliuwork/SiteIndex/pull/324)
 - [x] B-4b 应用页迁移：Skill 中心与软件设置使用 PageHeader、Card、EmptyState、Notice、Toast 和设计 token — [PR #327](https://github.com/henryliuwork/SiteIndex/pull/327)
-- [x] B-4c 应用页迁移：README 与定时任务汇总页使用共享组件和 DataTable v2，页面字号、间距和颜色使用设计 token — 本 PR
-- [x] B-5：`schedule.listSystemTasks` 只读区块，展示刷新状态、下次运行、配置一致性与差异；孤立任务继续调用 #291 的清理确认流程 — 本 PR
+- [x] B-4c 应用页迁移：README 与定时任务汇总页使用共享组件和 DataTable v2，页面字号、间距和颜色使用设计 token — [PR #331](https://github.com/henryliuwork/SiteIndex/pull/331)
+- [x] B-5：`schedule.listSystemTasks` 只读区块，展示刷新状态、下次运行、配置一致性与差异；孤立任务继续调用 #291 的清理确认流程 — [PR #331](https://github.com/henryliuwork/SiteIndex/pull/331)
 - [ ] C 联动：ui-state 持久化支持 200 / 全部 — [issue #307](https://github.com/henryliuwork/SiteIndex/issues/307)
 
 ## v0.4.0 · Agent 工作区
-- [x] B4-1 / B-6：向导项目位置选择；按可选 `workspace.check/create` 显示 Agent 工作区步骤，默认启用、平台选择、Mailchimp 预设、目标目录空检查和目录树预览 — 本 PR（Core 未接入，mock 已实现）
-- [x] 项目中心“创建空工作区”：调用可选 `projects.createWorkspaceOnly`，真实 Core/IPC 行为待 A4-3 / C4-1 — 本 PR
+- [x] B4-1 / B-6：向导项目位置选择；按可选 `workspace.check/create` 显示 Agent 工作区步骤，默认启用、平台选择、Mailchimp 预设、目标目录空检查和目录树预览 — 本 PR（Core `projects.create` / `workspace.check` / `workspace.create` 已实现；Desktop 方法仍在 `PENDING_HANDLERS`，真实入口由门控隐藏）
+- [x] 项目中心“创建空工作区”：调用可选 `projects.createWorkspaceOnly`；mock 已实现，Desktop preload/Core handler 尚未实现，真实入口由门控隐藏 — 本 PR
 - [x] 工作区入口按 `PENDING_HANDLERS` 过滤尚未接入的 Desktop 桩；浏览器 mock 保持可预览，规范 ESP preset ID 使用 `mailchimp`。向导和项目中心均覆盖了可用、缺失与待接入场景 — 本 PR
+- [ ] B4-2 工作区导入检查 UI：Core 与 preload 已有 `workspace.importCheck`，Desktop handler 仍在 `PENDING_HANDLERS`；清除 pending 后再显示检查入口并接入 `issues/repaired` — 等 C handler 完成
 
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
