@@ -170,6 +170,70 @@ describe("workspace.importCheck", () => {
     expect(await api.workspace.importCheck("demo", { apply: true })).toEqual({ issues: [], repaired: [] });
   }, 30_000);
 
+  it("reports missing README.md and AGENTS.md read-only, restores only those files, and stays idempotent", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-import-docs-"));
+    TEMP_DIRS.push(root);
+    const project = path.join(root, "demo");
+    const api = service(project);
+    await api.workspace.create(createInput(project));
+
+    const claudePath = path.join(project, paths.claudeMd);
+    const customClaude = "Custom Claude instructions.\nDo not replace this user file.\n";
+    await writeFile(claudePath, customClaude, "utf8");
+    const userFilePath = path.join(project, "01-brand", "user-note.txt");
+    const userFile = "User-maintained workspace note.\n";
+    await writeFile(userFilePath, userFile, "utf8");
+
+    const readmePath = path.join(project, paths.readme);
+    const agentsPath = path.join(project, paths.agentsMd);
+    await unlink(readmePath);
+    await unlink(agentsPath);
+
+    const checked = await api.workspace.importCheck("demo");
+    expect(checked.issues).toEqual(expect.arrayContaining([
+      {
+        path: paths.readme,
+        code: "document_missing",
+        message: "缺少 README.md，可从内置工作区模板恢复。",
+        auto_fixable: true,
+      },
+      {
+        path: paths.agentsMd,
+        code: "document_missing",
+        message: "缺少 AGENTS.md，可从内置工作区模板恢复。",
+        auto_fixable: true,
+      },
+    ]));
+    expect(checked.issues).toHaveLength(2);
+    expect(checked.repaired).toEqual([]);
+    await expect(readFile(readmePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(agentsPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    const applied = await api.workspace.importCheck("demo", { apply: true });
+    expect(applied.issues).toEqual([]);
+    expect(applied.repaired).toEqual([paths.agentsMd, paths.readme].sort());
+    const restoredReadme = await readFile(readmePath, "utf8");
+    const restoredAgents = await readFile(agentsPath, "utf8");
+    expect(restoredReadme).toContain('id="workspace-map"');
+    expect(restoredReadme).toContain('id="index-summary"');
+    expect(restoredReadme).toContain('id="changelog"');
+    expect(restoredReadme).toContain("Demo Import");
+    expect(restoredAgents).toContain('id="agents-core"');
+    expect(restoredAgents).toContain('id="task-routing"');
+    expect(restoredAgents).toContain('id="data-guide"');
+    expect(restoredAgents).toContain('id="design-summary"');
+    expect(restoredAgents).toContain('id="skills-installed"');
+    expect(restoredAgents).toContain('id="esp-presets"');
+    expect(await readFile(claudePath, "utf8")).toBe(customClaude);
+    expect(await readFile(userFilePath, "utf8")).toBe(userFile);
+
+    expect(await api.workspace.importCheck("demo", { apply: true })).toEqual({ issues: [], repaired: [] });
+    expect(await readFile(readmePath, "utf8")).toBe(restoredReadme);
+    expect(await readFile(agentsPath, "utf8")).toBe(restoredAgents);
+    expect(await readFile(claudePath, "utf8")).toBe(customClaude);
+    expect(await readFile(userFilePath, "utf8")).toBe(userFile);
+  }, 30_000);
+
   it("preserves an existing custom CLAUDE.md exactly", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-import-claude-custom-"));
     TEMP_DIRS.push(root);
