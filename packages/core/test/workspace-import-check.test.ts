@@ -140,7 +140,51 @@ describe("workspace.importCheck", () => {
       expect.objectContaining({ path: paths.site, code: "workspace_config_missing", auto_fixable: false }),
     ]);
     expect(result.repaired).toEqual([]);
+    await expect(readFile(path.join(root, paths.claudeMd), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("reports and restores a missing CLAUDE.md from the workspace template, then stays clean on repeat", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-import-claude-"));
+    TEMP_DIRS.push(root);
+    const project = path.join(root, "demo");
+    const api = service(project);
+    await api.workspace.create(createInput(project));
+    const claudePath = path.join(project, paths.claudeMd);
+    const templateClaude = await readFile(path.join(process.cwd(), "templates/workspace", paths.claudeMd), "utf8");
+    await unlink(claudePath);
+
+    const checked = await api.workspace.importCheck("demo");
+    expect(checked.issues).toContainEqual({
+      path: paths.claudeMd,
+      code: "document_missing",
+      message: "缺少 CLAUDE.md，可从工作区模板恢复。",
+      auto_fixable: true,
+    });
+    expect(checked.repaired).toEqual([]);
+
+    const applied = await api.workspace.importCheck("demo", { apply: true });
+    expect(applied.repaired).toContain(paths.claudeMd);
+    expect(applied.issues).not.toContainEqual(expect.objectContaining({ path: paths.claudeMd }));
+    expect(await readFile(claudePath, "utf8")).toBe(templateClaude);
+
+    expect(await api.workspace.importCheck("demo", { apply: true })).toEqual({ issues: [], repaired: [] });
+  }, 30_000);
+
+  it("preserves an existing custom CLAUDE.md exactly", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-import-claude-custom-"));
+    TEMP_DIRS.push(root);
+    const project = path.join(root, "demo");
+    const api = service(project);
+    await api.workspace.create(createInput(project));
+    const claudePath = path.join(project, paths.claudeMd);
+    const customClaude = "Custom Claude instructions.\nKeep this file unchanged.\n";
+    await writeFile(claudePath, customClaude, "utf8");
+
+    const result = await api.workspace.importCheck("demo", { apply: true });
+    expect(result.repaired).not.toContain(paths.claudeMd);
+    expect(result.issues).not.toContainEqual(expect.objectContaining({ path: paths.claudeMd }));
+    expect(await readFile(claudePath, "utf8")).toBe(customClaude);
+  }, 30_000);
 
   it("reports a missing schema_version without rewriting the config", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-import-schema-"));
