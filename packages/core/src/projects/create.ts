@@ -16,7 +16,7 @@ function createError(code: "PROJECT_NOT_FOUND" | "FOLDER_EXISTS" | "WRITE_FAILED
   return { code, message, ...(detail ? { detail } : {}) };
 }
 
-function cleanFolderName(value: string): string {
+export function cleanFolderName(value: string): string {
   const name = value.trim();
   if (!name || name === "." || name === ".." || /[<>:"/\\|?*\u0000-\u001f]/.test(name) || /[. ]$/.test(name)) {
     throw createError("UNKNOWN", "项目文件夹名称无效。", value);
@@ -109,7 +109,7 @@ async function copySkills(templatePath: string, projectPath: string): Promise<vo
   }
 }
 
-function createConfig(input: CreateProjectInput, detected: DetectResult): SiteConfig {
+export function createConfig(input: CreateProjectInput, detected: DetectResult): SiteConfig {
   const finalUrl = new URL(detected.final_url);
   const domain = finalUrl.hostname.toLowerCase().replace(/^www\./, "");
   return {
