@@ -103,6 +103,21 @@ describe("workspace.importCheck", () => {
       expect.objectContaining({ code: "missing_auto_block:workspace-map" }),
       expect.objectContaining({ code: "missing_auto_block:data-guide" }),
     ]));
+    const metadataIssue = applied.issues.find((issue) => issue.code === "workspace_metadata_missing");
+    expect(metadataIssue).toEqual({
+      path: paths.site,
+      code: "workspace_metadata_missing",
+      message: "site.json 缺少 workspace 元数据。为避免覆盖用户配置，请根据 _site-index/workspace.json 手动补充 workspace.version、workspace.sections（目录名数组）和 workspace.esp_presets；若该文件缺失，请先运行自动修复，再重新检查。",
+      auto_fixable: false,
+    });
+    const repairedManifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      version: string;
+      sections: { id: string; dir: string }[];
+      esp_presets: string[];
+    };
+    expect(repairedManifest.version).toBe("1.0");
+    expect(repairedManifest.sections.map((section) => section.dir)).toContain("01-brand");
+    expect(repairedManifest.esp_presets).toEqual(["mailchimp"]);
     expect(await readFile(configPath, "utf8")).toBe(configAfterUserEdit);
     expect(JSON.parse(configAfterUserEdit)).not.toHaveProperty("workspace");
     expect(await readFile(path.join(project, paths.keywords), "utf8")).toBe("");
