@@ -99,7 +99,16 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
         if (nextHiddenProjects.length !== (currentAfterCreate.hidden_projects ?? []).length) {
           patch.hidden_projects = nextHiddenProjects;
         }
-        const updated = Object.keys(patch).length > 0 ? await context.settings.set(patch) : currentAfterCreate;
+        let updated: AppSettings;
+        try {
+          updated = Object.keys(patch).length > 0 ? await context.settings.set(patch) : currentAfterCreate;
+        } catch (error) {
+          throw {
+            code: "WRITE_FAILED",
+            message: "工作区已创建，但项目登记未保存。请在项目中心点击“添加已有项目”，选择刚创建的文件夹来恢复登记。",
+            detail: error instanceof Error ? error.message : String(error),
+          } satisfies SiteIndexError;
+        }
         if (updated !== currentAfterCreate) await context.settingsChanged(updated, false);
 
         await context.projects.refresh(updated);
