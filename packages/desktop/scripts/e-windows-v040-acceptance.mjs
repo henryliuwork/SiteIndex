@@ -453,6 +453,7 @@ async function testWorkspaceApi(page) {
   const importProjectPath = path.join(PROJECTS_ROOT, id);
   const readmePath = path.join(importProjectPath, "README.md");
   const agentsPath = path.join(importProjectPath, "AGENTS.md");
+  const claudePath = path.join(importProjectPath, "CLAUDE.md");
   const envPath = path.join(importProjectPath, ".env");
   const siteConfigPath = path.join(importProjectPath, "_site-index", "site.json");
   const userNotesPath = path.join(importProjectPath, "user-owned-notes.txt");
@@ -460,6 +461,7 @@ async function testWorkspaceApi(page) {
   const mediaLedgerPath = path.join(importProjectPath, "_site-index", "ledgers", "sku_media.csv");
   const presetPath = path.join(importProjectPath, "_site-index", "skills", "presets", "esp.mailchimp.md");
   const siteConfigBefore = await fileSha256(siteConfigPath);
+  const claudeBefore = await readFile(claudePath, "utf8");
   const generatedManifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const presetCopied = generatedManifest.esp_presets.includes("mailchimp") && await exists(presetPath);
   assert(presetCopied, "Mailchimp preset is included in workspace manifest and skill files");
@@ -474,8 +476,11 @@ async function testWorkspaceApi(page) {
   }, id);
   assert(workspaceRead.idMatches && workspaceRead.nameMatches && workspaceRead.workspaceSections > 0 && workspaceRead.mailchimpEnabled,
     "packaged projects.get reads workspace layout and selected preset", workspaceRead);
-  const readmeBefore = `${await readFile(readmePath, "utf8")}\n<!-- synthetic-user-area -->\nPreserve this user section.\n`;
-  const agentsBefore = `${await readFile(agentsPath, "utf8")}\n<!-- synthetic-agent-user-area -->\nPreserve this agent section.\n`;
+  const removeAutoBlock = (markdown, id) => markdown
+    .replace(new RegExp(`<!-- siteindex:auto:start id="${id}" -->[\\s\\S]*?<!-- siteindex:auto:end id="${id}" -->\\s*`, "u"), "")
+    .trimEnd() + "\n";
+  const readmeBefore = `${removeAutoBlock(await readFile(readmePath, "utf8"), "workspace-map")}\n<!-- synthetic-user-area -->\nPreserve this user section.\n`;
+  const agentsBefore = `${removeAutoBlock(await readFile(agentsPath, "utf8"), "agents-core")}\n<!-- synthetic-agent-user-area -->\nPreserve this agent section.\n`;
   const envBefore = "SYNTHETIC_ACCEPTANCE=preserve-this-value\n";
   const userNotesBefore = "Synthetic user-authored file: preserve byte-for-byte.\n";
   await writeFile(readmePath, readmeBefore, "utf8");
@@ -487,18 +492,36 @@ async function testWorkspaceApi(page) {
   const importResult = await page.evaluate((projectId) => window.siteindex.workspace.importCheck(projectId, { apply: true }), id);
   const readmeAfter = await readFile(readmePath, "utf8");
   const agentsAfter = await readFile(agentsPath, "utf8");
+  const claudeAfter = await readFile(claudePath, "utf8");
   const envAfter = await readFile(envPath, "utf8");
   const userNotesAfter = await readFile(userNotesPath, "utf8");
   const siteConfigAfter = await fileSha256(siteConfigPath);
-  assert(importResult.repaired.length >= 2, "import check repairs missing manifest and ledger files", { repairedCount: importResult.repaired.length });
+  assert(importResult.repaired.length >= 4, "import check repairs missing manifest, ledger, and required auto blocks", {
+    repairedCount: importResult.repaired.length,
+    readmeAutoBlockRepaired: importResult.repaired.includes("README.md"),
+    agentsAutoBlockRepaired: importResult.repaired.includes("AGENTS.md"),
+  });
+  const readmeAutoBlockRestored = /<!-- siteindex:auto:start id="workspace-map" -->[\s\S]*?<!-- siteindex:auto:end id="workspace-map" -->/u.test(readmeAfter);
+  const agentsAutoBlockRestored = /<!-- siteindex:auto:start id="agents-core" -->[\s\S]*?<!-- siteindex:auto:end id="agents-core" -->/u.test(agentsAfter);
+  const userContentKeptAroundAutoBlocks = readmeAfter.startsWith(readmeBefore) && agentsAfter.startsWith(agentsBefore);
+  assert(readmeAutoBlockRestored && agentsAutoBlockRestored && userContentKeptAroundAutoBlocks,
+    "import check adds only missing README and AGENTS auto blocks while preserving user sections", {
+      readmeAutoBlockRestored,
+      agentsAutoBlockRestored,
+      readmeUserAreaPreserved: readmeAfter.includes("Preserve this user section."),
+      agentUserAreaPreserved: agentsAfter.includes("Preserve this agent section."),
+      userContentKeptAroundAutoBlocks,
+    });
   const userFilesPreserved = readmeAfter.includes("Preserve this user section.")
     && agentsAfter.includes("Preserve this agent section.")
+    && claudeAfter === claudeBefore
     && envAfter === envBefore
     && userNotesAfter === userNotesBefore;
   assert(userFilesPreserved && siteConfigAfter === siteConfigBefore,
     "import check preserves README user area, .env, user file, and site.json", {
     userAreaPreserved: readmeAfter.includes("Preserve this user section."),
     agentUserAreaPreserved: agentsAfter.includes("Preserve this agent section."),
+    existingClaudeFilePreserved: claudeAfter === claudeBefore,
     envPreserved: envAfter === envBefore,
     userFilePreserved: userNotesAfter === userNotesBefore,
     siteConfigPreserved: siteConfigAfter === siteConfigBefore,
@@ -516,6 +539,99 @@ async function testWorkspaceApi(page) {
     && (await readFile(readmePath, "utf8")).includes("Preserve this user section.");
   assert(readmeAutoBlocksRefreshed, "README and AGENTS auto blocks refresh without removing user areas");
 
+  await Promise.all([readmePath, agentsPath, claudePath].map((file) => rm(file, { force: true })));
+  const missingDocsPreview = await page.evaluate((projectId) => window.siteindex.workspace.importCheck(projectId), id);
+  const missingDocsResult = await page.evaluate((projectId) => window.siteindex.workspace.importCheck(projectId, { apply: true }), id);
+  const readmeRestored = await exists(readmePath);
+  const agentsRestored = await exists(agentsPath);
+  const claudeRestored = await exists(claudePath);
+  const restoredReadme = readmeRestored ? await readFile(readmePath, "utf8") : "";
+  const restoredAgents = agentsRestored ? await readFile(agentsPath, "utf8") : "";
+  const restoredClaude = claudeRestored ? (await readFile(claudePath, "utf8")).trim() : null;
+  const missingIssueFor = (relativePath) => missingDocsPreview.issues.find((issue) => issue.path === relativePath && issue.code === "document_missing");
+  const readmeMissingIssue = missingIssueFor("README.md");
+  const agentsMissingIssue = missingIssueFor("AGENTS.md");
+  const claudeMissingIssue = missingIssueFor("CLAUDE.md");
+  const claudeMissingReported = Boolean(claudeMissingIssue);
+  const restoredReadmeBlocks = ["workspace-map", "index-summary", "changelog"].every((block) =>
+    new RegExp(`<!-- siteindex:auto:start id="${block}" -->[\\s\\S]*?<!-- siteindex:auto:end id="${block}" -->`, "u").test(restoredReadme));
+  const restoredAgentBlocks = ["agents-core", "task-routing", "data-guide", "design-summary", "skills-installed", "esp-presets"].every((block) =>
+    new RegExp(`<!-- siteindex:auto:start id="${block}" -->[\\s\\S]*?<!-- siteindex:auto:end id="${block}" -->`, "u").test(restoredAgents));
+  const readmeRepaired = missingDocsResult.repaired.includes("README.md");
+  const agentsRepaired = missingDocsResult.repaired.includes("AGENTS.md");
+  const claudeRepaired = missingDocsResult.repaired.includes("CLAUDE.md");
+  const missingDocumentChecks = [
+    {
+      name: "import check detects and restores missing README.md from template",
+      passed: readmeMissingIssue?.auto_fixable === true && readmeRepaired && readmeRestored && restoredReadmeBlocks,
+      evidence: {
+        reportedMissingBeforeApply: Boolean(readmeMissingIssue),
+        autoFixableBeforeApply: readmeMissingIssue?.auto_fixable === true,
+        repairedByApply: readmeRepaired,
+        restored: readmeRestored,
+        requiredAutoBlocksPresent: restoredReadmeBlocks,
+      },
+    },
+    {
+      name: "import check detects and restores missing AGENTS.md from template",
+      passed: agentsMissingIssue?.auto_fixable === true && agentsRepaired && agentsRestored && restoredAgentBlocks,
+      evidence: {
+        reportedMissingBeforeApply: Boolean(agentsMissingIssue),
+        autoFixableBeforeApply: agentsMissingIssue?.auto_fixable === true,
+        repairedByApply: agentsRepaired,
+        restored: agentsRestored,
+        requiredAutoBlocksPresent: restoredAgentBlocks,
+      },
+    },
+    {
+      name: "import check detects and restores missing CLAUDE.md as @AGENTS.md",
+      passed: claudeMissingIssue?.auto_fixable === true && claudeRepaired && claudeRestored && restoredClaude === "@AGENTS.md",
+      evidence: {
+        reportedMissingBeforeApply: claudeMissingReported,
+        autoFixableBeforeApply: claudeMissingIssue?.auto_fixable === true,
+        repairedByApply: claudeRepaired,
+        restored: claudeRestored,
+        contentCorrect: restoredClaude === "@AGENTS.md",
+      },
+    },
+  ];
+  report.checks.push(...missingDocumentChecks.map(({ name, passed, evidence }) => ({ name, status: passed ? "passed" : "failed", evidence })));
+  const missingDocsSummary = {
+    previewIssuePaths: missingDocsPreview.issues.map((issue) => ({ path: issue.path, code: issue.code, autoFixable: issue.auto_fixable })),
+    repairedPaths: missingDocsResult.repaired,
+    readmeMissingReported: Boolean(readmeMissingIssue),
+    readmeRepaired,
+    readmeRestored,
+    readmeRequiredAutoBlocksPresent: restoredReadmeBlocks,
+    agentsMissingReported: Boolean(agentsMissingIssue),
+    agentsRepaired,
+    agentsRestored,
+    agentsRequiredAutoBlocksPresent: restoredAgentBlocks,
+    claudeRepaired,
+    claudeRestored,
+    claudeContentCorrect: restoredClaude === "@AGENTS.md",
+    claudeMissingReported,
+  };
+  const missingDocsPassed = missingDocumentChecks.every((check) => check.passed);
+
+  const restoredDocumentHashes = await Promise.all([readmePath, agentsPath, claudePath].map(fileSha256));
+  const siteConfigAfterMissingDocCheck = await fileSha256(siteConfigPath);
+  const noMissingFilesApply = await page.evaluate((projectId) => window.siteindex.workspace.importCheck(projectId, { apply: true }), id);
+  const restoredDocumentHashesAfter = await Promise.all([readmePath, agentsPath, claudePath].map(fileSha256));
+  const fillMissingOnly = JSON.stringify(restoredDocumentHashes) === JSON.stringify(restoredDocumentHashesAfter)
+    && siteConfigAfterMissingDocCheck === await fileSha256(siteConfigPath)
+    && noMissingFilesApply.repaired.length === 0;
+  const fillMissingOnlyEvidence = {
+    existingDocumentsUnchanged: JSON.stringify(restoredDocumentHashes) === JSON.stringify(restoredDocumentHashesAfter),
+    siteConfigUnchanged: siteConfigAfterMissingDocCheck === await fileSha256(siteConfigPath),
+    repairedCountOnSecondApply: noMissingFilesApply.repaired.length,
+  };
+  report.checks.push({
+    name: "a second import check leaves restored documents and existing project data unchanged",
+    status: fillMissingOnly ? "passed" : "failed",
+    evidence: fillMissingOnlyEvidence,
+  });
+
   workspaceProbeData = {
     emptyWorkspaceCreated: true,
     gitDirectoryAccepted: true,
@@ -528,7 +644,13 @@ async function testWorkspaceApi(page) {
     userFilesPreserved,
     readmeAutoBlocksRefreshed,
     userContentPreserved: userFilesPreserved && siteConfigAfter === siteConfigBefore,
+    missingDocuments: missingDocsSummary,
+    userContentPreservedWhenAutoBlocksRepaired: userContentKeptAroundAutoBlocks,
+    repeatedImportOnlyFillsMissingFiles: fillMissingOnly,
   };
+  if (!missingDocsPassed || !fillMissingOnly) {
+    throw new Error("Acceptance assertion failed: import check must restore missing workspace documents without overwriting existing content");
+  }
 }
 
 async function captureAddExistingTrace(page) {
