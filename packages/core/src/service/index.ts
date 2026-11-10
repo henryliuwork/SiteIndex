@@ -2351,7 +2351,11 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const tokens = await readJsonAs<DesignTokens | null>(projectPath, paths.designTokens, null, paths);
       const screenshotsPath = path.join(projectPath, paths.designScreenshots);
       const names = await readdir(screenshotsPath).catch(() => []);
-      return { tokens, screenshots: names.sort(codeUnitCompare).map((name) => ({ name, path: path.join(screenshotsPath, name) })) };
+      return {
+        tokens,
+        screenshots: names.sort(codeUnitCompare).map((name) => ({ name, path: path.join(screenshotsPath, name) })),
+        artifact_paths: { tokens: paths.designTokens, brand: paths.designBrand },
+      };
     },
   };
 
