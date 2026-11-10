@@ -203,7 +203,11 @@
 `sku`★ `title` `variant_title` `category` `price` `stock_status` `since` `days_in_status` `online_rate_7d` `online_rate_30d` `history_30d` `changes_30d` `last_change` `last_change_at`
 - `history_30d`：30 个字符，最旧在左，每天一个：`i` 有货 / `o` 缺货 / `p` 预售 / `u` 未知 / `-` 未上架；由 events + latest 回推
 - `online_rate_*` = 有货天数 / 在售天数（`-` 不计入分母）
-- `inventory.listSkus` 的 `parent_only` 展示模式：仅在 `sku_grouping.enabled=true` 时，根据子 SKU 的 `parent_sku` 临时合成父行，并保留未归组的独立 SKU；父行不写入本文件，也不计入库存实体或在线率。父行状态为任一子项有货则有货、全缺货则缺货、其余预售优先于未知；分类取子项众数（并列按 `compareKeys`），价格取子项最低价。父行历史为未知、在线率为空；搜索子 SKU 可命中父行。
+- `inventory.listSkus` 的 `parent_only` 展示模式：仅在 `sku_grouping.enabled=true` 时，根据子 SKU 的 `parent_sku` 临时合成父行，并保留未归组的独立 SKU。父行只存在于查询结果，不写入本文件，不作为库存实体，也不重复计入 `inventory.summary` 的 SKU 总量或汇总在线率。分类取子项众数（并列按 `compareKeys`），价格取子项最低价；搜索子 SKU 可命中父行。
+- 父行 `stock_status` 与 `history_30d` 按子 SKU 状态聚合：逐日忽略子项的 `-`；若当天没有任何已上架子项，结果为 `-`；否则任一子项为 `i`，结果为 `i`；所有可用子项均为 `o`，结果为 `o`；否则任一子项为 `p`，结果为 `p`；其余结果为 `u`。当前 `stock_status` 对子项当前状态使用同一优先级。
+- 父行 `online_rate_7d` / `online_rate_30d` 从聚合后的 `history_30d` 计算：分子为 `i` 天数，分母为非 `-` 天数，因此 `o`、`p`、`u` 都计入分母；窗口内没有非 `-` 天时为 `null`。
+- 父行 `changes_30d`、`last_change`、`last_change_at` 从聚合后的每日状态变化计算：只统计前后两天都不是 `-` 且状态不同的相邻日；上架/恢复上架边界不计为状态变化。没有此类变化时 `last_change` 与 `last_change_at` 为 `null`。
+- 当前 Core 对合成父行返回 `since = asOf`、`days_in_status = 0`；这两个值没有从聚合历史推导，不表示父级当前状态实际开始日期或已持续天数。界面与调用方不得将其作为父级状态持续时长展示；若需该语义，须另行定义和实现。
 
 ### 5.18 `logs/runs.jsonl`（★run_id）
 `run_id`★(`{date}-{job}`) `job`✓ `trigger`(`schedule`/`manual`/`cli`) `device_name` `started_at`✓ `finished_at` `status`✓(`ok`/`partial`/`failed`/`skipped`) `counts` `errors`
