@@ -22,6 +22,7 @@ import { createSkuHandlers } from "./sku.js";
 import { createSkillsHandlers } from "./skills.js";
 import { createUiStateHandlers } from "./ui-state.js";
 import { createUpdatesHandlers } from "./updates.js";
+import { createWorkspaceHandlers } from "./workspace.js";
 
 export function createIpcHandlerImplementations(context: IpcContext): IpcHandlerImplementations {
   return {
@@ -30,6 +31,7 @@ export function createIpcHandlerImplementations(context: IpcContext): IpcHandler
     ...createSettingsHandlers(context),
     ...createUiStateHandlers(context),
     ...createProjectsHandlers(context),
+    ...createWorkspaceHandlers(context),
     ...createOverviewHandlers(context),
     ...createInventoryHandlers(context),
     ...createProductsHandlers(context),

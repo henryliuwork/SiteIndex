@@ -10,6 +10,7 @@ const IPC_ERROR_PREFIX = "__SITEINDEX_IPC_ERROR__:";
 type UiStateApi = NonNullable<SiteIndexApi["uiState"]>;
 type UpdatesApi = NonNullable<SiteIndexApi["updates"]>;
 type SkuApi = NonNullable<SiteIndexApi["sku"]>;
+type WorkspaceApi = NonNullable<SiteIndexApi["workspace"]>;
 
 function decodeIpcError(error: unknown): unknown {
   const message =
@@ -89,6 +90,11 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       remove: (...args) => invoke<NonNullable<SiteIndexApi["projects"]["remove"]>>("projects.remove", ...args),
       updateConfig: (...args) => invoke<SiteIndexApi["projects"]["updateConfig"]>("projects.updateConfig", ...args),
       onChanged: (callback) => listen("projects.onChanged", callback),
+    },
+    workspace: {
+      check: (...args) => invoke<WorkspaceApi["check"]>("workspace.check", ...args),
+      create: (...args) => invoke<WorkspaceApi["create"]>("workspace.create", ...args),
+      importCheck: (...args) => invoke<WorkspaceApi["importCheck"]>("workspace.importCheck", ...args),
     },
     overview: {
       get: (...args) => invoke<SiteIndexApi["overview"]["get"]>("overview.get", ...args),
