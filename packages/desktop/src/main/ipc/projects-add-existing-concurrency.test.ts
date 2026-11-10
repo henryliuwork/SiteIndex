@@ -64,7 +64,6 @@ describe("projects.addExisting concurrent registration", () => {
     const first = addExisting(projectPaths[0]!);
     await firstPathStarted;
     const second = addExisting(projectPaths[1]!);
-    await new Promise((resolve) => setTimeout(resolve, 20));
     const concurrentPathChecks = projects.resolveExistingPath.mock.calls.length;
     releaseFirstPath();
     await Promise.all([first, second]);
