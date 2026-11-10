@@ -18,7 +18,7 @@ const OLD_RELEASE = {
   commit: "9dca729763ff6474e9baf182aac01213c81430a9",
   sha256: "5b0ffb1e5c74b743c5938bd62349ef0b9fe69a87f05dfc8f56adf25c26f77bdd",
 };
-const CANDIDATE_VERSION = "0.4.0";
+const CANDIDATE_VERSION = process.env.SITEINDEX_CANDIDATE_VERSION?.trim() || "0.4.0";
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
 const APP_DATA_ROOT = process.env.APPDATA;
@@ -38,10 +38,16 @@ const report = {
   sourceCommit: null,
   prHeadCommit: process.env.SITEINDEX_PR_HEAD_SHA || null,
   expectedSourceCommit: process.env.SITEINDEX_EXPECTED_SOURCE_COMMIT || null,
-  versionOverride: CANDIDATE_VERSION,
-  candidateArtifactSource: process.env.SITEINDEX_CANDIDATE_INSTALLER_URL
-    ? "official-candidate-installer"
-    : "runner-built-internal-candidate",
+  candidateVersion: CANDIDATE_VERSION,
+  candidateArtifactSource: process.env.SITEINDEX_CANDIDATE_ARTIFACT_SOURCE || "runner-built-internal-candidate",
+  candidateWorkflowRunId: process.env.SITEINDEX_CANDIDATE_ARTIFACT_RUN_ID || process.env.SITEINDEX_CANDIDATE_WORKFLOW_RUN_ID || null,
+  candidateArtifactId: process.env.SITEINDEX_CANDIDATE_ARTIFACT_ID || null,
+  candidateArtifactName: process.env.SITEINDEX_CANDIDATE_ARTIFACT_NAME || null,
+  candidateArtifactSha256: process.env.SITEINDEX_CANDIDATE_ARTIFACT_SHA256 || null,
+  expectedCandidateArtifactSha256: process.env.SITEINDEX_EXPECTED_CANDIDATE_ARTIFACT_SHA256 || null,
+  candidateSourceCommit: process.env.SITEINDEX_CANDIDATE_SOURCE_COMMIT || process.env.SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT || null,
+  expectedCandidateSourceCommit: process.env.SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT || null,
+  runnerBuildVersionOverride: process.env.SITEINDEX_CANDIDATE_ARTIFACT_SOURCE === "runner-built-internal-candidate",
   previousRelease: { ...OLD_RELEASE },
   candidateInstallerSha256: null,
   windows: {
@@ -97,7 +103,7 @@ async function fileSha256(filePath) {
 }
 
 async function fsMkdtemp() {
-  const root = path.join(os.tmpdir(), `siteindex-e-v040-${randomUUID()}`);
+  const root = path.join(os.tmpdir(), `siteindex-e-acceptance-${randomUUID()}`);
   await mkdir(root, { recursive: true });
   return root;
 }
@@ -149,7 +155,7 @@ async function writeRunnerSettings() {
   await writeFile(
     SETTINGS_FILE,
     `${JSON.stringify({
-      device_id: "e-v040-synthetic-runner",
+      device_id: "e-acceptance-synthetic-runner",
       device_name: "Synthetic Windows runner",
       projects_root: PROJECTS_ROOT,
       extra_projects: [],
@@ -379,7 +385,7 @@ async function safeCandidateScreenshot(page) {
     report.visualEvidence = { screenshotCreated: false, reason: "synthetic-runner-path-visible" };
     return;
   }
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "v040-synthetic-project-center.png"), fullPage: true });
+  await page.screenshot({ path: path.join(OUTPUT_DIR, "candidate-synthetic-project-center.png"), fullPage: true });
   report.visualEvidence = { screenshotCreated: true, reason: null };
 }
 
@@ -742,6 +748,23 @@ async function main() {
   report.candidateInstallerSha256 = await fileSha256(candidateInstaller);
   report.sourceCommit = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
   const expectedCandidateHash = process.env.SITEINDEX_EXPECTED_CANDIDATE_SHA256?.trim().toLowerCase();
+  if (report.candidateArtifactSource === "workflow-run-artifact") {
+    assert(
+      report.candidateArtifactName === "siteindex-win"
+        && report.candidateWorkflowRunId !== null
+        && report.candidateArtifactId !== null
+        && report.candidateSourceCommit === report.expectedCandidateSourceCommit
+        && report.candidateArtifactSha256 === report.expectedCandidateArtifactSha256,
+      "candidate installer provenance matches the verified Windows workflow artifact",
+      {
+        artifactName: report.candidateArtifactName,
+        artifactId: report.candidateArtifactId,
+        runId: report.candidateWorkflowRunId,
+        artifactDigestMatches: report.candidateArtifactSha256 === report.expectedCandidateArtifactSha256,
+        sourceCommitMatches: report.candidateSourceCommit === report.expectedCandidateSourceCommit,
+      },
+    );
+  }
   if (report.expectedSourceCommit) {
     assert(report.sourceCommit === report.expectedSourceCommit, "checkout matches requested frozen source commit", {
       expectedCommit: report.expectedSourceCommit,
@@ -781,7 +804,7 @@ async function main() {
   candidateInstalled = true;
   assert(await exists(path.join(INSTALL_DIR, "SiteIndex.exe")), "candidate installer upgraded the same installation directory");
 
-  currentStage = "v0.4.0 packaged launch and upgrade persistence";
+  currentStage = `v${CANDIDATE_VERSION} packaged launch and upgrade persistence`;
   page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: true });
   const candidateState = await appState(page);
   assert(candidateState.version === CANDIDATE_VERSION, "upgraded packaged app reports candidate version through preload IPC", { version: candidateState.version });
@@ -850,11 +873,14 @@ async function writeReport() {
   if (failed) report.failure = failed;
   await writeFile(path.join(OUTPUT_DIR, "summary.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   const summaryLines = [
-    "## E · Windows v0.3.0 → v0.4.0 isolated packaged acceptance",
+    `## E · Windows ${OLD_RELEASE.tag} → v${CANDIDATE_VERSION} isolated packaged acceptance`,
     "",
     `- Result: **${report.result}**`,
     `- Source commit: \`${report.sourceCommit ?? "unavailable"}\``,
     `- Candidate artifact: ${report.candidateArtifactSource}`,
+    `- Candidate source commit: \`${report.candidateSourceCommit ?? "unavailable"}\``,
+    `- Candidate workflow run / artifact: \`${report.candidateWorkflowRunId ?? "n/a"}\` / \`${report.candidateArtifactId ?? "n/a"}\``,
+    `- Candidate artifact SHA256: \`${report.candidateArtifactSha256 ?? "n/a"}\``,
     `- Candidate installer SHA256: \`${report.candidateInstallerSha256 ?? "unavailable"}\``,
     `- Windows build: \`${report.windows.build ?? report.windows.version}\``,
     `- Checks passed: ${report.checks.filter((check) => check.status === "passed").length}/${report.checks.length}`,
