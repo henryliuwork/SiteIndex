@@ -41,15 +41,42 @@ jobs:
           cache: pnpm
       - name: Record Windows build
         shell: pwsh
+        env:
+          EXPECTED_SOURCE_COMMIT_INPUT: ${{ inputs.expected_source_commit }}
+          CANDIDATE_SHA256_INPUT: ${{ inputs.candidate_installer_sha256 }}
+          CANDIDATE_URL_INPUT: ${{ inputs.candidate_installer_url }}
+          PR_HEAD_SHA_INPUT: ${{ github.event.pull_request.head.sha }}
         run: |
+          $rawInputs = @($env:EXPECTED_SOURCE_COMMIT_INPUT, $env:CANDIDATE_SHA256_INPUT, $env:CANDIDATE_URL_INPUT)
+          foreach ($value in $rawInputs) {
+            if ($value -match '[\r\n]') { throw "Workflow inputs must be single-line values." }
+          }
+          $sourceCommit = $env:EXPECTED_SOURCE_COMMIT_INPUT.Trim()
+          $candidateSha256 = $env:CANDIDATE_SHA256_INPUT.Trim()
+          $candidateUrl = $env:CANDIDATE_URL_INPUT.Trim()
+          if ($sourceCommit -and $sourceCommit -notmatch '^[0-9a-fA-F]{40}$') {
+            throw "The expected source commit must be a 40-character hexadecimal SHA."
+          }
+          if ($candidateSha256 -and $candidateSha256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "The candidate installer SHA256 must be a 64-character hexadecimal digest."
+          }
+          if ($candidateUrl -and $candidateUrl -notmatch '^https://\S{1,2040}$') {
+            throw "The candidate installer URL must be a single-line HTTPS URL."
+          }
+          if ($candidateUrl -and (-not $candidateSha256 -or -not $sourceCommit)) {
+            throw "A supplied candidate installer requires both its SHA256 and frozen source commit."
+          }
+          if (-not $candidateUrl -and $candidateSha256) {
+            throw "A candidate SHA256 requires a candidate installer URL."
+          }
           $os = Get-CimInstance Win32_OperatingSystem
           "SITEINDEX_WINDOWS_VERSION=$($os.Version)" >> $env:GITHUB_ENV
           "SITEINDEX_WINDOWS_BUILD=$($os.BuildNumber)" >> $env:GITHUB_ENV
           "SITEINDEX_RUNNER_IMAGE=$($env:ImageOS)/$($env:ImageVersion)" >> $env:GITHUB_ENV
-          "SITEINDEX_PR_HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> $env:GITHUB_ENV
-          "SITEINDEX_EXPECTED_SOURCE_COMMIT=${{ inputs.expected_source_commit }}" >> $env:GITHUB_ENV
-          "SITEINDEX_EXPECTED_CANDIDATE_SHA256=${{ inputs.candidate_installer_sha256 }}" >> $env:GITHUB_ENV
-          "SITEINDEX_CANDIDATE_INSTALLER_URL=${{ inputs.candidate_installer_url }}" >> $env:GITHUB_ENV
+          "SITEINDEX_PR_HEAD_SHA=$($env:PR_HEAD_SHA_INPUT)" >> $env:GITHUB_ENV
+          "SITEINDEX_EXPECTED_SOURCE_COMMIT=$sourceCommit" >> $env:GITHUB_ENV
+          "SITEINDEX_EXPECTED_CANDIDATE_SHA256=$candidateSha256" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_INSTALLER_URL=$candidateUrl" >> $env:GITHUB_ENV
           New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "siteindex-e-v040-results") -Force | Out-Null
           "SITEINDEX_ACCEPTANCE_OUTPUT=$(Join-Path $env:RUNNER_TEMP 'siteindex-e-v040-results')" >> $env:GITHUB_ENV
           Write-Output "Windows build recorded: $($os.Version) build $($os.BuildNumber)"
