@@ -16,6 +16,10 @@ function testContext(): IpcContext {
   return {
     withProject: async <T>(_value: unknown, callback: (id: ProjectId) => Promise<T>) => callback("demo" as ProjectId),
     core: {
+      workspace: {
+        check: vi.fn(async () => ({ ok: true, invalid_entries: [] })),
+        create: vi.fn(async () => ({ path: "C:/projects/demo", created: ["README.md"] })),
+      },
       design: { get: vi.fn(async () => ({ tokens: null, screenshots: [] })) },
       categories: {
         get: vi.fn(async () => ({ mode: "feed" })),
@@ -70,5 +74,28 @@ describe("IPC handler completeness", () => {
     });
     await expect(implementations["seo.checkIndex"]?.("demo")).resolves.toEqual({ runId: "2026-10-28-index-check" });
     expect(context.jobs.run).toHaveBeenCalledWith({ projectPath: "C:/projects/demo", job: "index-check" });
+  });
+
+  it("forwards workspace validation and creation to Core without changing their inputs", async () => {
+    const context = testContext();
+    const implementations = createIpcHandlerImplementations(context);
+    const createInput = {
+      targetDir: "C:/Fixture/workspace",
+      domain: "fixture.example.test",
+      brand: { name: "Fixture", voice: "清晰" },
+      platform: "other" as const,
+      esp_presets: [],
+    };
+
+    await expect(implementations["workspace.check"]?.("C:/Fixture/workspace")).resolves.toEqual({
+      ok: true,
+      invalid_entries: [],
+    });
+    await expect(implementations["workspace.create"]?.(createInput)).resolves.toEqual({
+      path: "C:/projects/demo",
+      created: ["README.md"],
+    });
+    expect(context.core.workspace.check).toHaveBeenCalledWith("C:/Fixture/workspace");
+    expect(context.core.workspace.create).toHaveBeenCalledWith(createInput);
   });
 });
