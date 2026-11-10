@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, FilterPill, Input, Notice, PageHeader, ProjectHeader, ProjectTabPanel, Select, StatusCells, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, FilterPill, Input, Notice, ProjectHeader, ProjectTabPanel, Select, StatusCells, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 
 const initialQuery: ListQuery<ProductFilters> = { page: 1, pageSize: 100, filters: {} };
@@ -256,14 +256,14 @@ export function ProductsPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目产品页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-products-page">
-    <ProjectHeader project={project} activeTab="products" hasTabPanel />
-    <ProjectTabPanel projectId={project.id} tab="products">
-    <PageHeader
-      title="产品"
-      meta={<Chip tone="neutral">{project.domain}</Chip>}
+    <ProjectHeader
+      project={project}
+      activeTab="products"
+      hasTabPanel
       actions={<Button variant="primary" onClick={() => void exportCsv()}>导出 CSV</Button>}
       overflow={[{ label: "SKU 父子规则设置", onSelect: openGroupingSettings, icon: <Settings2 size={14} /> }]}
     />
+    <ProjectTabPanel projectId={project.id} tab="products">
     <div className="si-products-filterbar">
       <FilterBar className="si-products-filter-conditions">
         <span className="si-products-filter-label">库存</span>{stockOptions.map((option) => <FilterPill key={option.value} currentValue={stock} value={option.value} onValueChange={onStockChange}>{option.label}</FilterPill>)}

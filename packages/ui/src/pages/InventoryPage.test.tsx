@@ -25,7 +25,7 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
-async function renderInventoryPage(groupingEnabled: boolean) {
+async function renderInventoryPage(groupingEnabled: boolean, skuListPending = false) {
   const mockApi = createMockApi();
   const project = await mockApi.projects.get("demo");
   mockApi.projects.get = vi.fn(async () => ({
@@ -39,6 +39,9 @@ async function renderInventoryPage(groupingEnabled: boolean) {
     },
   }));
   const listSkus = vi.fn(mockApi.inventory.listSkus);
+  if (skuListPending) {
+    listSkus.mockImplementation(() => new Promise<Awaited<ReturnType<typeof mockApi.inventory.listSkus>>>(() => {}));
+  }
   mockApi.inventory.listSkus = listSkus;
   mockApi.sku = {
     previewGrouping: vi.fn(async () => ({
@@ -76,6 +79,14 @@ async function renderInventoryPage(groupingEnabled: boolean) {
 }
 
 describe("InventoryPage D-2", () => {
+  it("首次加载 SKU 时显示加载状态，不显示空结果表格", async () => {
+    const { listSkus } = await renderInventoryPage(true, true);
+
+    expect(await screen.findByText("正在加载 SKU 列表…")).toBeTruthy();
+    expect(listSkus).toHaveBeenCalledOnce();
+    expect(screen.queryByText("没有匹配的 SKU")).toBeNull();
+  });
+
   it("父 SKU 开关始终可见；未启用分组时打开 Core 预览并引导到设置", async () => {
     const { mockApi } = await renderInventoryPage(false);
     const parentOnly = await screen.findByRole("checkbox", { name: "仅展示父 SKU" });
