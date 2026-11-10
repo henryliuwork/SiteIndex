@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, ProjectDetail, SeoIssue, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, formatDateTime, KpiCard, Notice, PageHeader, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, formatDateTime, KpiCard, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
 const syncLabels: Record<SyncState, string> = {
@@ -127,11 +127,11 @@ export function OverviewPage() {
   const summary = project.summary;
   const canIgnoreAttention = typeof api.seo.setRuleIgnored === "function";
   return <div className="si-page si-overview-page">
-    <ProjectHeader project={summary} activeTab="overview" hasTabPanel status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>} />
-    <ProjectTabPanel projectId={summary.id} tab="overview">
-    <div className="si-overview-content">
-    <PageHeader
-      title="概览"
+    <ProjectHeader
+      project={summary}
+      activeTab="overview"
+      hasTabPanel
+      status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>}
       actions={<>
         <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={running} onClick={() => void runSync()}>{running ? "同步中…" : "立即同步"}</Button>
@@ -142,6 +142,8 @@ export function OverviewPage() {
         { label: "打开 README", onSelect: () => void openReadme(), icon: <FileText size={14} /> },
       ]}
     />
+    <ProjectTabPanel projectId={summary.id} tab="overview">
+    <div className="si-overview-content">
     {running && <Notice tone="info" title="每日同步进行中">{syncMessage || "正在同步项目数据…"}</Notice>}
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
     <section className="si-overview-kpis" aria-label="项目指标">

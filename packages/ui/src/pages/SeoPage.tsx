@@ -11,7 +11,7 @@ import type {
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, KpiCard, LengthBadge, Notice, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, KpiCard, LengthBadge, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, useToast } from "../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./seo/filters";
 import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams, type SeoSearchParamPatch, type SeoView } from "./seo/query-params";
 
@@ -462,18 +462,20 @@ export function SeoPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 SEO 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-seo-page">
-    <ProjectHeader project={project} activeTab="seo" hasTabPanel status={<Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip>} />
+    <ProjectHeader
+      project={project}
+      activeTab="seo"
+      hasTabPanel
+      status={<Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip>}
+      pageMeta={<Chip tone="neutral">最近抓取：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}</Chip>}
+      actions={<>
+        <Button variant="primary" icon={<Settings2 size={14} />} onClick={() => setRuleSettingsOpen(true)}>规则设置</Button>
+        <Button disabled={busy} icon={<Globe2 size={14} />} onClick={() => void checkIndex()}>{runKind === "index-check" ? "检查中…" : "重新检查收录"}</Button>
+        <Button icon={<FileDown size={14} />} onClick={() => void exportIssues()}>导出</Button>
+      </>}
+      overflow={[{ label: runKind === "crawl" ? "正在重新抓取…" : "重新抓取 SEO 数据", onSelect: () => void recrawl(), disabled: busy, icon: <RefreshCw size={14} /> }]}
+    />
     <ProjectTabPanel projectId={project.id} tab="seo">
-      <PageHeader
-        title="SEO"
-        meta={<Chip tone="neutral">最近抓取：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}</Chip>}
-        actions={<>
-          <Button variant="primary" icon={<Settings2 size={14} />} onClick={() => setRuleSettingsOpen(true)}>规则设置</Button>
-          <Button disabled={busy} icon={<Globe2 size={14} />} onClick={() => void checkIndex()}>{runKind === "index-check" ? "检查中…" : "重新检查收录"}</Button>
-          <Button icon={<FileDown size={14} />} onClick={() => void exportIssues()}>导出</Button>
-        </>}
-        overflow={[{ label: runKind === "crawl" ? "正在重新抓取…" : "重新抓取 SEO 数据", onSelect: () => void recrawl(), disabled: busy, icon: <RefreshCw size={14} /> }]}
-      />
       <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
       <div className="si-seo-controls" data-view={view}>
         <Segmented value={view} options={views} onChange={changeView} ariaLabel="SEO 视图" />

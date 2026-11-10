@@ -184,7 +184,7 @@ export function ProjectSettingsCategoriesPage() {
   if (configQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载分类设置…</div>;
 
   return <div className="si-page si-category-page">
-    <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle={`${project.domain} · ${modeDescription(draft.mode)}`} actions={<><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></>} />
+    <ProjectHeader project={project} activeTab="settings" hasTabPanel pageTitle="分类设置" pageMeta={<Chip tone="neutral">{modeDescription(draft.mode)}</Chip>} actions={<><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="settings">
     <SettingsNav id={id} />
     <section className="si-category-mode-section"><h2>分类识别方式</h2><div className="si-category-mode-grid">{matchingModes.map((mode) => <button type="button" key={mode.value} className={`si-category-mode-card${draft.mode === mode.value ? " active" : ""}`} aria-pressed={draft.mode === mode.value} onClick={() => setDraft((current) => current ? { ...current, mode: mode.value } : current)}><span className="si-category-mode-title"><strong>{mode.title}</strong><Chip tone={draft.mode === mode.value ? "ok" : "neutral"}>{draft.mode === mode.value ? "当前" : mode.hint}</Chip></span><span>{mode.detail}</span></button>)}</div></section>
