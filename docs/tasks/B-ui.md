@@ -85,8 +85,8 @@
 - [x] B-3 follow-up #360：表格页等网络请求完成后，再等待 DataTable、空态或错误态；加载状态优先于残留表格；Products、Inventory、EDM、SEO、分类页纳入双视口检查，填充表格同时检查表体与分页栏可见性。慢响应、空态、错误态和超时有单测 — [PR #369](https://github.com/henryliuwork/SiteIndex/pull/369)；路由与分页边界扩展 — 本 PR
 - [x] B-4a 应用页迁移：项目中心与新建向导使用 PageHeader、Card、EmptyState、Notice、Drawer、Toast；向导步骤采用可插入数组并预留隐藏的 Agent 工作区插槽 — [PR #324](https://github.com/henryliuwork/SiteIndex/pull/324)
 - [x] B-4b 应用页迁移：Skill 中心与软件设置使用 PageHeader、Card、EmptyState、Notice、Toast 和设计 token — [PR #327](https://github.com/henryliuwork/SiteIndex/pull/327)
-- [x] B-4c 应用页迁移：README 与定时任务汇总页使用共享组件和 DataTable v2，页面字号、间距和颜色使用设计 token — 本 PR
-- [x] B-5：`schedule.listSystemTasks` 只读区块，展示刷新状态、下次运行、配置一致性与差异；孤立任务继续调用 #291 的清理确认流程 — 本 PR
+- [x] B-4c 应用页迁移：README 与定时任务汇总页使用共享组件和 DataTable v2，页面字号、间距和颜色使用设计 token — [PR #331](https://github.com/henryliuwork/SiteIndex/pull/331)
+- [x] B-5：`schedule.listSystemTasks` 只读区块，展示刷新状态、下次运行、配置一致性与差异；孤立任务继续调用 #291 的清理确认流程 — [PR #331](https://github.com/henryliuwork/SiteIndex/pull/331)
 - [ ] C 联动：ui-state 持久化支持 200 / 全部 — [issue #307](https://github.com/henryliuwork/SiteIndex/issues/307)
 
 ## v0.4.0 · Agent 工作区
