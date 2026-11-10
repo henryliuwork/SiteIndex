@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
+import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
 
 const OLD_RELEASE = {
   tag: "v0.3.0",
@@ -21,18 +22,7 @@ const OLD_RELEASE = {
 };
 const CANDIDATE_VERSION = process.env.SITEINDEX_CANDIDATE_VERSION?.trim() || "0.4.0";
 const W2_PROJECT_ID = "synthetic-w2-pages";
-const W2_EXPECTED = {
-  parentGroups: 40,
-  childrenPerGroup: 3,
-  ungroupedSkus: 40,
-  totalSkus: 160,
-  products: 80,
-  blogsBeforeRefresh: 65,
-  blogsAfterRefresh: 2,
-  issues: 66,
-  pages: 66,
-  links: 65,
-};
+const W2_EXPECTED = W2_SYNTHETIC_EXPECTED;
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
 const APP_DATA_ROOT = process.env.APPDATA;
@@ -242,7 +232,7 @@ async function makeLegacyProject(directory, name = "Synthetic legacy project") {
     markets: ["US"],
     brand: { name, tagline: "Synthetic migration fixture" },
     sitemaps: [],
-    crawl: { adapter: "gmc_feed", feed_url: [], rate_limit_ms: 0 },
+    crawl: { adapter: "gmc_feed", feed_url: [], rate_limit_ms: 200 },
     categories: { mode: "feed" },
     workspace_folders: [],
     schedule: disabledSchedule(),
@@ -257,125 +247,50 @@ async function writeJsonlFile(filePath, rows) {
   await writeFile(filePath, rows.length ? `${rows.map((row) => JSON.stringify(row)).join("\n")}\n` : "", "utf8");
 }
 
-function syntheticSeoPage(url, date) {
-  return { url, page_type: "product", status_code: 200, final_url: null, response_ms: 1,
-    title: null, title_length: 0, meta_description: null, description_length: 0, h1: null, h1_count: 0, h2: [],
-    canonical: null, canonical_status: "missing", robots_meta: null, x_robots_tag: null, indexable: true,
-    in_sitemap: true, google_indexed: null, schema_types: [], word_count: 0, images_total: 0,
-    images_missing_alt: 0, links_internal_out: 0, links_external_out: 0, links_internal_in: 0, last_crawled: date };
-}
-
 async function makeW2SyntheticProject(directory, origin) {
-  const date = "2026-11-10";
-  const firstSeen = "2026-11-01";
-  const config = {
-    schema_version: "1.1", domain: "w2.example.invalid", base_url: origin, platform: "woocommerce", currency: "USD",
-    locale: "en-US", timezone: "UTC", markets: ["US"],
-    brand: { name: "Synthetic W2 project", tagline: "Hosted runner acceptance data" },
-    sitemaps: [`${origin}/sitemap.xml`],
-    content: { blog_sitemaps: [`${origin}/blog-sitemap.xml`], blog_url_patterns: ["/blog/"] },
-    crawl: { adapter: "gmc_feed", feed_url: [], sku_field: "id", missing_as: "out_of_stock", max_pages: 100, rate_limit_ms: 0, blog_url_patterns: [] },
-    categories: { mode: "feed" }, sku_grouping: { enabled: true, rule: { type: "separator", value: "-CH-" } }, workspace_folders: [],
-    schedule: disabledSchedule(),
-  };
-  const skus = [], latest = [], skuStock = [], products = [];
-  const stockState = (group, variant) => group === 0 || variant !== 1 ? "in_stock" : "out_of_stock";
-  const addSku = (sku, handle, title, variant, status, parent, price) => {
-    const variantTitle = variant ? `Synthetic option ${variant}` : null;
-    skus.push({ sku, product_id: `product-${handle}`, handle, title, variant_title: variantTitle,
-      url: `${origin}/products/${handle}${variant ? `?variant=${variant}` : ""}`, category: "synthetic-category",
-      categories: ["synthetic-category"], category_source: "feed", price, compare_at_price: null, currency: "USD",
-      image_url: null, status: "active", first_seen: firstSeen, last_seen: date, updated_at: date });
-    latest.push({ sku, stock_status: status, qty: status === "in_stock" ? 10 : 0, since: date, checked_at: `${date}T12:00:00.000Z` });
-    skuStock.push({ sku, title, variant_title: variantTitle, category: "synthetic-category", price, stock_status: status,
-      since: date, days_in_status: 1, online_rate_7d: status === "in_stock" ? 1 : 0,
-      online_rate_30d: status === "in_stock" ? 1 : 0, history_30d: (status === "in_stock" ? "i" : "o").repeat(30),
-      changes_30d: 0, last_change: null, last_change_at: null, parent_sku: parent, price_history: [] });
-    return { sku, price, status };
-  };
-  const addProduct = (handle, title, rows) => {
-    const prices = rows.map((row) => row.price);
-    const inStock = rows.filter((row) => row.status === "in_stock").length;
-    products.push({ handle, product_id: `product-${handle}`, title, url: `${origin}/products/${handle}`,
-      category: "synthetic-category", categories: ["synthetic-category"], price_min: Math.min(...prices),
-      price_max: Math.max(...prices), compare_at_max: null, currency: "USD", on_sale: false,
-      image_url: null, image_source: "none", feed_image_url: null, manual_image_url: null,
-      variant_count: rows.length, skus: rows.map((row) => row.sku), in_stock_variants: inStock,
-      stock_status: inStock ? "in_stock" : "out_of_stock", stock_since: date, row_kind: "single", parent_sku: null,
-      tags: [], priority: null, exclude_edm: 0, last_featured: null, days_since_featured: null, first_seen: firstSeen, status: "active" });
-  };
-
-  for (let group = 0; group < W2_EXPECTED.parentGroups; group += 1) {
-    const parent = `SYN-P${String(group).padStart(3, "0")}`;
-    const handle = `group-${String(group).padStart(3, "0")}`;
-    const children = [];
-    for (let variant = 1; variant <= W2_EXPECTED.childrenPerGroup; variant += 1) {
-      const title = `Synthetic grouped product ${String(group).padStart(3, "0")}`;
-      children.push(addSku(`${parent}-CH-${String(variant).padStart(2, "0")}`, handle, title, variant,
-        stockState(group, variant), parent, 10 + group + variant / 100));
-    }
-    addProduct(handle, `Synthetic grouped product ${String(group).padStart(3, "0")}`, children);
-  }
-
-  for (let single = 0; single < W2_EXPECTED.ungroupedSkus; single += 1) {
-    const sku = `SYN-SINGLE-${String(single).padStart(3, "0")}`;
-    const handle = `single-${String(single).padStart(3, "0")}`;
-    const status = single % 2 === 0 ? "in_stock" : "out_of_stock";
-    const title = `Synthetic single product ${String(single).padStart(3, "0")}`;
-    addProduct(handle, title, [addSku(sku, handle, title, null, status, null, 20 + single)]);
-  }
-
-  const seoPages = Array.from({ length: W2_EXPECTED.pages }, (_, index) =>
-    syntheticSeoPage(`${origin}/products/seo-issue-${String(index).padStart(3, "0")}`, date));
-  const seoIssues = Array.from({ length: W2_EXPECTED.issues }, (_, index) => ({
-    url: `${origin}/products/seo-issue-${String(index).padStart(3, "0")}`,
-    rule: index < W2_EXPECTED.issues - 6 ? "title_missing" : "desc_missing",
-    severity: index < W2_EXPECTED.issues - 6 ? "high" : "mid",
-    detail: "Synthetic SEO fixture issue",
-    status: "open",
-    first_seen: date,
-    last_seen: date,
-  }));
-  const seoLinks = Array.from({ length: W2_EXPECTED.links }, (_, index) => ({
-    from: `${origin}/pages/source-${String(index).padStart(3, "0")}`,
-    to: `${origin}/products/group-${String(index % W2_EXPECTED.parentGroups).padStart(3, "0")}`,
-    anchor: "synthetic internal link",
-    to_type: "product",
-  }));
-  const blogs = Array.from({ length: W2_EXPECTED.blogsBeforeRefresh }, (_, index) => {
-    const slug = `synthetic-article-${String(index).padStart(3, "0")}`;
-    return { url: `${origin}/blog/article-${String(index).padStart(3, "0")}`, slug, title: `Synthetic blog article ${String(index).padStart(3, "0")}`,
-      published_at: date, updated_at: null, category: "synthetic-category", author: "Synthetic author", tags: [],
-      meta_description: "Synthetic blog content for packaged acceptance.", word_count: 10, reading_minutes: 1, outline: [], has_faq: true,
-      featured_image: null, primary_keyword: null, links_internal: [], links_products: [], links_in: 0, linked_out_of_stock: [], last_crawled: date };
-  });
-
+  const fixture = makeW2SyntheticFixture(origin);
   await mkdir(directory, { recursive: true });
   const index = path.join(directory, "index");
-  await mkdir(index, { recursive: true });
-  await writeFile(path.join(index, "site.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
-  await writeJsonlFile(path.join(index, "catalog", "skus.jsonl"), skus.sort((a, b) => a.sku.localeCompare(b.sku)));
-  await writeJsonlFile(path.join(index, "inventory", "latest.jsonl"), latest.sort((a, b) => a.sku.localeCompare(b.sku)));
-  await writeJsonlFile(path.join(index, "views", "sku_stock.jsonl"), skuStock.sort((a, b) => a.sku.localeCompare(b.sku)));
-  await writeJsonlFile(path.join(index, "views", "products.jsonl"), products.sort((a, b) => a.handle.localeCompare(b.handle)));
-  await writeJsonlFile(path.join(index, "seo", "pages.jsonl"), seoPages);
-  await writeJsonlFile(path.join(index, "seo", "issues.jsonl"), seoIssues);
-  await writeJsonlFile(path.join(index, "seo", "links.jsonl"), seoLinks);
-  await writeJsonlFile(path.join(index, "content", "blog_index.jsonl"), blogs);
+  await mkdir(path.join(index, "catalog"), { recursive: true });
+  await mkdir(path.join(index, "inventory", "events"), { recursive: true });
+  await mkdir(path.join(index, "views"), { recursive: true });
+  await mkdir(path.join(index, "seo"), { recursive: true });
+  await mkdir(path.join(index, "content"), { recursive: true });
+  await mkdir(path.join(index, "ledgers"), { recursive: true });
+  await mkdir(path.join(index, "logs"), { recursive: true });
+  await writeFile(path.join(index, "site.json"), JSON.stringify(fixture.config, null, 2) + "\n", "utf8");
+  await writeJsonlFile(path.join(index, "catalog", "skus.jsonl"), fixture.skus.sort((a, b) => a.sku.localeCompare(b.sku)));
+  await writeJsonlFile(path.join(index, "catalog", "product_details.jsonl"), fixture.productDetails);
+  await writeJsonlFile(path.join(index, "inventory", "latest.jsonl"), fixture.latest.sort((a, b) => a.sku.localeCompare(b.sku)));
+  await writeJsonlFile(path.join(index, "views", "sku_stock.jsonl"), fixture.skuStock.sort((a, b) => a.sku.localeCompare(b.sku)));
+  await writeJsonlFile(path.join(index, "views", "products.jsonl"), fixture.products.sort((a, b) => a.handle.localeCompare(b.handle)));
+  await writeJsonlFile(path.join(index, "seo", "pages.jsonl"), fixture.seoPages);
+  await writeJsonlFile(path.join(index, "seo", "issues.jsonl"), fixture.seoIssues);
+  await writeJsonlFile(path.join(index, "seo", "links.jsonl"), fixture.seoLinks);
+  await writeJsonlFile(path.join(index, "content", "blog_index.jsonl"), fixture.blogs);
   await writeJsonlFile(path.join(index, "content", "keywords.jsonl"), []);
   await writeJsonlFile(path.join(index, "ledgers", "edm_campaigns.jsonl"), []);
+  await writeJsonlFile(path.join(index, "ledgers", "outreach.jsonl"), fixture.outreach);
   await writeJsonlFile(path.join(index, "logs", "runs.jsonl"), []);
-  await mkdir(path.join(index, "inventory", "events"), { recursive: true });
-  await writeJsonlFile(path.join(index, "inventory", "events", "2026-11.jsonl"), []);
-  const inStockCount = latest.filter((row) => row.stock_status === "in_stock").length;
-  const outOfStockCount = latest.filter((row) => row.stock_status === "out_of_stock").length;
-  await writeFile(path.join(index, "inventory", "daily_summary.csv"), `date,category,total,in_stock,out_of_stock,preorder,unknown\n2026-11-10,_all,${latest.length},${inStockCount},${outOfStockCount},0,0\n`, "utf8");
-  await writeFile(path.join(index, "catalog", "categories.json"), "[]\n", "utf8");
+  for (const month of ["2026-10", "2026-11"]) {
+    await writeJsonlFile(path.join(index, "inventory", "events", month + ".jsonl"),
+      fixture.events.filter((event) => event.date.startsWith(month)));
+  }
+  const summaryLines = fixture.dailySummaryRows.map((row) =>
+    [row.date, row.category, row.total, row.in_stock, row.out_of_stock, row.preorder, row.unknown].join(","));
+  await writeFile(path.join(index, "inventory", "daily_summary.csv"),
+    "date,category,total,in_stock,out_of_stock,preorder,unknown\n" + summaryLines.join("\n") + "\n", "utf8");
+  await writeFile(path.join(index, "catalog", "categories.json"), JSON.stringify(fixture.categories, null, 2) + "\n", "utf8");
   await writeFile(path.join(index, "ledgers", "sku_media.csv"), "sku,image_role,image_url,alt_text,source,width,height,updated_at\n", "utf8");
   await writeFile(path.join(index, "ledgers", "sku_tags.csv"), "sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at\n", "utf8");
-  return { skuCount: skus.length, productCount: products.length, blogCount: blogs.length, issueCount: seoIssues.length };
+  return {
+    ...fixture.summary,
+    skuCount: fixture.summary.totalSkus,
+    productCount: fixture.summary.products,
+    blogCount: fixture.summary.blogsBeforeRefresh,
+    issueCount: fixture.summary.issues,
+  };
 }
-
 async function startSyntheticSite() {
   let requestCount = 0;
   let failedRequestCount = 0;
@@ -669,8 +584,9 @@ async function exerciseW2Pagination(page, expectedTotal) {
 async function packagedW2Baseline(page) {
   return page.evaluate(async (projectId) => {
     const api = window.siteindex;
-    const [inventory, products, edm, blogPage, blogSummary, issues, pages, links, overview] = await Promise.all([
+    const [inventory, inventorySummary, products, edm, blogPage, blogSummary, issues, pages, links, overview] = await Promise.all([
       api.inventory.listSkus(projectId, { page: 1, pageSize: 0, filters: { parent_only: true } }),
+      api.inventory.summary(projectId, 30),
       api.products.list(projectId, { page: 1, pageSize: 0, filters: { parent_only: true } }),
       api.edm.listImages(projectId, { page: 1, pageSize: 0, filters: { parent_only: true } }),
       api.content.listBlog(projectId, { page: 1, pageSize: 0, filters: {} }),
@@ -683,6 +599,9 @@ async function packagedW2Baseline(page) {
     const count = (key) => blogSummary.kpis.find((item) => item.key === key)?.value ?? null;
     const parentInventory = inventory.rows.filter((row) => row.is_parent === true);
     const unmatchedInventory = inventory.rows.filter((row) => row.is_parent !== true && !row.parent_sku);
+    const kpi = (key) => inventorySummary.kpis.find((item) => item.key === key)?.value ?? null;
+    const trendParent = parentInventory.find((row) => row.sku === "SYN-P001");
+    const categoryRate = inventorySummary.category_rates.find((row) => row.category === "synthetic-category");
     const parentProducts = products.rows.filter((row) => row.row_kind === "parent");
     const unmatchedProducts = products.rows.filter((row) => row.row_kind === "single");
     const parentHasThreeOfThree = parentProducts.some((row) => row.variant_count === 3 && row.in_stock_variants === 3);
@@ -698,6 +617,15 @@ async function packagedW2Baseline(page) {
         parents: parentInventory.length,
         unmatched: unmatchedInventory.length,
         childrenLeaked: inventory.rows.some((row) => typeof row.parent_sku === "string" && row.parent_sku.length > 0 && row.is_parent !== true),
+        summary: { total: kpi("total"), inStock: kpi("in_stock"), outOfStock: kpi("out_of_stock"), categoryRate: categoryRate ?? null },
+        parentTrend: trendParent ? {
+          sku: trendParent.sku,
+          history30d: trendParent.history_30d,
+          onlineRate7d: trendParent.online_rate_7d,
+          onlineRate30d: trendParent.online_rate_30d,
+          changes30d: trendParent.changes_30d,
+          lastChangeAt: trendParent.last_change_at,
+        } : null,
       },
       products: {
         rows: products.total,
@@ -712,7 +640,7 @@ async function packagedW2Baseline(page) {
         unmatched: edmSingles,
         childrenLeaked: edm.rows.some((row) => /-CH-\d{2}$/u.test(row.sku)),
       },
-      content: { blogs: blogPage.total, summaryBlogs: count("blogs") },
+      content: { blogs: blogPage.total, summaryBlogs: count("blogs"), summaryNoSchema: count("no_schema") },
       seo: { issues: issues.total, pages: pages.total, links: links.total },
       overview: { attentionCount: overview.attention.length, firstSeoRule: attentionRule },
     };
@@ -760,6 +688,17 @@ async function testW2Pages(page, syntheticSite) {
       && baseline.inventory.parents === W2_EXPECTED.parentGroups
       && baseline.inventory.unmatched === W2_EXPECTED.ungroupedSkus
       && !baseline.inventory.childrenLeaked
+      && baseline.inventory.summary.total === String(W2_EXPECTED.totalSkus)
+      && baseline.inventory.summary.inStock === String(W2_EXPECTED.inStock)
+      && baseline.inventory.summary.outOfStock === String(W2_EXPECTED.outOfStock)
+      && baseline.inventory.summary.categoryRate?.total === W2_EXPECTED.totalSkus
+      && baseline.inventory.summary.categoryRate?.rate === W2_EXPECTED.inStock / W2_EXPECTED.totalSkus
+      && baseline.inventory.parentTrend?.sku === W2_EXPECTED.trendParentSku
+      && baseline.inventory.parentTrend?.history30d === W2_EXPECTED.trendHistory30d
+      && baseline.inventory.parentTrend?.onlineRate7d === W2_EXPECTED.trendOnlineRate7d
+      && baseline.inventory.parentTrend?.onlineRate30d === W2_EXPECTED.trendOnlineRate30d
+      && baseline.inventory.parentTrend?.changes30d === 1
+      && baseline.inventory.parentTrend?.lastChangeAt === W2_EXPECTED.trendLastChangeAt
       && baseline.products.rows === W2_EXPECTED.products
       && baseline.products.parents === W2_EXPECTED.parentGroups
       && baseline.products.unmatched === W2_EXPECTED.ungroupedSkus
@@ -771,6 +710,7 @@ async function testW2Pages(page, syntheticSite) {
       && !baseline.edm.childrenLeaked
       && baseline.content.blogs === W2_EXPECTED.blogsBeforeRefresh
       && baseline.content.summaryBlogs === String(W2_EXPECTED.blogsBeforeRefresh)
+      && baseline.content.summaryNoSchema === "0"
       && baseline.seo.issues === W2_EXPECTED.issues
       && baseline.seo.pages === W2_EXPECTED.pages
       && baseline.seo.links === W2_EXPECTED.links
@@ -941,21 +881,28 @@ async function testW2Pages(page, syntheticSite) {
         api.content.listBlog(projectId, { page: 1, pageSize: 0, filters: {} }),
       ]);
       const value = summary.kpis.find((item) => item.key === "blogs")?.value;
-      return blogs.total === 2 && value === "2";
+      const noSchema = summary.kpis.find((item) => item.key === "no_schema")?.value;
+      return blogs.total === 2 && value === "2" && noSchema === "0";
     }, W2_PROJECT_ID, { timeout: 90_000 });
     await page.waitForFunction(() => document.querySelector(".si-data-table .si-pagination-count")?.textContent?.includes("/ 2"), null, { timeout: 20_000 });
     const uiKpi = await page.locator(".si-content-kpis").innerText();
+    const schemaKpi = await page.evaluate(async (projectId) => {
+      const summary = await window.siteindex.content.summary(projectId);
+      return summary.kpis.find((item) => item.key === "no_schema")?.value ?? null;
+    }, W2_PROJECT_ID);
     const table = await readW2TableMetrics(page);
     const requestStats = syntheticSite.metrics();
     const busyStateVisible = busyStateObserved === "正在启动…" || busyStateObserved === "抓取中…";
     const passed = table.total === W2_EXPECTED.blogsAfterRefresh
       && uiKpi.includes("博客文章") && uiKpi.includes(String(W2_EXPECTED.blogsAfterRefresh))
+      && schemaKpi === "0"
       && requestStats.requestCount >= 4 && requestStats.failedRequestCount === 0;
     return { passed, evidence: {
       busyStateObserved,
       busyStateVisible,
       refreshedBlogCount: table.total,
       kpiShowsRefreshedCount: uiKpi.includes(String(W2_EXPECTED.blogsAfterRefresh)),
+      noSchemaKpi: schemaKpi,
       localRequestCount: requestStats.requestCount,
       failedLocalRequestCount: requestStats.failedRequestCount,
       originRedacted: true,
