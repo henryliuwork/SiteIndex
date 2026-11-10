@@ -10,6 +10,7 @@ import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, KpiCard, Notice, PageHeader, useToast } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
+import { WorkspaceImportCheckDialog } from "./project-center/workspace-import-dialog";
 import { workspaceDirectoryTree, workspacePathJoin } from "./new-project/workspace-preview";
 import { getWorkspaceCapabilities } from "./workspace-capabilities";
 
@@ -78,7 +79,15 @@ function RunDetail({ run }: { run: RunLog }) {
   );
 }
 
-function ProjectActionsMenu({ project, onRemove }: { project: ProjectSummary; onRemove: (project: ProjectSummary) => void }) {
+function ProjectActionsMenu({
+  project, onRemove, onImportCheck, canRemove, canImportCheck,
+}: {
+  project: ProjectSummary;
+  onRemove: (project: ProjectSummary) => void;
+  onImportCheck: (project: ProjectSummary) => void;
+  canRemove: boolean;
+  canImportCheck: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
     <PopoverPrimitive.Trigger asChild>
@@ -88,7 +97,8 @@ function ProjectActionsMenu({ project, onRemove }: { project: ProjectSummary; on
     </PopoverPrimitive.Trigger>
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content className="si-popover-content si-project-action-menu" align="end" sideOffset={6}>
-        <button type="button" className="si-project-menu-action" onClick={() => { setOpen(false); onRemove(project); }}>移除项目</button>
+        {canImportCheck && <button type="button" className="si-project-menu-action" onClick={() => { setOpen(false); onImportCheck(project); }}>识别并检查工作区</button>}
+        {canRemove && <button type="button" className="si-project-menu-action is-danger" onClick={() => { setOpen(false); onRemove(project); }}>移除项目</button>}
         <PopoverPrimitive.Arrow className="si-popover-arrow" />
       </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
@@ -109,11 +119,13 @@ function scheduleVerificationLabel(check: ScheduleVerificationDisplay): string {
 }
 
 function ProjectCard({
-  project, onOpenFolder, onRemove, scheduleVerification,
+  project, onOpenFolder, onRemove, onImportCheck, canImportCheck, scheduleVerification,
 }: {
   project: ProjectSummary;
   onOpenFolder: (path: string) => void;
   onRemove: (project: ProjectSummary) => void;
+  onImportCheck: (project: ProjectSummary) => void;
+  canImportCheck: boolean;
   scheduleVerification?: ScheduleVerificationDisplay;
 }) {
   const detailQuery = useQuery({ queryKey: projectQueryKeys.detail(project.id), queryFn: () => api.projects.get(project.id) });
@@ -135,7 +147,13 @@ function ProjectCard({
         </div>
         <div className="si-project-card-actions">
           <Chip tone={warning?.tone ?? (project.sync.state === "ok" ? "ok" : "neutral")}>{statusLabel(project)}</Chip>
-          {typeof api.projects.remove === "function" && <ProjectActionsMenu project={project} onRemove={onRemove} />}
+          {(typeof api.projects.remove === "function" || canImportCheck) && <ProjectActionsMenu
+            project={project}
+            onRemove={onRemove}
+            onImportCheck={onImportCheck}
+            canRemove={typeof api.projects.remove === "function"}
+            canImportCheck={canImportCheck}
+          />}
         </div>
       </div>
       {scheduleVerification && <p className={"si-project-schedule-verification" + (scheduleVerification.state === "error" || (scheduleVerification.state === "complete" && scheduleVerification.result.state === "error") ? " is-error" : "")} role="status">{scheduleVerificationLabel(scheduleVerification)}</p>}
@@ -436,6 +454,7 @@ export function ProjectCenterPage() {
   const [runQuery, setRunQuery] = useState<ListQuery>({ page: 1, pageSize: 20 });
   const [attentionExpanded, setAttentionExpanded] = useState(false);
   const [projectToRemove, setProjectToRemove] = useState<ProjectSummary | null>(null);
+  const [projectForImportCheck, setProjectForImportCheck] = useState<ProjectSummary | null>(null);
   const [removingProject, setRemovingProject] = useState(false);
   const [scheduleVerifications, setScheduleVerifications] = useState<Record<string, ScheduleVerificationDisplay>>({});
 
@@ -569,6 +588,8 @@ export function ProjectCenterPage() {
               project={project}
               onOpenFolder={(path) => void openFolder(path)}
               onRemove={(target) => setProjectToRemove(target)}
+              onImportCheck={(target) => setProjectForImportCheck(target)}
+              canImportCheck={workspaceCapabilities.importCheckAvailable}
               scheduleVerification={scheduleVerifications[project.id]}
             />)}
             <Link className="si-new-project-card" to="/new/url"><Plus size={22} /><strong>新建项目</strong><span>输入网址，3 分钟生成工作区</span></Link>
@@ -605,6 +626,12 @@ export function ProjectCenterPage() {
       </>}
       <AddExistingDialog open={addExistingOpen} onOpenChange={setAddExistingOpen} onAdded={(project) => void handleAdded(project)} />
       {workspaceCapabilities.emptyWorkspaceAvailable && <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} defaultRoot={configuredRoot ?? ""} onCreated={(id) => void handleWorkspaceCreated(id)} />}
+      {workspaceCapabilities.importCheckAvailable && <WorkspaceImportCheckDialog
+        open={Boolean(projectForImportCheck)}
+        onOpenChange={(open) => { if (!open) setProjectForImportCheck(null); }}
+        project={projectForImportCheck}
+        available={workspaceCapabilities.importCheckAvailable}
+      />}
       <ConfirmDialog
         open={Boolean(projectToRemove)}
         onOpenChange={(open) => { if (!open && !removingProject) setProjectToRemove(null); }}

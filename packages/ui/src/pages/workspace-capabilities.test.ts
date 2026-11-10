@@ -7,6 +7,7 @@ describe("workspace capability gate", () => {
     expect(getWorkspaceCapabilities(createMockApi(), true)).toEqual({
       wizardAvailable: true,
       emptyWorkspaceAvailable: true,
+      importCheckAvailable: true,
       explainWizardUnavailable: false,
       explainEmptyWorkspaceUnavailable: false,
     });
@@ -16,6 +17,7 @@ describe("workspace capability gate", () => {
     expect(getWorkspaceCapabilities(createMockApi(), false)).toEqual({
       wizardAvailable: false,
       emptyWorkspaceAvailable: false,
+      importCheckAvailable: false,
       explainWizardUnavailable: true,
       explainEmptyWorkspaceUnavailable: true,
     });
@@ -28,6 +30,16 @@ describe("workspace capability gate", () => {
     expect(getWorkspaceCapabilities(api, true)).toMatchObject({
       wizardAvailable: false,
       emptyWorkspaceAvailable: false,
+      importCheckAvailable: false,
     });
+  });
+
+  it("keeps import-check hidden when the optional method is absent or pending in Desktop", () => {
+    const api = createMockApi();
+    api.workspace = undefined;
+    expect(getWorkspaceCapabilities(api, true).importCheckAvailable).toBe(false);
+
+    const desktopApi = createMockApi();
+    expect(getWorkspaceCapabilities(desktopApi, false).importCheckAvailable).toBe(false);
   });
 });

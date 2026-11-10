@@ -3,6 +3,7 @@ import { PENDING_HANDLERS, type SiteIndexApi } from "@siteindex/shared";
 export interface WorkspaceCapabilities {
   wizardAvailable: boolean;
   emptyWorkspaceAvailable: boolean;
+  importCheckAvailable: boolean;
   explainWizardUnavailable: boolean;
   explainEmptyWorkspaceUnavailable: boolean;
 }
@@ -19,12 +20,14 @@ export function getWorkspaceCapabilities(api: SiteIndexApi, isMockApi: boolean):
   const checkAvailable = methodAvailable("workspace.check", typeof api.workspace?.check === "function", isMockApi);
   const createAvailable = methodAvailable("workspace.create", typeof api.workspace?.create === "function", isMockApi);
   const createOnlyAvailable = methodAvailable("projects.createWorkspaceOnly", typeof api.projects.createWorkspaceOnly === "function", isMockApi);
+  const importCheckAvailable = methodAvailable("workspace.importCheck", typeof api.workspace?.importCheck === "function", isMockApi);
   const wizardAvailable = checkAvailable && createAvailable;
   const emptyWorkspaceAvailable = checkAvailable && createOnlyAvailable;
 
   return {
     wizardAvailable,
     emptyWorkspaceAvailable,
+    importCheckAvailable,
     explainWizardUnavailable: !isMockApi && !wizardAvailable,
     explainEmptyWorkspaceUnavailable: !isMockApi && !emptyWorkspaceAvailable,
   };

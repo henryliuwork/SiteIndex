@@ -1,5 +1,14 @@
-import type { SiteIndexApi, SiteIndexError, WorkspaceCreateInput, WorkspaceCreateResult } from "@siteindex/shared";
+import { pathsFor, type SiteIndexApi, type SiteIndexError, type WorkspaceCreateInput, type WorkspaceCreateResult, type WorkspaceImportIssue } from "@siteindex/shared";
 import { reply } from "./context";
+
+const workspacePaths = pathsFor("workspace");
+const workspaceManifestPath = workspacePaths.index + "/workspace.json";
+const workspaceMetadataIssue: WorkspaceImportIssue = {
+  path: workspacePaths.site,
+  code: "workspace_metadata_missing",
+  message: "site.json 缺少 workspace 元数据。为避免覆盖用户配置，请根据 _site-index/workspace.json 手动补充 workspace.version、workspace.sections（目录名数组）和 workspace.esp_presets；若该文件缺失，请先运行自动修复，再重新检查。",
+  auto_fixable: false,
+};
 
 const generatedWorkspaceFiles = [
   "README.md", "AGENTS.md", "CLAUDE.md", ".env", ".gitignore", "workspace.json",
@@ -25,6 +34,7 @@ export interface WorkspaceMock {
 
 export function createWorkspaceMock(): WorkspaceMock {
   const createdByTarget = new Map<string, string[]>();
+  const repairedImports = new Set<string>();
 
   const createNow = (input: WorkspaceCreateInput): WorkspaceCreateResult => {
     const path = input.targetDir.trim();
@@ -51,7 +61,38 @@ export function createWorkspaceMock(): WorkspaceMock {
       return { ok: invalid.length === 0, invalid_entries: invalid };
     }),
     create: (input) => reply(() => createNow(input)),
-    importCheck: () => reply({ issues: [], repaired: [] }),
+    importCheck: (id, options) => reply(() => {
+      const projectId = String(id);
+      if (projectId !== "demo2") {
+        return {
+          issues: [{
+            path: workspacePaths.site,
+            code: "workspace_config_missing",
+            message: "找不到工作区数据目录中的 site.json。",
+            auto_fixable: false,
+          }],
+          repaired: [],
+        };
+      }
+
+      const wasRepaired = repairedImports.has(projectId);
+      if (options?.apply && !wasRepaired) {
+        repairedImports.add(projectId);
+        return {
+          issues: [workspaceMetadataIssue],
+          repaired: [workspacePaths.skuMedia, workspaceManifestPath],
+        };
+      }
+      if (wasRepaired) return { issues: [workspaceMetadataIssue], repaired: [] };
+      return {
+        issues: [
+          { path: workspacePaths.skuMedia, code: "missing_ledger", message: "缺少 SKU 媒体台账文件，可自动补齐空模板。", auto_fixable: true },
+          workspaceMetadataIssue,
+          { path: workspaceManifestPath, code: "workspace_manifest_missing", message: "缺少工作区路径映射文件 workspace.json。", auto_fixable: true },
+        ],
+        repaired: [],
+      };
+    }),
   };
 
   return { api, createNow };
