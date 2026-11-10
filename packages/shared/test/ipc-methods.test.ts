@@ -55,6 +55,6 @@ describe("shared IPC method contract", () => {
     for (const method of workspaceMethods) {
       expect(API_INVOKE_METHODS).toContain(method);
     }
-    expect(PENDING_HANDLERS).toEqual(["projects.createWorkspaceOnly"]);
+    expect(PENDING_HANDLERS).toEqual([]);
   });
 });
