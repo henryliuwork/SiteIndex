@@ -37,4 +37,12 @@ describe("ui:check data surface readiness", () => {
     await expect(waitForDataSurface(async () => "missing", { timeoutMs: 25, pollMs: 5 }))
       .rejects.toThrow("最后状态：missing");
   });
+
+  it("does not treat a continuously loading content surface as ready", async () => {
+    const readState = vi.fn(async () => "loading" as const);
+
+    await expect(waitForDataSurface(readState, { timeoutMs: 25, pollMs: 5 }))
+      .rejects.toThrow("最后状态：loading");
+    expect(readState.mock.calls.length).toBeGreaterThan(1);
+  });
 });

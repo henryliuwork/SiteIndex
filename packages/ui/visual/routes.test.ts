@@ -7,6 +7,7 @@ describe("ui:check data table routes", () => {
     "/p/demo/inventory",
     "/p/demo/edm",
     "/p/demo/seo",
+    "/p/demo/content",
     "/p/demo/settings/categories",
   ])("waits for the table surface on %s", (route) => {
     expect(isDataTableRoute(route)).toBe(true);
