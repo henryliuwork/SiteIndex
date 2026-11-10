@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type { DesignButtonVariant, DesignColorRole, DesignTokens, DesignTypographyScaleKey } from "@siteindex/shared";
-import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, EmptyState, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
@@ -195,13 +194,6 @@ export function DesignPage() {
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
   }, [activeRunId, id, queryClient, toast]);
 
-  const openProjectFile = async (path: string, label: string) => {
-    if (!project) return;
-    try {
-      await api.shell.openPath(project.path.replace(/[\\/]+$/, "") + "/" + path);
-      toast.success(`已打开 ${label}。`);
-    } catch (cause) { toast.error(apiErrorMessage(cause, `打开 ${label} 失败。`)); }
-  };
   const copyTokens = async () => {
     if (!tokens) return;
     try {
@@ -239,10 +231,7 @@ export function DesignPage() {
             <Button variant="secondary" disabled={!tokens} onClick={() => void copyTokens()}>复制 Token（JSON）</Button>
             <Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void refresh()}>{activeRunId ? "提取中…" : "重新提取"}</Button>
           </>
-        } overflow={[
-          { label: "打开 tokens.json", onSelect: () => void openProjectFile(PATHS.designTokens, "tokens.json") },
-          { label: "打开 brand.md", onSelect: () => void openProjectFile(PATHS.designBrand, "brand.md") },
-        ]} />
+        } />
       <ProjectTabPanel projectId={project.id} tab="design">
         {runMessage && <Notice tone="info" title={activeRunId ? "设计规范提取进行中" : "正在启动设计规范提取"}>{runMessage}</Notice>}
         {designQuery.isLoading ? <div className="si-page-loading" role="status">正在加载设计规范…</div>

@@ -107,6 +107,7 @@ describe("DesignPage Token v2", () => {
     expect(document.querySelector(".si-design-type-row .si-design-type-metrics")?.textContent).toContain("字距 -0.02em");
     expect(screen.getByRole("heading", { name: "按钮规范" })).toBeTruthy();
     expect(screen.getByText("描边按钮")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
 
     const variables = document.querySelector<HTMLDetailsElement>(".si-design-css-variables");
     expect(variables?.open).toBe(false);
