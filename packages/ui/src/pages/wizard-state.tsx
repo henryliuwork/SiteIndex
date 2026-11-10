@@ -33,7 +33,7 @@ const initialDraft: WizardDraft = {
   folderName: "",
   workspaceEnabled: true,
   workspacePlatform: "other",
-  workspaceEspPresets: ["esp.mailchimp"],
+  workspaceEspPresets: ["mailchimp"],
   created: null,
 };
 

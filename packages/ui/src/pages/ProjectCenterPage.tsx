@@ -6,11 +6,12 @@ import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { FolderOpen, MoreHorizontal, Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import type { CreateWorkspaceOnlyInput, Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue, WorkspaceCreateInput } from "@siteindex/shared";
-import { api, apiErrorMessage } from "../api";
+import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, KpiCard, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, KpiCard, Notice, PageHeader, useToast } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
 import { workspaceDirectoryTree, workspacePathJoin } from "./new-project/workspace-preview";
+import { getWorkspaceCapabilities } from "./workspace-capabilities";
 
 type ScheduleVerification = {
   state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error";
@@ -282,7 +283,7 @@ function CreateWorkspaceDialog({
         markets: markets.split(/[，,]/).map((market) => market.trim()).filter(Boolean),
         projects_root: cleanRoot,
         folder_name: cleanFolder,
-        workspace: { enabled: true, platform, esp_presets: mailchimp ? ["esp.mailchimp"] : [] },
+        workspace: { enabled: true, platform, esp_presets: mailchimp ? ["mailchimp"] : [] },
       } satisfies CreateWorkspaceOnlyInput);
       onCreated(created.id);
       toast.success("空工作区已创建。");
@@ -420,6 +421,7 @@ function AttentionList({ projects }: { projects: ProjectSummary[] }) {
 export function ProjectCenterPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const workspaceCapabilities = getWorkspaceCapabilities(api, isMockApi);
   const projectsQuery = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
   const projects = projectsQuery.data ?? [];
@@ -543,10 +545,11 @@ export function ProjectCenterPage() {
         meta={<div className="si-project-root-line"><span>项目根目录 <code>{projectRoot}</code></span>{needsRootSetup && <Button size="small" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}</div>}
         actions={<>
           <Button icon={<FolderOpen size={15} />} onClick={() => setAddExistingOpen(true)}>添加已有项目</Button>
-          {typeof api.projects.createWorkspaceOnly === "function" && <Button icon={<FolderOpen size={15} />} onClick={() => setCreateWorkspaceOpen(true)}>创建空工作区</Button>}
+          {workspaceCapabilities.emptyWorkspaceAvailable && <Button icon={<FolderOpen size={15} />} onClick={() => setCreateWorkspaceOpen(true)}>创建空工作区</Button>}
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
         </>}
       />
+      {workspaceCapabilities.explainEmptyWorkspaceUnavailable && <Notice tone="info" title="Agent 工作区暂不可用">桌面端尚未接入空工作区创建和目录检查操作；现有项目添加与普通新建流程仍可使用。</Notice>}
       {settingsQuery.isError && <ApiErrorNotice className="si-center-query-error" label="项目根目录读取失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
       {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : <>
         <div className="si-center-kpis">
@@ -601,7 +604,7 @@ export function ProjectCenterPage() {
         </section>
       </>}
       <AddExistingDialog open={addExistingOpen} onOpenChange={setAddExistingOpen} onAdded={(project) => void handleAdded(project)} />
-      {typeof api.projects.createWorkspaceOnly === "function" && <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} defaultRoot={configuredRoot ?? ""} onCreated={(id) => void handleWorkspaceCreated(id)} />}
+      {workspaceCapabilities.emptyWorkspaceAvailable && <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} defaultRoot={configuredRoot ?? ""} onCreated={(id) => void handleWorkspaceCreated(id)} />}
       <ConfirmDialog
         open={Boolean(projectToRemove)}
         onOpenChange={(open) => { if (!open && !removingProject) setProjectToRemove(null); }}

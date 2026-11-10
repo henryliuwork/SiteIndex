@@ -91,6 +91,7 @@
 ## v0.4.0 · Agent 工作区
 - [x] B4-1 / B-6：向导项目位置选择；按可选 `workspace.check/create` 显示 Agent 工作区步骤，默认启用、平台选择、Mailchimp 预设、目标目录空检查和目录树预览 — 本 PR（Core 未接入，mock 已实现）
 - [x] 项目中心“创建空工作区”：调用可选 `projects.createWorkspaceOnly`，真实 Core/IPC 行为待 A4-3 / C4-1 — 本 PR
+- [x] 工作区入口按 `PENDING_HANDLERS` 过滤尚未接入的 Desktop 桩；浏览器 mock 保持可预览，规范 ESP preset ID 使用 `mailchimp`。向导和项目中心均覆盖了可用、缺失与待接入场景 — 本 PR
 
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点

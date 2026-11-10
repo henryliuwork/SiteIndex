@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CircleAlert, FolderOpen, LoaderCircle, Plus, X } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobResult, type Platform } from "@siteindex/shared";
-import { api, apiErrorMessage } from "../api";
+import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Card, Chip, EmptyState, Notice, PageHeader, useToast } from "../components";
 import { useWizardDraft } from "./wizard-state";
@@ -11,6 +11,7 @@ import { applyInitProgress, applyInitResult, finalInitProgressPercent, getInitCo
 import { findExistingProject, type ExistingProject } from "./new-project/duplicate-check";
 import { getVisibleWizardSteps } from "./new-project/wizard-steps";
 import { workspaceDirectoryTree, workspacePathJoin, workspacePlatformFromDetected } from "./new-project/workspace-preview";
+import { getWorkspaceCapabilities } from "./workspace-capabilities";
 const platformNames: Record<Platform, string> = { magento: "Magento", wordpress: "WordPress", woocommerce: "WooCommerce", shopify: "Shopify", other: "其他平台" };
 const progressSteps: Record<InitStepKey, { name: string; detail: string }> = {
   folders: { name: "创建数据目录", detail: "index/ 网站数据索引" },
@@ -109,7 +110,8 @@ export function NewProjectWizardPage() {
   const { draft, update, reset } = useWizardDraft();
   const registeredProjects = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
-  const workspaceApiAvailable = typeof api.workspace?.check === "function" && typeof api.workspace?.create === "function";
+  const workspaceCapabilities = getWorkspaceCapabilities(api, isMockApi);
+  const workspaceApiAvailable = workspaceCapabilities.wizardAvailable;
   const steps = getVisibleWizardSteps(workspaceApiAvailable);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -352,6 +354,7 @@ export function NewProjectWizardPage() {
   return <div className="si-page si-wizard-page">
     <PageHeader title="新建项目" meta={<span><Link to="/">项目中心</Link> · 第 {active + 1} 步：{steps[active]?.label}</span>} />
     <WizardSteps active={active} steps={steps} />
+    {activeStepKey === "brand" && workspaceCapabilities.explainWizardUnavailable && <Notice tone="info" title="Agent 工作区暂不可用">桌面端尚未接入工作区检查和创建操作；仍可继续创建并初始化 SiteIndex 项目。</Notice>}
 
     {active === 0 && <Card className="si-wizard-card si-wizard-url-card">
       <header><h2>输入网站地址</h2><p>SiteIndex 会自动检测跳转、robots.txt、sitemap、建站平台、语言和币种。</p></header>
@@ -437,7 +440,7 @@ export function NewProjectWizardPage() {
           </label>
           <fieldset className="si-wizard-workspace-presets" disabled={!draft.workspaceEnabled}>
             <legend>启用的渠道预设</legend>
-            <label><input type="checkbox" checked={draft.workspaceEspPresets.includes("esp.mailchimp")} onChange={(event) => update({ workspaceEspPresets: event.target.checked ? [...new Set([...draft.workspaceEspPresets, "esp.mailchimp"])] : draft.workspaceEspPresets.filter((preset) => preset !== "esp.mailchimp") })} />Mailchimp</label>
+            <label><input type="checkbox" checked={draft.workspaceEspPresets.includes("mailchimp")} onChange={(event) => update({ workspaceEspPresets: event.target.checked ? [...new Set([...draft.workspaceEspPresets, "mailchimp"])] : draft.workspaceEspPresets.filter((preset) => preset !== "mailchimp") })} />Mailchimp</label>
           </fieldset>
           <div className={`si-wizard-workspace-check is-${workspaceCheck.state}`} role={workspaceCheck.state === "not-empty" || workspaceCheck.state === "error" ? "alert" : "status"} aria-live="polite">
             {!draft.workspaceEnabled ? "Agent 工作区已关闭，不会创建预览中的目录。" : workspaceCheck.state === "checking" ? "正在检查目标目录是否为空…" : workspaceCheck.message ?? "等待检查目标目录。"}
