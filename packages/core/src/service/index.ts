@@ -10,6 +10,7 @@ import {
   pathsFor,
   isSiteIndexError,
   type CreateProjectInput,
+  type CreateWorkspaceOnlyInput,
   type AttentionItem,
   type BlogFilters,
   type BlogPost,
@@ -131,7 +132,9 @@ export interface CoreServiceContext {
  * 各方法的输入输出签名直接取自 SiteIndexApi。
  */
 export interface CoreService {
-  projects: Pick<SiteIndexApi["projects"], "get" | "updateConfig" | "detect" | "inspectFeed" | "create">;
+  projects: Pick<SiteIndexApi["projects"], "get" | "updateConfig" | "detect" | "inspectFeed" | "create"> & {
+    createWorkspaceOnly: NonNullable<SiteIndexApi["projects"]["createWorkspaceOnly"]>;
+  };
   workspace: Pick<NonNullable<SiteIndexApi["workspace"]>, "check" | "create" | "importCheck">;
   overview: SiteIndexApi["overview"];
   sku: NonNullable<SiteIndexApi["sku"]>;
@@ -1776,6 +1779,30 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         const created = await createProjectFiles(input, detected, ctx.templateDir);
         invalidate(created.path);
         return { id: created.id, runId: `${localDate(created.config.timezone)}-init` };
+      });
+    },
+    createWorkspaceOnly: async (input: CreateWorkspaceOnlyInput) => {
+      const domain = normalizeSiteDomain(input.url);
+      if (!domain) throw siteError("CONFIG_INVALID", "请输入有效的网站地址。", input.url);
+      const folderName = cleanFolderName(input.folder_name);
+      const projectsRoot = path.resolve(input.projects_root);
+      const targetDir = path.resolve(projectsRoot, folderName);
+      const relative = path.relative(projectsRoot, targetDir);
+      if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+        throw siteError("CONFIG_INVALID", "工作区目录必须位于 projects_root 内。", targetDir);
+      }
+      return withSiteCreateLock(domain, async () => {
+        await assertSiteNotRegistered(domain, projectsRoot, ctx.listRegisteredProjects);
+        const created = await createWorkspaceFiles({
+          targetDir,
+          domain,
+          brand: input.brand,
+          platform: input.workspace.platform,
+          markets: input.markets,
+          esp_presets: input.workspace.esp_presets,
+        }, { templateDir: ctx.templateDir });
+        invalidate(created.path);
+        return { id: folderName };
       });
     },
   };

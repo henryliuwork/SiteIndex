@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { access, readdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PATHS, type SiteIndexErrorCode } from "@siteindex/shared";
+import { PATHS, pathsFor, type SiteIndexErrorCode } from "@siteindex/shared";
 import { compareKeys } from "../io/compare";
 import { CoreIOError, withLock } from "../io/runner-lock";
 
@@ -43,15 +43,19 @@ async function scanProjectRoot(projectsRoot: string): Promise<RegisteredProjectP
   }
 
   const projects: RegisteredProjectPath[] = [];
+  const sitePaths = [pathsFor("workspace").site, PATHS.site];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const projectPath = path.join(projectsRoot, entry.name);
-    try {
-      await access(path.join(projectPath, PATHS.site));
-      projects.push({ id: entry.name, path: projectPath });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw guardError("PROJECT_UNREADABLE", "无法检查已登记项目，暂不能创建新项目。", projectPath);
+    for (const sitePath of sitePaths) {
+      try {
+        await access(path.join(projectPath, sitePath));
+        projects.push({ id: entry.name, path: projectPath });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw guardError("PROJECT_UNREADABLE", "无法检查已登记项目，暂不能创建新项目。", projectPath);
+        }
       }
     }
   }
@@ -61,7 +65,18 @@ async function scanProjectRoot(projectsRoot: string): Promise<RegisteredProjectP
 async function domainFromSiteFile(project: RegisteredProjectPath): Promise<string> {
   let value: unknown;
   try {
-    value = JSON.parse(await readFile(path.join(project.path, PATHS.site), "utf8"));
+    let configPath: string | null = null;
+    for (const relative of [pathsFor("workspace").site, PATHS.site]) {
+      try {
+        await access(path.join(project.path, relative));
+        configPath = path.join(project.path, relative);
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    if (!configPath) throw new Error("site.json not found");
+    value = JSON.parse(await readFile(configPath, "utf8"));
   } catch {
     throw guardError("PROJECT_UNREADABLE", "无法读取已登记项目配置，暂不能创建新项目。", project.path);
   }
