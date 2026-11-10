@@ -27,11 +27,21 @@ const PROJECTS_ROOT = path.join(TEST_ROOT, "projects");
 const INSTALL_DIR = path.join(TEST_ROOT, "installed-app");
 const APP_DATA_DIR = APP_DATA_ROOT ? path.join(APP_DATA_ROOT, "SiteIndex") : "";
 const SETTINGS_FILE = APP_DATA_DIR ? path.join(APP_DATA_DIR, "settings.json") : "";
-const LOG_FILE = APP_DATA_DIR ? path.join(APP_DATA_DIR, "logs", "siteindex-trace.log") : "";
+const TRACE_LOG_NAME = "siteindex-trace.log";
+const TRACE_SEARCH_ROOTS = [
+  APP_DATA_DIR,
+  APP_DATA_ROOT ? path.join(APP_DATA_ROOT, "siteindex-desktop") : "",
+  process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "SiteIndex") : "",
+  process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "siteindex") : "",
+].filter(Boolean);
 const report = {
   sourceCommit: null,
   prHeadCommit: process.env.SITEINDEX_PR_HEAD_SHA || null,
+  expectedSourceCommit: process.env.SITEINDEX_EXPECTED_SOURCE_COMMIT || null,
   versionOverride: CANDIDATE_VERSION,
+  candidateArtifactSource: process.env.SITEINDEX_CANDIDATE_INSTALLER_URL
+    ? "official-candidate-installer"
+    : "runner-built-internal-candidate",
   previousRelease: { ...OLD_RELEASE },
   candidateInstallerSha256: null,
   windows: {
@@ -42,6 +52,13 @@ const report = {
   },
   checks: [],
   addExistingTrace: null,
+  traceEnvironmentPassedToSpawn: false,
+  uncovered: [
+    "settings UI for close_to_tray and launch_at_login, plus tray and login-start behavior",
+    "Skills Center installation/version status in ~/.agents/skills and retired edm-builder status",
+    "full legacy feature matrix and golden tests beyond project read/query, settings persistence, and byte comparison",
+    "manual Windows 10/11 and real-project migration, visual, accessibility, and native UAC checks",
+  ],
 };
 
 let currentStage = "preflight";
@@ -168,7 +185,7 @@ function disabledSchedule() {
 }
 
 async function makeLegacyProject(directory, name = "Synthetic legacy project") {
-  await mkdir(path.join(directory, "index"), { recursive: true });
+  await mkdir(path.join(directory, "index", "catalog"), { recursive: true });
   const config = {
     schema_version: "1.0",
     domain: "legacy.example.invalid",
@@ -186,7 +203,7 @@ async function makeLegacyProject(directory, name = "Synthetic legacy project") {
     schedule: disabledSchedule(),
   };
   await writeFile(path.join(directory, "index", "site.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
-  await writeFile(path.join(directory, "index", "skus.jsonl"), '{"sku":"SYN-001","handle":"fixture-item","status":"active"}\n', "utf8");
+  await writeFile(path.join(directory, "index", "catalog", "skus.jsonl"), '{"sku":"SYN-001","handle":"fixture-item","status":"active"}\n', "utf8");
   await writeFile(path.join(directory, "user-owned.txt"), "synthetic-data-survives-upgrade\n", "utf8");
 }
 
@@ -215,6 +232,7 @@ async function launchInstalledApp({ executablePath, trace = false }) {
   const environment = { ...process.env, ELECTRON_RENDERER_URL: "", SITEINDEX_UI_URL: "" };
   if (trace) environment.SITEINDEX_TRACE = "1";
   else delete environment.SITEINDEX_TRACE;
+  report.traceEnvironmentPassedToSpawn = trace && environment.SITEINDEX_TRACE === "1";
   applicationProcess = spawn(executablePath, [`--remote-debugging-port=${CDP_PORT}`, "--disable-gpu"], {
     env: environment,
     stdio: "ignore",
@@ -247,7 +265,62 @@ async function launchInstalledApp({ executablePath, trace = false }) {
   }
   if (!page) throw new Error("Packaged app did not load the complete file-based UI page.");
   await page.waitForFunction(() => typeof window.siteindex === "object" && window.siteindex !== null, null, { timeout: 30_000 });
+  await delay(300);
+  if (applicationProcess.exitCode !== null) throw new Error("Packaged app process exited after CDP attached; refusing to use another app instance.");
   return page;
+}
+
+async function findTraceLogs(root, depth = 5) {
+  if (depth < 0 || !(await exists(root))) return [];
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const found = [];
+  for (const entry of entries) {
+    const absolute = path.join(root, entry.name);
+    if (entry.isFile() && entry.name.toLowerCase() === TRACE_LOG_NAME) found.push(absolute);
+    else if (entry.isDirectory() && !entry.isSymbolicLink() && depth > 0) {
+      found.push(...await findTraceLogs(absolute, depth - 1));
+    }
+  }
+  return found;
+}
+
+async function traceRoots() {
+  const roots = new Set(TRACE_SEARCH_ROOTS);
+  for (const base of [APP_DATA_ROOT, process.env.LOCALAPPDATA].filter(Boolean)) {
+    let entries = [];
+    try {
+      entries = await readdir(base, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !/site.?index|@siteindex/iu.test(entry.name)) continue;
+      const candidate = path.join(base, entry.name);
+      roots.add(candidate);
+      if (entry.name === "@siteindex") roots.add(path.join(candidate, "desktop"));
+    }
+  }
+  return [...roots];
+}
+
+async function readTraceLogs() {
+  const files = new Set();
+  const roots = await traceRoots();
+  for (const root of roots) {
+    for (const file of await findTraceLogs(root)) files.add(file);
+  }
+  const contents = await Promise.all([...files].map((file) => readFile(file, "utf8").catch(() => "")));
+  const locations = [...files].map((file) => {
+    if (APP_DATA_ROOT && file.toLowerCase().startsWith(APP_DATA_ROOT.toLowerCase())) return "roaming-app-data";
+    if (process.env.LOCALAPPDATA && file.toLowerCase().startsWith(process.env.LOCALAPPDATA.toLowerCase())) return "local-app-data";
+    return "other-siteindex-data";
+  });
+  return { rootCount: roots.length, fileCount: files.size, locations: [...new Set(locations)], text: contents.join("\n") };
 }
 
 async function stopApplication() {
@@ -353,11 +426,12 @@ async function testWorkspaceApi(page) {
   const generated = emptyFiles.every(Boolean)
     && sectionDirectories.every(Boolean)
     && skillEntries.some((entry) => entry.isDirectory())
-    && !claudeText.includes("{{");
+    && claudeText.trim() === "@AGENTS.md";
   assert(generated, "workspace template contains required files, sections, installed skills, and rendered CLAUDE.md", {
     requiredFileCount: emptyFiles.filter(Boolean).length,
     sectionCount: sectionDirectories.filter(Boolean).length,
     skillDirectoryCount: skillEntries.filter((entry) => entry.isDirectory()).length,
+    claudeContentCorrect: claudeText.trim() === "@AGENTS.md",
     gitWorkspaceCreated: Boolean(gitResult.path),
     emptyWorkspaceCreated: Boolean(emptyResult.path),
   });
@@ -368,28 +442,74 @@ async function testWorkspaceApi(page) {
     markets: ["US"],
     projects_root: PROJECTS_ROOT,
     folder_name: "synthetic-import-project",
-    workspace: { enabled: true, platform: "woocommerce", esp_presets: [] },
+    workspace: { enabled: true, platform: "woocommerce", esp_presets: ["esp.mailchimp"] },
   };
   const { id } = await page.evaluate((input) => window.siteindex.projects.createWorkspaceOnly(input), importInput);
   const importProjectPath = path.join(PROJECTS_ROOT, id);
   const readmePath = path.join(importProjectPath, "README.md");
+  const agentsPath = path.join(importProjectPath, "AGENTS.md");
   const envPath = path.join(importProjectPath, ".env");
+  const siteConfigPath = path.join(importProjectPath, "_site-index", "site.json");
+  const userNotesPath = path.join(importProjectPath, "user-owned-notes.txt");
   const manifestPath = path.join(importProjectPath, "_site-index", "workspace.json");
   const mediaLedgerPath = path.join(importProjectPath, "_site-index", "ledgers", "sku_media.csv");
+  const presetPath = path.join(importProjectPath, "_site-index", "skills", "presets", "esp.mailchimp.md");
+  const siteConfigBefore = await fileSha256(siteConfigPath);
+  const generatedManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const presetCopied = generatedManifest.esp_presets.includes("mailchimp") && await exists(presetPath);
+  assert(presetCopied, "Mailchimp preset is included in workspace manifest and skill files");
+  const workspaceRead = await page.evaluate(async (projectId) => {
+    const detail = await window.siteindex.projects.get(projectId);
+    return {
+      idMatches: detail.summary.id === projectId,
+      nameMatches: detail.summary.name === "Synthetic Import Project",
+      workspaceSections: detail.config.workspace?.sections?.length ?? 0,
+      mailchimpEnabled: detail.config.workspace?.esp_presets?.includes("mailchimp") ?? false,
+    };
+  }, id);
+  assert(workspaceRead.idMatches && workspaceRead.nameMatches && workspaceRead.workspaceSections > 0 && workspaceRead.mailchimpEnabled,
+    "packaged projects.get reads workspace layout and selected preset", workspaceRead);
   const readmeBefore = `${await readFile(readmePath, "utf8")}\n<!-- synthetic-user-area -->\nPreserve this user section.\n`;
+  const agentsBefore = `${await readFile(agentsPath, "utf8")}\n<!-- synthetic-agent-user-area -->\nPreserve this agent section.\n`;
   const envBefore = "SYNTHETIC_ACCEPTANCE=preserve-this-value\n";
+  const userNotesBefore = "Synthetic user-authored file: preserve byte-for-byte.\n";
   await writeFile(readmePath, readmeBefore, "utf8");
+  await writeFile(agentsPath, agentsBefore, "utf8");
   await writeFile(envPath, envBefore, "utf8");
+  await writeFile(userNotesPath, userNotesBefore, "utf8");
   await rm(manifestPath, { force: true });
   await rm(mediaLedgerPath, { force: true });
   const importResult = await page.evaluate((projectId) => window.siteindex.workspace.importCheck(projectId, { apply: true }), id);
   const readmeAfter = await readFile(readmePath, "utf8");
+  const agentsAfter = await readFile(agentsPath, "utf8");
   const envAfter = await readFile(envPath, "utf8");
+  const userNotesAfter = await readFile(userNotesPath, "utf8");
+  const siteConfigAfter = await fileSha256(siteConfigPath);
   assert(importResult.repaired.length >= 2, "import check repairs missing manifest and ledger files", { repairedCount: importResult.repaired.length });
-  assert(readmeAfter.includes("Preserve this user section.") && envAfter === envBefore, "import check preserves existing user content and .env", {
+  const userFilesPreserved = readmeAfter.includes("Preserve this user section.")
+    && agentsAfter.includes("Preserve this agent section.")
+    && envAfter === envBefore
+    && userNotesAfter === userNotesBefore;
+  assert(userFilesPreserved && siteConfigAfter === siteConfigBefore,
+    "import check preserves README user area, .env, user file, and site.json", {
     userAreaPreserved: readmeAfter.includes("Preserve this user section."),
+    agentUserAreaPreserved: agentsAfter.includes("Preserve this agent section."),
     envPreserved: envAfter === envBefore,
+    userFilePreserved: userNotesAfter === userNotesBefore,
+    siteConfigPreserved: siteConfigAfter === siteConfigBefore,
   });
+
+  await page.evaluate(async (projectId) => {
+    await window.siteindex.projects.updateConfig(projectId, {
+      brand: { name: "Synthetic Updated Brand", tagline: "Refresh check" },
+    });
+    await window.siteindex.readme.refresh(projectId);
+  }, id);
+  const refreshedAgents = await readFile(agentsPath, "utf8");
+  const readmeAutoBlocksRefreshed = refreshedAgents.includes("Synthetic Updated Brand")
+    && refreshedAgents.includes("Preserve this agent section.")
+    && (await readFile(readmePath, "utf8")).includes("Preserve this user section.");
+  assert(readmeAutoBlocksRefreshed, "README and AGENTS auto blocks refresh without removing user areas");
 
   workspaceProbeData = {
     emptyWorkspaceCreated: true,
@@ -398,7 +518,11 @@ async function testWorkspaceApi(page) {
     requiredFiles: emptyFiles.filter(Boolean).length,
     requiredSections: sectionDirectories.filter(Boolean).length,
     importRepairedFiles: importResult.repaired.length,
-    userContentPreserved: readmeAfter.includes("Preserve this user section.") && envAfter === envBefore,
+    mailchimpEnabled: presetCopied && workspaceRead.mailchimpEnabled,
+    siteConfigPreserved: siteConfigAfter === siteConfigBefore,
+    userFilesPreserved,
+    readmeAutoBlocksRefreshed,
+    userContentPreserved: userFilesPreserved && siteConfigAfter === siteConfigBefore,
   };
 }
 
@@ -417,14 +541,31 @@ async function captureAddExistingTrace(page) {
   const siteConfig = JSON.parse(await readFile(siteConfigPath, "utf8"));
   siteConfig.schedule = disabledSchedule();
   await writeFile(siteConfigPath, `${JSON.stringify(siteConfig, null, 2)}\n`, "utf8");
-  await rm(LOG_FILE, { force: true });
+  for (const root of await traceRoots()) {
+    for (const traceFile of await findTraceLogs(root)) await rm(traceFile, { force: true });
+  }
+  report.addExistingTrace = {
+    traceEnvPassedToSpawn: report.traceEnvironmentPassedToSpawn,
+    traceSearchRootCount: null,
+    logFileFound: false,
+    logLocations: [],
+    phases: [],
+    targetMs: 5000,
+  };
   const project = await page.evaluate((target) => window.siteindex.projects.addExisting(target), timedProjectPath);
   assert(project && typeof project.id === "string", "projects.addExisting registers synthetic project via packaged IPC");
 
   const deadline = Date.now() + 30_000;
   let trace = "";
+  let traceSearchRootCount = 0;
+  let traceFileCount = 0;
+  let traceLocations = [];
   while (Date.now() < deadline) {
-    if (await exists(LOG_FILE)) trace = await readFile(LOG_FILE, "utf8");
+    const current = await readTraceLogs();
+    trace = current.text;
+    traceSearchRootCount = current.rootCount;
+    traceFileCount = current.fileCount;
+    traceLocations = current.locations;
     if (
       trace.includes("projects.addExisting handler.total")
       && trace.includes("projects.addExisting scheduler.task_list")
@@ -435,6 +576,19 @@ async function captureAddExistingTrace(page) {
   const entries = [...trace.matchAll(/^projects\.addExisting ([a-z_.]+) ([\d.]+)ms$/gmu)]
     .map(([, phase, duration]) => ({ phase, durationMs: Number(duration) }));
   const handlerTotalMs = entries.find((entry) => entry.phase === "handler.total")?.durationMs ?? null;
+  report.addExistingTrace = {
+    traceEnvPassedToSpawn: report.traceEnvironmentPassedToSpawn,
+    traceSearchRootCount,
+    logFileFound: traceFileCount > 0,
+    traceLogFileCount: traceFileCount,
+    logLocations: traceLocations,
+    phaseCount: entries.length,
+    phases: entries,
+    handlerTotalMs,
+    targetMs: 5000,
+    withinTarget: handlerTotalMs !== null && handlerTotalMs < 5000,
+    elevationWaitRecorded: entries.some((entry) => entry.phase === "scheduler.elevation_wait"),
+  };
   assert(handlerTotalMs !== null, "SITEINDEX_TRACE records add-existing handler total", { tracePhaseCount: entries.length });
   assert(handlerTotalMs < 5000, "add-existing handler total is under five seconds", { handlerTotalMs });
   assert(
@@ -443,14 +597,6 @@ async function captureAddExistingTrace(page) {
     "SITEINDEX_TRACE records task-list and XML-query phases",
     { taskListRecorded: entries.some((entry) => entry.phase === "scheduler.task_list"), taskQueryRecorded: entries.some((entry) => entry.phase === "scheduler.task_query") },
   );
-  report.addExistingTrace = {
-    phaseCount: entries.length,
-    phases: entries,
-    handlerTotalMs,
-    targetMs: 5000,
-    withinTarget: handlerTotalMs < 5000,
-    elevationWaitRecorded: entries.some((entry) => entry.phase === "scheduler.elevation_wait"),
-  };
 }
 
 async function main() {
@@ -468,6 +614,18 @@ async function main() {
   assert(actualOldHash === OLD_RELEASE.sha256, "official v0.3.0 installer matches pinned GitHub digest", { tag: OLD_RELEASE.tag, sha256: actualOldHash });
   report.candidateInstallerSha256 = await fileSha256(candidateInstaller);
   report.sourceCommit = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  const expectedCandidateHash = process.env.SITEINDEX_EXPECTED_CANDIDATE_SHA256?.trim().toLowerCase();
+  if (report.expectedSourceCommit) {
+    assert(report.sourceCommit === report.expectedSourceCommit, "checkout matches requested frozen source commit", {
+      expectedCommit: report.expectedSourceCommit,
+      sourceCommit: report.sourceCommit,
+    });
+  }
+  if (expectedCandidateHash) {
+    assert(report.candidateInstallerSha256 === expectedCandidateHash, "candidate installer matches supplied official SHA256", {
+      sha256: report.candidateInstallerSha256,
+    });
+  }
 
   await mkdir(PROJECTS_ROOT, { recursive: true });
   const legacyProjectPath = path.join(PROJECTS_ROOT, "synthetic-legacy-project");
@@ -503,6 +661,24 @@ async function main() {
   assert(candidateState.projectIds.includes("synthetic-legacy-project") && candidateState.projectCount === 1, "synthetic legacy project remains registered after upgrade", {
     projectCount: candidateState.projectCount,
     legacyProjectFound: candidateState.projectIds.includes("synthetic-legacy-project"),
+  });
+  const legacyRead = await page.evaluate(async () => {
+    const detail = await window.siteindex.projects.get("synthetic-legacy-project");
+    return {
+      idMatches: detail.summary.id === "synthetic-legacy-project",
+      name: detail.summary.name,
+      domain: detail.config.domain,
+      skuCount: detail.summary.sku_count,
+      legacyLayout: !detail.config.workspace,
+    };
+  });
+  assert(legacyRead.idMatches && legacyRead.name === "Synthetic legacy project" && legacyRead.domain === "legacy.example.invalid"
+    && legacyRead.skuCount === 1 && legacyRead.legacyLayout, "packaged projects.get reads legacy project and synthetic index data", {
+    idMatches: legacyRead.idMatches,
+    syntheticName: legacyRead.name === "Synthetic legacy project",
+    domainIsSynthetic: legacyRead.domain === "legacy.example.invalid",
+    skuCount: legacyRead.skuCount,
+    legacyLayout: legacyRead.legacyLayout,
   });
   const settingsAfterUpgrade = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
   const settingsPreserved = settingsAfterUpgrade.projects_root === PROJECTS_ROOT
@@ -551,11 +727,15 @@ async function writeReport() {
     "",
     `- Result: **${report.result}**`,
     `- Source commit: \`${report.sourceCommit ?? "unavailable"}\``,
+    `- Candidate artifact: ${report.candidateArtifactSource}`,
     `- Candidate installer SHA256: \`${report.candidateInstallerSha256 ?? "unavailable"}\``,
     `- Windows build: \`${report.windows.build ?? report.windows.version}\``,
     `- Checks passed: ${report.checks.filter((check) => check.status === "passed").length}/${report.checks.length}`,
     `- Add-existing handler total: ${report.addExistingTrace?.handlerTotalMs ?? "not measured"} ms (target < 5000 ms)`,
     "- Data: synthetic runner-only project; no real project or customer data used.",
+    "",
+    "### Not covered by this runner",
+    ...report.uncovered.map((item) => `- ${item}`),
   ];
   if (failed) summaryLines.push(`- Failure stage: ${failed.stage} (${failed.reason})`);
   await writeFile(path.join(OUTPUT_DIR, "summary.md"), `${summaryLines.join("\n")}\n`, "utf8");

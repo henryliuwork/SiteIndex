@@ -7,6 +7,19 @@ on:
       - ".github/workflows/e-windows-v040-acceptance.yml"
       - "packages/desktop/scripts/e-windows-v040-acceptance.mjs"
   workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        description: "完整源码 commit SHA；正式候选包复测时填写"
+        required: false
+        type: string
+      candidate_installer_url:
+        description: "可选：正式 Windows 候选安装包下载地址"
+        required: false
+        type: string
+      candidate_installer_sha256:
+        description: "提供正式候选安装包时必须填写其 SHA256"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -34,22 +47,52 @@ jobs:
           "SITEINDEX_WINDOWS_BUILD=$($os.BuildNumber)" >> $env:GITHUB_ENV
           "SITEINDEX_RUNNER_IMAGE=$($env:ImageOS)/$($env:ImageVersion)" >> $env:GITHUB_ENV
           "SITEINDEX_PR_HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> $env:GITHUB_ENV
+          "SITEINDEX_EXPECTED_SOURCE_COMMIT=${{ inputs.expected_source_commit }}" >> $env:GITHUB_ENV
+          "SITEINDEX_EXPECTED_CANDIDATE_SHA256=${{ inputs.candidate_installer_sha256 }}" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_INSTALLER_URL=${{ inputs.candidate_installer_url }}" >> $env:GITHUB_ENV
           New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "siteindex-e-v040-results") -Force | Out-Null
           "SITEINDEX_ACCEPTANCE_OUTPUT=$(Join-Path $env:RUNNER_TEMP 'siteindex-e-v040-results')" >> $env:GITHUB_ENV
           Write-Output "Windows build recorded: $($os.Version) build $($os.BuildNumber)"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Set runner-only candidate version
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.candidate_installer_url == '' }}
         shell: pwsh
         run: |
           $packagePath = Join-Path $PWD "packages/desktop/package.json"
           $source = [System.IO.File]::ReadAllText($packagePath)
-          $candidate = [regex]::Replace($source, '(?m)(^\s*"version"\s*:\s*")0\.3\.0(")', '${1}0.4.0${2}', 1)
-          if ($candidate -eq $source) { throw "Could not apply the runner-only version override." }
-          [System.IO.File]::WriteAllText($packagePath, $candidate, [System.Text.UTF8Encoding]::new($false))
-          Write-Output "Runner checkout will package app version 0.4.0; repository manifest is unchanged."
+          $version = [regex]::Match($source, '(?m)^\s*"version"\s*:\s*"([^"]+)"').Groups[1].Value
+          if ($version -eq "0.3.0") {
+            $candidate = $source.Replace('"version": "0.3.0"', '"version": "0.4.0"')
+            if ($candidate -eq $source) { throw "Could not apply the runner-only version override." }
+            [System.IO.File]::WriteAllText($packagePath, $candidate, [System.Text.UTF8Encoding]::new($false))
+            Write-Output "Runner checkout will package app version 0.4.0; repository manifest is unchanged."
+          } elseif ($version -ne "0.4.0") {
+            throw "Expected Desktop package version 0.3.0 or 0.4.0 for the internal candidate build."
+          }
       - name: Build candidate Windows installer
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.candidate_installer_url == '' }}
         run: pnpm --filter @siteindex/desktop dist:win
+      - name: Download and verify supplied official candidate installer
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_installer_url != '' }}
+        shell: pwsh
+        env:
+          CANDIDATE_URL: ${{ inputs.candidate_installer_url }}
+          EXPECTED_SHA256: ${{ inputs.candidate_installer_sha256 }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.expected_source_commit }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CANDIDATE_URL) -or [string]::IsNullOrWhiteSpace($env:EXPECTED_SHA256)) {
+            throw "A candidate installer URL and SHA256 are both required."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:EXPECTED_SOURCE_COMMIT)) {
+            throw "The frozen source commit is required when testing a supplied candidate installer."
+          }
+          $installer = Join-Path $env:RUNNER_TEMP "SiteIndex-Setup-0.4.0.exe"
+          Invoke-WebRequest -Uri $env:CANDIDATE_URL -OutFile $installer
+          $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:EXPECTED_SHA256.ToLowerInvariant()) { throw "Candidate installer SHA256 does not match the supplied digest." }
+          "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
+          Write-Output "Supplied official candidate installer SHA256 verified."
       - name: Download pinned official v0.3.0 installer
         shell: pwsh
         run: |
@@ -63,7 +106,11 @@ jobs:
         shell: pwsh
         run: |
           $oldInstaller = Join-Path $env:RUNNER_TEMP "SiteIndex-Setup-0.3.0.exe"
-          $candidateInstaller = Join-Path $PWD "release/SiteIndex-Setup-0.4.0.exe"
+          $candidateInstaller = if ($env:SITEINDEX_CANDIDATE_INSTALLER_PATH) {
+            $env:SITEINDEX_CANDIDATE_INSTALLER_PATH
+          } else {
+            Join-Path $PWD "release/SiteIndex-Setup-0.4.0.exe"
+          }
           node packages/desktop/scripts/e-windows-v040-acceptance.mjs $oldInstaller $candidateInstaller
       - name: Add acceptance summary to workflow
         if: always()
