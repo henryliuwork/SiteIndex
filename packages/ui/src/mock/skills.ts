@@ -1,4 +1,4 @@
-import type { SiteIndexApi } from "@siteindex/shared";
+import type { SiteIndexApi, SiteIndexError } from "@siteindex/shared";
 import { clone, mockSkillBodies, mockSkillTargets, mockSkills, reply } from "./context";
 
 export function createSkillsMock(): SiteIndexApi["skills"] {
@@ -11,8 +11,12 @@ export function createSkillsMock(): SiteIndexApi["skills"] {
     }),
     targets: (name) => reply(() => clone(mockSkillTargets[name] ?? [])),
     install: (name, targetId) => reply(() => {
+      if (mockSkills.find((skill) => skill.name === name)?.retired) {
+        throw { code: "CONFIG_INVALID", message: "此 Skill 已退役，不能重新安装。", detail: name } satisfies SiteIndexError;
+      }
       const target = mockSkillTargets[name]?.find((item) => item.target_id === targetId);
       if (!target) throw new Error("找不到 Skill 安装位置：" + targetId);
+      if (target.local_newer) return clone(target);
       target.status = "latest";
       target.dir ??= "C:/SiteIndex/mock-skills/" + name;
       return clone(target);

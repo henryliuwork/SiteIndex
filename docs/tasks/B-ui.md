@@ -90,10 +90,10 @@
 - [ ] C 联动：ui-state 持久化支持 200 / 全部 — [issue #307](https://github.com/henryliuwork/SiteIndex/issues/307)
 
 ## v0.4.0 · Agent 工作区
-- [x] B4-1 / B-6：向导项目位置选择；按可选 `workspace.check/create` 显示 Agent 工作区步骤，默认启用、平台选择、Mailchimp 预设、目标目录空检查和目录树预览 — 本 PR（Core `projects.create` / `workspace.check` / `workspace.create` 已实现；Desktop 方法仍在 `PENDING_HANDLERS`，真实入口由门控隐藏）
-- [x] 项目中心“创建空工作区”：调用可选 `projects.createWorkspaceOnly`；mock 已实现，Desktop preload/Core handler 尚未实现，真实入口由门控隐藏 — 本 PR
-- [x] 工作区入口按 `PENDING_HANDLERS` 过滤尚未接入的 Desktop 桩；浏览器 mock 保持可预览，规范 ESP preset ID 使用 `mailchimp`。向导和项目中心均覆盖了可用、缺失与待接入场景 — 本 PR
-- [ ] B4-2 工作区导入检查 UI：项目中心“更多”菜单已加入识别/检查对话框；按 `auto_fixable` 展示自动补齐与手动处理项，显示 `repaired` 路径；`workspace_metadata_missing` 指引从 `workspace.json` 手动补 `site.json.workspace` 并重新检查。浏览器 mock 覆盖自动补齐后保留手工项；真实 Desktop 入口由 `PENDING_HANDLERS` 门控，待 C/契约清除 pending 后解锁 — 本 PR
+- [x] B4-1 / B-6：向导项目位置选择；按可选 `workspace.check/create` 显示 Agent 工作区步骤，默认启用、平台选择、Mailchimp 预设、目标目录空检查和目录树预览 — 浏览器 mock 与 UI 回归测试通过；Core/Desktop 源码 handler 已接入。未启动安装包，本记录不作为打包 IPC 验收
+- [x] 项目中心“创建空工作区”：调用可选 `projects.createWorkspaceOnly`；浏览器 mock 验证创建后进入项目页；Core/Desktop 源码测试覆盖合成目录，不读取真实项目
+- [x] B4-2 工作区导入检查 UI：项目中心“更多”菜单提供识别/检查；按 `auto_fixable` 显示补齐与手动处理项，显示 `repaired` 路径；浏览器 mock 验证补齐后仍保留 `site.json.workspace` 手工项
+- [x] B4-3 软件设置与 Skill 中心：呈现托盘/开机选项；Skill 中心显示 Agents 通用目录、退役 `edm-builder` 且阻止安装/更新；mock 与回归测试覆盖 — 本 PR
 
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点

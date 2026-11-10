@@ -196,11 +196,25 @@ export function AppSettingsPage() {
         </div>
       </Card>}
 
+      {activeTab === "basic" && (typeof draft.close_to_tray === "boolean" || typeof draft.launch_at_login === "boolean") && <Card className="si-app-settings-card">
+        <h2>启动与关闭</h2>
+        {typeof draft.close_to_tray === "boolean" && <div className="si-app-setting-row">
+          <label><input type="checkbox" checked={draft.close_to_tray} disabled={saving} onChange={(event) => void saveSettings({ close_to_tray: event.target.checked })} />关闭窗口时最小化到托盘</label>
+          <span className="si-setting-hint">关闭主窗口后，SiteIndex 继续在后台运行；关闭此选项后，点击关闭将退出软件。</span>
+          <span />
+        </div>}
+        {typeof draft.launch_at_login === "boolean" && <div className="si-app-setting-row">
+          <label><input type="checkbox" checked={draft.launch_at_login} disabled={saving} onChange={(event) => void saveSettings({ launch_at_login: event.target.checked })} />开机时启动 SiteIndex</label>
+          <span className="si-setting-hint">登录电脑后自动启动 SiteIndex。</span>
+          <span />
+        </div>}
+      </Card>}
+
       {activeTab === "basic" && <Card className="si-app-settings-card si-project-migration-card">
         <h2>移动或重新添加项目</h2>
         <ol className="si-project-migration-steps">
           <li><span aria-hidden="true">①</span><span className="si-sr-only">第 1 步：</span>先在文件管理器里把项目文件夹移到新位置。</li>
-          <li><span aria-hidden="true">②</span><span className="si-sr-only">第 2 步：</span><span>在项目中心移除旧项目（仅取消登记，不删文件）。<small className="si-project-migration-note">该功能将在后续版本提供。</small></span></li>
+          <li><span aria-hidden="true">②</span><span className="si-sr-only">第 2 步：</span>在项目中心移除旧项目（仅取消登记，不删文件）。</li>
           <li><span aria-hidden="true">③</span><span className="si-sr-only">第 3 步：</span>在项目中心点击“添加已有项目”，选择新位置。添加完成后，到“定时任务”页点“校验”，确认系统计划任务指向新位置；如果提示路径不一致，点“修复”。</li>
           <li><span aria-hidden="true">④</span><span className="si-sr-only">第 4 步：</span>在“定时任务”页确认计划任务已重新启用。</li>
         </ol>
