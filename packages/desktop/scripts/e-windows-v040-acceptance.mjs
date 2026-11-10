@@ -548,24 +548,66 @@ async function testWorkspaceApi(page) {
   const restoredReadme = readmeRestored ? await readFile(readmePath, "utf8") : "";
   const restoredAgents = agentsRestored ? await readFile(agentsPath, "utf8") : "";
   const restoredClaude = claudeRestored ? (await readFile(claudePath, "utf8")).trim() : null;
-  const claudeMissingReported = missingDocsPreview.issues.some((issue) => issue.path === "CLAUDE.md" && issue.code === "document_missing");
+  const missingIssueFor = (relativePath) => missingDocsPreview.issues.find((issue) => issue.path === relativePath && issue.code === "document_missing");
+  const readmeMissingIssue = missingIssueFor("README.md");
+  const agentsMissingIssue = missingIssueFor("AGENTS.md");
+  const claudeMissingIssue = missingIssueFor("CLAUDE.md");
+  const claudeMissingReported = Boolean(claudeMissingIssue);
   const restoredReadmeBlocks = ["workspace-map", "index-summary", "changelog"].every((block) =>
     new RegExp(`<!-- siteindex:auto:start id="${block}" -->[\\s\\S]*?<!-- siteindex:auto:end id="${block}" -->`, "u").test(restoredReadme));
   const restoredAgentBlocks = ["agents-core", "task-routing", "data-guide", "design-summary", "skills-installed", "esp-presets"].every((block) =>
     new RegExp(`<!-- siteindex:auto:start id="${block}" -->[\\s\\S]*?<!-- siteindex:auto:end id="${block}" -->`, "u").test(restoredAgents));
+  const readmeRepaired = missingDocsResult.repaired.includes("README.md");
+  const agentsRepaired = missingDocsResult.repaired.includes("AGENTS.md");
+  const claudeRepaired = missingDocsResult.repaired.includes("CLAUDE.md");
   const missingDocumentChecks = [
-    { name: "import check restores missing README.md from template", passed: readmeRestored && restoredReadmeBlocks, evidence: { restored: readmeRestored, requiredAutoBlocksPresent: restoredReadmeBlocks, reportedMissingBeforeApply: missingDocsPreview.issues.some((issue) => issue.path === "README.md" && issue.code === "document_missing") } },
-    { name: "import check restores missing AGENTS.md from template", passed: agentsRestored && restoredAgentBlocks, evidence: { restored: agentsRestored, requiredAutoBlocksPresent: restoredAgentBlocks, reportedMissingBeforeApply: missingDocsPreview.issues.some((issue) => issue.path === "AGENTS.md" && issue.code === "document_missing") } },
-    { name: "import check restores missing CLAUDE.md as @AGENTS.md", passed: claudeRestored && restoredClaude === "@AGENTS.md", evidence: { restored: claudeRestored, contentCorrect: restoredClaude === "@AGENTS.md", reportedMissingBeforeApply: claudeMissingReported } },
+    {
+      name: "import check detects and restores missing README.md from template",
+      passed: readmeMissingIssue?.auto_fixable === true && readmeRepaired && readmeRestored && restoredReadmeBlocks,
+      evidence: {
+        reportedMissingBeforeApply: Boolean(readmeMissingIssue),
+        autoFixableBeforeApply: readmeMissingIssue?.auto_fixable === true,
+        repairedByApply: readmeRepaired,
+        restored: readmeRestored,
+        requiredAutoBlocksPresent: restoredReadmeBlocks,
+      },
+    },
+    {
+      name: "import check detects and restores missing AGENTS.md from template",
+      passed: agentsMissingIssue?.auto_fixable === true && agentsRepaired && agentsRestored && restoredAgentBlocks,
+      evidence: {
+        reportedMissingBeforeApply: Boolean(agentsMissingIssue),
+        autoFixableBeforeApply: agentsMissingIssue?.auto_fixable === true,
+        repairedByApply: agentsRepaired,
+        restored: agentsRestored,
+        requiredAutoBlocksPresent: restoredAgentBlocks,
+      },
+    },
+    {
+      name: "import check detects and restores missing CLAUDE.md as @AGENTS.md",
+      passed: claudeMissingIssue?.auto_fixable === true && claudeRepaired && claudeRestored && restoredClaude === "@AGENTS.md",
+      evidence: {
+        reportedMissingBeforeApply: claudeMissingReported,
+        autoFixableBeforeApply: claudeMissingIssue?.auto_fixable === true,
+        repairedByApply: claudeRepaired,
+        restored: claudeRestored,
+        contentCorrect: restoredClaude === "@AGENTS.md",
+      },
+    },
   ];
   report.checks.push(...missingDocumentChecks.map(({ name, passed, evidence }) => ({ name, status: passed ? "passed" : "failed", evidence })));
   const missingDocsSummary = {
-    previewIssuePaths: missingDocsPreview.issues.map((issue) => ({ path: issue.path, code: issue.code })),
+    previewIssuePaths: missingDocsPreview.issues.map((issue) => ({ path: issue.path, code: issue.code, autoFixable: issue.auto_fixable })),
     repairedPaths: missingDocsResult.repaired,
+    readmeMissingReported: Boolean(readmeMissingIssue),
+    readmeRepaired,
     readmeRestored,
     readmeRequiredAutoBlocksPresent: restoredReadmeBlocks,
+    agentsMissingReported: Boolean(agentsMissingIssue),
+    agentsRepaired,
     agentsRestored,
     agentsRequiredAutoBlocksPresent: restoredAgentBlocks,
+    claudeRepaired,
     claudeRestored,
     claudeContentCorrect: restoredClaude === "@AGENTS.md",
     claudeMissingReported,
