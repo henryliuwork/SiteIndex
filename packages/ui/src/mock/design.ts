@@ -28,6 +28,29 @@ const designTokensV2: DesignTokens = {
       caption: { size: "12px", weight: 400, line_height: "18px", letter_spacing: "0.01em" },
     },
   },
+  css_variables: {
+    ...designTokens.css_variables,
+    "--button-primary-background": "#2F5D3A",
+    "--font-heading": "Lora, serif",
+    "--space-4": "16px",
+  },
+  buttons: {
+    primary: {
+      background: "#2F5D3A", text_color: "#FFFFFF", border: "1px solid #2F5D3A",
+      border_radius: "4px", padding: "12px 24px", font_size: "16px", font_weight: 600,
+      hover_background: "#244B2E",
+    },
+    secondary: {
+      background: "#FFFFFF", text_color: "#2F5D3A", border: "1px solid #2F5D3A",
+      border_radius: "4px", padding: "12px 24px", font_size: "16px", font_weight: 600,
+      hover_background: "#F6F4EF",
+    },
+    outline: {
+      background: "transparent", text_color: "#2F5D3A", border: "1px solid #2F5D3A",
+      border_radius: "4px", padding: "12px 24px", font_size: "16px", font_weight: 600,
+      hover_background: "#F6F4EF",
+    },
+  },
 };
 
 export function createDesignMock(): SiteIndexApi["design"] {
