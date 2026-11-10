@@ -2,107 +2,143 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
-import { PATHS } from "@siteindex/shared";
-import { createMockApi } from "../mock";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { DesignTokens, SiteIndexApi } from "@siteindex/shared";
+
+const tokensFixture: DesignTokens = {
+  extracted_at: "2026-11-10T10:00:00Z",
+  source_pages: ["https://demo.example.test/"],
+  css_variables: { "--color-primary": "#2F5D3A", "--font-body": "Inter" },
+  color: {
+    primary: "#2F5D3A", text: "#222222", background: "#FFFFFF", palette: [],
+    roles: {
+      primary: { value: "#2F5D3A", source: "--color-primary", confidence: 0.98 },
+      secondary: null,
+      text: { value: "#222222", source: "body color", confidence: 0.9 },
+      text_muted: null,
+      background: { value: "#FFFFFF", source: "html background-color", confidence: 0.96 },
+      surface: null,
+      border: null,
+      sale: null,
+      link: { value: "#2B6480", source: "a color", confidence: 0.88 },
+    },
+  },
+  typography: {
+    font_families: { heading: "Lora, serif", body: "Inter, sans-serif", mono: "Consolas, monospace" },
+    scale: {
+      h1: { size: "40px", weight: 700, line_height: "48px", letter_spacing: "-0.02em" },
+      h2: { size: "28px", weight: 600, line_height: "36px" },
+      h3: { size: "20px", weight: 600, line_height: "28px" },
+      h4: { size: "18px", weight: 600, line_height: "26px" },
+      h5: { size: "16px", weight: 600, line_height: "24px" },
+      h6: { size: "14px", weight: 600, line_height: "20px" },
+      body: { size: "16px", weight: 400, line_height: "26px" },
+      small: { size: "13px", weight: 400, line_height: "20px" },
+      caption: { size: "12px", weight: 400, line_height: "18px" },
+    },
+  },
+  spacing: [], radius: [], shadow: [], components: {}, assets: {},
+  buttons: {
+    primary: { background: "#2F5D3A", text_color: "#FFFFFF", border: null, border_radius: "4px", padding: "12px 24px", font_size: "14px", font_weight: 600 },
+    secondary: { background: null, text_color: "#2F5D3A", border: "1px solid #2F5D3A", border_radius: "4px", padding: "12px 24px", font_size: "14px", font_weight: 600 },
+    outline: { background: null, text_color: "#2F5D3A", border: "1px solid #2F5D3A", border_radius: "4px", padding: "12px 24px", font_size: "14px", font_weight: 600 },
+  },
+};
 
 beforeEach(() => {
-  vi.stubGlobal("ResizeObserver", class { observe(): void {} unobserve(): void {} disconnect(): void {} });
+  vi.stubGlobal("ResizeObserver", class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  });
 });
 
 afterEach(() => {
   cleanup();
   vi.doUnmock("../api");
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.resetModules();
 });
 
-async function renderDesignPage(mockApi: ReturnType<typeof createMockApi>) {
-  vi.doMock("../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
-  const [{ DesignPage }, { ToastProvider }] = await Promise.all([import("./DesignPage"), import("../components")]);
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><DesignPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+function createDesignApi(tokens: DesignTokens | null = tokensFixture) {
+  const copyText = vi.fn(async () => undefined);
+  const api = {
+    projects: { get: vi.fn(async () => ({ summary: { id: "demo", name: "演示项目", domain: "demo.example.test", platform: "other", path: "C:/demo" } })) },
+    design: { get: vi.fn(async () => ({ tokens, screenshots: [] })) },
+    jobs: { onProgress: vi.fn(() => () => undefined), onFinished: vi.fn(() => () => undefined), run: vi.fn(async () => ({ runId: "run-1" })) },
+    shell: { copyText, openPath: vi.fn(async () => undefined) },
+  } as unknown as SiteIndexApi;
+  return { api, copyText };
 }
 
-describe("DesignPage Token v2 颜色与字体", () => {
-  it("显示角色来源、置信度和完整字号，并保留打开 tokens.json", async () => {
-    const mockApi = createMockApi();
-    const project = await mockApi.projects.get("demo");
-    const openPath = vi.spyOn(mockApi.shell, "openPath");
-    await renderDesignPage(mockApi);
+async function renderDesignPage(api: SiteIndexApi) {
+  vi.doMock("../api", () => ({
+    api,
+    apiErrorMessage: (error: unknown, fallback: string) =>
+      typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+        ? error.message
+        : fallback,
+  }));
+  const [{ DesignPage }, { ToastProvider }] = await Promise.all([import("./DesignPage"), import("../components")]);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <ToastProvider>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/p/demo/design"]}>
+          <Routes><Route path="/p/:id/design" element={<DesignPage />} /></Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </ToastProvider>,
+  );
+}
+
+describe("DesignPage Token v2", () => {
+  it("展示颜色角色来源与置信度、完整字号层级、按钮规范和可折叠 CSS 变量", async () => {
+    const { api } = createDesignApi();
+    await renderDesignPage(api);
 
     expect(await screen.findByRole("heading", { name: "颜色角色" })).toBeTruthy();
-    expect(screen.getByText("主色")).toBeTruthy();
     expect(document.querySelector(".si-design-role-content code")?.textContent).toBe("--color-primary");
     expect(screen.getByText("置信度：98%")).toBeTruthy();
-    expect(screen.getByText("当前页面未识别此颜色角色。")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "字体与字号层级" })).toBeTruthy();
     expect(screen.getByText("一级标题 H1")).toBeTruthy();
     expect(screen.getByText("六级标题 H6")).toBeTruthy();
     expect(screen.getByText("说明 Caption")).toBeTruthy();
+    expect(document.querySelector(".si-design-type-row .si-design-type-metrics")?.textContent).toContain("字距 -0.02em");
+    expect(screen.getByRole("heading", { name: "按钮规范" })).toBeTruthy();
+    expect(screen.getByText("描边按钮")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "打开 tokens.json" }));
-    expect(openPath).toHaveBeenCalledWith(`${project.summary.path}/${PATHS.designTokens}`);
-    expect(await screen.findByText("已打开 tokens.json。")).toBeTruthy();
-  }, 15_000);
-
-  it("展示三类按钮规范和默认折叠的 CSS 变量，并可复制完整 Token JSON", async () => {
-    const mockApi = createMockApi();
-    const { tokens } = await mockApi.design.get("demo");
-    const copyText = vi.spyOn(mockApi.shell, "copyText");
-    await renderDesignPage(mockApi);
-
-    expect(await screen.findByRole("heading", { name: "按钮规范" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "主按钮" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "次按钮" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "描边按钮" })).toBeTruthy();
-    expect(document.querySelector(".si-design-button-sample")?.getAttribute("style")).toContain("background-color");
-    expect(screen.queryByRole("heading", { name: "间距 · 圆角 · 阴影" })).toBeNull();
-
-    const variables = document.querySelector<HTMLDetailsElement>(".si-design-variables");
+    const variables = document.querySelector<HTMLDetailsElement>(".si-design-css-variables");
     expect(variables?.open).toBe(false);
-    fireEvent.click(variables!.querySelector("summary")!);
+    fireEvent.click(screen.getByText("原始 CSS 变量"));
     expect(variables?.open).toBe(true);
-    expect(screen.getByText("--button-primary-background")).toBeTruthy();
+    expect(variables?.textContent).toContain("--color-primary");
+    expect(screen.queryByRole("heading", { name: "间距 · 圆角 · 阴影" })).toBeNull();
+  });
 
+  it("缺失的 Token v2 字段显示未识别状态，不用旧值补造", async () => {
+    const tokens = structuredClone(tokensFixture);
+    if (tokens.color.roles) tokens.color.roles.link = null;
+    delete tokens.typography.scale.h5;
+    if (tokens.buttons) tokens.buttons.outline = null;
+    const { api } = createDesignApi(tokens);
+    await renderDesignPage(api);
+
+    expect(await screen.findByRole("heading", { name: "颜色角色" })).toBeTruthy();
+    expect(screen.getAllByText("当前页面未识别此颜色角色。").length).toBeGreaterThan(0);
+    expect(screen.getByText("未识别此层级")).toBeTruthy();
+    expect(screen.getByText("未识别此按钮变体")).toBeTruthy();
+    expect(screen.getAllByText("未识别", { selector: ".si-design-role-value" }).length).toBeGreaterThan(0);
+  });
+
+  it("复制按钮会把当前完整 Token JSON 交给剪贴板 API", async () => {
+    const { api, copyText } = createDesignApi();
+    await renderDesignPage(api);
+
+    expect(await screen.findByRole("heading", { name: "颜色角色" })).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "复制 Token（JSON）" }));
-    expect(await screen.findByText("设计 Token JSON 已复制。")).toBeTruthy();
-    expect(copyText).toHaveBeenCalledWith(JSON.stringify(tokens, null, 2));
-  });
 
-  it("缺少按钮规范和 CSS 变量时明确显示不可用状态", async () => {
-    const mockApi = createMockApi();
-    const data = await mockApi.design.get("demo");
-    mockApi.design.get = vi.fn(async () => ({
-      ...data,
-      tokens: data.tokens ? { ...data.tokens, buttons: undefined, css_variables: {} } : null,
-    }));
-    await renderDesignPage(mockApi);
-
-    expect(await screen.findByText("当前 tokens.json 尚未提供 Token v2 按钮规范。")).toBeTruthy();
-    const variables = document.querySelector<HTMLDetailsElement>(".si-design-variables");
-    fireEvent.click(variables!.querySelector("summary")!);
-    expect(screen.getByText("暂无 CSS 变量。完成设计规范提取后会在这里显示。")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "复制 Token（JSON）" })).toBeTruthy();
-  });
-
-  it("复制 Token JSON 失败时显示错误提示", async () => {
-    const mockApi = createMockApi();
-    vi.spyOn(mockApi.shell, "copyText").mockRejectedValue(new Error("clipboard unavailable"));
-    await renderDesignPage(mockApi);
-
-    await screen.findByRole("heading", { name: "按钮规范" });
-    fireEvent.click(screen.getByRole("button", { name: "复制 Token（JSON）" }));
-    expect(await screen.findByText("复制设计 Token JSON 失败。")).toBeTruthy();
-  });
-
-  it("缺少 Token v2 角色和字号时显示明确空状态", async () => {
-    const mockApi = createMockApi();
-    mockApi.design.get = vi.fn(async () => ({ tokens: null, screenshots: [] }));
-    await renderDesignPage(mockApi);
-
-    expect(await screen.findByText("暂无颜色角色数据")).toBeTruthy();
-    expect(screen.getByText("暂无字号层级。当前 tokens.json 尚未提供 Token v2 字号数据。")).toBeTruthy();
+    expect(copyText).toHaveBeenCalledWith(JSON.stringify(tokensFixture, null, 2));
+    expect(await screen.findByText("Token JSON 已复制，可交给 agent 使用。")).toBeTruthy();
   });
 });

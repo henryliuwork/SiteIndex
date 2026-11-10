@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Copy } from "lucide-react";
+import { Copy } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type { DesignButtonVariant, DesignColorRole, DesignTokens, DesignTypographyScaleKey } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
@@ -14,6 +14,7 @@ const colorRoles: { key: DesignColorRole; label: string }[] = [
   { key: "background", label: "页面背景" }, { key: "surface", label: "内容表面" },
   { key: "border", label: "边框" }, { key: "sale", label: "促销" }, { key: "link", label: "链接" },
 ];
+
 const typographyItems: { key: DesignTypographyScaleKey; label: string; sample: string }[] = [
   { key: "h1", label: "一级标题 H1", sample: "示例页面标题" },
   { key: "h2", label: "二级标题 H2", sample: "示例区块标题" },
@@ -25,17 +26,22 @@ const typographyItems: { key: DesignTypographyScaleKey; label: string; sample: s
   { key: "small", label: "小字 Small", sample: "用于辅助说明的示例文字" },
   { key: "caption", label: "说明 Caption", sample: "图表与控件的补充说明" },
 ];
+
 const buttonVariants: { key: DesignButtonVariant; label: string; sample: string }[] = [
-  { key: "primary", label: "主按钮", sample: "主要操作" },
-  { key: "secondary", label: "次按钮", sample: "次要操作" },
-  { key: "outline", label: "描边按钮", sample: "辅助操作" },
+  { key: "primary", label: "主要按钮", sample: "立即操作" },
+  { key: "secondary", label: "次要按钮", sample: "了解更多" },
+  { key: "outline", label: "描边按钮", sample: "查看详情" },
 ];
-const textValue = (value: string | number | undefined, fallback = "—"): string => value === undefined || value === "" ? fallback : String(value);
+
+const displayValue = (value: string | number | null | undefined): string =>
+  value === null || value === undefined || value === "" ? "未识别" : String(value);
+
 const formatExtracted = (value: string): string => {
   const [year, month, day] = value.slice(0, 10).split("-");
   return year && month && day ? `${month}-${day}` : value;
 };
-function ColorCard({ tokens, onCopy, copied }: { tokens: DesignTokens | null; onCopy: (value: string) => void; copied: string }) {
+
+function ColorRolesCard({ tokens, onCopy, copied }: { tokens: DesignTokens | null; onCopy: (value: string) => void; copied: string }) {
   const roles = tokens?.color.roles;
   return (
     <section className="si-design-card si-design-colors">
@@ -82,12 +88,20 @@ function TypographyCard({ tokens }: { tokens: DesignTokens | null }) {
           return <article className="si-design-type-row" key={key}>
             <span className="si-design-type-name">{label}</span>
             {style ? <>
-              <span className="si-design-type-sample" style={{ fontFamily: fontFamily || undefined, fontSize: style.size, fontWeight: style.weight, lineHeight: style.line_height, letterSpacing: style.letter_spacing }}>{sample}</span>
-              <span className="si-design-type-metrics">{style.size} · 字重 {style.weight} · 行高 {style.line_height} · 字距 {textValue(style.letter_spacing)}</span>
+              <span className="si-design-type-sample" style={{
+                fontFamily: fontFamily || undefined,
+                fontSize: style.size,
+                fontWeight: style.weight,
+                lineHeight: style.line_height,
+                letterSpacing: style.letter_spacing,
+              }}>{sample}</span>
+              <span className="si-design-type-metrics">
+                {style.size} · 字重 {style.weight} · 行高 {style.line_height} · 字距 {displayValue(style.letter_spacing)}
+              </span>
             </> : <span className="si-design-type-missing">未识别此层级</span>}
           </article>;
         })}
-      </div> : <p className="si-design-empty">暂无字号层级。当前 tokens.json 尚未提供 Token v2 字号数据。</p>}
+      </div> : <EmptyState title="暂无字号层级">提取结果尚未提供 h1–h6、正文、小字或说明字号。</EmptyState>}
     </section>
   );
 }
@@ -101,11 +115,9 @@ function ButtonsCard({ tokens }: { tokens: DesignTokens | null }) {
         {buttonVariants.map(({ key, label, sample }) => {
           const button = buttons[key];
           if (!button) return <article className="si-design-button-variant" key={key}>
-            <h3>{label}</h3>
-            <p className="si-design-empty">当前网站未识别此类型按钮。</p>
+            <h3>{label}</h3><EmptyState title="未识别此按钮变体">Core 没有返回可用的样式数据。</EmptyState>
           </article>;
-
-          const style: CSSProperties = {
+          const previewStyle: CSSProperties = {
             backgroundColor: button.background ?? undefined,
             color: button.text_color ?? undefined,
             border: button.border ?? undefined,
@@ -113,28 +125,20 @@ function ButtonsCard({ tokens }: { tokens: DesignTokens | null }) {
             padding: button.padding ?? undefined,
             fontSize: button.font_size ?? undefined,
             fontWeight: button.font_weight ?? undefined,
-            fontFamily: tokens?.typography.font_families.body ?? undefined,
           };
-          const hasVisualStyle = Boolean(button.background || button.text_color || button.border);
-          const fields: [string, string | number | null | undefined][] = [
-            ["背景色", button.background], ["文字色", button.text_color], ["边框", button.border],
+          const properties: [string, string | number | null | undefined][] = [
+            ["背景", button.background], ["文字", button.text_color], ["边框", button.border],
             ["圆角", button.border_radius], ["内边距", button.padding], ["字号", button.font_size],
             ["字重", button.font_weight], ["悬停背景", button.hover_background],
           ];
-
           return <article className="si-design-button-variant" key={key}>
-            <h3>{label}</h3>
-            {hasVisualStyle
-              ? <span className="si-design-button-sample" style={style}>{sample}</span>
-              : <p className="si-design-empty">已找到按钮记录，但没有可用于绘制预览的颜色或边框。</p>}
-            <dl className="si-design-button-fields">
-              {fields.map(([name, value]) => <div key={name}>
-                <dt>{name}</dt><dd>{value === null || value === undefined || value === "" ? "未识别" : String(value)}</dd>
-              </div>)}
+            <div className="si-design-button-heading"><h3>{label}</h3><span className="si-design-button-sample" style={previewStyle}>{sample}</span></div>
+            <dl className="si-design-button-properties">
+              {properties.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{displayValue(value)}</dd></div>)}
             </dl>
           </article>;
         })}
-      </div> : <EmptyState title="暂无按钮规范数据">当前 tokens.json 尚未提供 Token v2 按钮规范。</EmptyState>}
+      </div> : <EmptyState title="暂无按钮规范">当前 tokens.json 尚未提供 Token v2 按钮样式。</EmptyState>}
     </section>
   );
 }
@@ -142,15 +146,11 @@ function ButtonsCard({ tokens }: { tokens: DesignTokens | null }) {
 function CssVariablesCard({ tokens }: { tokens: DesignTokens | null }) {
   const variables = Object.entries(tokens?.css_variables ?? {}).sort(([left], [right]) => left.localeCompare(right));
   return (
-    <details className="si-design-card si-design-variables">
-      <summary>
-        <span>原始 CSS 变量</span>
-        <span className="si-design-variable-count">{variables.length} 项</span>
-        <ChevronDown className="si-design-variable-caret" size={14} aria-hidden="true" />
-      </summary>
-      {variables.length > 0 ? <dl className="si-design-variable-list">
+    <details className="si-design-card si-design-css-variables">
+      <summary><span>原始 CSS 变量</span><Chip tone="neutral">{variables.length}</Chip></summary>
+      {variables.length ? <dl className="si-design-variable-list">
         {variables.map(([name, value]) => <div key={name}><dt><code>{name}</code></dt><dd><code>{value}</code></dd></div>)}
-      </dl> : <p className="si-design-empty">暂无 CSS 变量。完成设计规范提取后会在这里显示。</p>}
+      </dl> : <EmptyState title="暂无 CSS 变量">提取结果没有返回原始 CSS 变量。</EmptyState>}
     </details>
   );
 }
@@ -159,9 +159,9 @@ function ScreenshotsCard({ screenshots, onOpen }: { screenshots: { name: string;
   return (
     <section className="si-design-card si-design-screenshots">
       <h2>页面截图 · {screenshots.length}</h2>
-      {screenshots.length > 0
-        ? <div className="si-design-screenshot-grid">{screenshots.map((screen) => <button type="button" key={screen.path} onClick={() => onOpen(screen.path)} title={`打开 ${screen.path}`}>{screen.name}</button>)}</div>
-        : <p className="si-design-empty">提取后显示网站桌面端和移动端截图。</p>}
+      {screenshots.length ? <div className="si-design-screenshot-grid">
+        {screenshots.map((screen) => <Button variant="secondary" size="small" key={screen.path} onClick={() => onOpen(screen.path)} title={`打开 ${screen.path}`}>{screen.name}</Button>)}
+      </div> : <EmptyState title="暂无页面截图">提取完成后会显示网站截图。</EmptyState>}
     </section>
   );
 }
@@ -195,24 +195,19 @@ export function DesignPage() {
     return () => { unsubscribeProgress(); unsubscribeFinished(); };
   }, [activeRunId, id, queryClient, toast]);
 
-  const openTokens = async () => {
+  const openProjectFile = async (path: string, label: string) => {
     if (!project) return;
-    try { await api.shell.openPath(project.path.replace(/[\\/]+$/, "") + "/" + PATHS.designTokens); toast.success("已打开 tokens.json。"); }
-    catch (cause) { toast.error(apiErrorMessage(cause, "打开 tokens.json 失败。")); }
-  };
-  const copyInstruction = async () => {
     try {
-      const { body } = await api.skills.get("page-design");
-      await api.shell.copyText(body);
-      toast.success("page-design 指令已复制。");
-    } catch (cause) { toast.error(apiErrorMessage(cause, "复制 page-design 指令失败。")); }
+      await api.shell.openPath(project.path.replace(/[\\/]+$/, "") + "/" + path);
+      toast.success(`已打开 ${label}。`);
+    } catch (cause) { toast.error(apiErrorMessage(cause, `打开 ${label} 失败。`)); }
   };
-  const copyTokenJson = async () => {
+  const copyTokens = async () => {
     if (!tokens) return;
     try {
       await api.shell.copyText(JSON.stringify(tokens, null, 2));
-      toast.success("设计 Token JSON 已复制。");
-    } catch (cause) { toast.error(apiErrorMessage(cause, "复制设计 Token JSON 失败。")); }
+      toast.success("Token JSON 已复制，可交给 agent 使用。");
+    } catch (cause) { toast.error(apiErrorMessage(cause, "复制 Token JSON 失败。")); }
   };
   const refresh = async () => {
     if (!project) return;
@@ -241,28 +236,31 @@ export function DesignPage() {
         ? <Chip tone="neutral">提取于 {formatExtracted(tokens.extracted_at)} · {tokens.source_pages.length} 个页面{import.meta.env.DEV ? " · 示例数据" : ""}</Chip>
         : <Chip tone="warn">尚未提取设计规范</Chip>} actions={
           <>
-            <Button disabled={!tokens} onClick={() => void copyTokenJson()}><Copy size={14} aria-hidden="true" />复制 Token（JSON）</Button>
+            <Button variant="secondary" disabled={!tokens} onClick={() => void copyTokens()}>复制 Token（JSON）</Button>
             <Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void refresh()}>{activeRunId ? "提取中…" : "重新提取"}</Button>
           </>
         } overflow={[
-          { label: "打开 tokens.json", onSelect: () => void openTokens() },
-          { label: "复制 page-design 指令", onSelect: () => void copyInstruction() },
+          { label: "打开 tokens.json", onSelect: () => void openProjectFile(PATHS.designTokens, "tokens.json") },
+          { label: "打开 brand.md", onSelect: () => void openProjectFile(PATHS.designBrand, "brand.md") },
         ]} />
       <ProjectTabPanel projectId={project.id} tab="design">
-      {runMessage && <Notice tone="info" title={activeRunId ? "设计规范提取进行中" : "正在启动设计规范提取"}>{runMessage}</Notice>}
-      {designQuery.isLoading ? <div className="si-page-loading" role="status">正在加载设计规范…</div> : designQuery.isError ? <ApiErrorNotice label="设计规范加载失败。" error={designQuery.error} onRetry={() => void designQuery.refetch()} /> : <div className="si-design-layout">
-        <div className="si-design-main-column">
-          <ColorCard tokens={tokens} onCopy={(value) => void copyColor(value)} copied={copiedColor} />
-          <TypographyCard tokens={tokens} />
-        </div>
-        <aside className="si-design-side-column">
-          <ButtonsCard tokens={tokens} />
-          <CssVariablesCard tokens={tokens} />
-          <ScreenshotsCard screenshots={screenshots} onOpen={(path) => void openScreenshot(path)} />
-        </aside>
-      </div>}
+        {runMessage && <Notice tone="info" title={activeRunId ? "设计规范提取进行中" : "正在启动设计规范提取"}>{runMessage}</Notice>}
+        {designQuery.isLoading ? <div className="si-page-loading" role="status">正在加载设计规范…</div>
+          : designQuery.isError ? <ApiErrorNotice label="设计规范加载失败。" error={designQuery.error} onRetry={() => void designQuery.refetch()} />
+            : <div className="si-design-layout">
+              <div className="si-design-main-column">
+                <ColorRolesCard tokens={tokens} onCopy={(value) => void copyColor(value)} copied={copiedColor} />
+                <TypographyCard tokens={tokens} />
+              </div>
+              <aside className="si-design-side-column">
+                <ButtonsCard tokens={tokens} />
+                <CssVariablesCard tokens={tokens} />
+                <ScreenshotsCard screenshots={screenshots} onOpen={(path) => void openScreenshot(path)} />
+              </aside>
+            </div>}
       </ProjectTabPanel>
     </div>
   );
 }
+
 import "./design/page.css";
