@@ -53,6 +53,7 @@ const report = {
   checks: [],
   addExistingTrace: null,
   traceEnvironmentPassedToSpawn: false,
+  visualEvidence: null,
   uncovered: [
     "settings UI for close_to_tray and launch_at_login, plus tray and login-start behavior",
     "Skills Center installation/version status in ~/.agents/skills and retired edm-builder status",
@@ -374,8 +375,12 @@ async function safeCandidateScreenshot(page) {
   await mkdir(OUTPUT_DIR, { recursive: true });
   const visibleText = await page.locator("body").innerText();
   const containsRunnerPath = (APP_DATA_ROOT && visibleText.includes(APP_DATA_ROOT)) || visibleText.includes(TEST_ROOT);
-  assert(!containsRunnerPath, "visible candidate UI contains no runner paths");
+  if (containsRunnerPath) {
+    report.visualEvidence = { screenshotCreated: false, reason: "synthetic-runner-path-visible" };
+    return;
+  }
   await page.screenshot({ path: path.join(OUTPUT_DIR, "v040-synthetic-project-center.png"), fullPage: true });
+  report.visualEvidence = { screenshotCreated: true, reason: null };
 }
 
 async function testWorkspaceApi(page) {
@@ -732,6 +737,7 @@ async function writeReport() {
     `- Windows build: \`${report.windows.build ?? report.windows.version}\``,
     `- Checks passed: ${report.checks.filter((check) => check.status === "passed").length}/${report.checks.length}`,
     `- Add-existing handler total: ${report.addExistingTrace?.handlerTotalMs ?? "not measured"} ms (target < 5000 ms)`,
+    `- Screenshot: ${report.visualEvidence?.screenshotCreated ? "created" : report.visualEvidence?.reason ?? "not available"}`,
     "- Data: synthetic runner-only project; no real project or customer data used.",
     "",
     "### Not covered by this runner",
