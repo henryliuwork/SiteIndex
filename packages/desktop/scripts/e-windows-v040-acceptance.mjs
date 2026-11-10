@@ -8,6 +8,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -19,6 +20,19 @@ const OLD_RELEASE = {
   sha256: "5b0ffb1e5c74b743c5938bd62349ef0b9fe69a87f05dfc8f56adf25c26f77bdd",
 };
 const CANDIDATE_VERSION = process.env.SITEINDEX_CANDIDATE_VERSION?.trim() || "0.4.0";
+const W2_PROJECT_ID = "synthetic-w2-pages";
+const W2_EXPECTED = {
+  parentGroups: 40,
+  childrenPerGroup: 3,
+  ungroupedSkus: 40,
+  totalSkus: 160,
+  products: 80,
+  blogsBeforeRefresh: 65,
+  blogsAfterRefresh: 2,
+  issues: 66,
+  pages: 66,
+  links: 65,
+};
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
 const APP_DATA_ROOT = process.env.APPDATA;
@@ -60,6 +74,18 @@ const report = {
   addExistingTrace: null,
   traceEnvironmentPassedToSpawn: false,
   visualEvidence: null,
+  w2Acceptance: {
+    candidateVersion: CANDIDATE_VERSION,
+    candidateArtifactSource: "workflow-run-artifact",
+    syntheticProject: true,
+    realProjectUsed: false,
+    evidenceLegend: {
+      ui: "Packaged Electron renderer DOM with Playwright interaction through CDP.",
+      packagedIpc: "window.siteindex calls from the packaged renderer, crossing preload/IPC into the packaged desktop/core handlers.",
+      notVerified: "No assertion was possible in this runner.",
+    },
+    checks: [],
+  },
   uncovered: [
     "settings UI for close_to_tray and launch_at_login, plus tray and login-start behavior",
     "Skills Center installation/version status in ~/.agents/skills and retired edm-builder status",
@@ -75,6 +101,7 @@ let candidateInstalled = false;
 let testProfileCreated = false;
 let failed = null;
 let workspaceProbeData = null;
+let syntheticSiteServer = null;
 
 function record(name, passed, evidence = {}) {
   report.checks.push({ name, status: passed ? "passed" : "failed", evidence });
@@ -83,6 +110,17 @@ function record(name, passed, evidence = {}) {
 
 function assert(condition, name, evidence = {}) {
   record(name, Boolean(condition), evidence);
+}
+
+function recordW2(name, passed, evidenceType, evidence = {}) {
+  const entry = {
+    name,
+    status: passed ? "passed" : "failed",
+    evidenceType,
+    evidence,
+  };
+  report.w2Acceptance.checks.push(entry);
+  report.checks.push(entry);
 }
 
 function safeMessage(error) {
@@ -212,6 +250,181 @@ async function makeLegacyProject(directory, name = "Synthetic legacy project") {
   await writeFile(path.join(directory, "index", "site.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
   await writeFile(path.join(directory, "index", "catalog", "skus.jsonl"), '{"sku":"SYN-001","handle":"fixture-item","status":"active"}\n', "utf8");
   await writeFile(path.join(directory, "user-owned.txt"), "synthetic-data-survives-upgrade\n", "utf8");
+}
+
+async function writeJsonlFile(filePath, rows) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, rows.length ? `${rows.map((row) => JSON.stringify(row)).join("\n")}\n` : "", "utf8");
+}
+
+function syntheticSeoPage(url, date) {
+  return { url, page_type: "product", status_code: 200, final_url: null, response_ms: 1,
+    title: null, title_length: 0, meta_description: null, description_length: 0, h1: null, h1_count: 0, h2: [],
+    canonical: null, canonical_status: "missing", robots_meta: null, x_robots_tag: null, indexable: true,
+    in_sitemap: true, google_indexed: null, schema_types: [], word_count: 0, images_total: 0,
+    images_missing_alt: 0, links_internal_out: 0, links_external_out: 0, links_internal_in: 0, last_crawled: date };
+}
+
+async function makeW2SyntheticProject(directory, origin) {
+  const date = "2026-11-10";
+  const firstSeen = "2026-11-01";
+  const config = {
+    schema_version: "1.1", domain: "w2.example.invalid", base_url: origin, platform: "woocommerce", currency: "USD",
+    locale: "en-US", timezone: "UTC", markets: ["US"],
+    brand: { name: "Synthetic W2 project", tagline: "Hosted runner acceptance data" },
+    sitemaps: [`${origin}/sitemap.xml`],
+    content: { blog_sitemaps: [`${origin}/blog-sitemap.xml`], blog_url_patterns: ["/blog/"] },
+    crawl: { adapter: "gmc_feed", feed_url: [], sku_field: "id", missing_as: "out_of_stock", max_pages: 100, rate_limit_ms: 0, blog_url_patterns: [] },
+    categories: { mode: "feed" }, sku_grouping: { enabled: true, rule: { type: "separator", value: "-CH-" } }, workspace_folders: [],
+    schedule: disabledSchedule(),
+  };
+  const skus = [], latest = [], skuStock = [], products = [];
+  const stockState = (group, variant) => group === 0 || variant !== 1 ? "in_stock" : "out_of_stock";
+  const addSku = (sku, handle, title, variant, status, parent, price) => {
+    const variantTitle = variant ? `Synthetic option ${variant}` : null;
+    skus.push({ sku, product_id: `product-${handle}`, handle, title, variant_title: variantTitle,
+      url: `${origin}/products/${handle}${variant ? `?variant=${variant}` : ""}`, category: "synthetic-category",
+      categories: ["synthetic-category"], category_source: "feed", price, compare_at_price: null, currency: "USD",
+      image_url: null, status: "active", first_seen: firstSeen, last_seen: date, updated_at: date });
+    latest.push({ sku, stock_status: status, qty: status === "in_stock" ? 10 : 0, since: date, checked_at: `${date}T12:00:00.000Z` });
+    skuStock.push({ sku, title, variant_title: variantTitle, category: "synthetic-category", price, stock_status: status,
+      since: date, days_in_status: 1, online_rate_7d: status === "in_stock" ? 1 : 0,
+      online_rate_30d: status === "in_stock" ? 1 : 0, history_30d: (status === "in_stock" ? "i" : "o").repeat(30),
+      changes_30d: 0, last_change: null, last_change_at: null, parent_sku: parent, price_history: [] });
+    return { sku, price, status };
+  };
+  const addProduct = (handle, title, rows) => {
+    const prices = rows.map((row) => row.price);
+    const inStock = rows.filter((row) => row.status === "in_stock").length;
+    products.push({ handle, product_id: `product-${handle}`, title, url: `${origin}/products/${handle}`,
+      category: "synthetic-category", categories: ["synthetic-category"], price_min: Math.min(...prices),
+      price_max: Math.max(...prices), compare_at_max: null, currency: "USD", on_sale: false,
+      image_url: null, image_source: "none", feed_image_url: null, manual_image_url: null,
+      variant_count: rows.length, skus: rows.map((row) => row.sku), in_stock_variants: inStock,
+      stock_status: inStock ? "in_stock" : "out_of_stock", stock_since: date, row_kind: "single", parent_sku: null,
+      tags: [], priority: null, exclude_edm: 0, last_featured: null, days_since_featured: null, first_seen: firstSeen, status: "active" });
+  };
+
+  for (let group = 0; group < W2_EXPECTED.parentGroups; group += 1) {
+    const parent = `SYN-P${String(group).padStart(3, "0")}`;
+    const handle = `group-${String(group).padStart(3, "0")}`;
+    const children = [];
+    for (let variant = 1; variant <= W2_EXPECTED.childrenPerGroup; variant += 1) {
+      const title = `Synthetic grouped product ${String(group).padStart(3, "0")}`;
+      children.push(addSku(`${parent}-CH-${String(variant).padStart(2, "0")}`, handle, title, variant,
+        stockState(group, variant), parent, 10 + group + variant / 100));
+    }
+    addProduct(handle, `Synthetic grouped product ${String(group).padStart(3, "0")}`, children);
+  }
+
+  for (let single = 0; single < W2_EXPECTED.ungroupedSkus; single += 1) {
+    const sku = `SYN-SINGLE-${String(single).padStart(3, "0")}`;
+    const handle = `single-${String(single).padStart(3, "0")}`;
+    const status = single % 2 === 0 ? "in_stock" : "out_of_stock";
+    const title = `Synthetic single product ${String(single).padStart(3, "0")}`;
+    addProduct(handle, title, [addSku(sku, handle, title, null, status, null, 20 + single)]);
+  }
+
+  const seoPages = Array.from({ length: W2_EXPECTED.pages }, (_, index) =>
+    syntheticSeoPage(`${origin}/products/seo-issue-${String(index).padStart(3, "0")}`, date));
+  const seoIssues = Array.from({ length: W2_EXPECTED.issues }, (_, index) => ({
+    url: `${origin}/products/seo-issue-${String(index).padStart(3, "0")}`,
+    rule: index < W2_EXPECTED.issues - 6 ? "title_missing" : "desc_missing",
+    severity: index < W2_EXPECTED.issues - 6 ? "high" : "mid",
+    detail: "Synthetic SEO fixture issue",
+    status: "open",
+    first_seen: date,
+    last_seen: date,
+  }));
+  const seoLinks = Array.from({ length: W2_EXPECTED.links }, (_, index) => ({
+    from: `${origin}/pages/source-${String(index).padStart(3, "0")}`,
+    to: `${origin}/products/group-${String(index % W2_EXPECTED.parentGroups).padStart(3, "0")}`,
+    anchor: "synthetic internal link",
+    to_type: "product",
+  }));
+  const blogs = Array.from({ length: W2_EXPECTED.blogsBeforeRefresh }, (_, index) => {
+    const slug = `synthetic-article-${String(index).padStart(3, "0")}`;
+    return { url: `${origin}/blog/article-${String(index).padStart(3, "0")}`, slug, title: `Synthetic blog article ${String(index).padStart(3, "0")}`,
+      published_at: date, updated_at: null, category: "synthetic-category", author: "Synthetic author", tags: [],
+      meta_description: "Synthetic blog content for packaged acceptance.", word_count: 10, reading_minutes: 1, outline: [], has_faq: true,
+      featured_image: null, primary_keyword: null, links_internal: [], links_products: [], links_in: 0, linked_out_of_stock: [], last_crawled: date };
+  });
+
+  await mkdir(directory, { recursive: true });
+  const index = path.join(directory, "index");
+  await mkdir(index, { recursive: true });
+  await writeFile(path.join(index, "site.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await writeJsonlFile(path.join(index, "catalog", "skus.jsonl"), skus.sort((a, b) => a.sku.localeCompare(b.sku)));
+  await writeJsonlFile(path.join(index, "inventory", "latest.jsonl"), latest.sort((a, b) => a.sku.localeCompare(b.sku)));
+  await writeJsonlFile(path.join(index, "views", "sku_stock.jsonl"), skuStock.sort((a, b) => a.sku.localeCompare(b.sku)));
+  await writeJsonlFile(path.join(index, "views", "products.jsonl"), products.sort((a, b) => a.handle.localeCompare(b.handle)));
+  await writeJsonlFile(path.join(index, "seo", "pages.jsonl"), seoPages);
+  await writeJsonlFile(path.join(index, "seo", "issues.jsonl"), seoIssues);
+  await writeJsonlFile(path.join(index, "seo", "links.jsonl"), seoLinks);
+  await writeJsonlFile(path.join(index, "content", "blog_index.jsonl"), blogs);
+  await writeJsonlFile(path.join(index, "content", "keywords.jsonl"), []);
+  await writeJsonlFile(path.join(index, "ledgers", "edm_campaigns.jsonl"), []);
+  await writeJsonlFile(path.join(index, "logs", "runs.jsonl"), []);
+  await mkdir(path.join(index, "inventory", "events"), { recursive: true });
+  await writeJsonlFile(path.join(index, "inventory", "events", "2026-11.jsonl"), []);
+  const inStockCount = latest.filter((row) => row.stock_status === "in_stock").length;
+  const outOfStockCount = latest.filter((row) => row.stock_status === "out_of_stock").length;
+  await writeFile(path.join(index, "inventory", "daily_summary.csv"), `date,category,total,in_stock,out_of_stock,preorder,unknown\n2026-11-10,_all,${latest.length},${inStockCount},${outOfStockCount},0,0\n`, "utf8");
+  await writeFile(path.join(index, "catalog", "categories.json"), "[]\n", "utf8");
+  await writeFile(path.join(index, "ledgers", "sku_media.csv"), "sku,image_role,image_url,alt_text,source,width,height,updated_at\n", "utf8");
+  await writeFile(path.join(index, "ledgers", "sku_tags.csv"), "sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at\n", "utf8");
+  return { skuCount: skus.length, productCount: products.length, blogCount: blogs.length, issueCount: seoIssues.length };
+}
+
+async function startSyntheticSite() {
+  let requestCount = 0;
+  let failedRequestCount = 0;
+  let origin = "";
+  const send = (response, status, contentType, body) => {
+    response.writeHead(status, { "content-type": `${contentType}; charset=utf-8`, "cache-control": "no-store" });
+    response.end(body);
+  };
+  syntheticSiteServer = createServer((request, response) => {
+    requestCount += 1;
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (request.method !== "GET") {
+      failedRequestCount += 1;
+      return send(response, 405, "text/plain", "GET only");
+    }
+    if (pathname === "/sitemap.xml") {
+      return send(response, 200, "application/xml", `<?xml version="1.0"?><urlset><url><loc>${origin}/products/group-000</loc></url></urlset>`);
+    }
+    if (pathname === "/blog-sitemap.xml") {
+      return send(response, 200, "application/xml", `<?xml version="1.0"?><urlset><url><loc>${origin}/blog/refreshed-one</loc></url><url><loc>${origin}/blog/refreshed-two</loc></url></urlset>`);
+    }
+    const isBlog = pathname === "/blog/refreshed-one" || pathname === "/blog/refreshed-two";
+    if (isBlog || pathname === "/products/group-000") {
+      const title = isBlog ? "Synthetic refreshed blog" : "Synthetic product page";
+      const kind = isBlog ? "BlogPosting" : "Product";
+      const body = `<!doctype html><html><head><title>${title}</title><meta name="description" content="Synthetic local acceptance page."><link rel="canonical" href="${origin}${pathname}"><script type="application/ld+json">{"@type":"${kind}","headline":"${title}","name":"${title}"}</script></head><body><main><article><h1>${title}</h1><p>Synthetic local acceptance content.</p><a href="/products/group-000">Synthetic link</a></article></main></body></html>`;
+      return send(response, 200, "text/html", body);
+    }
+    failedRequestCount += 1;
+    return send(response, 404, "text/plain", "Synthetic route not found");
+  });
+  await new Promise((resolve, reject) => {
+    syntheticSiteServer.once("error", reject);
+    syntheticSiteServer.listen(0, "127.0.0.1", resolve);
+  });
+  const address = syntheticSiteServer.address();
+  if (!address || typeof address === "string") throw new Error("Synthetic acceptance site did not bind a local TCP port.");
+  origin = `http://127.0.0.1:${address.port}`;
+  return {
+    origin,
+    metrics: () => ({ requestCount, failedRequestCount }),
+  };
+}
+
+async function closeSyntheticSite() {
+  if (!syntheticSiteServer) return;
+  syntheticSiteServer.closeAllConnections?.();
+  await new Promise((resolve) => syntheticSiteServer.close(resolve));
+  syntheticSiteServer = null;
 }
 
 async function snapshotTree(directory) {
@@ -374,6 +587,388 @@ async function appState(page) {
       },
     };
   });
+}
+
+async function goToW2Route(page, route) {
+  await page.evaluate((nextRoute) => { window.location.hash = `#${nextRoute}`; }, route);
+  await page.waitForFunction((nextRoute) => window.location.hash === `#${nextRoute}`, route, { timeout: 15_000 });
+  await page.locator(".si-page").first().waitFor({ state: "visible", timeout: 15_000 });
+}
+
+async function clickProjectTab(page, label) {
+  if (await page.locator(".si-drawer").isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
+  }
+  if (await page.locator(".si-detail-panel").isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "关闭详情", exact: true }).click();
+  }
+  const tab = page.getByRole("tab", { name: label, exact: true });
+  if (await tab.count()) {
+    await tab.click();
+    await page.locator(".si-page").first().waitFor({ state: "visible", timeout: 15_000 });
+    return "tab-click";
+  }
+  await goToW2Route(page, `/p/${W2_PROJECT_ID}${label === "概览" ? "" : `/${({ 库存: "inventory", 产品: "products", SEO: "seo", 内容: "content", EDM: "edm" })[label] ?? ""}`}`);
+  return "route-fallback";
+}
+
+async function waitForW2Table(page) {
+  await page.locator(".si-data-table").first().waitFor({ state: "visible", timeout: 20_000 });
+  await page.locator(".si-data-table .si-pagination-count").first().waitFor({ state: "visible", timeout: 20_000 });
+}
+
+async function readW2TableMetrics(page) {
+  return page.evaluate(() => {
+    const table = document.querySelector(".si-data-table");
+    const count = table?.querySelector(".si-pagination-count")?.textContent?.trim() ?? "";
+    const match = count.match(/\/(\s*[\d,]+)/u);
+    return {
+      tableVisible: Boolean(table && table.getBoundingClientRect().height > 0),
+      scrollRegionVisible: Boolean(table?.querySelector(".si-table-scroll")?.getBoundingClientRect().height),
+      renderedRows: table?.querySelectorAll("tbody tr[data-row-id]").length ?? 0,
+      paginationVisible: Boolean(table?.querySelector(".si-pagination")?.getBoundingClientRect().height),
+      paginationText: count,
+      total: match ? Number(match[1].replaceAll(",", "").trim()) : null,
+      pageSize: table?.querySelector('select[aria-label="每页条数"]')?.value ?? null,
+      nextEnabled: table?.querySelector('button[aria-label="下一页"]') instanceof HTMLButtonElement
+        && !table.querySelector('button[aria-label="下一页"]').disabled,
+      headerCount: table?.querySelectorAll("thead th").length ?? 0,
+    };
+  });
+}
+
+async function exerciseW2Pagination(page, expectedTotal) {
+  const before = await readW2TableMetrics(page);
+  let advanced = false;
+  let returned = false;
+  if (before.nextEnabled) {
+    await page.getByRole("button", { name: "下一页", exact: true }).click();
+    await page.waitForFunction((oldText) => {
+      const count = document.querySelector(".si-data-table .si-pagination-count")?.textContent?.trim();
+      return Boolean(count && count !== oldText);
+    }, before.paginationText, { timeout: 10_000 });
+    const secondPage = await readW2TableMetrics(page);
+    advanced = secondPage.paginationText !== before.paginationText && secondPage.total === expectedTotal;
+    if (await page.getByRole("button", { name: "上一页", exact: true }).isEnabled()) {
+      await page.getByRole("button", { name: "上一页", exact: true }).click();
+      await page.waitForFunction((oldText) => document.querySelector(".si-data-table .si-pagination-count")?.textContent?.trim() === oldText,
+        before.paginationText, { timeout: 10_000 });
+      returned = true;
+    }
+  }
+  return {
+    before,
+    expectedTotal,
+    advanced,
+    returned,
+    passed: before.tableVisible && before.scrollRegionVisible && before.paginationVisible
+      && before.total === expectedTotal && before.headerCount > 0 && advanced && returned,
+  };
+}
+
+async function packagedW2Baseline(page) {
+  return page.evaluate(async (projectId) => {
+    const api = window.siteindex;
+    const [inventory, products, edm, blogPage, blogSummary, issues, pages, links, overview] = await Promise.all([
+      api.inventory.listSkus(projectId, { page: 1, pageSize: 0, filters: { parent_only: true } }),
+      api.products.list(projectId, { page: 1, pageSize: 0, filters: { parent_only: true } }),
+      api.edm.listImages(projectId, { page: 1, pageSize: 0, filters: { parent_only: true } }),
+      api.content.listBlog(projectId, { page: 1, pageSize: 0, filters: {} }),
+      api.content.summary(projectId),
+      api.seo.listIssues(projectId, { page: 1, pageSize: 0, filters: { status: "open" } }),
+      api.seo.listPages(projectId, { page: 1, pageSize: 0, filters: {} }),
+      api.seo.listLinks(projectId, { page: 1, pageSize: 0, filters: {} }),
+      api.overview.get(projectId),
+    ]);
+    const count = (key) => blogSummary.kpis.find((item) => item.key === key)?.value ?? null;
+    const parentInventory = inventory.rows.filter((row) => row.is_parent === true);
+    const unmatchedInventory = inventory.rows.filter((row) => row.is_parent !== true && !row.parent_sku);
+    const parentProducts = products.rows.filter((row) => row.row_kind === "parent");
+    const unmatchedProducts = products.rows.filter((row) => row.row_kind === "single");
+    const parentHasThreeOfThree = parentProducts.some((row) => row.variant_count === 3 && row.in_stock_variants === 3);
+    const edmParents = edm.rows.filter((row) => /^SYN-P\d{3}$/u.test(row.sku)).length;
+    const edmSingles = edm.rows.filter((row) => row.sku.startsWith("SYN-SINGLE-")).length;
+    const attentionRule = overview.attention.map((item) => {
+      const query = item.link.split("?")[1] ?? "";
+      return new URLSearchParams(query).get("rule");
+    }).find(Boolean) ?? null;
+    return {
+      inventory: {
+        rows: inventory.total,
+        parents: parentInventory.length,
+        unmatched: unmatchedInventory.length,
+        childrenLeaked: inventory.rows.some((row) => typeof row.parent_sku === "string" && row.parent_sku.length > 0 && row.is_parent !== true),
+      },
+      products: {
+        rows: products.total,
+        parents: parentProducts.length,
+        unmatched: unmatchedProducts.length,
+        childrenLeaked: products.rows.some((row) => row.row_kind === "child"),
+        parentHasThreeOfThree,
+      },
+      edm: {
+        rows: edm.total,
+        parents: edmParents,
+        unmatched: edmSingles,
+        childrenLeaked: edm.rows.some((row) => /-CH-\d{2}$/u.test(row.sku)),
+      },
+      content: { blogs: blogPage.total, summaryBlogs: count("blogs") },
+      seo: { issues: issues.total, pages: pages.total, links: links.total },
+      overview: { attentionCount: overview.attention.length, firstSeoRule: attentionRule },
+    };
+  }, W2_PROJECT_ID);
+}
+
+async function attemptW2(name, evidenceType, action) {
+  try {
+    const result = await action();
+    recordW2(name, result.passed, evidenceType, result.evidence ?? result);
+    return result;
+  } catch (error) {
+    recordW2(name, false, evidenceType, { error: safeMessage(error) });
+    return null;
+  }
+}
+
+async function readW2SeoStatusCounts(page, rule) {
+  return page.evaluate(async ({ projectId, targetRule }) => {
+    const api = window.siteindex;
+    const read = (status) => api.seo.listIssues(projectId, {
+      page: 1,
+      pageSize: 0,
+      filters: { rules: [targetRule], ...(status ? { status } : {}) },
+    });
+    const [all, open, fixed, ignored] = await Promise.all([read(undefined), read("open"), read("fixed"), read("ignored")]);
+    return { all: all.total, open: open.total, fixed: fixed.total, ignored: ignored.total };
+  }, { projectId: W2_PROJECT_ID, targetRule: rule });
+}
+
+async function waitForW2SeoCount(page, rule, status, count) {
+  await page.waitForFunction(async ({ projectId, targetRule, targetStatus, expectedCount }) => {
+    const result = await window.siteindex.seo.listIssues(projectId, {
+      page: 1, pageSize: 0, filters: { rules: [targetRule], status: targetStatus },
+    });
+    return result.total === expectedCount;
+  }, { projectId: W2_PROJECT_ID, targetRule: rule, targetStatus: status, expectedCount: count }, { timeout: 15_000 });
+}
+
+async function testW2Pages(page, syntheticSite) {
+  let baseline = null;
+  await attemptW2("W2 baseline data is served by the packaged IPC", "packaged-ipc", async () => {
+    baseline = await packagedW2Baseline(page);
+    const passed = baseline.inventory.rows === W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus
+      && baseline.inventory.parents === W2_EXPECTED.parentGroups
+      && baseline.inventory.unmatched === W2_EXPECTED.ungroupedSkus
+      && !baseline.inventory.childrenLeaked
+      && baseline.products.rows === W2_EXPECTED.products
+      && baseline.products.parents === W2_EXPECTED.parentGroups
+      && baseline.products.unmatched === W2_EXPECTED.ungroupedSkus
+      && !baseline.products.childrenLeaked
+      && baseline.products.parentHasThreeOfThree
+      && baseline.edm.rows === W2_EXPECTED.products
+      && baseline.edm.parents === W2_EXPECTED.parentGroups
+      && baseline.edm.unmatched === W2_EXPECTED.ungroupedSkus
+      && !baseline.edm.childrenLeaked
+      && baseline.content.blogs === W2_EXPECTED.blogsBeforeRefresh
+      && baseline.content.summaryBlogs === String(W2_EXPECTED.blogsBeforeRefresh)
+      && baseline.seo.issues === W2_EXPECTED.issues
+      && baseline.seo.pages === W2_EXPECTED.pages
+      && baseline.seo.links === W2_EXPECTED.links
+      && baseline.overview.firstSeoRule === "title_missing";
+    return { passed, evidence: baseline };
+  });
+
+  let overviewRoutePass = false;
+  await attemptW2("Overview SEO attention link opens the filtered issues view", "ui", async () => {
+    await goToW2Route(page, `/p/${W2_PROJECT_ID}`);
+    await page.locator(".si-overview-attention").waitFor({ state: "visible", timeout: 20_000 });
+    const link = page.getByRole("link", { name: "查看 SEO 问题" }).first();
+    await link.waitFor({ state: "visible", timeout: 10_000 });
+    await link.click();
+    await page.locator(".si-seo-controls").waitFor({ state: "visible", timeout: 20_000 });
+    const selected = await page.evaluate(() => {
+      const [, query = ""] = window.location.hash.split("?");
+      const params = new URLSearchParams(query);
+      return {
+        onSeoRoute: window.location.hash.includes("/seo?"),
+        rule: params.get("rule"),
+        status: params.get("status"),
+        selectedFilterText: document.querySelector(".si-seo-selected-filters")?.textContent?.trim() ?? "",
+      };
+    });
+    overviewRoutePass = selected.onSeoRoute && selected.rule === "title_missing" && selected.status === "open";
+    return { passed: overviewRoutePass, evidence: selected };
+  });
+
+  await attemptW2("SEO issues table renders real packaged rows and advances pagination", "ui", async () => {
+    await waitForW2Table(page);
+    const pagination = await exerciseW2Pagination(page, W2_EXPECTED.issues - 6);
+    const columnText = await page.locator(".si-data-table thead").innerText();
+    const statusColumn = columnText.includes("状态");
+    const statusFilterVisible = await page.locator('.si-seo-dropdown-trigger[aria-label^="状态"]').isVisible();
+    const passed = pagination.passed && statusColumn && statusFilterVisible;
+    return { passed, evidence: { ...pagination, statusColumn, statusFilterVisible } };
+  });
+
+  await attemptW2("SEO issue action marks a row processed and restores it through the UI", "ui", async () => {
+    const before = await readW2SeoStatusCounts(page, "title_missing");
+    await page.once("dialog", (dialog) => { void dialog.accept(); });
+    await page.getByRole("button", { name: /问题操作：/u }).first().click();
+    await page.getByRole("menuitem", { name: "标记已处理", exact: true }).click();
+    await waitForW2SeoCount(page, "title_missing", "fixed", 1);
+    await page.waitForFunction((expected) => {
+      const count = document.querySelector(".si-data-table .si-pagination-count")?.textContent ?? "";
+      return count.includes(`/ ${expected}`);
+    }, String(before.open - 1), { timeout: 10_000 });
+    const afterFixed = await readW2SeoStatusCounts(page, "title_missing");
+    const statusFilter = page.locator('.si-seo-dropdown-trigger[aria-label^="状态"]');
+    await statusFilter.click();
+    await page.getByRole("group", { name: "状态" }).getByRole("button", { name: "已处理", exact: true }).click();
+    await waitForW2Table(page);
+    await page.once("dialog", (dialog) => { void dialog.accept(); });
+    await page.getByRole("button", { name: /问题操作：/u }).first().click();
+    await page.getByRole("menuitem", { name: "恢复为待处理", exact: true }).click();
+    await waitForW2SeoCount(page, "title_missing", "open", W2_EXPECTED.issues - 6);
+    const statusCounts = await readW2SeoStatusCounts(page, "title_missing");
+    const passed = before.open === W2_EXPECTED.issues - 6
+      && afterFixed.fixed === before.fixed + 1
+      && statusCounts.open === W2_EXPECTED.issues - 6
+      && statusCounts.fixed === 0;
+    return { passed, evidence: { before, afterFixed, afterRestore: statusCounts, restoredToOpen: statusCounts.open === before.open } };
+  });
+
+  await attemptW2("SEO rules Drawer ignores and restores a rule class", "ui", async () => {
+    await clickProjectTab(page, "SEO");
+    await page.locator(".si-seo-controls").waitFor({ state: "visible", timeout: 15_000 });
+    await page.getByRole("button", { name: "规则设置", exact: true }).click();
+    const ruleSection = page.locator(".si-seo-rule-setting").filter({ hasText: "Title 缺失" }).first();
+    await ruleSection.waitFor({ state: "visible", timeout: 15_000 });
+    const before = await readW2SeoStatusCounts(page, "title_missing");
+    await page.once("dialog", (dialog) => { void dialog.accept(); });
+    await ruleSection.getByRole("button", { name: "忽略此规则", exact: true }).click();
+    await ruleSection.getByRole("button", { name: "恢复此规则", exact: true }).waitFor({ state: "visible", timeout: 10_000 });
+    await waitForW2SeoCount(page, "title_missing", "ignored", W2_EXPECTED.issues - 6);
+    const ignored = await readW2SeoStatusCounts(page, "title_missing");
+    await page.once("dialog", (dialog) => { void dialog.accept(); });
+    await ruleSection.getByRole("button", { name: "恢复此规则", exact: true }).click();
+    await waitForW2SeoCount(page, "title_missing", "open", W2_EXPECTED.issues - 6);
+    const restored = await readW2SeoStatusCounts(page, "title_missing");
+    const passed = before.open === W2_EXPECTED.issues - 6
+      && ignored.ignored === before.open
+      && restored.open === before.open
+      && restored.ignored === 0;
+    await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
+    return { passed, evidence: { before, ignored, restored, drawerOpened: true } };
+  });
+
+  await attemptW2("Inventory table renders rows and paginates", "ui", async () => {
+    await clickProjectTab(page, "库存");
+    await waitForW2Table(page);
+    const pagination = await exerciseW2Pagination(page, W2_EXPECTED.totalSkus);
+    return { passed: pagination.passed, evidence: pagination };
+  });
+
+  await attemptW2("Inventory parent-only UI shows parents plus ungrouped SKUs", "ui", async () => {
+    const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
+    await checkbox.check();
+    await page.waitForFunction(() => document.querySelector(".si-pagination-count")?.textContent?.includes("/ 80"), null, { timeout: 10_000 });
+    const metrics = await readW2TableMetrics(page);
+    const toolbarText = await page.locator(".si-table-total").innerText();
+    const rowIds = await page.locator(".si-data-table tbody tr[data-row-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id") ?? ""));
+    const childrenVisible = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
+    const passed = metrics.total === W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus
+      && await checkbox.isChecked() && !childrenVisible && toolbarText.includes("父 SKU");
+    return { passed, evidence: { ...metrics, childrenVisible, toolbarShowsParentView: toolbarText.includes("父 SKU") } };
+  });
+
+  await attemptW2("Products parent-only UI shows grouped products and 3/3 in-stock variants", "ui", async () => {
+    await clickProjectTab(page, "产品");
+    await waitForW2Table(page);
+    const pagination = await exerciseW2Pagination(page, W2_EXPECTED.products);
+    const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
+    await checkbox.check();
+    await page.waitForFunction(() => document.querySelector(".si-data-table")?.innerText.includes("3/3"), null, { timeout: 10_000 });
+    const metrics = await readW2TableMetrics(page);
+    const row = page.locator('.si-data-table tbody tr[data-row-id]').filter({ hasText: "Synthetic grouped product 000" }).first();
+    await row.click();
+    const panel = page.locator(".si-detail-panel");
+    await panel.waitFor({ state: "visible", timeout: 15_000 });
+    const inventoryHeading = await panel.getByText("变体库存", { exact: true }).isVisible();
+    const variantRows = await panel.locator(".si-data-table tbody tr[data-row-id]").count();
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "hidden", timeout: 10_000 });
+    const passed = pagination.passed && metrics.total === W2_EXPECTED.products
+      && await checkbox.isChecked() && inventoryHeading && variantRows === W2_EXPECTED.childrenPerGroup;
+    return { passed, evidence: { pagination, parentOnlyTotal: metrics.total, groupedVariantCellVisible: true, productDrawerShowsStock: inventoryHeading, visibleVariantRows: variantRows } };
+  });
+
+  await attemptW2("EDM table paginates and parent-only UI hides child SKU rows", "ui", async () => {
+    await clickProjectTab(page, "EDM");
+    await waitForW2Table(page);
+    const pagination = await exerciseW2Pagination(page, W2_EXPECTED.totalSkus);
+    const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
+    await checkbox.check();
+    await page.waitForFunction(() => document.querySelector(".si-pagination-count")?.textContent?.includes("/ 80"), null, { timeout: 10_000 });
+    const metrics = await readW2TableMetrics(page);
+    const rowIds = await page.locator(".si-data-table tbody tr[data-row-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id") ?? ""));
+    const childrenVisible = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
+    const passed = pagination.passed && metrics.total === W2_EXPECTED.products && await checkbox.isChecked() && !childrenVisible;
+    return { passed, evidence: { pagination, parentOnlyTotal: metrics.total, childrenVisible } };
+  });
+
+  await attemptW2("Content table renders real packaged rows and advances pagination", "ui", async () => {
+    await clickProjectTab(page, "内容");
+    await waitForW2Table(page);
+    const pagination = await exerciseW2Pagination(page, W2_EXPECTED.blogsBeforeRefresh);
+    const refreshButton = page.getByRole("button", { name: "重新抓取", exact: true });
+    const refreshVisible = await refreshButton.isVisible();
+    const keywordMappingVisible = await page.getByText("关键词映射", { exact: false }).count() > 0;
+    return { passed: pagination.passed && refreshVisible && !keywordMappingVisible,
+      evidence: { pagination, refreshButtonVisible: refreshVisible, keywordMappingVisible } };
+  });
+
+  await attemptW2("Content refresh button runs against loopback-only synthetic pages and refreshes KPI/table", "ui", async () => {
+    const refreshButton = page.getByRole("button", { name: "重新抓取", exact: true });
+    await refreshButton.click();
+    const busyStateObserved = await page.evaluate(() => {
+      const button = Array.from(document.querySelectorAll("button")).find((item) => ["正在启动…", "抓取中…"].includes(item.textContent?.trim() ?? ""));
+      return button?.textContent?.trim() ?? null;
+    });
+    await page.waitForFunction(async (projectId) => {
+      const api = window.siteindex;
+      const [summary, blogs] = await Promise.all([
+        api.content.summary(projectId),
+        api.content.listBlog(projectId, { page: 1, pageSize: 0, filters: {} }),
+      ]);
+      const value = summary.kpis.find((item) => item.key === "blogs")?.value;
+      return blogs.total === 2 && value === "2";
+    }, W2_PROJECT_ID, { timeout: 90_000 });
+    await page.waitForFunction(() => document.querySelector(".si-data-table .si-pagination-count")?.textContent?.includes("/ 2"), null, { timeout: 20_000 });
+    const uiKpi = await page.locator(".si-content-kpis").innerText();
+    const table = await readW2TableMetrics(page);
+    const requestStats = syntheticSite.metrics();
+    const busyStateVisible = busyStateObserved === "正在启动…" || busyStateObserved === "抓取中…";
+    const passed = table.total === W2_EXPECTED.blogsAfterRefresh
+      && uiKpi.includes("博客文章") && uiKpi.includes(String(W2_EXPECTED.blogsAfterRefresh))
+      && requestStats.requestCount >= 4 && requestStats.failedRequestCount === 0;
+    return { passed, evidence: {
+      busyStateObserved,
+      busyStateVisible,
+      refreshedBlogCount: table.total,
+      kpiShowsRefreshedCount: uiKpi.includes(String(W2_EXPECTED.blogsAfterRefresh)),
+      localRequestCount: requestStats.requestCount,
+      failedLocalRequestCount: requestStats.failedRequestCount,
+      originRedacted: true,
+    } };
+  });
+
+  report.w2Acceptance.checks.push({
+    name: "Real project and real-site data behavior",
+    status: "not-verified",
+    evidenceType: "not-verified",
+    evidence: { reason: "Hosted acceptance uses synthetic project files and loopback-only pages; no real project was included." },
+  });
+  await goToW2Route(page, "/");
 }
 
 async function safeCandidateScreenshot(page) {
@@ -806,11 +1401,16 @@ async function main() {
 
   currentStage = `v${CANDIDATE_VERSION} packaged launch and upgrade persistence`;
   page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: true });
+  const syntheticSite = await startSyntheticSite();
+  report.w2Acceptance.seed = await makeW2SyntheticProject(path.join(PROJECTS_ROOT, W2_PROJECT_ID), syntheticSite.origin);
   const candidateState = await appState(page);
   assert(candidateState.version === CANDIDATE_VERSION, "upgraded packaged app reports candidate version through preload IPC", { version: candidateState.version });
-  assert(candidateState.projectIds.includes("synthetic-legacy-project") && candidateState.projectCount === 1, "synthetic legacy project remains registered after upgrade", {
+  assert(candidateState.projectIds.includes("synthetic-legacy-project")
+    && candidateState.projectIds.includes(W2_PROJECT_ID)
+    && candidateState.projectCount === 2, "synthetic legacy and W2 projects are listed by the upgraded package", {
     projectCount: candidateState.projectCount,
     legacyProjectFound: candidateState.projectIds.includes("synthetic-legacy-project"),
+    w2SyntheticProjectFound: candidateState.projectIds.includes(W2_PROJECT_ID),
   });
   const legacyRead = await page.evaluate(async () => {
     const detail = await window.siteindex.projects.get("synthetic-legacy-project");
@@ -850,10 +1450,14 @@ async function main() {
   await captureAddExistingTrace(page);
   currentStage = "packaged workspace IPC acceptance";
   await testWorkspaceApi(page);
+  currentStage = "packaged W2 page acceptance";
+  await testW2Pages(page, syntheticSite);
   const finalState = await appState(page);
-  assert(finalState.version === CANDIDATE_VERSION && finalState.projectCount >= 3, "candidate project center lists legacy, add-existing, and workspace projects", {
+  assert(finalState.version === CANDIDATE_VERSION && finalState.projectCount >= 4
+    && finalState.projectIds.includes(W2_PROJECT_ID), "candidate project center lists the legacy, W2, add-existing, and workspace projects", {
     projectCount: finalState.projectCount,
     syntheticLegacyPresent: finalState.projectIds.includes("synthetic-legacy-project"),
+    w2SyntheticProjectPresent: finalState.projectIds.includes(W2_PROJECT_ID),
   });
   await safeCandidateScreenshot(page);
 }
@@ -869,7 +1473,14 @@ async function writeReport() {
   if (!OUTPUT_DIR) return;
   await mkdir(OUTPUT_DIR, { recursive: true });
   report.workspaceAcceptance = workspaceProbeData;
-  report.result = failed ? "failed" : "passed";
+  const w2Failures = report.w2Acceptance.checks.filter((check) => check.status === "failed").length;
+  const w2NotVerified = report.w2Acceptance.checks.filter((check) => check.status === "not-verified").length;
+  report.w2Acceptance.summary = {
+    passed: report.w2Acceptance.checks.filter((check) => check.status === "passed").length,
+    failed: w2Failures,
+    notVerified: w2NotVerified,
+  };
+  report.result = failed || w2Failures > 0 ? "failed" : "passed";
   if (failed) report.failure = failed;
   await writeFile(path.join(OUTPUT_DIR, "summary.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   const summaryLines = [
@@ -887,6 +1498,10 @@ async function writeReport() {
     `- Add-existing handler total: ${report.addExistingTrace?.handlerTotalMs ?? "not measured"} ms (target < 5000 ms)`,
     `- Screenshot: ${report.visualEvidence?.screenshotCreated ? "created" : report.visualEvidence?.reason ?? "not available"}`,
     "- Data: synthetic runner-only project; no real project or customer data used.",
+    "",
+    `### W2 packaged page acceptance: ${report.w2Acceptance.summary.passed} passed, ${report.w2Acceptance.summary.failed} failed, ${report.w2Acceptance.summary.notVerified} not verified`,
+    "",
+    ...report.w2Acceptance.checks.map((check) => `- ${check.status.toUpperCase()} · ${check.evidenceType} · ${check.name}`),
     "",
     "### Not covered by this runner",
     ...report.uncovered.map((item) => `- ${item}`),
@@ -907,6 +1522,11 @@ try {
 } finally {
   await stopApplication();
   try {
+    await closeSyntheticSite();
+  } catch (error) {
+    failed ??= { stage: "cleanup", code: "SYNTHETIC_SITE_CLEANUP_FAILED", reason: safeMessage(error) };
+  }
+  try {
     if (candidateInstalled || await exists(path.join(INSTALL_DIR, "Uninstall SiteIndex.exe"))) await uninstallCurrent();
   } catch (error) {
     failed ??= { stage: "cleanup", code: "UNINSTALL_FAILED", reason: safeMessage(error) };
@@ -926,4 +1546,4 @@ try {
   await writeReport();
 }
 
-if (failed) process.exitCode = 1;
+if (failed || report.w2Acceptance.checks.some((check) => check.status === "failed")) process.exitCode = 1;

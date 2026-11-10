@@ -1,11 +1,7 @@
 name: E · Windows packaged acceptance
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/e-windows-v040-acceptance.yml"
-      - "packages/desktop/scripts/e-windows-v040-acceptance.mjs"
+  # 安装包验收需由协调者显式启动，避免普通脚本 PR 意外安装候选包。
   workflow_dispatch:
     inputs:
       expected_source_commit:
