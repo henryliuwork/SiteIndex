@@ -3,12 +3,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import type { ProjectDetail, ProjectSummary, SeoIssue, SiteIndexError } from "@siteindex/shared";
+import type { ProjectDetail, ProjectSummary, SeoIssue, SiteIndexApi, SiteIndexError } from "@siteindex/shared";
 import { createMockApi } from "../mock";
+
+const pendingEmptyWorkspaceHandlers = [
+  "projects.createWorkspaceOnly",
+  "workspace.check",
+];
+const pendingImportHandlers = ["workspace.importCheck"];
+
+function mockWorkspaceCapabilities(pendingHandlers: readonly string[]) {
+  vi.doMock("./workspace-capabilities", async () => {
+    const actual = await vi.importActual<typeof import("./workspace-capabilities")>("./workspace-capabilities");
+    return {
+      ...actual,
+      getWorkspaceCapabilities: (api: SiteIndexApi, isMockApi: boolean) =>
+        actual.getWorkspaceCapabilities(api, isMockApi, pendingHandlers),
+    };
+  });
+}
 
 afterEach(() => {
   cleanup();
   vi.doUnmock("../api");
+  vi.doUnmock("./workspace-capabilities");
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -284,12 +302,13 @@ describe("ProjectCenterPage create empty workspace flow", () => {
     const createWorkspaceOnly = vi.spyOn(mockApi.projects, "createWorkspaceOnly");
     vi.doMock("../api", () => ({
       api: mockApi,
-      isMockApi: true,
+      isMockApi: false,
       apiErrorMessage: (error: unknown, fallback: string) =>
         typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
           ? error.message
           : fallback,
     }));
+    mockWorkspaceCapabilities([]);
     const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -339,6 +358,7 @@ describe("ProjectCenterPage create empty workspace flow", () => {
     const mockApi = createMockApi();
     mockApi.jobs.history = vi.fn(async () => []);
     vi.doMock("../api", () => ({ api: mockApi, isMockApi: false, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    mockWorkspaceCapabilities(pendingEmptyWorkspaceHandlers);
     const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
@@ -403,6 +423,7 @@ describe("ProjectCenterPage workspace import check", () => {
     const mockApi = createMockApi();
     mockApi.jobs.history = vi.fn(async () => []);
     vi.doMock("../api", () => ({ api: mockApi, isMockApi: false, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    mockWorkspaceCapabilities(pendingImportHandlers);
     const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);

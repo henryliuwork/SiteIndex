@@ -3,11 +3,29 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import type { SiteIndexApi } from "@siteindex/shared";
 import { createMockApi } from "../mock";
+
+const pendingWizardHandlers = [
+  "workspace.check",
+  "workspace.create",
+];
+
+function mockWorkspaceCapabilities(pendingHandlers: readonly string[]) {
+  vi.doMock("./workspace-capabilities", async () => {
+    const actual = await vi.importActual<typeof import("./workspace-capabilities")>("./workspace-capabilities");
+    return {
+      ...actual,
+      getWorkspaceCapabilities: (api: SiteIndexApi, isMockApi: boolean) =>
+        actual.getWorkspaceCapabilities(api, isMockApi, pendingHandlers),
+    };
+  });
+}
 
 afterEach(() => {
   cleanup();
   vi.doUnmock("../api");
+  vi.doUnmock("./workspace-capabilities");
   vi.resetModules();
 });
 
@@ -22,12 +40,13 @@ describe("NewProjectWizardPage workspace step", () => {
     const checkWorkspace = vi.spyOn(mockApi.workspace!, "check");
     vi.doMock("../api", () => ({
       api: mockApi,
-      isMockApi: true,
+      isMockApi: false,
       apiErrorMessage: (error: unknown, fallback: string) =>
         typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
           ? error.message
           : fallback,
     }));
+    mockWorkspaceCapabilities([]);
     const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
       import("./NewProjectWizardPage"), import("./wizard-state"), import("../components/overlays"),
     ]);
@@ -100,6 +119,7 @@ describe("NewProjectWizardPage workspace step", () => {
     const mockApi = createMockApi();
     mockApi.jobs.history = vi.fn(async () => []);
     vi.doMock("../api", () => ({ api: mockApi, isMockApi: false, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    mockWorkspaceCapabilities(pendingWizardHandlers);
     const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
       import("./NewProjectWizardPage"), import("./wizard-state"), import("../components/overlays"),
     ]);
