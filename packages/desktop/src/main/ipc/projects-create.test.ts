@@ -42,6 +42,7 @@ describe("projects.create Desktop flow", () => {
       projects_root: selectedRoot,
       folder_name: "example",
       workspace_folders: [],
+      workspace: { enabled: true, platform: "woocommerce", esp_presets: ["esp.mailchimp"] },
     };
     let saved = settings;
     const settingsChanged = vi.fn(async () => undefined);
@@ -52,7 +53,8 @@ describe("projects.create Desktop flow", () => {
     const context = {
       core: {
         projects: {
-          create: vi.fn(async () => {
+          create: vi.fn(async (receivedInput: CreateProjectInput) => {
+            expect(receivedInput.workspace).toEqual(input.workspace);
             await mkdir(projectPath, { recursive: true });
             return { id: "example", runId: "core-init-run-id" };
           }),
@@ -74,6 +76,7 @@ describe("projects.create Desktop flow", () => {
 
     const result = await createProjectsHandlers(context)["projects.create"]?.(input);
     expect(result).toEqual({ id: "example", runId: "desktop-init-run-id" });
+    expect(context.core.projects.create).toHaveBeenCalledWith(input);
     expect(run).toHaveBeenCalledWith({ projectPath, job: "init" });
     expect(saved.extra_projects).toEqual([projectPath]);
     expect(settingsChanged).toHaveBeenCalledWith(saved, false);

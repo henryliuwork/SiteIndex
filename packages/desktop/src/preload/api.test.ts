@@ -5,9 +5,11 @@ describe("createApiBridge IPC errors", () => {
   it("forwards workspace checks, creation, and pending import checks", async () => {
     const check = { ok: true, invalid_entries: [] };
     const created = { path: "C:/Fixture/workspace", created: ["README.md"] };
+    const imported = { issues: [], repaired: ["_site-index/workspace.json"] };
     const invoke = vi.fn(async (channel: string) => {
       if (channel === "si:workspace.check") return check;
       if (channel === "si:workspace.create") return created;
+      if (channel === "si:workspace.importCheck") return imported;
       return undefined;
     });
     const bridge = createApiBridge({ invoke, listen: () => () => undefined });
@@ -21,11 +23,11 @@ describe("createApiBridge IPC errors", () => {
 
     await expect(bridge.workspace?.check("C:/Fixture/workspace")).resolves.toEqual(check);
     await expect(bridge.workspace?.create(workspaceInput)).resolves.toEqual(created);
-    await expect(bridge.workspace?.importCheck("fixture-project")).resolves.toBeUndefined();
+    await expect(bridge.workspace?.importCheck("fixture-project", { apply: true })).resolves.toEqual(imported);
     expect(invoke.mock.calls).toEqual([
       ["si:workspace.check", "C:/Fixture/workspace"],
       ["si:workspace.create", workspaceInput],
-      ["si:workspace.importCheck", "fixture-project"],
+      ["si:workspace.importCheck", "fixture-project", { apply: true }],
     ]);
   });
 

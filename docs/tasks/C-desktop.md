@@ -146,7 +146,9 @@
 - [x] 托盘支持打开、下次计划、立即同步和退出；退出时有运行中 Job 会确认。
 - [x] 技能目标新增 `agents-dir`（`~/.agents/skills`）；同步时保留版本高于内置版本的本地副本。
 - [x] 从内置分发移除 `edm-builder`；发现已安装副本时返回退役状态，不自动删除或重装。
-- [ ] A4-3 合并后接入 workspace、importCheck 与相关打包资源。
+- [x] `workspace.check/create`、`workspace.importCheck` 已接入 Desktop IPC；导入检查有修复文件时立即失效 Core 项目缓存，目录监听负责变更通知。`PENDING_HANDLERS` 清理需在 handler PR 合并后走独立 contract PR。
+- [x] 打包资源脚本复制完整 `templates/` 与 `skills/`，Core 的 `templateDir` 相邻路径可解析 `templates/workspace/`；由 Desktop 资源测试覆盖。
+- [ ] `projects.createWorkspaceOnly` Desktop IPC：等待 A 对应的 Core 方法合并后接线。
 
 ## Windows 原生标题栏桥接
 
