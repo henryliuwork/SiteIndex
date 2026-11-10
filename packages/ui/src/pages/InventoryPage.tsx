@@ -418,7 +418,7 @@ export function InventoryPage() {
       {skuQuery.isFetching && skuQuery.data && <div className="si-inventory-query-state" role="status">正在更新 SKU 列表…</div>}
       {skuQuery.isError && <ApiErrorNotice className="si-inventory-query-state" label={"SKU 列表更新失败" + (skuQuery.data ? "，当前保留上次结果。" : "。")} error={skuQuery.error} onRetry={() => void skuQuery.refetch()} />}
       <div className="si-inventory-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-      <DataTable
+      {skuQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 列表…</div> : skuQuery.isError && !skuQuery.data ? null : <DataTable
         tableId="inventory.skus"
         scopeId={id}
         rows={skuRows}
@@ -433,7 +433,7 @@ export function InventoryPage() {
         emptyTitle="没有匹配的 SKU"
         emptyDescription={watchedOnly ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或库存筛选条件。"}
         toolbar={tableToolbar}
-      />
+      />}
       <div className="si-inventory-legend" aria-label="库存状态图例">
         <span><i className="si-status-in" />有货</span><span><i className="si-status-out" />缺货</span><span><i className="si-status-preorder" />预售</span><span><i className="si-status-unknown" />未知 / 未上架</span>
         <span>数据：index/views/sku_stock.jsonl</span>

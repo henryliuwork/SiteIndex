@@ -1,5 +1,5 @@
-.si-category-page { --si-table-min-h: 420px; display: flex; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); min-height: 0; flex-direction: column; gap: var(--si-gap-4); }
-.si-category-page > .si-tab-panel { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--si-gap-3); }
+.si-category-page { --si-table-min-h: 420px; display: flex; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); min-height: 0; flex-direction: column; gap: var(--si-gap-3); }
+.si-category-page > .si-tab-panel { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--si-gap-2); }
 .si-category-subtabs { display: flex; align-items: center; gap: var(--si-gap-1); }
 .si-category-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 var(--si-gap-3); border-radius: 6px; color: var(--color-ink-2); font-size: 13px; text-decoration: none; }
 .si-category-subtabs a:hover { background: var(--color-neutral-soft); }
