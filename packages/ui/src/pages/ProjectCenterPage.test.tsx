@@ -348,6 +348,127 @@ describe("ProjectCenterPage create empty workspace flow", () => {
   }, 25_000);
 });
 
+describe("ProjectCenterPage workspace import check", () => {
+  it("offers mock repairs and keeps missing site.json workspace metadata as a manual issue", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    const importCheck = mockApi.workspace?.importCheck;
+    if (!importCheck) throw new Error("workspace import-check mock is missing");
+    const importCheckSpy = vi.spyOn(mockApi.workspace!, "importCheck");
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      isMockApi: true,
+      apiErrorMessage: (error: unknown, fallback: string) =>
+        typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+          ? error.message
+          : fallback,
+    }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Demo Catalog更多操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "识别并检查工作区" }));
+    const dialog = await screen.findByRole("dialog", { name: "识别并检查工作区 · Demo Catalog" });
+    expect(await within(dialog).findByText("site.json.workspace 需要手动补充", { exact: false })).toBeTruthy();
+    for (const field of ["version", "workspace.version", "sections[].dir", "workspace.sections", "esp_presets", "workspace.esp_presets"]) {
+      expect(within(dialog).getByText(field, { exact: true })).toBeTruthy();
+    }
+    expect(importCheckSpy).toHaveBeenNthCalledWith(1, "demo2", undefined);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "自动补齐可修复项（2）" }));
+    await expectToast("自动补齐请求完成，返回 2 个已补齐路径。", "success");
+    expect(within(dialog).getByText("本次已补齐 2 个路径或区块", { exact: true })).toBeTruthy();
+    expect(within(dialog).getByText("发现 1 项待处理", { exact: true })).toBeTruthy();
+    expect(within(dialog).getByText("需要手动处理", { exact: true })).toBeTruthy();
+    expect(importCheckSpy).toHaveBeenNthCalledWith(2, "demo2", { apply: true });
+    expect(within(dialog).queryByText("工作区导入检查通过", { exact: true })).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "重新检查" }));
+    await waitFor(() => expect(importCheckSpy).toHaveBeenNthCalledWith(3, "demo2", undefined));
+    expect(await within(dialog).findByText("site.json.workspace 需要手动补充", { exact: false })).toBeTruthy();
+  }, 25_000);
+
+  it("hides the import-check action while the Desktop handler is pending", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: false, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Demo Catalog更多操作" }));
+    expect(screen.queryByRole("button", { name: "识别并检查工作区" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /识别并检查工作区/ })).toBeNull();
+  });
+
+  it("shows the SiteIndexError message and lets the user retry", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    const importCheck = mockApi.workspace?.importCheck;
+    if (!importCheck) throw new Error("workspace import-check mock is missing");
+    const importCheckSpy = vi.fn(importCheck);
+    importCheckSpy.mockRejectedValueOnce({ code: "PROJECT_UNREADABLE", message: "无法读取工作区数据目录。" });
+    mockApi.workspace!.importCheck = importCheckSpy;
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      isMockApi: true,
+      apiErrorMessage: (error: unknown, fallback: string) =>
+        typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+          ? error.message
+          : fallback,
+    }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Demo Catalog更多操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "识别并检查工作区" }));
+    const dialog = await screen.findByRole("dialog", { name: "识别并检查工作区 · Demo Catalog" });
+    expect(await within(dialog).findByText("无法读取工作区数据目录。", { exact: true })).toBeTruthy();
+    await expectToast("无法读取工作区数据目录。", "error");
+    fireEvent.click(within(dialog).getByRole("button", { name: "重新检查" }));
+    await waitFor(() => expect(importCheckSpy).toHaveBeenCalledTimes(2));
+    expect(await within(dialog).findByText("site.json.workspace 需要手动补充", { exact: false })).toBeTruthy();
+  }, 25_000);
+
+  it("recognizes a legacy project and does not offer workspace repairs", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Demo Store更多操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "识别并检查工作区" }));
+    const dialog = await screen.findByRole("dialog", { name: "识别并检查工作区 · Demo Store" });
+    expect(await within(dialog).findByText("未识别为 Agent 工作区", { exact: true })).toBeTruthy();
+    expect(within(dialog).getByText("此项目没有找到工作区数据目录；本次没有修改项目文件。")).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: /自动补齐/ })).toBeNull();
+  }, 25_000);
+});
+
 describe("ProjectCenterPage project removal", () => {
   it("confirms unregistering without deleting files and refreshes the center", async () => {
     vi.stubGlobal("ResizeObserver", class {
@@ -385,7 +506,12 @@ describe("ProjectCenterPage project removal", () => {
     expect((await mockApi.projects.get("demo2")).summary.path).toBeTruthy();
   });
 
-  it("hides the more menu when the optional remove method is unavailable", async () => {
+  it("keeps import check available while hiding project removal when its method is absent", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
     const mockApi = createMockApi();
     delete mockApi.projects.remove;
     mockApi.jobs.history = vi.fn(async () => []);
@@ -402,6 +528,8 @@ describe("ProjectCenterPage project removal", () => {
     render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
 
     await screen.findByRole("link", { name: "Demo Catalog" });
-    expect(screen.queryByRole("button", { name: "Demo Catalog更多操作" })).toBeNull();
-  });
+    fireEvent.click(screen.getByRole("button", { name: "Demo Catalog更多操作" }));
+    expect(screen.getByRole("button", { name: "识别并检查工作区" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "移除项目" })).toBeNull();
+  }, 25_000);
 });
