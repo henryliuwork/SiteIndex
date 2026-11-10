@@ -29,6 +29,7 @@
 - [x] DetailPanel（右侧 320–400，Esc 关闭）、Pagination（20/50/100）、StatusCells（30 格）、SearchInput（200ms 防抖）— [PR #12](https://github.com/henryliuwork/SiteIndex/pull/12)
 - [x] WindowChrome（标题栏 38，整条为拖动区域；Windows 右侧按 Window Controls Overlay CSS 变量留出原生按钮空间，mac 左侧留 78px —— 用 `api.app.platform()` 判断）、SideNav（宽 232，可折叠为图标栏）— [PR #7](https://github.com/henryliuwork/SiteIndex/pull/7)、[PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)
 - **验收**：组件有 vitest 单测（筛选、分页、长度标色、列设置持久化）
+- [x] Drawer 打开时按遮罩层数合成并同步 Windows 原生 titleBarOverlay 颜色；最后一层关闭或卸载后恢复白色，缺少 bridge 时安全降级 — [PR #364](https://github.com/henryliuwork/SiteIndex/pull/364)
 
 ### B4 项目中心 `/` 与 库存页 `/p/:id/inventory`
 - [x] 项目中心：PRD §5.1 全部内容；异常卡片高亮规则 — [PR #13](https://github.com/henryliuwork/SiteIndex/pull/13)、[PR #61](https://github.com/henryliuwork/SiteIndex/pull/61)

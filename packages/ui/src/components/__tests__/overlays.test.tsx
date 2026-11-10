@@ -23,8 +23,26 @@ function ToastHarness() {
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(window, "siteindexWindow");
   vi.useRealTimers();
 });
+
+function installTitleBarBridge(setTitleBarOverlayColor: (color: string) => void): void {
+  Object.defineProperty(window, "siteindexWindow", {
+    configurable: true,
+    value: { setTitleBarOverlayColor },
+  });
+}
+
+function MultipleDrawerHarness() {
+  const [firstOpen, setFirstOpen] = useState(false);
+  const [secondOpen, setSecondOpen] = useState(false);
+  return <>
+    <button type="button" onClick={() => { setFirstOpen(true); setSecondOpen(true); }}>同时打开两个</button>
+    <Drawer open={firstOpen} onOpenChange={setFirstOpen} title="第一个抽屉">第一个内容</Drawer>
+    <Drawer open={secondOpen} onOpenChange={setSecondOpen} title="第二个抽屉">第二个内容</Drawer>
+  </>;
+}
 
 describe("Drawer and Toast", () => {
   it("closes with Escape and returns focus to the opener", async () => {
@@ -38,6 +56,46 @@ describe("Drawer and Toast", () => {
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(opener);
+  });
+
+  it("tints the native title bar while a Drawer is open and restores white after close", async () => {
+    const setTitleBarOverlayColor = vi.fn();
+    installTitleBarBridge(setTitleBarOverlayColor);
+    render(<DrawerHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开详情" }));
+    await waitFor(() => expect(setTitleBarOverlayColor).toHaveBeenLastCalledWith("#BCBEBD"));
+    fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
+    await waitFor(() => expect(setTitleBarOverlayColor).toHaveBeenLastCalledWith("#FFFFFF"));
+  });
+
+  it("keeps the tint until the final Drawer closes and clears it when an open Drawer unmounts", async () => {
+    const setTitleBarOverlayColor = vi.fn();
+    installTitleBarBridge(setTitleBarOverlayColor);
+    const view = render(<MultipleDrawerHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "同时打开两个" }));
+    expect(setTitleBarOverlayColor).toHaveBeenNthCalledWith(1, "#BCBEBD");
+    expect(setTitleBarOverlayColor).toHaveBeenNthCalledWith(2, "#8C8F8D");
+    // Radix 把非顶层 modal 隐藏在可访问树外；测试直接触发其中一个抽屉的关闭回调。
+    const closeButtons = screen.getAllByRole("button", { name: "关闭抽屉", hidden: true });
+    fireEvent.click(closeButtons[1]!);
+    expect(setTitleBarOverlayColor).toHaveBeenLastCalledWith("#BCBEBD");
+    view.unmount();
+    expect(setTitleBarOverlayColor).toHaveBeenLastCalledWith("#FFFFFF");
+  });
+
+  it("degrades safely when the Desktop bridge is missing or throws", () => {
+    const { unmount } = render(<DrawerHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "打开详情" }));
+    unmount();
+
+    const setTitleBarOverlayColor = vi.fn(() => { throw new Error("bridge unavailable"); });
+    installTitleBarBridge(setTitleBarOverlayColor);
+    const secondView = render(<DrawerHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "打开详情" }));
+    expect(screen.getByRole("dialog", { name: "库存详情" })).toBeTruthy();
+    secondView.unmount();
   });
 
   it("auto-dismisses success messages after three seconds", async () => {

@@ -3,6 +3,55 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { Button } from "./primitives";
 
+type WindowTitleBarBridge = { setTitleBarOverlayColor?: (color: string) => void };
+
+// --color-overlay (rgba(16, 22, 19, .28)) composited over --color-surface (#fff).
+const overlayRgb = [16, 22, 19] as const;
+const surfaceRgb = [255, 255, 255] as const;
+const overlayAlpha = 0.28;
+const defaultTitleBarColor = "#FFFFFF";
+const openDrawerIds = new Set<string>();
+let lastTitleBarBridge: WindowTitleBarBridge | undefined;
+let lastTitleBarColor: string | undefined;
+
+function colorForDrawerCount(count: number): string {
+  const channels = surfaceRgb.map((surface, index) => {
+    let value = surface;
+    for (let layer = 0; layer < count; layer += 1) {
+      value = overlayRgb[index]! * overlayAlpha + value * (1 - overlayAlpha);
+    }
+    return Math.round(value).toString(16).padStart(2, "0");
+  });
+  return "#" + channels.join("").toUpperCase();
+}
+
+function updateTitleBarColor(): void {
+  if (typeof window === "undefined") return;
+  const bridge = (window as Window & { siteindexWindow?: WindowTitleBarBridge }).siteindexWindow;
+  const setColor = bridge?.setTitleBarOverlayColor;
+  if (typeof setColor !== "function") return;
+
+  const color = openDrawerIds.size > 0 ? colorForDrawerCount(openDrawerIds.size) : defaultTitleBarColor;
+  if (bridge === lastTitleBarBridge && color === lastTitleBarColor) return;
+  try {
+    setColor.call(bridge, color);
+    lastTitleBarBridge = bridge;
+    lastTitleBarColor = color;
+  } catch {
+    // UI 在浏览器 mock、无 IPC bridge 或窗口关闭过程中仍可正常使用。
+    lastTitleBarBridge = undefined;
+    lastTitleBarColor = undefined;
+  }
+}
+
+function setDrawerTitleBarOverlay(id: string, open: boolean): void {
+  const wasOpen = openDrawerIds.has(id);
+  if (open === wasOpen) return;
+  if (open) openDrawerIds.add(id);
+  else openDrawerIds.delete(id);
+  updateTitleBarColor();
+}
+
 export function Drawer({ open, onOpenChange, title, description, children, footer, width = "standard", className = "" }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -15,6 +64,14 @@ export function Drawer({ open, onOpenChange, title, description, children, foote
 }) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const descriptionId = useId();
+  const drawerId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    setDrawerTitleBarOverlay(drawerId, true);
+    return () => setDrawerTitleBarOverlay(drawerId, false);
+  }, [drawerId, open]);
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
