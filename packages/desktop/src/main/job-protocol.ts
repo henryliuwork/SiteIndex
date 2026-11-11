@@ -1,4 +1,5 @@
 import type { AppSettings, JobName, JobProgress, JobRequest, JobResult, JobTrigger } from "@siteindex/shared";
+import type { WordPressCredential } from "../shared/wordpress-credential-types.js";
 
 export type JobStartRequest = Omit<JobRequest, "trigger"> & { trigger: JobTrigger };
 
@@ -7,6 +8,8 @@ export interface JobWorkerContext {
   deviceName: string;
   cacheDir: string;
   browserPath?: string | null;
+  /** Main-to-worker only. Never part of JobRequest, argv, or environment. */
+  wordpressCredential?: WordPressCredential;
 }
 
 export interface JobWorkerStartMessage {
@@ -36,7 +39,8 @@ export function isJobName(value: unknown): value is JobName {
     value === "design" ||
     value === "index-check" ||
     value === "views" ||
-    value === "init"
+    value === "init" ||
+    value === "media"
   );
 }
 

@@ -25,6 +25,7 @@ function settings(): AppSettings {
 class FakeUtilityProcess extends EventEmitter implements UtilityProcessLike {
   readonly pid = 45678;
   readonly messages: unknown[] = [];
+  readonly postedReferences: unknown[] = [];
   killed = false;
 
   constructor(private readonly reportStarted = true) {
@@ -32,7 +33,8 @@ class FakeUtilityProcess extends EventEmitter implements UtilityProcessLike {
   }
 
   postMessage(message: unknown): void {
-    this.messages.push(message);
+    this.messages.push(structuredClone(message));
+    this.postedReferences.push(message);
     if (!this.reportStarted) return;
     queueMicrotask(() => {
       this.emit("message", { type: "started", runId: "2026-10-23-daily", startedAt: "2026-10-23T01:00:00.000Z" });
@@ -73,6 +75,16 @@ async function writeOwnedLock(projectPath: string, child: FakeUtilityProcess, jo
     "utf8",
   );
   return lockPath;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 afterEach(async () => {
@@ -232,6 +244,324 @@ describe("desktop job manager", () => {
     }
     expect(detail).not.toContain("ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk");
     expect(detail).toContain("[已隐藏]");
+  });
+
+  it("injects media credentials only through worker context and redacts every returned value", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    const credential = { username: "a", applicationPassword: "fictional-media-password" };
+    const basicToken = Buffer.from(`${credential.username}:${credential.applicationPassword}`).toString("base64");
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const progress = vi.fn();
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => credential,
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: progress,
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+
+    const untrustedRequest = { projectPath, job: "media" as const, skus: ["sku-a1"], credential };
+    const { runId } = await manager.runMedia(untrustedRequest);
+    const startMessage = child.messages[0] as { request: Record<string, unknown>; context: Record<string, unknown> };
+    expect(startMessage.request.skus).toEqual(["sku-a1"]);
+    expect(JSON.stringify(startMessage.request)).not.toContain(credential.applicationPassword);
+    expect(startMessage.context).toMatchObject({ wordpressCredential: credential });
+    expect(
+      (child.postedReferences[0] as { context: Record<string, unknown> }).context.wordpressCredential,
+    ).toBeUndefined();
+
+    child.emit("message", {
+      type: "progress",
+      progress: {
+        runId: "2026-10-23-media",
+        projectPath,
+        job: "media",
+        pct: 50,
+        level: "info",
+        message: `Uploading ${credential.username}:${credential.applicationPassword} (${basicToken}); rejected account ${credential.username}`,
+        at: "2026-10-23T01:00:01.000Z",
+      },
+    });
+    child.emit("message", {
+      type: "finished",
+      oosRate: null,
+      result: {
+        runId: "2026-10-23-media",
+        job: "media",
+        status: "partial",
+        exitCode: 1,
+        summary: `Completed ${credential.applicationPassword}`,
+        errors: [basicToken],
+        media_results: [{ sku: "sku-a1", status: "failed", reason: credential.username }],
+      },
+    });
+
+    await expect(finished).resolves.toMatchObject({ runId, status: "partial" });
+    const exposed = `${JSON.stringify(progress.mock.calls)} ${JSON.stringify(await finished)}`;
+    expect(exposed).not.toContain(credential.applicationPassword);
+    expect(exposed).not.toContain(basicToken);
+    expect(exposed).toContain("sku-a1");
+    expect(exposed).toContain('"reason":"[已隐藏]"');
+    expect(progress.mock.calls[0]?.[0].projectPath).toBe(projectPath);
+    expect(progress.mock.calls[0]?.[0].message).toBe("Uploading [已隐藏] ([已隐藏]); rejected account [已隐藏]");
+  });
+
+  it("requires a stored WordPress credential before forking a media worker", async () => {
+    const projectPath = await projectDirectory();
+    const fork = vi.fn(() => new FakeUtilityProcess());
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => null,
+      resolveProject: async () => projectPath,
+      fork,
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    await expect(manager.runMedia({ projectPath, job: "media", skus: ["fictional-sku"] })).rejects.toMatchObject({
+      code: "WP_NOT_CONFIGURED",
+    });
+    expect(fork).not.toHaveBeenCalled();
+  });
+
+  it("reports media as not implemented before reading credentials or forking until Core is ready", async () => {
+    const projectPath = await projectDirectory();
+    const getSettings = vi.fn(async () => settings());
+    const getWordPressCredential = vi.fn(async () => ({
+      username: "fictional-user",
+      applicationPassword: "fictional-password",
+    }));
+    const fork = vi.fn(() => new FakeUtilityProcess());
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings,
+      isMediaJobReady: () => false,
+      getWordPressCredential,
+      resolveProject: async () => projectPath,
+      fork,
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    await expect(manager.runMedia({ projectPath, job: "media", skus: ["fictional-sku"] })).rejects.toMatchObject({
+      code: "NOT_IMPLEMENTED",
+    });
+    expect(getSettings).not.toHaveBeenCalled();
+    expect(getWordPressCredential).not.toHaveBeenCalled();
+    expect(fork).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty media SKU list before reading credentials or forking", async () => {
+    const projectPath = await projectDirectory();
+    const getWordPressCredential = vi.fn(async () => ({
+      username: "fictional-user",
+      applicationPassword: "fictional-password",
+    }));
+    const fork = vi.fn(() => new FakeUtilityProcess());
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential,
+      resolveProject: async () => projectPath,
+      fork,
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    await expect(manager.runMedia({ projectPath, job: "media", skus: [] })).rejects.toMatchObject({
+      code: "CONFIG_INVALID",
+    });
+    expect(getWordPressCredential).not.toHaveBeenCalled();
+    expect(fork).not.toHaveBeenCalled();
+  });
+
+  it("reserves a project while media credentials are read so a concurrent start is rejected", async () => {
+    const projectPath = await projectDirectory();
+    const credentialRead = deferred<{
+      username: string;
+      applicationPassword: string;
+    } | null>();
+    const child = new FakeUtilityProcess();
+    const fork = vi.fn(() => {
+      queueMicrotask(() => child.ready());
+      return child;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: () => credentialRead.promise,
+      resolveProject: async () => projectPath,
+      fork,
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const firstStart = manager.runMedia({ projectPath, job: "media", skus: ["fictional-sku"] });
+    await vi.waitFor(() => expect(manager.activeCount).toBe(1));
+    await expect(
+      manager.runMedia({ projectPath, job: "media", skus: ["another-fictional-sku"] }),
+    ).rejects.toMatchObject({ code: "LOCKED" });
+    expect(fork).not.toHaveBeenCalled();
+
+    credentialRead.resolve({ username: "fictional-user", applicationPassword: "fictional-password" });
+    const { runId } = await firstStart;
+    expect(fork).toHaveBeenCalledTimes(1);
+    await manager.cancel(runId);
+  });
+
+  it("waits for a pending credential read during update pause and prevents its worker from forking", async () => {
+    const projectPath = await projectDirectory();
+    const credentialRead = deferred<{
+      username: string;
+      applicationPassword: string;
+    } | null>();
+    const fork = vi.fn(() => new FakeUtilityProcess());
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: () => credentialRead.promise,
+      resolveProject: async () => projectPath,
+      fork,
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const starting = manager.runMedia({ projectPath, job: "media", skus: ["fictional-sku"] });
+    await vi.waitFor(() => expect(manager.activeCount).toBe(1));
+    let pauseFinished = false;
+    const paused = manager.pauseAndWaitForIdle().then(() => {
+      pauseFinished = true;
+    });
+    await Promise.resolve();
+    expect(pauseFinished).toBe(false);
+    expect(manager.activeCount).toBe(1);
+
+    credentialRead.resolve({ username: "fictional-user", applicationPassword: "fictional-password" });
+    await expect(starting).rejects.toMatchObject({ code: "LOCKED" });
+    await paused;
+    expect(fork).not.toHaveBeenCalled();
+    expect(manager.activeCount).toBe(0);
+  });
+
+  it("releases a project start reservation after credential lookup fails", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    const getWordPressCredential = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary vault failure"))
+      .mockResolvedValue({ username: "fictional-user", applicationPassword: "fictional-password" });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential,
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    await expect(manager.runMedia({ projectPath, job: "media", skus: ["fictional-sku"] })).rejects.toThrow(
+      "temporary vault failure",
+    );
+    expect(manager.activeCount).toBe(0);
+
+    const { runId } = await manager.runMedia({ projectPath, job: "media", skus: ["fictional-sku"] });
+    await manager.cancel(runId);
+    expect(manager.activeCount).toBe(0);
+  });
+
+  it("redacts injected media credentials from fatal errors", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess(false);
+    const credential = { username: "fictional-cancel-user", applicationPassword: "fictional-cancel-password" };
+    const basicToken = Buffer.from(`${credential.username}:${credential.applicationPassword}`).toString("base64");
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => credential,
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const starting = manager.runMedia({ projectPath, job: "media", skus: ["fictional-sku"] });
+    await vi.waitFor(() => expect(child.messages).toHaveLength(1));
+    child.emit("message", {
+      type: "fatal",
+      message: `connection failed ${credential.username}:${credential.applicationPassword} ${basicToken}`,
+    });
+    let detail = "";
+    try {
+      await starting;
+    } catch (error) {
+      detail = String(error && typeof error === "object" && "detail" in error ? error.detail : error);
+    }
+    expect(detail).not.toContain(credential.username);
+    expect(detail).not.toContain(credential.applicationPassword);
+    expect(detail).not.toContain(basicToken);
+  });
+
+  it("terminates a cancelled media worker and exposes only a sanitized cancellation result", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    const credential = { username: "fictional-cancel-user", applicationPassword: "fictional-cancel-password" };
+    let finished: JobResult | null = null;
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => credential,
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: (result) => {
+        finished = result;
+      },
+      notify: vi.fn(),
+    });
+
+    const { runId } = await manager.runMedia({ projectPath, job: "media", skus: ["fictional-sku"] });
+    await manager.cancel(runId);
+
+    expect(child.killed).toBe(true);
+    expect(manager.activeCount).toBe(0);
+    expect(JSON.stringify(finished)).not.toContain(credential.username);
+    expect(JSON.stringify(finished)).not.toContain(credential.applicationPassword);
   });
 
   it("does not put worker fatal text into Desktop run history", async () => {
@@ -527,9 +857,13 @@ describe("desktop job manager", () => {
     });
 
     const starting = manager.run({ projectPath: "pending-project", job: "daily" });
-    await manager.pauseAndWaitForIdle();
+    const pausing = manager.pauseAndWaitForIdle();
+    await Promise.resolve();
+    expect(manager.activeCount).toBe(1);
     provideSettings(settings());
     await expect(starting).rejects.toMatchObject({ code: "LOCKED" });
+    await pausing;
     expect(fork).not.toHaveBeenCalled();
+    expect(manager.activeCount).toBe(0);
   });
 });

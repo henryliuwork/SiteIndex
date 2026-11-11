@@ -121,10 +121,27 @@ if (!hasSingleInstanceLock) {
       isPackaged: app.isPackaged,
     });
     let finalizeInit: NonNullable<JobManagerOptions["finalizeInit"]> = async (result) => result;
+    let mediaCore: CoreService | null = null;
     const jobs = createJobManager({
       workerPath: join(mainDirectory, "job-worker.js"),
       getSettings: () => settingsStore.get(),
       getBrowserExecutablePath: async (settings) => (await desktopIntegrations.detectBrowser(settings.browser)).path,
+      // Core media Job 接入完成后再打开能力闸；当前必须保持 NOT_IMPLEMENTED。
+      isMediaJobReady: () => false,
+      getWordPressCredential: async (id) => {
+        if (!mediaCore) throw { code: "PROJECT_NOT_FOUND", message: "项目服务尚未就绪。" };
+        const project = await mediaCore.projects.get(id);
+        if (project.config.edm?.image_host?.type !== "wordpress") {
+          throw { code: "WP_NOT_CONFIGURED", message: "该项目尚未配置 WordPress 媒体托管。" };
+        }
+        try {
+          const credential = await wordpressCredentialVault.getForHost(project.config.base_url);
+          if (credential) return credential;
+        } catch {
+          throw { code: "WP_NOT_CONFIGURED", message: "本机 WordPress 凭据不可用，请在设置中重新保存。" };
+        }
+        throw { code: "WP_NOT_CONFIGURED", message: "尚未配置此项目的 WordPress 应用程序密码。" };
+      },
       resolveProject: (id: ProjectId) => {
         if (!projectCatalog) throw { code: "PROJECT_NOT_FOUND", message: "项目目录尚未就绪。", detail: id };
         return projectCatalog.resolveProject(id);
@@ -232,6 +249,7 @@ if (!hasSingleInstanceLock) {
         : resolve(mainDirectory, "../../../../templates/project"),
     } satisfies CoreServiceContext;
     const coreService = createCoreService(coreContext);
+    mediaCore = coreService;
     core = coreService;
     const skillService = createSkillService({
       sourceDirectory: app.isPackaged

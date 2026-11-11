@@ -42,7 +42,10 @@ function testContext(): IpcContext {
       },
     },
     projects: { resolveProject: vi.fn(() => "C:/projects/demo") },
-    jobs: { run: vi.fn(async () => ({ runId: "2026-10-28-index-check" })) },
+    jobs: {
+      run: vi.fn(async () => ({ runId: "2026-10-28-index-check" })),
+      runMedia: vi.fn(async () => ({ runId: "2026-10-28-media" })),
+    },
   } as unknown as IpcContext;
 }
 
@@ -85,7 +88,31 @@ describe("IPC handler completeness", () => {
       unmatched: 1,
     });
     await expect(implementations["seo.checkIndex"]?.("demo")).resolves.toEqual({ runId: "2026-10-28-index-check" });
+    await expect(implementations["media.prepare"]?.({ project: "demo", skus: ["fictional-sku"] })).resolves.toEqual({
+      runId: "2026-10-28-media",
+    });
     expect(context.jobs.run).toHaveBeenCalledWith({ projectPath: "C:/projects/demo", job: "index-check" });
+    expect(context.jobs.runMedia).toHaveBeenCalledWith({
+      projectPath: "C:/projects/demo",
+      job: "media",
+      skus: ["fictional-sku"],
+    });
+  });
+
+  it("rejects malformed media requests before starting a worker", async () => {
+    const context = testContext();
+    const handler = createIpcHandlerImplementations(context)["media.prepare"];
+    if (!handler) throw new Error("media.prepare handler missing");
+
+    await expect(
+      Promise.resolve().then(() => handler({ project: "demo", skus: ["fictional-sku", 1] })),
+    ).rejects.toMatchObject({
+      code: "CONFIG_INVALID",
+    });
+    await expect(Promise.resolve().then(() => handler({ project: "demo", skus: [] }))).rejects.toMatchObject({
+      code: "CONFIG_INVALID",
+    });
+    expect(context.jobs.runMedia).not.toHaveBeenCalled();
   });
 
   it("forwards workspace validation and creation to Core without changing their inputs", async () => {
