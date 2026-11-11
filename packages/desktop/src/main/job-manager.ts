@@ -29,6 +29,7 @@ import {
   sanitizeJobResult,
   sanitizeWorkerText,
   wordpressCredentialSensitiveValues,
+  wordpressCredentialUsernames,
 } from "./worker-output-sanitizer.js";
 
 const START_TIMEOUT_MS = 30_000;
@@ -69,6 +70,7 @@ interface JobEntry {
   browserPath: string | null;
   wordpressCredential: WordPressCredential | null;
   sensitiveValues: string[];
+  sensitiveUsernames: string[];
   child: UtilityProcessLike;
   started: Promise<string>;
   resolveStarted(runId: string): void;
@@ -169,6 +171,8 @@ export function createJobManager(options: JobManagerOptions) {
     entry.wordpressCredential = null;
     entry.sensitiveValues.fill("");
     entry.sensitiveValues.length = 0;
+    entry.sensitiveUsernames.fill("");
+    entry.sensitiveUsernames.length = 0;
     notifyIdleWaitersIfIdle();
   }
 
@@ -337,7 +341,7 @@ export function createJobManager(options: JobManagerOptions) {
         if (entry.request.job === "init" && message.progress.step === "schedule") return;
         // Known credential-derived values are redacted even without recognizable auth labels.
         options.emitProgress({
-          ...sanitizeJobProgress(message.progress, entry.sensitiveValues),
+          ...sanitizeJobProgress(message.progress, entry.sensitiveValues, entry.sensitiveUsernames),
           runId: entry.runId ?? message.progress.runId,
         });
       }
@@ -345,7 +349,7 @@ export function createJobManager(options: JobManagerOptions) {
     }
     if (message.type === "finished") {
       if (!isJobResult(message.result)) return;
-      entry.result = sanitizeJobResult(message.result, entry.sensitiveValues);
+      entry.result = sanitizeJobResult(message.result, entry.sensitiveValues, entry.sensitiveUsernames);
       entry.oosRate = typeof message.oosRate === "number" ? message.oosRate : null;
       entry.child.kill();
       return;
@@ -353,7 +357,7 @@ export function createJobManager(options: JobManagerOptions) {
     if (message.type === "fatal") {
       const detail =
         typeof message.message === "string"
-          ? sanitizeWorkerText(message.message, entry.sensitiveValues)
+          ? sanitizeWorkerText(message.message, entry.sensitiveValues, entry.sensitiveUsernames)
           : "未知 Worker 错误。";
       if (!entry.runId) entry.rejectStarted(jobError("UNKNOWN", "Job utilityProcess 执行失败。", detail));
       entry.child.kill();
@@ -394,6 +398,7 @@ export function createJobManager(options: JobManagerOptions) {
         throw jobError("WP_NOT_CONFIGURED", "尚未配置此项目的 WordPress 应用程序密码。");
       }
       const sensitiveValues = wordpressCredential ? wordpressCredentialSensitiveValues(wordpressCredential) : [];
+      const sensitiveUsernames = wordpressCredential ? wordpressCredentialUsernames(wordpressCredential) : [];
       if (
         sensitiveValues.some(
           (secret) =>
@@ -437,6 +442,7 @@ export function createJobManager(options: JobManagerOptions) {
         browserPath,
         wordpressCredential: wordpressCredential ?? null,
         sensitiveValues,
+        sensitiveUsernames,
         child,
         started,
         resolveStarted,

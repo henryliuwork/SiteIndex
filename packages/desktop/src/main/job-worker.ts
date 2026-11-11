@@ -14,6 +14,7 @@ import {
   sanitizeJobResult,
   sanitizeWorkerText,
   wordpressCredentialSensitiveValues,
+  wordpressCredentialUsernames,
 } from "./worker-output-sanitizer.js";
 
 const port = process.parentPort;
@@ -104,10 +105,17 @@ port.on("message", (event) => {
   const sensitiveValues = event.data.context.wordpressCredential
     ? wordpressCredentialSensitiveValues(event.data.context.wordpressCredential)
     : [];
+  const sensitiveUsernames = event.data.context.wordpressCredential
+    ? wordpressCredentialUsernames(event.data.context.wordpressCredential)
+    : [];
   void run(event.data).catch((error: unknown) => {
     port.postMessage({
       type: "fatal",
-      message: sanitizeWorkerText(error instanceof Error ? error.message : String(error), sensitiveValues),
+      message: sanitizeWorkerText(
+        error instanceof Error ? error.message : String(error),
+        sensitiveValues,
+        sensitiveUsernames,
+      ),
     } satisfies JobWorkerMessage);
   });
 });
@@ -118,6 +126,9 @@ async function run(message: JobWorkerStartMessage): Promise<void> {
   const projectPath = path.resolve(message.request.projectPath);
   const sensitiveValues = message.context.wordpressCredential
     ? wordpressCredentialSensitiveValues(message.context.wordpressCredential)
+    : [];
+  const sensitiveUsernames = message.context.wordpressCredential
+    ? wordpressCredentialUsernames(message.context.wordpressCredential)
     : [];
   const request: JobRequest = { ...message.request, projectPath, trigger: message.request.trigger };
   const coreContext: CoreServiceContext & {
@@ -145,7 +156,7 @@ async function run(message: JobWorkerStartMessage): Promise<void> {
     };
     port.postMessage({
       type: "progress",
-      progress: sanitizeJobProgress(event, sensitiveValues),
+      progress: sanitizeJobProgress(event, sensitiveValues, sensitiveUsernames),
     } satisfies JobWorkerMessage);
   };
 
@@ -155,11 +166,15 @@ async function run(message: JobWorkerStartMessage): Promise<void> {
       request.job === "daily" && result.status !== "failed" ? await currentOutOfStockRate(core, projectPath) : null;
     port.postMessage({
       type: "finished",
-      result: sanitizeJobResult(result, sensitiveValues),
+      result: sanitizeJobResult(result, sensitiveValues, sensitiveUsernames),
       oosRate,
     } satisfies JobWorkerMessage);
   } catch (error) {
-    const detail = sanitizeWorkerText(error instanceof Error ? error.message : String(error), sensitiveValues);
+    const detail = sanitizeWorkerText(
+      error instanceof Error ? error.message : String(error),
+      sensitiveValues,
+      sensitiveUsernames,
+    );
     port.postMessage({
       type: "finished",
       oosRate: null,

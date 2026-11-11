@@ -289,7 +289,7 @@ describe("desktop job manager", () => {
         job: "media",
         pct: 50,
         level: "info",
-        message: `Uploading ${credential.username}:${credential.applicationPassword} (${basicToken})`,
+        message: `Uploading ${credential.username}:${credential.applicationPassword} (${basicToken}); rejected account ${credential.username}`,
         at: "2026-10-23T01:00:01.000Z",
       },
     });
@@ -312,7 +312,9 @@ describe("desktop job manager", () => {
     expect(exposed).not.toContain(credential.applicationPassword);
     expect(exposed).not.toContain(basicToken);
     expect(exposed).toContain("sku-a1");
-    expect(exposed).toContain('"reason":"a"');
+    expect(exposed).toContain('"reason":"[已隐藏]"');
+    expect(progress.mock.calls[0]?.[0].projectPath).toBe(projectPath);
+    expect(progress.mock.calls[0]?.[0].message).toBe("Uploading [已隐藏] ([已隐藏]); rejected account [已隐藏]");
   });
 
   it("requires a stored WordPress credential before forking a media worker", async () => {
