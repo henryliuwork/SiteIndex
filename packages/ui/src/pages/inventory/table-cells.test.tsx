@@ -2,7 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { SkuStockView } from "@siteindex/shared";
-import { InventoryHistoryCell, InventoryRateCell } from "./table-cells";
+import { formatInventoryDetailDuration, formatInventoryTableDuration, InventoryHistoryCell, InventoryRateCell } from "./table-cells";
 
 const baseRow: SkuStockView = {
   sku: "DEMO-PARENT", title: "虚构演示商品", variant_title: null,
@@ -13,6 +13,18 @@ const baseRow: SkuStockView = {
 };
 
 describe("Inventory table aggregate cells", () => {
+  it("uses table duration labels for child SKUs, but never shows a parent placeholder", () => {
+    expect(formatInventoryTableDuration(baseRow)).toBe("—");
+    expect(formatInventoryTableDuration({ is_parent: false, days_in_status: 1 })).toBe("今天");
+    expect(formatInventoryTableDuration({ is_parent: false, days_in_status: 90 })).toBe("60 天+");
+  });
+
+  it("keeps exact child duration in the detail drawer while suppressing parent placeholders", () => {
+    expect(formatInventoryDetailDuration(baseRow)).toBe("—");
+    expect(formatInventoryDetailDuration({ is_parent: false, days_in_status: 1 })).toBe("1 天");
+    expect(formatInventoryDetailDuration({ is_parent: false, days_in_status: 90 })).toBe("90 天");
+  });
+
   it("shows a dash without a rate track for missing aggregate rates", () => {
     const { container } = render(<InventoryRateCell value={null} />);
     expect(screen.getByText("—")).toBeTruthy();
