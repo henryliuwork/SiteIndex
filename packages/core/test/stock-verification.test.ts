@@ -21,12 +21,22 @@ import {
   type FakeSiteService,
 } from "../../../fixtures/e-v041-loopback/fake-site-service.mjs";
 
-const atomicWriteFault = vi.hoisted(() => ({ target: null as string | null }));
+const atomicWriteFault = vi.hoisted(() => ({
+  target: null as string | null,
+  delayTarget: null as string | null,
+  onDelay: null as (() => void) | null,
+  releaseDelay: null as (() => void) | null,
+}));
 vi.mock("../src/io/atomic-write", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/io/atomic-write")>();
   return {
     ...actual,
     atomicWrite: async (filePath: string, data: string | Uint8Array) => {
+      if (atomicWriteFault.delayTarget === filePath) {
+        atomicWriteFault.delayTarget = null;
+        atomicWriteFault.onDelay?.();
+        await new Promise<void>((resolve) => { atomicWriteFault.releaseDelay = resolve; });
+      }
       if (atomicWriteFault.target === filePath) {
         atomicWriteFault.target = null;
         throw new Error("Injected daily output interruption");
@@ -55,7 +65,11 @@ const runDate = "2026-10-22";
 const runNow = new Date("2026-10-22T12:00:00Z");
 
 afterEach(async () => {
+  atomicWriteFault.releaseDelay?.();
   atomicWriteFault.target = null;
+  atomicWriteFault.delayTarget = null;
+  atomicWriteFault.onDelay = null;
+  atomicWriteFault.releaseDelay = null;
   await Promise.all(siteServices.splice(0).map((service) => service.close()));
   await Promise.all(graphqlServices.splice(0).map((service) => service.close()));
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -151,6 +165,30 @@ async function runProjectDaily(root: string, site: TestSite, date = runDate) {
 }
 
 describe("feed-absence stock verification", () => {
+  it("serializes concurrent public runDaily calls with the same project lock", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-daily-lock-"));
+    tempDirs.push(root);
+    const paths = pathsFor("legacy");
+    await mkdir(path.join(root, paths.index), { recursive: true });
+    await writeFile(path.join(root, paths.site), JSON.stringify({ domain: "shop.example.test", timezone: "UTC" }) + "\n");
+    const latestPath = path.join(root, paths.inventoryLatest);
+    let signalDelay!: () => void;
+    const delayed = new Promise<void>((resolve) => { signalDelay = resolve; });
+    atomicWriteFault.delayTarget = latestPath;
+    atomicWriteFault.onDelay = signalDelay;
+
+    const first = runDaily(root, [{ sku: "DEMO-LOCKED", stock_status: "in_stock", price: 12 }], { date: runDate, now: runNow });
+    await delayed;
+    const second = runDaily(root, [{ sku: "DEMO-LOCKED", stock_status: "out_of_stock", price: 12 }], { date: runDate, now: runNow });
+    await expect(second).rejects.toMatchObject({ code: "LOCKED" });
+    atomicWriteFault.releaseDelay?.();
+    await expect(first).resolves.toMatchObject({ status: "ok" });
+
+    const latest = await readJsonl(latestPath);
+    expect(latest).toHaveLength(1);
+    expect(latest[0]).toMatchObject({ sku: "DEMO-LOCKED", stock_status: "in_stock" });
+  });
+
   it("checks only absent active SKUs and aggregates GraphQL results in both layouts", async () => {
     const siteService = await createSiteService({
       feedRows: [{ sku: "DEMO-PRESENT", availability: "out of stock" }],

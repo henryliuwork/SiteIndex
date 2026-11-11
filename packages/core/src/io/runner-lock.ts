@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { open, readFile, rename, unlink, lstat, mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
@@ -185,7 +186,7 @@ export async function unlinkOwnedLock(
   }
 }
 
-export async function withLock<T>(project: string, fn: () => Promise<T> | T, options: LockOptions = {}): Promise<T> {
+async function withExclusiveLock<T>(project: string, fn: () => Promise<T> | T, options: LockOptions = {}): Promise<T> {
   const paths = pathsFor(await resolveProjectLayoutOrLegacy(project));
   const lockPath = path.join(project, paths.lock);
   const now = options.now ?? (() => new Date());
@@ -240,6 +241,35 @@ export async function withLock<T>(project: string, fn: () => Promise<T> | T, opt
     await handle?.close().catch(() => undefined);
     await cleanup().catch(() => undefined);
     throw error;
+  }
+}
+
+interface LockContextToken { active: boolean }
+const lockContext = new AsyncLocalStorage<Map<string, LockContextToken>>();
+
+/**
+ * Acquire one cross-process project lock. Nested calls in the same async operation reuse
+ * its live lock, so Core services can protect a whole Job while lower-level readers and
+ * writers keep their own safe public entry points.
+ */
+export async function withLock<T>(project: string, fn: () => Promise<T> | T, options: LockOptions = {}): Promise<T> {
+  const key = path.resolve(project);
+  const inherited = lockContext.getStore();
+  const current = inherited?.get(key);
+  if (current?.active) return await fn();
+
+  const token: LockContextToken = { active: true };
+  const next = new Map(inherited ?? []);
+  next.set(key, token);
+  try {
+    return await withExclusiveLock(project, () => lockContext.run(next, async () => {
+      try { return await fn(); }
+      finally { token.active = false; }
+    }), options);
+  } finally {
+    // Detached async work inherits the ALS map; invalidate the token as soon as its
+    // owning file lock is released so later work must acquire a fresh cross-process lock.
+    token.active = false;
   }
 }
 

@@ -91,6 +91,7 @@ import { hasPriceChangeWithin } from "../inventory/price-history";
 import { parentStockRows } from "../inventory/parent-stock-view";
 import { groupProductRows } from "../products/parent-view";
 import { runDaily } from "../jobs/daily";
+import { recoverDailyOutputTransaction } from "../jobs/daily-output-transaction";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
 import { cleanFolderName, createConfig, createProjectFiles } from "../projects/create";
@@ -1374,45 +1375,67 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   const cache = new Map<string, SnapshotCacheEntry>();
   const projectSummaryCache = new Map<string, ProjectSummaryCacheEntry>();
   const createdTags = new Map<string, Set<string>>();
+  const readQueues = new Map<string, Promise<void>>();
   const resolve = (id: ProjectId) => path.resolve(ctx.resolveProject(id));
   const invalidate = (projectPath: string) => {
     const key = path.resolve(projectPath);
     cache.delete(key);
     projectSummaryCache.delete(key);
   };
+  const serializeRead = async <T>(projectPath: string, read: () => Promise<T>): Promise<T> => {
+    const key = path.resolve(projectPath);
+    const previous = readQueues.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolveGate) => { release = resolveGate; });
+    const queued = previous.then(() => gate);
+    readQueues.set(key, queued);
+    await previous;
+    try {
+      return await read();
+    } finally {
+      release();
+      if (readQueues.get(key) === queued) readQueues.delete(key);
+    }
+  };
   const load = async (projectPath: string): Promise<ProjectSnapshot> => {
     const key = path.resolve(projectPath);
-    let fingerprint: string;
-    try {
-      fingerprint = await snapshotFingerprint(key);
-    } catch {
-      cache.delete(key);
-      return loadSnapshot(key);
-    }
-    const existing = cache.get(key);
-    if (existing?.fingerprint === fingerprint) return existing.snapshot;
-    const pending = loadSnapshot(key);
-    cache.set(key, { fingerprint, snapshot: pending });
-    void pending.catch(() => { if (cache.get(key)?.snapshot === pending) cache.delete(key); });
-    return pending;
+    return serializeRead(key, () => withLock(key, async () => {
+      await recoverDailyOutputTransaction(key, pathsFor(await resolveProjectLayout(key)));
+      let fingerprint: string;
+      try {
+        fingerprint = await snapshotFingerprint(key);
+      } catch {
+        cache.delete(key);
+        return loadSnapshot(key);
+      }
+      const existing = cache.get(key);
+      if (existing?.fingerprint === fingerprint) return existing.snapshot;
+      const pending = loadSnapshot(key);
+      cache.set(key, { fingerprint, snapshot: pending });
+      void pending.catch(() => { if (cache.get(key)?.snapshot === pending) cache.delete(key); });
+      return pending;
+    }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "read-snapshot" }));
   };
   const loadProjectSummary = async (projectPath: string): Promise<ProjectSummarySnapshot> => {
     const key = path.resolve(projectPath);
-    let fingerprint: string;
-    try {
-      fingerprint = await snapshotFingerprint(key, PROJECT_SUMMARY_FILE_PATHS);
-    } catch {
-      projectSummaryCache.delete(key);
-      return loadProjectSummarySnapshot(key);
-    }
-    const existing = projectSummaryCache.get(key);
-    if (existing?.fingerprint === fingerprint) return existing.snapshot;
-    const pending = loadProjectSummarySnapshot(key);
-    projectSummaryCache.set(key, { fingerprint, snapshot: pending });
-    void pending.catch(() => {
-      if (projectSummaryCache.get(key)?.snapshot === pending) projectSummaryCache.delete(key);
-    });
-    return pending;
+    return serializeRead(key, () => withLock(key, async () => {
+      await recoverDailyOutputTransaction(key, pathsFor(await resolveProjectLayout(key)));
+      let fingerprint: string;
+      try {
+        fingerprint = await snapshotFingerprint(key, PROJECT_SUMMARY_FILE_PATHS);
+      } catch {
+        projectSummaryCache.delete(key);
+        return loadProjectSummarySnapshot(key);
+      }
+      const existing = projectSummaryCache.get(key);
+      if (existing?.fingerprint === fingerprint) return existing.snapshot;
+      const pending = loadProjectSummarySnapshot(key);
+      projectSummaryCache.set(key, { fingerprint, snapshot: pending });
+      void pending.catch(() => {
+        if (projectSummaryCache.get(key)?.snapshot === pending) projectSummaryCache.delete(key);
+      });
+      return pending;
+    }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "read-project-summary" }));
   };
 
   const runJob: CoreService["runJob"] = async (req, report) => {
@@ -1461,6 +1484,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           await cp(projectPath, executionPath, { recursive: true, force: false, errorOnExist: false });
         }
         const executionPaths = await pathsForProject(executionPath);
+        if (req.dryRun) {
+          try { await unlink(path.join(executionPath, executionPaths.lock)); }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
+        }
+        const recoverOutputs = async () => recoverDailyOutputTransaction(executionPath, executionPaths);
+        await recoverOutputs();
 
         let jobResult: JobResult;
         if (req.job === "init") {
@@ -1496,6 +1527,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           }
           progress(50, "weekly", "正在同步 SEO 页面与内容");
           try {
+            await recoverOutputs();
             const weekly = await runWeekly(executionPath, config, { date: requestedDate,
               onProgress: (_step, message) => progress(55, "weekly", message) });
             Object.assign(counts, weekly.counts);
@@ -1508,11 +1540,13 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           const viewErrors: string[] = [];
           progress(70, "views", "正在生成视图并校验项目文件");
           try {
+            await recoverOutputs();
             const built = await buildViews(executionPath, { date: requestedDate });
             counts.products = built.products;
             counts.sku_stock = built.skuStock;
           } catch (error) { viewErrors.push(`视图生成失败：${error instanceof Error ? error.message : String(error)}`); }
           try {
+            await recoverOutputs();
             const validation = await validateProjectFiles(executionPath, { trigger: req.trigger });
             if (validation.summary.error || validation.summary.missing || validation.summary.conflict_copy) {
               const files = validation.files.filter((file) => ["error", "missing", "conflict_copy"].includes(file.status));
@@ -1522,6 +1556,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           record("views", viewErrors.length ? "failed" : "ok", viewErrors.join("；") || "数据视图与文件校验完成。", 85);
           progress(90, "readme", "正在刷新 README 自动区块");
           try {
+            await recoverOutputs();
             invalidate(executionPath);
             await refreshReadmeFile(executionPath, await load(executionPath));
             const readme = steps.find((step) => step.key === "readme");

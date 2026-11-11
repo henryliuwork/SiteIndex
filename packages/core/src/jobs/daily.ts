@@ -6,6 +6,7 @@ import { compareKeys } from "../io/compare";
 import { readCsv, writeCsv } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { resolveProjectLayout } from "../io/project-layout";
+import { withLock } from "../io/runner-lock";
 import { persistDailyOutputTransaction, recoverDailyOutputTransaction } from "./daily-output-transaction";
 import { verifyMissingStock } from "./stock-verifier";
 
@@ -274,9 +275,9 @@ async function appendRun(project: string, relativePath: string, record: JsonReco
 }
 
 /** 合并一份解析后的 feed 快照，输出每日 SKU、库存、事件、汇总、日报与 runs。 */
-export async function runDaily(project: string, snapshot: readonly DailySnapshot[], options: DailyOptions = {}): Promise<DailyResult> {
+async function runDailyWithinLock(project: string, snapshot: readonly DailySnapshot[], options: DailyOptions = {}): Promise<DailyResult> {
   const paths = pathsFor(await resolveProjectLayout(project));
-  await recoverDailyOutputTransaction(project, paths.jobLogsDir);
+  await recoverDailyOutputTransaction(project, paths);
   const sitePath = path.join(project, paths.site);
   const site = JSON.parse(await readFile(sitePath, "utf8")) as DailySite;
   const now = nowDate(options.now);
@@ -499,16 +500,16 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
     return true;
   });
   const outputWrites = [
-    { target: eventPath, write: () => writeJsonl(eventPath, [...existingEvents, ...appended], "inventory_event") },
-    { target: path.join(project, paths.inventoryLatest), write: () => writeJsonl(path.join(project, paths.inventoryLatest), [...latest.values()], "inventory_latest") },
-    { target: path.join(project, paths.skus), write: () => writeJsonl(path.join(project, paths.skus), [...skus.values()], "sku") },
-    { target: summaryPath, write: () => writeCsv(summaryPath, summary, CSV_HEADERS.dailySummary, ["date", "category"]) },
+    { target: eventPath, writeTo: (destination: string) => writeJsonl(destination, [...existingEvents, ...appended], "inventory_event") },
+    { target: path.join(project, paths.inventoryLatest), writeTo: (destination: string) => writeJsonl(destination, [...latest.values()], "inventory_latest") },
+    { target: path.join(project, paths.skus), writeTo: (destination: string) => writeJsonl(destination, [...skus.values()], "sku") },
+    { target: summaryPath, writeTo: (destination: string) => writeCsv(destination, summary, CSV_HEADERS.dailySummary, ["date", "category"]) },
   ];
   // A verified batch is one recoverable multi-file write; the cursor commits only after it.
   if (verification?.processedSkus.length) {
-    await persistDailyOutputTransaction(project, paths.jobLogsDir, outputWrites);
+    await persistDailyOutputTransaction(project, paths, outputWrites);
   } else {
-    for (const output of outputWrites) await output.write();
+    for (const output of outputWrites) await output.writeTo(output.target);
   }
 
   if (verification && cursorPath && committedCursor) {
@@ -544,8 +545,15 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
   return { exitCode: EXIT.OK, status, counts, errors };
 }
 
-/** 与 CLI/Job 入口共用：读取磁盘 JSONL 快照后执行 daily。 */
+/** Daily 的公共入口持有项目锁；runJob 中的嵌套调用由 withLock 复用同一锁。 */
+export async function runDaily(project: string, snapshot: readonly DailySnapshot[], options: DailyOptions = {}): Promise<DailyResult> {
+  return withLock(project, () => runDailyWithinLock(project, snapshot, options), { job: "daily" });
+}
+
+/** 与 CLI/Job 入口共用：项目锁覆盖快照读取和整个 daily 执行。 */
 export async function runDailyFromFile(project: string, snapshotPath: string, options: DailyOptions = {}): Promise<DailyResult> {
-  const rows = await readJsonl(snapshotPath);
-  return runDaily(project, rows as DailySnapshot[], options);
+  return withLock(project, async () => {
+    const rows = await readJsonl(snapshotPath);
+    return runDailyWithinLock(project, rows as DailySnapshot[], options);
+  }, { job: "daily" });
 }

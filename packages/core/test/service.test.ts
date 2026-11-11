@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -42,6 +43,48 @@ async function makeProject(): Promise<{ root: string; projectPath: string }> {
   return { root, projectPath };
 }
 
+async function installInterruptedDailyTransaction(
+  projectPath: string,
+  options: { afterIndexes?: readonly number[]; externalIndex?: number } = {},
+): Promise<{ manifestPath: string; backupDirectory: string; targets: string[]; externalBytes?: Buffer }> {
+  const paths = PATHS;
+  const targets = [
+    `${paths.eventsDir}/2026-10.jsonl`,
+    paths.inventoryLatest,
+    paths.skus,
+    paths.dailySummary,
+  ];
+  const backupDirectory = path.join(projectPath, paths.jobLogsDir, "daily-output-transaction-backups");
+  await mkdir(backupDirectory, { recursive: true });
+  const files = [];
+  for (const [index, target] of targets.entries()) {
+    const targetPath = path.join(projectPath, target);
+    const before = await readFile(targetPath);
+    const after = Buffer.from(`synthetic after ${index}\n`);
+    const backup = path.join(backupDirectory, `${index}.before`);
+    const staged = path.join(backupDirectory, `${index}.after`);
+    await writeFile(backup, before);
+    await writeFile(staged, after);
+    const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+    files.push({
+      target,
+      backup: `${paths.jobLogsDir}/daily-output-transaction-backups/${index}.before`,
+      staged: `${paths.jobLogsDir}/daily-output-transaction-backups/${index}.after`,
+      before_hash: sha256(before),
+      after_hash: sha256(after),
+    });
+    if (options.afterIndexes?.includes(index)) await writeFile(targetPath, after);
+  }
+  let externalBytes: Buffer | undefined;
+  if (options.externalIndex !== undefined) {
+    externalBytes = Buffer.from("synthetic external edit\n");
+    await writeFile(path.join(projectPath, targets[options.externalIndex]!), externalBytes);
+  }
+  const manifestPath = path.join(projectPath, paths.jobLogsDir, "daily-output-transaction.json");
+  await writeFile(manifestPath, `${JSON.stringify({ version: 2, files })}\n`);
+  return { manifestPath, backupDirectory, targets, ...(externalBytes ? { externalBytes } : {}) };
+}
+
 function service(projectPath: string) {
   return createCoreService({
     resolveProject: (id) => id === "fixture" ? projectPath : path.join(projectPath, "missing"),
@@ -82,6 +125,83 @@ describe("createCoreService initial namespaces", () => {
     expect(inventory.category_source).toBe(detail.config.categories?.mode ?? "feed");
     expect(await api.inventory.dailyReport("fixture", "2026-10-21")).toContain("库存日报");
     expect(await api.inventory.dailyReport("fixture", "2026-10-18")).toBeNull();
+  }, 30_000);
+
+  it("recovers an interrupted daily transaction before a cached inventory read", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const expected = await api.inventory.summary("fixture", 30);
+    const paths = PATHS;
+    const originalEvents = await readFile(path.join(projectPath, paths.eventsDir, "2026-10.jsonl"));
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0] });
+
+    const recovered = await api.inventory.summary("fixture", 30);
+
+    expect(recovered).toEqual(expected);
+    expect(await readFile(path.join(projectPath, paths.eventsDir, "2026-10.jsonl"))).toEqual(originalEvents);
+    await expect(readFile(transaction.manifestPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(transaction.backupDirectory, "0.before"))).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("fails closed before weekly reads when an interrupted daily output was externally changed", async () => {
+    const { projectPath } = await makeProject();
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0], externalIndex: 1 });
+    const fetchSpy = vi.fn(async () => new Response("<urlset />", { headers: { "content-type": "application/xml" } }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await service(projectPath).runJob(
+      { projectPath, job: "weekly", trigger: "manual", date: "2026-10-22" },
+      () => undefined,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.errors?.[0]).toContain("被其他进程修改");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(await readFile(path.join(projectPath, transaction.targets[1]!))).toEqual(transaction.externalBytes);
+    await expect(readFile(transaction.manifestPath)).resolves.toBeTruthy();
+    await expect(readFile(path.join(transaction.backupDirectory, "0.before"))).resolves.toBeTruthy();
+  }, 30_000);
+
+  it("keeps init from continuing into weekly after daily leaves a conflicted transaction", async () => {
+    const { projectPath } = await makeProject();
+    const configPath = path.join(projectPath, PATHS.site);
+    const config = JSON.parse(await readFile(configPath, "utf8")) as import("@siteindex/shared").SiteConfig;
+    config.base_url = "https://shop.example.test";
+    config.sitemaps = ["https://shop.example.test/sitemap.xml"];
+    config.crawl.feed_url = "https://shop.example.test/feed.csv";
+    config.crawl.rate_limit_ms = 0;
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    const requested: string[] = [];
+    const fetchSpy = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      requested.push(url.pathname);
+      if (url.pathname === "/feed.csv") {
+        await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0], externalIndex: 1 });
+        return new Response("<html><body>Login required</body></html>", {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      return new Response("<urlset />", { headers: { "content-type": "application/xml" } });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await service(projectPath).runJob(
+      { projectPath, job: "init", trigger: "manual", date: "2026-10-22" },
+      () => undefined,
+    );
+
+    expect(result.status).toBe("partial");
+    expect(result.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "daily", status: "failed", message: expect.stringContaining("网页而不是商品 feed") }),
+      expect.objectContaining({ key: "weekly", status: "failed", message: expect.stringContaining("被其他进程修改") }),
+    ]));
+    expect(requested).toEqual(["/feed.csv"]);
+    const targets = [
+      `${PATHS.eventsDir}/2026-10.jsonl`,
+      PATHS.inventoryLatest,
+    ];
+    expect(await readFile(path.join(projectPath, targets[0]!))).toEqual(Buffer.from("synthetic after 0\n"));
+    expect(await readFile(path.join(projectPath, targets[1]!))).toEqual(Buffer.from("synthetic external edit\n"));
   }, 30_000);
 
   it("surfaces feed-anomaly events in the inventory summary without treating them as SEO issues", async () => {
