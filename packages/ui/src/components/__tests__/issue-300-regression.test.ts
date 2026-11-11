@@ -94,6 +94,12 @@ describe("Issue #300 SEO row action hit testing", () => {
     try {
       await page.goto(`${baseUrl}/#/p/demo/seo`, { waitUntil: "domcontentloaded" });
       const scroll = page.locator(".si-table-scroll").first();
+      await scroll.waitFor({ state: "attached" });
+      const hideTableStyle = await page.addStyleTag({ content: ".si-seo-page .si-data-table.is-fill { display: none !important; }" });
+      await page.waitForFunction(() => (document.querySelector(".si-table-scroll") as HTMLElement | null)?.clientHeight === 0);
+      expect(await scroll.evaluate((element) => element.clientHeight)).toBe(0);
+      expect(await page.locator(".si-data-table").first().evaluate((element) => element.classList.contains("is-compact-fill"))).toBe(false);
+      await hideTableStyle.evaluate((element) => element.parentNode?.removeChild(element));
       await scroll.waitFor({ state: "visible" });
       // Reproduce the 1100×720 packaged layout recorded by E: a fill table collapsed to a 55px scroll viewport.
       await page.addStyleTag({ content: `
@@ -128,6 +134,19 @@ describe("Issue #300 SEO row action hit testing", () => {
       // This is an ordinary Playwright pointer click: no force option and no DOM-dispatched click.
       await actionTrigger.click({ timeout: 5_000 });
       await page.locator(".si-seo-issue-menu").first().waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+
+      // The compact fallback must clear when the parent grows, even without a window resize.
+      await page.addStyleTag({ content: `
+        .si-seo-page .si-data-table.is-fill { height: 600px; min-height: 0; flex: 0 0 600px; }
+        .si-seo-page .si-data-table.is-fill > .si-table-scroll { height: auto; min-height: 0; flex: 1 1 auto; }
+      ` });
+      await page.waitForFunction(() => {
+        const table = document.querySelector(".si-data-table");
+        const scrollArea = document.querySelector(".si-table-scroll");
+        return Boolean(table && scrollArea && !table.classList.contains("is-compact-fill")
+          && table.getBoundingClientRect().height >= 500 && (scrollArea as HTMLElement).clientHeight > 80);
+      });
     } finally {
       await page.close();
     }

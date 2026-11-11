@@ -178,9 +178,14 @@ export function DataTable<T, F = Record<string, unknown>>({
     let fallbackApplied = false;
     const updateLayout = () => {
       setAvailableWidth(element.clientWidth);
+      const hasLayoutBox = element.getClientRects().length > 0;
+      if (isFill && !hasLayoutBox) return;
       if (isFill && !fallbackApplied && element.clientHeight < FILL_SCROLL_COMPACT_THRESHOLD) {
         fallbackApplied = true;
         setCompactFillFallback(true);
+      } else if (isFill && fallbackApplied && element.clientHeight > FILL_SCROLL_COMPACT_THRESHOLD) {
+        fallbackApplied = false;
+        setCompactFillFallback(false);
       }
     };
     const resetFallbackAfterViewportResize = () => {
