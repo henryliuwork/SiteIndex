@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, link, mkdtemp, mkdir, readFile, readdir, realpath, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,7 +9,7 @@ import {
   assertRunner, atomicWrite, findConflictCopies, readCsv, readJsonl, readRunner,
   withLock, writeCsv, writeJsonl, writeRunner,
 } from "../src";
-import { readOrCreateLocalHostId, unlinkOwnedLock } from "../src/io/runner-lock";
+import { readOrCreateLocalHostId, unlinkOwnedLock, withLockForTest } from "../src/io/runner-lock";
 
 const roots: string[] = [];
 async function tempDir() {
@@ -52,6 +53,28 @@ function runChildScript(source: string, cwd: string, env: NodeJS.ProcessEnv): Pr
       if (code === 0) resolve(stdout.trim());
       else reject(new Error(stderr || `Lock identity child exited (${String(code)} / ${String(signal)})`));
     });
+  });
+}
+
+function waitForMarker(markerPath: string, timeoutMs = 10_000): Promise<string> {
+  const startedAt = Date.now();
+  return new Promise((resolve, reject) => {
+    const check = async () => {
+      try {
+        resolve(await readFile(markerPath, "utf8"));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          reject(error);
+          return;
+        }
+        if (Date.now() - startedAt >= timeoutMs) {
+          reject(new Error(`Timed out waiting for process marker: ${path.basename(markerPath)}`));
+          return;
+        }
+        setTimeout(() => { void check(); }, 5);
+      }
+    };
+    void check();
   });
 }
 
@@ -512,6 +535,526 @@ describe("core io", () => {
         await childClosed;
       }
     }
+  }, 30_000);
+
+  it("allows only one stale-lock reclaimer into the critical section", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const markerDir = path.join(root, "markers");
+    await mkdir(markerDir, { recursive: true });
+    const env = {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: path.join(root, "project"),
+      SITEINDEX_TEST_MARKER_DIR: markerDir,
+    };
+    const ownerSource = [
+      'import { writeFile } from "node:fs/promises";',
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'const markers = process.env.SITEINDEX_TEST_MARKER_DIR;',
+      'if (!root || !markers) throw new Error("Missing test parameters");',
+      'await withLock(root, async () => {',
+      '  await writeFile(`${markers}/owner.entered`, "entered");',
+      '  setInterval(() => undefined, 1000);',
+      '  await new Promise(() => undefined);',
+      '}, { heartbeatMs: 60000 });',
+    ].join("\n");
+    const reclaimerSource = [
+      'import { readFile, writeFile } from "node:fs/promises";',
+      'import { withLockForTest } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'const markers = process.env.SITEINDEX_TEST_MARKER_DIR;',
+      'const role = process.env.SITEINDEX_TEST_ROLE;',
+      'if (!root || !markers || !role) throw new Error("Missing test parameters");',
+      'const wait = async (name) => { while (true) { try { await readFile(`${markers}/${name}`, "utf8"); return; } catch (error) { if (error?.code !== "ENOENT") throw error; await new Promise((resolve) => setTimeout(resolve, 5)); } } };',
+      'try {',
+      '  await withLockForTest(root, async () => {',
+      '    await writeFile(`${markers}/${role}.entered`, "entered");',
+      '    await wait(`${role}.finish`);',
+      '  }, { job: "daily", heartbeatMs: 60000 }, {',
+      '    afterStaleLockValidated: async () => {',
+      '      await writeFile(`${markers}/${role}.validated`, "validated");',
+      '      await wait(`${role}.continue`);',
+      '    },',
+      '  });',
+      '  await writeFile(`${markers}/${role}.result`, "acquired");',
+      '} catch (error) {',
+      '  const value = error && typeof error === "object" ? error : {};',
+      '  await writeFile(`${markers}/${role}.result`, `${value.code ?? "ERROR"}:${value.message ?? String(error)}`);',
+      '}',
+    ].join("\n");
+    const startChild = (source: string, role?: string) => {
+      const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source], {
+        cwd: coreDirectory,
+        env: { ...env, ...(role ? { SITEINDEX_TEST_ROLE: role } : {}) },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let output = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString("utf8"); });
+      child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+      const closed = new Promise<void>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", (code, signal) => {
+          if (code === 0 || signal !== null) resolve();
+          else reject(new Error(stderr || output || `Lock race child exited with code ${String(code)}`));
+        });
+      });
+      return { child, closed };
+    };
+    const owner = startChild(ownerSource);
+    let workers: Array<ReturnType<typeof startChild>> = [];
+    try {
+      await waitForMarker(path.join(markerDir, "owner.entered"));
+      owner.child.kill();
+      await owner.closed;
+
+      const first = startChild(reclaimerSource, "a");
+      workers.push(first);
+      await waitForMarker(path.join(markerDir, "a.validated"));
+      const second = startChild(reclaimerSource, "b");
+      workers.push(second);
+      const secondResult = await waitForMarker(path.join(markerDir, "b.result"));
+      expect(secondResult).toMatch(/^LOCKED:/);
+      await expect(readFile(path.join(markerDir, "b.entered"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+      await writeFile(path.join(markerDir, "a.continue"), "go");
+      await waitForMarker(path.join(markerDir, "a.entered"));
+      await writeFile(path.join(markerDir, "a.finish"), "go");
+      await Promise.all(workers.map((process) => process.closed));
+      expect(await readFile(path.join(markerDir, "a.result"), "utf8")).toBe("acquired");
+
+      const retry = startChild(reclaimerSource, "retry");
+      workers.push(retry);
+      await waitForMarker(path.join(markerDir, "retry.entered"));
+      await writeFile(path.join(markerDir, "retry.finish"), "go");
+      await retry.closed;
+      expect(await readFile(path.join(markerDir, "retry.result"), "utf8")).toBe("acquired");
+    } finally {
+      await writeFile(path.join(markerDir, "a.continue"), "go").catch(() => undefined);
+      await writeFile(path.join(markerDir, "b.continue"), "go").catch(() => undefined);
+      await writeFile(path.join(markerDir, "a.finish"), "go").catch(() => undefined);
+      await writeFile(path.join(markerDir, "b.finish"), "go").catch(() => undefined);
+      await writeFile(path.join(markerDir, "retry.finish"), "go").catch(() => undefined);
+      owner.child.kill();
+      for (const process of workers) process.child.kill();
+      await Promise.all([owner.closed, ...workers.map((process) => process.closed)]).catch(() => undefined);
+    }
+  }, 30_000);
+
+  it("retries stale-lock recovery in the same process after one rename failure", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    const hostId = await currentHostId(root);
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const now = new Date().toISOString();
+    await writeFile(lockPath, `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`);
+    const injected = Object.assign(new Error("injected transient rename failure"), { code: "EPERM" });
+
+    await expect(withLockForTest(root, () => "must not enter", { heartbeatMs: 60_000 }, {
+      renameStaleLock: async () => { throw injected; },
+    })).rejects.toMatchObject({ code: "EPERM" });
+    await expect(withLock(root, () => "recovered on same-process retry", { heartbeatMs: 60_000 }))
+      .resolves.toBe("recovered on same-process retry");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("does not steal an active same-process claim and retries after a release marker write failure", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    const hostId = await currentHostId(root);
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: new Date().toISOString(),
+      heartbeat: new Date().toISOString(),
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+
+    let published!: () => void;
+    const claimPublished = new Promise<void>((resolve) => { published = resolve; });
+    let continueFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { continueFirst = resolve; });
+    let failStateLink = true;
+    const renameFailure = Object.assign(new Error("injected transient rename failure"), { code: "EPERM" });
+    const stateWriteFailure = Object.assign(new Error("injected local-state write failure"), { code: "ENOSPC" });
+
+    const firstAttempt = withLockForTest(root, () => "must not enter", { heartbeatMs: 60_000 }, {
+      afterReclaimClaimPublished: async () => { published(); await firstGate; },
+      renameStaleLock: async () => { throw renameFailure; },
+      linkReclaimClaimState: async (tempPath, statePath) => {
+        if (failStateLink) {
+          failStateLink = false;
+          throw stateWriteFailure;
+        }
+        await link(tempPath, statePath);
+      },
+    });
+    await claimPublished;
+    await expect(withLock(root, () => "must not steal active same-process claim", { heartbeatMs: 60_000 }))
+      .rejects.toMatchObject({ code: "LOCKED" });
+
+    continueFirst();
+    await expect(firstAttempt).rejects.toMatchObject({ code: "LOCKED" });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+    await expect(withLock(root, () => "recovered after local state returned", { heartbeatMs: 60_000 }))
+      .resolves.toBe("recovered after local state returned");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("recovers after a stale-lock reclaimer crashes after publishing its claim", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    expect(exitedPid).toBeGreaterThan(0);
+    const now = new Date().toISOString();
+    await writeFile(lockPath, `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`);
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const crashSource = [
+      'import { withLockForTest } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'await withLockForTest(root, () => "must not enter", { heartbeatMs: 60000 }, {',
+      '  afterReclaimClaimPublished: async () => process.exit(73),',
+      '});',
+    ].join("\n");
+    await expect(runChildScript(crashSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).rejects.toThrow(/Lock identity child exited \(73 \/ null\)/);
+
+    const recoverSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'await withLock(root, () => "recovered", { heartbeatMs: 60000 }).then((value) => process.stdout.write(value));',
+    ].join("\n");
+    await expect(runChildScript(recoverSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).resolves.toBe("recovered");
+    const claimFiles = await readdir(path.join(path.dirname(hostIdPath), "lock-recovery"));
+    expect(claimFiles.some((name) => name.endsWith(".root"))).toBe(true);
+    expect(claimFiles.some((name) => name.endsWith(".state"))).toBe(true);
+  }, 30_000);
+
+  it("rejects a claim path replacement between handle read and path identity check", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    const markerDir = path.join(root, "markers");
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    await mkdir(markerDir, { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const now = new Date().toISOString();
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const crashSource = [
+      'import { withLockForTest } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'await withLockForTest(root, () => "must not enter", { heartbeatMs: 60000 }, {',
+      '  afterReclaimClaimPublished: async () => process.exit(75),',
+      '});',
+    ].join("\n");
+    await expect(runChildScript(crashSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).rejects.toThrow(/Lock identity child exited \(75 \/ null\)/);
+
+    const recoveryDirectory = path.join(path.dirname(hostIdPath), "lock-recovery");
+    const rootName = (await readdir(recoveryDirectory)).find((name) => name.endsWith(".root"));
+    expect(rootName).toBeDefined();
+    const rootClaimPath = path.join(recoveryDirectory, rootName!);
+    const oldClaim = JSON.parse(await readFile(rootClaimPath, "utf8")) as {
+      host_id: string; pid: number; token: string; lock_key: string; previous_token: string | null;
+    };
+    const replacementTemp = `${rootClaimPath}.replacement-${randomUUID()}`;
+    const readMarker = path.join(markerDir, "claim-read");
+    const continueMarker = path.join(markerDir, "continue");
+    const resultMarker = path.join(markerDir, "result");
+    const source = [
+      'import { readFile, writeFile } from "node:fs/promises";',
+      'import { withLockForTest } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'const markers = process.env.SITEINDEX_TEST_MARKER_DIR;',
+      'if (!root || !markers) throw new Error("Missing test parameters");',
+      'const wait = async (name) => { while (true) { try { await readFile(`${markers}/${name}`, "utf8"); return; } catch (error) { if (error?.code !== "ENOENT") throw error; await new Promise((resolve) => setTimeout(resolve, 5)); } } };',
+      'try {',
+      '  await withLockForTest(root, () => "must not enter", { heartbeatMs: 60000 }, {',
+      '    afterReclaimClaimReadBeforePathCheck: async () => { await writeFile(`${markers}/claim-read`, "ready"); await wait("continue"); },',
+      '  });',
+      '  await writeFile(`${markers}/result`, "ACQUIRED");',
+      '} catch (error) { const value = error && typeof error === "object" ? error : {}; await writeFile(`${markers}/result`, `${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source], {
+      cwd: coreDirectory,
+      env: {
+        ...process.env,
+        ...hostIdentityEnvironment(stateRoot),
+        SITEINDEX_TEST_LOCK_ROOT: project,
+        SITEINDEX_TEST_MARKER_DIR: markerDir,
+      },
+      stdio: "ignore",
+    });
+    const closed = new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", (code) => code === 0 ? resolve() : reject(new Error(`Claim reader exited with ${String(code)}`)));
+    });
+    try {
+      await waitForMarker(readMarker);
+      await unlink(rootClaimPath);
+      await writeFile(replacementTemp, `${JSON.stringify({
+        version: 1,
+        host_id: oldClaim.host_id,
+        pid: process.pid,
+        token: randomUUID(),
+        lock_key: oldClaim.lock_key,
+        previous_token: null,
+      })}\n`, { flag: "wx" });
+      await link(replacementTemp, rootClaimPath);
+      await writeFile(continueMarker, "go");
+      await closed;
+      expect(await readFile(resultMarker, "utf8")).toMatch(/^LOCKED:/);
+      const obsoleteSuccessor = path.join(recoveryDirectory, `${oldClaim.lock_key}.${oldClaim.token}`);
+      await expect(lstat(obsoleteSuccessor)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+    } finally {
+      await writeFile(continueMarker, "go").catch(() => undefined);
+      if (child.exitCode === null) child.kill();
+      await closed.catch(() => undefined);
+    }
+  }, 30_000);
+
+  it("fails closed when a previous stale-lock reclaim claim is malformed", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const now = new Date().toISOString();
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const crashSource = [
+      'import { withLockForTest } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'await withLockForTest(root, () => "must not enter", { heartbeatMs: 60000 }, {',
+      '  afterReclaimClaimPublished: async () => process.exit(74),',
+      '});',
+    ].join("\n");
+    await expect(runChildScript(crashSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).rejects.toThrow(/Lock identity child exited \(74 \/ null\)/);
+
+    const recoveryDirectory = path.join(path.dirname(hostIdPath), "lock-recovery");
+    const rootClaim = (await readdir(recoveryDirectory)).find((name) => name.endsWith(".root"));
+    expect(rootClaim).toBeDefined();
+    await writeFile(path.join(recoveryDirectory, rootClaim!), "{partial");
+    const attemptSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'try { await withLock(root, () => "must not enter", { heartbeatMs: 60000 }); }',
+      'catch (error) { const value = error && typeof error === "object" ? error : {}; process.stdout.write(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    await expect(runChildScript(attemptSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).resolves.toMatch(/^LOCKED:/);
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+  }, 30_000);
+
+  it("fails closed at 1024 reclaim generations and recovers after offline local-state reset", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: new Date().toISOString(),
+      heartbeat: new Date().toISOString(),
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+    const lockIdentity = await lstat(lockPath);
+    const lockKey = createHash("sha256")
+      .update(`${await realpath(lockPath)}\0${lockIdentity.dev}:${lockIdentity.ino}:${lockIdentity.size}:${lockIdentity.mtimeMs}:${lockIdentity.ctimeMs}\0${staleLock}`)
+      .digest("hex");
+    const recoveryDirectory = path.join(path.dirname(hostIdPath), "lock-recovery");
+    await mkdir(recoveryDirectory, { recursive: true, mode: 0o700 });
+    let previousToken: string | null = null;
+    for (let generation = 0; generation < 1024; generation += 1) {
+      const token = randomUUID();
+      const claimPath = path.join(recoveryDirectory, generation === 0
+        ? `${lockKey}.root`
+        : `${lockKey}.${previousToken}`);
+      await writeFile(claimPath, `${JSON.stringify({
+        version: 1,
+        host_id: hostId,
+        pid: exitedPid,
+        token,
+        lock_key: lockKey,
+        previous_token: previousToken,
+      })}\n`, { flag: "wx", mode: 0o600 });
+      previousToken = token;
+    }
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const attemptSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'try { const value = await withLock(root, () => "must not enter", { heartbeatMs: 60000 }); process.stdout.write(value); }',
+      'catch (error) { const value = error && typeof error === "object" ? error : {}; process.stdout.write(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    const env = {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    };
+    await expect(runChildScript(attemptSource, coreDirectory, env)).resolves.toMatch(/^LOCKED:.*历史过长/);
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+
+    // This isolated test models the documented reset: all SiteIndex processes are stopped,
+    // then only per-user recovery metadata is cleared; project files are untouched.
+    await rm(recoveryDirectory, { recursive: true, force: true });
+    const recoveredSource = attemptSource.replace('() => "must not enter"', '() => "recovered"');
+    await expect(runChildScript(recoveredSource, coreDirectory, env)).resolves.toBe("recovered");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  }, 60_000);
+
+  it("returns a structured LOCKED error when the local reclaim directory is unavailable", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const now = new Date().toISOString();
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+    await writeFile(path.join(path.dirname(hostIdPath), "lock-recovery"), "not a directory");
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const attemptSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'try { await withLock(root, () => "must not enter", { heartbeatMs: 60000 }); }',
+      'catch (error) { const value = error && typeof error === "object" ? error : {}; process.stdout.write(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    await expect(runChildScript(attemptSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).resolves.toMatch(/^LOCKED:/);
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
   }, 30_000);
 
   it("handles 200 concurrent lock attempts without exposing partial JSON", async () => {

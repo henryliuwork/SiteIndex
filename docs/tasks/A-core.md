@@ -14,7 +14,7 @@
 - [x] `atomicWrite(path, data)`：同目录临时文件 → fsync → rename；Windows `EPERM/EBUSY` 重试 10 次（200ms 递增）
 - [x] JSONL 读写：按主键排序（`compareKeys`，不用 localeCompare）、键顺序固定、末尾换行，与参考实现逐字节一致
 - [x] CSV 读写：表头来自 `CSV_HEADERS`，引号规则与 Python `csv` 模块一致
-- [x] `index/.lock`：`wx` 创建、原子写入初始记录与 30 秒心跳、10 分钟僵尸锁回收；空或截断记录短暂重试后返回结构化占用错误；`withLock(project, fn)`
+- [x] `index/.lock`：`wx` 创建、原子写入初始记录与 30 秒心跳、10 分钟僵尸锁回收；仅回收同主机且确认进程已退出的锁；通过用户本机状态目录中的不可变认领链串行化多个 Core 回收者，回收者崩溃后由下一认领者续接；失败时为自身 token 原子发布 `released` 状态，成功后发布 `completed` 状态，不删除或替换 claim 节点；同一句柄读取并核对路径 inode，覆盖 claim 路径 ABA；状态标记写入失败后仅当前模块已确认退出回收流程的自身 token 可在同进程重试时续接，活跃 token 仍 fail closed；空、损坏或未知认领状态及认领目录不可用时 fail closed。每个精确 stale-lock 快照最多遍历 1024 代，超限不动项目锁并返回 `LOCKED`；本机 recovery 记录按不同快照累计且 append-only 保留以避免 ABA，无自动 GC。超限维护恢复需先退出该用户的全部 SiteIndex/Core 进程，再清理本机 `lock-recovery` 目录后重试（不触碰项目数据）。项目 `.lock` 仍在项目目录以供其他设备观察，云盘同步不是跨设备原子互斥；非协作同步程序若恰在最后一次 `lstat` 后替换 `.lock`，Node 可移植 API 无法条件删除该路径。ABA 屏障测试通过暂停 claim 读取并手动替换路径模拟竞态窗口，不代表复现完整自然三进程交错。
 - [x] `.runner.json` 读写；`assertRunner(project, deviceId, trigger)`（定时模式下非执行设备 → 退出码 5）
 - [x] 云盘冲突副本检测（`DEFAULT_CONFLICT_PATTERNS`）
 - **验收**：单测覆盖并发写同一文件、锁超时、冲突副本识别
