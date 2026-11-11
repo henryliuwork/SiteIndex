@@ -88,34 +88,75 @@ export interface MediaSkuRecoveryPartition {
   not_started_skus: readonly string[];
 }
 
-/** 验证新格式的逐 SKU 恢复结果完整、互斥且保持各分组的请求顺序。 */
-export function isValidMediaSkuRecoveryPartition(partition: MediaSkuRecoveryPartition): boolean {
-  const { requested_skus, state, results, unknown_skus, not_started_skus } = partition;
-  const requested = new Set(requested_skus);
-  if (requested.size !== requested_skus.length) return false;
+const MEDIA_BATCH_STATES = ["complete", "interrupted", "outcome_unknown"] as const;
+const MEDIA_PREPARE_STATUSES = ["uploaded", "reused", "recorded", "skipped_has_url", "failed"] as const;
 
-  const resultSkus = results.map(({ sku }) => sku);
-  const assignedSkus = [...resultSkus, ...unknown_skus, ...not_started_skus];
-  if (assignedSkus.length !== requested_skus.length || new Set(assignedSkus).size !== assignedSkus.length) return false;
-  if (assignedSkus.some((sku) => !requested.has(sku))) return false;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
-  const requestOrder = new Map(requested_skus.map((sku, index) => [sku, index]));
-  const preservesRequestOrder = (skus: readonly string[]): boolean => {
-    let previous = -1;
-    for (const sku of skus) {
-      const current = requestOrder.get(sku);
-      if (current === undefined || current <= previous) return false;
-      previous = current;
+function isStringArray(value: unknown): value is string[] {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index) || typeof value[index] !== "string") return false;
+  }
+  return true;
+}
+
+function isMediaPrepareResult(value: unknown): value is MediaPrepareSkuResult {
+  if (!isRecord(value)) return false;
+  const { sku, status, reason, image_url } = value;
+  return typeof sku === "string"
+    && MEDIA_PREPARE_STATUSES.some((allowed) => allowed === status)
+    && (reason === undefined || typeof reason === "string")
+    && (image_url === undefined || typeof image_url === "string");
+}
+
+function isMediaPrepareResultArray(value: unknown): value is MediaPrepareSkuResult[] {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index) || !isMediaPrepareResult(value[index])) return false;
+  }
+  return true;
+}
+
+/** 校验来自磁盘或 IPC 的新格式逐 SKU 结果；旧/损坏数据返回 false，不抛异常。 */
+export function isValidMediaSkuRecoveryPartition(value: unknown): value is MediaSkuRecoveryPartition {
+  try {
+    if (!isRecord(value)) return false;
+    const { requested_skus, state, results, unknown_skus, not_started_skus } = value;
+    if (!isStringArray(requested_skus) || !isStringArray(unknown_skus) || !isStringArray(not_started_skus)) return false;
+    if (!isMediaPrepareResultArray(results) || !MEDIA_BATCH_STATES.some((allowed) => allowed === state)) return false;
+
+    const requested = new Set(requested_skus);
+    if (requested.size !== requested_skus.length) return false;
+
+    const resultSkus = results.map(({ sku }) => sku);
+    const assignedSkus = [...resultSkus, ...unknown_skus, ...not_started_skus];
+    if (assignedSkus.length !== requested_skus.length || new Set(assignedSkus).size !== assignedSkus.length) return false;
+    if (assignedSkus.some((sku) => !requested.has(sku))) return false;
+
+    const requestOrder = new Map(requested_skus.map((sku, index) => [sku, index]));
+    const preservesRequestOrder = (skus: readonly string[]): boolean => {
+      let previous = -1;
+      for (const sku of skus) {
+        const current = requestOrder.get(sku);
+        if (current === undefined || current <= previous) return false;
+        previous = current;
+      }
+      return true;
+    };
+    if (!preservesRequestOrder(resultSkus) || !preservesRequestOrder(unknown_skus) || !preservesRequestOrder(not_started_skus)) {
+      return false;
     }
-    return true;
-  };
-  if (!preservesRequestOrder(resultSkus) || !preservesRequestOrder(unknown_skus) || !preservesRequestOrder(not_started_skus)) {
+
+    if (state === "complete") return unknown_skus.length === 0 && not_started_skus.length === 0;
+    if (state === "interrupted") return unknown_skus.length === 0 && not_started_skus.length > 0;
+    if (state === "outcome_unknown") return unknown_skus.length > 0;
+    return false;
+  } catch {
     return false;
   }
-
-  if (state === "complete") return unknown_skus.length === 0 && not_started_skus.length === 0;
-  if (state === "interrupted") return unknown_skus.length === 0 && not_started_skus.length > 0;
-  return unknown_skus.length > 0;
 }
 
 /** 进度回调：core 的每个 Job 接收它；desktop 转发为 IPC 事件，cli 打印到终端 */

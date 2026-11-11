@@ -51,6 +51,9 @@ describe("K5 media and stock contracts", () => {
     expect(isValidMediaSkuRecoveryPartition(outcomeUnknown)).toBe(true);
   });
 
+  const sparseSkuArray = new Array<string>(1);
+  const sparseResultArray = new Array<unknown>(1);
+
   it.each([
     ["overlap", {
       requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
@@ -105,6 +108,75 @@ describe("K5 media and stock contracts", () => {
     expect(isValidMediaSkuRecoveryPartition(partition)).toBe(false);
   });
 
+  it.each([
+    ["null", null],
+    ["missing fields", {}],
+    ["missing not-started group", {
+      requested_skus: ["DEMO-WP-001"],
+      state: "complete",
+      results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      unknown_skus: [],
+    }],
+    ["non-array request", {
+      requested_skus: "DEMO-WP-001",
+      state: "complete",
+      results: [],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+    ["sparse SKU array", {
+      requested_skus: sparseSkuArray,
+      state: "complete",
+      results: [],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+    ["non-string SKU", {
+      requested_skus: [1],
+      state: "complete",
+      results: [],
+      unknown_skus: [],
+      not_started_skus: [1],
+    }],
+    ["invalid batch state", {
+      requested_skus: ["DEMO-WP-001"],
+      state: "garbage",
+      results: [],
+      unknown_skus: ["DEMO-WP-001"],
+      not_started_skus: [],
+    }],
+    ["invalid result status", {
+      requested_skus: ["DEMO-WP-001"],
+      state: "complete",
+      results: [{ sku: "DEMO-WP-001", status: "maybe_uploaded" }],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+    ["non-object result", {
+      requested_skus: ["DEMO-WP-001"],
+      state: "complete",
+      results: [null],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+    ["sparse result array", {
+      requested_skus: ["DEMO-WP-001"],
+      state: "complete",
+      results: sparseResultArray,
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+    ["invalid optional result field", {
+      requested_skus: ["DEMO-WP-001"],
+      state: "complete",
+      results: [{ sku: "DEMO-WP-001", status: "uploaded", reason: 1 }],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+  ] as const)("returns false for malformed persisted data: %s", (_name, value) => {
+    expect(isValidMediaSkuRecoveryPartition(value)).toBe(false);
+  });
+
   it("keeps old run logs assignable while making missing recovery data unavailable", () => {
     const oldLog: RunLog = {
       run_id: "demo-old-media-run",
@@ -116,6 +188,7 @@ describe("K5 media and stock contracts", () => {
 
     expect(oldLog.media_batch_state).toBeUndefined();
     expect(oldLog.media_results).toBeUndefined();
+    expect(isValidMediaSkuRecoveryPartition(oldLog)).toBe(false);
   });
 
   it("keeps the media API additive and models asynchronous per-SKU completion", async () => {
