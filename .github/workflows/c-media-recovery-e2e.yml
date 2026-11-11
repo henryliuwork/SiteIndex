@@ -1,0 +1,62 @@
+name: C Media Recovery E2E
+
+on:
+  pull_request:
+    paths:
+      - "packages/desktop/src/main/job-manager.ts"
+      - "packages/desktop/src/main/job-manager.test.ts"
+      - "packages/desktop/src/main/job-protocol.ts"
+      - "packages/desktop/src/main/job-worker-execution.ts"
+      - "packages/desktop/src/main/job-worker-execution.test.ts"
+      - "packages/desktop/src/main/job-worker.ts"
+      - "packages/desktop/src/main/media-recovery-harness.ts"
+      - "packages/desktop/electron.vite.media-recovery.config.ts"
+      - "packages/desktop/scripts/create-media-recovery-builder-config.mjs"
+      - "packages/desktop/scripts/media-recovery-electron-e2e.mjs"
+      - ".github/workflows/c-media-recovery-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packaged-crash-recovery:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify checked-out source matches the PR head
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SOURCE_COMMIT) { throw "E2E source commit does not match the PR head." }
+          "SITEINDEX_MEDIA_E2E_SOURCE_COMMIT=$actual" >> $env:GITHUB_ENV
+      - name: Build production Desktop resources
+        run: pnpm --filter @siteindex/desktop prepare:dist
+      - name: Build isolated E2E main entry
+        working-directory: packages/desktop
+        run: pnpm exec electron-vite build --config electron.vite.media-recovery.config.ts
+      - name: Generate isolated builder configuration
+        working-directory: packages/desktop
+        run: node scripts/create-media-recovery-builder-config.mjs
+      - name: Package isolated Windows app
+        working-directory: packages/desktop
+        run: pnpm exec electron-builder --win dir --publish never --config electron-builder.media-recovery.generated.json
+      - name: Run crash recovery and renderer restart acceptance
+        run: node packages/desktop/scripts/media-recovery-electron-e2e.mjs artifacts/media-recovery-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c-media-recovery-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/media-recovery-summary.json
+          if-no-files-found: error
+          retention-days: 14

@@ -1,11 +1,17 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathsForProject } from "@siteindex/core";
+import type { Readable } from "node:stream";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathsForProject, readJsonl, withLock } from "@siteindex/core";
+import { withLockForTest } from "../../../core/src/io/runner-lock.js";
 import { isValidMediaSkuRecoveryPartition } from "@siteindex/shared";
 import {
+  EXIT,
   pathsFor,
   type AppSettings,
   type JobProgress,
@@ -19,6 +25,56 @@ import { createJobManager, type UtilityProcessLike } from "./job-manager.js";
 import { resolveJobRunId } from "./job-run-id.js";
 
 const roots: string[] = [];
+type LockSubprocess = ChildProcessByStdio<null, Readable, Readable>;
+const coreDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../core");
+const coreRequire = createRequire(path.join(coreDirectory, "package.json"));
+const coreRunnerUrl = pathToFileURL(path.join(coreDirectory, "src/index.ts")).href;
+const tsxLoaderUrl = pathToFileURL(path.join(path.dirname(coreRequire.resolve("tsx/cli")), "loader.mjs")).href;
+
+const coreLockSubprocessSource = `
+import path from "node:path";
+const { atomicWrite, pathsForProject, readJsonl, withLock } = await import(${JSON.stringify(coreRunnerUrl)});
+const projectPath = process.argv[2];
+const mode = process.argv[3];
+const options = { deviceId: "desktop-test-device", deviceName: "Desktop Test", job: "lock-subprocess-test" };
+if (mode === "hold") {
+  await withLock(projectPath, async () => {
+    process.stdout.write("HELD\\n");
+    await new Promise(() => setInterval(() => undefined, 1000));
+  }, options);
+} else if (mode === "try") {
+  try {
+    await withLock(projectPath, async () => undefined, options);
+    process.stdout.write("ACQUIRED\\n");
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "LOCKED") {
+      process.stdout.write("BLOCKED\\n");
+    } else {
+      process.stdout.write("UNEXPECTED\\n");
+      process.exitCode = 2;
+    }
+  }
+} else if (mode === "append") {
+  await withLock(projectPath, async () => {
+    const projectPaths = await pathsForProject(projectPath);
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const rows = await readJsonl(runsPath);
+    rows.push({
+      run_id: "2026-11-12-weekly-next",
+      job: "weekly",
+      trigger: "manual",
+      started_at: "2026-11-12T10:02:00.000Z",
+      finished_at: "2026-11-12T10:03:00.000Z",
+      status: "failed",
+    });
+    await atomicWrite(runsPath, rows.map((row) => JSON.stringify(row)).join("\\n") + "\\n");
+  }, options);
+  process.stdout.write("APPENDED\\n");
+} else {
+  process.stdout.write("INVALID\\n");
+  process.exitCode = 2;
+}
+`;
 
 function coreMediaRunId(): string {
   return `2026-11-11-media-${randomUUID()}`;
@@ -39,7 +95,7 @@ function settings(): AppSettings {
 }
 
 class FakeUtilityProcess extends EventEmitter implements UtilityProcessLike {
-  readonly pid = 45678;
+  readonly pid = 2_147_000_000;
   readonly messages: unknown[] = [];
   readonly postedReferences: unknown[] = [];
   killed = false;
@@ -87,11 +143,18 @@ async function projectDirectory(layout: ProjectLayout = "legacy"): Promise<strin
 async function writeOwnedLock(projectPath: string, child: FakeUtilityProcess, job: string): Promise<string> {
   const projectPaths = await pathsForProject(projectPath);
   const lockPath = path.join(projectPath, projectPaths.lock);
+  let hostId = "";
+  await withLock(projectPath, async () => {
+    const owned = JSON.parse(await readFile(lockPath, "utf8")) as { host_id?: unknown };
+    if (typeof owned.host_id === "string") hostId = owned.host_id;
+  }, { deviceId: settings().device_id, deviceName: settings().device_name, job: "read-test-host-id" });
+  if (!hostId) throw new Error("Core test lock did not expose a host identity.");
   await writeFile(
     lockPath,
     JSON.stringify({
       device_id: settings().device_id,
       device_name: settings().device_name,
+      host_id: hostId,
       pid: child.pid,
       job,
       started_at: "2026-10-23T01:00:00.000Z",
@@ -100,6 +163,57 @@ async function writeOwnedLock(projectPath: string, child: FakeUtilityProcess, jo
     "utf8",
   );
   return lockPath;
+}
+
+async function spawnCoreLockSubprocess(
+  projectPath: string,
+  mode: "hold" | "try" | "append",
+): Promise<LockSubprocess> {
+  const scriptPath = path.join(projectPath, ".synthetic-core-lock-subprocess.mts");
+  await writeFile(scriptPath, coreLockSubprocessSource, "utf8");
+  const child = spawn(process.execPath, ["--import", tsxLoaderUrl, scriptPath, projectPath, mode], {
+    cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../.."),
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stderr.on("data", () => undefined);
+  return child;
+}
+
+async function waitForSubprocessMarker(child: LockSubprocess, marker: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let output = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Core lock subprocess timed out."));
+    }, 20_000);
+    timer.unref?.();
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString("utf8");
+      if (output.includes(marker)) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    child.once("error", () => {
+      clearTimeout(timer);
+      reject(new Error("Core lock subprocess failed to start."));
+    });
+    child.once("exit", () => {
+      if (output.includes(marker)) return;
+      clearTimeout(timer);
+      reject(new Error("Core lock subprocess exited before reporting its state."));
+    });
+  });
+}
+
+async function waitForSubprocessExit(child: LockSubprocess): Promise<number | null> {
+  if (child.exitCode !== null) return child.exitCode;
+  if (child.signalCode !== null) return null;
+  return new Promise((resolve, reject) => {
+    child.once("error", () => reject(new Error("Core lock subprocess failed.")));
+    child.once("exit", (code) => resolve(code));
+  });
 }
 
 async function runIdPairForWorkerResultScenario(
@@ -1010,6 +1124,593 @@ describe("desktop job manager", () => {
     expect(persisted).not.toContain(credentialA.applicationPassword);
     expect(persisted).not.toContain(credentialB.username);
     expect(persisted).not.toContain(credentialB.applicationPassword);
+  });
+
+  it("recovers a durable SKU partition after utilityProcess crash and exposes it in jobs.history", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    let resolveFinished!: (result: JobResult) => void;
+    const finishedPromise = new Promise<JobResult>((resolveFinishedValue) => {
+      resolveFinished = resolveFinishedValue;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+    const started = await manager.runMedia({
+      projectPath,
+      job: "media",
+      skus: ["synthetic-a", "synthetic-b", "synthetic-c"],
+    });
+    expect(started.runId).toBe(runId);
+    const projectPaths = pathsFor("legacy");
+    const checkpointPath = path.join(projectPath, projectPaths.jobLogsDir, `${runId}.media.json`);
+    await mkdir(path.dirname(checkpointPath), { recursive: true });
+    await writeFile(checkpointPath, JSON.stringify({
+      run_id: runId,
+      checkpoint_state: "running",
+      media_requested_skus: ["synthetic-a", "synthetic-b", "synthetic-c"],
+      media_batch_state: "outcome_unknown",
+      media_results: [{ sku: "synthetic-a", status: "uploaded", image_url: "https://cdn.example.test/media.jpg" }],
+      media_unknown_skus: ["synthetic-b"],
+      media_not_started_skus: ["synthetic-c"],
+    }), "utf8");
+    child.emit("exit", 1);
+
+    const result = await finishedPromise;
+    expect(result).toMatchObject({
+      runId,
+      job: "media",
+      status: "failed",
+      media_requested_skus: ["synthetic-a", "synthetic-b", "synthetic-c"],
+      media_batch_state: "outcome_unknown",
+      media_results: [{ sku: "synthetic-a", status: "uploaded", image_url: "https://cdn.example.test/media.jpg" }],
+      media_unknown_skus: ["synthetic-b"],
+      media_not_started_skus: ["synthetic-c"],
+    });
+    expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
+    const [history] = await manager.history(projectId);
+    expect(history).toMatchObject({
+      run_id: runId,
+      media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+      media_unknown_skus: ["synthetic-b"],
+      media_not_started_skus: ["synthetic-c"],
+    });
+    expect(isValidMediaSkuRecoveryPartition(history)).toBe(true);
+  });
+
+  it.each([
+    { label: "missing", mutation: null },
+    { label: "corrupt", mutation: "not-json" },
+    { label: "run ID mismatch", mutation: "run-id" },
+    { label: "requested SKU order mismatch", mutation: "sku-order" },
+  ] as const)("fails closed when the media checkpoint is $label", async ({ mutation }) => {
+    const projectPath = await projectDirectory("legacy");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a", "synthetic-b"] });
+    if (mutation) {
+      const projectPaths = pathsFor("legacy");
+      const checkpointPath = path.join(projectPath, projectPaths.jobLogsDir, `${runId}.media.json`);
+      await mkdir(path.dirname(checkpointPath), { recursive: true });
+      const validCheckpoint = {
+        run_id: runId,
+        checkpoint_state: "running",
+        media_requested_skus: ["synthetic-a", "synthetic-b"],
+        media_batch_state: "outcome_unknown",
+        media_results: [],
+        media_unknown_skus: ["synthetic-a", "synthetic-b"],
+        media_not_started_skus: [],
+      };
+      const checkpoint = mutation === "run-id"
+        ? { ...validCheckpoint, run_id: `media-${randomUUID()}` }
+        : mutation === "sku-order"
+          ? {
+              ...validCheckpoint,
+              media_requested_skus: ["synthetic-b", "synthetic-a"],
+              media_unknown_skus: ["synthetic-b", "synthetic-a"],
+            }
+          : null;
+      await writeFile(checkpointPath, checkpoint ? JSON.stringify(checkpoint) : "not-json", "utf8");
+    }
+    child.emit("exit", 1);
+
+    const result = await finished;
+    expect(result.status).toBe("failed");
+    expect(result.media_requested_skus).toEqual(["synthetic-a", "synthetic-b"]);
+    expect(result.media_results).toEqual([]);
+    expect(result.media_unknown_skus).toEqual(["synthetic-a", "synthetic-b"]);
+    expect(result.media_not_started_skus).toEqual([]);
+    expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
+    const [history] = await manager.history(projectId);
+    if (!history) throw new Error("Recovered run history is missing.");
+    expect(history.media_unknown_skus).toEqual(["synthetic-a", "synthetic-b"]);
+    expect(isValidMediaSkuRecoveryPartition(history)).toBe(true);
+  });
+
+  it("does not replace a real successful media history row when the worker later exits", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    const projectPaths = pathsFor("legacy");
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    await mkdir(path.dirname(runsPath), { recursive: true });
+    const successfulRow = {
+      run_id: runId,
+      job: "media",
+      trigger: "manual",
+      started_at: "2026-11-12T10:00:00.000Z",
+      finished_at: "2026-11-12T10:01:00.000Z",
+      status: "ok",
+      media_requested_skus: ["synthetic-a"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    };
+    const originalRuns = `${JSON.stringify(successfulRow)}\n`;
+    await writeFile(runsPath, originalRuns, "utf8");
+    const checkpointPath = path.join(projectPath, projectPaths.jobLogsDir, `${runId}.media.json`);
+    await mkdir(path.dirname(checkpointPath), { recursive: true });
+    await writeFile(
+      checkpointPath,
+      JSON.stringify({
+        run_id: runId,
+        checkpoint_state: "finished",
+        media_requested_skus: ["synthetic-a"],
+        media_batch_state: "complete",
+        media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+        media_unknown_skus: [],
+        media_not_started_skus: [],
+      }),
+      "utf8",
+    );
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+    child.emit("exit", 1);
+
+    const currentCrash = await finished;
+    expect(currentCrash).toMatchObject({
+      runId,
+      job: "media",
+      status: "failed",
+      exitCode: EXIT.SOURCE_FAILED,
+      media_requested_skus: ["synthetic-a"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+      media_unknown_skus: [],
+    });
+    expect(await readFile(runsPath, "utf8")).toBe(originalRuns);
+    const [history] = await manager.history(projectId);
+    if (!history) throw new Error("Existing successful run history is missing.");
+    expect(history).toMatchObject(successfulRow);
+    expect(isValidMediaSkuRecoveryPartition(history)).toBe(true);
+  });
+
+  it.each(["wrong-job", "wrong-requested-skus", "wrong-partition"] as const)(
+    "preserves a same-run-ID media row that has %s and reports unknown for the current crash",
+    async (mutation) => {
+      const projectPath = await projectDirectory("legacy");
+      const projectId = path.basename(projectPath) as ProjectId;
+      const runId = `media-${randomUUID()}`;
+      const child = new FakeUtilityProcess(true, runId);
+      const projectPaths = pathsFor("legacy");
+      const runsPath = path.join(projectPath, projectPaths.runs);
+      await mkdir(path.dirname(runsPath), { recursive: true });
+      const existingRow = mutation === "wrong-job"
+        ? { run_id: runId, job: "weekly", started_at: "2026-11-12T10:00:00.000Z", finished_at: "2026-11-12T10:01:00.000Z", status: "failed" }
+        : mutation === "wrong-requested-skus"
+          ? {
+              run_id: runId,
+              job: "media",
+              started_at: "2026-11-12T10:00:00.000Z",
+              finished_at: "2026-11-12T10:01:00.000Z",
+              status: "failed",
+              media_requested_skus: ["other-a", "other-b"],
+              media_batch_state: "outcome_unknown",
+              media_results: [],
+              media_unknown_skus: ["other-a", "other-b"],
+              media_not_started_skus: [],
+            }
+          : {
+              run_id: runId,
+              job: "media",
+              started_at: "2026-11-12T10:00:00.000Z",
+              finished_at: "2026-11-12T10:01:00.000Z",
+              status: "failed",
+              media_requested_skus: ["synthetic-a", "synthetic-b"],
+              media_batch_state: "outcome_unknown",
+              media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+              media_unknown_skus: ["synthetic-b"],
+              media_not_started_skus: [],
+            };
+      const originalRows = `${JSON.stringify(existingRow)}\n`;
+      await writeFile(runsPath, originalRows, "utf8");
+      let resolveFinished!: (result: JobResult) => void;
+      const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+      const manager = createJobManager({
+        workerPath: "job-worker.js",
+        getSettings: async () => settings(),
+        isMediaJobReady: () => true,
+        getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+        resolveProject: async () => projectPath,
+        fork: () => {
+          queueMicrotask(() => child.ready());
+          return child;
+        },
+        emitProgress: vi.fn(),
+        emitFinished: resolveFinished,
+        notify: vi.fn(),
+      });
+      await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a", "synthetic-b"] });
+      child.emit("exit", 1);
+
+      const result = await finished;
+      expect(result).toMatchObject({
+        status: "failed",
+        media_requested_skus: ["synthetic-a", "synthetic-b"],
+        media_batch_state: "outcome_unknown",
+        media_results: [],
+        media_unknown_skus: ["synthetic-a", "synthetic-b"],
+        media_not_started_skus: [],
+      });
+      expect(await readFile(runsPath, "utf8")).toBe(originalRows);
+      await expect(manager.history(projectId)).resolves.toMatchObject([existingRow]);
+    },
+  );
+
+  it("takes over a dead Core lock and blocks a real competing withLock until history commits", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const lockPath = path.join(projectPath, projectPaths.lock);
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    const holder = await spawnCoreLockSubprocess(projectPath, "hold");
+    await waitForSubprocessMarker(holder, "HELD");
+    const originalLock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; job: string };
+    expect(originalLock).toMatchObject({ pid: holder.pid, job: "lock-subprocess-test" });
+    const holderExit = waitForSubprocessExit(holder);
+    holder.kill();
+    await holderExit;
+    await expect(access(lockPath)).resolves.toBeUndefined();
+
+    let signalHistoryCommit!: () => void;
+    let releaseHistoryCommit!: () => void;
+    const historyCommitEntered = new Promise<void>((resolve) => { signalHistoryCommit = resolve; });
+    const historyCommitGate = new Promise<void>((resolve) => { releaseHistoryCommit = resolve; });
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+      testOnlyBeforeSyntheticRunLogCommit: async () => {
+        signalHistoryCommit();
+        await historyCommitGate;
+      },
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+    child.emit("exit", 1);
+    await historyCommitEntered;
+    await expect(access(lockPath)).resolves.toBeUndefined();
+    const recoveryLock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; job: string };
+    expect(recoveryLock).toMatchObject({ pid: process.pid, job: "desktop-media-recovery" });
+
+    const competitor = await spawnCoreLockSubprocess(projectPath, "try");
+    await waitForSubprocessMarker(competitor, "BLOCKED");
+    await expect(waitForSubprocessExit(competitor)).resolves.toBe(0);
+
+    releaseHistoryCommit();
+    const recovered = await finished;
+    expect(recovered.status).toBe("failed");
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const nextRun = await spawnCoreLockSubprocess(projectPath, "append");
+    await waitForSubprocessMarker(nextRun, "APPENDED");
+    await expect(waitForSubprocessExit(nextRun)).resolves.toBe(0);
+    const rows = await readJsonl(runsPath);
+    expect(rows.map((row) => row.run_id).sort()).toEqual([runId, "2026-11-12-weekly-next"].sort());
+  }, 30_000);
+
+  it("uses the Core single-winner reclaim claim when Desktop races another stale-lock reclaimer", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const guardProjectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const lockPath = path.join(projectPath, projectPaths.lock);
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    const holder = await spawnCoreLockSubprocess(projectPath, "hold");
+    await waitForSubprocessMarker(holder, "HELD");
+    const holderExit = waitForSubprocessExit(holder);
+    holder.kill();
+    await holderExit;
+    await expect(access(lockPath)).resolves.toBeUndefined();
+
+    let signalClaimPublished!: () => void;
+    let releaseClaim!: () => void;
+    const claimPublished = new Promise<void>((resolve) => { signalClaimPublished = resolve; });
+    const claimGate = new Promise<void>((resolve) => { releaseClaim = resolve; });
+    let signalHistoryCommit!: () => void;
+    let releaseHistoryCommit!: () => void;
+    const historyCommitEntered = new Promise<void>((resolve) => { signalHistoryCommit = resolve; });
+    const historyCommitGate = new Promise<void>((resolve) => { releaseHistoryCommit = resolve; });
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+      testOnlyBeforeSyntheticRunLogCommit: async () => {
+        signalHistoryCommit();
+        await historyCommitGate;
+      },
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-race"] });
+
+    try {
+      await withLockForTest(guardProjectPath, async () => {
+        child.emit("exit", 1);
+        await claimPublished;
+
+        // Desktop has published the Core reclaim claim but has not yet replaced the stale lock.
+        // A real second Core process now races the same stale generation and must be rejected.
+        const competitor = await spawnCoreLockSubprocess(projectPath, "try");
+        await waitForSubprocessMarker(competitor, "BLOCKED");
+        await expect(waitForSubprocessExit(competitor)).resolves.toBe(0);
+
+        releaseClaim();
+        await historyCommitEntered;
+        const recoveryLock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; job: string };
+        expect(recoveryLock).toMatchObject({ pid: process.pid, job: "desktop-media-recovery" });
+        releaseHistoryCommit();
+
+        const result = await finished;
+        expect(result).toMatchObject({
+          status: "failed",
+          media_batch_state: "outcome_unknown",
+          media_requested_skus: ["synthetic-race"],
+          media_unknown_skus: ["synthetic-race"],
+        });
+        await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+        const rows = await readJsonl(runsPath);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ run_id: runId, job: "media", status: "failed" });
+
+        const afterRecovery = await spawnCoreLockSubprocess(projectPath, "try");
+        await waitForSubprocessMarker(afterRecovery, "ACQUIRED");
+        await expect(waitForSubprocessExit(afterRecovery)).resolves.toBe(0);
+      }, {
+        deviceId: settings().device_id,
+        deviceName: settings().device_name,
+        job: "desktop-test-claim-scope",
+      }, {
+        afterReclaimClaimPublished: async () => {
+          signalClaimPublished();
+          await claimGate;
+        },
+      });
+    } finally {
+      releaseClaim();
+      releaseHistoryCommit();
+    }
+  }, 30_000);
+
+  it("creates a recovery lock when the worker exits before Core acquired its lock", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const lockPath = path.join(projectPath, projectPaths.lock);
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    let signalHistoryCommit!: () => void;
+    let releaseHistoryCommit!: () => void;
+    const historyCommitEntered = new Promise<void>((resolve) => { signalHistoryCommit = resolve; });
+    const historyCommitGate = new Promise<void>((resolve) => { releaseHistoryCommit = resolve; });
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+      testOnlyBeforeSyntheticRunLogCommit: async () => {
+        signalHistoryCommit();
+        await historyCommitGate;
+      },
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    child.emit("exit", 1);
+    await historyCommitEntered;
+    const recoveryLock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; job: string };
+    expect(recoveryLock).toMatchObject({ pid: process.pid, job: "desktop-media-recovery" });
+    const competitor = await spawnCoreLockSubprocess(projectPath, "try");
+    await waitForSubprocessMarker(competitor, "BLOCKED");
+    await expect(waitForSubprocessExit(competitor)).resolves.toBe(0);
+    releaseHistoryCommit();
+    expect((await finished).status).toBe("failed");
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("leaves a third-party live Core lock and its history untouched", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const lockPath = path.join(projectPath, projectPaths.lock);
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    const holder = await spawnCoreLockSubprocess(projectPath, "hold");
+    await waitForSubprocessMarker(holder, "HELD");
+    const originalLock = await readFile(lockPath, "utf8");
+    const originalHistory = `${JSON.stringify({
+      run_id: runId,
+      job: "weekly",
+      started_at: "2026-11-12T10:00:00.000Z",
+      finished_at: "2026-11-12T10:01:00.000Z",
+      status: "failed",
+    })}\n`;
+    await mkdir(path.dirname(runsPath), { recursive: true });
+    await writeFile(runsPath, originalHistory, "utf8");
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+    try {
+      await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+      child.emit("exit", 1);
+      const result = await finished;
+      expect(result).toMatchObject({ status: "failed", media_unknown_skus: ["synthetic-a"], media_results: [] });
+      expect(result.summary).toContain("无法安全取得项目运行锁");
+      expect(result.errors).toContain(
+        "无法安全取得项目运行锁，原有历史保持不变；请人工检查项目锁、runs.jsonl 与媒体端实际状态后再重试。",
+      );
+      expect(result.errors?.join(" ")).not.toContain("历史与当前请求不匹配");
+      expect(await readFile(lockPath, "utf8")).toBe(originalLock);
+      expect(await readFile(runsPath, "utf8")).toBe(originalHistory);
+    } finally {
+      const holderExit = waitForSubprocessExit(holder);
+      holder.kill();
+      await holderExit;
+    }
+  }, 30_000);
+
+  it.each([
+    ["read", "读取 runs.jsonl 失败，原历史未修改；请人工检查运行记录与媒体端实际状态后再重试。"],
+    ["write", "写入 runs.jsonl 失败，无法确认恢复历史是否已持久化；请人工检查运行记录与媒体端实际状态后再重试。"],
+  ] as const)("keeps old history and reports an unknown result when synthetic run history %s fails", async (phase, expectedError) => {
+    const projectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const runId = `media-${randomUUID()}`;
+    const originalHistory = `${JSON.stringify({
+      run_id: "2026-11-12-weekly-before-media",
+      job: "weekly",
+      started_at: "2026-11-12T10:00:00.000Z",
+      finished_at: "2026-11-12T10:01:00.000Z",
+      status: "ok",
+    })}\n`;
+    await mkdir(path.dirname(runsPath), { recursive: true });
+    await writeFile(runsPath, originalHistory, "utf8");
+
+    const child = new FakeUtilityProcess(true, runId);
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+      ...(phase === "read"
+        ? { testOnlyReadSyntheticRunLog: async () => { throw new Error("EACCES"); } }
+        : { testOnlyWriteSyntheticRunLog: async () => { throw new Error("ENOSPC"); } }),
+    });
+
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+    child.emit("exit", 1);
+    const result = await finished;
+
+    expect(result).toMatchObject({
+      status: "failed",
+      summary: expect.stringContaining("恢复历史"),
+      media_batch_state: "outcome_unknown",
+      media_requested_skus: ["synthetic-a"],
+      media_unknown_skus: ["synthetic-a"],
+      media_results: [],
+    });
+    expect(result.errors).toContain(expectedError);
+    expect(await readFile(runsPath, "utf8")).toBe(originalHistory);
   });
 
   it.each(["legacy", "workspace"] as const)(

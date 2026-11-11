@@ -112,10 +112,50 @@ describe("media utility worker Core execution ID", () => {
     );
 
     expect(contextSeen[0]?.onJobStarted).toBeTypeOf("function");
+    expect(contextSeen[0]?.testOnlyAllowLoopbackHttp).toBeUndefined();
     expect(messages.map(({ type }) => type)).toEqual(["started", "progress", "finished"]);
     expect(messages[0]).toEqual({ type: "started", runId: coreRunId, startedAt });
     expect(messages[1]).toMatchObject({ type: "progress", progress: { runId: coreRunId, job: "media" } });
     expect(messages[2]).toMatchObject({ type: "finished", result: { runId: coreRunId, job: "media" } });
+    expect(JSON.stringify(messages)).not.toContain("fixture-password");
+  });
+
+  it("forwards the explicit synthetic loopback flag only through the worker context", async () => {
+    const projectPath = await tempProject();
+    const messages: JobWorkerMessage[] = [];
+    const contextSeen: CoreServiceContext[] = [];
+    const startMessage = request(projectPath);
+    startMessage.context.testOnlyAllowLoopbackHttp = true;
+
+    await executeJobWorkerMessage(
+      startMessage,
+      { postMessage: (message) => messages.push(message) },
+      {
+        createCore: (context) => {
+          contextSeen.push(context);
+          return {
+            runJob: async () => {
+              context.onJobStarted?.("media-synthetic-loopback", "2026-11-12T10:00:00.000Z");
+              return {
+                runId: "media-synthetic-loopback",
+                job: "media",
+                status: "failed",
+                exitCode: 1,
+                summary: "Synthetic loopback test.",
+                media_requested_skus: ["fixture-sku-a", "fixture-sku-b"],
+                media_batch_state: "outcome_unknown",
+                media_results: [],
+                media_unknown_skus: ["fixture-sku-a", "fixture-sku-b"],
+                media_not_started_skus: [],
+              } satisfies JobResult;
+            },
+          } as unknown as CoreService;
+        },
+      },
+    );
+
+    expect(contextSeen[0]?.testOnlyAllowLoopbackHttp).toBe(true);
+    expect(messages.map(({ type }) => type)).toEqual(["started", "finished"]);
     expect(JSON.stringify(messages)).not.toContain("fixture-password");
   });
 
@@ -279,8 +319,8 @@ describe("media utility worker Core execution ID", () => {
       },
     );
 
-    expect(messages.map(({ type }) => type)).toEqual(["started", "finished"]);
-    expect(messages[1]).toMatchObject({ type: "finished", result: { runId: coreRunId, status: "failed" } });
+    expect(messages.map(({ type }) => type)).toEqual(["started", "fatal"]);
+    expect(messages[1]).toMatchObject({ type: "fatal", message: "synthetic worker failure" });
   });
 
   it("lets JobManager finalize a Core exception after started through the worker message path", async () => {

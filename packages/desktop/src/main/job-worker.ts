@@ -13,9 +13,20 @@ if (!port) throw new Error("Job Worker 必须由 Electron utilityProcess 启动�
 function isStartMessage(value: unknown): value is JobWorkerStartMessage {
   if (!isRecord(value) || value.type !== "run" || !isRecord(value.request) || !isRecord(value.context)) return false;
   const allowedRequestKeys = new Set(["projectPath", "job", "trigger", "only", "date", "force", "dryRun", "skus"]);
-  const allowedContextKeys = new Set(["deviceId", "deviceName", "cacheDir", "browserPath", "wordpressCredential"]);
+  const allowedContextKeys = new Set([
+    "deviceId",
+    "deviceName",
+    "cacheDir",
+    "browserPath",
+    "wordpressCredential",
+    "testOnlyAllowLoopbackHttp",
+  ]);
   if (Object.keys(value.request).some((key) => !allowedRequestKeys.has(key))) return false;
   if (Object.keys(value.context).some((key) => !allowedContextKeys.has(key))) return false;
+  if (
+    value.context.testOnlyAllowLoopbackHttp !== undefined &&
+    typeof value.context.testOnlyAllowLoopbackHttp !== "boolean"
+  ) return false;
   const hasCredential = value.context.wordpressCredential !== undefined;
   if (
     hasCredential &&

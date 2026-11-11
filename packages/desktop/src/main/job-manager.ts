@@ -1,4 +1,4 @@
-import { pathsForProject, readJsonl, writeJsonl } from "@siteindex/core";
+import { atomicWrite, compareKeys, pathsForProject, readJsonl, type MediaJobCheckpoint, withLock } from "@siteindex/core";
 import {
   EXIT,
   isValidMediaSkuRecoveryPartition,
@@ -13,7 +13,6 @@ import {
   type SiteIndexError,
 } from "@siteindex/shared";
 import { randomUUID } from "node:crypto";
-import { lstat, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { WordPressCredential } from "../shared/wordpress-credential-types.js";
 import {
@@ -33,6 +32,7 @@ import {
   wordpressCredentialSensitiveValues,
   wordpressCredentialUsernames,
 } from "./worker-output-sanitizer.js";
+import { readStableBoundedFile } from "./media-checkpoint-reader.js";
 
 const START_TIMEOUT_MS = 30_000;
 
@@ -49,12 +49,19 @@ export interface JobManagerOptions {
   getSettings(): Promise<AppSettings>;
   getBrowserExecutablePath?(settings: AppSettings): Promise<string | null>;
   isMediaJobReady?(): boolean;
+  /** E2E harness only; the production main process must leave this unset. */
+  testOnlyAllowLoopbackHttp?: boolean;
   getWordPressCredential?(id: ProjectId, projectPath: string): Promise<WordPressCredential | null>;
   resolveProject(id: ProjectId): string | Promise<string>;
   resolveProjectPaths?(projectPath: string): Promise<ProjectPaths>;
   fork(modulePath: string): UtilityProcessLike;
   emitProgress(progress: JobProgress): void;
   emitFinished(result: JobResult): void;
+  /** Test seam for proving a competing run cannot pass the project lock during synthetic history persistence. */
+  testOnlyBeforeSyntheticRunLogCommit?(): Promise<void>;
+  /** Fault injection for synthetic history I/O; production must leave these unset. */
+  testOnlyReadSyntheticRunLog?(filePath: string): Promise<Record<string, unknown>[]>;
+  testOnlyWriteSyntheticRunLog?(filePath: string, contents: string): Promise<void>;
   finalizeInit?(
     result: JobResult,
     projectPath: string,
@@ -92,6 +99,15 @@ interface JobEntry {
   cancelled: boolean;
   finalizing: boolean;
   startupTimer: NodeJS.Timeout;
+}
+
+const MAX_MEDIA_CHECKPOINT_BYTES = 5 * 1024 * 1024;
+
+class SyntheticRunLogPersistenceError extends Error {
+  constructor(readonly operation: "read" | "write") {
+    super(`Synthetic run history ${operation} failed.`);
+    this.name = "SyntheticRunLogPersistenceError";
+  }
 }
 
 function jobError(code: SiteIndexError["code"], message: string, detail?: string): SiteIndexError {
@@ -227,6 +243,132 @@ function processFailureResult(entry: JobEntry, code: number): JobResult {
   };
 }
 
+async function recoverMediaCheckpoint(entry: JobEntry, fallback: JobResult): Promise<JobResult> {
+  if (
+    entry.request.job !== "media" ||
+    !entry.runId ||
+    fallback.job !== "media" ||
+    !/^media-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.runId)
+  ) return fallback;
+
+  try {
+    const projectRoot = path.resolve(entry.projectPath);
+    const relativeDirectory = path.normalize(entry.projectPaths.jobLogsDir);
+    if (path.isAbsolute(relativeDirectory) || relativeDirectory.split(path.sep).some((part) => part === "..")) return fallback;
+    let logsDirectory = projectRoot;
+    const guardedDirectories = [projectRoot];
+    for (const part of relativeDirectory.split(path.sep).filter(Boolean)) {
+      logsDirectory = path.join(logsDirectory, part);
+      guardedDirectories.push(logsDirectory);
+    }
+    const checkpointPath = path.join(logsDirectory, `${entry.runId}.media.json`);
+    const parsed: unknown = JSON.parse(
+      await readStableBoundedFile(checkpointPath, MAX_MEDIA_CHECKPOINT_BYTES, guardedDirectories),
+    );
+    if (
+      !isRecord(parsed) ||
+      parsed.run_id !== entry.runId ||
+      (parsed.checkpoint_state !== "running" && parsed.checkpoint_state !== "finished") ||
+      !matchesMediaRecoveryRequest(parsed, entry.request.skus ?? [])
+    ) return fallback;
+
+    const checkpoint = parsed as unknown as MediaJobCheckpoint;
+    if (
+      checkpoint.media_error_code !== undefined &&
+      checkpoint.media_error_code !== "WP_AUTH_FAILED" &&
+      checkpoint.media_error_code !== "WP_FORBIDDEN"
+    ) return fallback;
+
+    const counts: Record<string, number> = {
+      uploaded: 0,
+      reused: 0,
+      recorded: 0,
+      skipped_has_url: 0,
+      failed: 0,
+      unknown: checkpoint.media_unknown_skus.length,
+      not_started: checkpoint.media_not_started_skus.length,
+    };
+    for (const result of checkpoint.media_results) counts[result.status] = (counts[result.status] ?? 0) + 1;
+    const recovered: JobResult = {
+      ...fallback,
+      // Checkpoints contain SKU outcomes, not a trustworthy process-level exit status.
+      // A crashed worker must never be promoted to a successful Job from this file alone.
+      status: fallback.status,
+      exitCode: fallback.exitCode,
+      summary:
+        checkpoint.checkpoint_state === "finished"
+          ? "媒体任务进程异常退出；已从完成检查点恢复 SKU 状态，任务整体仍按异常处理。"
+          : "媒体任务进程异常退出；已从检查点恢复 SKU 状态。",
+      counts,
+      media_requested_skus: [...checkpoint.media_requested_skus],
+      media_batch_state: checkpoint.media_batch_state,
+      media_results: checkpoint.media_results.map((result) => ({ ...result })),
+      media_unknown_skus: [...checkpoint.media_unknown_skus],
+      media_not_started_skus: [...checkpoint.media_not_started_skus],
+      ...(checkpoint.media_error_code ? { media_error_code: checkpoint.media_error_code } : {}),
+      errors: fallback.errors ?? ["utilityProcess 异常退出；SKU 状态已从持久化检查点恢复。"],
+    };
+    return sanitizeMediaJobResult(recovered, entry.sensitiveValues, entry.sensitiveUsernames);
+  } catch {
+    return fallback;
+  }
+}
+
+function hasSameMediaRecoveryPartition(left: unknown, right: JobResult): boolean {
+  if (!isValidMediaSkuRecoveryPartition(left) || !isValidMediaSkuRecoveryPartition(right)) return false;
+  const leftErrorCode = (left as unknown as { media_error_code?: string }).media_error_code ?? null;
+  if (
+    left.media_batch_state !== right.media_batch_state ||
+    JSON.stringify(left.media_requested_skus) !== JSON.stringify(right.media_requested_skus) ||
+    JSON.stringify(left.media_unknown_skus) !== JSON.stringify(right.media_unknown_skus) ||
+    JSON.stringify(left.media_not_started_skus) !== JSON.stringify(right.media_not_started_skus) ||
+    leftErrorCode !== (right.media_error_code ?? null) ||
+    left.media_results.length !== right.media_results.length
+  ) return false;
+  return left.media_results.every((item, index) => {
+    const current = right.media_results[index];
+    return Boolean(
+      current &&
+      item.sku === current.sku &&
+      item.status === current.status &&
+      (item.reason ?? null) === (current.reason ?? null) &&
+      (item.image_url ?? null) === (current.image_url ?? null),
+    );
+  });
+}
+
+function conservativeUnknownMediaResult(
+  entry: JobEntry,
+  result: JobResult,
+  reason: { summary: string; error: string } = {
+    summary: "媒体任务历史与当前请求不一致；为避免显示错误结果，逐 SKU 状态按未知处理。",
+    error: "同 run_id 的媒体历史与当前请求不匹配；原历史已保留。",
+  },
+): JobResult {
+  const recovery = unknownMediaRecovery(entry);
+  const skuCount = recovery.media_requested_skus?.length ?? 0;
+  const { media_error_code: _ignoredErrorCode, ...withoutCheckpointError } = result;
+  return sanitizeMediaJobResult(
+    {
+      ...withoutCheckpointError,
+      summary: reason.summary,
+      errors: [...(result.errors ?? []), reason.error],
+      counts: {
+        uploaded: 0,
+        reused: 0,
+        recorded: 0,
+        skipped_has_url: 0,
+        failed: 0,
+        unknown: skuCount,
+        not_started: 0,
+      },
+      ...recovery,
+    },
+    entry.sensitiveValues,
+    entry.sensitiveUsernames,
+  );
+}
+
 function unknownMediaRecovery(entry: JobEntry): Partial<JobResult> {
   if (entry.request.job !== "media") return {};
   const skus = [...new Set(entry.request.skus ?? [])];
@@ -274,33 +416,43 @@ export function createJobManager(options: JobManagerOptions) {
     notifyIdleWaitersIfIdle();
   }
 
-  async function releaseOwnedLock(entry: JobEntry): Promise<void> {
-    const pid = entry.workerPid;
-    if (pid === null) return;
-    const lockPath = path.join(entry.projectPath, entry.projectPaths.lock);
-    try {
-      const identity = await lstat(lockPath);
-      const text = await readFile(lockPath, "utf8");
-      const lock: unknown = JSON.parse(text);
-      if (
-        !isRecord(lock) ||
-        lock.pid !== pid ||
-        lock.job !== entry.request.job ||
-        lock.device_id !== entry.settings.device_id
-      )
-        return;
-      const current = await lstat(lockPath);
-      if (current.ino === identity.ino && current.dev === identity.dev) await unlink(lockPath);
-    } catch {
-      // Job 进程异常退出后，锁清理尽力进行；不可读时留给 core 的陈旧锁回收。
-    }
-  }
-
   async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<JobResult> {
     if (!entry.runId) return result;
+    const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
+    let rows: Record<string, unknown>[];
     try {
-      const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
-      const rows = await readJsonl(filePath);
+      rows = options.testOnlyReadSyntheticRunLog
+        ? await options.testOnlyReadSyntheticRunLog(filePath)
+        : await readJsonl(filePath);
+    } catch {
+      throw new SyntheticRunLogPersistenceError("read");
+    }
+    {
+      const existingRows = rows.filter((row) => row.run_id === entry.runId);
+      const existing = existingRows[0];
+      if (entry.request.job === "media" && existingRows.length > 0) {
+        const matchesCurrentRequest =
+          existingRows.length === 1 &&
+          isRunLog(existing) &&
+          existing.run_id === entry.runId &&
+          existing.job === "media" &&
+          matchesMediaRecoveryRequest(existing, entry.request.skus ?? []) &&
+          isValidMediaSkuRecoveryPartition(existing) &&
+          hasSameMediaRecoveryPartition(existing, result);
+        if (!matchesCurrentRequest) {
+          // A same-ID row that does not match this request is preserved, but never becomes current outcome data.
+          return conservativeUnknownMediaResult(entry, result);
+        }
+
+        // Keep an already-written Core row intact. The live crash result remains failed even when the
+        // durable Core row says success; the two facts are exposed separately to the caller.
+        return result;
+      }
+      if (existing && isRunLog(existing) && existing.job === entry.request.job) {
+        if (existing.job !== "media") {
+          if (existing.status === "ok" && existing.finished_at !== null) return result;
+        }
+      }
       const record: RunLog = {
         run_id: entry.runId,
         job: entry.request.job,
@@ -323,10 +475,15 @@ export function createJobManager(options: JobManagerOptions) {
       };
       const next = rows.filter((row) => row.run_id !== entry.runId);
       next.push(record as unknown as Record<string, unknown>);
-      await writeJsonl(filePath, next, "run_log");
-      return result;
-    } catch {
-      // 项目文件不可写时仍把失败结果发回界面。
+      next.sort((left, right) => compareKeys(String(left.run_id ?? ""), String(right.run_id ?? "")));
+      try {
+        await options.testOnlyBeforeSyntheticRunLogCommit?.();
+        const contents = `${next.map((row) => JSON.stringify(row)).join("\n")}\n`;
+        if (options.testOnlyWriteSyntheticRunLog) await options.testOnlyWriteSyntheticRunLog(filePath, contents);
+        else await atomicWrite(filePath, contents);
+      } catch {
+        throw new SyntheticRunLogPersistenceError("write");
+      }
       return result;
     }
   }
@@ -335,9 +492,16 @@ export function createJobManager(options: JobManagerOptions) {
     if (entry.finalizing) return;
     entry.finalizing = true;
     clearTimeout(entry.startupTimer);
-    await releaseOwnedLock(entry);
-
     if (!entry.runId) {
+      try {
+        await withLock(entry.projectPath, async () => undefined, {
+          deviceId: entry.settings.device_id,
+          deviceName: entry.settings.device_name,
+          job: "desktop-startup-cleanup",
+        });
+      } catch {
+        // Live, foreign, or unverifiable locks stay untouched.
+      }
       entry.rejectStarted(jobError("UNKNOWN", "Job utilityProcess 未能启动。", `exit code: ${exitCode}`));
       const result = processFailureResult(entry, exitCode);
       entry.resolveDone(result);
@@ -347,20 +511,80 @@ export function createJobManager(options: JobManagerOptions) {
 
     let result = entry.result;
     if (!result) {
-      result = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
-      result = await appendSyntheticRunLog(entry, result);
-      if (entry.cancelled) {
-        options.emitProgress({
-          runId: result.runId,
-          projectPath: entry.projectPath,
-          job: entry.request.job,
-          pct: null,
-          step: "cancelled",
-          level: "warn",
-          message: result.summary,
-          at: new Date().toISOString(),
+      const fallback = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
+      let recoveryLockAcquired = false;
+      try {
+        // Core's real cross-process lock safely reclaims a dead worker lock or creates a fresh
+        // main-process lock when the worker exited before acquiring Core's lock. It rejects live,
+        // foreign, or unverifiable locks without touching them.
+        result = await withLock(entry.projectPath, async () => {
+          recoveryLockAcquired = true;
+          const recovered = await recoverMediaCheckpoint(entry, fallback);
+          return appendSyntheticRunLog(entry, recovered);
+        }, {
+          deviceId: entry.settings.device_id,
+          deviceName: entry.settings.device_name,
+          job: "desktop-media-recovery",
         });
+      } catch (error) {
+        const persistencePhase = error instanceof SyntheticRunLogPersistenceError ? error.operation : null;
+        result = entry.request.job === "media"
+          ? conservativeUnknownMediaResult(entry, fallback, recoveryLockAcquired
+              ? persistencePhase === "read"
+                ? {
+                    summary: "媒体任务恢复历史读取失败；逐 SKU 状态按未知处理，请人工核查运行记录。",
+                    error: "读取 runs.jsonl 失败，原历史未修改；请人工检查运行记录与媒体端实际状态后再重试。",
+                  }
+                : persistencePhase === "write"
+                  ? {
+                      summary: "媒体任务恢复历史写入失败；无法确认历史是否持久化，逐 SKU 状态按未知处理。",
+                      error: "写入 runs.jsonl 失败，无法确认恢复历史是否已持久化；请人工检查运行记录与媒体端实际状态后再重试。",
+                    }
+                  : {
+                  summary: "媒体任务恢复未能确认持久化；逐 SKU 状态按未知处理，请人工核查运行记录。",
+                  error: "已取得项目运行锁，但恢复历史未能确认持久化；请人工检查 runs.jsonl 与媒体端实际状态后再重试。",
+                  }
+              : {
+                  summary: "无法安全取得项目运行锁，恢复历史未写入；逐 SKU 状态按未知处理，请人工核查运行记录。",
+                  error: "无法安全取得项目运行锁，原有历史保持不变；请人工检查项目锁、runs.jsonl 与媒体端实际状态后再重试。",
+                })
+          : {
+              ...fallback,
+              errors: [
+                ...(fallback.errors ?? []),
+                persistencePhase === "read"
+                  ? "读取 runs.jsonl 失败；原历史未修改。"
+                  : persistencePhase === "write"
+                    ? "写入 runs.jsonl 失败；无法确认恢复历史是否已持久化。"
+                    : "无法安全获取项目运行锁；本次恢复历史未写入。",
+              ],
+            };
       }
+    } else {
+      try {
+        // Core normally releases its lock before sending finished. This no-op acquisition only
+        // performs Core's safe stale-PID recovery if the utility process exited during cleanup.
+        await withLock(entry.projectPath, async () => undefined, {
+          deviceId: entry.settings.device_id,
+          deviceName: entry.settings.device_name,
+          job: "desktop-finished-cleanup",
+        });
+      } catch {
+        // Do not disturb a lock another task or device currently owns.
+      }
+    }
+
+    if (!entry.result && entry.cancelled) {
+      options.emitProgress({
+        runId: result.runId,
+        projectPath: entry.projectPath,
+        job: entry.request.job,
+        pct: null,
+        step: "cancelled",
+        level: "warn",
+        message: result.summary,
+        at: new Date().toISOString(),
+      });
     }
 
     if (result.runId !== entry.runId) result = { ...result, runId: entry.runId };
@@ -426,6 +650,7 @@ export function createJobManager(options: JobManagerOptions) {
           deviceName: entry.settings.device_name,
           cacheDir: entry.settings.cache_dir,
           browserPath: entry.browserPath,
+          ...(options.testOnlyAllowLoopbackHttp ? { testOnlyAllowLoopbackHttp: true } : {}),
           ...(entry.wordpressCredential ? { wordpressCredential: entry.wordpressCredential } : {}),
         },
       };
