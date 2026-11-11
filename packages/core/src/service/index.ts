@@ -2359,6 +2359,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     setManualImage: async (id, sku, imageUrl) => {
       const projectPath = resolve(id);
       return withLock(projectPath, async () => {
+        await recoverDailyOutputTransaction(projectPath, pathsFor(await resolveProjectLayout(projectPath)));
         const snapshot = await load(projectPath);
         const record = snapshot.skus.find((row) => row.sku === sku);
         const activeSkus = snapshot.skus.filter((row) => row.status === "active");
@@ -2480,6 +2481,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     save: async (id, config) => {
       const projectPath = resolve(id);
       return withLock(projectPath, async () => {
+        await recoverDailyOutputTransaction(projectPath, pathsFor(await resolveProjectLayout(projectPath)));
         const snapshot = await load(projectPath);
         const preview = categoryPreview(snapshot, config);
         const nextConfig: SiteConfig = { ...snapshot.config, categories: config };

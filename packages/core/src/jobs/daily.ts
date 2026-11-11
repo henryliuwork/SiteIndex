@@ -3,11 +3,16 @@ import path from "node:path";
 import { CSV_HEADERS, EXIT, pathsFor, type CategoryMode } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
-import { readCsv, writeCsv } from "../io/csv";
-import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
+import { parseCsv, writeCsv } from "../io/csv";
+import { parseJsonl, readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { resolveProjectLayout } from "../io/project-layout";
 import { withLock } from "../io/runner-lock";
-import { persistDailyOutputTransaction, recoverDailyOutputTransaction } from "./daily-output-transaction";
+import {
+  assertDailyOutputInputsUnchanged,
+  captureDailyOutputInputBytes,
+  persistDailyOutputTransaction,
+  recoverDailyOutputTransaction,
+} from "./daily-output-transaction";
 import { verifyMissingStock } from "./stock-verifier";
 
 type StockStatus = "in_stock" | "out_of_stock" | "preorder" | "unknown";
@@ -308,8 +313,16 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     snapBy.set(row.sku, row);
   }
 
-  const skuRows = await readJsonl(path.join(project, paths.skus));
-  const latestRows = await readJsonl(path.join(project, paths.inventoryLatest));
+  const summaryPath = path.join(project, paths.dailySummary);
+  const eventPath = path.join(project, paths.eventsDir, `${day.slice(0, 7)}.jsonl`);
+  const eventRelativePath = `${paths.eventsDir}/${day.slice(0, 7)}.jsonl`;
+  const initialOutputBytes = await captureDailyOutputInputBytes(project, paths, eventPath);
+  const inputText = (relativePath: string) => initialOutputBytes.get(relativePath)?.toString("utf8") ?? "";
+  const skuRows = parseJsonl(inputText(paths.skus), path.join(project, paths.skus));
+  const latestRows = parseJsonl(inputText(paths.inventoryLatest), path.join(project, paths.inventoryLatest));
+  const oldSummary = parseCsv(inputText(paths.dailySummary), summaryPath);
+  const existingEvents = parseJsonl(inputText(eventRelativePath), eventPath);
+  await assertDailyOutputInputsUnchanged(project, initialOutputBytes);
   const skus = new Map(skuRows.map((row) => [String(row.sku), row]));
   const latest = new Map(latestRows.map((row) => [String(row.sku), row]));
   const events: JsonRecord[] = [];
@@ -456,8 +469,6 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     addCounts(aggregate, String(row.category || "uncategorized"), status);
     addCounts(aggregate, "_all", status);
   }
-  const summaryPath = path.join(project, paths.dailySummary);
-  const oldSummary = await readCsv(summaryPath);
   const summaryWithoutCurrent = oldSummary.filter((row) => row.date !== day);
   const previousDate = summaryWithoutCurrent.map((row) => String(row.date ?? "")).sort(compareKeys).at(-1);
   const previous = new Map(summaryWithoutCurrent.filter((row) => row.date === previousDate).map((row) => [String(row.category), row]));
@@ -490,8 +501,6 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
   }
   if (verification?.unavailable) errors.push(`${verification.unavailable} 个缺席 SKU 的核验结果不可用，原库存状态已保留。`);
   if (verification?.deferred) errors.push(`${verification.deferred} 个缺席 SKU 超出本次核验上限，将在后续 daily 处理中。`);
-  const eventPath = path.join(project, paths.eventsDir, `${day.slice(0, 7)}.jsonl`);
-  const existingEvents = await readJsonl(eventPath);
   const eventKeys = new Set(existingEvents.map((event) => [event.date, event.sku, event.type].join("\u0000")));
   const appended = events.filter((event) => {
     const key = [event.date, event.sku, event.type].join("\u0000");
@@ -507,7 +516,7 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
   ];
   // A verified batch is one recoverable multi-file write; the cursor commits only after it.
   if (verification?.processedSkus.length) {
-    await persistDailyOutputTransaction(project, paths, outputWrites);
+    await persistDailyOutputTransaction(project, paths, outputWrites, undefined, initialOutputBytes);
   } else {
     for (const output of outputWrites) await output.writeTo(output.target);
   }

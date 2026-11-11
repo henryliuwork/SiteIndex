@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { open, readFile, rename, unlink, lstat, mkdir, readdir } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { DEFAULT_CONFLICT_PATTERNS, EXIT, pathsFor, type SiteIndexError, type SiteIndexErrorCode } from "@siteindex/shared";
 import { atomicWrite } from "./atomic-write";
@@ -15,6 +16,7 @@ export interface RunnerConfig {
 export interface LockRecord {
   device_id: string;
   device_name: string;
+  host_id: string;
   pid: number;
   job: string;
   started_at: string;
@@ -27,7 +29,6 @@ export interface LockOptions {
   deviceName?: string;
   job?: string;
   heartbeatMs?: number;
-  staleAfterMs?: number;
   now?: () => Date;
 }
 
@@ -81,6 +82,82 @@ function lockError(message: string): CoreIOError {
 
 const LOCK_READ_RETRIES = 8;
 const LOCK_READ_RETRY_MS = 10;
+const HOST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+let localHostIdPromise: Promise<string> | undefined;
+
+/** Persist an opaque identity outside project folders so cloud-synced lock records stay host-specific. */
+function localHostIdFile(): string {
+  const home = os.homedir();
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA?.trim();
+    if (!localAppData || !path.win32.isAbsolute(localAppData) || localAppData.startsWith("\\\\")) {
+      throw lockError("无法访问本机锁身份存储；请检查 LOCALAPPDATA 后重试。为避免多设备并发写入，项目锁未创建。");
+    }
+    return path.win32.join(localAppData, "SiteIndex", "lock-host-id");
+  }
+  if (process.platform === "darwin") {
+    return path.join(home, "Library", "Application Support", "SiteIndex", "lock-host-id");
+  }
+  const stateHome = process.env.XDG_STATE_HOME?.trim();
+  const stateRoot = stateHome && path.isAbsolute(stateHome) ? stateHome : path.join(home, ".local", "state");
+  return path.join(stateRoot, "siteindex", "lock-host-id");
+}
+
+async function readOrCreateLocalHostId(): Promise<string> {
+  const filePath = localHostIdFile();
+  await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const readExisting = async (): Promise<string> => {
+    for (let attempt = 0; attempt <= LOCK_READ_RETRIES; attempt += 1) {
+      let source: string;
+      try {
+        source = await readFile(filePath, "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" || attempt === LOCK_READ_RETRIES) throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, LOCK_READ_RETRY_MS));
+        continue;
+      }
+      const value = source.trim();
+      if (HOST_ID_PATTERN.test(value)) return value;
+      if (attempt < LOCK_READ_RETRIES) {
+        await new Promise<void>((resolve) => setTimeout(resolve, LOCK_READ_RETRY_MS));
+        continue;
+      }
+      throw lockError("本机锁身份文件无效；为避免错误回收项目锁，Core 已停止。");
+    }
+    throw lockError("本机锁身份文件尚未写入完成；请稍后重试。");
+  };
+  try {
+    return await readExisting();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const value = randomUUID();
+  let handle;
+  try {
+    handle = await open(filePath, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return readExisting();
+  }
+  try {
+    await handle.writeFile(`${value}\n`, "utf8");
+    await handle.sync();
+    return value;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function localHostId(): Promise<string> {
+  if (!localHostIdPromise) {
+    const pending = readOrCreateLocalHostId();
+    localHostIdPromise = pending;
+    void pending.catch(() => { if (localHostIdPromise === pending) localHostIdPromise = undefined; });
+  }
+  return localHostIdPromise;
+}
 
 type ProcessPresence = "alive" | "dead" | "unknown";
 
@@ -97,7 +174,7 @@ function processPresence(pid: number): ProcessPresence {
   }
 }
 
-async function openOrRecover(lockPath: string, staleAfterMs: number, now: () => Date) {
+async function openOrRecover(lockPath: string, currentHostId: string) {
   try {
     return await open(lockPath, "wx");
   } catch (error) {
@@ -106,39 +183,43 @@ async function openOrRecover(lockPath: string, staleAfterMs: number, now: () => 
 
   for (let attempt = 0; attempt <= LOCK_READ_RETRIES; attempt += 1) {
     let handle;
-    let incomplete = false;
     try {
       handle = await open(lockPath, "r");
       const identity = await handle.stat();
       const text = await handle.readFile({ encoding: "utf8" });
       let record: Partial<LockRecord> | null = null;
+      let malformed = false;
       try {
         const parsed: unknown = JSON.parse(text);
         if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
           record = parsed as Partial<LockRecord>;
         } else {
-          incomplete = true;
+          malformed = true;
         }
       } catch (error) {
         if (!(error instanceof SyntaxError)) throw error;
-        incomplete = true;
+        malformed = true;
       }
-      const heartbeat = typeof record?.heartbeat === "string" ? Date.parse(record.heartbeat) : Number.NaN;
-      if (!Number.isFinite(heartbeat)) incomplete = true;
-      const lastActivity = Number.isFinite(heartbeat) ? heartbeat : identity.mtimeMs;
-      const stale = Number.isFinite(lastActivity) && now().getTime() - lastActivity > staleAfterMs;
-      const presence = typeof record?.pid === "number" ? processPresence(record.pid) : "unknown";
-      const definitelyDead = presence === "dead";
-      // A fresh heartbeat is not evidence that its writer survived a forced process exit.
-      // Conversely, a live or unprobeable PID is never stolen, even after a long stall:
-      // this also treats PID reuse conservatively rather than killing another process's job.
-      const reclaimable = definitelyDead || (stale && !record?.pid);
-
-      if (incomplete && !stale && !definitelyDead) {
+      if (malformed && attempt < LOCK_READ_RETRIES) continue;
+      if (!record) {
         if (attempt < LOCK_READ_RETRIES) continue;
-        throw lockError("项目运行锁内容尚未写入完成，请稍后重试。");
+        throw lockError("项目运行锁缺少有效主机身份或进程信息；为避免多设备并发写入，锁未回收。");
       }
-      if (!reclaimable) throw lockError("项目正在运行另一个任务，请稍后重试。");
+      const heartbeat = typeof record.heartbeat === "string" ? Date.parse(record.heartbeat) : Number.NaN;
+      if (typeof record.host_id !== "string" || !HOST_ID_PATTERN.test(record.host_id)
+        || typeof record.pid !== "number" || !Number.isSafeInteger(record.pid) || record.pid <= 0
+        || !Number.isFinite(heartbeat)) {
+        if (attempt < LOCK_READ_RETRIES) continue;
+        throw lockError("项目运行锁缺少有效主机身份或进程信息；为避免多设备并发写入，锁未回收。");
+      }
+      if (record.host_id !== currentHostId) {
+        throw lockError("项目运行锁属于其他设备或未知设备；为避免多设备并发写入，锁未回收。");
+      }
+      // A live PID may have been reused; portable process APIs cannot prove its start time.
+      // EPERM and other probe failures are also unknown, so only ESRCH for this host is reclaimable.
+      if (processPresence(record.pid) !== "dead") {
+        throw lockError("本机项目任务仍在运行或进程状态无法确认；为避免误抢锁，锁未回收。");
+      }
 
       const current = await lstat(lockPath);
       if (current.ino !== identity.ino || current.dev !== identity.dev
@@ -176,7 +257,7 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 export async function unlinkOwnedLock(
   lockPath: string,
   identity: LockIdentity,
-  expected?: Pick<LockRecord, "pid" | "started_at">,
+  expected?: Pick<LockRecord, "host_id" | "pid" | "started_at">,
   options: LockUnlinkOptions = {},
 ): Promise<void> {
   const remove = options.unlinkFile ?? unlink;
@@ -192,7 +273,8 @@ export async function unlinkOwnedLock(
           if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
           if (!(error instanceof SyntaxError)) throw error;
         }
-        if (currentRecord && (currentRecord.pid !== expected.pid || currentRecord.started_at !== expected.started_at)) return;
+        if (currentRecord && (currentRecord.host_id !== expected.host_id
+          || currentRecord.pid !== expected.pid || currentRecord.started_at !== expected.started_at)) return;
       }
       const latest = await lstat(lockPath);
       if (latest.ino !== identity.ino || latest.dev !== identity.dev) return;
@@ -211,8 +293,8 @@ async function withExclusiveLock<T>(project: string, fn: () => Promise<T> | T, o
   const paths = pathsFor(await resolveProjectLayoutOrLegacy(project));
   const lockPath = path.join(project, paths.lock);
   const now = options.now ?? (() => new Date());
-  const staleAfterMs = options.staleAfterMs ?? 10 * 60_000;
   const heartbeatMs = options.heartbeatMs ?? 30_000;
+  const hostId = await localHostId();
   const started = now().toISOString();
   let handle;
   let identity: LockIdentity | undefined;
@@ -220,18 +302,19 @@ async function withExclusiveLock<T>(project: string, fn: () => Promise<T> | T, o
   let cleaned = false;
   const cleanup = async () => {
     if (!identity || cleaned) return;
-    await unlinkOwnedLock(lockPath, identity, record ? { pid: record.pid, started_at: record.started_at } : undefined);
+    await unlinkOwnedLock(lockPath, identity, record ? { host_id: record.host_id, pid: record.pid, started_at: record.started_at } : undefined);
     cleaned = true;
   };
   try {
     const parent = path.dirname(lockPath);
     await mkdir(parent, { recursive: true });
-    handle = await openOrRecover(lockPath, staleAfterMs, now);
+    handle = await openOrRecover(lockPath, hostId);
     const reservation = await handle.stat();
     identity = { ino: reservation.ino, dev: reservation.dev };
     record = {
       device_id: options.deviceId ?? "unknown",
       device_name: options.deviceName ?? "unknown",
+      host_id: hostId,
       pid: process.pid,
       job: options.job ?? "unknown",
       started_at: started,

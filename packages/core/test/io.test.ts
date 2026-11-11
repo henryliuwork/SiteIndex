@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CSV_HEADERS, EXIT, PATHS, pathsFor } from "@siteindex/shared";
 import {
   assertRunner, atomicWrite, findConflictCopies, readCsv, readJsonl, readRunner,
@@ -15,6 +15,15 @@ async function tempDir() {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-io-"));
   roots.push(root);
   return root;
+}
+
+async function currentHostId(project: string): Promise<string> {
+  let hostId = "";
+  await withLock(project, async () => {
+    const record = JSON.parse(await readFile(path.join(project, PATHS.lock), "utf8")) as { host_id: string };
+    hostId = record.host_id;
+  }, { heartbeatMs: 60_000 });
+  return hostId;
 }
 
 afterEach(async () => {
@@ -138,7 +147,7 @@ describe("core io", () => {
     await expect(readFile(path.join(root, paths.lock))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("holds an exclusive lock, removes it after work, and reclaims stale locks", async () => {
+  it("holds an exclusive lock and fails closed on a stale lock with unknown ownership", async () => {
     const root = await tempDir();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -152,14 +161,14 @@ describe("core io", () => {
     await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
     await mkdir(path.join(root, "index"), { recursive: true });
-    await writeFile(path.join(root, PATHS.lock), JSON.stringify({ heartbeat: "2026-10-22T09:00:00.000Z" }));
-    await expect(withLock(root, () => "recovered", {
-      now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
-    })).resolves.toBe("recovered");
-    await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const staleLegacyLock = JSON.stringify({ heartbeat: "2026-10-22T09:00:00.000Z" });
+    await writeFile(path.join(root, PATHS.lock), staleLegacyLock);
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(path.join(root, PATHS.lock), "utf8")).resolves.toBe(staleLegacyLock);
   });
 
-  it("treats an empty lock record as active and reclaims it only after it is stale", async () => {
+  it("treats incomplete stale lock records as unknown ownership and preserves them", async () => {
     const root = await tempDir();
     const lockPath = path.join(root, PATHS.lock);
     await mkdir(path.dirname(lockPath), { recursive: true });
@@ -169,19 +178,20 @@ describe("core io", () => {
 
     const staleAt = new Date("2026-10-22T09:00:00.000Z");
     await utimes(lockPath, staleAt, staleAt);
-    await expect(withLock(root, () => "recovered", {
-      now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
-    })).resolves.toBe("recovered");
-    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe("");
   });
 
-  it("does not steal a stale lock when its owner PID is still alive", async () => {
+  it("does not steal a stale local lock when its owner PID is still alive", async () => {
     const root = await tempDir();
+    const hostId = await currentHostId(root);
     const lockPath = path.join(root, PATHS.lock);
     await mkdir(path.dirname(lockPath), { recursive: true });
     const record = {
       device_id: "live-owner",
       device_name: "test",
+      host_id: hostId,
       pid: process.pid,
       job: "synthetic-stalled-job",
       started_at: "2026-10-22T09:00:00.000Z",
@@ -189,10 +199,67 @@ describe("core io", () => {
     };
     await writeFile(lockPath, JSON.stringify(record));
 
-    await expect(withLock(root, () => "must not enter", {
-      now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
-    })).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
     await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(record));
+  });
+
+  it.each([
+    ["a reused PID that now belongs to another live process", undefined],
+    ["a PID that cannot be probed due to EPERM", "EPERM"],
+  ])("fails closed for %s", async (_description, probeFailure) => {
+    const root = await tempDir();
+    const hostId = await currentHostId(root);
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const record = {
+      device_id: "same-host-owner",
+      device_name: "test",
+      host_id: hostId,
+      pid: 424242,
+      job: "daily",
+      started_at: "2026-10-22T09:00:00.000Z",
+      heartbeat: "2000-01-01T00:00:00.000Z",
+    };
+    await writeFile(lockPath, JSON.stringify(record));
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      if (probeFailure) throw Object.assign(new Error("probe denied"), { code: probeFailure });
+      return true;
+    });
+
+    try {
+      await expect(withLock(root, () => "must not enter"))
+        .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+      await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(record));
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it("never reclaims remote or legacy locks even when their heartbeat is stale", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const remote = {
+      device_id: "remote-owner",
+      device_name: "test",
+      host_id: "a1b2c3d4-1111-4111-8111-111111111111",
+      pid: Number.MAX_SAFE_INTEGER,
+      job: "daily",
+      started_at: "2026-10-22T09:00:00.000Z",
+      heartbeat: "2026-10-22T09:00:00.000Z",
+    };
+    await writeFile(lockPath, JSON.stringify(remote));
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(remote));
+
+    const legacy: Record<string, unknown> = { ...remote, heartbeat: "2000-01-01T00:00:00.000Z" };
+    delete legacy.host_id;
+    await writeFile(lockPath, JSON.stringify(legacy));
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(legacy));
   });
 
   it("immediately reclaims a fresh lock after its owning child process exits", async () => {
@@ -234,7 +301,8 @@ describe("core io", () => {
       }
 
       const lockPath = path.join(root, PATHS.lock);
-      const lock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; heartbeat: string };
+      const lock = JSON.parse(await readFile(lockPath, "utf8")) as { host_id: string; pid: number; heartbeat: string };
+      expect(lock.host_id).toMatch(/^[0-9a-f-]{36}$/i);
       expect(lock.pid).toBe(child.pid);
       expect(Date.now() - Date.parse(lock.heartbeat)).toBeLessThan(5_000);
       child.kill();
@@ -302,11 +370,11 @@ describe("core io", () => {
     const root = await tempDir();
     const lockPath = path.join(root, PATHS.lock);
     await mkdir(path.dirname(lockPath), { recursive: true });
-    const record = { device_id: "device-1", device_name: "test", pid: process.pid, job: "weekly", started_at: "2026-10-28T00:00:00.000Z", heartbeat: "2026-10-28T00:00:00.000Z" };
+    const record = { device_id: "device-1", device_name: "test", host_id: await currentHostId(root), pid: process.pid, job: "weekly", started_at: "2026-10-28T00:00:00.000Z", heartbeat: "2026-10-28T00:00:00.000Z" };
     await writeFile(lockPath, JSON.stringify(record));
     const identity = await lstat(lockPath);
     let attempts = 0;
-    await unlinkOwnedLock(lockPath, identity, { pid: record.pid, started_at: record.started_at }, {
+    await unlinkOwnedLock(lockPath, identity, { host_id: record.host_id, pid: record.pid, started_at: record.started_at }, {
       unlinkFile: async (filePath) => {
         attempts += 1;
         if (attempts === 1) throw Object.assign(new Error("sharing violation"), { code: "EPERM" });

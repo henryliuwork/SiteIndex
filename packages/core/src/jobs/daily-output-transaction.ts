@@ -34,6 +34,8 @@ export interface DailyOutputWrite {
   writeTo(destination: string): Promise<void>;
 }
 
+export type DailyOutputInputBytes = ReadonlyMap<string, Buffer | null>;
+
 /** Deterministic race gate used by transaction tests; production callers omit it. */
 export interface DailyOutputTransactionHooks {
   beforeTargetReplace?(relativeTarget: string): Promise<void>;
@@ -198,6 +200,35 @@ async function readBytesIfPresent(project: string, relative: string): Promise<Bu
 async function currentHash(project: string, relative: string): Promise<string | null> {
   const bytes = await readBytesIfPresent(project, relative);
   return bytes === null ? null : sha256(bytes);
+}
+
+/** Read the exact transaction-target bytes used as the starting point for daily business calculations. */
+export async function captureDailyOutputInputBytes(
+  projectPath: string,
+  paths: DailyOutputPaths,
+  eventPath: string,
+): Promise<Map<string, Buffer | null>> {
+  const project = path.resolve(projectPath);
+  const eventTarget = relativeProjectFile(project, eventPath);
+  const targets = expectedTargets(paths, eventTarget);
+  const inputs = new Map<string, Buffer | null>();
+  for (const target of targets) inputs.set(target, await readBytesIfPresent(project, target));
+  return inputs;
+}
+
+/** Fail if any output used to calculate daily results changed after its initial byte snapshot. */
+export async function assertDailyOutputInputsUnchanged(
+  projectPath: string,
+  inputs: DailyOutputInputBytes,
+): Promise<void> {
+  const project = path.resolve(projectPath);
+  for (const [target, expected] of inputs) {
+    const actual = await currentHash(project, normalizeRelative(target));
+    const expectedHash = expected === null ? null : sha256(expected);
+    if (actual !== expectedHash) {
+      throw transactionError("daily 计算期间库存文件已被其他进程修改。为保护用户数据，本次同步已停止，请重新运行 daily。请检查项目数据后重试。");
+    }
+  }
 }
 
 async function assertPrivateArtifactDirectory(project: string, relative: string, expectedNames?: ReadonlySet<string>): Promise<string[]> {
@@ -471,6 +502,7 @@ export async function persistDailyOutputTransaction(
   paths: DailyOutputPaths,
   writes: readonly DailyOutputWrite[],
   hooks?: DailyOutputTransactionHooks,
+  expectedInputBytes?: DailyOutputInputBytes,
 ): Promise<void> {
   const project = path.resolve(projectPath);
   await recoverDailyOutputTransaction(project, paths, hooks);
@@ -492,6 +524,10 @@ export async function persistDailyOutputTransaction(
   if (writes.length !== 4 || writes.some((entry, index) => relativeProjectFile(project, entry.target) !== targetFiles[index])) {
     throw transactionError("daily 输出事务只能按固定顺序写入事件、库存、SKU 与汇总文件。");
   }
+  if (expectedInputBytes && (expectedInputBytes.size !== targetFiles.length
+    || targetFiles.some((target) => !expectedInputBytes.has(target)))) {
+    throw transactionError("daily 初始输入快照与固定输出清单不一致；为保护用户数据，本次同步已停止。");
+  }
 
   const backupDirRelative = backupDirectoryRelative(paths);
   const backupDir = await ensureProjectDirectory(project, backupDirRelative);
@@ -500,6 +536,12 @@ export async function persistDailyOutputTransaction(
     for (const [index, entry] of writes.entries()) {
       const target = targetFiles[index]!;
       const before = await readBytesIfPresent(project, target);
+      if (expectedInputBytes) {
+        const expected = expectedInputBytes.get(target)!;
+        if ((before === null ? null : sha256(before)) !== (expected === null ? null : sha256(expected))) {
+          throw transactionError("daily 首次读取后目标文件已被其他进程修改。未覆盖该文件，请检查项目数据并重新运行 daily。");
+        }
+      }
       const stagedRelative = artifactRelative(paths, index, "after");
       const stagedPath = projectFile(project, stagedRelative);
       await safeProjectPath(project, stagedRelative, "file");

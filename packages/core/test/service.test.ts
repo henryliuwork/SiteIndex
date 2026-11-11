@@ -156,6 +156,33 @@ describe("createCoreService initial namespaces", () => {
     await expect(readFile(path.join(transaction.backupDirectory, "0.after"))).resolves.toBeTruthy();
   }, 30_000);
 
+  it("recovers an interrupted daily transaction before categories.save mutates its protected SKU output", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0, 2] });
+
+    const result = await api.categories.save("fixture", { mode: "feed" });
+
+    expect(result.uncategorized).toBe(0);
+    expect(await readFile(transaction.manifestPath).catch(() => null)).toBeNull();
+    expect(await readFile(path.join(projectPath, PATHS.skus), "utf8")).toContain('"sku":"KYBF000-G"');
+    expect(await readFile(path.join(projectPath, PATHS.skus), "utf8")).not.toContain("synthetic after 2");
+  }, 30_000);
+
+  it("recovers an interrupted daily transaction before EDM image edits rebuild protected views", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0, 2] });
+
+    const result = await api.edm.setManualImage("fixture", "KYBF000-G", "https://images.example.test/demo.jpg");
+
+    expect(result.sku).toBe("KYBF000-G");
+    expect(await readFile(transaction.manifestPath).catch(() => null)).toBeNull();
+    expect(await readFile(path.join(projectPath, PATHS.skus), "utf8")).toContain('"sku":"KYBF000-G"');
+    expect(await readFile(path.join(projectPath, PATHS.skus), "utf8")).not.toContain("synthetic after 2");
+    expect(await readFile(path.join(projectPath, PATHS.skuMedia), "utf8")).toContain("https://images.example.test/demo.jpg");
+  }, 30_000);
+
   it("serves query APIs while a runner holds the project job lock", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);
