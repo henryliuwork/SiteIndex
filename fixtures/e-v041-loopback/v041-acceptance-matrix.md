@@ -6,7 +6,7 @@
 
 本矩阵只使用 `synthetic-shop.test`、`SYN-*` 虚构 SKU、内存中的假媒体和 loopback 服务。服务只能绑定 `127.0.0.1`，不记录请求头或请求正文，不访问真实站点，不上传真实媒体，不迁移真实项目，也不安装应用。
 
-截至验收准备时，`main` 基线为 `dab4db0efd4fb384cadb502d5d6b372a0ced7c99`。`media.prepare` 仍列在 `PENDING_HANDLERS`，EDM 页明确将图片处理标为演示且禁用；`edm export-index` 尚无 CLI 命令。库存核验只在开放 PR #417 分支验证，不能记作 main 或安装包通过。
+截至本次复核，`main` 基线为 `8c89eda12fb6301d5636b66f04153edb25aa08cf`（已含 #433）。`media.prepare` 与 `edm.exportIndex` 仍列在 `PENDING_HANDLERS`，EDM 图片处理仍为演示且禁用。库存核验只在开放 PR #417 分支验证，不能记作 main 或安装包通过；当前 PR head 为 `1c05ebdc63f2fdddc98f6b6b93ce91f682e16b22`。
 
 ## 证据层级
 
@@ -32,7 +32,19 @@
 | MED-03 | 假上传端保存媒体对象后断开连接，下一次 GET slug 查重命中 | 第一次上传后模拟连接断开；重试同一 SKU、同源图指纹 | 重试复用已存在对象（`reused`），只保留一个假媒体对象、一次成功上传记录和一条台账行；`media_id` / `source_hash` 稳定 | L0：假服务已覆盖“保存后断连”和后续 GET 查重；SiteIndex 客户端是否先查重未验证 |
 | LED-01 | 旧版 8 列 `sku_media.csv` 与两条虚构旧记录 | 先只读导入；再触发第一次真实写入 | 读取 / 导入时文件字节不变；首次写入才将 `media_id,source_hash` 追加为第 9、10 列，保留旧列和旧值，旧行新增列留空 | L1：#390 契约与 shared contract tests 约束表头；Core 文件迁移尚无验收证据 |
 | SEC-01 | 只在测试进程使用的假凭据 canary | 将假值投放到模拟凭据源并扫描模拟日志、Job、IPC、CLI/MCP 与导出边界 | 公开输出不包含假值；扫描器只返回匹配类别 / 数量，不返回命中内容。另核验错误码、提示及结果不回显响应正文 | L0：假 canary 扫描器自测；产品日志/IPC/CLI/MCP 尚未逐层验证 |
+| SEC-02 | 两个不同的虚构 HTTPS origin A / B；只用 #433 的固定假用户名和假密码 | 打包 renderer 中对 A、B 分别 configure；停止并重新启动同一安装版进程；分别读取 status；replace / delete B 后再重启并核对 A/B 状态 | 状态按 origin 隔离并跨进程保留；replace/delete B 不改变 A；preload IPC 结果只含状态，不回显凭据；DOM、浏览器存储、日志和可读导出中均没有 canary 明文 | #433 已合并，helper/设置页 UI 测试通过；当前 runner 未调用 helper，真实打包 IPC 跨进程复测未验证，见 #434 |
+| HOST-01 | 新鲜 GitHub-hosted Windows runner；一个 RUNNER_TEMP 子目录作为唯一测试根 | 启动前将 APPDATA、LOCALAPPDATA、USERPROFILE、HOME、TEMP、TMP 全部重定向到该根；检查 Electron 子进程环境、安装路径和每段 canonical/reparse 路径；退出后只清理并核验该根内数据 | 任一路径逃出测试根、出现重解析点或遗留进程时 fail closed；运行全程不读写 runner 默认用户数据；测试结束无残留 | #424 runner 目前仅把 LOCALAPPDATA 放入临时根，APPDATA 仍用 hosted runner 默认根，其他 profile/temp 根未统一重定向；待 C 改造，见 #434 |
 | EXP-01 | 虚构父子 SKU、synthetic 价格等级、tag、jpg/png/webp 与空图台账 | 调用 `edm export-index`，检查生成的 SKU 清单 | 按父 SKU 聚合；图片选择台账主图优先，其次 feed 首图；只输出 jpg/png；无图标记待补图；应用折扣档并写出短描述；不得输出凭据 | L1：导出命令尚未实现，准备项；L2 页面不可替代 CLI 导出证据 |
+
+## #433 后的托管包凭据验收状态
+
+| 阶段 | 当前证据 | 状态 / 下一步 |
+|---|---|---|
+| L0 loopback 假服务 | `fake-services.test.mjs` 覆盖 GraphQL 请求计数与 429、WordPress 401/403/429、上传保存后断连、混合上传结果和假凭据 canary | 7/7 通过；只验证夹具响应和结构，不证明产品调用路径 |
+| L1 浏览器 UI helper | #433 合并 `runWordPressCredentialsUiSmoke` 的 configure / replace / delete / assert-status 和 otherOrigins 断言；helper 的返回明确为 `ui-only` | #433 的 CI 成功；本地 helper 专项 6/6 通过；不能升级为打包 IPC 证据 |
+| L2 runner 隔离 | #424 脚本只将 LOCALAPPDATA 指向 RUNNER_TEMP 子目录，APPDATA 仍取 runner 默认值；USERPROFILE/HOME/TEMP/TMP 未统一重定向；helper 只校验调用方声明，未核验实际子进程环境与路径重解析点 | 未满足两站点包测前置；#434 已交给 C，要求单一临时根、spawn 环境核验、canonical/reparse 检查及限定清理 |
+| L2 打包 IPC / 跨进程 | 当前 packaged runner 未导入或调用 #433 helper；尚无使用 `window.siteindexWindow.wordpressCredentials` 的安装版 CDP 证据 | 未验证。待 #434 的 runner 接线完成后，在 hosted Windows runner 上以两站点假 origin 配置、退出、重启、replace/delete 并核对状态 |
+| L3 真实 WordPress | 无真实账号或站点访问 | 本轮不执行；仍需单独授权。`media.prepare` / `edm.exportIndex` 未接通，不调用上传流程 |
 
 ## 可观察性与 GraphQL epoch 切换
 
@@ -44,6 +56,6 @@
 
 - Loopback 假服务自测 `node --test fixtures/e-v041-loopback/fake-services.test.mjs`：7/7；仅证明 L0 服务夹具的计数、401/403、429、保存后断连、混合结果与假 canary 扫描。
 - K5 `packages/shared/test/media-contract.test.ts`：在基线 `dab4db0efd4fb384cadb502d5d6b372a0ced7c99` 上 8/8；只证明契约，不证明台账文件迁移或媒体处理。
-- #417 固定提交 `23c35c76c59f7dbcc469bfbd672ae8f1fd808428`：Core `stock-verification.test.ts` 11/11；CLI `cli.test.ts` 8/8；临时 CLI `main()` loopback 日更调用 1/1。CLI 专项调用读取假 Feed 和假 GraphQL 并检查 `feed_anomaly` 输出，但不是打包 CLI，也未做子进程崩溃恢复。
-- #417 目前仍是开放 PR。23c 的事务恢复清单还有 INV-06 四项完整性 / 并发编辑门槛未验证；不得把其 Core 通过数写成 PR 最终通过或发布验收。
+- #417 当前仍是开放 PR，base `8c89eda`、head `1c05ebd`。与之前验收 head `02b5986` 做 `git range-diff`，10 个提交逐项 patch 等价；`02b5986` 的 Windows `packages/core/test/io.test.ts` 定向测试 21/21。当前 head GitHub Actions run `43031610742` 的 Windows / Ubuntu / macOS 均通过；这证明代码和 CI，不是已发布安装包验收。host identity 测试明示为有起跑屏障的并发 smoke test，不保证两个进程命中内部 read-missing/exclusive-create 临界区，也不构成跨设备分布式锁证明。
+- #417 的 INV-01 至 INV-06 仍只属于该未合并 PR 的 Core/CLI 合成证据；即使三系统 CI 已通过，也不能记入 main、候选安装包或真实站点通过栏。
 - L2 正式候选包和 L3 真实 WordPress 环境均未执行。所有未实现或未接线的 API/UI 维持“未验证”，不得用 mock 自测替代。
