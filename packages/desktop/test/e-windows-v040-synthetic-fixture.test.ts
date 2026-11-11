@@ -16,7 +16,7 @@ function stockRate(history: string): number | null {
   return available.length ? available.filter((value) => value === "i").length / available.length : null;
 }
 
-describe("v0.4.0 W2 synthetic fixture integrity", () => {
+describe("v0.4.1 W2 synthetic fixture integrity", () => {
   it("publishes a typed summary that matches the generated records", () => {
     expect(fixture.summary).toMatchObject({
       totalSkus: expected.totalSkus,

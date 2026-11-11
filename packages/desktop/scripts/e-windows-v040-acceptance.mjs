@@ -14,20 +14,26 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
+import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
 
 const OLD_RELEASE = {
-  tag: "v0.3.0",
-  commit: "9dca729763ff6474e9baf182aac01213c81430a9",
-  sha256: "5b0ffb1e5c74b743c5938bd62349ef0b9fe69a87f05dfc8f56adf25c26f77bdd",
+  version: process.env.SITEINDEX_BASELINE_VERSION?.trim() || "0.4.0",
+  tag: `v${process.env.SITEINDEX_BASELINE_VERSION?.trim() || "0.4.0"}`,
+  commit: process.env.SITEINDEX_BASELINE_TAG_COMMIT?.trim() || "334d5bee76156ad856986031020f51b2bcb7319d",
+  assetId: process.env.SITEINDEX_BASELINE_ASSET_ID?.trim() || "734250277",
+  sha256: process.env.SITEINDEX_BASELINE_ASSET_SHA256?.trim().toLowerCase()
+    || "a7414e062a18170ef00f3bb7e09d11cb2b81d2197baff8717b7ee4a9ddda2b90",
 };
-const CANDIDATE_VERSION = process.env.SITEINDEX_CANDIDATE_VERSION?.trim() || "0.4.0";
+const CANDIDATE_VERSION = process.env.SITEINDEX_CANDIDATE_VERSION?.trim() || "0.4.1";
+const HOSTED_UPDATE = process.env.SITEINDEX_HOSTED_UPDATE === "true";
 const W2_PROJECT_ID = "synthetic-w2-pages";
 const W2_EXPECTED = W2_SYNTHETIC_EXPECTED;
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
-const APP_DATA_ROOT = process.env.APPDATA;
 const TEST_ROOT = await fsMkdtemp();
+const APP_DATA_ROOT = process.env.APPDATA;
+const LOCAL_APP_DATA_ROOT = path.join(TEST_ROOT, "local-app-data");
 const PROJECTS_ROOT = path.join(TEST_ROOT, "projects");
 const W2_PROJECT_DIRECTORY = path.join(PROJECTS_ROOT, W2_PROJECT_ID);
 const INSTALL_DIR = path.join(TEST_ROOT, "installed-app");
@@ -37,8 +43,8 @@ const TRACE_LOG_NAME = "siteindex-trace.log";
 const TRACE_SEARCH_ROOTS = [
   APP_DATA_DIR,
   APP_DATA_ROOT ? path.join(APP_DATA_ROOT, "siteindex-desktop") : "",
-  process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "SiteIndex") : "",
-  process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "siteindex") : "",
+  path.join(LOCAL_APP_DATA_ROOT, "SiteIndex"),
+  path.join(LOCAL_APP_DATA_ROOT, "siteindex"),
 ].filter(Boolean);
 const report = {
   sourceCommit: null,
@@ -53,9 +59,29 @@ const report = {
   expectedCandidateArtifactSha256: process.env.SITEINDEX_EXPECTED_CANDIDATE_ARTIFACT_SHA256 || null,
   candidateSourceCommit: process.env.SITEINDEX_CANDIDATE_SOURCE_COMMIT || process.env.SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT || null,
   expectedCandidateSourceCommit: process.env.SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT || null,
+  hostedUpdate: HOSTED_UPDATE,
+  userDataIsolation: "ephemeral GitHub runner APPDATA with a clean per-run SiteIndex directory; isolated temporary LOCALAPPDATA vault",
+  candidateReleaseCommit: process.env.SITEINDEX_CANDIDATE_RELEASE_COMMIT || null,
+  candidateReleaseAssetId: process.env.SITEINDEX_CANDIDATE_RELEASE_ASSET_ID || null,
+  candidateReleaseAssetSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ASSET_SHA256 || null,
+  candidateReleaseWorkflowRunId: process.env.SITEINDEX_CANDIDATE_RELEASE_RUN_ID || null,
+  candidateReleaseArtifactId: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_ID || null,
+  candidateReleaseArtifactSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_SHA256 || null,
+  candidateReleaseArtifactExeSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_EXE_SHA256 || null,
+  candidateUpdateMetadataVerified: process.env.SITEINDEX_CANDIDATE_UPDATE_METADATA_VERIFIED === "true",
+  updateMode: HOSTED_UPDATE ? "published-github-release" : "candidate-installer",
+  updaterRestart: {
+    detected: false,
+    hadRemoteDebugPort: false,
+    harnessRelaunchedForIpc: false,
+    originalRestartProfile: "not-applicable",
+    harnessProfileVerified: false,
+    executableVersion: null,
+  },
   runnerBuildVersionOverride: process.env.SITEINDEX_CANDIDATE_ARTIFACT_SOURCE === "runner-built-internal-candidate",
   previousRelease: { ...OLD_RELEASE },
   candidateInstallerSha256: null,
+  installerStartedAppBeforeHarness: null,
   windows: {
     version: process.env.SITEINDEX_WINDOWS_VERSION || os.version(),
     build: process.env.SITEINDEX_WINDOWS_BUILD || null,
@@ -63,12 +89,14 @@ const report = {
     architecture: os.arch(),
   },
   checks: [],
+  processOutput: [],
+  rendererDiagnostics: { targets: [], consoleErrors: [], pageErrors: [] },
   addExistingTrace: null,
   traceEnvironmentPassedToSpawn: false,
   visualEvidence: null,
   w2Acceptance: {
     candidateVersion: CANDIDATE_VERSION,
-    candidateArtifactSource: "workflow-run-artifact",
+    candidateArtifactSource: process.env.SITEINDEX_CANDIDATE_ARTIFACT_SOURCE || "runner-built-internal-candidate",
     syntheticProject: true,
     realProjectUsed: false,
     evidenceLegend: {
@@ -96,6 +124,7 @@ let workspaceProbeData = null;
 let syntheticSiteServer = null;
 let w2RuntimeDiagnostics = [];
 let activeW2CheckNumber = null;
+const instrumentedPages = new WeakSet();
 
 function record(name, passed, evidence = {}) {
   report.checks.push({ name, status: passed ? "passed" : "failed", evidence });
@@ -180,9 +209,64 @@ async function install(installerPath) {
   run(installerPath, ["/S", `/D=${INSTALL_DIR}`]);
 }
 
+function stopInstalledAppProcesses() {
+  const stopInstalledApp = [
+    "$installDir = [System.IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_DIR)",
+    "$installedExe = Join-Path $installDir 'SiteIndex.exe'",
+    "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $installedExe } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ].join("; ");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", stopInstalledApp], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15_000,
+    env: { ...process.env, SITEINDEX_ACCEPTANCE_INSTALL_DIR: INSTALL_DIR },
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error("Could not stop only the SiteIndex process from the isolated acceptance install.");
+}
+
+function installedAppProcessCount() {
+  const command = [
+    "$installDir = [System.IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_DIR)",
+    "$installedExe = Join-Path $installDir 'SiteIndex.exe'",
+    "$count = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $installedExe }).Count",
+    "Write-Output $count",
+  ].join("; ");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15_000,
+    env: { ...process.env, SITEINDEX_ACCEPTANCE_INSTALL_DIR: INSTALL_DIR },
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) return 0;
+  return Number.parseInt(result.stdout.trim(), 10) || 0;
+}
+
+function installedExecutableVersion() {
+  const command = [
+    "$exe = Join-Path ([System.IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_DIR)) 'SiteIndex.exe'",
+    "if (Test-Path -LiteralPath $exe -PathType Leaf) { (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion }",
+  ].join("; ");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15_000,
+    env: { ...process.env, SITEINDEX_ACCEPTANCE_INSTALL_DIR: INSTALL_DIR },
+  });
+  if (result.error || result.status !== 0) return null;
+  return result.stdout.trim() || null;
+}
+
+function collectProcessOutput(stream, chunk) {
+  const lines = chunk.toString("utf8").split(/\r?\n/u).filter(Boolean);
+  for (const line of lines) report.processOutput.push({ stream, text: safeMessage(line).slice(0, 600) });
+  if (report.processOutput.length > 40) report.processOutput.splice(0, report.processOutput.length - 40);
+}
+
 async function writeRunnerSettings() {
-  if (!APP_DATA_ROOT) throw new Error("APPDATA is unavailable on this Windows runner.");
   await mkdir(APP_DATA_DIR, { recursive: true });
+  await mkdir(LOCAL_APP_DATA_ROOT, { recursive: true });
   testProfileCreated = true;
   await writeFile(
     SETTINGS_FILE,
@@ -368,16 +452,34 @@ async function launchInstalledApp({ executablePath, trace = false }) {
   } catch (error) {
     if (error instanceof Error && error.message === "CDP acceptance port is already in use.") throw error;
   }
-  const environment = { ...process.env, ELECTRON_RENDERER_URL: "", SITEINDEX_UI_URL: "" };
+  const environment = {
+    ...process.env,
+    APPDATA: APP_DATA_ROOT,
+    LOCALAPPDATA: LOCAL_APP_DATA_ROOT,
+    ELECTRON_RENDERER_URL: "",
+    SITEINDEX_UI_URL: "",
+  };
+  if (HOSTED_UPDATE && process.env.GITHUB_ACTIONS !== "true") {
+    throw new Error("Hosted update acceptance must run on a fresh GitHub Actions Windows runner.");
+  }
+  for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "NODE_AUTH_TOKEN", "NPM_TOKEN"]) {
+    delete environment[key];
+  }
   if (trace) environment.SITEINDEX_TRACE = "1";
   else delete environment.SITEINDEX_TRACE;
   report.traceEnvironmentPassedToSpawn = trace && environment.SITEINDEX_TRACE === "1";
   applicationProcess = spawn(executablePath, [`--remote-debugging-port=${CDP_PORT}`, "--disable-gpu"], {
     env: environment,
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: false,
   });
   applicationProcess.on("error", () => undefined);
+  applicationProcess.stdout?.on("data", (chunk) => collectProcessOutput("stdout", chunk));
+  applicationProcess.stderr?.on("data", (chunk) => collectProcessOutput("stderr", chunk));
+  return connectToInstalledApp({ processHandle: applicationProcess });
+}
+
+async function connectToInstalledApp({ processHandle = null } = {}) {
   const endpoint = `http://127.0.0.1:${CDP_PORT}`;
   const deadline = Date.now() + 60_000;
   let lastError = null;
@@ -388,7 +490,7 @@ async function launchInstalledApp({ executablePath, trace = false }) {
     } catch (error) {
       lastError = error;
     }
-    if (applicationProcess.exitCode !== null) throw new Error("Packaged SiteIndex process exited before CDP became ready.");
+    if (processHandle && processHandle.exitCode !== null) throw new Error("Packaged SiteIndex process exited before CDP became ready.");
     await delay(500);
   }
   if (Date.now() >= deadline) throw new Error(lastError ? "Packaged SiteIndex CDP endpoint did not start." : "Packaged SiteIndex CDP timed out.");
@@ -398,15 +500,71 @@ async function launchInstalledApp({ executablePath, trace = false }) {
   let page = null;
   while (Date.now() < deadlineForPage) {
     const pages = browserConnection.contexts().flatMap((context) => context.pages());
+    for (const candidate of pages) {
+      if (instrumentedPages.has(candidate)) continue;
+      instrumentedPages.add(candidate);
+      candidate.on("console", (message) => {
+        if (message.type() === "error") report.rendererDiagnostics.consoleErrors.push(safeMessage(message.text()).slice(0, 600));
+      });
+      candidate.on("pageerror", (error) => report.rendererDiagnostics.pageErrors.push(safeMessage(error).slice(0, 600)));
+    }
     page = pages.find((candidate) => candidate.url().startsWith("file:") && candidate.url().includes("/ui/index.html")) ?? null;
     if (page) break;
+    if (processHandle && processHandle.exitCode !== null) throw new Error("Packaged SiteIndex process exited before its UI target appeared.");
     await delay(300);
   }
-  if (!page) throw new Error("Packaged app did not load the complete file-based UI page.");
+  if (!page) {
+    report.rendererDiagnostics.targets = await Promise.all(
+      browserConnection.contexts().flatMap((context) => context.pages()).map(async (target) => ({
+        url: safeMessage(target.url()),
+        title: safeMessage(await target.title().catch(() => "")),
+      })),
+    );
+    throw new Error(`Packaged app did not load the complete file-based UI page; CDP targets=${JSON.stringify(report.rendererDiagnostics.targets)}`);
+  }
   await page.waitForFunction(() => typeof window.siteindex === "object" && window.siteindex !== null, null, { timeout: 30_000 });
   await delay(300);
-  if (applicationProcess.exitCode !== null) throw new Error("Packaged app process exited after CDP attached; refusing to use another app instance.");
+  if (processHandle && processHandle.exitCode !== null) throw new Error("Packaged app process exited after CDP attached; refusing to use another app instance.");
   return page;
+}
+
+async function waitForHostedUpdatedApp() {
+  const result = await waitForUpdatedWindowsApp({
+    candidateVersion: CANDIDATE_VERSION,
+    connectExisting: async () => {
+      const endpoint = await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`).catch(() => null);
+      if (!endpoint?.ok) return null;
+      if (browserConnection) {
+        await browserConnection.close().catch(() => undefined);
+        browserConnection = null;
+      }
+      try {
+        const page = await connectToInstalledApp();
+        const state = await appState(page);
+        return { page, version: state.version };
+      } catch (error) {
+        await browserConnection?.close().catch(() => undefined);
+        browserConnection = null;
+        throw error;
+      }
+    },
+    getInstalledExecutableVersion: async () => installedExecutableVersion(),
+    isOriginalProcessRunning: async () => Boolean(applicationProcess && applicationProcess.exitCode === null),
+    getInstalledProcessCount: async () => installedAppProcessCount(),
+    stopInstalledProcesses: async () => stopInstalledAppProcesses(),
+    launchForVerification: async () => {
+      const page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: true });
+      const state = await appState(page);
+      return { page, version: state.version };
+    },
+    now: () => Date.now(),
+    wait: delay,
+    intervalMs: 1000,
+    timeoutMs: 180_000,
+    formatError: safeMessage,
+  });
+  report.updaterRestart = result.updaterRestart;
+  return result.connected.page;
 }
 
 async function findTraceLogs(root, depth = 5) {
@@ -430,7 +588,7 @@ async function findTraceLogs(root, depth = 5) {
 
 async function traceRoots() {
   const roots = new Set(TRACE_SEARCH_ROOTS);
-  for (const base of [APP_DATA_ROOT, process.env.LOCALAPPDATA].filter(Boolean)) {
+  for (const base of [APP_DATA_ROOT, LOCAL_APP_DATA_ROOT]) {
     let entries = [];
     try {
       entries = await readdir(base, { withFileTypes: true });
@@ -456,7 +614,7 @@ async function readTraceLogs() {
   const contents = await Promise.all([...files].map((file) => readFile(file, "utf8").catch(() => "")));
   const locations = [...files].map((file) => {
     if (APP_DATA_ROOT && file.toLowerCase().startsWith(APP_DATA_ROOT.toLowerCase())) return "roaming-app-data";
-    if (process.env.LOCALAPPDATA && file.toLowerCase().startsWith(process.env.LOCALAPPDATA.toLowerCase())) return "local-app-data";
+    if (file.toLowerCase().startsWith(LOCAL_APP_DATA_ROOT.toLowerCase())) return "local-app-data";
     return "other-siteindex-data";
   });
   return { rootCount: roots.length, fileCount: files.size, locations: [...new Set(locations)], text: contents.join("\n") };
@@ -464,6 +622,13 @@ async function readTraceLogs() {
 
 async function stopApplication() {
   if (browserConnection) {
+    let pages = [];
+    try {
+      pages = browserConnection.contexts().flatMap((context) => context.pages());
+    } catch {
+      // The updater may already have disconnected the old renderer.
+    }
+    await Promise.all(pages.map((page) => page.close().catch(() => undefined)));
     await browserConnection.close().catch(() => undefined);
     browserConnection = null;
   }
@@ -474,6 +639,7 @@ async function stopApplication() {
       timeout: 15_000,
     });
   }
+  stopInstalledAppProcesses();
   applicationProcess = null;
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
@@ -506,6 +672,46 @@ async function appState(page) {
       },
     };
   });
+}
+
+async function requestHostedUpdate(page) {
+  const available = await page.evaluate(async () => {
+    const updates = window.siteindex?.updates;
+    if (!updates) throw new Error("The installed baseline does not expose the update API.");
+    return updates.check();
+  });
+  assert(available.state === "available" && available.latest === CANDIDATE_VERSION,
+    "packaged baseline discovers the published GitHub candidate through electron-updater", {
+      state: available.state,
+      latest: available.latest ?? null,
+      expectedVersion: CANDIDATE_VERSION,
+    });
+
+  await page.evaluate(async () => {
+    const updates = window.siteindex?.updates;
+    if (!updates) throw new Error("The installed baseline does not expose the update API.");
+    await updates.download();
+  });
+  const ready = await page.evaluate(async () => {
+    const updates = window.siteindex?.updates;
+    if (!updates) throw new Error("The installed baseline does not expose the update API.");
+    return updates.check();
+  });
+  assert(ready.state === "ready" && ready.latest === CANDIDATE_VERSION,
+    "electron-updater finishes downloading the published candidate before install", {
+      state: ready.state,
+      latest: ready.latest ?? null,
+      expectedVersion: CANDIDATE_VERSION,
+    });
+
+  await page.evaluate(() => {
+    const updates = window.siteindex?.updates;
+    if (!updates) throw new Error("The installed baseline does not expose the update API.");
+    void updates.install().catch(() => undefined);
+    return true;
+  }).catch(() => undefined);
+  await delay(1000);
+  return waitForHostedUpdatedApp();
 }
 
 async function goToW2Route(page, route) {
@@ -2186,8 +2392,11 @@ async function captureAddExistingTrace(page) {
 
 async function main() {
   if (process.platform !== "win32") throw new Error("This acceptance workflow requires Windows.");
+  if (process.env.GITHUB_ACTIONS !== "true" || process.env.SITEINDEX_RUNNER_ENVIRONMENT !== "github-hosted") {
+    throw new Error("Packaged acceptance must run on a GitHub-hosted Actions Windows runner to isolate APPDATA safely.");
+  }
+  if (!APP_DATA_ROOT) throw new Error("The GitHub Actions Windows runner did not provide APPDATA.");
   if (!OUTPUT_DIR) throw new Error("SITEINDEX_ACCEPTANCE_OUTPUT is not configured.");
-  if (!APP_DATA_ROOT) throw new Error("APPDATA is unavailable on this Windows runner.");
   if (hasInstalledSiteIndex()) throw new Error("The Windows runner already has a SiteIndex install; refusing to touch it.");
   if (await exists(APP_DATA_DIR)) throw new Error("The Windows runner already has SiteIndex user data; refusing to alter it.");
   const oldInstaller = path.resolve(process.argv[2] || "");
@@ -2196,8 +2405,40 @@ async function main() {
     throw new Error("The official and candidate installers must both exist.");
   }
   const actualOldHash = await fileSha256(oldInstaller);
-  assert(actualOldHash === OLD_RELEASE.sha256, "official v0.3.0 installer matches pinned GitHub digest", { tag: OLD_RELEASE.tag, sha256: actualOldHash });
+  assert(actualOldHash === OLD_RELEASE.sha256, `official ${OLD_RELEASE.tag} installer matches pinned GitHub digest`, {
+    tag: OLD_RELEASE.tag,
+    commit: OLD_RELEASE.commit,
+    assetId: OLD_RELEASE.assetId,
+    sha256: actualOldHash,
+  });
   report.candidateInstallerSha256 = await fileSha256(candidateInstaller);
+  if (HOSTED_UPDATE) {
+    assert(report.candidateUpdateMetadataVerified,
+      "published latest.yml version, installer filename, and SHA512 match the candidate EXE");
+    assert(Boolean(report.candidateReleaseWorkflowRunId && report.candidateReleaseArtifactId),
+      "candidate installer is bound to the successful tag-triggered Release run and its Windows artifact", {
+        workflowRunId: report.candidateReleaseWorkflowRunId,
+        artifactId: report.candidateReleaseArtifactId,
+        artifactDigest: report.candidateReleaseArtifactSha256,
+      });
+    assert(report.candidateReleaseCommit === report.candidateSourceCommit,
+      "candidate Release tag commit matches the downloaded installer provenance", {
+        releaseCommit: report.candidateReleaseCommit,
+        candidateSourceCommit: report.candidateSourceCommit,
+      });
+    assert(report.candidateReleaseAssetSha256 === report.candidateInstallerSha256,
+      "candidate installer SHA256 matches the published Release asset digest", {
+        releaseAssetId: report.candidateReleaseAssetId,
+        expectedSha256: report.candidateReleaseAssetSha256,
+        actualSha256: report.candidateInstallerSha256,
+      });
+    assert(report.candidateReleaseArtifactExeSha256 === report.candidateInstallerSha256,
+      "published Release installer SHA256 matches the exact Windows artifact from its Release run", {
+        releaseArtifactId: report.candidateReleaseArtifactId,
+        artifactSha256: report.candidateReleaseArtifactExeSha256,
+        releaseAssetSha256: report.candidateInstallerSha256,
+      });
+  }
   report.sourceCommit = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
   const expectedCandidateHash = process.env.SITEINDEX_EXPECTED_CANDIDATE_SHA256?.trim().toLowerCase();
   if (report.candidateArtifactSource === "workflow-run-artifact") {
@@ -2233,35 +2474,55 @@ async function main() {
   const legacyProjectPath = path.join(PROJECTS_ROOT, "synthetic-legacy-project");
   await makeLegacyProject(legacyProjectPath);
   const projectSnapshot = await snapshotTree(legacyProjectPath);
-  currentStage = "v0.3.0 installation";
+  currentStage = `${OLD_RELEASE.tag} installation`;
   await install(oldInstaller);
-  assert(await exists(path.join(INSTALL_DIR, "SiteIndex.exe")), "v0.3.0 installed into dedicated runner directory");
+  assert(await exists(path.join(INSTALL_DIR, "SiteIndex.exe")), `${OLD_RELEASE.tag} installed into dedicated runner directory`);
+  report.installerStartedAppBeforeHarness = installedAppProcessCount() > 0;
+  stopInstalledAppProcesses();
   await writeRunnerSettings();
 
-  currentStage = "v0.3.0 packaged launch";
-  let page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe") });
+  currentStage = `${OLD_RELEASE.tag} packaged launch`;
+  let page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: HOSTED_UPDATE });
   const oldState = await appState(page);
-  assert(oldState.version === "0.3.0", "old packaged app reports v0.3.0 through preload IPC", { version: oldState.version });
-  assert(oldState.projectIds.includes("synthetic-legacy-project") && oldState.projectCount === 1, "v0.3.0 discovers synthetic legacy project", {
+  assert(oldState.version === OLD_RELEASE.version, `baseline packaged app reports ${OLD_RELEASE.tag} through preload IPC`, { version: oldState.version });
+  assert(oldState.projectIds.includes("synthetic-legacy-project") && oldState.projectCount === 1, `${OLD_RELEASE.tag} discovers synthetic legacy project`, {
     projectCount: oldState.projectCount,
     syntheticProjectFound: oldState.projectIds.includes("synthetic-legacy-project"),
     syntheticSkuCount: oldState.activeSkuCounts[0] ?? 0,
   });
-  assert(oldState.settings.projects_root === PROJECTS_ROOT, "v0.3.0 loads project-root setting from the runner's default profile");
   const oldSettings = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
-  await stopApplication();
-
-  currentStage = "candidate upgrade installation";
-  await install(candidateInstaller);
-  candidateInstalled = true;
-  assert(await exists(path.join(INSTALL_DIR, "SiteIndex.exe")), "candidate installer upgraded the same installation directory");
-
-  currentStage = `v${CANDIDATE_VERSION} packaged launch and upgrade persistence`;
-  page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: true });
+  assert(oldState.settings.projects_root === PROJECTS_ROOT, `${OLD_RELEASE.tag} loads the project-root setting from the runner profile`);
+  if (HOSTED_UPDATE) {
+    currentStage = "GitHub hosted update check, download, and install";
+    page = await requestHostedUpdate(page);
+    candidateInstalled = true;
+    assert(report.updaterRestart.detected, "NSIS update install relaunched the candidate application", report.updaterRestart);
+  } else {
+    await stopApplication();
+    currentStage = "candidate installer upgrade";
+    await install(candidateInstaller);
+    candidateInstalled = true;
+    assert(await exists(path.join(INSTALL_DIR, "SiteIndex.exe")), "candidate installer upgraded the same installation directory");
+    stopInstalledAppProcesses();
+    currentStage = `v${CANDIDATE_VERSION} packaged launch and upgrade persistence`;
+    page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: true });
+  }
   const syntheticSite = await startSyntheticSite();
   report.w2Acceptance.seed = await makeW2SyntheticProject(path.join(PROJECTS_ROOT, W2_PROJECT_ID), syntheticSite.origin);
   const candidateState = await appState(page);
   assert(candidateState.version === CANDIDATE_VERSION, "upgraded packaged app reports candidate version through preload IPC", { version: candidateState.version });
+  const candidateProfileIsolated = candidateState.settings.projects_root === PROJECTS_ROOT;
+  if (HOSTED_UPDATE && report.updaterRestart.harnessRelaunchedForIpc) {
+    report.updaterRestart.harnessProfileVerified = candidateProfileIsolated;
+    assert(candidateProfileIsolated,
+      "harness-reopened candidate uses the isolated temporary profile; original updater-launched profile remains unverified",
+      { harnessProfileVerified: candidateProfileIsolated, originalRestartProfile: "unknown" });
+  } else {
+    if (HOSTED_UPDATE) report.updaterRestart.originalRestartProfile = candidateProfileIsolated ? "verified-isolated" : "profile-mismatch";
+    assert(candidateProfileIsolated,
+      HOSTED_UPDATE ? "original updater-restarted candidate uses the isolated temporary profile" : "candidate installer app uses the isolated temporary profile",
+      { profileMatchesTemporaryRoot: candidateProfileIsolated, originalRestartProfile: report.updaterRestart.originalRestartProfile });
+  }
   assert(candidateState.projectIds.includes("synthetic-legacy-project")
     && candidateState.projectIds.includes(W2_PROJECT_ID)
     && candidateState.projectCount === 2, "synthetic legacy and W2 projects are listed by the upgraded package", {
@@ -2347,6 +2608,14 @@ async function writeReport() {
     `- Source commit: \`${report.sourceCommit ?? "unavailable"}\``,
     `- Candidate artifact: ${report.candidateArtifactSource}`,
     `- Candidate source commit: \`${report.candidateSourceCommit ?? "unavailable"}\``,
+    `- Candidate Release commit / asset: \`${report.candidateReleaseCommit ?? "n/a"}\` / \`${report.candidateReleaseAssetId ?? "n/a"}\``,
+    `- Candidate Release asset SHA256: \`${report.candidateReleaseAssetSha256 ?? "n/a"}\``,
+    `- Candidate Release run / Windows artifact: \`${report.candidateReleaseWorkflowRunId ?? "n/a"}\` / \`${report.candidateReleaseArtifactId ?? "n/a"}\``,
+    `- Candidate artifact ZIP SHA256 / installer SHA256: \`${report.candidateReleaseArtifactSha256 ?? "n/a"}\` / \`${report.candidateReleaseArtifactExeSha256 ?? "n/a"}\``,
+    `- Update mode: ${report.updateMode}`,
+    `- User data isolation: ${report.userDataIsolation}`,
+    `- Installer launched app before harness: ${report.installerStartedAppBeforeHarness ?? "not checked"}`,
+    `- Updater restart: ${JSON.stringify(report.updaterRestart)}`,
     `- Candidate workflow run / artifact: \`${report.candidateWorkflowRunId ?? "n/a"}\` / \`${report.candidateArtifactId ?? "n/a"}\``,
     `- Candidate artifact SHA256: \`${report.candidateArtifactSha256 ?? "n/a"}\``,
     `- Candidate installer SHA256: \`${report.candidateInstallerSha256 ?? "unavailable"}\``,
