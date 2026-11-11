@@ -5,7 +5,16 @@ describe("packaged credential region wait", () => {
   it("uses an exact accessible name and waits for one stable region", async () => {
     const locator = { count: vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1).mockResolvedValueOnce(1) };
     const page = { getByRole: vi.fn(() => locator), url: vi.fn(() => "file:///ui/index.html") };
-    const wrapped = createCredentialRegionWaitPage(page, { timeoutMs: 30, intervalMs: 1, stableSamples: 2 });
+    let clock = 0;
+    const wrapped = createCredentialRegionWaitPage(page, {
+      timeoutMs: 30,
+      intervalMs: 1,
+      stableSamples: 2,
+      now: () => clock,
+      sleep: async (duration) => {
+        clock += duration;
+      },
+    });
 
     const region = wrapped.getByRole("region", { name: "凭据：https://synthetic.invalid" });
     await expect(region.count()).resolves.toBe(1);
@@ -22,10 +31,46 @@ describe("packaged credential region wait", () => {
     const missing = { count: vi.fn().mockResolvedValue(0) };
     const duplicate = { count: vi.fn().mockResolvedValue(2) };
     const page = { getByRole: vi.fn().mockReturnValueOnce(missing).mockReturnValueOnce(duplicate) };
-    const wrapped = createCredentialRegionWaitPage(page, { timeoutMs: 5, intervalMs: 1, stableSamples: 2 });
+    let clock = 0;
+    const wrapped = createCredentialRegionWaitPage(page, {
+      timeoutMs: 2,
+      intervalMs: 1,
+      stableSamples: 2,
+      now: () => clock,
+      sleep: async (duration) => {
+        clock += duration;
+      },
+    });
 
-    await expect(wrapped.getByRole("region", { name: "凭据：https://missing.synthetic.invalid" }).count()).resolves.toBe(0);
-    await expect(wrapped.getByRole("region", { name: "凭据：https://duplicate.synthetic.invalid" }).count()).resolves.toBe(2);
+    await expect(
+      wrapped.getByRole("region", { name: "凭据：https://missing.synthetic.invalid" }).count(),
+    ).resolves.toBe(-1);
+    await expect(
+      wrapped.getByRole("region", { name: "凭据：https://duplicate.synthetic.invalid" }).count(),
+    ).resolves.toBe(-1);
+  });
+
+  it.each([
+    { label: "missing", counts: [0, 0, 1] },
+    { label: "duplicate", counts: [2, 2, 1] },
+  ])("does not accept a single final match after an unstable $label sequence", async ({ counts }) => {
+    const locator = {
+      count: vi.fn().mockResolvedValueOnce(counts[0]).mockResolvedValueOnce(counts[1]).mockResolvedValueOnce(counts[2]),
+    };
+    const page = { getByRole: vi.fn(() => locator) };
+    let clock = 0;
+    const wrapped = createCredentialRegionWaitPage(page, {
+      timeoutMs: 2,
+      intervalMs: 1,
+      stableSamples: 2,
+      now: () => clock,
+      sleep: async (duration) => {
+        clock += duration;
+      },
+    });
+
+    await expect(wrapped.getByRole("region", { name: "凭据：https://synthetic.invalid" }).count()).resolves.toBe(-1);
+    expect(locator.count).toHaveBeenCalledTimes(3);
   });
 
   it("leaves other page roles unchanged", () => {
