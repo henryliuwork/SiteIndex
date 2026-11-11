@@ -137,6 +137,8 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
 
   function handleResult(result: JobResult): void {
     if (result.job !== "media") return;
+    // JobResult 不含 projectId/projectPath；只有 Desktop/Core 保证 runId 全局唯一时，
+    // 才能把事件归给本地上下文。多窗口并发隔离必须由真实执行身份契约和集成测试证明。
     const context = contextsByRunId.get(result.runId);
     if (!context) {
       rememberRecent(earlyResults, result.runId, result);
