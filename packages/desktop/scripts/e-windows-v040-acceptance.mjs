@@ -50,6 +50,14 @@ const CREDENTIAL_OUTPUT_MARKERS = [
   "siteindex-synthetic-user-replacement",
   "siteindex-synthetic-credential-not-valid-replacement",
 ];
+const CREDENTIAL_BASIC_PAIRS = [
+  `${CREDENTIAL_OUTPUT_MARKERS[0]}:${CREDENTIAL_OUTPUT_MARKERS[1]}`,
+  `${CREDENTIAL_OUTPUT_MARKERS[2]}:${CREDENTIAL_OUTPUT_MARKERS[3]}`,
+];
+const CREDENTIAL_BASIC_HEADERS = CREDENTIAL_BASIC_PAIRS.map(
+  (value) => `Basic ${Buffer.from(value, "utf8").toString("base64")}`,
+);
+const CREDENTIAL_CANARY_VALUES = [...CREDENTIAL_OUTPUT_MARKERS, ...CREDENTIAL_BASIC_PAIRS, ...CREDENTIAL_BASIC_HEADERS];
 const W2_EXPECTED = W2_SYNTHETIC_EXPECTED;
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
@@ -119,6 +127,7 @@ const report = {
   credentialIsolation: {
     candidateVersion: CANDIDATE_VERSION,
     candidateSha256: null,
+    baselineSettingsProfileReadback: false,
     environmentPaths: {},
     subprocessPathDiagnostics: { observed: false, contained: false, pathCount: 0 },
     preloadPathDiagnostics: { observed: false, contained: false, pathCount: 0 },
@@ -132,7 +141,19 @@ const report = {
     restarts: [],
     siteStates: [],
     ipcCounts: { status: 0, save: 0, clear: 0 },
-    canary: { type: "synthetic username and application password", echoedCount: 0, browserStorageMatchCount: 0 },
+    canary: {
+      type: "synthetic username and application password",
+      echoedCount: 0,
+      browserStorageMatchCount: 0,
+      diskMatchedFileCount: null,
+      diskScan: {
+        profileScanCompleted: false,
+        outputArtifactScanCompleted: false,
+        filesScanned: 0,
+        matchingFileCount: 0,
+        matchCounts: { plaintextUtf8: 0, plaintextUtf16le: 0, base64Utf8: 0, base64Utf16le: 0, basicHeader: 0 },
+      },
+    },
   },
   addExistingTrace: null,
   traceEnvironmentPassedToSpawn: false,
@@ -191,9 +212,15 @@ function recordW2(name, passed, evidenceType, evidence = {}) {
 function safeMessage(error) {
   const source = error instanceof Error ? error.message : String(error);
   let safe = source.replaceAll(TEST_ROOT, "<TEST_ROOT>").replaceAll(INSTALL_DIR, "<INSTALL_DIR>");
-  for (const marker of CREDENTIAL_OUTPUT_MARKERS) {
-    safe = safe.replaceAll(marker, "<CREDENTIAL>");
-    safe = safe.replaceAll(Buffer.from(marker).toString("base64"), "<CREDENTIAL>");
+  for (const marker of CREDENTIAL_CANARY_VALUES) {
+    for (const variant of [
+      marker,
+      Buffer.from(marker, "utf8").toString("base64"),
+      Buffer.from(marker, "utf16le").toString("utf8"),
+      Buffer.from(marker, "utf16le").toString("base64"),
+    ]) {
+      if (variant) safe = safe.replaceAll(variant, "<CREDENTIAL>");
+    }
   }
   if (APP_DATA_DIR) safe = safe.replaceAll(APP_DATA_DIR, "<APP_DATA>");
   return safe
@@ -218,8 +245,7 @@ async function fsMkdtemp() {
   const root = await mkdtemp(path.join(RUNNER_TEMP, "siteindex-e-acceptance-"));
   const check = await inspectContainedPath(RUNNER_TEMP, root);
   if (!check.withinRoot || !check.noReparse) {
-    await rm(root, { recursive: true, force: true });
-    throw new Error("The isolated acceptance root is outside RUNNER_TEMP or contains a reparse path.");
+    throw new Error("The isolated acceptance root is outside RUNNER_TEMP or contains a reparse path; cleanup was refused.");
   }
   return root;
 }
@@ -311,28 +337,35 @@ async function prepareIsolatedProfile() {
 
   const junctionTarget = path.join(RUNNER_TEMP, `siteindex-junction-target-${randomUUID()}`);
   const junctionPath = path.join(TEST_ROOT, "junction-probe");
-  const [targetContained, targetOutsideProfile] = await Promise.all([
-    inspectContainedPath(RUNNER_TEMP, junctionTarget),
-    inspectContainedPath(TEST_ROOT, junctionTarget),
-  ]);
-  if (!targetContained.withinRoot || !targetContained.noReparse || targetOutsideProfile.withinRoot) {
-    throw new Error("The synthetic junction target is not safely isolated under RUNNER_TEMP.");
-  }
+  if (await exists(junctionTarget)) throw new Error("The synthetic junction target already exists.");
   try {
     await mkdir(path.join(junctionTarget, "child"), { recursive: true });
+    const [targetContained, targetOutsideProfile] = await Promise.all([
+      inspectContainedPath(RUNNER_TEMP, junctionTarget),
+      inspectContainedPath(TEST_ROOT, junctionTarget),
+    ]);
+    if (!targetContained.withinRoot || !targetContained.noReparse || targetOutsideProfile.withinRoot) {
+      throw new Error("The synthetic junction target is not safely isolated under RUNNER_TEMP.");
+    }
     await symlink(junctionTarget, junctionPath, "junction");
     const probe = await inspectContainedPath(TEST_ROOT, path.join(junctionPath, "child"));
     report.credentialIsolation.junctionEscapeRejected = !probe.withinRoot || !probe.noReparse;
     if (!report.credentialIsolation.junctionEscapeRejected) throw new Error("Isolation validation did not reject a synthetic junction.");
   } finally {
-    const targetBeforeRemoval = await inspectContainedPath(RUNNER_TEMP, junctionTarget);
-    if (!targetBeforeRemoval.withinRoot || !targetBeforeRemoval.noReparse) {
-      throw new Error("The synthetic junction target moved outside the runner's temporary root.");
+    const rootBeforeRemoval = await inspectContainedPath(RUNNER_TEMP, TEST_ROOT);
+    if (!rootBeforeRemoval.withinRoot || !rootBeforeRemoval.noReparse) {
+      throw new Error("The test root moved outside RUNNER_TEMP during the junction check.");
     }
     await unlink(junctionPath).catch((error) => {
       if (error?.code !== "ENOENT") throw error;
     });
-    await rm(junctionTarget, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    if (await exists(junctionTarget)) {
+      const targetBeforeRemoval = await inspectContainedPath(RUNNER_TEMP, junctionTarget);
+      if (!targetBeforeRemoval.withinRoot || !targetBeforeRemoval.noReparse) {
+        throw new Error("The synthetic junction target moved outside the runner's temporary root.");
+      }
+      await rm(junctionTarget, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
     const targetAfterRemoval = await inspectContainedPath(RUNNER_TEMP, junctionTarget);
     report.credentialIsolation.junctionCleanupVerified = !(await exists(junctionPath))
       && !(await exists(junctionTarget))
@@ -481,17 +514,44 @@ async function exists(filePath) {
   }
 }
 
-async function scanCredentialCanaries() {
-  const markers = new Set(CREDENTIAL_OUTPUT_MARKERS.flatMap((marker) => [
-    marker,
-    Buffer.from(marker).toString("base64"),
-  ]));
-  let matchedFileCount = 0;
-  for (const root of [APP_DATA_ROOT, LOCAL_APP_DATA_ROOT, PROJECTS_ROOT]) {
+function credentialCanaryPatterns() {
+  const values = CREDENTIAL_CANARY_VALUES;
+  return {
+    plaintextUtf8: values.map((value) => Buffer.from(value, "utf8")),
+    plaintextUtf16le: values.map((value) => Buffer.from(value, "utf16le")),
+    base64Utf8: values.map((value) => Buffer.from(value, "utf8").toString("base64")),
+    base64Utf16le: values.map((value) => Buffer.from(value, "utf16le").toString("base64")),
+    basicHeader: CREDENTIAL_BASIC_HEADERS.map((value) => Buffer.from(value, "utf8")),
+  };
+}
+
+async function scanCredentialCanaries({ outputOnly = false } = {}) {
+  const expectedOutput = path.resolve(process.cwd(), "siteindex-e-windows-results");
+  if (!OUTPUT_DIR || path.resolve(OUTPUT_DIR) !== expectedOutput) {
+    throw new Error("The acceptance output directory is outside its dedicated artifact location.");
+  }
+  const outputRoot = { name: "outputArtifact", path: OUTPUT_DIR, boundary: process.cwd() };
+  const roots = outputOnly
+    ? [outputRoot]
+    : [
+      { name: "appData", path: APP_DATA_ROOT, boundary: TEST_ROOT },
+      { name: "localAppData", path: LOCAL_APP_DATA_ROOT, boundary: TEST_ROOT },
+      { name: "projectData", path: PROJECTS_ROOT, boundary: TEST_ROOT },
+      { name: "profileTemp", path: PROFILE_LAYOUT.tempRoot, boundary: TEST_ROOT },
+      { name: "profileTmp", path: PROFILE_LAYOUT.tmpRoot, boundary: TEST_ROOT },
+      { name: "userProfile", path: PROFILE_LAYOUT.userProfileRoot, boundary: TEST_ROOT },
+      { name: "home", path: PROFILE_LAYOUT.homeRoot, boundary: TEST_ROOT },
+      outputRoot,
+    ];
+  const patterns = credentialCanaryPatterns();
+  const matchCounts = Object.fromEntries(Object.keys(patterns).map((name) => [name, 0]));
+  let filesScanned = 0;
+  let matchingFileCount = 0;
+  for (const { path: root, boundary } of roots) {
     if (!(await exists(root))) continue;
-    const rootCheck = await inspectContainedPath(TEST_ROOT, root);
+    const rootCheck = await inspectContainedPath(boundary, root);
     if (!rootCheck.withinRoot || !rootCheck.noReparse) {
-      throw new Error("A credential scan root escaped the isolated profile.");
+      throw new Error("A credential scan root escaped its verified boundary.");
     }
     async function visit(directory) {
       for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -504,8 +564,16 @@ async function scanCredentialCanaries() {
         if (entryStats.isDirectory()) {
           await visit(filePath);
         } else if (entryStats.isFile()) {
-          const content = (await readFile(filePath)).toString("utf8");
-          if ([...markers].some((marker) => marker && content.includes(marker))) matchedFileCount += 1;
+          const content = await readFile(filePath);
+          filesScanned += 1;
+          let matchedFile = false;
+          for (const [category, candidates] of Object.entries(patterns)) {
+            if (candidates.some((candidate) => content.indexOf(candidate) >= 0)) {
+              matchCounts[category] += 1;
+              matchedFile = true;
+            }
+          }
+          if (matchedFile) matchingFileCount += 1;
         } else {
           throw new Error("A credential scan encountered an unsupported file entry.");
         }
@@ -513,7 +581,7 @@ async function scanCredentialCanaries() {
     }
     await visit(root);
   }
-  return { matchedFileCount };
+  return { filesScanned, matchingFileCount, matchCounts };
 }
 
 async function removeIsolatedTestRoot() {
@@ -685,7 +753,7 @@ async function snapshotTree(directory) {
   return hashes;
 }
 
-async function launchInstalledApp({ executablePath, trace = false }) {
+async function launchInstalledApp({ executablePath, trace = false, verifyProfile = true }) {
   try {
     const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`);
     if (response.ok) throw new Error("CDP acceptance port is already in use.");
@@ -712,14 +780,14 @@ async function launchInstalledApp({ executablePath, trace = false }) {
   applicationProcess.stdout?.on("data", (chunk) => collectProcessOutput("stdout", chunk));
   applicationProcess.stderr?.on("data", (chunk) => collectProcessOutput("stderr", chunk));
   await verifySpawnedExecutable(applicationProcess.pid);
-  return connectToInstalledApp({ processHandle: applicationProcess });
+  return connectToInstalledApp({ processHandle: applicationProcess, verifyProfile });
 }
 
 async function verifyElectronProfileDiagnostics(page) {
   const diagnostics = await page.evaluate(async () => {
-    const siteindex = window.siteindex;
-    return typeof siteindex.getProfilePathDiagnostics === "function"
-      ? siteindex.getProfilePathDiagnostics()
+    const windowApi = window.siteindexWindow;
+    return windowApi && typeof windowApi.getProfilePathDiagnostics === "function"
+      ? windowApi.getProfilePathDiagnostics()
       : null;
   });
   const checks = diagnostics && typeof diagnostics === "object" ? Object.values(diagnostics) : [];
@@ -740,7 +808,7 @@ async function verifyElectronProfileDiagnostics(page) {
   });
 }
 
-async function connectToInstalledApp({ processHandle = null } = {}) {
+async function connectToInstalledApp({ processHandle = null, verifyProfile = true } = {}) {
   const endpoint = `http://127.0.0.1:${CDP_PORT}`;
   const deadline = Date.now() + 60_000;
   let lastError = null;
@@ -790,7 +858,7 @@ async function connectToInstalledApp({ processHandle = null } = {}) {
     throw new Error(`Packaged app did not load the complete file-based UI page; CDP targets=${JSON.stringify(report.rendererDiagnostics.targets)}`);
   }
   await page.waitForFunction(() => typeof window.siteindex === "object" && window.siteindex !== null, null, { timeout: 30_000 });
-  await verifyElectronProfileDiagnostics(page);
+  if (verifyProfile) await verifyElectronProfileDiagnostics(page);
   await delay(300);
   if (processHandle && processHandle.exitCode !== null) throw new Error("Packaged app process exited after CDP attached; refusing to use another app instance.");
   return page;
@@ -2887,7 +2955,11 @@ async function main() {
   await writeRunnerSettings();
 
   currentStage = `${OLD_RELEASE.tag} packaged launch`;
-  let page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: HOSTED_UPDATE });
+  let page = await launchInstalledApp({
+    executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"),
+    trace: HOSTED_UPDATE,
+    verifyProfile: false,
+  });
   const oldState = await appState(page);
   assert(oldState.version === OLD_RELEASE.version, `baseline packaged app reports ${OLD_RELEASE.tag} through preload IPC`, { version: oldState.version });
   assert(oldState.projectIds.includes("synthetic-legacy-project") && oldState.projectCount === 1, `${OLD_RELEASE.tag} discovers synthetic legacy project`, {
@@ -2896,7 +2968,9 @@ async function main() {
     syntheticSkuCount: oldState.activeSkuCounts[0] ?? 0,
   });
   const oldSettings = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
-  assert(oldState.settings.projects_root === PROJECTS_ROOT, `${OLD_RELEASE.tag} loads the project-root setting from the runner profile`);
+  report.credentialIsolation.baselineSettingsProfileReadback = oldState.settings.projects_root === PROJECTS_ROOT;
+  assert(report.credentialIsolation.baselineSettingsProfileReadback,
+    `${OLD_RELEASE.tag} reads the synthetic settings file written at the runner profile location`);
   if (HOSTED_UPDATE) {
     currentStage = "GitHub hosted update check, download, and install";
     page = await requestHostedUpdate(page);
@@ -3033,13 +3107,14 @@ async function writeReport() {
     `- Candidate artifact SHA256: \`${report.candidateArtifactSha256 ?? "n/a"}\``,
     `- Candidate installer SHA256: \`${report.candidateInstallerSha256 ?? "unavailable"}\``,
     `- Synthetic credential isolation: ${report.credentialIsolation.siteStates.length} state checks, ${report.credentialIsolation.restarts.length} isolated restarts, IPC counts ${JSON.stringify(report.credentialIsolation.ipcCounts)}, canary matches ${report.credentialIsolation.canary.echoedCount + report.credentialIsolation.canary.browserStorageMatchCount}`,
+    `- Baseline settings profile readback: ${report.credentialIsolation.baselineSettingsProfileReadback} (baseline does not expose the candidate-only Electron path diagnostic IPC)`,
     `- Profile containment booleans: ${JSON.stringify({
       electronSubprocess: report.credentialIsolation.subprocessPathDiagnostics,
       preloadElectron: report.credentialIsolation.preloadPathDiagnostics,
       processExecutableContained: report.credentialIsolation.processExecutableContained,
       installDirectoryContained: report.credentialIsolation.installDirectoryContained,
     })}`,
-    `- Disk credential scan: ${report.credentialIsolation.canary.diskMatchedFileCount ?? "not completed"} matching files`,
+    `- Disk credential scan counts: ${JSON.stringify(report.credentialIsolation.canary.diskScan)}`,
     `- Windows build: \`${report.windows.build ?? report.windows.version}\``,
     `- Checks passed: ${report.checks.filter((check) => check.status === "passed").length}/${report.checks.length}`,
     `- Add-existing handler total: ${report.addExistingTrace?.handlerTotalMs ?? "not measured"} ms (target < 5000 ms)`,
@@ -3084,12 +3159,17 @@ try {
   }
   try {
     const scan = await scanCredentialCanaries();
-    report.credentialIsolation.canary.diskMatchedFileCount = scan.matchedFileCount;
-    const passed = scan.matchedFileCount === 0;
+    report.credentialIsolation.canary.diskMatchedFileCount = scan.matchingFileCount;
+    report.credentialIsolation.canary.diskScan = {
+      ...report.credentialIsolation.canary.diskScan,
+      ...scan,
+      profileScanCompleted: true,
+    };
+    const passed = scan.matchingFileCount === 0;
     report.checks.push({
-      name: "synthetic credential canaries are absent from isolated profile and project files",
+      name: "synthetic credential canaries are absent from profile, project, temp, and output files",
       status: passed ? "passed" : "failed",
-      evidence: { matchedFileCount: scan.matchedFileCount },
+      evidence: { filesScanned: scan.filesScanned, matchingFileCount: scan.matchingFileCount, matchCounts: scan.matchCounts },
     });
     if (!passed) {
       failed ??= { stage: "credential_disk_scan", code: "SYNTHETIC_CREDENTIAL_FOUND", reason: "Synthetic credential values were found in isolated test files." };
@@ -3103,6 +3183,23 @@ try {
     failed ??= { stage: "cleanup", code: "TEST_DATA_CLEANUP_FAILED", reason: safeMessage(error) };
   }
   await writeReport();
+  try {
+    const outputScan = await scanCredentialCanaries({ outputOnly: true });
+    report.credentialIsolation.canary.diskScan.outputArtifactScanCompleted = true;
+    report.credentialIsolation.canary.diskMatchedFileCount += outputScan.matchingFileCount;
+    report.credentialIsolation.canary.diskScan.filesScanned += outputScan.filesScanned;
+    report.credentialIsolation.canary.diskScan.matchingFileCount += outputScan.matchingFileCount;
+    for (const [category, count] of Object.entries(outputScan.matchCounts)) {
+      report.credentialIsolation.canary.diskScan.matchCounts[category] += count;
+    }
+    if (outputScan.matchingFileCount > 0) {
+      failed ??= { stage: "credential_artifact_scan", code: "SYNTHETIC_CREDENTIAL_FOUND", reason: "Synthetic credential values were found in the generated acceptance artifact." };
+    }
+    await writeReport();
+  } catch (error) {
+    failed ??= { stage: "credential_artifact_scan", code: "CREDENTIAL_SCAN_FAILED", reason: safeMessage(error) };
+    await writeReport();
+  }
 }
 
 if (failed || report.w2Acceptance.checks.some((check) => check.status === "failed")) process.exitCode = 1;

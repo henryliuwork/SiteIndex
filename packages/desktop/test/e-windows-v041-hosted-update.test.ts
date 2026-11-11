@@ -85,9 +85,15 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain('mkdtemp(path.join(RUNNER_TEMP, "siteindex-e-acceptance-"))');
     expect(acceptanceScript).toContain("report.credentialIsolation.processExecutableContained");
     expect(acceptanceScript).toContain("await verifyElectronProfileDiagnostics(page)");
+    expect(acceptanceScript).toContain("window.siteindexWindow");
+    expect(acceptanceScript).toContain("verifyProfile: false");
     expect(acceptanceScript).toContain("await scanCredentialCanaries()");
-    expect(acceptanceScript).toContain("matchedFileCount");
-    expect(acceptanceScript).toContain('Buffer.from(marker).toString("base64")');
+    expect(acceptanceScript).toContain("matchingFileCount");
+    expect(acceptanceScript).toContain('Buffer.from(value, "utf8").toString("base64")');
+    expect(acceptanceScript).toContain("plaintextUtf16le");
+    expect(acceptanceScript).toContain("base64Utf16le");
+    expect(acceptanceScript).toContain("basicHeader");
+    expect(acceptanceScript).toContain("outputArtifact");
     expect(acceptanceScript).toContain("await removeIsolatedTestRoot()");
     expect(acceptanceScript).toContain("report.credentialIsolation.junctionCleanupVerified");
     expect(acceptanceScript).toContain(
@@ -135,9 +141,7 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain('restartCandidateWithSameProfile(page, "site-b-replaced")');
     expect(acceptanceScript).toContain('restartCandidateWithSameProfile(page, "site-b-deleted")');
     expect(acceptanceScript).toContain("ipcCounts: { status: 0, save: 0, clear: 0 }");
-    expect(acceptanceScript).toContain(
-      'canary: { type: "synthetic username and application password", echoedCount: 0, browserStorageMatchCount: 0 }',
-    );
+    expect(acceptanceScript).toContain('canary: {\n      type: "synthetic username and application password",');
     expect(acceptanceScript).toContain("credentialIsolation.siteStates.push({ alias, stage: phase, state })");
     expect(acceptanceScript).not.toContain("credentialIsolation.siteStates.push({ alias, origin");
   });
@@ -148,7 +152,7 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain("inspectContainedPath(TEST_ROOT, oldInstaller)");
     expect(acceptanceScript).toContain("inspectContainedPath(TEST_ROOT, candidateInstaller)");
     expect(acceptanceScript).toContain("page = await testWordPressCredentialIsolation(page)");
-    expect(acceptanceScript).toContain('safe = safe.replaceAll(marker, "<CREDENTIAL>")');
+    expect(acceptanceScript).toContain('safe = safe.replaceAll(variant, "<CREDENTIAL>")');
     expect(acceptanceScript).toContain("env: isolatedProcessEnvironment() });");
   });
 

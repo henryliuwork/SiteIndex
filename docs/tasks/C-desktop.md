@@ -178,7 +178,12 @@
 
 ## #440 · Windows hosted 安装验收隔离复核
 
+- [x] 首次 hosted run `43046081311`：基线安装通过，失败发生在 v0.4.0 安装后启动；DevTools 已监听，但 60 秒内 CDP target 列表为空，因此没有进入凭据/UI 流程，尚不能仅凭该结果断定为资源缺失或 AppData 路径问题。
+- [x] Hosted run `43057045355` 在安装前 preflight 失败：junction 目标尚未创建就被 `realpath` 检查，结果被误判为越界。现改为创建目标后检查，再 unlink junction、核验目标并安全清理。
+- [x] Candidate 的 packaged main 输出实际 Electron `appData`、`userData`、home/temp 与子进程环境的 containment/reparse 布尔值；候选 preload IPC 再读同一诊断。v0.4.0 基线没有该 IPC，只能由传入环境和合成 `settings.json` 的项目根回读验证，不声称已直接读取旧版 `app.getPath()`。
+- [x] 用 CIM 只记录实际安装进程 exe 是否在隔离根内；扫描 appData、LocalAppData vault、合成项目数据、隔离 profile 的 TEMP/TMP 和生成的 summary artifact，覆盖 UTF-8、UTF-16LE、base64 与 Basic 认证组合，只报告类别和数量，不记录路径或命中值；不扫描安装器二进制或 GitHub runner 的其他临时文件。
 - [x] Windows runner AppData shell-folder 重定向、containment/reparse 检查、fail-closed registry 查询与反序恢复测试；恢复失败时拒绝删除隔离 profile。
-- [x] 隔离凭据扫描仅记录匹配类别/计数；精确凭据 region 查询增加有界稳定等待，持续缺失/重复及超时边界仍失败。
-- [x] head `4962f466f2d179d6ff044e28f5e281afe18aa008`（基于 #435 合并前的 `08804a5`）Windows packaged acceptance run `43075389702` 通过 71/71，包含 17 次状态、3 次保存、2 次删除、4 次重启，209 个隔离文件零凭据命中。此结果不是当前重基线 head 的验收结论。
-- [ ] #435 合并后已重基线到 main `de157b92c46fdfd2a465e7f50b4ccd3a0aef634a`；新 head 的三系统 CI 与 packaged acceptance 完成前，不把旧 run 作为当前通过证据。
+- [x] 隔离凭据扫描只记录匹配类别/计数；精确 credential region 名称采用有界稳定等待，持续缺失、重复和未稳定超时均失败。
+- [x] Junction 负向用例、临时根清理前 containment 复核与删除后目标不存在检查。
+- [x] head `4962f466f2d179d6ff044e28f5e281afe18aa008` 的 run `43075389702`（基于 #435 合并前的 `08804a5`）Windows packaged acceptance 通过 71/71：17 次凭据状态检查、3 次保存、2 次删除、4 次重启；209 个隔离文件零 canary 命中；添加已有项目 41 ms。该 run 是历史证据，不代替当前基线验收。
+- [ ] #435 合并后已将本 PR 变基到 main `de157b92c46fdfd2a465e7f50b4ccd3a0aef634a`；最新 head 的三系统 CI 与 packaged acceptance 尚待完成。
