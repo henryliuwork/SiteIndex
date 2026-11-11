@@ -1,0 +1,4 @@
+sku,image_role,image_url,alt_text,source,width,height,updated_at
+DEMO-GROUP01,main,https://synthetic-cdn.invalid/manual/demo-group-01.jpg,,cdn,640,640,2026-11-10
+DEMO-GROUP02,main,https://synthetic-cdn.invalid/manual/demo-group-02.jpg,,cdn,640,640,2026-11-11
+DEMO-SINGLE,main,https://synthetic-cdn.invalid/manual/demo-single.webp,,cdn,640,640,2026-11-11

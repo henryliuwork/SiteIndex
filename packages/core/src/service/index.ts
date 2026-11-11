@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   CSV_HEADERS,
   EXIT,
+  EDM_SKU_INDEX_PATHS,
   INIT_STEPS,
   JOB_NAMES,
   PATHS,
@@ -24,6 +25,7 @@ import {
   type DetectResult,
   type EdmCampaign,
   type EdmCommandInput,
+  type EdmSkuIndexExportResult,
   type FeedInspectResult,
   type InventoryEvent,
   type InventoryLatest,
@@ -108,6 +110,7 @@ import { launchChromium, type BrowserLauncher } from "../browser/automation";
 import { runDesign } from "../jobs/design";
 import { runIndexCheck } from "../jobs/index-check";
 import { runMediaJob, type WordPressCredential } from "../jobs/media";
+import { createEdmSkuIndexFile, edmIndexResult, renderEdmSkuIndex } from "../edm/sku-index";
 import {
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,
@@ -2453,6 +2456,46 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   };
 
   const edm: CoreService["edm"] = {
+    exportIndex: async (id): Promise<EdmSkuIndexExportResult> => {
+      const projectPath = resolve(id);
+      return withLock(projectPath, async () => {
+        try {
+          const layout = await resolveProjectLayout(projectPath);
+          const paths = pathsFor(layout);
+          await recoverDailyOutputTransaction(projectPath, paths);
+          const snapshot = await load(projectPath);
+          const rendered = renderEdmSkuIndex({
+            products: snapshot.products,
+            skus: snapshot.skus,
+            stock: snapshot.skuStock,
+            skuMedia: snapshot.skuMedia,
+            skuTags: snapshot.skuTags,
+            grouping: snapshot.config.sku_grouping,
+          });
+          const status = await createEdmSkuIndexFile(projectPath, layout, rendered.content);
+          return edmIndexResult(status, EDM_SKU_INDEX_PATHS[layout], rendered);
+        } catch (error) {
+          if (error instanceof SkuGroupingRuleError) {
+            throw siteError("CONFIG_INVALID", "SKU 分组规则无效，未生成 EDM 清单。");
+          }
+          if (isSiteIndexError(error)) {
+            switch (error.code) {
+              case "EDM_INDEX_CONFLICT":
+              case "EDM_EXPORT_OUTCOME_UNKNOWN":
+              case "LOCKED":
+                throw siteError(error.code, error.message);
+              case "PROJECT_NOT_FOUND":
+                throw siteError("PROJECT_NOT_FOUND", "找不到项目配置文件，未生成 EDM 清单。");
+              case "CONFIG_INVALID":
+                throw siteError("CONFIG_INVALID", "项目配置无效，未生成 EDM 清单。");
+              default:
+                throw siteError("WRITE_FAILED", "读取项目数据或生成 EDM 清单失败；目标文件未修改。");
+            }
+          }
+          throw siteError("WRITE_FAILED", "生成 EDM SKU 清单失败；目标文件未修改。");
+        }
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "edm-export-index" });
+    },
     summary: async (id) => {
       const snapshot = await load(resolve(id));
       const result = { total: snapshot.products.length, feed: 0, manual: 0, none: 0 };

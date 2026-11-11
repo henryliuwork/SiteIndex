@@ -175,3 +175,6 @@
 
 ### v0.4.1 · Core media Job
 - [x] `runJob(job="media")`：凭据仅由 Core 内存上下文注入；WASM 将 WebP/AVIF 转为白底 JPEG；逐 SKU 记录；每次执行有唯一 runId，并在 `pathsForProject(...).jobLogsDir/<runId>.media.json` 原子写恢复 checkpoint；服从 K5 分区语义及 #438 虚构验收向量
+
+### v0.4.1 · EDM SKU 清单导出
+- [ ] #423 Core 导出尚未完成：当前分支实现确定性读取/渲染、legacy/workspace 路径、安全首次独占创建与冲突检测；已存在受管文件发生变化时保持更新门禁，折扣档选择/舍入规则仍待产品确认

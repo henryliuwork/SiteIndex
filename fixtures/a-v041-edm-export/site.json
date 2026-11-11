@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.1",
+  "domain": "synthetic-edm.test",
+  "base_url": "https://synthetic-edm.test",
+  "platform": "other",
+  "currency": "USD",
+  "locale": "en-US",
+  "timezone": "UTC",
+  "brand": { "name": "Synthetic EDM Fixture" },
+  "sitemaps": [],
+  "crawl": { "adapter": "gmc_feed", "feed_url": "https://synthetic-edm.test/feed.xml", "rate_limit_ms": 0 },
+  "categories": { "mode": "feed" },
+  "sku_grouping": { "enabled": true, "rule": { "type": "regex", "value": "^(.+?)\\d{2}$" } },
+  "edm": { "discount_tiers": [15, 25] }
+}
