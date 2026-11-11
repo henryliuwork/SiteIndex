@@ -1564,6 +1564,61 @@ describe("desktop job manager", () => {
     }
   }, 30_000);
 
+  it.each([
+    ["read", "读取 runs.jsonl 失败，原历史未修改；请人工检查运行记录与媒体端实际状态后再重试。"],
+    ["write", "写入 runs.jsonl 失败，无法确认恢复历史是否已持久化；请人工检查运行记录与媒体端实际状态后再重试。"],
+  ] as const)("keeps old history and reports an unknown result when synthetic run history %s fails", async (phase, expectedError) => {
+    const projectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const runId = `media-${randomUUID()}`;
+    const originalHistory = `${JSON.stringify({
+      run_id: "2026-11-12-weekly-before-media",
+      job: "weekly",
+      started_at: "2026-11-12T10:00:00.000Z",
+      finished_at: "2026-11-12T10:01:00.000Z",
+      status: "ok",
+    })}\n`;
+    await mkdir(path.dirname(runsPath), { recursive: true });
+    await writeFile(runsPath, originalHistory, "utf8");
+
+    const child = new FakeUtilityProcess(true, runId);
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+      ...(phase === "read"
+        ? { testOnlyReadSyntheticRunLog: async () => { throw new Error("EACCES"); } }
+        : { testOnlyWriteSyntheticRunLog: async () => { throw new Error("ENOSPC"); } }),
+    });
+
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+    child.emit("exit", 1);
+    const result = await finished;
+
+    expect(result).toMatchObject({
+      status: "failed",
+      summary: expect.stringContaining("恢复历史"),
+      media_batch_state: "outcome_unknown",
+      media_requested_skus: ["synthetic-a"],
+      media_unknown_skus: ["synthetic-a"],
+      media_results: [],
+    });
+    expect(result.errors).toContain(expectedError);
+    expect(await readFile(runsPath, "utf8")).toBe(originalHistory);
+  });
+
   it.each(["legacy", "workspace"] as const)(
     "reads persisted media recovery fields from the %s history and leaves old records unavailable",
     async (layout) => {

@@ -59,6 +59,9 @@ export interface JobManagerOptions {
   emitFinished(result: JobResult): void;
   /** Test seam for proving a competing run cannot pass the project lock during synthetic history persistence. */
   testOnlyBeforeSyntheticRunLogCommit?(): Promise<void>;
+  /** Fault injection for synthetic history I/O; production must leave these unset. */
+  testOnlyReadSyntheticRunLog?(filePath: string): Promise<Record<string, unknown>[]>;
+  testOnlyWriteSyntheticRunLog?(filePath: string, contents: string): Promise<void>;
   finalizeInit?(
     result: JobResult,
     projectPath: string,
@@ -99,6 +102,13 @@ interface JobEntry {
 }
 
 const MAX_MEDIA_CHECKPOINT_BYTES = 5 * 1024 * 1024;
+
+class SyntheticRunLogPersistenceError extends Error {
+  constructor(readonly operation: "read" | "write") {
+    super(`Synthetic run history ${operation} failed.`);
+    this.name = "SyntheticRunLogPersistenceError";
+  }
+}
 
 function jobError(code: SiteIndexError["code"], message: string, detail?: string): SiteIndexError {
   return { code, message, ...(detail ? { detail } : {}) };
@@ -408,9 +418,16 @@ export function createJobManager(options: JobManagerOptions) {
 
   async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<JobResult> {
     if (!entry.runId) return result;
+    const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
+    let rows: Record<string, unknown>[];
     try {
-      const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
-      const rows = await readJsonl(filePath);
+      rows = options.testOnlyReadSyntheticRunLog
+        ? await options.testOnlyReadSyntheticRunLog(filePath)
+        : await readJsonl(filePath);
+    } catch {
+      throw new SyntheticRunLogPersistenceError("read");
+    }
+    {
       const existingRows = rows.filter((row) => row.run_id === entry.runId);
       const existing = existingRows[0];
       if (entry.request.job === "media" && existingRows.length > 0) {
@@ -459,11 +476,14 @@ export function createJobManager(options: JobManagerOptions) {
       const next = rows.filter((row) => row.run_id !== entry.runId);
       next.push(record as unknown as Record<string, unknown>);
       next.sort((left, right) => compareKeys(String(left.run_id ?? ""), String(right.run_id ?? "")));
-      await options.testOnlyBeforeSyntheticRunLogCommit?.();
-      await atomicWrite(filePath, `${next.map((row) => JSON.stringify(row)).join("\n")}\n`);
-      return result;
-    } catch {
-      // 项目文件不可写时仍把失败结果发回界面。
+      try {
+        await options.testOnlyBeforeSyntheticRunLogCommit?.();
+        const contents = `${next.map((row) => JSON.stringify(row)).join("\n")}\n`;
+        if (options.testOnlyWriteSyntheticRunLog) await options.testOnlyWriteSyntheticRunLog(filePath, contents);
+        else await atomicWrite(filePath, contents);
+      } catch {
+        throw new SyntheticRunLogPersistenceError("write");
+      }
       return result;
     }
   }
@@ -506,20 +526,38 @@ export function createJobManager(options: JobManagerOptions) {
           deviceName: entry.settings.device_name,
           job: "desktop-media-recovery",
         });
-      } catch {
+      } catch (error) {
+        const persistencePhase = error instanceof SyntheticRunLogPersistenceError ? error.operation : null;
         result = entry.request.job === "media"
           ? conservativeUnknownMediaResult(entry, fallback, recoveryLockAcquired
-              ? {
+              ? persistencePhase === "read"
+                ? {
+                    summary: "媒体任务恢复历史读取失败；逐 SKU 状态按未知处理，请人工核查运行记录。",
+                    error: "读取 runs.jsonl 失败，原历史未修改；请人工检查运行记录与媒体端实际状态后再重试。",
+                  }
+                : persistencePhase === "write"
+                  ? {
+                      summary: "媒体任务恢复历史写入失败；无法确认历史是否持久化，逐 SKU 状态按未知处理。",
+                      error: "写入 runs.jsonl 失败，无法确认恢复历史是否已持久化；请人工检查运行记录与媒体端实际状态后再重试。",
+                    }
+                  : {
                   summary: "媒体任务恢复未能确认持久化；逐 SKU 状态按未知处理，请人工核查运行记录。",
                   error: "已取得项目运行锁，但恢复历史未能确认持久化；请人工检查 runs.jsonl 与媒体端实际状态后再重试。",
-                }
+                  }
               : {
                   summary: "无法安全取得项目运行锁，恢复历史未写入；逐 SKU 状态按未知处理，请人工核查运行记录。",
                   error: "无法安全取得项目运行锁，原有历史保持不变；请人工检查项目锁、runs.jsonl 与媒体端实际状态后再重试。",
                 })
           : {
               ...fallback,
-              errors: [...(fallback.errors ?? []), "无法安全获取项目运行锁；本次恢复历史未写入。"],
+              errors: [
+                ...(fallback.errors ?? []),
+                persistencePhase === "read"
+                  ? "读取 runs.jsonl 失败；原历史未修改。"
+                  : persistencePhase === "write"
+                    ? "写入 runs.jsonl 失败；无法确认恢复历史是否已持久化。"
+                    : "无法安全获取项目运行锁；本次恢复历史未写入。",
+              ],
             };
       }
     } else {
