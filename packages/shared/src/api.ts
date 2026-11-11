@@ -268,7 +268,7 @@ export interface InventorySummary {
   category_source: CategoryMode;
   timezone?: string;
   uncategorized: number;
-  today: { type: "restock" | "oos" | "price" | "new" | "removed"; sku: string; title: string; detail?: string }[];
+  today: { type: "restock" | "oos" | "price" | "new" | "removed" | "feed_anomaly"; sku: string; title: string; detail?: string }[];
 }
 
 export interface SkuStockFilters {

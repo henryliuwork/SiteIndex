@@ -137,7 +137,8 @@
 `sku`★ `stock_status`✓(`in_stock`/`out_of_stock`/`preorder`/`unknown`) `qty` `since`✓ `checked_at`✓
 
 ### 5.5 `inventory/events/YYYY-MM.jsonl`（★date+sku+type · 每日追加）
-`date`★ `sku`★ `type`★(`stock_change`/`price_change`/`new_sku`/`removed_sku`/`restored_sku`) `from` `to` `category`✓ `title`✓
+`date`★ `sku`★ `type`★(`stock_change`/`price_change`/`new_sku`/`removed_sku`/`restored_sku`/`feed_anomaly`) `from` `to` `category`✓ `title`✓
+- `feed_anomaly`：本次成功且完整的 feed 未包含仍 active 的 SKU，但产品页核验判断为有货；作为库存事件保存，不写入 SEO 问题。Core 通过 `inventory.summary.today[]` 返回 `type: "feed_anomaly"` 供界面消费。
 
 ### 5.6 `inventory/daily_summary.csv`（★date+category）
 `date,category,total,in_stock,out_of_stock,preorder,unknown`；每天每分类一行 + `_all`；只计 active
@@ -182,7 +183,9 @@
 ### 5.12 `ledgers/sku_media.csv`（★sku+image_role · 台账）
 `sku,image_role,image_url,alt_text,source,width,height,updated_at`
 - **手动首图** = `image_role=main` 的行；EDM 页"手动输入的首图 URL"读写这里
-- `source`：`mailchimp`（域名含 mcusercontent.com / mailchimp）或 `cdn`
+- `source`：`mailchimp`（域名含 mcusercontent.com / mailchimp）、`cdn` 或 `wordpress`
+- 兼容旧版 8 列表头；可选的 `media_id`、`source_hash` 只追加在表尾。读取旧台账时不改写文件；首次写入时才把表头扩展为 `sku,image_role,image_url,alt_text,source,width,height,updated_at,media_id,source_hash`，保留所有旧列值，新列对旧行留空。
+- `media_id` 为 WordPress 媒体 ID；`source_hash` 为原始图片内容指纹，用于同 SKU、同源图的重试去重。凭据不得写入此台账。
 
 ### 5.13 `ledgers/sku_tags.csv`（★sku · 台账）
 `sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at`；tags 小写 `;` 分隔；以产品为单位操作时写入该产品全部 active 变体

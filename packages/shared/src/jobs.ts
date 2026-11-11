@@ -1,3 +1,4 @@
+import type { SiteIndexErrorCode } from "./errors";
 import type { JobName } from "./models";
 
 export const JOB_NAMES: readonly JobName[] = [
@@ -63,16 +64,21 @@ export interface JobResult {
   /** init 任务逐步结果；schedule 由 Desktop 执行。 */
   steps?: { key: string; status: "ok" | "failed" | "skipped"; message?: string }[];
   /**
-   * media 正常完成时按请求顺序返回每个 SKU 的结果。取消或 worker 崩溃后可能仅包含已完成项；
-   * 缺失 SKU 表示结果未决，不能当成失败或成功。通过 jobs.onFinished 按 runId 关联，且不包含本机凭据。
+   * media 未中断地完成批次时，按请求顺序为每个 SKU 返回一条结果；单个 SKU 可失败而继续处理。
+   * 401/403、取消或 worker 故障会提前终止：保留已完成结果，并可包含当前失败 SKU；尚未开始的 SKU 省略，表示未决。
+   * 认证/权限终止通过 media_error_code 区分；此前至少有一项非失败 SKU 结果时为 partial，否则为 failed。
+   * 通过 jobs.onFinished 按 runId 关联；原因须脱敏，且结果不得包含本机凭据。
    */
   media_results?: MediaPrepareSkuResult[];
+  /** media 因 WordPress 认证失败或权限不足停批时，返回 WP_AUTH_FAILED / WP_FORBIDDEN。 */
+  media_error_code?: Extract<SiteIndexErrorCode, "WP_AUTH_FAILED" | "WP_FORBIDDEN">;
 }
 
 export interface MediaPrepareSkuResult {
   sku: string;
-  status: "uploaded" | "reused" | "skipped_has_url" | "failed";
-  /** 脱敏后的原因；不得包含凭据、授权头或口令。 */
+  /** recorded 表示 jpg/png 原图 URL 直接写入台账，没有上传；skipped_has_url 表示台账原本已有 URL。 */
+  status: "uploaded" | "reused" | "recorded" | "skipped_has_url" | "failed";
+  /** 脱敏后的原因；不得包含凭据、授权头、口令或原始认证响应。 */
   reason?: string;
   image_url?: string;
 }
