@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathsForProject } from "@siteindex/core";
@@ -1010,6 +1010,187 @@ describe("desktop job manager", () => {
     expect(persisted).not.toContain(credentialA.applicationPassword);
     expect(persisted).not.toContain(credentialB.username);
     expect(persisted).not.toContain(credentialB.applicationPassword);
+  });
+
+  it("recovers a durable SKU partition after utilityProcess crash and exposes it in jobs.history", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    let resolveFinished!: (result: JobResult) => void;
+    const finishedPromise = new Promise<JobResult>((resolveFinishedValue) => {
+      resolveFinished = resolveFinishedValue;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+    const started = await manager.runMedia({
+      projectPath,
+      job: "media",
+      skus: ["synthetic-a", "synthetic-b", "synthetic-c"],
+    });
+    expect(started.runId).toBe(runId);
+    const projectPaths = pathsFor("legacy");
+    const checkpointPath = path.join(projectPath, projectPaths.jobLogsDir, `${runId}.media.json`);
+    await mkdir(path.dirname(checkpointPath), { recursive: true });
+    await writeFile(checkpointPath, JSON.stringify({
+      run_id: runId,
+      checkpoint_state: "running",
+      media_requested_skus: ["synthetic-a", "synthetic-b", "synthetic-c"],
+      media_batch_state: "outcome_unknown",
+      media_results: [{ sku: "synthetic-a", status: "uploaded", image_url: "https://cdn.example.test/media.jpg" }],
+      media_unknown_skus: ["synthetic-b"],
+      media_not_started_skus: ["synthetic-c"],
+    }), "utf8");
+    child.emit("exit", 1);
+
+    const result = await finishedPromise;
+    expect(result).toMatchObject({
+      runId,
+      job: "media",
+      status: "failed",
+      media_requested_skus: ["synthetic-a", "synthetic-b", "synthetic-c"],
+      media_batch_state: "outcome_unknown",
+      media_results: [{ sku: "synthetic-a", status: "uploaded", image_url: "https://cdn.example.test/media.jpg" }],
+      media_unknown_skus: ["synthetic-b"],
+      media_not_started_skus: ["synthetic-c"],
+    });
+    expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
+    const [history] = await manager.history(projectId);
+    expect(history).toMatchObject({
+      run_id: runId,
+      media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+      media_unknown_skus: ["synthetic-b"],
+      media_not_started_skus: ["synthetic-c"],
+    });
+    expect(isValidMediaSkuRecoveryPartition(history)).toBe(true);
+  });
+
+  it.each([
+    { label: "missing", mutation: null },
+    { label: "corrupt", mutation: "not-json" },
+    { label: "run ID mismatch", mutation: "run-id" },
+    { label: "requested SKU order mismatch", mutation: "sku-order" },
+  ] as const)("fails closed when the media checkpoint is $label", async ({ mutation }) => {
+    const projectPath = await projectDirectory("legacy");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a", "synthetic-b"] });
+    if (mutation) {
+      const projectPaths = pathsFor("legacy");
+      const checkpointPath = path.join(projectPath, projectPaths.jobLogsDir, `${runId}.media.json`);
+      await mkdir(path.dirname(checkpointPath), { recursive: true });
+      const validCheckpoint = {
+        run_id: runId,
+        checkpoint_state: "running",
+        media_requested_skus: ["synthetic-a", "synthetic-b"],
+        media_batch_state: "outcome_unknown",
+        media_results: [],
+        media_unknown_skus: ["synthetic-a", "synthetic-b"],
+        media_not_started_skus: [],
+      };
+      const checkpoint = mutation === "run-id"
+        ? { ...validCheckpoint, run_id: `media-${randomUUID()}` }
+        : mutation === "sku-order"
+          ? {
+              ...validCheckpoint,
+              media_requested_skus: ["synthetic-b", "synthetic-a"],
+              media_unknown_skus: ["synthetic-b", "synthetic-a"],
+            }
+          : null;
+      await writeFile(checkpointPath, checkpoint ? JSON.stringify(checkpoint) : "not-json", "utf8");
+    }
+    child.emit("exit", 1);
+
+    const result = await finished;
+    expect(result.status).toBe("failed");
+    expect(result.media_requested_skus).toEqual(["synthetic-a", "synthetic-b"]);
+    expect(result.media_results).toEqual([]);
+    expect(result.media_unknown_skus).toEqual(["synthetic-a", "synthetic-b"]);
+    expect(result.media_not_started_skus).toEqual([]);
+    expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
+    const [history] = await manager.history(projectId);
+    if (!history) throw new Error("Recovered run history is missing.");
+    expect(history.media_unknown_skus).toEqual(["synthetic-a", "synthetic-b"]);
+    expect(isValidMediaSkuRecoveryPartition(history)).toBe(true);
+  });
+
+  it("does not replace a real successful media history row when the worker later exits", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    const projectPaths = pathsFor("legacy");
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    await mkdir(path.dirname(runsPath), { recursive: true });
+    const successfulRow = {
+      run_id: runId,
+      job: "media",
+      trigger: "manual",
+      started_at: "2026-11-12T10:00:00.000Z",
+      finished_at: "2026-11-12T10:01:00.000Z",
+      status: "ok",
+      media_requested_skus: ["synthetic-a"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    };
+    const originalRuns = `${JSON.stringify(successfulRow)}\n`;
+    await writeFile(runsPath, originalRuns, "utf8");
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+    child.emit("exit", 1);
+
+    await finished;
+    expect(await readFile(runsPath, "utf8")).toBe(originalRuns);
+    const [history] = await manager.history(projectId);
+    if (!history) throw new Error("Existing successful run history is missing.");
+    expect(history).toMatchObject(successfulRow);
+    expect(isValidMediaSkuRecoveryPartition(history)).toBe(true);
   });
 
   it.each(["legacy", "workspace"] as const)(

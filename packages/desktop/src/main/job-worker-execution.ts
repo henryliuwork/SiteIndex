@@ -68,6 +68,7 @@ export async function executeJobWorkerMessage(
     deviceName: message.context.deviceName,
     cacheDir: message.context.cacheDir,
     browserExecutablePath: message.context.browserPath ?? null,
+    ...(message.context.testOnlyAllowLoopbackHttp === true ? { testOnlyAllowLoopbackHttp: true } : {}),
     ...(message.context.wordpressCredential ? { wordpressCredential: message.context.wordpressCredential } : {}),
     ...(request.job === "media"
       ? {
@@ -158,6 +159,12 @@ export async function executeJobWorkerMessage(
     }
     const finalRunId = runId;
     if (!finalRunId) {
+      postFatal(error);
+      return;
+    }
+    if (request.job === "media") {
+      // Let JobManager distinguish an abnormal worker exit from a Core result and recover
+      // the durable per-SKU checkpoint after the utilityProcess has actually exited.
       postFatal(error);
       return;
     }

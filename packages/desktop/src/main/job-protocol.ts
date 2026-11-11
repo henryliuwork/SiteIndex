@@ -9,6 +9,8 @@ export interface JobWorkerContext {
   deviceName: string;
   cacheDir: string;
   browserPath?: string | null;
+  /** E2E harness only. Production main never enables HTTP loopback for media. */
+  testOnlyAllowLoopbackHttp?: boolean;
   /** Main-to-worker only. Never part of JobRequest, argv, or environment. */
   wordpressCredential?: WordPressCredential;
 }

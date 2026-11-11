@@ -1,4 +1,4 @@
-import { pathsForProject, readJsonl, writeJsonl } from "@siteindex/core";
+import { atomicWrite, compareKeys, pathsForProject, readJsonl, type MediaJobCheckpoint } from "@siteindex/core";
 import {
   EXIT,
   isValidMediaSkuRecoveryPartition,
@@ -49,6 +49,8 @@ export interface JobManagerOptions {
   getSettings(): Promise<AppSettings>;
   getBrowserExecutablePath?(settings: AppSettings): Promise<string | null>;
   isMediaJobReady?(): boolean;
+  /** E2E harness only; the production main process must leave this unset. */
+  testOnlyAllowLoopbackHttp?: boolean;
   getWordPressCredential?(id: ProjectId, projectPath: string): Promise<WordPressCredential | null>;
   resolveProject(id: ProjectId): string | Promise<string>;
   resolveProjectPaths?(projectPath: string): Promise<ProjectPaths>;
@@ -93,6 +95,8 @@ interface JobEntry {
   finalizing: boolean;
   startupTimer: NodeJS.Timeout;
 }
+
+const MAX_MEDIA_CHECKPOINT_BYTES = 5 * 1024 * 1024;
 
 function jobError(code: SiteIndexError["code"], message: string, detail?: string): SiteIndexError {
   return { code, message, ...(detail ? { detail } : {}) };
@@ -227,6 +231,79 @@ function processFailureResult(entry: JobEntry, code: number): JobResult {
   };
 }
 
+async function recoverMediaCheckpoint(entry: JobEntry, fallback: JobResult): Promise<JobResult> {
+  if (
+    entry.request.job !== "media" ||
+    !entry.runId ||
+    fallback.job !== "media" ||
+    !/^media-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.runId)
+  ) return fallback;
+
+  try {
+    const projectRoot = path.resolve(entry.projectPath);
+    const relativeDirectory = path.normalize(entry.projectPaths.jobLogsDir);
+    if (path.isAbsolute(relativeDirectory) || relativeDirectory.split(path.sep).some((part) => part === "..")) return fallback;
+    const rootStat = await lstat(projectRoot);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) return fallback;
+    let logsDirectory = projectRoot;
+    for (const part of relativeDirectory.split(path.sep).filter(Boolean)) {
+      logsDirectory = path.join(logsDirectory, part);
+      const directoryStat = await lstat(logsDirectory);
+      if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) return fallback;
+    }
+    const checkpointPath = path.join(logsDirectory, `${entry.runId}.media.json`);
+    const checkpointStat = await lstat(checkpointPath);
+    if (!checkpointStat.isFile() || checkpointStat.isSymbolicLink() || checkpointStat.size > MAX_MEDIA_CHECKPOINT_BYTES) return fallback;
+    const parsed: unknown = JSON.parse(await readFile(checkpointPath, "utf8"));
+    if (
+      !isRecord(parsed) ||
+      parsed.run_id !== entry.runId ||
+      (parsed.checkpoint_state !== "running" && parsed.checkpoint_state !== "finished") ||
+      !matchesMediaRecoveryRequest(parsed, entry.request.skus ?? [])
+    ) return fallback;
+
+    const checkpoint = parsed as unknown as MediaJobCheckpoint;
+    if (
+      checkpoint.media_error_code !== undefined &&
+      checkpoint.media_error_code !== "WP_AUTH_FAILED" &&
+      checkpoint.media_error_code !== "WP_FORBIDDEN"
+    ) return fallback;
+
+    const counts: Record<string, number> = {
+      uploaded: 0,
+      reused: 0,
+      recorded: 0,
+      skipped_has_url: 0,
+      failed: 0,
+      unknown: checkpoint.media_unknown_skus.length,
+      not_started: checkpoint.media_not_started_skus.length,
+    };
+    for (const result of checkpoint.media_results) counts[result.status] = (counts[result.status] ?? 0) + 1;
+    const recovered: JobResult = {
+      ...fallback,
+      // Checkpoints contain SKU outcomes, not a trustworthy process-level exit status.
+      // A crashed worker must never be promoted to a successful Job from this file alone.
+      status: fallback.status,
+      exitCode: fallback.exitCode,
+      summary:
+        checkpoint.checkpoint_state === "finished"
+          ? "媒体任务进程异常退出；已从完成检查点恢复 SKU 状态，任务整体仍按异常处理。"
+          : "媒体任务进程异常退出；已从检查点恢复 SKU 状态。",
+      counts,
+      media_requested_skus: [...checkpoint.media_requested_skus],
+      media_batch_state: checkpoint.media_batch_state,
+      media_results: checkpoint.media_results.map((result) => ({ ...result })),
+      media_unknown_skus: [...checkpoint.media_unknown_skus],
+      media_not_started_skus: [...checkpoint.media_not_started_skus],
+      ...(checkpoint.media_error_code ? { media_error_code: checkpoint.media_error_code } : {}),
+      errors: fallback.errors ?? ["utilityProcess 异常退出；SKU 状态已从持久化检查点恢复。"],
+    };
+    return sanitizeMediaJobResult(recovered, entry.sensitiveValues, entry.sensitiveUsernames);
+  } catch {
+    return fallback;
+  }
+}
+
 function unknownMediaRecovery(entry: JobEntry): Partial<JobResult> {
   if (entry.request.job !== "media") return {};
   const skus = [...new Set(entry.request.skus ?? [])];
@@ -301,6 +378,27 @@ export function createJobManager(options: JobManagerOptions) {
     try {
       const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
       const rows = await readJsonl(filePath);
+      const existing = rows.find((row) => row.run_id === entry.runId);
+      if (existing && isRunLog(existing) && existing.job === entry.request.job) {
+        if (existing.job !== "media") {
+          if (existing.status === "ok" && existing.finished_at !== null) return result;
+        } else if (isValidMediaSkuRecoveryPartition(existing)) {
+          const recovered: JobResult = {
+            ...result,
+            status: existing.status,
+            media_requested_skus: [...existing.media_requested_skus],
+            media_batch_state: existing.media_batch_state,
+            media_results: existing.media_results.map((item) => ({ ...item })),
+            media_unknown_skus: [...existing.media_unknown_skus],
+            media_not_started_skus: [...existing.media_not_started_skus],
+            ...(existing.media_error_code ? { media_error_code: existing.media_error_code } : {}),
+          };
+          return sanitizeMediaJobResult(recovered, entry.sensitiveValues, entry.sensitiveUsernames);
+        } else if (existing.status === "ok" && existing.finished_at !== null) {
+          // An older successful row without recovery fields stays unavailable rather than being replaced.
+          return result;
+        }
+      }
       const record: RunLog = {
         run_id: entry.runId,
         job: entry.request.job,
@@ -323,7 +421,8 @@ export function createJobManager(options: JobManagerOptions) {
       };
       const next = rows.filter((row) => row.run_id !== entry.runId);
       next.push(record as unknown as Record<string, unknown>);
-      await writeJsonl(filePath, next, "run_log");
+      next.sort((left, right) => compareKeys(String(left.run_id ?? ""), String(right.run_id ?? "")));
+      await atomicWrite(filePath, `${next.map((row) => JSON.stringify(row)).join("\n")}\n`);
       return result;
     } catch {
       // 项目文件不可写时仍把失败结果发回界面。
@@ -335,9 +434,8 @@ export function createJobManager(options: JobManagerOptions) {
     if (entry.finalizing) return;
     entry.finalizing = true;
     clearTimeout(entry.startupTimer);
-    await releaseOwnedLock(entry);
-
     if (!entry.runId) {
+      await releaseOwnedLock(entry);
       entry.rejectStarted(jobError("UNKNOWN", "Job utilityProcess 未能启动。", `exit code: ${exitCode}`));
       const result = processFailureResult(entry, exitCode);
       entry.resolveDone(result);
@@ -348,6 +446,12 @@ export function createJobManager(options: JobManagerOptions) {
     let result = entry.result;
     if (!result) {
       result = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
+      // The utilityProcess has exited. Read its Core checkpoint while the project lock still belongs to this job.
+      result = await recoverMediaCheckpoint(entry, result);
+    }
+    await releaseOwnedLock(entry);
+
+    if (!entry.result) {
       result = await appendSyntheticRunLog(entry, result);
       if (entry.cancelled) {
         options.emitProgress({
@@ -426,6 +530,7 @@ export function createJobManager(options: JobManagerOptions) {
           deviceName: entry.settings.device_name,
           cacheDir: entry.settings.cache_dir,
           browserPath: entry.browserPath,
+          ...(options.testOnlyAllowLoopbackHttp ? { testOnlyAllowLoopbackHttp: true } : {}),
           ...(entry.wordpressCredential ? { wordpressCredential: entry.wordpressCredential } : {}),
         },
       };
