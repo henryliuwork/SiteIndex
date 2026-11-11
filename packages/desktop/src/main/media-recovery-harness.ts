@@ -1,14 +1,16 @@
-import { app, BrowserWindow, ipcMain, utilityProcess } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage, utilityProcess } from "electron";
 import { createServer, type Server } from "node:http";
 import { cp, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathsForProject } from "@siteindex/core";
-import { PATHS, isValidMediaSkuRecoveryPartition, type JobResult } from "@siteindex/shared";
+import { PATHS, isValidMediaSkuRecoveryPartition, type JobResult, type ProjectId } from "@siteindex/shared";
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import { createJobManager } from "./job-manager.js";
 import { createJobsHandlers } from "./ipc/jobs.js";
 import { createMediaHandlers } from "./ipc/media.js";
 import { createWindowManager } from "./window-manager.js";
+import { createWordPressCredentialVault, resolveWordPressCredentialDirectory } from "./wordpress-credential-vault.js";
+import { createWordPressMediaCredentialProvider } from "./wordpress-media-credential-provider.js";
 import { ipcChannel } from "../shared/ipc-contract.js";
 
 const EXPECTED_SKUS = ["synthetic-media-a", "synthetic-media-b", "synthetic-media-c"] as const;
@@ -31,6 +33,26 @@ function rootPath(): string {
   const value = process.env.SITEINDEX_MEDIA_E2E_ROOT;
   if (!value) throw new Error("Missing test root.");
   return path.resolve(value);
+}
+
+function isPathWithin(parent: string, target: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(target));
+  return relative === "" || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`));
+}
+
+function createE2eCredentialVault() {
+  return createWordPressCredentialVault({
+    platform: process.platform,
+    localAppData: process.env.LOCALAPPDATA,
+    homeDirectory: app.getPath("home"),
+    safeStorage: {
+      isAsyncEncryptionAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
+      encryptStringAsync: (plainText) => safeStorage.encryptStringAsync(plainText),
+      decryptStringAsync: (encrypted) => safeStorage.decryptStringAsync(encrypted),
+    },
+    // The harness uses only its synthetic 127.0.0.1 WordPress server. Production never sets this override.
+    testOnlyAllowLoopbackHttp: true,
+  });
 }
 
 function reportPath(): string {
@@ -394,6 +416,19 @@ async function startMainProcessForPhase(phaseName: "crash-worker" | "read-recove
     [path.basename(primaryProjectPath), primaryProjectPath],
     [path.basename(secondaryProjectPath), secondaryProjectPath],
   ]);
+  const credentialVault = createE2eCredentialVault();
+  const getWordPressCredential = createWordPressMediaCredentialProvider({
+    getProject: async (id) => {
+      const projectPath = projects.get(id);
+      if (!projectPath) throw new Error("Synthetic project was not registered.");
+      const config = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as {
+        base_url: string;
+        edm?: { image_host?: { type: string } };
+      };
+      return { config };
+    },
+    vault: credentialVault,
+  });
   const windowManager = createWindowManagerForHarness();
   const workerOutput: string[] = [];
   let worker: ReturnType<typeof utilityProcess.fork> | null = null;
@@ -408,8 +443,7 @@ async function startMainProcessForPhase(phaseName: "crash-worker" | "read-recove
     getSettings: async () => settings as any,
     isMediaJobReady: () => phaseName === "crash-worker",
     testOnlyAllowLoopbackHttp: phaseName === "crash-worker",
-    getWordPressCredential: async () =>
-      phaseName === "crash-worker" ? currentCredential : null,
+    getWordPressCredential,
     resolveProject: async (id) => projects.get(id) ?? primaryProjectPath,
     fork: (modulePath) => {
       worker = utilityProcess.fork(modulePath, [], { serviceName: "SiteIndex synthetic media recovery E2E" });
@@ -444,6 +478,8 @@ async function startMainProcessForPhase(phaseName: "crash-worker" | "read-recove
     observerWindow,
     windowManager,
     jobManager,
+    credentialVault,
+    getWordPressCredential,
     finished,
     worker: () => worker,
     workerOutput,
@@ -457,8 +493,6 @@ async function startMainProcessForPhase(phaseName: "crash-worker" | "read-recove
   };
 }
 
-let currentCredential: { username: string; applicationPassword: string } | null = null;
-
 async function crashWorkerPhase(): Promise<HarnessInternalResult> {
   const root = rootPath();
   const expectedPrimaryPath = path.join(root, "projects", "synthetic-media-recovery");
@@ -467,7 +501,6 @@ async function crashWorkerPhase(): Promise<HarnessInternalResult> {
   const imageServer = await startImageServer();
   const canaryValues = syntheticCredentialCanaries();
   const credentials = { username: canaryValues[0]!, applicationPassword: canaryValues[1]! };
-  currentCredential = credentials;
   const wordpress = await startWordPressServer(credentials);
   canaryValues.push(...wordpress.canaryValues);
   let system: Awaited<ReturnType<typeof startMainProcessForPhase>> | null = null;
@@ -477,7 +510,7 @@ async function crashWorkerPhase(): Promise<HarnessInternalResult> {
 
   try {
     await createFixtureProject(expectedPrimaryPath, wordpress.origin, `${imageServer.origin}/synthetic.webp`);
-    await createFixtureProject(secondaryPath, wordpress.origin, `${imageServer.origin}/synthetic.webp`);
+    await createFixtureProject(secondaryPath, "https://isolated-other.example.test", `${imageServer.origin}/synthetic.webp`);
     phaseCode = "secondary-history-setup";
     const secondaryPaths = await pathsForProject(secondaryPath);
     await writeFile(path.join(secondaryPath, secondaryPaths.runs), `${JSON.stringify({
@@ -491,6 +524,22 @@ async function crashWorkerPhase(): Promise<HarnessInternalResult> {
     phaseCode = "desktop-window-and-handler-startup";
     const activeSystem = await startMainProcessForPhase("crash-worker");
     system = activeSystem;
+    phaseCode = "save-credential-to-isolated-safe-storage-vault";
+    const localAppData = process.env.LOCALAPPDATA;
+    if (!localAppData) throw new Error("Isolated Local AppData is unavailable.");
+    const vaultDirectory = resolveWordPressCredentialDirectory({
+      platform: process.platform,
+      localAppData,
+      homeDirectory: app.getPath("home"),
+    });
+    const credentialVaultPathIsolated = isPathWithin(root, vaultDirectory) && isPathWithin(localAppData, vaultDirectory);
+    if (!credentialVaultPathIsolated) throw new Error("Credential vault is outside the isolated test profile.");
+    await activeSystem.credentialVault.save({ siteUrl: wordpress.origin, ...credentials });
+    const credentialReadback = await activeSystem.credentialVault.getForHost(wordpress.origin);
+    const credentialVaultSafeStorageRoundTrip =
+      credentialReadback?.username === credentials.username &&
+      credentialReadback.applicationPassword === credentials.applicationPassword;
+    if (!credentialVaultSafeStorageRoundTrip) throw new Error("Electron safeStorage vault round-trip failed.");
     // The production handler path is exercised through the actual preload and ipcMain invoke bridge.
     phaseCode = "preload-media-ipc-start";
     const startRequest = await activeSystem.primaryWindow.webContents.executeJavaScript(
@@ -620,6 +669,9 @@ async function crashWorkerPhase(): Promise<HarnessInternalResult> {
       observerRendererReadRecoveredHistory: observerHistoryMatches,
       runLogMatchesRecoveredPartition: durableRunLogMatches,
       credentialCanaryMatches: canaryMatches,
+      credentialVaultPathIsolated,
+      credentialVaultSafeStorageRoundTrip,
+      credentialUsedForSyntheticWordPressAuth: result.media_results.some(({ status }) => status === "uploaded"),
       durationMs: Date.now() - startedAt,
     };
     if (
@@ -627,6 +679,8 @@ async function crashWorkerPhase(): Promise<HarnessInternalResult> {
       !rendererFinishMatches ||
       !observerHistoryMatches ||
       !durableRunLogMatches ||
+      !credentialVaultPathIsolated ||
+      !credentialVaultSafeStorageRoundTrip ||
       !checkpointReadAfterWorkerExit ||
       !projectLockHeldBeforeKill ||
       leakedLock ||
@@ -648,7 +702,6 @@ async function crashWorkerPhase(): Promise<HarnessInternalResult> {
     await writeFile(path.join(root, "media-e2e-internal.json"), JSON.stringify(internal), "utf8");
     throw error;
   } finally {
-    currentCredential = null;
     await Promise.all([
       new Promise<void>((resolve) => { imageServer.server.close(() => resolve()); imageServer.server.closeAllConnections?.(); }),
       new Promise<void>((resolve) => { wordpress.server.close(() => resolve()); wordpress.server.closeAllConnections?.(); }),
@@ -669,6 +722,19 @@ async function readRecoveryPhase(): Promise<HarnessInternalResult> {
   try {
     const projectId = path.basename(system.primaryProjectPath);
     const otherProjectId = path.basename(system.secondaryProjectPath);
+    phaseCode = "read-encrypted-credential-after-process-restart";
+    const persistedCredential = await system.getWordPressCredential(projectId as ProjectId);
+    const expectedCredential = syntheticCredentialCanaries();
+    const credentialVaultRecoveredAfterProcessRestart =
+      persistedCredential.username === expectedCredential[0] &&
+      persistedCredential.applicationPassword === expectedCredential[1];
+    let credentialNotSharedAcrossDifferentProjectOrigin = false;
+    try {
+      await system.getWordPressCredential(otherProjectId as ProjectId);
+    } catch (error) {
+      credentialNotSharedAcrossDifferentProjectOrigin =
+        typeof error === "object" && error !== null && "code" in error && error.code === "WP_NOT_CONFIGURED";
+    }
     const [primaryRows, isolatedRows] = await Promise.all([
       system.observerWindow.webContents.executeJavaScript(`window.siteindex.jobs.history(${JSON.stringify(projectId)})`),
       system.observerWindow.webContents.executeJavaScript(`window.siteindex.jobs.history(${JSON.stringify(otherProjectId)})`),
@@ -696,6 +762,8 @@ async function readRecoveryPhase(): Promise<HarnessInternalResult> {
         !Object.hasOwn(oldRecord, "media_not_started_skus"),
       noCrossProjectRunLeak:
         Array.isArray(isolatedRows) && isolatedRows.every((row) => row.run_id !== expectedRunId),
+      credentialVaultRecoveredAfterProcessRestart,
+      credentialNotSharedAcrossDifferentProjectOrigin,
       observerWindowCount: BrowserWindow.getAllWindows().length,
       noCredentialCanaryInRendererOrHistory: true,
       durationMs: Date.now() - startedAt,
@@ -723,6 +791,8 @@ async function readRecoveryPhase(): Promise<HarnessInternalResult> {
       report.recoveredNotStartedSkuMatches &&
       report.oldRecordDoesNotInventRecoveryFields &&
       report.noCrossProjectRunLeak &&
+      credentialVaultRecoveredAfterProcessRestart &&
+      credentialNotSharedAcrossDifferentProjectOrigin &&
       report.observerWindowCount === 2 &&
       report.noCredentialCanaryInRendererOrHistory;
     if (!passed) throw new Error("Restart read acceptance assertion failed.");

@@ -159,6 +159,41 @@ describe("WordPress local credential vault", () => {
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
   });
 
+  it("allows HTTP credentials only for the explicit packaged-E2E loopback override", async () => {
+    const directory = await tempDirectory();
+    const input = {
+      siteUrl: "http://127.0.0.1:41873/wp/",
+      username: "fixture-user",
+      applicationPassword: "fixture-secret",
+    };
+    const productionVault = createWordPressCredentialVault({
+      platform: "darwin",
+      homeDirectory: "/Users/fixture",
+      directoryOverride: path.join(directory, "production-vault"),
+      safeStorage: fakeSafeStorage(),
+    });
+    await expect(productionVault.save(input)).rejects.toMatchObject({ code: "INVALID_INPUT" });
+
+    const e2eVault = createWordPressCredentialVault({
+      platform: "darwin",
+      homeDirectory: "/Users/fixture",
+      directoryOverride: path.join(directory, "e2e-vault"),
+      safeStorage: fakeSafeStorage(),
+      testOnlyAllowLoopbackHttp: true,
+    });
+    await e2eVault.save(input);
+    await expect(e2eVault.getForHost(input.siteUrl)).resolves.toEqual({
+      username: input.username,
+      applicationPassword: input.applicationPassword,
+    });
+    await expect(
+      e2eVault.save({ ...input, siteUrl: "http://fixture.example.test" }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(
+      e2eVault.save({ ...input, siteUrl: "http://localhost:41873" }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  });
+
   it("requires re-entry if the encrypted file cannot be read on this machine", async () => {
     const directory = await tempDirectory();
     const options = {

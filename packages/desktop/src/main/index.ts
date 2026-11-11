@@ -30,6 +30,7 @@ import { backgroundPolicy, type BackgroundPolicy } from "./background-policy.js"
 import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type AppTray } from "./app-background.js";
 import { registerWordPressCredentialHandlers } from "./wordpress-credential-ipc.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
+import { createWordPressMediaCredentialProvider } from "./wordpress-media-credential-provider.js";
 import {
   inspectProfilePaths,
   profilePathsAreContained,
@@ -141,6 +142,13 @@ if (!hasSingleInstanceLock) {
         isTrustedSender: (sender) => sender === windowManager.getMainWindow()?.webContents,
       },
     );
+    const getWordPressMediaCredential = createWordPressMediaCredentialProvider({
+      getProject: async (id) => {
+        if (!mediaCore) throw new Error("Project service is not ready.");
+        return mediaCore.projects.get(id);
+      },
+      vault: wordpressCredentialVault,
+    });
     const scheduler = createSystemScheduler({
       executablePath: app.getPath("exe"),
       runtimeStatePath: join(app.getPath("userData"), "schedule-runtime-state.json"),
@@ -171,20 +179,7 @@ if (!hasSingleInstanceLock) {
       getBrowserExecutablePath: async (settings) => (await desktopIntegrations.detectBrowser(settings.browser)).path,
       // Core media Job 与 WASM 已接线；完整媒体流水线的安装版验收完成前仍保持关闭。
       isMediaJobReady: () => false,
-      getWordPressCredential: async (id) => {
-        if (!mediaCore) throw { code: "PROJECT_NOT_FOUND", message: "项目服务尚未就绪。" };
-        const project = await mediaCore.projects.get(id);
-        if (project.config.edm?.image_host?.type !== "wordpress") {
-          throw { code: "WP_NOT_CONFIGURED", message: "该项目尚未配置 WordPress 媒体托管。" };
-        }
-        try {
-          const credential = await wordpressCredentialVault.getForHost(project.config.base_url);
-          if (credential) return credential;
-        } catch {
-          throw { code: "WP_NOT_CONFIGURED", message: "本机 WordPress 凭据不可用，请在设置中重新保存。" };
-        }
-        throw { code: "WP_NOT_CONFIGURED", message: "尚未配置此项目的 WordPress 应用程序密码。" };
-      },
+      getWordPressCredential: getWordPressMediaCredential,
       resolveProject: (id: ProjectId) => {
         if (!projectCatalog) throw { code: "PROJECT_NOT_FOUND", message: "项目目录尚未就绪。", detail: id };
         return projectCatalog.resolveProject(id);
