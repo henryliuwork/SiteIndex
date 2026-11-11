@@ -68,7 +68,13 @@ function scanSourceForMissingToast(sourceText: string, fileName = "page.tsx"): s
     const hasErrorToast = /toast\.error\s*\(/.test(text);
     const hasJobProgressNotice = /set(?:ActiveRunId|RunId|RecrawlRunId)\s*\(/.test(text) && /<Notice/.test(sourceText) && /toast\.success\s*\(/.test(sourceText);
     const hasInlineReadState = /setReportError\s*\(/.test(text) && /setReport\s*\(/.test(text) && /<ApiErrorNotice/.test(sourceText);
-    if ((!hasSuccessToast && !hasJobProgressNotice && !hasInlineReadState) || (!hasErrorToast && !hasInlineReadState)) violations.push(handler);
+    const hasEdmMonitorNotifications = fileName === "EdmPage.tsx"
+      && /edmMediaJobMonitor\.fail\s*\(/.test(text)
+      && /function notifyFinished/.test(sourceText)
+      && /activeToast\?\.(success|info)\s*\(/.test(sourceText)
+      && /activeToast\?\.error\s*\(/.test(sourceText);
+    if ((!hasSuccessToast && !hasJobProgressNotice && !hasInlineReadState && !hasEdmMonitorNotifications)
+      || (!hasErrorToast && !hasInlineReadState && !hasEdmMonitorNotifications)) violations.push(handler);
   }
   return violations;
 }
@@ -83,7 +89,8 @@ describe("D 页面异步操作 Toast 覆盖", () => {
     const pagesRoot = resolve(import.meta.dirname, "..");
     const violations = auditedPages.flatMap((fileName) => {
       const source = readFileSync(resolve(pagesRoot, fileName), "utf8");
-      return scanSourceForMissingToast(source, fileName).map((handler) => `${fileName}: ${handler}`);
+      const delegatedSource = fileName === "EdmPage.tsx" ? readFileSync(resolve(pagesRoot, "edm/media-job-monitor.ts"), "utf8") : "";
+      return scanSourceForMissingToast(source + delegatedSource, fileName).map((handler) => `${fileName}: ${handler}`);
     });
     expect(violations).toEqual([]);
   });

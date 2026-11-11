@@ -25,7 +25,11 @@ afterEach(() => {
 function LocationProbe() {
   const location = useLocation();
   const navigate = useNavigate();
-  return <><output data-testid="location">{location.pathname + location.search}</output><button type="button" onClick={() => navigate("/p/other/edm")}>切换项目</button></>;
+  return <><output data-testid="location">{location.pathname + location.search}</output>
+    <button type="button" onClick={() => navigate("/p/demo/runs")}>离开 EDM</button>
+    <button type="button" onClick={() => navigate("/p/demo/edm")}>返回 EDM</button>
+    <button type="button" onClick={() => navigate("/p/other/edm")}>切换项目</button>
+  </>;
 }
 
 async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[], mediaReady = false, deferredMediaPrepare = false) {
@@ -53,14 +57,24 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
     : vi.fn(async () => ({ runId: "demo-media-run" }));
   let onMediaProgress: ((progress: JobProgress) => void) | undefined;
   let onMediaFinished: ((result: JobResult) => void) | undefined;
+  let activeProgressSubscriptions = 0;
+  let activeFinishedSubscriptions = 0;
   if (mediaReady) {
     vi.doMock("@siteindex/shared", async () => {
       const actual = await vi.importActual<typeof import("@siteindex/shared")>("@siteindex/shared");
       return { ...actual, PENDING_HANDLERS: [] };
     });
     mockApi.media = { prepare: mediaPrepare };
-    mockApi.jobs.onProgress = (callback) => { onMediaProgress = callback; return () => { onMediaProgress = undefined; }; };
-    mockApi.jobs.onFinished = (callback) => { onMediaFinished = callback; return () => { onMediaFinished = undefined; }; };
+    mockApi.jobs.onProgress = (callback) => {
+      activeProgressSubscriptions += 1;
+      onMediaProgress = callback;
+      return () => { activeProgressSubscriptions -= 1; if (onMediaProgress === callback) onMediaProgress = undefined; };
+    };
+    mockApi.jobs.onFinished = (callback) => {
+      activeFinishedSubscriptions += 1;
+      onMediaFinished = callback;
+      return () => { activeFinishedSubscriptions -= 1; if (onMediaFinished === callback) onMediaFinished = undefined; };
+    };
   }
   const previewGrouping = vi.fn(async () => ({
     parents: 1,
@@ -86,6 +100,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
       <MemoryRouter initialEntries={["/p/demo/edm"]}>
         <Routes>
           <Route path="/p/:id/edm" element={<EdmPage />} />
+          <Route path="/p/:id/runs" element={<div>运行页面</div>} />
           <Route path="/p/:id/settings/config" element={<div>项目设置页</div>} />
         </Routes>
         <LocationProbe />
@@ -99,6 +114,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
     emitMediaProgress: (progress: JobProgress) => onMediaProgress?.(progress),
     emitMediaFinished: (result: JobResult) => onMediaFinished?.(result),
     resolveMediaPrepare: (runId = "demo-media-run") => resolvePendingMediaPrepare?.({ runId }),
+    activeSubscriptions: () => ({ progress: activeProgressSubscriptions, finished: activeFinishedSubscriptions }),
   };
 }
 
@@ -305,5 +321,45 @@ describe("EdmPage media preparation prototype", () => {
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["edm", "images", "other"] });
     expect(screen.queryByRole("list", { name: "图片准备逐 SKU 结果" })).toBeNull();
     expect(screen.queryByText("DEMO-OLD-PROJECT-001")).toBeNull();
+  }, 15_000);
+
+  it("离开 EDM 后保留进度、完成通知与原项目缓存刷新，并在返回后恢复逐 SKU 结果", async () => {
+    const rows = [
+      mediaImageRow("DEMO-BACKGROUND-001", "https://demo-store.example.test/demo/first.webp"),
+      mediaImageRow("DEMO-BACKGROUND-002", "https://demo-store.example.test/demo/second.webp"),
+    ];
+    const { mediaPrepare, invalidateQueries, emitMediaProgress, emitMediaFinished, activeSubscriptions } = await renderEdmPage(true, false, rows, true);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（2）" }));
+    await waitFor(() => expect(mediaPrepare).toHaveBeenCalledWith({ project: "demo", skus: ["DEMO-BACKGROUND-001", "DEMO-BACKGROUND-002"] }));
+    expect(activeSubscriptions()).toEqual({ progress: 1, finished: 1 });
+
+    fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
+    expect(await screen.findByText("运行页面")).toBeTruthy();
+    emitMediaProgress({ runId: "demo-media-run", projectPath: "C:/fake/demo", job: "media", pct: 70, level: "info", message: "正在处理虚构 SKU", at: "2026-11-11T00:00:00.000Z" });
+    expect(await screen.findByText(/图片处理进度（.*）：正在处理虚构 SKU/)).toBeTruthy();
+    emitMediaFinished({
+      runId: "demo-media-run", job: "media", status: "partial", exitCode: 1, summary: "有 1 个 SKU 处理失败",
+      media_results: [
+        { sku: "DEMO-BACKGROUND-001", status: "uploaded" },
+        { sku: "DEMO-BACKGROUND-002", status: "failed", reason: "虚构测试错误" },
+      ],
+    });
+
+    expect(await screen.findByText(/图片 URL 已部分处理，请检查逐 SKU 结果。/)).toBeTruthy();
+    await waitFor(() => {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "images", "demo"] });
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "summary", "demo"] });
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["job-history", "demo"] });
+    });
+    expect(activeSubscriptions()).toEqual({ progress: 0, finished: 0 });
+
+    fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
+    const results = await screen.findByRole("list", { name: "图片准备逐 SKU 结果" });
+    expect(within(results).getByText("DEMO-BACKGROUND-001")).toBeTruthy();
+    expect(within(results).getByText("已上传")).toBeTruthy();
+    expect(within(results).getByText("DEMO-BACKGROUND-002")).toBeTruthy();
+    expect(within(results).getByText("虚构测试错误")).toBeTruthy();
+    expect(activeSubscriptions()).toEqual({ progress: 1, finished: 1 });
   }, 15_000);
 });

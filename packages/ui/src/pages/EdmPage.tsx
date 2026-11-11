@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { EdmCommandInput, JobProgress, JobResult, Kpi, ListQuery, MediaPrepareSkuResult, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
+import type { EdmCommandInput, JobResult, Kpi, ListQuery, MediaPrepareSkuResult, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
+import { edmMediaJobMonitor, type EdmMediaRunSnapshot } from "./edm/media-job-monitor";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
@@ -20,7 +21,6 @@ const viewOptions: { value: ImageView; label: string }[] = [
 type MediaDemoStatus = "queued" | MediaPrepareSkuResult["status"] | "unresolved";
 type MediaDemoRowState = { status: MediaDemoStatus; reason?: string };
 type MediaDemoOutcome = "complete" | "WP_AUTH_FAILED" | "WP_FORBIDDEN";
-interface MediaRunContext { projectId: string; skus: string[] }
 
 const mediaStatusLabels: Record<MediaDemoStatus, string> = {
   queued: "排队中", uploaded: "已上传", reused: "已复用",
@@ -33,20 +33,40 @@ const mediaStatusTones: Record<MediaDemoStatus, "neutral" | "info" | "ok" | "war
   skipped_has_url: "neutral", failed: "danger", unresolved: "warn",
 };
 
+function summarizeMediaRun(skus: string[], result: JobResult): string {
+  const labels: Record<MediaPrepareSkuResult["status"], string> = {
+    uploaded: "上传", reused: "复用", recorded: "记录原图 URL", skipped_has_url: "已有 URL 跳过", failed: "失败",
+  };
+  const results = result.media_results ?? [];
+  const counts = new Map<MediaPrepareSkuResult["status"], number>();
+  for (const item of results) counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
+  const summaryParts = [...counts].map(([status, count]) => `${labels[status]} ${count}`);
+  const unresolved = skus.length - results.length;
+  if (unresolved > 0) summaryParts.push(`尚未开始 ${unresolved}`);
+  const authMessage = result.media_error_code === "WP_AUTH_FAILED" ? "WordPress 认证失败（401），批次已停止。"
+    : result.media_error_code === "WP_FORBIDDEN" ? "WordPress 权限不足（403），批次已停止。" : "";
+  return [authMessage, result.summary, summaryParts.join("，")].filter(Boolean).join(" ") || "图片准备任务已结束。";
+}
+
+function getMediaRunStatuses(skus: string[], state: EdmMediaRunSnapshot["state"], result?: JobResult): Record<string, MediaDemoRowState> {
+  if (state === "starting" || state === "running") {
+    return Object.fromEntries(skus.map((sku) => [sku, { status: "queued" as const }]));
+  }
+  if (!result) return {};
+  const resultsBySku = new Map((result.media_results ?? []).map((item) => [item.sku, item]));
+  return Object.fromEntries(skus.map((sku) => {
+    const item = resultsBySku.get(sku);
+    return [sku, item
+      ? { status: item.status, ...(item.reason ? { reason: item.reason } : {}) }
+      : { status: "unresolved" as const, reason: "批次提前结束，尚未开始处理" }];
+  }));
+}
+
 function isRecordableFeedImage(url: string): boolean {
   try {
     return /\.(?:jpe?g|png)$/i.test(new URL(url, "https://siteindex.invalid").pathname);
   } catch {
     return false;
-  }
-}
-
-function rememberRecent<T>(cache: Map<string, T>, key: string, value: T): void {
-  cache.set(key, value);
-  while (cache.size > 20) {
-    const oldestKey = cache.keys().next().value;
-    if (oldestKey === undefined) return;
-    cache.delete(oldestKey);
   }
 }
 
@@ -120,17 +140,15 @@ function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
 
 export function EdmPage() {
   const { id = "demo" } = useParams();
-  const currentProjectIdRef = useRef(id);
   const lastResetProjectIdRef = useRef(id);
-  currentProjectIdRef.current = id;
-  const activeMediaRunRef = useRef<(MediaRunContext & { runId?: string }) | null>(null);
-  const mediaRunContextsRef = useRef(new Map<string, MediaRunContext>());
-  const earlyMediaResultsRef = useRef(new Map<string, JobResult>());
-  const earlyMediaProgressRef = useRef(new Map<string, JobProgress>());
-  const finishMediaResultRef = useRef<(result: JobResult, context: MediaRunContext) => void>(() => undefined);
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const mediaRunSnapshot = useSyncExternalStore(
+    edmMediaJobMonitor.subscribe,
+    () => edmMediaJobMonitor.getSnapshot(id),
+    () => null,
+  );
   const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 50, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
   const [selectedRows, setSelectedRows] = useState<SkuImageRow[]>([]);
@@ -139,12 +157,6 @@ export function EdmPage() {
   const [mediaDemoRunning, setMediaDemoRunning] = useState(false);
   const [mediaDemoMessage, setMediaDemoMessage] = useState("");
   const [mediaDemoOpen, setMediaDemoOpen] = useState(false);
-  const [mediaRunId, setRunId] = useState<string | null>(null);
-  const [mediaRunStarting, setMediaRunStarting] = useState(false);
-  const [mediaRunProgress, setMediaRunProgress] = useState("");
-  const [mediaRunMessage, setMediaRunMessage] = useState("");
-  const [mediaRunTone, setMediaRunTone] = useState<"info" | "warn" | "error">("info");
-  const [mediaRunStatuses, setMediaRunStatuses] = useState<Record<string, MediaDemoRowState>>({});
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["edm", "summary", id], queryFn: () => api.edm.summary(id) });
@@ -152,94 +164,31 @@ export function EdmPage() {
   const project = projectQuery.data?.summary;
   const skuGrouping = projectQuery.data?.config.sku_grouping;
   const mediaCapability = getEdmMediaCapability(api);
-  const mediaRunBusy = mediaRunStarting || Boolean(mediaRunId);
+  const mediaRunBusy = mediaRunSnapshot?.state === "starting" || mediaRunSnapshot?.state === "running";
+  const mediaRunProgress = mediaRunSnapshot?.state === "starting" || mediaRunSnapshot?.state === "running" ? mediaRunSnapshot.progress : "";
+  const mediaRunMessage = mediaRunSnapshot?.state === "failed" ? mediaRunSnapshot.error ?? "图片处理任务启动失败。"
+    : mediaRunSnapshot?.result ? summarizeMediaRun(mediaRunSnapshot.skus, mediaRunSnapshot.result) : "";
+  const mediaRunTone = mediaRunSnapshot?.state === "failed" || mediaRunSnapshot?.result?.status === "failed" ? "error"
+    : mediaRunSnapshot?.result?.status === "partial" ? "warn" : "info";
+  const mediaRunStatuses = mediaRunSnapshot ? getMediaRunStatuses(mediaRunSnapshot.skus, mediaRunSnapshot.state, mediaRunSnapshot.result) : {};
   const groupingEnabled = skuGrouping?.enabled === true;
   const groupingRule: SkuGroupingRule = skuGrouping?.rule ?? { type: "separator", value: "-" };
   const summary = summaryQuery.data;
   const columns = useMemo(() => imageColumns(id), [id]);
   const currentView: ImageView = query.filters?.view ?? "all";
 
-  finishMediaResultRef.current = (result, context) => {
-    const isCurrentRun = currentProjectIdRef.current === context.projectId
-      && activeMediaRunRef.current?.runId === result.runId;
-    if (isCurrentRun) {
-      const resultsBySku = new Map((result.media_results ?? []).map((item) => [item.sku, item]));
-      setMediaRunStatuses(Object.fromEntries(context.skus.map((sku) => {
-        const item = resultsBySku.get(sku);
-        return [sku, item
-          ? { status: item.status, ...(item.reason ? { reason: item.reason } : {}) }
-          : { status: "unresolved" as const, reason: "批次提前结束，尚未开始处理" }];
-      })));
-      const labels: Record<MediaPrepareSkuResult["status"], string> = {
-        uploaded: "上传", reused: "复用", recorded: "记录原图 URL", skipped_has_url: "已有 URL 跳过", failed: "失败",
-      };
-      const counts = new Map<MediaPrepareSkuResult["status"], number>();
-      for (const item of result.media_results ?? []) counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
-      const summaryParts = [...counts].map(([status, count]) => `${labels[status]} ${count}`);
-      const unresolved = context.skus.length - resultsBySku.size;
-      if (unresolved > 0) summaryParts.push(`尚未开始 ${unresolved}`);
-      const authMessage = result.media_error_code === "WP_AUTH_FAILED" ? "WordPress 认证失败（401），批次已停止。"
-        : result.media_error_code === "WP_FORBIDDEN" ? "WordPress 权限不足（403），批次已停止。" : "";
-      setMediaRunMessage([authMessage, result.summary, summaryParts.join("，")].filter(Boolean).join(" ") || "图片准备任务已结束。");
-      setMediaRunTone(result.status === "ok" ? "info" : result.status === "partial" ? "warn" : "error");
-      setMediaRunProgress("");
-      setRunId(null);
-      setMediaRunStarting(false);
-      if (result.media_error_code === "WP_AUTH_FAILED") toast.error("WordPress 认证失败（401），媒体批次已停止。");
-      else if (result.media_error_code === "WP_FORBIDDEN") toast.error("WordPress 权限不足（403），媒体批次已停止。");
-      else if (result.status === "ok") toast.success("图片 URL 处理完成。");
-      else if (result.status === "partial") toast.info("图片 URL 已部分处理，请检查逐 SKU 结果。");
-      else toast.error(result.summary || "图片 URL 处理失败。");
-      activeMediaRunRef.current = null;
-    }
-    void Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["edm", "images", context.projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["edm", "summary", context.projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["job-history", context.projectId] }),
-    ]);
-    mediaRunContextsRef.current.delete(result.runId);
-    earlyMediaResultsRef.current.delete(result.runId);
-    earlyMediaProgressRef.current.delete(result.runId);
-  };
-
   useEffect(() => {
-    const unsubscribeProgress = api.jobs.onProgress((progress: JobProgress) => {
-      if (progress.job !== "media") return;
-      const context = mediaRunContextsRef.current.get(progress.runId);
-      if (!context) {
-        rememberRecent(earlyMediaProgressRef.current, progress.runId, progress);
-        return;
-      }
-      if (currentProjectIdRef.current === context.projectId && activeMediaRunRef.current?.runId === progress.runId) {
-        setMediaRunProgress(progress.message);
-      }
-    });
-    const unsubscribeFinished = api.jobs.onFinished((result: JobResult) => {
-      if (result.job !== "media") return;
-      const context = mediaRunContextsRef.current.get(result.runId);
-      if (!context) {
-        rememberRecent(earlyMediaResultsRef.current, result.runId, result);
-        return;
-      }
-      finishMediaResultRef.current(result, context);
-    });
-    return () => { unsubscribeProgress(); unsubscribeFinished(); };
-  }, []);
+    return edmMediaJobMonitor.connect(api.jobs, queryClient, toast);
+  }, [api.jobs, queryClient, toast]);
 
   useEffect(() => {
     if (lastResetProjectIdRef.current === id) return;
     lastResetProjectIdRef.current = id;
-    activeMediaRunRef.current = null;
     setSelected(null);
     setSelectedRows([]);
     setMediaDemoStatuses({});
     setMediaDemoRunning(false);
     setMediaDemoMessage("");
-    setRunId(null);
-    setMediaRunStarting(false);
-    setMediaRunProgress("");
-    setMediaRunMessage("");
-    setMediaRunStatuses({});
   }, [id]);
   const metrics: Kpi[] = summary ? [
     { key: "total", label: "SKU", value: String(summary.total) },
@@ -342,31 +291,12 @@ export function EdmPage() {
     if (!mediaCapability.available || !prepare || mediaRunBusy || selectedRows.length === 0) return;
     const projectId = id;
     const skus = selectedRows.map((row) => row.sku);
-    const activation: MediaRunContext & { runId?: string } = { projectId, skus };
-    activeMediaRunRef.current = activation;
-    setMediaRunStarting(true);
-    setMediaRunMessage("");
-    setMediaRunProgress("正在启动图片处理任务…");
-    setMediaRunStatuses(Object.fromEntries(skus.map((sku) => [sku, { status: "queued" as const }])));
+    const activation = edmMediaJobMonitor.begin(projectId, project?.name ?? projectId, skus);
     try {
       const run = await prepare({ project: projectId, skus });
-      mediaRunContextsRef.current.set(run.runId, { projectId, skus });
-      if (activeMediaRunRef.current === activation && currentProjectIdRef.current === projectId) {
-        activation.runId = run.runId;
-        setRunId(run.runId);
-        setMediaRunProgress(earlyMediaProgressRef.current.get(run.runId)?.message ?? "图片处理任务正在运行…");
-      }
-      const earlyResult = earlyMediaResultsRef.current.get(run.runId);
-      if (earlyResult) finishMediaResultRef.current(earlyResult, { projectId, skus });
+      edmMediaJobMonitor.associate(activation, run.runId);
     } catch (cause) {
-      if (activeMediaRunRef.current === activation && currentProjectIdRef.current === projectId) {
-        activeMediaRunRef.current = null;
-        setMediaRunProgress("");
-        setMediaRunStatuses({});
-        toast.error(apiErrorMessage(cause, "图片处理任务启动失败。"));
-      }
-    } finally {
-      if (activeMediaRunRef.current === activation && currentProjectIdRef.current === projectId) setMediaRunStarting(false);
+      edmMediaJobMonitor.fail(activation, apiErrorMessage(cause, "图片处理任务启动失败。"));
     }
   };
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
