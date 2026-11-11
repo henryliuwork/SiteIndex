@@ -1,9 +1,15 @@
 import type { SkuStockView } from "@siteindex/shared";
 import { StatusCells } from "../../components";
 
-export function formatInventoryDuration(row: Pick<SkuStockView, "is_parent" | "days_in_status">): string {
+type InventoryDuration = Pick<SkuStockView, "is_parent" | "days_in_status">;
+
+export function formatInventoryTableDuration(row: InventoryDuration): string {
   if (row.is_parent) return "—";
   return row.days_in_status >= 60 ? "60 天+" : row.days_in_status <= 1 ? "今天" : row.days_in_status + " 天";
+}
+
+export function formatInventoryDetailDuration(row: InventoryDuration): string {
+  return row.is_parent ? "—" : `${row.days_in_status} 天`;
 }
 
 export function InventoryRateCell({ value }: { value: number | null | undefined }) {
