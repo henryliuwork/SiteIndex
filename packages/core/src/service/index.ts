@@ -130,6 +130,8 @@ export interface CoreServiceContext {
   browserLauncher?: BrowserLauncher;
   /** 本机凭据仅由 Desktop 主进程注入后台 Job；不得进入请求、日志或返回值。 */
   wordpressCredential?: WordPressCredential;
+  /** Desktop worker 用 Core 最终执行 ID 发送 started，checkpoint、结果与事件保持同一标识。 */
+  onJobStarted?: (runId: string, startedAt: string) => void;
   /** 测试专用：允许 127.0.0.1 假服务使用 HTTP；生产保持 HTTPS-only。 */
   testOnlyAllowLoopbackHttp?: boolean;
   /** 测试专用：替换媒体图片网络读取，覆盖响应大小和资源限制。 */
@@ -1502,28 +1504,39 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
 
   const runJob: CoreService["runJob"] = async (req, report) => {
     const projectPath = path.resolve(req.projectPath);
+    const mediaRunToken = req.job === "media" ? randomUUID() : null;
+    let runId = mediaRunToken ? `media-${mediaRunToken}` : `${new Date().toISOString().slice(0, 10)}-${req.job}`;
     let config: SiteConfig;
     let requestedDate = req.date;
     try {
       await access(projectPath);
       config = await readSiteConfig(projectPath);
       if (requestedDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
-        const failure = jobFailure(req, `${requestedDate}-${req.job}`, EXIT.BAD_ARGS, "Job 日期格式无效。", [requestedDate]);
+        const failure = jobFailure(req, runId, EXIT.BAD_ARGS, "Job 日期格式无效。", [requestedDate]);
         return req.job === "media" ? { ...failure, ...mediaNotStartedFields(req) } : failure;
       }
       requestedDate ??= localDate(config.timezone);
     } catch (error) {
-      const failure = jobFailure(req, `${new Date().toISOString().slice(0, 10)}-${req.job}`, thrownExitCode(error),
+      const failure = jobFailure(req, runId, thrownExitCode(error),
         isSiteIndexError(error) ? error.message : "项目不可读。", [error instanceof Error ? error.message : String(error)]);
       return req.job === "media"
         ? { ...failure, summary: "媒体项目无法读取或配置无效，未启动处理。", errors: ["媒体项目无法读取或配置无效，未启动处理。"], ...mediaNotStartedFields(req) }
         : failure;
     }
-    const runId = req.job === "media"
-      ? `${requestedDate}-media-${randomUUID()}`
+    runId = req.job === "media"
+      ? `${requestedDate}-media-${mediaRunToken}`
       : `${requestedDate}-${req.job}`;
     if (!(JOB_NAMES as readonly string[]).includes(req.job)) {
       return jobFailure(req, runId, EXIT.BAD_ARGS, "不支持的 Job。", [String(req.job)]);
+    }
+
+    const startedAt = zonedTimestamp(config.timezone);
+    if (req.job === "media") {
+      try { ctx.onJobStarted?.(runId, startedAt); }
+      catch {
+        const failure = jobFailure(req, runId, EXIT.SOURCE_FAILED, "无法报告媒体任务启动。", ["媒体任务启动通知失败，未开始处理。"]);
+        return { ...failure, ...mediaNotStartedFields(req) };
+      }
     }
 
     try {
@@ -1543,7 +1556,6 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         : failure;
     }
 
-    const startedAt = zonedTimestamp(config.timezone);
     let tempRoot: string | null = null;
     const initSteps: NonNullable<JobResult["steps"]> = [];
     const progress = (pct: number | null, step: string, message: string, level: "info" | "warn" | "error" = "info") => {

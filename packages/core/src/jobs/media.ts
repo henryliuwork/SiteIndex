@@ -253,16 +253,77 @@ function webpDimensions(bytes: Buffer): ImageDimensions | null {
   return null;
 }
 
-function avifDimensions(bytes: Buffer): ImageDimensions[] {
-  const result: ImageDimensions[] = [];
-  for (let typeOffset = 4; typeOffset + 16 <= bytes.length; typeOffset += 1) {
-    if (bytes.toString("ascii", typeOffset, typeOffset + 4) !== "ispe") continue;
-    const boxStart = typeOffset - 4;
-    const boxLength = bytes.readUInt32BE(boxStart);
-    if (boxLength < 20 || boxStart + boxLength > bytes.length) continue;
-    result.push({ width: bytes.readUInt32BE(typeOffset + 8), height: bytes.readUInt32BE(typeOffset + 12) });
+interface IsoBmffBox {
+  type: string;
+  payloadStart: number;
+  end: number;
+}
+
+function isoBmffBoxes(bytes: Buffer, start: number, end: number): IsoBmffBox[] | null {
+  const boxes: IsoBmffBox[] = [];
+  for (let offset = start; offset < end;) {
+    if (offset + 8 > end) return null;
+    const size32 = bytes.readUInt32BE(offset);
+    const type = bytes.toString("ascii", offset + 4, offset + 8);
+    let headerSize = 8;
+    let size: number;
+    if (size32 === 1) {
+      if (offset + 16 > end) return null;
+      const extendedSize = bytes.readBigUInt64BE(offset + 8);
+      if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+      size = Number(extendedSize);
+      headerSize = 16;
+    } else if (size32 === 0) {
+      size = end - offset;
+    } else {
+      size = size32;
+    }
+    if (size < headerSize || offset + size > end) return null;
+    const boxEnd = offset + size;
+    boxes.push({ type, payloadStart: offset + headerSize, end: boxEnd });
+    offset = boxEnd;
   }
-  return result;
+  return boxes;
+}
+
+function avifDimensions(bytes: Buffer): ImageDimensions[] {
+  const topLevel = isoBmffBoxes(bytes, 0, bytes.length);
+  if (!topLevel) return [];
+  let hasAvifBrand = false;
+  const result: ImageDimensions[] = [];
+  for (const box of topLevel) {
+    if (box.type === "ftyp") {
+      if (box.end - box.payloadStart < 8 || (box.end - box.payloadStart - 8) % 4 !== 0) return [];
+      const brands: string[] = [bytes.toString("ascii", box.payloadStart, box.payloadStart + 4)];
+      for (let offset = box.payloadStart + 8; offset + 4 <= box.end; offset += 4) {
+        brands.push(bytes.toString("ascii", offset, offset + 4));
+      }
+      hasAvifBrand ||= brands.some((brand) => brand === "avif" || brand === "avis");
+    } else if (box.type === "meta") {
+      if (box.end - box.payloadStart < 4) return [];
+      const metaBoxes = isoBmffBoxes(bytes, box.payloadStart + 4, box.end);
+      if (!metaBoxes) return [];
+      for (const metaChild of metaBoxes) {
+        if (metaChild.type !== "iprp") continue;
+        const properties = isoBmffBoxes(bytes, metaChild.payloadStart, metaChild.end);
+        if (!properties) return [];
+        for (const property of properties) {
+          if (property.type !== "ipco") continue;
+          const propertyBoxes = isoBmffBoxes(bytes, property.payloadStart, property.end);
+          if (!propertyBoxes) return [];
+          for (const imageSize of propertyBoxes) {
+            if (imageSize.type !== "ispe") continue;
+            if (imageSize.end - imageSize.payloadStart !== 12 || bytes[imageSize.payloadStart] !== 0) return [];
+            result.push({
+              width: bytes.readUInt32BE(imageSize.payloadStart + 4),
+              height: bytes.readUInt32BE(imageSize.payloadStart + 8),
+            });
+          }
+        }
+      }
+    }
+  }
+  return hasAvifBrand ? result : [];
 }
 
 function dimensionsWithinDecodeLimit(dimensions: ImageDimensions): boolean {
@@ -512,7 +573,9 @@ async function fetchWordPress(
     if (response.status === 401) throw mediaError("auth", "WordPress 应用密码认证失败。", "WP_AUTH_FAILED");
     if (response.status === 403) throw mediaError("auth", "WordPress 账号没有上传媒体的权限。", "WP_FORBIDDEN");
     const method = (init.method ?? "GET").toUpperCase();
-    if (method === "POST" && ((response.status >= 300 && response.status < 400) || response.status >= 500)) {
+    // 401/403 above are known authorization failures. Other POST errors may be
+    // returned by a proxy after the upstream created the media, so stop as unknown.
+    if (method === "POST" && response.status >= 300) {
       await response.body?.cancel().catch(() => undefined);
       throw mediaError("unknown", "WordPress 上传结果暂无法确认，后续商品已停止处理。");
     }

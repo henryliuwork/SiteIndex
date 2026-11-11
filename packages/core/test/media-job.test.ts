@@ -96,15 +96,30 @@ async function decodeJpegFixture(bytes: Uint8Array): Promise<ImageData> {
   return decode(arrayBuffer);
 }
 
-function oversizedAvifHeader(width: number, height: number): Buffer {
-  const bytes = Buffer.alloc(32);
-  bytes.writeUInt32BE(20, 12);
-  bytes.write("ispe", 16, "ascii");
-  bytes.writeUInt32BE(width, 24);
-  bytes.writeUInt32BE(height, 28);
-  bytes.write("ftyp", 4, "ascii");
-  bytes.write("avif", 8, "ascii");
-  return bytes;
+function isoBmffBox(type: string, payload: Buffer): Buffer {
+  const header = Buffer.alloc(8);
+  header.writeUInt32BE(payload.length + 8, 0);
+  header.write(type, 4, "ascii");
+  return Buffer.concat([header, payload]);
+}
+
+function avifWithImageSize(width: number, height: number): Buffer {
+  const ftyp = isoBmffBox("ftyp", Buffer.concat([Buffer.from("avif"), Buffer.alloc(4), Buffer.from("avif")]));
+  const imageSize = Buffer.alloc(12);
+  imageSize.writeUInt32BE(width, 4);
+  imageSize.writeUInt32BE(height, 8);
+  const properties = isoBmffBox("ipco", isoBmffBox("ispe", imageSize));
+  const propertyContainer = isoBmffBox("iprp", properties);
+  const meta = isoBmffBox("meta", Buffer.concat([Buffer.alloc(4), propertyContainer]));
+  return Buffer.concat([ftyp, meta]);
+}
+
+function avifWithUnassociatedIspe(width: number, height: number): Buffer {
+  const ftyp = isoBmffBox("ftyp", Buffer.concat([Buffer.from("avif"), Buffer.alloc(4), Buffer.from("avif")]));
+  const imageSize = Buffer.alloc(12);
+  imageSize.writeUInt32BE(width, 4);
+  imageSize.writeUInt32BE(height, 8);
+  return Buffer.concat([ftyp, isoBmffBox("free", isoBmffBox("ispe", imageSize))]);
 }
 
 async function makeProject(options: {
@@ -171,6 +186,7 @@ function service(
   projectPath: string,
   credential?: { username: string; applicationPassword: string },
   testOnlyMediaFetch?: typeof fetch,
+  onJobStarted?: (runId: string, startedAt: string) => void,
 ) {
   return createCoreService({
     resolveProject: () => projectPath,
@@ -178,6 +194,7 @@ function service(
     cacheDir: path.join(path.dirname(projectPath), "cache"),
     ...(credential ? { wordpressCredential: credential } : {}),
     ...(testOnlyMediaFetch ? { testOnlyMediaFetch } : {}),
+    ...(onJobStarted ? { onJobStarted } : {}),
     testOnlyAllowLoopbackHttp: true,
   });
 }
@@ -231,7 +248,8 @@ describe("media Core Job", () => {
       sourceImageUrl: imageServer.origin + "/synthetic.webp",
       grouping: { enabled: true, rule: { type: "suffix", value: "A" } },
     });
-    const api = service(projectPath, credentials);
+    const started: { runId: string; startedAt: string }[] = [];
+    const api = service(projectPath, credentials, undefined, (runId, startedAt) => started.push({ runId, startedAt }));
     const progress: unknown[] = [];
 
     const first = await api.runJob({
@@ -240,6 +258,9 @@ describe("media Core Job", () => {
     expect(first.status).toBe("ok");
     expect(first.media_requested_skus).toEqual(["DEMO001"]);
     expect(first.media_batch_state).toBe("complete");
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ runId: first.runId });
+    expect(Number.isNaN(Date.parse(started[0]!.startedAt))).toBe(false);
     expect(first.media_results).toMatchObject([{
       sku: "DEMO001",
       status: "uploaded",
@@ -275,6 +296,35 @@ describe("media Core Job", () => {
     }, credentials);
     expect(canary.passed).toBe(true);
     expect(first.runId).not.toBe(reused.runId);
+  }, 30_000);
+
+  it("reports globally unique media execution IDs before work and uses the same ID in both checkpoints", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials });
+    const imageServer = await startImageServer();
+    const firstProject = await makeProject({
+      wordpressOrigin: wordpress.origin, sourceImageUrl: imageServer.origin + "/synthetic.webp", skuIds: ["RUN-A"],
+    });
+    const secondProject = await makeProject({
+      wordpressOrigin: wordpress.origin, sourceImageUrl: imageServer.origin + "/synthetic.webp", skuIds: ["RUN-B"],
+    });
+    const started: string[] = [];
+    const [first, second] = await Promise.all([
+      service(firstProject.projectPath, credentials, undefined, (runId) => started.push(runId)).runJob({
+        projectPath: firstProject.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["RUN-A"],
+      }, () => undefined),
+      service(secondProject.projectPath, credentials, undefined, (runId) => started.push(runId)).runJob({
+        projectPath: secondProject.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["RUN-B"],
+      }, () => undefined),
+    ]);
+    expect(first.runId).not.toBe(second.runId);
+    expect(new Set(started)).toEqual(new Set([first.runId, second.runId]));
+    for (const [project, result] of [[firstProject, first], [secondProject, second]] as const) {
+      const checkpoint = JSON.parse(await readFile(
+        path.join(project.projectPath, PATHS.jobLogsDir, `${result.runId}.media.json`), "utf8",
+      )) as { run_id: string };
+      expect(checkpoint.run_id).toBe(result.runId);
+    }
   }, 30_000);
 
   it("keeps case-distinct and long SKUs on distinct stable WordPress media slugs", async () => {
@@ -471,7 +521,7 @@ describe("media Core Job", () => {
   it("rejects compressed size and decoded pixel limits before invoking a decoder or WordPress", async () => {
     const credentials = createFakeCredentialCanary();
     const wordpress = await makeWordPress({ credentials });
-    const largeDimensionServer = await startImageServer(oversizedAvifHeader(6000, 5000), "image/avif");
+    const largeDimensionServer = await startImageServer(avifWithImageSize(6000, 5000), "image/avif");
     const largeDimensions = await makeProject({
       wordpressOrigin: wordpress.origin,
       sourceImageUrl: largeDimensionServer.origin + "/oversized.avif",
@@ -482,6 +532,20 @@ describe("media Core Job", () => {
     }, () => undefined);
     expect(dimensionResult.media_results).toMatchObject([{
       status: "failed", reason: "图片尺寸超过解码安全上限，已拒绝解码。",
+    }]);
+    expect(wordpress.snapshot().totalRequests).toBe(0);
+
+    const forgedDimensionServer = await startImageServer(avifWithUnassociatedIspe(6000, 5000), "image/avif");
+    const forgedDimensions = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: forgedDimensionServer.origin + "/forged-ispe.avif",
+      skuIds: ["SYN-FORGED-ISPE"],
+    });
+    const forgedResult = await service(forgedDimensions.projectPath, credentials).runJob({
+      projectPath: forgedDimensions.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-FORGED-ISPE"],
+    }, () => undefined);
+    expect(forgedResult.media_results).toMatchObject([{
+      status: "failed", reason: "图片尺寸无法安全校验，已拒绝解码。",
     }]);
     expect(wordpress.snapshot().totalRequests).toBe(0);
 
@@ -569,7 +633,8 @@ describe("media Core Job", () => {
     const batchCases = cases.filter((item) => [
       "MEDIA-401-after-confirmed-item",
       "MEDIA-403-after-confirmed-item",
-      "MEDIA-ordinary-partial-then-continue",
+      "MEDIA-422-after-persist",
+      "MEDIA-429-after-persist",
       "MEDIA-save-then-disconnect",
       "MEDIA-500-after-persist",
       "MEDIA-302-after-persist",
@@ -602,7 +667,7 @@ describe("media Core Job", () => {
       expect(result.media_not_started_skus).toEqual(expected.media_not_started_skus);
       if (expected.job_status) expect(result.status).toBe(expected.job_status);
 
-      if (["MEDIA-save-then-disconnect", "MEDIA-500-after-persist", "MEDIA-302-after-persist"].includes(fixtureCase.id)) {
+      if (["MEDIA-save-then-disconnect", "MEDIA-422-after-persist", "MEDIA-429-after-persist", "MEDIA-500-after-persist", "MEDIA-302-after-persist"].includes(fixtureCase.id)) {
         const retry = await service(projectPath, credentials).runJob({
           projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: [fixtureCase.request_skus[0]!],
         }, () => undefined);
