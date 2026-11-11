@@ -6,6 +6,7 @@ import {
   createFakeWordPressService,
   scanCredentialCanary,
 } from "./fake-services.mjs";
+import { createFakeSiteService } from "./fake-site-service.mjs";
 
 const openServices = new Set();
 
@@ -27,6 +28,69 @@ async function track(servicePromise) {
 
 function authHeaders(credentials) {
   return { authorization: credentials.authorization };
+}
+
+async function assertFakeSiteServiceBehavior() {
+  const service = await createFakeSiteService({
+    feedRows: [{ sku: "SYNTHETIC-101", availability: "in stock" }],
+    productResponsesBySku: {
+      "SYNTHETIC-101": { status: 200, body: "Synthetic out of stock text." },
+      "SYNTHETIC-404": { status: 404, body: "Synthetic removed page." },
+      "SYNTHETIC-410": { status: 410, body: "Synthetic gone page." },
+      "SYNTHETIC-503": { status: 503, body: "Synthetic temporary failure." },
+      "SYNTHETIC-TIMEOUT": { timeout: true },
+    },
+  });
+
+  try {
+    assert.equal(service.boundHost, "127.0.0.1");
+    const feedResponse = await fetch(service.feedUrl);
+    assert.equal(feedResponse.status, 200);
+    const feed = await feedResponse.text();
+    assert.match(feed, /^id,title,link,price,availability,product_type/mu);
+    assert.match(feed, /SYNTHETIC-101/u);
+    assert.equal(feed.includes(service.productUrl("SYNTHETIC-101")), true);
+
+    const page = await fetch(service.productUrl("SYNTHETIC-101"));
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /out of stock/u);
+    for (const [sku, expected] of [["SYNTHETIC-404", 404], ["SYNTHETIC-410", 410], ["SYNTHETIC-503", 503]]) {
+      assert.equal((await fetch(service.productUrl(sku))).status, expected);
+    }
+
+    await assert.rejects(fetch(service.productUrl("SYNTHETIC-TIMEOUT"), {
+      signal: AbortSignal.timeout(100),
+    }));
+    for (let attempt = 0; attempt < 20 && service.snapshot().statusCounts.timeout !== 1; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    const snapshot = service.snapshot();
+    assert.equal(snapshot.totalRequests, 6);
+    assert.equal(snapshot.routeCounts["GET /feed.csv"], 1);
+    assert.equal(snapshot.routeCounts["GET /products/:sku"], 5);
+    assert.equal(snapshot.statusCounts["200"], 2);
+    assert.equal(snapshot.statusCounts["404"], 1);
+    assert.equal(snapshot.statusCounts["410"], 1);
+    assert.equal(snapshot.statusCounts["503"], 1);
+    assert.equal(snapshot.statusCounts.timeout, 1);
+    assert.equal(snapshot.outcomeCounts.client_timeout, 1);
+    assert.equal(snapshot.requestBodiesRecorded, false);
+    assert.equal(snapshot.requestHeadersRecorded, false);
+    assert.equal(JSON.stringify(snapshot).includes("SYNTHETIC-101"), false);
+  } finally {
+    await service.close();
+  }
+
+  const feedErrorService = await createFakeSiteService({
+    feedResponse: { status: 503, body: "Synthetic feed unavailable." },
+  });
+  try {
+    assert.equal((await fetch(feedErrorService.feedUrl)).status, 503);
+    assert.equal(feedErrorService.snapshot().statusCounts["503"], 1);
+  } finally {
+    await feedErrorService.close();
+  }
 }
 
 describe("v0.4.1 loopback synthetic services", () => {
@@ -63,6 +127,7 @@ describe("v0.4.1 loopback synthetic services", () => {
     assert.equal(snapshot.requestBodiesRecorded, false);
     assert.equal(snapshot.requestHeadersRecorded, false);
     assert.equal(JSON.stringify(snapshot).includes("SYNTHETIC-SKU-01"), false);
+    await assertFakeSiteServiceBehavior();
   });
 
   it("models WordPress 401, upload permission 403, and request counts without retaining credentials", async () => {
