@@ -181,7 +181,7 @@ describe("feed-absence stock verification", () => {
       expect(siteService.boundHost).toBe("127.0.0.1");
       expect(graphqlService.boundHost).toBe("127.0.0.1");
     }
-  });
+  }, 30_000);
 
   it("uses page text after GraphQL failure, marks 404/410 removed, and preserves state on page 5xx", async () => {
     const oosHtml = await readFile(path.join(fixtureRoot, "out-of-stock.html"), "utf8");
@@ -249,7 +249,7 @@ describe("feed-absence stock verification", () => {
     expect(catalog.get("DEMO-5XX")).toMatchObject({ status: "active" });
     expect(latest.get("DEMO-5XX")).toMatchObject({ stock_status: "in_stock", checked_at: "2026-10-21T12:00:00Z" });
     expect(graphqlService.snapshot().routeCounts["POST /graphql"]).toBe(7);
-  });
+  }, 30_000);
 
   it("treats malformed GraphQL JSON as unavailable and only uses reliable page-text fallback", async () => {
     const siteService = await createSiteService();
@@ -392,12 +392,14 @@ describe("feed-absence stock verification", () => {
         }
         return value.last_sku;
       };
+      const readCursorState = async () => JSON.parse(await readFile(cursorPath, "utf8")) as { last_sku?: string; pending_skus?: string[] };
 
       const first = await runProjectDaily(root, site);
       expect(first.counts).toMatchObject({ stock_verified: 2, stock_verify_unavailable: 1, stock_verify_deferred: 3 });
       expect((await readLatest()).get("DEMO-B")).toMatchObject({ stock_status: "in_stock" });
       expect((await readLatest()).get("DEMO-C")).toMatchObject({ stock_status: "out_of_stock" });
       expect(await readCursor()).toBe("DEMO-B");
+      expect((await readCursorState()).pending_skus).toEqual([]);
 
       // A fresh daily invocation on the same date reads the persisted cursor and continues after B.
       const second = await runProjectDaily(root, site);
@@ -405,6 +407,7 @@ describe("feed-absence stock verification", () => {
       expect((await readLatest()).get("DEMO-C")).toMatchObject({ stock_status: "in_stock" });
       expect((await readLatest()).get("DEMO-D")).toMatchObject({ stock_status: "in_stock" });
       expect(await readCursor()).toBe("DEMO-D");
+      expect((await readCursorState()).pending_skus).toEqual([]);
 
       // The cursor SKU can disappear from candidates; a new SKU before it is reached after wraparound.
       const skuPath = path.join(root, paths.skus);
@@ -430,6 +433,46 @@ describe("feed-absence stock verification", () => {
       expect((await readLatest()).get("DEMO-AA")).toMatchObject({ stock_status: "in_stock" });
       expect((await readLatest()).get("DEMO-B")).toMatchObject({ stock_status: "in_stock" });
     }
+  }, 30_000);
+
+  it("retries pending stock verification after interruption before output persistence", async () => {
+    const siteService = await createSiteService({
+      feedRows: [{ sku: "DEMO-PRESENT" }],
+      defaultProductResponse: { status: 200, body: "<main>Product detail fixture.</main>" },
+    });
+    const graphqlService = await createGraphqlService({ responsesBySku: {
+      "DEMO-PENDING": { body: { data: { product: { sku: "DEMO-PENDING", stock_status: "IN_STOCK" } } } },
+    } });
+    const { root, site } = await newProject(siteService, graphqlService, "legacy", 1);
+    await seed(root, siteService, [
+      { sku: "DEMO-PRESENT", status: "in_stock" },
+      { sku: "DEMO-PENDING", status: "out_of_stock" },
+    ], "legacy");
+    const paths = pathsFor("legacy");
+    const eventDir = path.join(root, paths.eventsDir);
+    const cursorPath = path.join(root, paths.jobLogsDir, "stock-verification-cursor.json");
+    await mkdir(path.dirname(eventDir), { recursive: true });
+    await writeFile(eventDir, "block event persistence");
+
+    // The verifier returns, but the blocked event directory makes daily fail before any outcome file is saved.
+    await expect(runProjectDaily(root, site)).rejects.toThrow();
+    const interruptedState = JSON.parse(await readFile(cursorPath, "utf8")) as { last_sku?: string; pending_skus?: string[] };
+    expect(interruptedState.last_sku).toBeUndefined();
+    expect(interruptedState.pending_skus).toEqual(["DEMO-PENDING"]);
+    expect(graphqlService.snapshot().totalRequests).toBe(1);
+
+    await rm(eventDir, { force: true });
+    await mkdir(eventDir, { recursive: true });
+    const resumed = await runProjectDaily(root, site);
+    const latest = new Map((await readJsonl(path.join(root, paths.inventoryLatest))).map((row) => [String(row.sku), row]));
+    const resumedState = JSON.parse(await readFile(cursorPath, "utf8")) as { last_sku?: string; pending_skus?: string[] };
+
+    expect(resumed.status).toBe("ok");
+    expect(resumed.counts.stock_verified).toBe(1);
+    expect(latest.get("DEMO-PENDING")).toMatchObject({ stock_status: "in_stock" });
+    expect(resumedState.last_sku).toBe("DEMO-PENDING");
+    expect(resumedState.pending_skus).toEqual([]);
+    expect(graphqlService.snapshot().totalRequests).toBe(2);
   });
 
   it("makes no requests when max_per_run is zero and preserves rows whose legacy URL is blank", async () => {

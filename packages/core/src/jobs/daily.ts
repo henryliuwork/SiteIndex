@@ -48,6 +48,11 @@ export interface DailyResult {
 const STOCK_STATES: readonly StockStatus[] = ["in_stock", "out_of_stock", "preorder", "unknown"];
 const STOCK_VERIFY_CURSOR_VERSION = 1;
 const STOCK_VERIFY_CURSOR_FILE = "stock-verification-cursor.json";
+interface StockVerifyCursor {
+  version: 1;
+  last_sku?: string;
+  pending_skus: string[];
+}
 const TRACKED = ["product_id", "handle", "title", "variant_title", "url", "category", "categories", "category_source",
   "price", "compare_at_price", "currency", "image_url"] as const;
 
@@ -81,16 +86,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function readStockVerifyCursor(filePath: string): Promise<string | undefined> {
+async function readStockVerifyCursor(filePath: string): Promise<StockVerifyCursor> {
   try {
     const value: unknown = JSON.parse(await readFile(filePath, "utf8"));
-    if (!isRecord(value)) return undefined;
-    return value.version === STOCK_VERIFY_CURSOR_VERSION && typeof value.last_sku === "string" && value.last_sku
-      ? value.last_sku
-      : undefined;
+    if (!isRecord(value) || value.version !== STOCK_VERIFY_CURSOR_VERSION) {
+      return { version: STOCK_VERIFY_CURSOR_VERSION, pending_skus: [] };
+    }
+    return {
+      version: STOCK_VERIFY_CURSOR_VERSION,
+      ...(typeof value.last_sku === "string" && value.last_sku ? { last_sku: value.last_sku } : {}),
+      pending_skus: Array.isArray(value.pending_skus)
+        ? [...new Set(value.pending_skus.filter((sku: unknown): sku is string => typeof sku === "string" && sku.length > 0))]
+        : [],
+    };
   } catch {
-    return undefined;
+    return { version: STOCK_VERIFY_CURSOR_VERSION, pending_skus: [] };
   }
+}
+
+function serializeStockVerifyCursor(state: StockVerifyCursor): string {
+  return `${JSON.stringify({
+    version: STOCK_VERIFY_CURSOR_VERSION,
+    ...(state.last_sku ? { last_sku: state.last_sku } : {}),
+    pending_skus: state.pending_skus,
+  })}\n`;
 }
 
 function slugify(value: string): string {
@@ -338,22 +357,31 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
   }
 
   const shouldVerifyMissing = site.crawl?.stock_verify?.enabled === true && !ratioExceeded;
+  const cursorPath = shouldVerifyMissing
+    ? path.join(project, paths.jobLogsDir, STOCK_VERIFY_CURSOR_FILE)
+    : null;
+  const committedCursor = cursorPath ? await readStockVerifyCursor(cursorPath) : null;
+  const missingSkus = new Set(gone);
+  const pendingJournal = (committedCursor?.pending_skus ?? []).filter((sku) => missingSkus.has(sku));
   const verification = shouldVerifyMissing
-    ? await (async () => {
-      const cursorPath = path.join(project, paths.jobLogsDir, STOCK_VERIFY_CURSOR_FILE);
-      const startAfterSku = await readStockVerifyCursor(cursorPath);
-      return verifyMissingStock(
-        gone.map((sku) => ({ sku, url: String(skus.get(sku)?.url ?? "") })),
-        site,
-        {
-          startAfterSku,
-          async beforeCandidate(sku) {
-            // 只在独立 Job 元数据文件中保存轮转位置，不改 site.json、SKU 行或 last_seen。
-            await atomicWrite(cursorPath, `${JSON.stringify({ version: STOCK_VERIFY_CURSOR_VERSION, last_sku: sku })}\n`);
-          },
+    ? await verifyMissingStock(
+      gone.map((sku) => ({ sku, url: String(skus.get(sku)?.url ?? "") })),
+      site,
+      {
+        startAfterSku: committedCursor?.last_sku,
+        pendingSkus: pendingJournal,
+        async beforeCandidate(sku) {
+          // 待处理记录先原子落盘；只有库存结果落盘后才提交 last_sku 并清空 pending。
+          if (!pendingJournal.includes(sku)) pendingJournal.push(sku);
+          if (cursorPath && committedCursor) {
+            await atomicWrite(cursorPath, serializeStockVerifyCursor({
+              ...committedCursor,
+              pending_skus: pendingJournal,
+            }));
+          }
         },
-      );
-    })()
+      },
+    )
     : null;
   const missingAs = site.crawl?.missing_as ?? "removed";
   const removedAfter = site.crawl?.missing_removed_after_days ?? 30;
@@ -457,13 +485,8 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
   if (counts.unknown > 0.05 * Math.max(counts.active, 1)) {
     errors.push(`unknown 库存占比过高: ${counts.unknown}/${counts.active}，请检查 feed 的 availability 字段或 stock_rules`);
   }
-  if (verification?.unavailable) errors.push(`${verification.unavailable} 个缺席 SKU 核验请求失败，原库存状态已保留。`);
+  if (verification?.unavailable) errors.push(`${verification.unavailable} 个缺席 SKU 的核验结果不可用，原库存状态已保留。`);
   if (verification?.deferred) errors.push(`${verification.deferred} 个缺席 SKU 超出本次核验上限，将在后续 daily 处理中。`);
-  const status: DailyStatus = errors.length ? "partial" : "ok";
-  const report = renderReport(site, day, aggregate, previous, events, skus, latest);
-
-  await writeJsonl(path.join(project, paths.skus), [...skus.values()], "sku");
-  await writeJsonl(path.join(project, paths.inventoryLatest), [...latest.values()], "inventory_latest");
   const eventPath = path.join(project, paths.eventsDir, `${day.slice(0, 7)}.jsonl`);
   const existingEvents = await readJsonl(eventPath);
   const eventKeys = new Set(existingEvents.map((event) => [event.date, event.sku, event.type].join("\u0000")));
@@ -473,8 +496,38 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
     eventKeys.add(key);
     return true;
   });
+  // 事件和快照先落盘，游标最后提交。若中途退出，待处理 SKU 会在下一次 daily 重放。
   await writeJsonl(eventPath, [...existingEvents, ...appended], "inventory_event");
+  await writeJsonl(path.join(project, paths.inventoryLatest), [...latest.values()], "inventory_latest");
+  await writeJsonl(path.join(project, paths.skus), [...skus.values()], "sku");
   await writeCsv(summaryPath, summary, CSV_HEADERS.dailySummary, ["date", "category"]);
+
+  if (verification && cursorPath && committedCursor) {
+    if (verification.statePersistenceFailed) {
+      errors.push("库存核验待处理状态写入失败；未提交轮转游标，本次未完成的 SKU 会在后续 daily 重试。");
+    } else {
+      const processed = new Set(verification.processedSkus);
+      const remainingPending = pendingJournal.filter((sku) => !processed.has(sku));
+      const lastSku = verification.processedSkus.at(-1) ?? committedCursor.last_sku;
+      const cursorChanged = verification.processedSkus.length > 0
+        || remainingPending.length !== committedCursor.pending_skus.length
+        || remainingPending.some((sku, index) => sku !== committedCursor.pending_skus[index]);
+      if (cursorChanged) {
+        try {
+          await atomicWrite(cursorPath, serializeStockVerifyCursor({
+            version: STOCK_VERIFY_CURSOR_VERSION,
+            ...(lastSku ? { last_sku: lastSku } : {}),
+            pending_skus: remainingPending,
+          }));
+        } catch {
+          errors.push("库存核验结果已保存，但轮转游标提交失败；待处理 SKU 会在后续 daily 重试。");
+        }
+      }
+    }
+  }
+
+  const status: DailyStatus = errors.length ? "partial" : "ok";
+  const report = renderReport(site, day, aggregate, previous, events, skus, latest);
   await mkdir(path.join(project, paths.dailyReportsDir), { recursive: true });
   await atomicWrite(path.join(project, paths.dailyReportsDir, `${day}.md`), report);
   await appendRun(project, paths.runs, { run_id: runId, job: "daily", started_at: startedAt, finished_at: finishedAt,

@@ -27,6 +27,8 @@ export interface MissingStockBatch {
   checked: number;
   unavailable: number;
   deferred: number;
+  processedSkus: readonly string[];
+  statePersistenceFailed: boolean;
 }
 
 export interface StockVerifierRuntime {
@@ -34,6 +36,7 @@ export interface StockVerifierRuntime {
   wait?: (milliseconds: number) => Promise<void>;
   timeoutMs?: number;
   startAfterSku?: string;
+  pendingSkus?: readonly string[];
   beforeCandidate?: (sku: string) => Promise<void>;
 }
 
@@ -155,20 +158,33 @@ export async function verifyMissingStock(
   runtime: StockVerifierRuntime = {},
 ): Promise<MissingStockBatch> {
   const config = site.crawl?.stock_verify;
-  if (!config?.enabled || !site.base_url) return { results: new Map(), checked: 0, unavailable: 0, deferred: candidates.length };
+  if (!config?.enabled || !site.base_url) {
+    return { results: new Map(), checked: 0, unavailable: 0, deferred: candidates.length, processedSkus: [], statePersistenceFailed: false };
+  }
   const base = allowedHttpOrigin(site.base_url);
-  if (!base) return { results: new Map(), checked: 0, unavailable: candidates.length, deferred: 0 };
+  if (!base) {
+    return { results: new Map(), checked: 0, unavailable: candidates.length, deferred: 0, processedSkus: [], statePersistenceFailed: false };
+  }
   const graphql = graphqlUrl(config.graphql_url, base);
-  if (!graphql) return { results: new Map(), checked: 0, unavailable: candidates.length, deferred: 0 };
+  if (!graphql) {
+    return { results: new Map(), checked: 0, unavailable: candidates.length, deferred: 0, processedSkus: [], statePersistenceFailed: false };
+  }
 
   const limit = Math.max(0, Math.floor(config.max_per_run ?? DEFAULT_MAX_PER_RUN));
   const ordered = [...candidates].sort((a, b) => compareKeys(a.sku, b.sku));
+  const candidatesBySku = new Map(ordered.map((candidate) => [candidate.sku, candidate]));
+  const pendingSkus = [...new Set(runtime.pendingSkus ?? [])];
+  const pendingCandidates = pendingSkus.flatMap((sku) => {
+    const candidate = candidatesBySku.get(sku);
+    return candidate ? [candidate] : [];
+  });
+  const pendingSet = new Set(pendingCandidates.map((candidate) => candidate.sku));
   const cursor = runtime.startAfterSku;
   const startIndex = cursor === undefined
     ? 0
     : ordered.findIndex(({ sku }) => compareKeys(sku, cursor) > 0);
   const rotated = startIndex > 0 ? [...ordered.slice(startIndex), ...ordered.slice(0, startIndex)] : ordered;
-  const pending = rotated.slice(0, limit);
+  const pending = [...pendingCandidates, ...rotated.filter((candidate) => !pendingSet.has(candidate.sku))].slice(0, limit);
   const rateLimitMs = Math.max(0, Number(site.crawl?.rate_limit_ms ?? 1500));
   const timeoutMs = Math.max(1, runtime.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const fetcher = runtime.fetcher ?? fetch;
@@ -188,16 +204,19 @@ export async function verifyMissingStock(
   let checked = 0;
   let unavailable = 0;
   let processed = 0;
+  let statePersistenceFailed = false;
+  const processedSkus: string[] = [];
   for (const candidate of pending) {
     try {
       await runtime.beforeCandidate?.(candidate.sku);
     } catch {
+      statePersistenceFailed = true;
       results.set(candidate.sku, { kind: "unavailable" });
       unavailable += 1;
-      processed += 1;
       break;
     }
     processed += 1;
+    processedSkus.push(candidate.sku);
     checked += 1;
     const productUrl = sameOriginUrl(candidate.url, base);
     if (!productUrl) {
@@ -262,5 +281,5 @@ export async function verifyMissingStock(
     }
   }
 
-  return { results, checked, unavailable, deferred: ordered.length - processed };
+  return { results, checked, unavailable, deferred: ordered.length - processed, processedSkus, statePersistenceFailed };
 }
