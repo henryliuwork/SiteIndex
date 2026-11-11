@@ -33,7 +33,12 @@
       ]
     },
     "max_removed_ratio": 1,
-    "missing_as": "out_of_stock"
+    "missing_as": "out_of_stock",
+    "clock_policy": {
+      "run_plan_now": "ISO-8601 UTC instant string",
+      "daily_options_now": "new Date(run_plan.now)",
+      "checked_at_output": "isoInZone in UTC formats offsets as +00:00"
+    }
   },
   "scenarios": [
     {
@@ -225,7 +230,7 @@
         "stock_status": "in_stock",
         "event_for_interrupted_sku": "feed_anomaly",
         "no_duplicate_removed_event": true,
-        "checked_at": "2026-10-21T12:05:00Z"
+        "checked_at": "2026-10-21T12:05:00+00:00"
       },
       "safe_observation": {
         "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
@@ -243,7 +248,8 @@
       },
       "independent_process_kill_status": "not_executed",
       "core_failure_injection_status": "A new-head unit test covers failure after pending state is written and before outcome files persist; this is not a hard process-kill test.",
-      "expected_first_candidate_after_restart": "SYN-RST-01"
+      "expected_first_candidate_after_restart": "SYN-RST-01",
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
     },
     {
       "id": "candidate-add-remove-around-cursor",
@@ -590,16 +596,17 @@
           "SYN-CHURN-40",
           "SYN-CHURN-15"
         ],
-        "checked_at_utc_by_run": [
-          "2026-10-21T12:00:00Z",
-          "2026-10-22T12:00:00Z"
+        "checked_at_offset_by_run": [
+          "2026-10-21T12:00:00+00:00",
+          "2026-10-22T12:00:00+00:00"
         ],
-        "candidate_order_observation": "For a two-SKU set, the exact set plus last_sku proves the order without retaining per-SKU request logs."
+        "candidate_set_cursor_consistency": "Compare each run unordered candidate result set with the persisted last_sku expected after that run. This checks rotation state and fairness; it is not direct observation of HTTP request order."
       },
       "safe_observation": {
         "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
         "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run."
-      }
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
     },
     {
       "id": "unavailable-results-preserve-prior-stock",
@@ -780,7 +787,8 @@
       "safe_observation": {
         "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
         "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run."
-      }
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
     },
     {
       "id": "feed-absent-404-and-410",
@@ -952,7 +960,8 @@
       "safe_observation": {
         "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
         "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run."
-      }
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
     },
     {
       "id": "fair-rotation-across-capped-reruns",
@@ -1307,17 +1316,18 @@
           "SYN-ROT-04",
           "SYN-ROT-01"
         ],
-        "checked_at_utc_by_run": [
-          "2026-10-21T12:00:00Z",
-          "2026-10-22T12:00:00Z",
-          "2026-10-23T12:00:00Z"
+        "checked_at_offset_by_run": [
+          "2026-10-21T12:00:00+00:00",
+          "2026-10-22T12:00:00+00:00",
+          "2026-10-23T12:00:00+00:00"
         ],
-        "candidate_order_observation": "Each run has two distinct visited SKUs; the set plus persisted last_sku proves exact sequence while aggregate service snapshots retain no request bodies."
+        "candidate_set_cursor_consistency": "Compare each run unordered candidate result set with the persisted last_sku expected after that run. This checks rotation state and fairness; it is not direct observation of HTTP request order."
       },
       "safe_observation": {
         "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
         "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run."
-      }
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
     },
     {
       "id": "event-written-inventory-write-fails-service-unavailable-retry",
@@ -1512,7 +1522,8 @@
           "run daily against the same synthetic project and preserved transaction/cursor files"
         ],
         "network_policy": "loopback_only; service snapshots contain aggregate counts only"
-      }
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
     }
   ],
   "stage_evidence": {
