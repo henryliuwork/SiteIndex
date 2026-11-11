@@ -1,5 +1,12 @@
 import { createCoreService, type CoreService, type CoreServiceContext } from "@siteindex/core";
-import { EXIT, type JobProgress, type JobRequest, type ProgressReporter, type ProjectId } from "@siteindex/shared";
+import {
+  EXIT,
+  type JobProgress,
+  type JobRequest,
+  type JobResult,
+  type ProgressReporter,
+  type ProjectId,
+} from "@siteindex/shared";
 import path from "node:path";
 import { type JobWorkerMessage, type JobWorkerStartMessage } from "./job-protocol.js";
 import { resolveJobRunId } from "./job-run-id.js";
@@ -164,7 +171,27 @@ export async function executeJobWorkerMessage(
         exitCode: EXIT.SOURCE_FAILED,
         summary: "Job 执行失败。",
         errors: [detail],
+        ...mediaFailureRecovery(request),
       },
     });
   }
+}
+
+function mediaFailureRecovery(
+  request: JobRequest,
+): Partial<
+  Pick<
+    JobResult,
+    "media_requested_skus" | "media_batch_state" | "media_results" | "media_unknown_skus" | "media_not_started_skus"
+  >
+> {
+  if (request.job !== "media") return {};
+  const skus = [...new Set(request.skus ?? [])];
+  return {
+    media_requested_skus: skus,
+    media_batch_state: "outcome_unknown",
+    media_results: [],
+    media_unknown_skus: skus,
+    media_not_started_skus: [],
+  };
 }

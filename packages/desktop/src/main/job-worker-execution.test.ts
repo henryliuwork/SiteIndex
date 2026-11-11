@@ -1,11 +1,25 @@
 import { createCoreService, type CoreService, type CoreServiceContext } from "@siteindex/core";
-import { pathsFor, type JobRequest, type JobProgress, type JobResult, type ProgressReporter } from "@siteindex/shared";
+import { EventEmitter } from "node:events";
+import {
+  pathsFor,
+  type AppSettings,
+  type JobRequest,
+  type JobProgress,
+  type JobResult,
+  type ProgressReporter,
+  type ProjectId,
+} from "@siteindex/shared";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { JobWorkerMessage, JobWorkerStartMessage } from "./job-protocol.js";
-import { executeJobWorkerMessage } from "./job-worker-execution.js";
+import { createJobManager, type UtilityProcessLike } from "./job-manager.js";
+import {
+  executeJobWorkerMessage,
+  type JobWorkerExecutionDependencies,
+  type JobWorkerMessagePort,
+} from "./job-worker-execution.js";
 
 const roots: string[] = [];
 
@@ -26,6 +40,33 @@ async function tempProject(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "siteindex-worker-media-"));
   roots.push(root);
   return path.join(root, "project");
+}
+
+class WorkerConnectedProcess extends EventEmitter implements UtilityProcessLike {
+  readonly pid = 12345;
+  killed = false;
+
+  constructor(private readonly dependencies: JobWorkerExecutionDependencies) {
+    super();
+  }
+
+  postMessage(value: unknown): void {
+    void executeJobWorkerMessage(
+      value as JobWorkerStartMessage,
+      { postMessage: (message: JobWorkerMessage) => this.emit("message", message) } satisfies JobWorkerMessagePort,
+      this.dependencies,
+    );
+  }
+
+  kill(): boolean {
+    this.killed = true;
+    queueMicrotask(() => this.emit("exit", 0));
+    return true;
+  }
+
+  ready(): void {
+    this.emit("message", { type: "ready" });
+  }
 }
 
 afterEach(async () => {
@@ -240,5 +281,70 @@ describe("media utility worker Core execution ID", () => {
 
     expect(messages.map(({ type }) => type)).toEqual(["started", "finished"]);
     expect(messages[1]).toMatchObject({ type: "finished", result: { runId: coreRunId, status: "failed" } });
+  });
+
+  it("lets JobManager finalize a Core exception after started through the worker message path", async () => {
+    const projectPath = await tempProject();
+    const projectId = path.basename(projectPath) as ProjectId;
+    const projectPaths = pathsFor("legacy");
+    await mkdir(path.join(projectPath, projectPaths.index), { recursive: true });
+    await writeFile(path.join(projectPath, projectPaths.site), JSON.stringify({ timezone: "UTC" }), "utf8");
+    const coreRunId = "media-core-started-before-throw";
+    const appSettings: AppSettings = {
+      device_id: "fixture-device",
+      device_name: "Fixture Device",
+      projects_root: "",
+      extra_projects: [],
+      cache_dir: path.join(path.dirname(projectPath), "cache"),
+      browser: { channel: "msedge", executable_path: null },
+      notify: { on_failure: false, on_success: false, oos_threshold: null, dingtalk_webhook: null },
+      skill_platforms: [],
+      conflict_patterns: [],
+    };
+    const child = new WorkerConnectedProcess({
+      createCore: (context) =>
+        ({
+          runJob: async () => {
+            context.onJobStarted?.(coreRunId, "2026-11-12T10:00:00.000Z");
+            throw new Error("synthetic Core failure after start");
+          },
+        }) as unknown as CoreService,
+    });
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => appSettings,
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-password" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: () => undefined,
+      emitFinished: resolveFinished,
+      notify: () => undefined,
+    });
+
+    const started = await manager.runMedia({ projectPath, job: "media", skus: ["fixture-sku-a", "fixture-sku-b"] });
+    expect(started.runId).toBe(coreRunId);
+    const result = await finished;
+
+    expect(result).toMatchObject({
+      runId: coreRunId,
+      job: "media",
+      status: "failed",
+      media_requested_skus: ["fixture-sku-a", "fixture-sku-b"],
+      media_batch_state: "outcome_unknown",
+      media_results: [],
+      media_unknown_skus: ["fixture-sku-a", "fixture-sku-b"],
+      media_not_started_skus: [],
+    });
+    await expect.poll(() => manager.activeCount).toBe(0);
+    expect(manager.running(projectId)).toBeNull();
+    expect(child.killed).toBe(true);
   });
 });
