@@ -175,22 +175,56 @@ export function DataTable<T, F = Record<string, unknown>>({
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
+    if (!isFill) setCompactFillFallback(false);
     let fallbackApplied = false;
+    let fallbackBaselineReady = false;
+    let fallbackParentHeight = 0;
+    let fallbackBaselineFrame = 0;
+    const layoutParent = element.parentElement?.parentElement;
+    const readLayoutParentHeight = () => layoutParent?.getBoundingClientRect().height ?? 0;
+    const captureFallbackBaseline = () => {
+      fallbackBaselineReady = false;
+      if (typeof window.requestAnimationFrame !== "function") {
+        fallbackParentHeight = readLayoutParentHeight();
+        fallbackBaselineReady = true;
+        return;
+      }
+      if (fallbackBaselineFrame) window.cancelAnimationFrame(fallbackBaselineFrame);
+      fallbackBaselineFrame = window.requestAnimationFrame(() => {
+        fallbackBaselineFrame = 0;
+        if (!fallbackApplied) return;
+        fallbackParentHeight = readLayoutParentHeight();
+        fallbackBaselineReady = true;
+      });
+    };
     const updateLayout = () => {
       setAvailableWidth(element.clientWidth);
+      if (!isFill) return;
       const hasLayoutBox = element.getClientRects().length > 0;
-      if (isFill && !hasLayoutBox) return;
-      if (isFill && !fallbackApplied && element.clientHeight < FILL_SCROLL_COMPACT_THRESHOLD) {
+      if (!hasLayoutBox) return;
+      if (!fallbackApplied && element.clientHeight < FILL_SCROLL_COMPACT_THRESHOLD) {
         fallbackApplied = true;
+        captureFallbackBaseline();
         setCompactFillFallback(true);
-      } else if (isFill && fallbackApplied && element.clientHeight > FILL_SCROLL_COMPACT_THRESHOLD) {
+      }
+    };
+    const clearFallbackOnParentExpansion = () => {
+      if (!isFill || !fallbackApplied || !fallbackBaselineReady) return;
+      if (readLayoutParentHeight() > fallbackParentHeight + 1) {
         fallbackApplied = false;
+        fallbackBaselineReady = false;
         setCompactFillFallback(false);
+        updateLayout();
       }
     };
     const resetFallbackAfterViewportResize = () => {
       if (fallbackApplied) {
         fallbackApplied = false;
+        fallbackBaselineReady = false;
+        if (fallbackBaselineFrame && typeof window.cancelAnimationFrame === "function") {
+          window.cancelAnimationFrame(fallbackBaselineFrame);
+          fallbackBaselineFrame = 0;
+        }
         setCompactFillFallback(false);
       }
       updateLayout();
@@ -198,10 +232,16 @@ export function DataTable<T, F = Record<string, unknown>>({
     updateLayout();
     const observer = new ResizeObserver(updateLayout);
     observer.observe(element);
+    const parentObserver = isFill ? new ResizeObserver(clearFallbackOnParentExpansion) : undefined;
+    if (layoutParent && parentObserver) parentObserver.observe(layoutParent);
     window.addEventListener("resize", resetFallbackAfterViewportResize);
     return () => {
       observer.disconnect();
+      parentObserver?.disconnect();
       window.removeEventListener("resize", resetFallbackAfterViewportResize);
+      if (fallbackBaselineFrame && typeof window.cancelAnimationFrame === "function") {
+        window.cancelAnimationFrame(fallbackBaselineFrame);
+      }
     };
   }, [isFill]);
 

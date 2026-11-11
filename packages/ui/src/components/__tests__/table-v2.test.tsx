@@ -14,10 +14,14 @@ const columns: ColumnDef<Row, unknown>[] = [
   { id: "actions", header: "操作", meta: { width: 68, minWidth: 68 }, cell: () => <button type="button">操作菜单</button> },
 ];
 const rows: Row[] = [{ id: "row-1", label: "DEMO 商品一", kind: "产品" }, { id: "row-2", label: "DEMO 商品二", kind: "组合" }];
+let tableScrollClientHeight = 400;
 
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(800);
-  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
+  tableScrollClientHeight = 400;
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains("si-table-scroll") ? tableScrollClientHeight : 400;
+  });
   vi.stubGlobal("ResizeObserver", class {
     constructor(private readonly callback: ResizeObserverCallback) {}
     observe(target: Element): void {
@@ -60,6 +64,31 @@ function renderTable(props: {
 }
 
 describe("DataTable v2", () => {
+  it("clears compact fill fallback when the same table switches to a fixed height", async () => {
+    tableScrollClientHeight = 55;
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(function (this: HTMLElement) {
+      return { length: this.classList.contains("si-table-scroll") ? 1 : 0 } as DOMRectList;
+    });
+    const tableProps = (height: number | "fill") => ({
+      tableId: "test.table-fill-switch",
+      rows,
+      total: rows.length,
+      columns,
+      query: { page: 1, pageSize: 50, filters: {} },
+      onQueryChange: vi.fn(),
+      getRowId: (row: Row) => row.id,
+      height,
+    });
+    const { rerender } = render(<DataTable {...tableProps("fill")} />);
+    await waitFor(() => expect(document.querySelector(".si-data-table")?.classList.contains("is-compact-fill")).toBe(true));
+
+    rerender(<DataTable {...tableProps(220)} />);
+    await waitFor(() => expect(document.querySelector(".si-data-table")?.classList.contains("is-compact-fill")).toBe(false));
+    expect((document.querySelector(".si-data-table") as HTMLElement).style.minHeight).toBe("");
+    expect((document.querySelector(".si-table-scroll") as HTMLElement).style.minHeight).toBe("");
+    expect((document.querySelector(".si-table-scroll") as HTMLElement).style.height).toBe("220px");
+  });
+
   it("keeps the actions column sticky on the right and exposes its menu outside the text clipper", () => {
     renderTable();
     const actionCell = document.querySelector("tbody td.is-sticky-right");

@@ -102,11 +102,24 @@ describe("Issue #300 SEO row action hit testing", () => {
       await hideTableStyle.evaluate((element) => element.parentNode?.removeChild(element));
       await scroll.waitFor({ state: "visible" });
       // Reproduce the 1100×720 packaged layout recorded by E: a fill table collapsed to a 55px scroll viewport.
-      await page.addStyleTag({ content: `
+      const compactLayoutStyle = await page.addStyleTag({ content: `
         .si-seo-page .si-data-table.is-fill { height: 144px; min-height: 0; flex: 0 1 auto; }
         .si-seo-page .si-data-table.is-fill > .si-table-scroll { height: 55px; min-height: 0; flex: none; }
       ` });
       await page.waitForFunction(() => document.querySelector(".si-data-table")?.classList.contains("is-compact-fill"));
+      await page.evaluate(() => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      }));
+      const stableCompactLayout = await page.evaluate(() => {
+        const table = document.querySelector(".si-data-table");
+        const scrollArea = document.querySelector(".si-table-scroll") as HTMLElement | null;
+        return {
+          compact: Boolean(table?.classList.contains("is-compact-fill")),
+          tableHeight: table?.getBoundingClientRect().height ?? 0,
+          scrollHeight: scrollArea?.clientHeight ?? 0,
+        };
+      });
+      expect(stableCompactLayout).toEqual({ compact: true, tableHeight: 180, scrollHeight: 80 });
       const actionTrigger = page.locator(".si-seo-row-action").first();
       await actionTrigger.waitFor({ state: "visible" });
       const scrollBox = await scroll.boundingBox();
@@ -136,17 +149,26 @@ describe("Issue #300 SEO row action hit testing", () => {
       await page.locator(".si-seo-issue-menu").first().waitFor({ state: "visible" });
       await page.keyboard.press("Escape");
 
-      // The compact fallback must clear when the parent grows, even without a window resize.
-      await page.addStyleTag({ content: `
-        .si-seo-page .si-data-table.is-fill { height: 600px; min-height: 0; flex: 0 0 600px; }
-        .si-seo-page .si-data-table.is-fill > .si-table-scroll { height: auto; min-height: 0; flex: 1 1 auto; }
-      ` });
-      await page.waitForFunction(() => {
-        const table = document.querySelector(".si-data-table");
-        const scrollArea = document.querySelector(".si-table-scroll");
-        return Boolean(table && scrollArea && !table.classList.contains("is-compact-fill")
-          && table.getBoundingClientRect().height >= 500 && (scrollArea as HTMLElement).clientHeight > 80);
+      // Parent growth, without a window resize, must clear the fallback and restore natural fill sizing.
+      await compactLayoutStyle.evaluate((element) => element.parentNode?.removeChild(element));
+      await scroll.evaluate((scrollElement) => {
+        const layoutParent = (scrollElement as HTMLElement).parentElement?.parentElement;
+        layoutParent?.style.setProperty("min-height", "1100px", "important");
       });
+      await page.waitForTimeout(250);
+      const afterParentExpansion = await scroll.evaluate((scrollElement) => {
+        const layoutParent = (scrollElement as HTMLElement).parentElement?.parentElement;
+        const table = (scrollElement as HTMLElement).parentElement;
+        return {
+          compact: Boolean(table?.classList.contains("is-compact-fill")),
+          tableHeight: table?.getBoundingClientRect().height ?? 0,
+          scrollHeight: (scrollElement as HTMLElement).clientHeight,
+          parentHeight: layoutParent?.getBoundingClientRect().height ?? 0,
+        };
+      });
+      expect(afterParentExpansion.compact).toBe(false);
+      expect(afterParentExpansion.parentHeight).toBeGreaterThanOrEqual(1100);
+      expect(afterParentExpansion.scrollHeight).toBeGreaterThan(80);
     } finally {
       await page.close();
     }
