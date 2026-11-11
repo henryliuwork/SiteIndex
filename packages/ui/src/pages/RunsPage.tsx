@@ -7,10 +7,11 @@ import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, Ref
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, formatDateTime as formatSharedDateTime, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { getMediaRecoveryDisplay } from "./edm/media-recovery";
 import "./runs/page.css";
 
 const jobLabels: Record<string, string> = {
-  daily: "每日同步", weekly: "每周同步", monthly: "每月同步", validate: "数据校验", readme: "刷新 README", design: "提取设计规范", "index-check": "检查 Google 索引", views: "重建视图", init: "项目初始化",
+  daily: "每日同步", weekly: "每周同步", monthly: "每月同步", validate: "数据校验", readme: "刷新 README", design: "提取设计规范", "index-check": "检查 Google 索引", views: "重建视图", init: "项目初始化", media: "图片 URL 处理",
 };
 const jobCards: { job: JobName; title: string; description: string; icon: typeof RefreshCw }[] = [
   { job: "daily", title: "每日同步", description: "Feed → SKU、库存、日报、视图", icon: RefreshCw },
@@ -54,6 +55,20 @@ function runDuration(run: RunLog): string {
 }
 
 function runSummary(run: RunLog): string {
+  if (run.job === "media") {
+    const recovery = getMediaRecoveryDisplay(run);
+    if (recovery.kind !== "available") {
+      return recovery.kind === "legacy" ? "旧版记录未保存逐 SKU 结果" : "逐 SKU 恢复结果不完整";
+    }
+    const labels: Record<string, string> = {
+      uploaded: "上传", reused: "复用", recorded: "记录原图 URL", skipped_has_url: "已有 URL 跳过",
+      failed: "失败", unknown: "结果未知", not_started: "已确认未开始", unavailable: "无法恢复",
+    };
+    const counts = new Map<string, number>();
+    for (const { status } of recovery.rows) counts.set(status, (counts.get(status) ?? 0) + 1);
+    const summary = [...counts].map(([status, count]) => `${labels[status] ?? status} ${count}`).join(" · ");
+    return [summary || "没有逐 SKU 结果", ...(run.errors ?? [])].join(" · ");
+  }
   if (run.errors?.length) return run.errors.join("；");
   const counts = run.counts;
   if (!counts || !Object.keys(counts).length) return run.status === "skipped" ? "未在指定执行设备运行" : run.status === "failed" ? "任务执行失败" : "任务已完成";
