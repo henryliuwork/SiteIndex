@@ -1,0 +1,192 @@
+{
+  "format": "siteindex.e.v041.stock-verification-acceptance-cases",
+  "format_version": 1,
+  "status": "prepared_not_executed_as_a_harness",
+  "scope": {
+    "pr": 417,
+    "observed_head": "9ccb1a9b5f2e39d18956e466e804462eb767bda5",
+    "head_state": "open_stage_only",
+    "layouts": ["legacy", "workspace"],
+    "service_factories": [
+      "fixtures/e-v041-loopback/fake-site-service.mjs:createFakeSiteService",
+      "fixtures/e-v041-loopback/fake-services.mjs:createFakeGraphqlService"
+    ],
+    "network_policy": "loopback_only",
+    "log_policy": "assert_counts_only_no_paths_headers_bodies_or_credentials"
+  },
+  "defaults": {
+    "frozen_date": "2026-10-21",
+    "rate_limit_ms": 0,
+    "stock_rules": {
+      "in_stock": ["Synthetic: available"],
+      "out_of_stock": ["Synthetic: unavailable"],
+      "preorder": ["Synthetic: preorder"]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "restart-after-cursor-before-result-commit",
+      "purpose": "A pending SKU is retried after the worker process stops after cursor persistence but before its inventory result is committed.",
+      "classification": "required_regression_gate",
+      "old_head": {
+        "expected": "fail",
+        "observed_head": "9ccb1a9b5f2e39d18956e466e804462eb767bda5",
+        "reason": "daily.ts persists last_sku in beforeCandidate before the HTTP request and before verifyMissingStock returns results. After an interruption at the first request, a restart begins after that SKU and can spend the capped run on the next candidate, leaving the interrupted candidate pending until wraparound.",
+        "expected_first_candidate_after_restart": "SYN-RST-02"
+      },
+      "project": {
+        "max_per_run": 1,
+        "initial_cursor": null,
+        "active_missing_skus": [
+          { "sku": "SYN-RST-01", "stock_status": "out_of_stock", "since": "2026-10-20", "checked_at": "2026-10-20T12:00:00Z" },
+          { "sku": "SYN-RST-02", "stock_status": "out_of_stock", "since": "2026-10-20", "checked_at": "2026-10-20T12:00:00Z" }
+        ],
+        "feedRows": [{ "sku": "SYN-RST-FEED" }]
+      },
+      "site_service": {
+        "productResponsesBySku": {
+          "SYN-RST-01": { "status": 200, "delayMs": 5000, "body": "<main>Synthetic: available</main>" },
+          "SYN-RST-02": { "status": 200, "body": "<main>Synthetic: available</main>" }
+        }
+      },
+      "graphql_service": {
+        "responsesBySku": {
+          "SYN-RST-01": { "httpStatus": 200, "body": { "data": { "product": { "sku": "SYN-RST-01", "stock_status": "IN_STOCK" } } } },
+          "SYN-RST-02": { "httpStatus": 200, "body": { "data": { "product": { "sku": "SYN-RST-02", "stock_status": "IN_STOCK" } } } }
+        }
+      },
+      "steps": [
+        "Create a temporary synthetic project and start its daily job in a child process.",
+        "Keep the loopback product response delayed; poll only the fixture route count until the first product GET is observed, then terminate the child before the delayed response completes.",
+        "Verify the interrupted run did not commit a stock result for SYN-RST-01 and retain the project plus cursor file.",
+        "Restart daily against the same synthetic project and loopback services; inspect resulting inventory rows and events."
+      ],
+      "expected_after_recovery": {
+        "first_resumed_candidate": "SYN-RST-01",
+        "sku_status": "active",
+        "stock_status": "in_stock",
+        "event_for_interrupted_sku": "feed_anomaly",
+        "no_duplicate_removed_event": true
+      }
+    },
+    {
+      "id": "candidate-add-remove-around-cursor",
+      "purpose": "A removed candidate and a newly added candidate around a persisted cursor do not starve the remaining set.",
+      "classification": "must_pass",
+      "project": {
+        "max_per_run": 2,
+        "initial_cursor": "SYN-CHURN-20",
+        "active_skus": ["SYN-CHURN-10", "SYN-CHURN-15", "SYN-CHURN-20", "SYN-CHURN-30", "SYN-CHURN-40"],
+        "active_missing_skus": ["SYN-CHURN-10", "SYN-CHURN-15", "SYN-CHURN-30", "SYN-CHURN-40"],
+        "new_candidate_before_cursor": "SYN-CHURN-15",
+        "removed_candidate_now_in_feed": "SYN-CHURN-20",
+        "feedRows": [{ "sku": "SYN-CHURN-FEED" }, { "sku": "SYN-CHURN-20" }]
+      },
+      "site_service": {
+        "defaultProductResponse": { "status": 200, "body": "<main>Synthetic product page</main>" }
+      },
+      "graphql_service": {
+        "defaultResponse": { "httpStatus": 200, "body": { "data": { "product": { "stock_status": "IN_STOCK" } } } }
+      },
+      "steps": [
+        "Seed the cursor at SYN-CHURN-20, with SYN-CHURN-20 present in the current feed and SYN-CHURN-15 newly absent from it.",
+        "Run daily twice without changing the fixture set.",
+        "Compare synthetic inventory results for the four current candidates and the route request total."
+      ],
+      "expected": {
+        "candidate_visit_order": ["SYN-CHURN-30", "SYN-CHURN-40", "SYN-CHURN-10", "SYN-CHURN-15"],
+        "runs_to_visit_current_candidates": 2,
+        "product_page_requests_total": 4,
+        "removed_candidate_requested": false,
+        "max_candidate_skus_per_run": 2
+      }
+    },
+    {
+      "id": "unavailable-results-preserve-prior-stock",
+      "purpose": "Page 5xx and GraphQL 429 do not overwrite prior inventory state or timestamps.",
+      "classification": "must_pass",
+      "project": {
+        "max_per_run": 2,
+        "active_missing_skus": [
+          { "sku": "SYN-KEEP-503", "stock_status": "in_stock", "since": "2026-10-19", "checked_at": "2026-10-19T12:00:00Z" },
+          { "sku": "SYN-KEEP-429", "stock_status": "out_of_stock", "since": "2026-10-18", "checked_at": "2026-10-18T12:00:00Z" }
+        ],
+        "feedRows": [{ "sku": "SYN-KEEP-FEED" }]
+      },
+      "site_service": {
+        "productResponsesBySku": {
+          "SYN-KEEP-503": { "status": 503, "body": "Synthetic temporary failure" },
+          "SYN-KEEP-429": { "status": 200, "body": "<main>Synthetic page with no stock phrase</main>" }
+        }
+      },
+      "graphql_service": {
+        "responsesBySku": {
+          "SYN-KEEP-429": { "httpStatus": 429, "body": { "errors": [{ "message": "Synthetic rate limit" }] } }
+        }
+      },
+      "steps": ["Run daily once and compare the prior inventory rows and events."],
+      "expected": {
+        "prior_stock_status_preserved": true,
+        "prior_since_preserved": true,
+        "prior_checked_at_preserved": true,
+        "feed_anomaly_event_added": false,
+        "seo_issue_added": false
+      }
+    },
+    {
+      "id": "feed-absent-404-and-410",
+      "purpose": "Both gone responses remove only the corresponding active SKU and annotate the reason.",
+      "classification": "must_pass",
+      "project": {
+        "max_per_run": 2,
+        "active_missing_skus": ["SYN-GONE-404", "SYN-GONE-410"],
+        "feedRows": [{ "sku": "SYN-GONE-FEED" }]
+      },
+      "site_service": {
+        "productResponsesBySku": {
+          "SYN-GONE-404": { "status": 404, "body": "Synthetic not found" },
+          "SYN-GONE-410": { "status": 410, "body": "Synthetic gone" }
+        }
+      },
+      "graphql_service": {
+        "defaultResponse": { "httpStatus": 200, "body": { "data": { "product": { "stock_status": "IN_STOCK" } } } }
+      },
+      "steps": ["Run daily once and inspect catalog, latest inventory, and monthly events."],
+      "expected": {
+        "removed_skus": ["SYN-GONE-404", "SYN-GONE-410"],
+        "removed_reason": "feed_absent_404",
+        "latest_inventory_rows_removed": true,
+        "removed_event_per_sku": 1,
+        "graphql_requests_for_gone_skus": 0
+      }
+    },
+    {
+      "id": "fair-rotation-across-capped-reruns",
+      "purpose": "A capped verifier rotates through a stable candidate set and eventually reaches each candidate.",
+      "classification": "must_pass",
+      "project": {
+        "max_per_run": 2,
+        "initial_cursor": null,
+        "active_missing_skus": ["SYN-ROT-01", "SYN-ROT-02", "SYN-ROT-03", "SYN-ROT-04", "SYN-ROT-05"],
+        "feedRows": [{ "sku": "SYN-ROT-FEED" }]
+      },
+      "site_service": {
+        "defaultProductResponse": { "status": 200, "body": "<main>Synthetic product page</main>" }
+      },
+      "graphql_service": {
+        "defaultResponse": { "httpStatus": 200, "body": { "data": { "product": { "stock_status": "IN_STOCK" } } } }
+      },
+      "steps": ["Run daily three times on the same synthetic project, preserving the cursor between invocations."],
+      "expected": {
+        "candidate_visit_order_by_run": [
+          ["SYN-ROT-01", "SYN-ROT-02"],
+          ["SYN-ROT-03", "SYN-ROT-04"],
+          ["SYN-ROT-05", "SYN-ROT-01"]
+        ],
+        "all_candidates_visited_within_runs": 3,
+        "candidate_cap_per_run": 2,
+        "all_candidate_skus_remain_active": true
+      }
+    }
+  ]
+}
