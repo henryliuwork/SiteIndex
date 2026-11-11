@@ -288,6 +288,7 @@ export async function createFakeWordPressService({
   credentials,
   currentUserStatus = 200,
   mediaGetStatus = 200,
+  mediaGetStatuses,
   mediaPostStatus = 201,
   mediaMetaStatus = 200,
   mediaPostStatuses,
@@ -301,6 +302,7 @@ export async function createFakeWordPressService({
   const recorder = makeRecorder();
   const mediaBySlug = new Map();
   let nextMediaId = 7000;
+  let mediaGetAttempts = 0;
   let mediaPostAttempts = 0;
   let disconnectsRemaining = Math.max(0, Number(disconnectAfterPersist) || 0);
   let wordPressServer;
@@ -349,7 +351,10 @@ export async function createFakeWordPressService({
     }
 
     if (route === WP_MEDIA_ROUTE) {
-      const status = mediaGetStatus;
+      const status = Array.isArray(mediaGetStatuses)
+        ? (mediaGetStatuses[mediaGetAttempts] ?? mediaGetStatus)
+        : mediaGetStatus;
+      mediaGetAttempts += 1;
       recorder.record(route, status);
       if (status !== 200) {
         sendWpError(response, status);

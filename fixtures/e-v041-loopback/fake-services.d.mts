@@ -63,6 +63,7 @@ export function createFakeWordPressService(options?: {
   credentials?: FakeCredentialCanary;
   currentUserStatus?: number;
   mediaGetStatus?: number;
+  mediaGetStatuses?: number[];
   mediaPostStatus?: number;
   mediaPostStatuses?: number[];
   persistMediaBeforePostFailure?: boolean;

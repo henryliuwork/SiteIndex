@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 import { CSV_HEADERS, isValidMediaSkuRecoveryPartition, PATHS, type InventoryLatest, type SiteConfig, type SkuRecord } from "@siteindex/shared";
-import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -222,6 +222,23 @@ async function makeWordPress(options: Parameters<typeof createFakeWordPressServi
   const instance = await createFakeWordPressService(options);
   WORDPRESS_SERVERS.push(instance);
   return instance;
+}
+
+async function scanProjectCredentialCanary(
+  projectPath: string,
+  credentials: Parameters<typeof scanCredentialCanary>[1],
+) {
+  const files: { path: string; contents: string }[] = [];
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const filePath = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) await visit(filePath);
+      else if (entry.isFile()) files.push({ path: path.relative(projectPath, filePath), contents: await readFile(filePath, "utf8") });
+    }
+  };
+  await visit(projectPath);
+  return scanCredentialCanary(files, credentials);
 }
 
 interface MediaAcceptanceCase {
@@ -479,6 +496,114 @@ describe("media Core Job", () => {
     expect(result.media_not_started_skus).toEqual(["DEMO002"]);
     expect(result.media_unknown_skus).toEqual([]);
     expect(scanCredentialCanary(result, credentials).passed).toBe(true);
+  }, 30_000);
+
+  it("continues with later SKUs after an isolated WordPress media lookup error", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials, mediaGetStatuses: [503, 200] });
+    const imageServer = await startImageServer();
+    const skus = ["SYN-WP-LOOKUP-ERROR", "SYN-AFTER-WP-LOOKUP-ERROR"];
+    const { projectPath } = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: imageServer.origin + "/synthetic.webp",
+      skuIds: skus,
+    });
+
+    const result = await service(projectPath, credentials).runJob({
+      projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus,
+    }, () => undefined);
+
+    expect(result.status).toBe("partial");
+    expect(result.media_batch_state).toBe("complete");
+    expect(result.media_results).toMatchObject([
+      { sku: "SYN-WP-LOOKUP-ERROR", status: "failed", reason: "WordPress 图片服务请求失败。" },
+      { sku: "SYN-AFTER-WP-LOOKUP-ERROR", status: "uploaded" },
+    ]);
+    expect(result.media_unknown_skus).toEqual([]);
+    expect(result.media_not_started_skus).toEqual([]);
+    expect(wordpress.snapshot().routeCounts["GET /wp-json/wp/v2/media"]).toBe(2);
+    expect(wordpress.snapshot().mediaCount).toBe(1);
+
+    const logged = await readJsonl(path.join(projectPath, PATHS.runs));
+    const checkpoint = await readFile(path.join(projectPath, PATHS.jobLogsDir, `${result.runId}.media.json`), "utf8");
+    const ledger = await readFile(path.join(projectPath, PATHS.skuMedia), "utf8");
+    expect(scanCredentialCanary({ result, logged, checkpoint, ledger }, credentials).passed).toBe(true);
+    expect((await scanProjectCredentialCanary(projectPath, credentials)).passed).toBe(true);
+  }, 30_000);
+
+  it("keeps confirmed uploads when WordPress rejects the metadata update with a service error", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials, mediaMetaStatus: 500 });
+    const imageServer = await startImageServer();
+    const { projectPath } = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: imageServer.origin + "/synthetic.webp",
+      skuIds: ["SYN-META-REJECTED"],
+    });
+
+    const result = await service(projectPath, credentials).runJob({
+      projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-META-REJECTED"],
+    }, () => undefined);
+
+    expect(result.status).toBe("partial");
+    expect(result.media_batch_state).toBe("complete");
+    expect(result.media_results).toMatchObject([{
+      sku: "SYN-META-REJECTED",
+      status: "uploaded",
+      reason: "图片已保存，但标题或替代文本未更新。",
+      image_url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/wp-content\/uploads\/siteindex-v1-/u),
+    }]);
+    expect(result.media_error_code).toBeUndefined();
+    expect(result.media_unknown_skus).toEqual([]);
+    expect(result.media_not_started_skus).toEqual([]);
+    expect(wordpress.snapshot().mediaCount).toBe(1);
+    expect(await readCsv(path.join(projectPath, PATHS.skuMedia))).toContainEqual(
+      expect.objectContaining({ sku: "SYN-META-REJECTED", source: "wordpress", media_id: "7000" }),
+    );
+
+    const logged = await readJsonl(path.join(projectPath, PATHS.runs));
+    const checkpoint = await readFile(path.join(projectPath, PATHS.jobLogsDir, `${result.runId}.media.json`), "utf8");
+    const ledger = await readFile(path.join(projectPath, PATHS.skuMedia), "utf8");
+    expect(scanCredentialCanary({ result, logged, checkpoint, ledger }, credentials).passed).toBe(true);
+    expect((await scanProjectCredentialCanary(projectPath, credentials)).passed).toBe(true);
+  }, 30_000);
+
+  it("stops the batch after a confirmed upload receives a WordPress metadata permission error", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials, mediaMetaStatus: 403 });
+    const imageServer = await startImageServer();
+    const skus = ["SYN-META-FORBIDDEN", "SYN-AFTER-META-FORBIDDEN"];
+    const { projectPath } = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: imageServer.origin + "/synthetic.webp",
+      skuIds: skus,
+    });
+
+    const result = await service(projectPath, credentials).runJob({
+      projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus,
+    }, () => undefined);
+
+    expect(result.status).toBe("partial");
+    expect(result.media_batch_state).toBe("interrupted");
+    expect(result.media_error_code).toBe("WP_FORBIDDEN");
+    expect(result.media_results).toMatchObject([{
+      sku: "SYN-META-FORBIDDEN",
+      status: "uploaded",
+      reason: "图片已保存，但标题或替代文本未更新。",
+    }]);
+    expect(result.media_unknown_skus).toEqual([]);
+    expect(result.media_not_started_skus).toEqual(["SYN-AFTER-META-FORBIDDEN"]);
+    expect(wordpress.snapshot().mediaCount).toBe(1);
+    expect(wordpress.snapshot().routeCounts["POST /wp-json/wp/v2/media"]).toBe(1);
+    expect(await readCsv(path.join(projectPath, PATHS.skuMedia))).toContainEqual(
+      expect.objectContaining({ sku: "SYN-META-FORBIDDEN", source: "wordpress", media_id: "7000" }),
+    );
+
+    const logged = await readJsonl(path.join(projectPath, PATHS.runs));
+    const checkpoint = await readFile(path.join(projectPath, PATHS.jobLogsDir, `${result.runId}.media.json`), "utf8");
+    const ledger = await readFile(path.join(projectPath, PATHS.skuMedia), "utf8");
+    expect(scanCredentialCanary({ result, logged, checkpoint, ledger }, credentials).passed).toBe(true);
+    expect((await scanProjectCredentialCanary(projectPath, credentials)).passed).toBe(true);
   }, 30_000);
 
   it("marks a persisted upload with a lost response as outcome unknown", async () => {
