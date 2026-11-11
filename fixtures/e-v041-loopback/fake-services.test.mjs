@@ -131,7 +131,7 @@ describe("v0.4.1 loopback synthetic services", () => {
     const matches = await lookup.json();
     assert.equal(matches.length, 1);
     assert.equal(matches[0].slug, "synthetic-image-02");
-    assert.match(matches[0].source_url, /^http:\/\/127\.0\.0\.1:\d+\/wp-content\/uploads\//u);
+    assert.match(matches[0].source_url, /^http:\/\/127\.0\.0\.1:\d+\/wp-content\/uploads\/synthetic-image-02\.jpg$/u);
 
     const snapshot = service.snapshot();
     assert.equal(snapshot.totalRequests, 2);
@@ -187,7 +187,9 @@ describe("v0.4.1 loopback synthetic services", () => {
       body: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
     });
     assert.equal(upload.status, 201);
-    assert.equal((await upload.json()).slug, "synthetic-file-03");
+    const uploadedMedia = await upload.json();
+    assert.equal(uploadedMedia.slug, "synthetic-file-03");
+    assert.match(uploadedMedia.source_url, /\/synthetic-file-03\.png$/u);
 
     const lookup = await fetch(service.mediaEndpoint + "?slug=synthetic-file-03", {
       headers: authHeaders(credentials),

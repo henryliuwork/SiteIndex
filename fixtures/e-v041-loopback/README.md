@@ -8,7 +8,7 @@ These reusable HTTP fixtures support E's synthetic acceptance preparation. They 
 - `createFakeWordPressService`: fake Basic authentication, current-user capability responses, media lookups and upload responses, per-upload outcomes for partial failures, 401/403/429 responses, and a persist-then-disconnect window for retry verification.
 - `createFakeCredentialCanary` and `scanCredentialCanary`: per-run fake credentials and a scanner that reports only matched categories/counts, never credential values.
 
-The services intentionally keep no request body or header logs. WordPress media uploads accept the standard `Content-Disposition: attachment; filename=...` and UTF-8 `filename*` parameters, including safe basename handling for path-like names; the fixture-only `X-Fake-WP-Slug` header remains available for simpler cases. Snapshots expose fixed route names, counts, statuses, and synthetic media count only. Uploaded bytes are consumed in memory and are never written to disk. Media source URLs point back to the loopback fixture.
+The services intentionally keep no request body or header logs. WordPress media uploads accept the standard `Content-Disposition: attachment; filename=...` and UTF-8 `filename*` parameters, including safe basename handling for path-like names. Synthetic media URLs preserve a safe filename extension, falling back to a supported image Content-Type when needed. The fixture-only `X-Fake-WP-Slug` header remains available for simpler cases. Snapshots expose fixed route names, counts, statuses, and synthetic media count only. Uploaded bytes are consumed in memory and are never written to disk. Media source URLs point back to the loopback fixture.
 
 Run the service self-tests with:
 

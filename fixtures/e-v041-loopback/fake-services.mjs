@@ -177,7 +177,7 @@ export async function createFakeGraphqlService({
   };
 }
 
-function normalizeSlug(value) {
+function safeBasename(value) {
   if (typeof value !== "string" || value.length === 0) return null;
   let decoded = value.trim();
   try {
@@ -185,11 +185,16 @@ function normalizeSlug(value) {
   } catch {
     // Malformed percent escapes remain subject to the slug character allowlist below.
   }
-  const filename = decoded
+  return decoded
     .replace(/\\/gu, "/")
     .split("/")
     .pop()
     ?.replace(/[\u0000-\u001f\u007f]/gu, "") ?? "";
+}
+
+function normalizeSlug(value) {
+  const filename = safeBasename(value);
+  if (!filename) return null;
   const base = filename.replace(/\.[^.]+$/u, "");
   const slug = base.toLowerCase()
     .replace(/[^a-z0-9_-]+/gu, "-")
@@ -197,6 +202,24 @@ function normalizeSlug(value) {
     .slice(0, 120)
     .replace(/-+$/u, "");
   return slug || null;
+}
+
+const IMAGE_EXTENSION_BY_CONTENT_TYPE = {
+  "image/avif": "avif",
+  "image/gif": "gif",
+  "image/jpeg": "jpg",
+  "image/pjpeg": "jpg",
+  "image/png": "png",
+  "image/svg+xml": "svg",
+  "image/webp": "webp",
+};
+
+function mediaExtension(filename, contentType) {
+  const basename = safeBasename(filename) ?? "";
+  const extension = /\.([a-z0-9]{1,10})$/iu.exec(basename)?.[1];
+  if (extension) return extension.toLowerCase();
+  const mimeType = String(contentType ?? "").split(";", 1)[0].trim().toLowerCase();
+  return IMAGE_EXTENSION_BY_CONTENT_TYPE[mimeType] ?? "jpg";
 }
 
 function decodeExtendedFilename(value) {
@@ -220,28 +243,28 @@ function contentDispositionFilename(header) {
   return (plain[1] ?? plain[2] ?? "").replace(/\\(["\\])/gu, "$1").trim();
 }
 
-function extractMediaSlug(request, url, body) {
+function extractMediaFilename(request, url, body) {
   const headerSlug = request.headers["x-fake-wp-slug"];
-  if (typeof headerSlug === "string") return normalizeSlug(headerSlug);
+  if (typeof headerSlug === "string") return headerSlug;
   const querySlug = url.searchParams.get("slug");
-  if (querySlug) return normalizeSlug(querySlug);
+  if (querySlug) return querySlug;
 
   const dispositionFilename = contentDispositionFilename(request.headers["content-disposition"]);
-  if (dispositionFilename) return normalizeSlug(dispositionFilename);
+  if (dispositionFilename) return dispositionFilename;
 
   const contentType = request.headers["content-type"] ?? "";
   if (String(contentType).includes("application/json")) {
     try {
       const payload = JSON.parse(body.toString("utf8"));
       const jsonSlug = payload?.slug ?? payload?.filename;
-      if (typeof jsonSlug === "string") return normalizeSlug(jsonSlug);
+      if (typeof jsonSlug === "string") return jsonSlug;
     } catch {
       return null;
     }
   }
 
   const filename = body.toString("latin1").match(/filename="([^"]+)"/iu)?.[1];
-  return filename ? normalizeSlug(filename) : null;
+  return filename ?? null;
 }
 
 function uniqueMediaSlug(baseSlug, mediaBySlug) {
@@ -335,7 +358,8 @@ export async function createFakeWordPressService({
       return;
     }
 
-    const slug = extractMediaSlug(request, url, body);
+    const mediaFilename = extractMediaFilename(request, url, body);
+    const slug = normalizeSlug(mediaFilename);
     if (!slug) {
       recorder.record(route, 400, "missing_synthetic_slug");
       sendJson(response, 400, { code: "rest_upload_no_data", message: "Synthetic media slug is required." });
@@ -343,7 +367,7 @@ export async function createFakeWordPressService({
     }
 
     const storedSlug = uniqueMediaSlug(slug, mediaBySlug);
-    const extension = body.toString("latin1").match(/filename="[^"]*\.([a-z0-9]+)"/iu)?.[1]?.toLowerCase() ?? "jpg";
+    const extension = mediaExtension(mediaFilename, request.headers["content-type"]);
     const media = {
       id: nextMediaId,
       slug: storedSlug,
