@@ -8,7 +8,7 @@ import {
   assertRunner, atomicWrite, findConflictCopies, readCsv, readJsonl, readRunner,
   withLock, writeCsv, writeJsonl, writeRunner,
 } from "../src";
-import { unlinkOwnedLock } from "../src/io/runner-lock";
+import { readOrCreateLocalHostId, unlinkOwnedLock } from "../src/io/runner-lock";
 
 const roots: string[] = [];
 async function tempDir() {
@@ -338,19 +338,31 @@ describe("core io", () => {
     await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(legacy));
   });
 
-  it("smoke-tests concurrent local host identity initialization with a start barrier", async () => {
+  it("publishes one complete host identity with a deterministic two-process publication barrier", async () => {
     const root = await tempDir();
     const stateRoot = path.join(root, "isolated-local-state");
+    const hostFile = hostIdentityFile(stateRoot);
+    const publicationBarrier = path.join(root, "host-id-publication-barrier");
+    await mkdir(publicationBarrier, { recursive: true });
     const coreDirectory = path.resolve(process.cwd(), "packages/core");
     const source = [
-      'import { readFile } from "node:fs/promises";',
+      'import { readFile, readdir, writeFile } from "node:fs/promises";',
+      'import path from "node:path";',
+      'import { readOrCreateLocalHostId } from "./src/io/runner-lock.ts";',
       'import { withLock } from "./src/io/runner-lock.ts";',
       'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
       'const lockFile = process.env.SITEINDEX_TEST_LOCK_FILE;',
-      'if (!root || !lockFile) throw new Error("Missing test parameters");',
+      'const hostFile = process.env.SITEINDEX_TEST_HOST_FILE;',
+      'const barrier = process.env.SITEINDEX_TEST_HOST_BARRIER;',
+      'if (!root || !lockFile || !hostFile || !barrier) throw new Error("Missing test parameters");',
       'process.stdout.write("READY\\n");',
       'await new Promise((resolve) => process.stdin.once("data", resolve));',
-      'await withLock(root, async () => { const lock = JSON.parse(await readFile(lockFile, "utf8")); process.stdout.write(lock.host_id); }, { heartbeatMs: 60000 });',
+      'const hostId = await readOrCreateLocalHostId(hostFile, { beforePublish: async () => {',
+      '  await writeFile(path.join(barrier, `${process.pid}.ready`), "ready", { flag: "wx" });',
+      '  while ((await readdir(barrier)).filter((name) => name.endsWith(".ready")).length < 2) await new Promise((resolve) => setTimeout(resolve, 5));',
+      '} });',
+      'await withLock(root, async () => { const lock = JSON.parse(await readFile(lockFile, "utf8")); if (lock.host_id !== hostId) throw new Error("Lock used a different host identity"); process.stdout.write(lock.host_id); }, { heartbeatMs: 60000 });',
+      'if (hostId.length !== 36) throw new Error("Host identity was not a UUID");',
     ].join("\n");
     const hostEnv = hostIdentityEnvironment(stateRoot);
     const childEnvs = Array.from({ length: 2 }, (_, index) => {
@@ -358,18 +370,54 @@ describe("core io", () => {
       return {
         ...process.env,
         ...hostEnv,
+        SITEINDEX_TEST_HOST_FILE: hostFile,
+        SITEINDEX_TEST_HOST_BARRIER: publicationBarrier,
         SITEINDEX_TEST_LOCK_ROOT: project,
         SITEINDEX_TEST_LOCK_FILE: path.join(project, PATHS.lock),
       };
     });
 
-    // The barrier synchronizes entry into host identity initialization. It does not force both
-    // processes into the internal read-missing-to-exclusive-create interval without a runtime hook.
     const hostIds = await runBarrierChildScripts([source, source], coreDirectory, childEnvs);
 
     expect(new Set(hostIds).size).toBe(1);
     expect(hostIds[0]).toMatch(/^[0-9a-f-]{36}$/i);
-    expect(await readFile(hostIdentityFile(stateRoot), "utf8")).toBe(`${hostIds[0]}\n`);
+    expect(await readFile(hostFile, "utf8")).toBe(`${hostIds[0]}\n`);
+    expect((await readdir(path.dirname(hostFile))).sort()).toEqual(["lock-host-id"]);
+    expect((await readdir(publicationBarrier)).filter((name) => name.endsWith(".ready"))).toHaveLength(2);
+  }, 30_000);
+
+  it("recovers safely from crashes before and after host identity publication", async () => {
+    const root = await tempDir();
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const beforePath = path.join(root, "before-publish", "lock-host-id");
+    await mkdir(path.dirname(beforePath), { recursive: true });
+    const beforeSource = [
+      'import { readOrCreateLocalHostId } from "./src/io/runner-lock.ts";',
+      'await readOrCreateLocalHostId(process.env.SITEINDEX_TEST_HOST_FILE, { beforePublish: async () => process.exit(71) });',
+    ].join("\n");
+
+    await expect(runChildScript(beforeSource, coreDirectory, { ...process.env, SITEINDEX_TEST_HOST_FILE: beforePath }))
+      .rejects.toThrow(/Lock identity child exited \(71 \/ null\)/);
+    await expect(readFile(beforePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(path.dirname(beforePath))).toEqual(expect.arrayContaining([expect.stringMatching(/^\.lock-host-id\.tmp-/)]));
+
+    const beforeRecovery = await readOrCreateLocalHostId(beforePath);
+    expect(beforeRecovery).toMatch(/^[0-9a-f-]{36}$/i);
+    await expect(readFile(beforePath, "utf8")).resolves.toBe(`${beforeRecovery}\n`);
+
+    const afterPath = path.join(root, "after-publish", "lock-host-id");
+    await mkdir(path.dirname(afterPath), { recursive: true });
+    const afterSource = [
+      'import { readOrCreateLocalHostId } from "./src/io/runner-lock.ts";',
+      'await readOrCreateLocalHostId(process.env.SITEINDEX_TEST_HOST_FILE, { afterPublish: async () => process.exit(72) });',
+    ].join("\n");
+
+    await expect(runChildScript(afterSource, coreDirectory, { ...process.env, SITEINDEX_TEST_HOST_FILE: afterPath }))
+      .rejects.toThrow(/Lock identity child exited \(72 \/ null\)/);
+    const afterPublished = (await readFile(afterPath, "utf8")).trim();
+    expect(afterPublished).toMatch(/^[0-9a-f-]{36}$/i);
+    await expect(readOrCreateLocalHostId(afterPath)).resolves.toBe(afterPublished);
+    await expect(readFile(afterPath, "utf8")).resolves.toBe(`${afterPublished}\n`);
   }, 30_000);
 
   it("fails closed on a partial local identity left by a crash and documents safe reset behavior", async () => {
