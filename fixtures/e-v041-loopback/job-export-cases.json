@@ -1,0 +1,170 @@
+{
+  "fixture_version": "siteindex-e-v041-media-export-v1",
+  "evidence_scope": "fixture-only; tests below do not invoke SiteIndex Job, Core, CLI, Desktop IPC, or UI",
+  "synthetic_project": {
+    "project_id": "PROJECT-SYNTHETIC-01",
+    "domain": "synthetic-shop.test",
+    "layout": "legacy",
+    "date": "2026-11-11"
+  },
+  "media_job_cases": [
+    {
+      "id": "MEDIA-401-after-confirmed-item",
+      "request_skus": ["SYN-M001", "SYN-M002", "SYN-M003"],
+      "fake_wordpress": { "media_post_statuses": [201, 401] },
+      "fixture_probe_posts": ["SYN-M001", "SYN-M002"],
+      "expected_fixture_responses": [201, 401],
+      "core_acceptance_oracle": {
+        "media_batch_state": "interrupted",
+        "confirmed": ["SYN-M001", "SYN-M002"],
+        "media_error_code": "WP_AUTH_FAILED",
+        "unknown": [],
+        "not_started": ["SYN-M003"]
+      }
+    },
+    {
+      "id": "MEDIA-403-after-confirmed-item",
+      "request_skus": ["SYN-M011", "SYN-M012", "SYN-M013"],
+      "fake_wordpress": { "media_post_statuses": [201, 403] },
+      "fixture_probe_posts": ["SYN-M011", "SYN-M012"],
+      "expected_fixture_responses": [201, 403],
+      "core_acceptance_oracle": {
+        "media_batch_state": "interrupted",
+        "confirmed": ["SYN-M011", "SYN-M012"],
+        "media_error_code": "WP_FORBIDDEN",
+        "unknown": [],
+        "not_started": ["SYN-M013"]
+      }
+    },
+    {
+      "id": "MEDIA-ordinary-partial-then-continue",
+      "request_skus": ["SYN-M021", "SYN-M022", "SYN-M023"],
+      "fake_wordpress": { "media_post_statuses": [201, 503, 201] },
+      "fixture_probe_posts": ["SYN-M021", "SYN-M022", "SYN-M023"],
+      "expected_fixture_responses": [201, 503, 201],
+      "core_acceptance_oracle": {
+        "confirmed": ["SYN-M021", "SYN-M022", "SYN-M023"],
+        "unknown": [],
+        "not_started": [],
+        "job_status": "partial"
+      }
+    },
+    {
+      "id": "MEDIA-save-then-disconnect",
+      "request_skus": ["SYN-M031", "SYN-M032", "SYN-M033"],
+      "fake_wordpress": { "disconnect_after_persist": 1 },
+      "fixture_probe_post": "SYN-M031",
+      "fixture_probe_lookup_slug": "syn-m031-main",
+      "core_acceptance_oracle": {
+        "media_batch_state": "outcome_unknown",
+        "confirmed": [],
+        "unknown": ["SYN-M031"],
+        "not_started": ["SYN-M032", "SYN-M033"],
+        "retry_rule": "GET by the deterministic media slug first; if found, recover as reused instead of POSTing blindly"
+      }
+    },
+    {
+      "id": "MEDIA-same-day-rerun-and-deduplicate-request",
+      "request_skus": ["SYN-M041", "SYN-M041", "SYN-M042"],
+      "expected_deduplicated_request_order": ["SYN-M041", "SYN-M042"],
+      "same_day_ledger_fixture": "media-export/same-day-sku-media.csv",
+      "same_day_existing_ledger_skus": ["SYN-M041", "SYN-M042"],
+      "core_acceptance_oracle": {
+        "media_results": [
+          { "sku": "SYN-M041", "status": "skipped_has_url" },
+          { "sku": "SYN-M042", "status": "skipped_has_url" }
+        ],
+        "repeat_run_posts": 0,
+        "ledger_duplicate_rows": 0
+      }
+    },
+    {
+      "id": "MEDIA-legacy-ledger-read-before-first-write",
+      "input_fixture": "media-export/legacy-sku-media.csv",
+      "expected_extended_fixture": "media-export/extended-sku-media.expected.csv",
+      "core_acceptance_oracle": {
+        "read_only_export_ledger_bytes_unchanged": true,
+        "first_media_write_appends_columns": ["media_id", "source_hash"],
+        "legacy_rows_preserve_original_columns": true,
+        "legacy_rows_new_columns_empty": true
+      }
+    },
+    {
+      "id": "MEDIA-old-run-log-is-not-an-empty-recovery-result",
+      "input_fixture": "media-export/legacy-media-run.jsonl",
+      "recovery_fields_expected_absent": ["media_requested_skus", "media_batch_state", "media_results", "media_unknown_skus", "media_not_started_skus"],
+      "core_acceptance_oracle": {
+        "recovery_state": "unrecoverable",
+        "infer_empty_media_results": false,
+        "rewrite_legacy_line_on_read": false
+      }
+    },
+    {
+      "id": "SEC-fake-credential-canary",
+      "generated_at_test_time": true,
+      "surfaces_to_scan": ["job-result", "run-log", "ipc-result", "cli-output", "export-output", "diagnostic-log"],
+      "core_acceptance_oracle": {
+        "canary_plaintext_matches": 0,
+        "scanner_output_contains_values": false
+      }
+    }
+  ],
+  "export_index_cases": [
+    {
+      "id": "EXP-synthetic-golden-input",
+      "inputs": ["media-export/views-products.jsonl", "media-export/legacy-sku-media.csv", "media-export/sku-tags.csv"],
+      "expected_output": "media-export/sku-index.expected.md",
+      "expected_output_sha256": "1a48da2d012900c1aca45dbf473e46e346f2b817d70d277ae5f891f82a3881e7",
+      "expected_safe_relative_path": "index/edm/sku-index.md",
+      "fixture_assertions": ["generation marker", "canonical SKU order", "pipe escaping", "main ledger image before feed image", "WebP omitted", "no-image label", "no discount-tier assertion"]
+    },
+    {
+      "id": "EXP-same-day-rerun",
+      "target_initially_absent": true,
+      "same_input_and_same_day": true,
+      "core_acceptance_oracle": { "first_status": "created", "second_status": "unchanged", "output_bytes_equal": true, "second_write": false }
+    },
+    {
+      "id": "EXP-legacy-ledger-is-read-only",
+      "ledger": "media-export/legacy-sku-media.csv",
+      "expected_ledger_sha256": "64293e4db777851f2de6645fbafc91cb5ce23266251b0469923094d6d6405957",
+      "core_acceptance_oracle": { "before_bytes_equal_after_export": true, "no_header_migration_during_export": true }
+    },
+    {
+      "id": "EXP-unmarked-target-conflict",
+      "target_fixture": "media-export/conflict-unmarked.md",
+      "core_acceptance_oracle": { "error_code": "EDM_INDEX_CONFLICT", "target_bytes_unchanged": true }
+    },
+    {
+      "id": "EXP-target-edited-after-read",
+      "target_fixture": "media-export/conflict-marked-edited.md",
+      "mutation_window": "after initial read and before commit revalidation",
+      "core_acceptance_oracle": { "error_code": "EDM_INDEX_CONFLICT", "external_edit_preserved": true }
+    },
+    {
+      "id": "EXP-target-created-after-absence-check",
+      "target_fixture": "media-export/conflict-external-create.md",
+      "mutation_window": "after initial absence check and before create commit",
+      "core_acceptance_oracle": { "error_code": "EDM_INDEX_CONFLICT", "external_file_preserved": true }
+    },
+    {
+      "id": "EXP-write-completed-response-lost",
+      "target_fixture": "media-export/sku-index.expected.md",
+      "core_acceptance_oracle": {
+        "error_code": "EDM_EXPORT_OUTCOME_UNKNOWN",
+        "blind_retry": false,
+        "next_action": "reread target and validate marker, current bytes, and expected output before deciding whether to write"
+      }
+    },
+    {
+      "id": "EXP-path-escape-or-reparse-point",
+      "synthetic_path_token": "<OUTSIDE_PROJECT>",
+      "core_acceptance_oracle": { "fail_closed": true, "outside_target_modified": false, "result": "conflict-or-unknown" }
+    }
+  ],
+  "notes": [
+    "The JSON records future Core/Desktop acceptance oracles. The fixture tests only validate these inputs and the fake service contract.",
+    "Discount tier selection and rounding remain unspecified by DATA_SPEC; the golden output intentionally has no price assertion.",
+    "A fixture-level saved object or expected status is not evidence that SiteIndex produced it."
+  ]
+}
