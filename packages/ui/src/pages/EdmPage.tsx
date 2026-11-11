@@ -10,6 +10,7 @@ import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPil
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { edmMediaJobMonitor, type EdmMediaRunSnapshot } from "./edm/media-job-monitor";
+import { EdmWorkflowPrototype } from "./edm/workflow-prototype";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
@@ -326,6 +327,7 @@ export function EdmPage() {
           return <li key={row.sku}><code>{row.sku}</code><Chip tone={mediaStatusTones[state.status]}>{mediaStatusLabels[state.status]}（模拟）</Chip>{state.reason && <small>{state.reason}</small>}</li>;
         })}
       </ul>}
+      <EdmWorkflowPrototype key={id} projectName={project.name} projectSkuCount={summary?.total ?? 0} selectedSkus={selectedRows.map((row) => row.sku)} />
       </div>
     </div> : mediaCapability.available ? <div className="si-edm-media-demo">
       <Notice tone="info" title="图片 URL 准备将由 Core 逐 SKU 处理。">已选择 {selectedRows.length} 个 SKU；台账已有 URL、Feed JPG/PNG 及其他图片格式会按 Core 返回的逐 SKU 结果显示。</Notice>
