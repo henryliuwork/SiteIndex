@@ -6,6 +6,7 @@ const workflow = readFileSync(
   new URL("../../../.github/workflows/e-windows-v040-acceptance.yml", import.meta.url),
   "utf8",
 );
+const releaseWorkflow = readFileSync(new URL("../../../.github/workflows/release.yml", import.meta.url), "utf8");
 const acceptanceScript = readFileSync(new URL("../scripts/e-windows-v040-acceptance.mjs", import.meta.url), "utf8");
 
 describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
@@ -27,13 +28,23 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(workflow).toContain("candidate_release_asset_sha256:");
     expect(workflow).toContain("$latest.tag_name -cne $tag");
     expect(workflow).toContain("Candidate version tag does not resolve to the supplied source commit.");
+    expect(workflow).toContain('$_.name -ceq "package (windows-latest, win)"');
+    expect(workflow).toContain('$_.name -ceq "verify-release-assets"');
+    expect(workflow).toContain("actions/runs/$($releaseRun[0].id)/artifacts");
+    expect(workflow).toContain("actions/download-artifact@v8");
+    expect(workflow).toContain("digest-mismatch: error");
     expect(workflow).toContain('Where-Object { $_.name -ceq "latest.yml" }');
     expect(workflow).toContain('$feedText -notmatch "(?m)^version:');
     expect(workflow).toContain('$feedText -notmatch "(?m)^\\s*url:');
     expect(workflow).toContain("$actualSha512 -cne $feedSha512Match.Groups[1].Value");
     expect(acceptanceScript).toContain("candidateReleaseCommit === report.candidateSourceCommit");
     expect(acceptanceScript).toContain("report.candidateReleaseAssetSha256 === report.candidateInstallerSha256");
+    expect(acceptanceScript).toContain("report.candidateReleaseArtifactExeSha256 === report.candidateInstallerSha256");
     expect(acceptanceScript).toContain("OLD_RELEASE.version");
+    expect(acceptanceScript).toContain("report.updaterRestart");
+    expect(acceptanceScript).toContain("installedExecutableVersion()");
+    expect(acceptanceScript).toContain("restarted candidate app continues to use the isolated temporary profile");
+    expect(releaseWorkflow).toContain("retention-days: 30");
   });
 
   it("drives the packaged update API and checks the re-launched app version", () => {
@@ -57,5 +68,8 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain("LOCALAPPDATA: LOCAL_APP_DATA_ROOT");
     expect(acceptanceScript).toContain("no real credential vault read or written");
     expect(acceptanceScript).not.toContain("process.env.LOCALAPPDATA");
+    expect(acceptanceScript).toContain('process.env.GITHUB_ACTIONS !== "true"');
+    expect(acceptanceScript).toContain("before its UI target appeared");
+    expect(acceptanceScript).toContain("rendererDiagnostics.targets");
   });
 });

@@ -409,6 +409,21 @@ jobs:
             $tagObject = (Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/git/tags/$($tagObject.sha)" -Headers $headers).object
           }
           if ($tagObject.type -ne 'commit' -or $tagObject.sha -cne $expectedCommit) { throw "Candidate version tag does not resolve to the supplied source commit." }
+          $releaseWorkflow = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/actions/workflows/release.yml" -Headers $headers
+          $workflowRuns = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/actions/workflows/$($releaseWorkflow.id)/runs?event=push&head_sha=$expectedCommit&per_page=100" -Headers $headers
+          $releaseRun = @($workflowRuns.workflow_runs | Where-Object {
+            $_.head_branch -ceq $tag -and $_.head_sha -ceq $expectedCommit -and $_.status -ceq "completed" -and $_.conclusion -ceq "success"
+          } | Sort-Object -Property run_number -Descending | Select-Object -First 1)
+          if ($releaseRun.Count -ne 1) { throw "No successful tag-triggered Release workflow run is bound to the candidate commit." }
+          $releaseJobs = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/actions/runs/$($releaseRun[0].id)/jobs?per_page=100" -Headers $headers
+          $windowsPackageJob = @($releaseJobs.jobs | Where-Object { $_.name -ceq "package (windows-latest, win)" -and $_.conclusion -ceq "success" })
+          $assetVerificationJob = @($releaseJobs.jobs | Where-Object { $_.name -ceq "verify-release-assets" -and $_.conclusion -ceq "success" })
+          if ($windowsPackageJob.Count -ne 1 -or $assetVerificationJob.Count -ne 1) { throw "The candidate Release run did not pass Windows packaging and asset verification." }
+          $runArtifacts = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/actions/runs/$($releaseRun[0].id)/artifacts?per_page=100" -Headers $headers
+          $buildArtifact = @($runArtifacts.artifacts | Where-Object { $_.name -ceq "siteindex-win" -and -not $_.expired }) | Select-Object -First 1
+          if (-not $buildArtifact) { throw "The successful Release run has no retained siteindex-win build artifact." }
+          if ($buildArtifact.workflow_run.id -ne $releaseRun[0].id -or $buildArtifact.workflow_run.head_sha -cne $expectedCommit) { throw "The Windows build artifact does not match the candidate Release run commit." }
+          $buildArtifactDigest = ([string]$buildArtifact.digest -replace '^sha256:', '').ToLowerInvariant()
           $assetName = "SiteIndex-Setup-$version.exe"
           $asset = @($release.assets | Where-Object { $_.name -ceq $assetName }) | Select-Object -First 1
           $releaseDigest = ([string]$asset.digest -replace '^sha256:', '').ToLowerInvariant()
@@ -431,8 +446,32 @@ jobs:
           "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_SOURCE_COMMIT=$($tagObject.sha)" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_RELEASE_RUN_ID=$($releaseRun[0].id)" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_ID=$($buildArtifact.id)" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_SHA256=$buildArtifactDigest" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_UPDATE_METADATA_VERIFIED=true" >> $env:GITHUB_ENV
-          Write-Output "Published v$version Release tag, source commit, asset ID, GitHub digest, latest.yml version, installer filename, SHA512, and downloaded EXE verified."
+          Write-Output "Bound v$version to successful Release run $($releaseRun[0].id), Windows build artifact $($buildArtifact.id), tag commit, Release asset ID/digest, and latest.yml metadata."
+      - name: Download exact Windows artifact from the candidate Release run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.hosted_update }}
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_ID }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SITEINDEX_CANDIDATE_RELEASE_RUN_ID }}
+          path: ${{ runner.temp }}/siteindex-candidate-release-build
+          digest-mismatch: error
+      - name: Compare Release asset with its source workflow artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.hosted_update }}
+        shell: pwsh
+        run: |
+          $version = $env:SITEINDEX_CANDIDATE_VERSION
+          $artifactPath = Join-Path $env:RUNNER_TEMP "siteindex-candidate-release-build/SiteIndex-Setup-$version.exe"
+          if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) { throw "The verified siteindex-win artifact does not contain the expected candidate installer." }
+          $artifactExeSha256 = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($artifactExeSha256 -cne $env:SITEINDEX_CANDIDATE_RELEASE_ASSET_SHA256) { throw "The published Release EXE differs from the installer in its successful Release workflow artifact." }
+          "SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_EXE_SHA256=$artifactExeSha256" >> $env:GITHUB_ENV
+          Write-Output "Release EXE SHA256 matches the installer from the successful tag-triggered Windows packaging artifact."
       - name: Install, upgrade, and exercise packaged IPC
         shell: pwsh
         run: |
