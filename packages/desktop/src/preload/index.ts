@@ -24,5 +24,6 @@ contextBridge.exposeInMainWorld(
     process.env.SITEINDEX_CREDENTIAL_IPC_TRACE === "1"
       ? (method) => console.info(`__SITEINDEX_CREDENTIAL_IPC__ ${method}`)
       : undefined,
+    process.env.SITEINDEX_PROFILE_PATH_TRACE === "1",
   ),
 );

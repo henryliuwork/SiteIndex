@@ -81,9 +81,45 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain("await prepareIsolatedProfile()");
     expect(acceptanceScript).toContain("report.credentialIsolation.junctionEscapeRejected");
     expect(acceptanceScript).toContain("installerExeInRoot");
+    expect(acceptanceScript).toContain("const RUNNER_TEMP = process.env.RUNNER_TEMP");
+    expect(acceptanceScript).toContain('mkdtemp(path.join(RUNNER_TEMP, "siteindex-e-acceptance-"))');
+    expect(acceptanceScript).toContain("report.credentialIsolation.processExecutableContained");
+    expect(acceptanceScript).toContain("await verifyElectronProfileDiagnostics(page)");
+    expect(acceptanceScript).toContain("await scanCredentialCanaries()");
+    expect(acceptanceScript).toContain("matchedFileCount");
+    expect(acceptanceScript).toContain('Buffer.from(marker).toString("base64")');
+    expect(acceptanceScript).toContain("await removeIsolatedTestRoot()");
+    expect(acceptanceScript).toContain("report.credentialIsolation.junctionCleanupVerified");
+    expect(acceptanceScript).toContain(
+      "Refusing recursive cleanup because the test root is no longer contained in RUNNER_TEMP.",
+    );
+    expect(acceptanceScript).toContain("<FILE_URL>");
+    expect(acceptanceScript).toContain("<CREDENTIAL>");
+    expect(workflow).toContain("path: siteindex-e-windows-results/");
+    expect(workflow).not.toContain("SITEINDEX_BASE_INSTALLER_PATH=");
+    expect(workflow).not.toContain("SITEINDEX_CANDIDATE_INSTALLER_PATH=");
+    expect(workflow).not.toContain("SITEINDEX_ACCEPTANCE_OUTPUT=$(Join-Path");
     expect(acceptanceScript).toContain('process.env.GITHUB_ACTIONS !== "true"');
     expect(acceptanceScript).toContain("before its UI target appeared");
     expect(acceptanceScript).toContain("rendererDiagnostics.targets");
+  });
+
+  it("sets and verifies the actual packaged Electron profile before touching app data", () => {
+    const main = readFileSync(new URL("../src/main/index.ts", import.meta.url), "utf8");
+    const preload = readFileSync(new URL("../src/preload/window-api.ts", import.meta.url), "utf8");
+    const diagnostic = readFileSync(new URL("../src/main/profile-path-diagnostic.ts", import.meta.url), "utf8");
+
+    expect(main).toContain('app.setPath("appData", appDataPath)');
+    expect(main).toContain('app.setPath("userData", join(appDataPath, "SiteIndex"))');
+    expect(main).toContain("SITEINDEX_PROFILE_PATHS");
+    expect(main).toContain("JSON.stringify(profilePaths)");
+    expect(main.indexOf("profilePathsAreContained(profilePaths)")).toBeLessThan(
+      main.indexOf('createSettingsStore(join(app.getPath("appData"), "SiteIndex"))'),
+    );
+    expect(preload).toContain("si:desktop.profilePathDiagnostics");
+    expect(diagnostic).toContain("realpath");
+    expect(diagnostic).toContain("noReparse");
+    expect(diagnostic).not.toContain("console.");
   });
 
   it("runs two-site credential isolation through the packaged UI and reports only aliases, states, method counts and canary counts", () => {
@@ -182,8 +218,12 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
       "Packaged acceptance must run on a GitHub-hosted Actions Windows runner to isolate the complete process profile safely",
     );
     expect(acceptanceScript).toContain("await prepareIsolatedProfile()");
-    expect(acceptanceScript).toContain("if (await exists(APP_DATA_DIR))");
-    expect(acceptanceScript).toContain("await rm(APP_DATA_DIR, { recursive: true, force: true");
+    expect(acceptanceScript).toContain("const before = await inspectContainedPath(RUNNER_TEMP, TEST_ROOT)");
+    expect(acceptanceScript).toContain("await rm(TEST_ROOT, { recursive: true, force: true");
+    expect(acceptanceScript).not.toContain("await rm(APP_DATA_DIR, { recursive: true, force: true");
+    expect(acceptanceScript).toContain(
+      'if (await exists(TEST_ROOT)) throw new Error("The isolated test root remains after cleanup.")',
+    );
   });
 
   it("does not claim an update until the updater has restarted the candidate", async () => {

@@ -175,3 +175,10 @@
 - [x] #422：preload 暴露 `media.prepare` 路由；主进程仍在 `isMediaJobReady: false` 下返回 `NOT_IMPLEMENTED`，`media.prepare` 继续留在 `PENDING_HANDLERS`，Core 能力就绪前 UI 保持关闭。
 - [x] #423：preload 暴露 `edm.exportIndex`；Desktop 先检查显式 readiness 门禁，再转发到 Core 可选方法。main readiness 当前固定为 false，即使 Core 暴露同名方法仍返回 `NOT_IMPLEMENTED`；尚未清理 `PENDING_HANDLERS`，UI 仍关闭导出入口。
 - [ ] #423：A 尚未实现 Core SKU 清单生成；Desktop 不生成文件、不返回虚构成功状态。
+
+## #440 · Windows hosted 安装验收隔离复核
+
+- [x] Windows runner AppData shell-folder 重定向、containment/reparse 检查、fail-closed registry 查询与反序恢复测试；恢复失败时拒绝删除隔离 profile。
+- [x] 隔离凭据扫描仅记录匹配类别/计数；精确凭据 region 查询增加有界稳定等待，持续缺失/重复及超时边界仍失败。
+- [x] head `4962f466f2d179d6ff044e28f5e281afe18aa008`（基于 #435 合并前的 `08804a5`）Windows packaged acceptance run `43075389702` 通过 71/71，包含 17 次状态、3 次保存、2 次删除、4 次重启，209 个隔离文件零凭据命中。此结果不是当前重基线 head 的验收结论。
+- [ ] #435 合并后已重基线到 main `de157b92c46fdfd2a465e7f50b4ccd3a0aef634a`；新 head 的三系统 CI 与 packaged acceptance 完成前，不把旧 run 作为当前通过证据。

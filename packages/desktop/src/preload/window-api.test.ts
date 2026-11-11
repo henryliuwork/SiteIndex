@@ -52,4 +52,16 @@ describe("Desktop window bridge", () => {
     expect(JSON.stringify(trace.mock.calls)).not.toContain("synthetic-password");
     expect(JSON.stringify(trace.mock.calls)).not.toContain("example.invalid");
   });
+
+  it("exposes boolean-only profile path diagnostics only when the hosted runner enables them", async () => {
+    const invoke = vi.fn(async () => ({ userData: { withinRoot: true, noReparse: true } }));
+    const normalApi = createWindowApi({ send: vi.fn(), invoke });
+    expect(normalApi.getProfilePathDiagnostics).toBeUndefined();
+
+    const acceptanceApi = createWindowApi({ send: vi.fn(), invoke }, undefined, true);
+    await expect(acceptanceApi.getProfilePathDiagnostics?.()).resolves.toEqual({
+      userData: { withinRoot: true, noReparse: true },
+    });
+    expect(invoke).toHaveBeenCalledWith("si:desktop.profilePathDiagnostics");
+  });
 });
