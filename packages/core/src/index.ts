@@ -26,6 +26,7 @@ export { applyFeedOverrides, FeedError, parseFeed, readFeeds, toSnapshot, writeS
 export type { FeedItem, FeedSiteConfig, FeedSnapshot, SnapshotResult, StockStatus } from "./crawl/gmc-feed";
 export { runDaily, runDailyFromFile } from "./jobs/daily";
 export type { DailyOptions, DailyResult, DailySnapshot } from "./jobs/daily";
+export type { MediaJobCheckpoint } from "./jobs/media";
 export { buildViews } from "./views/build";
 export type { BuildViewsOptions, BuildViewsResult } from "./views/build";
 export { createCoreService } from "./service";

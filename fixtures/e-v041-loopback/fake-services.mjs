@@ -6,6 +6,7 @@ const DEFAULT_GRAPHQL_BODY = { data: { product: { stock_status: "IN_STOCK" } } }
 const WP_USER_ROUTE = "GET /wp-json/wp/v2/users/me";
 const WP_MEDIA_ROUTE = "GET /wp-json/wp/v2/media";
 const WP_MEDIA_POST_ROUTE = "POST /wp-json/wp/v2/media";
+const WP_MEDIA_UPDATE_ROUTE = "POST /wp-json/wp/v2/media/:id";
 
 function increment(counts, key) {
   counts[key] = (counts[key] ?? 0) + 1;
@@ -124,6 +125,7 @@ function getRoute(method, pathname) {
   if (method === "GET" && pathname === "/wp-json/wp/v2/users/me") return WP_USER_ROUTE;
   if (method === "GET" && pathname === "/wp-json/wp/v2/media") return WP_MEDIA_ROUTE;
   if (method === "POST" && pathname === "/wp-json/wp/v2/media") return WP_MEDIA_POST_ROUTE;
+  if (method === "POST" && /^\/wp-json\/wp\/v2\/media\/\d+$/u.test(pathname)) return WP_MEDIA_UPDATE_ROUTE;
   return "OTHER";
 }
 
@@ -287,6 +289,7 @@ export async function createFakeWordPressService({
   currentUserStatus = 200,
   mediaGetStatus = 200,
   mediaPostStatus = 201,
+  mediaMetaStatus = 200,
   mediaPostStatuses,
   uploadFilesCapability = true,
   rateLimitAfter = Number.POSITIVE_INFINITY,
@@ -352,6 +355,27 @@ export async function createFakeWordPressService({
       const slug = normalizeSlug(url.searchParams.get("slug"));
       const item = slug ? mediaBySlug.get(slug) : undefined;
       sendJson(response, 200, item ? [item] : []);
+      return;
+    }
+
+    if (route === WP_MEDIA_UPDATE_ROUTE) {
+      recorder.record(route, mediaMetaStatus);
+      if (mediaMetaStatus !== 200) {
+        sendWpError(response, mediaMetaStatus);
+        return;
+      }
+      const mediaId = Number(url.pathname.split("/").at(-1));
+      const media = [...mediaBySlug.values()].find((item) => item.id === mediaId);
+      if (!media) {
+        sendJson(response, 404, { error: "not_found" });
+        return;
+      }
+      let metadata = {};
+      try { metadata = JSON.parse(body.toString("utf8")); }
+      catch { sendJson(response, 400, { error: "invalid_metadata" }); return; }
+      media.title = typeof metadata.title === "string" ? metadata.title : "";
+      media.alt_text = typeof metadata.alt_text === "string" ? metadata.alt_text : "";
+      sendJson(response, 200, media);
       return;
     }
 

@@ -1,4 +1,5 @@
 import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -106,6 +107,7 @@ import { repairProjectFile, validateProjectFiles } from "../validate";
 import { launchChromium, type BrowserLauncher } from "../browser/automation";
 import { runDesign } from "../jobs/design";
 import { runIndexCheck } from "../jobs/index-check";
+import { runMediaJob, type WordPressCredential } from "../jobs/media";
 import {
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,
@@ -126,6 +128,10 @@ export interface CoreServiceContext {
   browserExecutablePath?: string | null;
   /** Injectable launcher for tests; production uses playwright-core Chromium. */
   browserLauncher?: BrowserLauncher;
+  /** 本机凭据仅由 Desktop 主进程注入后台 Job；不得进入请求、日志或返回值。 */
+  wordpressCredential?: WordPressCredential;
+  /** 测试专用：允许 127.0.0.1 假服务使用 HTTP；生产保持 HTTPS-only。 */
+  testOnlyAllowLoopbackHttp?: boolean;
 }
 
 /**
@@ -1079,6 +1085,29 @@ function jobFailure(req: JobRequest, runId: string, exitCode: number, summary: s
   return { runId, job: req.job, status: "failed", exitCode, summary, errors };
 }
 
+function requestedMediaSkus(req: JobRequest): string[] {
+  if (req.job !== "media" || !Array.isArray(req.skus)) return [];
+  const seen = new Set<string>();
+  const requested: string[] = [];
+  for (const sku of req.skus) {
+    if (typeof sku !== "string" || !sku.trim() || seen.has(sku)) continue;
+    seen.add(sku);
+    requested.push(sku);
+  }
+  return requested;
+}
+
+function mediaNotStartedFields(req: JobRequest) {
+  const requested = requestedMediaSkus(req);
+  return {
+    media_requested_skus: requested,
+    media_batch_state: "interrupted" as const,
+    media_results: [],
+    media_unknown_skus: [],
+    media_not_started_skus: requested,
+  };
+}
+
 function thrownExitCode(error: unknown): number {
   if (typeof error === "object" && error !== null && "exitCode" in error && typeof error.exitCode === "number") return error.exitCode;
   if (isSiteIndexError(error)) {
@@ -1477,14 +1506,20 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       await access(projectPath);
       config = await readSiteConfig(projectPath);
       if (requestedDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
-        return jobFailure(req, `${requestedDate}-${req.job}`, EXIT.BAD_ARGS, "Job 日期格式无效。", [requestedDate]);
+        const failure = jobFailure(req, `${requestedDate}-${req.job}`, EXIT.BAD_ARGS, "Job 日期格式无效。", [requestedDate]);
+        return req.job === "media" ? { ...failure, ...mediaNotStartedFields(req) } : failure;
       }
       requestedDate ??= localDate(config.timezone);
     } catch (error) {
-      return jobFailure(req, `${new Date().toISOString().slice(0, 10)}-${req.job}`, thrownExitCode(error),
+      const failure = jobFailure(req, `${new Date().toISOString().slice(0, 10)}-${req.job}`, thrownExitCode(error),
         isSiteIndexError(error) ? error.message : "项目不可读。", [error instanceof Error ? error.message : String(error)]);
+      return req.job === "media"
+        ? { ...failure, summary: "媒体项目无法读取或配置无效，未启动处理。", errors: ["媒体项目无法读取或配置无效，未启动处理。"], ...mediaNotStartedFields(req) }
+        : failure;
     }
-    const runId = `${requestedDate}-${req.job}`;
+    const runId = req.job === "media"
+      ? `${requestedDate}-media-${randomUUID()}`
+      : `${requestedDate}-${req.job}`;
     if (!(JOB_NAMES as readonly string[]).includes(req.job)) {
       return jobFailure(req, runId, EXIT.BAD_ARGS, "不支持的 Job。", [String(req.job)]);
     }
@@ -1495,8 +1530,15 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     } catch (error) {
       const code = thrownExitCode(error);
       const message = isSiteIndexError(error) ? error.message : "无法检查项目执行设备。";
-      if (code === EXIT.NOT_RUNNER) return { runId, job: req.job, status: "skipped", exitCode: code, summary: message };
-      return jobFailure(req, runId, code, message, [message]);
+      if (code === EXIT.NOT_RUNNER) {
+        const safeMessage = req.job === "media" ? "此设备不是项目执行设备，媒体任务未开始。" : message;
+        const skipped: JobResult = { runId, job: req.job, status: "skipped", exitCode: code, summary: safeMessage };
+        return req.job === "media" ? { ...skipped, ...mediaNotStartedFields(req) } : skipped;
+      }
+      const failure = jobFailure(req, runId, code, message, [message]);
+      return req.job === "media"
+        ? { ...failure, summary: "无法启动媒体任务。", errors: ["无法启动媒体任务。"], ...mediaNotStartedFields(req) }
+        : failure;
     }
 
     const startedAt = zonedTimestamp(config.timezone);
@@ -1706,6 +1748,39 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             runId, job: req.job, status: indexCheck.captcha ? "partial" : "ok", exitCode: EXIT.OK, summary,
             counts: { checked: indexCheck.checked, indexed: indexCheck.indexed, not_indexed: indexCheck.not_indexed, unchecked: indexCheck.unchecked },
           };
+        } else if (req.job === "media") {
+          progress(5, "media", "正在准备商品图片");
+          const snapshot = await load(executionPath);
+          const media = await runMediaJob({
+            runId,
+            checkpointPath: path.join(executionPath, executionPaths.jobLogsDir, `${runId}.media.json`),
+            mediaLedgerPath: path.join(executionPath, executionPaths.skuMedia),
+            config,
+            skus: snapshot.skus,
+            latest: snapshot.latest,
+            mediaLedger: snapshot.skuMedia,
+            requestedSkus: requestedMediaSkus(req),
+            credential: ctx.wordpressCredential,
+            date: requestedDate,
+            rateLimitMs: config.crawl.rate_limit_ms,
+            allowLoopbackHttpForTests: ctx.testOnlyAllowLoopbackHttp,
+            onProgress: (done, total) => progress(total ? 10 + Math.round(done * 80 / total) : 90, "media", "已处理 " + done + " / " + total + " 个商品图片请求。"),
+          });
+          jobResult = {
+            runId,
+            job: req.job,
+            status: media.status,
+            exitCode: media.status === "failed" ? EXIT.SOURCE_FAILED : EXIT.OK,
+            summary: media.summary,
+            counts: media.counts,
+            ...(media.errors?.length ? { errors: media.errors } : {}),
+            media_requested_skus: media.media_requested_skus,
+            media_batch_state: media.media_batch_state,
+            media_results: media.media_results,
+            media_unknown_skus: media.media_unknown_skus,
+            media_not_started_skus: media.media_not_started_skus,
+            ...(media.media_error_code ? { media_error_code: media.media_error_code } : {}),
+          };
         } else if (req.job === "validate") {
           progress(35, "validate", "正在校验项目文件");
           const validation = await validateProjectFiles(executionPath, { trigger: req.trigger });
@@ -1747,6 +1822,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             ...(jobResult.counts ? { counts: jobResult.counts } : {}),
             ...(jobResult.errors ? { errors: jobResult.errors } : {}),
             ...(req.job === "init" ? { steps: jobResult.steps ?? initSteps } : {}),
+            ...(req.job === "media" ? {
+              media_requested_skus: jobResult.media_requested_skus,
+              media_batch_state: jobResult.media_batch_state,
+              media_results: jobResult.media_results,
+              media_unknown_skus: jobResult.media_unknown_skus,
+              media_not_started_skus: jobResult.media_not_started_skus,
+              ...(jobResult.media_error_code ? { media_error_code: jobResult.media_error_code } : {}),
+            } : {}),
           };
           await appendRunLog(projectPath, record);
         }
@@ -1760,7 +1843,38 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const exitCode = thrownExitCode(error);
       const message = isSiteIndexError(error) ? error.message : error instanceof Error ? error.message : String(error);
       if (exitCode === EXIT.LOCKED || exitCode === EXIT.NOT_RUNNER) {
-        return { runId, job: req.job, status: "skipped", exitCode, summary: message, errors: [message] };
+        const safeMessage = req.job === "media"
+          ? exitCode === EXIT.NOT_RUNNER ? "此设备不是项目执行设备，媒体任务未开始。" : "项目当前无法启动媒体任务。"
+          : message;
+        const skipped: JobResult = { runId, job: req.job, status: "skipped", exitCode, summary: safeMessage, errors: [safeMessage] };
+        return req.job === "media" ? { ...skipped, ...mediaNotStartedFields(req) } : skipped;
+      }
+      if (req.job === "media") {
+        const requested = requestedMediaSkus(req);
+        const safeMessage = "媒体任务中断，未确认的商品图片结果已标记为未知。";
+        const failedResult: JobResult = {
+          runId,
+          job: req.job,
+          status: requested.length ? "partial" : "failed",
+          exitCode,
+          summary: safeMessage,
+          errors: [safeMessage],
+          media_requested_skus: requested,
+          media_batch_state: "outcome_unknown",
+          media_results: [],
+          media_unknown_skus: requested,
+          media_not_started_skus: [],
+        };
+        try {
+          await appendRunLog(projectPath, {
+            run_id: runId, job: req.job, trigger: req.trigger, device_name: ctx.deviceName ?? "SiteIndex",
+            started_at: startedAt, finished_at: zonedTimestamp(config.timezone), status: "partial", errors: [safeMessage],
+            media_requested_skus: requested, media_batch_state: "outcome_unknown", media_results: [],
+            media_unknown_skus: requested, media_not_started_skus: [],
+          });
+        } catch { /* 保留可返回的未知结果 */ }
+        progress(null, "failed", safeMessage, "error");
+        return failedResult;
       }
       const failedResult = jobFailure(req, runId, exitCode, req.job === "daily" ? `每日同步失败：${message}` : "Job 执行失败。", [message]);
       const failureSteps = req.job === "init" ? INIT_STEPS.map((key) => initSteps.find((step) => step.key === key) ?? {
