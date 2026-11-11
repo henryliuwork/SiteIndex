@@ -5,9 +5,17 @@ const REGISTRY_KEYS = [
 
 function registryValueResult(result, key, name) {
   if (result.error) throw new Error("Could not inspect the runner's roaming AppData registry value.");
-  if (result.status !== 0) return { key, name, exists: false, type: null, value: null };
-  const line = result.stdout.split(/\r?\n/u).find((entry) => new RegExp(`^\\s*${name}\\s+REG_\\w+\\s+`).test(entry));
-  if (!line) return { key, name, exists: false, type: null, value: null };
+  if (result.status !== 0) {
+    const output = `${result.stderr ?? ""}\n${result.stdout ?? ""}`;
+    if (/unable to find.*(?:registry key|value)|specified registry key or value/iu.test(output)) {
+      return { key, name, exists: false, type: null, value: null };
+    }
+    throw new Error("Could not inspect the runner's roaming AppData registry value.");
+  }
+  const line = (result.stdout ?? "")
+    .split(/\r?\n/u)
+    .find((entry) => new RegExp(`^\\s*${name}\\s+REG_\\w+\\s+`).test(entry));
+  if (!line) throw new Error("Could not parse the runner's roaming AppData registry value.");
   const match = new RegExp(`^\\s*${name}\\s+(REG_\\w+)\\s+(.*)$`).exec(line);
   if (!match) throw new Error("Could not parse the runner's roaming AppData registry value.");
   return { key, name, exists: true, type: match[1], value: match[2] };
@@ -61,9 +69,17 @@ export function createWindowsAppDataRedirect({ appDataRoot, runRegistry }) {
   return {
     redirect,
     restore,
-    get redirected() { return redirected; },
-    get restored() { return restored; },
-    get hasChanges() { return originals.length > 0; },
-    get canRemoveProfileRoot() { return originals.length === 0 || restored; },
+    get redirected() {
+      return redirected;
+    },
+    get restored() {
+      return restored;
+    },
+    get hasChanges() {
+      return originals.length > 0;
+    },
+    get canRemoveProfileRoot() {
+      return originals.length === 0 || restored;
+    },
   };
 }

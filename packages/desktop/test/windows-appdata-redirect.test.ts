@@ -18,7 +18,11 @@ function fakeRegistry(options: { failWriteCall?: number; failRestoreKey?: string
       const current = values.get(key!);
       return current
         ? { status: 0, stdout: `    AppData    ${current.type}    ${current.value}\r\n`, stderr: "" }
-        : { status: 1, stdout: "", stderr: "missing" };
+        : {
+            status: 1,
+            stdout: "",
+            stderr: "ERROR: The system was unable to find the specified registry key or value.",
+          };
     }
     if (operation === "add") {
       writeCalls += 1;
@@ -29,15 +33,56 @@ function fakeRegistry(options: { failWriteCall?: number; failRestoreKey?: string
       values.set(key!, { type, value });
       return { status: 0, stdout: "", stderr: "" };
     }
+    if (operation === "delete") {
+      values.delete(key!);
+      return { status: 0, stdout: "", stderr: "" };
+    }
     return { status: 0, stdout: "", stderr: "" };
   };
   return { values, calls, runRegistry };
 }
 
 describe("isolated Windows AppData registry redirect", () => {
+  it("treats only an explicit value-not-found result as an absent original value", () => {
+    const registry = fakeRegistry();
+    registry.values.delete(userShellFolders);
+    const redirect = createWindowsAppDataRedirect({
+      appDataRoot: "D:\\runner-temp\\profile\\roaming",
+      runRegistry: registry.runRegistry,
+    });
+
+    redirect.redirect();
+    expect(registry.values.get(userShellFolders)?.value).toBe("D:\\runner-temp\\profile\\roaming");
+    expect(redirect.restore()).toBe(true);
+    expect(registry.values.has(userShellFolders)).toBe(false);
+  });
+
+  it("fails closed when a registry query fails for a reason other than missing value", () => {
+    const redirect = createWindowsAppDataRedirect({
+      appDataRoot: "D:\\runner-temp\\profile\\roaming",
+      runRegistry: () => ({ status: 1, stdout: "", stderr: "ERROR: Access is denied." }),
+    });
+
+    expect(() => redirect.redirect()).toThrow("Could not inspect");
+    expect(redirect.hasChanges).toBe(false);
+  });
+
+  it("fails closed when a successful registry query cannot be parsed", () => {
+    const redirect = createWindowsAppDataRedirect({
+      appDataRoot: "D:\\runner-temp\\profile\\roaming",
+      runRegistry: () => ({ status: 0, stdout: "Some unrelated registry output\\r\\n", stderr: "" }),
+    });
+
+    expect(() => redirect.redirect()).toThrow("Could not parse");
+    expect(redirect.hasChanges).toBe(false);
+  });
+
   it("restores both shell-folder values in reverse order", () => {
     const registry = fakeRegistry();
-    const redirect = createWindowsAppDataRedirect({ appDataRoot: "D:\\runner-temp\\profile\\roaming", runRegistry: registry.runRegistry });
+    const redirect = createWindowsAppDataRedirect({
+      appDataRoot: "D:\\runner-temp\\profile\\roaming",
+      runRegistry: registry.runRegistry,
+    });
 
     redirect.redirect();
     expect(redirect.redirected).toBe(true);
@@ -47,14 +92,20 @@ describe("isolated Windows AppData registry redirect", () => {
 
     expect(redirect.restore()).toBe(true);
     expect(registry.calls.slice(-2)).toEqual([`add:${shellFolders}`, `add:${userShellFolders}`]);
-    expect(registry.values.get(userShellFolders)).toEqual({ type: "REG_EXPAND_SZ", value: "%USERPROFILE%\\AppData\\Roaming" });
+    expect(registry.values.get(userShellFolders)).toEqual({
+      type: "REG_EXPAND_SZ",
+      value: "%USERPROFILE%\\AppData\\Roaming",
+    });
     expect(registry.values.get(shellFolders)).toEqual({ type: "REG_SZ", value: "C:\\Synthetic\\Roaming" });
     expect(redirect.canRemoveProfileRoot).toBe(true);
   });
 
   it("restores the first registry value when the second redirect write fails", () => {
     const registry = fakeRegistry({ failWriteCall: 2 });
-    const redirect = createWindowsAppDataRedirect({ appDataRoot: "D:\\runner-temp\\profile\\roaming", runRegistry: registry.runRegistry });
+    const redirect = createWindowsAppDataRedirect({
+      appDataRoot: "D:\\runner-temp\\profile\\roaming",
+      runRegistry: registry.runRegistry,
+    });
 
     expect(() => redirect.redirect()).toThrow("Could not redirect");
     expect(redirect.hasChanges).toBe(true);
@@ -68,7 +119,10 @@ describe("isolated Windows AppData registry redirect", () => {
 
   it("refuses isolated-root cleanup when restoring a registry value fails", () => {
     const registry = fakeRegistry({ failRestoreKey: userShellFolders });
-    const redirect = createWindowsAppDataRedirect({ appDataRoot: "D:\\runner-temp\\profile\\roaming", runRegistry: registry.runRegistry });
+    const redirect = createWindowsAppDataRedirect({
+      appDataRoot: "D:\\runner-temp\\profile\\roaming",
+      runRegistry: registry.runRegistry,
+    });
 
     redirect.redirect();
     expect(redirect.restore()).toBe(false);

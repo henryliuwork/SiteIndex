@@ -46,6 +46,9 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain("report.updaterRestart");
     expect(acceptanceScript).toContain("ephemeral GitHub runner APPDATA with a clean per-run SiteIndex directory");
     expect(acceptanceScript).toContain("isolated temporary LOCALAPPDATA vault");
+    expect(acceptanceScript).toContain("lastUiDiagnostics");
+    expect(acceptanceScript).toContain("credentialRegionCount");
+    expect(acceptanceScript).toContain("settingsRouteVisible");
     expect(releaseWorkflow).toContain("retention-days: 30");
   });
 
@@ -108,6 +111,8 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain('process.env.GITHUB_ACTIONS !== "true"');
     expect(acceptanceScript).toContain("before its UI target appeared");
     expect(acceptanceScript).toContain("rendererDiagnostics.targets");
+    expect(workflow).toContain('"packages/desktop/scripts/windows-appdata-redirect.mjs"');
+    expect(workflow).toContain('"packages/desktop/test/windows-appdata-redirect.test.ts"');
   });
 
   it("sets and verifies the actual packaged Electron profile before touching app data", () => {
@@ -231,8 +236,8 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
   });
 
   it("starts the pinned baseline with tray and login startup disabled", () => {
-    expect(acceptanceScript).toContain('close_to_tray: false');
-    expect(acceptanceScript).toContain('launch_at_login: false');
+    expect(acceptanceScript).toContain("close_to_tray: false");
+    expect(acceptanceScript).toContain("launch_at_login: false");
   });
 
   it("records only process, CDP, and settings state when a packaged window is missing", () => {
@@ -250,7 +255,9 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain("redirectRoamingAppDataToTestProfile");
     expect(acceptanceScript).toContain("nativeAppDataMatchesProfile");
     expect(acceptanceScript).toContain("restoreRoamingAppDataRegistry");
-    expect(acceptanceScript).toContain("Refusing to remove the isolated profile before restoring the runner's AppData registry values.");
+    expect(acceptanceScript).toContain(
+      "Refusing to remove the isolated profile before restoring the runner's AppData registry values.",
+    );
   });
 
   it("does not claim an update until the updater has restarted the candidate", async () => {

@@ -181,9 +181,11 @@
 - [x] 首次 hosted run `43046081311`：基线安装通过，失败发生在 v0.4.0 安装后启动；DevTools 已监听，但 60 秒内 CDP target 列表为空，因此没有进入凭据/UI 流程，尚不能仅凭该结果断定为资源缺失或 AppData 路径问题。
 - [x] Hosted run `43057045355` 在安装前 preflight 失败：junction 目标尚未创建就被 `realpath` 检查，结果被误判为越界。现改为创建目标后检查，再 unlink junction、核验目标并安全清理。
 - [x] Candidate 的 packaged main 输出实际 Electron `appData`、`userData`、home/temp 与子进程环境的 containment/reparse 布尔值；候选 preload IPC 再读同一诊断。v0.4.0 基线没有该 IPC，只能由传入环境和合成 `settings.json` 的项目根回读验证，不声称已直接读取旧版 `app.getPath()`。
+<<<<<<< HEAD
 - [x] Runs `43059610977`、`43061317419` 与 `43062554716` 曾在 v0.4.0 启动阶段没有 renderer/page target；进程存活且 CDP endpoint 可达，关闭托盘后仍失败。
 - [x] 根因为只改 `APPDATA` 不会重定向 Windows roaming Known Folder。验收脚本将 runner 用户的两个 AppData shell-folder 值临时指向 `RUNNER_TEMP` profile，启动前验证并在结束后反序恢复；恢复失败时不清理 profile。受控测试覆盖部分写入失败与恢复失败。
 - [x] Run `43064308714`（head `2b11f4c`）完整通过：v0.4.0 隔离设置回读、覆盖升级候选版、packaged IPC 及 71/71 checks；候选 main/preload 各 10 项路径检查通过、凭据流程 17 项状态、4 次重启、206 个文件零 canary 命中。属于较早 head 历史证据。
+- [x] head `2665aa8` 的 Run `43065627800` 三系统 CI 通过，但 Windows hosted acceptance 在凭据 UI 区域定位处失败；该结果未计为 packaged acceptance 通过。
 - [x] 用 CIM 只记录实际安装进程 exe 是否在隔离根内；扫描 appData、LocalAppData vault、合成项目数据、隔离 profile 的 TEMP/TMP 和生成的 summary artifact，覆盖 UTF-8、UTF-16LE、base64 与 Basic 认证组合，只报告类别和数量，不记录路径或命中值；不扫描安装器二进制或 GitHub runner 的其他临时文件。
 - [x] Windows runner AppData shell-folder 重定向、containment/reparse 检查、fail-closed registry 查询与反序恢复测试；恢复失败时拒绝删除隔离 profile。
 - [x] 隔离凭据扫描只记录匹配类别/计数；精确 credential region 名称采用有界稳定等待，持续缺失、重复和未稳定超时均失败。
