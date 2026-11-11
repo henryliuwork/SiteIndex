@@ -5,7 +5,7 @@ import path from "node:path";
 const writes = new Map<string, Promise<void>>();
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-async function writeAtomic(target: string, data: string | Uint8Array): Promise<void> {
+async function writeAtomic(target: string, data: string | Uint8Array, beforeReplace?: () => Promise<void>): Promise<void> {
   const dir = path.dirname(target);
   await mkdir(dir, { recursive: true });
   const temp = path.join(dir, `.${path.basename(target)}.tmp-${process.pid}-${randomUUID()}`);
@@ -21,6 +21,7 @@ async function writeAtomic(target: string, data: string | Uint8Array): Promise<v
 
     for (let attempt = 0; ; attempt += 1) {
       try {
+        await beforeReplace?.();
         await rename(temp, target);
         return;
       } catch (error) {
@@ -37,10 +38,10 @@ async function writeAtomic(target: string, data: string | Uint8Array): Promise<v
 }
 
 /** 同目录临时文件写入并 fsync 后替换目标；同进程并发写同一目标会串行完成。 */
-export function atomicWrite(filePath: string, data: string | Uint8Array): Promise<void> {
+export function atomicWrite(filePath: string, data: string | Uint8Array, beforeReplace?: () => Promise<void>): Promise<void> {
   const target = path.resolve(filePath);
   const previous = writes.get(target) ?? Promise.resolve();
-  const current = previous.catch(() => undefined).then(() => writeAtomic(target, data));
+  const current = previous.catch(() => undefined).then(() => writeAtomic(target, data, beforeReplace));
   writes.set(target, current);
   void current.then(
     () => { if (writes.get(target) === current) writes.delete(target); },

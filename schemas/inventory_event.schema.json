@@ -17,7 +17,8 @@
         "price_change",
         "new_sku",
         "removed_sku",
-        "restored_sku"
+        "restored_sku",
+        "feed_anomaly"
       ]
     },
     "from": {},

@@ -16,6 +16,8 @@ import {
 import { readCsv, type CsvRow } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { resolveProjectLayout } from "../io/project-layout";
+import { withLock } from "../io/runner-lock";
+import { recoverDailyOutputTransaction } from "../jobs/daily-output-transaction";
 import { groupSkuIds } from "../inventory/sku-grouping";
 import { buildPriceHistory } from "../inventory/price-history";
 
@@ -296,44 +298,47 @@ export function buildSkuStockViews(
 }
 
 export async function buildViews(projectPath: string, options: BuildViewsOptions = {}): Promise<BuildViewsResult> {
-  const layout = await resolveProjectLayout(projectPath);
-  const paths = pathsFor(layout);
-  const sitePath = path.join(projectPath, paths.site);
-  const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
-  const today = options.date ?? dateInTimezone(options.now ?? new Date(), site.timezone || "UTC");
+  return withLock(projectPath, async () => {
+    const layout = await resolveProjectLayout(projectPath);
+    const paths = pathsFor(layout);
+    await recoverDailyOutputTransaction(projectPath, paths);
+    const sitePath = path.join(projectPath, paths.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
+    const today = options.date ?? dateInTimezone(options.now ?? new Date(), site.timezone || "UTC");
 
-  const [skuRows, latestRows, mediaRows, tagRows, campaigns] = await Promise.all([
-    readJsonl(path.join(projectPath, paths.skus)),
-    readJsonl(path.join(projectPath, paths.inventoryLatest)),
-    readCsv(path.join(projectPath, paths.skuMedia)),
-    readCsv(path.join(projectPath, paths.skuTags)),
-    readJsonl(path.join(projectPath, paths.edmCampaigns)),
-  ]);
-  let eventFiles: string[] = [];
-  try {
-    eventFiles = (await readdir(path.join(projectPath, paths.eventsDir)))
-      .filter((name) => /^\d{4}-(?:0[1-9]|1[0-2])\.jsonl$/u.test(name))
-      .sort(compareText);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  const eventsByMonth = await Promise.all(eventFiles.map((name) => readJsonl(path.join(projectPath, paths.eventsDir, name))));
-  const skus = skuRows as unknown as SkuRecord[];
-  const latest = latestRows as unknown as InventoryLatest[];
-  const campaignRows = campaigns as unknown as EdmCampaign[];
-  const events = eventsByMonth.flat() as unknown as InventoryEvent[];
-  const products = buildProductViews(skus, latest, mediaRows, tagRows, campaignRows, today);
-  const groupingRule = site.sku_grouping?.enabled ? site.sku_grouping.rule : undefined;
-  const stock = buildSkuStockViews(skus, latest, events, today, groupingRule);
+    const [skuRows, latestRows, mediaRows, tagRows, campaigns] = await Promise.all([
+      readJsonl(path.join(projectPath, paths.skus)),
+      readJsonl(path.join(projectPath, paths.inventoryLatest)),
+      readCsv(path.join(projectPath, paths.skuMedia)),
+      readCsv(path.join(projectPath, paths.skuTags)),
+      readJsonl(path.join(projectPath, paths.edmCampaigns)),
+    ]);
+    let eventFiles: string[] = [];
+    try {
+      eventFiles = (await readdir(path.join(projectPath, paths.eventsDir)))
+        .filter((name) => /^\d{4}-(?:0[1-9]|1[0-2])\.jsonl$/u.test(name))
+        .sort(compareText);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const eventsByMonth = await Promise.all(eventFiles.map((name) => readJsonl(path.join(projectPath, paths.eventsDir, name))));
+    const skus = skuRows as unknown as SkuRecord[];
+    const latest = latestRows as unknown as InventoryLatest[];
+    const campaignRows = campaigns as unknown as EdmCampaign[];
+    const events = eventsByMonth.flat() as unknown as InventoryEvent[];
+    const products = buildProductViews(skus, latest, mediaRows, tagRows, campaignRows, today);
+    const groupingRule = site.sku_grouping?.enabled ? site.sku_grouping.rule : undefined;
+    const stock = buildSkuStockViews(skus, latest, events, today, groupingRule);
 
-  await Promise.all([
-    writeJsonl(path.join(projectPath, paths.productsView), products as unknown as JsonRecord[], {
-      primaryKey: ["handle"], fieldOrder: PRODUCT_FIELDS, floatFields: PRODUCT_FLOAT_FIELDS,
-    }),
-    writeJsonl(path.join(projectPath, paths.skuStockView), stock as unknown as JsonRecord[], {
-      primaryKey: ["sku"], fieldOrder: SKU_STOCK_FIELDS, floatFields: STOCK_FLOAT_FIELDS,
-    }),
-  ]);
+    await Promise.all([
+      writeJsonl(path.join(projectPath, paths.productsView), products as unknown as JsonRecord[], {
+        primaryKey: ["handle"], fieldOrder: PRODUCT_FIELDS, floatFields: PRODUCT_FLOAT_FIELDS,
+      }),
+      writeJsonl(path.join(projectPath, paths.skuStockView), stock as unknown as JsonRecord[], {
+        primaryKey: ["sku"], fieldOrder: SKU_STOCK_FIELDS, floatFields: STOCK_FLOAT_FIELDS,
+      }),
+    ]);
 
-  return { products: products.length, skuStock: stock.length };
+    return { products: products.length, skuStock: stock.length };
+  }, { job: "views" });
 }

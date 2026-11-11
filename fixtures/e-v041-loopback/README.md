@@ -18,6 +18,6 @@ Run the service self-tests with:
 node --test fixtures/e-v041-loopback/fake-services.test.mjs
 ```
 
-These tests validate the fixtures. The feed service is shaped for Core's existing CSV reader, but no stock-verifier API is present on the current main; protection-threshold, GraphQL-fallback, feed-anomaly, and CLI integration remain pending A's implementation. The fixtures do not exercise packaged IPC or any real site/account. Product-dependent package acceptance remains pending until A/C connect the relevant interfaces.
+These tests validate the fixtures. PR #417's Core stock-verification tests fetch the synthetic CSV with `readFeeds`, normalize it with `toSnapshot`, then run daily processing against the fake product and GraphQL responses. They cover both project layouts, removal-threshold protection, GraphQL/page-text fallback, feed-anomaly events, and interrupted output recovery. CLI and packaged IPC acceptance are separate checks; these fixtures never contact a real site or account.
 
-Current-main and branch evidence are separated in `v041-acceptance-matrix.md`. The stock-verifier scenarios reference the open PR #417 head and are not main or package acceptance. The K5 media contract remains pending Core and Desktop implementation.
+Current-main and branch evidence are separated in `v041-acceptance-matrix.md`; stock-verifier tests in PR #417 remain branch evidence until merge. Product-dependent package acceptance remains separate from these fixture tests. The K5 media contract remains pending Core and Desktop implementation.

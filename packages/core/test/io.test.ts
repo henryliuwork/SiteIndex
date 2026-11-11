@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { lstat, mkdtemp, mkdir, readFile, readdir, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CSV_HEADERS, EXIT, PATHS, pathsFor } from "@siteindex/shared";
 import {
   assertRunner, atomicWrite, findConflictCopies, readCsv, readJsonl, readRunner,
@@ -15,6 +15,91 @@ async function tempDir() {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-io-"));
   roots.push(root);
   return root;
+}
+
+async function currentHostId(project: string): Promise<string> {
+  let hostId = "";
+  await withLock(project, async () => {
+    const record = JSON.parse(await readFile(path.join(project, PATHS.lock), "utf8")) as { host_id: string };
+    hostId = record.host_id;
+  }, { heartbeatMs: 60_000 });
+  return hostId;
+}
+
+function hostIdentityEnvironment(stateRoot: string): NodeJS.ProcessEnv {
+  if (process.platform === "win32") return { LOCALAPPDATA: stateRoot };
+  if (process.platform === "darwin") return { HOME: stateRoot };
+  return { XDG_STATE_HOME: stateRoot };
+}
+
+function hostIdentityFile(stateRoot: string): string {
+  if (process.platform === "win32") return path.join(stateRoot, "SiteIndex", "lock-host-id");
+  if (process.platform === "darwin") return path.join(stateRoot, "Library", "Application Support", "SiteIndex", "lock-host-id");
+  return path.join(stateRoot, "siteindex", "lock-host-id");
+}
+
+function runChildScript(source: string, cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source], {
+      cwd, env, stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(stderr || `Lock identity child exited (${String(code)} / ${String(signal)})`));
+    });
+  });
+}
+
+function runBarrierChildScripts(sources: readonly string[], cwd: string, envs: readonly NodeJS.ProcessEnv[]): Promise<string[]> {
+  const children = sources.map((source, index) => spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source], {
+    cwd, env: envs[index], stdio: ["pipe", "pipe", "pipe"],
+  }));
+  const output = children.map(() => "");
+  const errors = children.map(() => "");
+  const ready = children.map((child, index) => new Promise<void>((resolve, reject) => {
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output[index] = `${output[index] ?? ""}${chunk.toString("utf8")}`;
+      if ((output[index] ?? "").includes("READY\n")) resolve();
+    });
+    child.stderr?.on("data", (chunk: Buffer) => { errors[index] = `${errors[index] ?? ""}${chunk.toString("utf8")}`; });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (!(output[index] ?? "").includes("READY\n")) {
+        reject(new Error(errors[index] || `Lock identity child exited before ready (${String(code)} / ${String(signal)})`));
+      }
+    });
+  }));
+  const completed = children.map((child, index) => new Promise<string>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (code === 0) resolve(output[index]!.replace(/^READY\n/, "").trim());
+      else reject(new Error(errors[index] || `Lock identity child exited (${String(code)} / ${String(signal)})`));
+    });
+  }));
+
+  return (async () => {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        Promise.all(ready),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Lock identity children did not reach the test barrier")), 15_000);
+        }),
+      ]);
+      if (timeout) clearTimeout(timeout);
+      for (const child of children) child.stdin?.end("go\n");
+      return await Promise.all(completed);
+    } catch (error) {
+      if (timeout) clearTimeout(timeout);
+      for (const child of children) child.kill();
+      throw error;
+    }
+  })();
 }
 
 afterEach(async () => {
@@ -138,7 +223,7 @@ describe("core io", () => {
     await expect(readFile(path.join(root, paths.lock))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("holds an exclusive lock, removes it after work, and reclaims stale locks", async () => {
+  it("holds an exclusive lock and fails closed on a stale lock with unknown ownership", async () => {
     const root = await tempDir();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -152,14 +237,14 @@ describe("core io", () => {
     await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
     await mkdir(path.join(root, "index"), { recursive: true });
-    await writeFile(path.join(root, PATHS.lock), JSON.stringify({ heartbeat: "2026-10-22T09:00:00.000Z" }));
-    await expect(withLock(root, () => "recovered", {
-      now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
-    })).resolves.toBe("recovered");
-    await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const staleLegacyLock = JSON.stringify({ heartbeat: "2026-10-22T09:00:00.000Z" });
+    await writeFile(path.join(root, PATHS.lock), staleLegacyLock);
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(path.join(root, PATHS.lock), "utf8")).resolves.toBe(staleLegacyLock);
   });
 
-  it("treats an empty lock record as active and reclaims it only after it is stale", async () => {
+  it("treats incomplete stale lock records as unknown ownership and preserves them", async () => {
     const root = await tempDir();
     const lockPath = path.join(root, PATHS.lock);
     await mkdir(path.dirname(lockPath), { recursive: true });
@@ -169,11 +254,217 @@ describe("core io", () => {
 
     const staleAt = new Date("2026-10-22T09:00:00.000Z");
     await utimes(lockPath, staleAt, staleAt);
-    await expect(withLock(root, () => "recovered", {
-      now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
-    })).resolves.toBe("recovered");
-    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe("");
   });
+
+  it("does not steal a stale local lock when its owner PID is still alive", async () => {
+    const root = await tempDir();
+    const hostId = await currentHostId(root);
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const record = {
+      device_id: "live-owner",
+      device_name: "test",
+      host_id: hostId,
+      pid: process.pid,
+      job: "synthetic-stalled-job",
+      started_at: "2026-10-22T09:00:00.000Z",
+      heartbeat: "2026-10-22T09:00:00.000Z",
+    };
+    await writeFile(lockPath, JSON.stringify(record));
+
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(record));
+  });
+
+  it.each([
+    ["a reused PID that now belongs to another live process", undefined],
+    ["a PID that cannot be probed due to EPERM", "EPERM"],
+  ])("fails closed for %s", async (_description, probeFailure) => {
+    const root = await tempDir();
+    const hostId = await currentHostId(root);
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const record = {
+      device_id: "same-host-owner",
+      device_name: "test",
+      host_id: hostId,
+      pid: 424242,
+      job: "daily",
+      started_at: "2026-10-22T09:00:00.000Z",
+      heartbeat: "2000-01-01T00:00:00.000Z",
+    };
+    await writeFile(lockPath, JSON.stringify(record));
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      if (probeFailure) throw Object.assign(new Error("probe denied"), { code: probeFailure });
+      return true;
+    });
+
+    try {
+      await expect(withLock(root, () => "must not enter"))
+        .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+      await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(record));
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it("never reclaims remote or legacy locks even when their heartbeat is stale", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const remote = {
+      device_id: "remote-owner",
+      device_name: "test",
+      host_id: "a1b2c3d4-1111-4111-8111-111111111111",
+      pid: Number.MAX_SAFE_INTEGER,
+      job: "daily",
+      started_at: "2026-10-22T09:00:00.000Z",
+      heartbeat: "2026-10-22T09:00:00.000Z",
+    };
+    await writeFile(lockPath, JSON.stringify(remote));
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(remote));
+
+    const legacy: Record<string, unknown> = { ...remote, heartbeat: "2000-01-01T00:00:00.000Z" };
+    delete legacy.host_id;
+    await writeFile(lockPath, JSON.stringify(legacy));
+    await expect(withLock(root, () => "must not enter"))
+      .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(legacy));
+  });
+
+  it("smoke-tests concurrent local host identity initialization with a start barrier", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const source = [
+      'import { readFile } from "node:fs/promises";',
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'const lockFile = process.env.SITEINDEX_TEST_LOCK_FILE;',
+      'if (!root || !lockFile) throw new Error("Missing test parameters");',
+      'process.stdout.write("READY\\n");',
+      'await new Promise((resolve) => process.stdin.once("data", resolve));',
+      'await withLock(root, async () => { const lock = JSON.parse(await readFile(lockFile, "utf8")); process.stdout.write(lock.host_id); }, { heartbeatMs: 60000 });',
+    ].join("\n");
+    const hostEnv = hostIdentityEnvironment(stateRoot);
+    const childEnvs = Array.from({ length: 2 }, (_, index) => {
+      const project = path.join(root, `parallel-project-${index}`);
+      return {
+        ...process.env,
+        ...hostEnv,
+        SITEINDEX_TEST_LOCK_ROOT: project,
+        SITEINDEX_TEST_LOCK_FILE: path.join(project, PATHS.lock),
+      };
+    });
+
+    // The barrier synchronizes entry into host identity initialization. It does not force both
+    // processes into the internal read-missing-to-exclusive-create interval without a runtime hook.
+    const hostIds = await runBarrierChildScripts([source, source], coreDirectory, childEnvs);
+
+    expect(new Set(hostIds).size).toBe(1);
+    expect(hostIds[0]).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(await readFile(hostIdentityFile(stateRoot), "utf8")).toBe(`${hostIds[0]}\n`);
+  }, 30_000);
+
+  it("fails closed on a partial local identity left by a crash and documents safe reset behavior", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const lockRoot = path.join(root, "project");
+    const lockPath = path.join(lockRoot, PATHS.lock);
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const source = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing lock root");',
+      'try { await withLock(root, () => "acquired", { heartbeatMs: 60000 }); process.stdout.write("acquired"); }',
+      'catch (error) { const value = error && typeof error === "object" ? error : {}; process.stdout.write(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    const env = {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: lockRoot,
+    };
+    await mkdir(path.dirname(hostIdPath), { recursive: true });
+    await writeFile(hostIdPath, "partial UUID");
+
+    const invalid = await runChildScript(source, coreDirectory, env);
+
+    expect(invalid).toContain("LOCKED:");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    // Recovery requires confirming this local user has no running SiteIndex process, then removing
+    // only the corrupt local identity file; old project locks remain unknown and are never auto-stolen.
+    await rm(hostIdPath);
+    const recovered = await runChildScript(source, coreDirectory, env);
+
+    expect(recovered).toBe("acquired");
+    const lockId = (await readFile(hostIdentityFile(stateRoot), "utf8")).trim();
+    expect(lockId).toMatch(/^[0-9a-f-]{36}$/i);
+  }, 30_000);
+
+  it("immediately reclaims a fresh lock after its owning child process exits", async () => {
+    const root = await tempDir();
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const childSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing lock root");',
+      'await withLock(root, async () => { process.stdout.write("held\\n"); await new Promise(() => undefined); }, { deviceId: "child", job: "daily", heartbeatMs: 60_000 });',
+    ].join("\n");
+    let child: ReturnType<typeof spawn> | undefined;
+    let closed!: () => void;
+    const childClosed = new Promise<void>((resolve) => { closed = resolve; });
+    try {
+      child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", childSource], {
+        cwd: coreDirectory,
+        env: { ...process.env, SITEINDEX_TEST_LOCK_ROOT: root },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let output = "";
+      let signalReady!: () => void;
+      let rejectReady!: (error: Error) => void;
+      const ready = new Promise<void>((resolve, reject) => { signalReady = resolve; rejectReady = reject; });
+      child.stdout?.on("data", (chunk: Buffer) => {
+        output += chunk.toString("utf8");
+        if (output.includes("held\n")) signalReady();
+      });
+      child.once("error", rejectReady);
+      child.once("close", () => closed());
+      let readyTimeout: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          ready,
+          new Promise<never>((_, reject) => { readyTimeout = setTimeout(() => reject(new Error("child did not acquire project lock")), 10_000); }),
+        ]);
+      } finally {
+        if (readyTimeout) clearTimeout(readyTimeout);
+      }
+
+      const lockPath = path.join(root, PATHS.lock);
+      const lock = JSON.parse(await readFile(lockPath, "utf8")) as { host_id: string; pid: number; heartbeat: string };
+      expect(lock.host_id).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(lock.pid).toBe(child.pid);
+      expect(Date.now() - Date.parse(lock.heartbeat)).toBeLessThan(5_000);
+      child.kill();
+      await childClosed;
+      child = undefined;
+
+      await expect(withLock(root, () => "recovered immediately", { heartbeatMs: 60_000 })).resolves.toBe("recovered immediately");
+      await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      if (child && child.exitCode === null) {
+        child.kill();
+        await childClosed;
+      }
+    }
+  }, 30_000);
 
   it("handles 200 concurrent lock attempts without exposing partial JSON", async () => {
     const root = await tempDir();
@@ -226,11 +517,11 @@ describe("core io", () => {
     const root = await tempDir();
     const lockPath = path.join(root, PATHS.lock);
     await mkdir(path.dirname(lockPath), { recursive: true });
-    const record = { device_id: "device-1", device_name: "test", pid: process.pid, job: "weekly", started_at: "2026-10-28T00:00:00.000Z", heartbeat: "2026-10-28T00:00:00.000Z" };
+    const record = { device_id: "device-1", device_name: "test", host_id: await currentHostId(root), pid: process.pid, job: "weekly", started_at: "2026-10-28T00:00:00.000Z", heartbeat: "2026-10-28T00:00:00.000Z" };
     await writeFile(lockPath, JSON.stringify(record));
     const identity = await lstat(lockPath);
     let attempts = 0;
-    await unlinkOwnedLock(lockPath, identity, { pid: record.pid, started_at: record.started_at }, {
+    await unlinkOwnedLock(lockPath, identity, { host_id: record.host_id, pid: record.pid, started_at: record.started_at }, {
       unlinkFile: async (filePath) => {
         attempts += 1;
         if (attempts === 1) throw Object.assign(new Error("sharing violation"), { code: "EPERM" });
