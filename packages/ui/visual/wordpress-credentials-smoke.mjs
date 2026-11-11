@@ -21,12 +21,16 @@ function assert(condition, message) {
 }
 
 function validateElectronIsolation(isolation) {
-  assert(isolation?.verifiedBeforeLaunch === true, "caller must confirm profile and vault isolation before Electron launch");
+  assert(isolation?.callerConfirmedBeforeLaunch === true, "caller must attest profile and vault isolation before Electron launch");
   const root = isolation.root?.replace(/[\\/]+$/, "");
   assert(root && path.win32.isAbsolute(root), "Electron isolation root must be an absolute Windows path");
   for (const [label, value] of Object.entries({
     APPDATA: isolation.appDataRoot,
     LOCALAPPDATA: isolation.localAppDataRoot,
+    USERPROFILE: isolation.userProfileRoot,
+    HOME: isolation.homeRoot,
+    TEMP: isolation.tempRoot,
+    TMP: isolation.tmpRoot,
     projectRoot: isolation.projectRoot,
     vault: isolation.vaultPath,
   })) {
@@ -40,19 +44,23 @@ function validateElectronIsolation(isolation) {
 }
 
 async function readBrowserStorageLeak(page, values) {
-  return page.evaluate((secrets) => {
-    try {
-      const content = [localStorage, sessionStorage].flatMap((storage) =>
-        Array.from({ length: storage.length }, (_, index) => {
-          const key = storage.key(index);
-          return key ? `${key}=${storage.getItem(key)}` : "";
-        }),
-      ).join("\n");
-      return secrets.some((value) => content.includes(value));
-    } catch {
-      return null;
-    }
-  }, values);
+  try {
+    return await page.evaluate((secrets) => {
+      try {
+        const content = [localStorage, sessionStorage].flatMap((storage) =>
+          Array.from({ length: storage.length }, (_, index) => {
+            const key = storage.key(index);
+            return key ? `${key}=${storage.getItem(key)}` : "";
+          }),
+        ).join("\n");
+        return secrets.some((value) => content.includes(value));
+      } catch {
+        return null;
+      }
+    }, values);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -61,7 +69,7 @@ async function readBrowserStorageLeak(page, values) {
  * IPC evidence separately.
  *
  * @param {import("playwright-core").Page} page
- * @param {{ runtime: "browser-mock" | "packaged-electron"; origin: string; screenshotPath?: string; electronIsolation?: { verifiedBeforeLaunch: true; root: string; appDataRoot: string; localAppDataRoot: string; projectRoot: string; vaultPath: string } }} options
+ * @param {{ runtime: "browser-mock" | "packaged-electron"; origin: string; screenshotPath?: string; electronIsolation?: { callerConfirmedBeforeLaunch: true; root: string; appDataRoot: string; localAppDataRoot: string; userProfileRoot: string; homeRoot: string; tempRoot: string; tmpRoot: string; projectRoot: string; vaultPath: string } }} options
  */
 export async function runWordPressCredentialsUiSmoke(page, options) {
   const { runtime, origin, screenshotPath, electronIsolation } = options;
@@ -172,7 +180,9 @@ export async function runWordPressCredentialsUiSmoke(page, options) {
     focusReturned,
     horizontalOverflow: layout.documentWidth > layout.width + 1,
     targetedSectionCount: await target.count(),
-    isolationVerifiedBeforeLaunch: runtime === "packaged-electron" ? electronIsolation.verifiedBeforeLaunch : null,
+    electronIsolationAttestation: runtime === "packaged-electron"
+      ? "caller-declared; physical environment and junction isolation are not verified by this helper"
+      : "not-applicable",
     screenshotPath: screenshotPath ?? null,
   };
 }
