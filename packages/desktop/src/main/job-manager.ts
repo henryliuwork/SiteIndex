@@ -81,7 +81,7 @@ interface JobEntry {
   rejectStarted(error: SiteIndexError): void;
   done: Promise<JobResult>;
   resolveDone(result: JobResult): void;
-  /** Core 的日期+Job 日志 ID；不作为 Desktop 的活动 ID 暴露。 */
+  /** Core 的执行/checkpoint ID；不作为 Desktop 的活动 ID 暴露。 */
   coreRunId: string | null;
   runId: string | null;
   startedAt: string | null;
@@ -436,8 +436,14 @@ export function createJobManager(options: JobManagerOptions) {
     }
     if (message.type === "started") {
       if (typeof message.runId !== "string" || typeof message.startedAt !== "string" || entry.runId) return;
+      const runId = entry.request.job === "media" ? message.runId : `${message.runId}-${randomUUID()}`;
+      if (!runId.trim() || entriesByRunId.has(runId)) {
+        entry.rejectStarted(jobError("UNKNOWN", "Core 返回了重复或空的 Job 执行 ID。"));
+        entry.child.kill();
+        return;
+      }
       entry.coreRunId = message.runId;
-      entry.runId = `${message.runId}-${randomUUID()}`;
+      entry.runId = runId;
       entry.startedAt = message.startedAt;
       entry.workerPid = entry.child.pid ?? null;
       clearTimeout(entry.startupTimer);
@@ -459,10 +465,14 @@ export function createJobManager(options: JobManagerOptions) {
     if (message.type === "finished") {
       if (
         !isJobResult(message.result) ||
-        message.result.runId !== entry.coreRunId ||
+        message.result.job !== entry.request.job ||
+        (entry.request.job === "media" && message.result.runId !== entry.coreRunId) ||
         (entry.request.job === "media" && !matchesMediaRecoveryRequest(message.result, entry.request.skus ?? []))
       )
         return;
+      // This listener is bound to the utilityProcess created for this entry. Core may
+      // recompute its business date at completion, so child ownership plus job name
+      // attributes the result; finishEntry normalizes its runId to the external ID.
       entry.result = sanitizeMediaJobResult(message.result, entry.sensitiveValues, entry.sensitiveUsernames);
       entry.oosRate = typeof message.oosRate === "number" ? message.oosRate : null;
       entry.child.kill();

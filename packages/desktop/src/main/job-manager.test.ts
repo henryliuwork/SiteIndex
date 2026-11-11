@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,8 +16,13 @@ import {
 } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createJobManager, type UtilityProcessLike } from "./job-manager.js";
+import { resolveJobRunId } from "./job-run-id.js";
 
 const roots: string[] = [];
+
+function coreMediaRunId(): string {
+  return `2026-11-11-media-${randomUUID()}`;
+}
 
 function settings(): AppSettings {
   return {
@@ -94,6 +100,30 @@ async function writeOwnedLock(projectPath: string, child: FakeUtilityProcess, jo
     "utf8",
   );
   return lockPath;
+}
+
+async function runIdPairForWorkerResultScenario(
+  projectPath: string,
+  scenario: "crosses-timezone-midnight" | "config-read-recovers",
+): Promise<[string, string]> {
+  const projectPaths = await pathsForProject(projectPath);
+  const sitePath = path.join(projectPath, projectPaths.site);
+  const request = { projectPath, job: "daily" as const };
+
+  if (scenario === "crosses-timezone-midnight") {
+    await writeFile(sitePath, JSON.stringify({ timezone: "America/Los_Angeles" }), "utf8");
+    return [
+      await resolveJobRunId(request, new Date("2026-11-11T07:59:59.999Z")),
+      await resolveJobRunId(request, new Date("2026-11-11T08:00:00.001Z")),
+    ];
+  }
+
+  await rm(sitePath, { force: true });
+  const now = new Date("2026-11-11T01:00:00.000Z");
+  const fallbackRunId = await resolveJobRunId(request, now);
+  await writeFile(sitePath, JSON.stringify({ timezone: "America/Los_Angeles" }), "utf8");
+  const recoveredRunId = await resolveJobRunId(request, now);
+  return [fallbackRunId, recoveredRunId];
 }
 
 function deferred<T>() {
@@ -177,9 +207,11 @@ describe("desktop job manager", () => {
     const projectB = await projectDirectory();
     const projectIdA = path.basename(projectA) as ProjectId;
     const projectIdB = path.basename(projectB) as ProjectId;
-    const childA = new FakeUtilityProcess(true, "2026-10-23-daily");
-    const childB = new FakeUtilityProcess(true, "2026-10-23-daily");
-    const children = [childA, childB];
+    const children = [
+      new FakeUtilityProcess(true, "2026-10-23-daily"),
+      new FakeUtilityProcess(true, "2026-10-23-daily"),
+    ];
+    const spawnedChildren: FakeUtilityProcess[] = [];
     const projectPaths = new Map([
       [projectIdA, projectA],
       [projectIdB, projectB],
@@ -195,6 +227,7 @@ describe("desktop job manager", () => {
       fork: () => {
         const child = children.shift();
         if (!child) throw new Error("unexpected extra worker");
+        spawnedChildren.push(child);
         queueMicrotask(() => child.ready());
         return child;
       },
@@ -207,6 +240,14 @@ describe("desktop job manager", () => {
       manager.run({ projectPath: projectA, job: "daily" }),
       manager.run({ projectPath: projectB, job: "daily" }),
     ]);
+    const childForProject = (projectPath: string) =>
+      spawnedChildren.find((child) => {
+        const message = child.messages[0] as { request?: { projectPath?: string } } | undefined;
+        return message?.request?.projectPath === projectPath;
+      });
+    const childA = childForProject(projectA);
+    const childB = childForProject(projectB);
+    if (!childA || !childB) throw new Error("both project workers should have started");
     expect(runA.runId).not.toBe(runB.runId);
     expect(runA.runId).not.toBe("2026-10-23-daily");
     expect(runB.runId).not.toBe("2026-10-23-daily");
@@ -223,6 +264,62 @@ describe("desktop job manager", () => {
     expect(childA.killed).toBe(true);
     await expect(manager.history(projectIdA)).resolves.toMatchObject([{ run_id: runA.runId, status: "failed" }]);
   });
+
+  it.each(["crosses-timezone-midnight", "config-read-recovers"] as const)(
+    "keeps a finished result attached to its worker when the Core business run ID %s",
+    async (scenario) => {
+      const projectPath = await projectDirectory();
+      const projectId = path.basename(projectPath) as ProjectId;
+      const [startedCoreRunId, finishedCoreRunId] = await runIdPairForWorkerResultScenario(projectPath, scenario);
+      expect(startedCoreRunId).not.toBe(finishedCoreRunId);
+      const child = new FakeUtilityProcess(true, startedCoreRunId);
+      let resolveFinished!: (result: JobResult) => void;
+      const finished = new Promise<JobResult>((resolve) => {
+        resolveFinished = resolve;
+      });
+      const manager = createJobManager({
+        workerPath: "job-worker.js",
+        getSettings: async () => settings(),
+        resolveProject: async () => projectPath,
+        fork: () => {
+          queueMicrotask(() => child.ready());
+          return child;
+        },
+        emitProgress: vi.fn(),
+        emitFinished: resolveFinished,
+        notify: vi.fn(),
+      });
+
+      const { runId: externalRunId } = await manager.run({ projectPath, job: "daily" });
+      child.emit("message", {
+        type: "finished",
+        result: {
+          runId: finishedCoreRunId,
+          job: "weekly",
+          status: "ok",
+          exitCode: 0,
+          summary: "其他任务结果。",
+        },
+      });
+      expect(manager.running(projectId)).toEqual({ runId: externalRunId, job: "daily" });
+      expect(child.killed).toBe(false);
+      child.emit("message", {
+        type: "finished",
+        result: {
+          runId: finishedCoreRunId,
+          job: "daily",
+          status: "ok",
+          exitCode: 0,
+          summary: "每日任务完成。",
+        },
+      });
+
+      await expect(finished).resolves.toMatchObject({ runId: externalRunId, status: "ok" });
+      expect(externalRunId).not.toBe(startedCoreRunId);
+      expect(externalRunId).not.toBe(finishedCoreRunId);
+      expect(manager.running(projectId)).toBeNull();
+    },
+  );
 
   it("redacts authorization material from utilityProcess progress and finished results", async () => {
     const projectPath = await projectDirectory();
@@ -319,7 +416,8 @@ describe("desktop job manager", () => {
 
   it("injects media credentials only through worker context and redacts every returned value", async () => {
     const projectPath = await projectDirectory();
-    const child = new FakeUtilityProcess(true, "2026-10-23-media");
+    const startedCoreRunId = "2026-10-23-media";
+    const child = new FakeUtilityProcess(true, startedCoreRunId);
     const credential = { username: "a", applicationPassword: "fictional-media-password" };
     const basicToken = Buffer.from(`${credential.username}:${credential.applicationPassword}`).toString("base64");
     let resolveFinished!: (result: JobResult) => void;
@@ -344,6 +442,7 @@ describe("desktop job manager", () => {
 
     const untrustedRequest = { projectPath, job: "media" as const, skus: ["sku-a1"], credential };
     const { runId } = await manager.runMedia(untrustedRequest);
+    expect(runId).toBe(startedCoreRunId);
     const startMessage = child.messages[0] as { request: Record<string, unknown>; context: Record<string, unknown> };
     expect(startMessage.request.skus).toEqual(["sku-a1"]);
     expect(JSON.stringify(startMessage.request)).not.toContain(credential.applicationPassword);
@@ -355,7 +454,7 @@ describe("desktop job manager", () => {
     child.emit("message", {
       type: "progress",
       progress: {
-        runId: "2026-10-23-media",
+        runId: startedCoreRunId,
         projectPath,
         job: "media",
         pct: 50,
@@ -368,7 +467,7 @@ describe("desktop job manager", () => {
       type: "finished",
       oosRate: null,
       result: {
-        runId: "2026-10-23-media",
+        runId: startedCoreRunId,
         job: "media",
         status: "partial",
         exitCode: 1,
@@ -394,6 +493,111 @@ describe("desktop job manager", () => {
     expect(exposed).toContain('"reason":"[已隐藏]"');
     expect(progress.mock.calls[0]?.[0].projectPath).toBe(projectPath);
     expect(progress.mock.calls[0]?.[0].message).toBe("Uploading [已隐藏] ([已隐藏]); rejected account [已隐藏]");
+  });
+
+  it("keeps a Core media execution ID unchanged when the finished result arrives immediately after started", async () => {
+    const projectPath = await projectDirectory();
+    const startedCoreRunId = coreMediaRunId();
+    const child = new FakeUtilityProcess(true, startedCoreRunId);
+    const sku = "fixture-early-result";
+    const progress = vi.fn();
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-password" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        child.on("message", (message) => {
+          if (!message || typeof message !== "object" || (message as { type?: string }).type !== "started") return;
+          queueMicrotask(() => {
+            child.emit("message", {
+              type: "progress",
+              progress: {
+                runId: startedCoreRunId,
+                projectPath,
+                job: "media",
+                pct: 100,
+                level: "info",
+                message: "媒体任务完成。",
+                at: new Date().toISOString(),
+              },
+            });
+            child.emit("message", {
+              type: "finished",
+              oosRate: null,
+              result: {
+                runId: startedCoreRunId,
+                job: "media",
+                status: "ok",
+                exitCode: 0,
+                summary: "媒体任务完成。",
+                media_requested_skus: [sku],
+                media_batch_state: "complete",
+                media_results: [{ sku, status: "uploaded" }],
+                media_unknown_skus: [],
+                media_not_started_skus: [],
+              },
+            });
+          });
+        });
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: progress,
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+
+    const start = manager.runMedia({ projectPath, job: "media", skus: [sku] });
+    const { runId } = await start;
+    const result = await finished;
+
+    expect(runId).toBe(startedCoreRunId);
+    expect(progress).toHaveBeenCalledTimes(1);
+    expect(progress.mock.calls[0]?.[0].runId).toBe(startedCoreRunId);
+    expect(result.runId).toBe(startedCoreRunId);
+    expect(result.media_results).toEqual([{ sku, status: "uploaded" }]);
+    await vi.waitFor(() => expect(manager.activeCount).toBe(0));
+  });
+
+  it("rejects a duplicate active Core media execution ID without replacing the first project mapping", async () => {
+    const projectA = await projectDirectory();
+    const projectB = await projectDirectory();
+    const projectIdA = path.basename(projectA) as ProjectId;
+    const projectIdB = path.basename(projectB) as ProjectId;
+    const duplicateRunId = coreMediaRunId();
+    const children = [new FakeUtilityProcess(true, duplicateRunId), new FakeUtilityProcess(true, duplicateRunId)];
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-password" }),
+      resolveProject: async (projectId) => (projectId === projectIdA ? projectA : projectB),
+      fork: () => {
+        const child = children.shift();
+        if (!child) throw new Error("unexpected extra worker");
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const first = await manager.runMedia({ projectPath: projectA, job: "media", skus: ["fixture-a"] });
+    await expect(manager.runMedia({ projectPath: projectB, job: "media", skus: ["fixture-b"] })).rejects.toMatchObject({
+      code: "UNKNOWN",
+    });
+
+    expect(manager.running(projectIdA)).toEqual({ runId: duplicateRunId, job: "media" });
+    expect(manager.running(projectIdB)).toBeNull();
+    expect(manager.activeCount).toBe(1);
+    await manager.cancel(first.runId);
   });
 
   it("requires a stored WordPress credential before forking a media worker", async () => {
@@ -655,6 +859,7 @@ describe("desktop job manager", () => {
       [projectB, credentialB],
     ]);
     const childProcesses: FakeUtilityProcess[] = [];
+    const coreRunIdByChild = new Map<FakeUtilityProcess, string>();
     const progress: JobProgress[] = [];
     const finished: JobResult[] = [];
     const manager = createJobManager({
@@ -664,8 +869,10 @@ describe("desktop job manager", () => {
       getWordPressCredential: async (_id, projectPath) => credentialByPath.get(projectPath) ?? null,
       resolveProject: async (id) => (id === projectAId ? projectA : projectB),
       fork: () => {
-        const child = new FakeUtilityProcess(true, "2026-10-23-media");
+        const coreRunId = coreMediaRunId();
+        const child = new FakeUtilityProcess(true, coreRunId);
         childProcesses.push(child);
+        coreRunIdByChild.set(child, coreRunId);
         queueMicrotask(() => child.ready());
         return child;
       },
@@ -690,7 +897,13 @@ describe("desktop job manager", () => {
     const childA = childForProject(projectA);
     const childB = childForProject(projectB);
     if (!childA || !childB) throw new Error("media worker missing for fixture project");
+    const coreRunIdA = coreRunIdByChild.get(childA);
+    const coreRunIdB = coreRunIdByChild.get(childB);
+    if (!coreRunIdA || !coreRunIdB) throw new Error("Core media execution ID missing for fixture project");
 
+    expect(runA.runId).toBe(coreRunIdA);
+    expect(runB.runId).toBe(coreRunIdB);
+    expect(runA.runId).not.toBe(runB.runId);
     expect(childA.messages[0]).toMatchObject({ context: { wordpressCredential: credentialA } });
     expect(childB.messages[0]).toMatchObject({ context: { wordpressCredential: credentialB } });
     expect(childA.messages[0]).toMatchObject({ request: { skus: ["fixture-sku-a", "fixture-sku-b"] } });
@@ -704,7 +917,7 @@ describe("desktop job manager", () => {
     childA.emit("message", {
       type: "progress",
       progress: {
-        runId: "2026-10-23-media-a",
+        runId: coreRunIdA,
         projectPath: projectA,
         job: "media",
         pct: 50,
@@ -716,7 +929,7 @@ describe("desktop job manager", () => {
     childB.emit("message", {
       type: "progress",
       progress: {
-        runId: "2026-10-23-media-b",
+        runId: coreRunIdB,
         projectPath: projectB,
         job: "media",
         pct: 50,
@@ -970,7 +1183,7 @@ describe("desktop job manager", () => {
     const projectPath = await projectDirectory("workspace");
     const projectId = path.basename(projectPath) as ProjectId;
     const projectPaths = pathsFor("workspace");
-    const child = new FakeUtilityProcess(true, "2026-10-23-media");
+    const child = new FakeUtilityProcess(true, coreMediaRunId());
     let resolveFinished!: (result: JobResult) => void;
     const finished = new Promise<JobResult>((resolve) => {
       resolveFinished = resolve;
