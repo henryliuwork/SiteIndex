@@ -1,6 +1,7 @@
 import { pathsForProject, readJsonl, writeJsonl } from "@siteindex/core";
 import {
   EXIT,
+  isValidMediaSkuRecoveryPartition,
   type AppSettings,
   type JobProgress,
   type JobRequest,
@@ -20,6 +21,7 @@ import {
   isJobProgress,
   isJobResult,
   isRecord,
+  matchesMediaRecoveryRequest,
   shouldNotify,
   type JobWorkerMessage,
   type JobWorkerStartMessage,
@@ -79,8 +81,9 @@ interface JobEntry {
   rejectStarted(error: SiteIndexError): void;
   done: Promise<JobResult>;
   resolveDone(result: JobResult): void;
-  runId: string | null;
+  /** Core 的执行/checkpoint ID；不作为 Desktop 的活动 ID 暴露。 */
   coreRunId: string | null;
+  runId: string | null;
   startedAt: string | null;
   result: JobResult | null;
   oosRate: number | null;
@@ -121,6 +124,85 @@ function isRunLog(value: unknown): value is RunLog {
   );
 }
 
+function isSafeMediaImageUrl(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      !url.hostname ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeMediaJobResult(
+  result: JobResult,
+  sensitiveValues: readonly string[] = [],
+  sensitiveUsernames: readonly string[] = [],
+): JobResult {
+  const sanitized = sanitizeJobResult(result, sensitiveValues, sensitiveUsernames);
+  if (sanitized.job !== "media" || !isValidMediaSkuRecoveryPartition(sanitized)) return sanitized;
+  return {
+    runId: sanitized.runId,
+    job: "media",
+    status: sanitized.status,
+    exitCode: sanitized.exitCode,
+    summary: sanitized.summary,
+    ...(sanitized.counts ? { counts: sanitized.counts } : {}),
+    ...(sanitized.errors ? { errors: sanitized.errors } : {}),
+    media_requested_skus: [...sanitized.media_requested_skus],
+    media_batch_state: sanitized.media_batch_state,
+    media_results: sanitized.media_results.map(({ sku, status, reason, image_url }) => ({
+      sku,
+      status,
+      ...(reason ? { reason } : {}),
+      ...(isSafeMediaImageUrl(image_url) ? { image_url } : {}),
+    })),
+    media_unknown_skus: [...sanitized.media_unknown_skus],
+    media_not_started_skus: [...sanitized.media_not_started_skus],
+    ...(sanitized.media_error_code ? { media_error_code: sanitized.media_error_code } : {}),
+  };
+}
+
+function sanitizeMediaRunLog(row: RunLog): RunLog {
+  if (row.job !== "media") return row;
+  const safe: RunLog = {
+    run_id: row.run_id,
+    job: "media",
+    started_at: row.started_at,
+    finished_at: row.finished_at,
+    status: row.status,
+    ...(row.trigger === "schedule" || row.trigger === "manual" || row.trigger === "cli"
+      ? { trigger: row.trigger }
+      : {}),
+    ...(row.errors?.length ? { errors: ["媒体任务存在未公开的错误详情。"] } : {}),
+  };
+  if (!isValidMediaSkuRecoveryPartition(row)) return safe;
+
+  safe.media_requested_skus = [...row.media_requested_skus];
+  safe.media_batch_state = row.media_batch_state;
+  safe.media_results = row.media_results.map(({ sku, status, image_url }) => ({
+    sku,
+    status,
+    ...(isSafeMediaImageUrl(image_url) ? { image_url } : {}),
+  }));
+  safe.media_unknown_skus = [...row.media_unknown_skus];
+  safe.media_not_started_skus = [...row.media_not_started_skus];
+  if (row.media_error_code === "WP_AUTH_FAILED" || row.media_error_code === "WP_FORBIDDEN") {
+    safe.media_error_code = row.media_error_code;
+  }
+  return safe;
+}
+
 function cancelledResult(entry: JobEntry): JobResult {
   return {
     runId: entry.runId ?? `${new Date().toISOString().slice(0, 10)}-${entry.request.job}`,
@@ -129,6 +211,7 @@ function cancelledResult(entry: JobEntry): JobResult {
     exitCode: EXIT.GUARD_ABORTED,
     summary: "任务已取消。",
     errors: ["用户已取消任务。"],
+    ...unknownMediaRecovery(entry),
   };
 }
 
@@ -140,6 +223,19 @@ function processFailureResult(entry: JobEntry, code: number): JobResult {
     exitCode: EXIT.SOURCE_FAILED,
     summary: "Job 执行进程异常退出。",
     errors: [`utilityProcess exit code: ${code}`],
+    ...unknownMediaRecovery(entry),
+  };
+}
+
+function unknownMediaRecovery(entry: JobEntry): Partial<JobResult> {
+  if (entry.request.job !== "media") return {};
+  const skus = [...new Set(entry.request.skus ?? [])];
+  return {
+    media_requested_skus: skus,
+    media_batch_state: "outcome_unknown",
+    media_results: [],
+    media_unknown_skus: skus,
+    media_not_started_skus: [],
   };
 }
 
@@ -200,13 +296,13 @@ export function createJobManager(options: JobManagerOptions) {
     }
   }
 
-  async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<void> {
-    if (!entry.coreRunId) return;
+  async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<JobResult> {
+    if (!entry.runId) return result;
     try {
       const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
       const rows = await readJsonl(filePath);
       const record: RunLog = {
-        run_id: entry.coreRunId,
+        run_id: entry.runId,
         job: entry.request.job,
         trigger: entry.trigger,
         device_name: entry.settings.device_name,
@@ -214,12 +310,24 @@ export function createJobManager(options: JobManagerOptions) {
         finished_at: new Date().toISOString(),
         status: result.status,
         ...(result.errors?.length ? { errors: result.errors } : {}),
+        ...(isValidMediaSkuRecoveryPartition(result)
+          ? {
+              media_requested_skus: [...result.media_requested_skus],
+              media_batch_state: result.media_batch_state,
+              media_results: result.media_results.map((item) => ({ ...item })),
+              media_unknown_skus: [...result.media_unknown_skus],
+              media_not_started_skus: [...result.media_not_started_skus],
+              ...(result.media_error_code ? { media_error_code: result.media_error_code } : {}),
+            }
+          : {}),
       };
-      const next = rows.filter((row) => row.run_id !== entry.coreRunId);
+      const next = rows.filter((row) => row.run_id !== entry.runId);
       next.push(record as unknown as Record<string, unknown>);
       await writeJsonl(filePath, next, "run_log");
+      return result;
     } catch {
       // 项目文件不可写时仍把失败结果发回界面。
+      return result;
     }
   }
 
@@ -240,7 +348,7 @@ export function createJobManager(options: JobManagerOptions) {
     let result = entry.result;
     if (!result) {
       result = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
-      await appendSyntheticRunLog(entry, result);
+      result = await appendSyntheticRunLog(entry, result);
       if (entry.cancelled) {
         options.emitProgress({
           runId: result.runId,
@@ -328,10 +436,15 @@ export function createJobManager(options: JobManagerOptions) {
     }
     if (message.type === "started") {
       if (typeof message.runId !== "string" || typeof message.startedAt !== "string" || entry.runId) return;
-      entry.runId = message.runId;
-      entry.startedAt = message.startedAt;
+      const runId = entry.request.job === "media" ? message.runId : `${message.runId}-${randomUUID()}`;
+      if (!runId.trim() || entriesByRunId.has(runId)) {
+        entry.rejectStarted(jobError("UNKNOWN", "Core 返回了重复或空的 Job 执行 ID。"));
+        entry.child.kill();
+        return;
+      }
       entry.coreRunId = message.runId;
-      entry.runId = `${message.runId}-${randomUUID()}`;
+      entry.runId = runId;
+      entry.startedAt = message.startedAt;
       entry.workerPid = entry.child.pid ?? null;
       clearTimeout(entry.startupTimer);
       entriesByRunId.set(entry.runId, entry);
@@ -350,8 +463,17 @@ export function createJobManager(options: JobManagerOptions) {
       return;
     }
     if (message.type === "finished") {
-      if (!isJobResult(message.result)) return;
-      entry.result = sanitizeJobResult(message.result, entry.sensitiveValues, entry.sensitiveUsernames);
+      if (
+        !isJobResult(message.result) ||
+        message.result.job !== entry.request.job ||
+        (entry.request.job === "media" && message.result.runId !== entry.coreRunId) ||
+        (entry.request.job === "media" && !matchesMediaRecoveryRequest(message.result, entry.request.skus ?? []))
+      )
+        return;
+      // This listener is bound to the utilityProcess created for this entry. Core may
+      // recompute its business date at completion, so child ownership plus job name
+      // attributes the result; finishEntry normalizes its runId to the external ID.
+      entry.result = sanitizeMediaJobResult(message.result, entry.sensitiveValues, entry.sensitiveUsernames);
       entry.oosRate = typeof message.oosRate === "number" ? message.oosRate : null;
       entry.child.kill();
       return;
@@ -413,7 +535,7 @@ export function createJobManager(options: JobManagerOptions) {
         projectPath,
         job: request.job,
         ...(request.job === "media"
-          ? { skus: request.skus as string[] }
+          ? { skus: [...new Set(request.skus as string[])] }
           : {
               ...(typeof request.only === "string" ? { only: request.only } : {}),
               ...(typeof request.date === "string" ? { date: request.date } : {}),
@@ -454,8 +576,8 @@ export function createJobManager(options: JobManagerOptions) {
         rejectStarted,
         done,
         resolveDone,
-        runId: null,
         coreRunId: null,
+        runId: null,
         startedAt: null,
         result: null,
         oosRate: null,
@@ -527,7 +649,7 @@ export function createJobManager(options: JobManagerOptions) {
       const rows = await readJsonl(path.join(projectPath, projectPaths.runs));
       const history: RunLog[] = [];
       for (const row of rows) {
-        if (isRunLog(row)) history.push(row as unknown as RunLog);
+        if (isRunLog(row)) history.push(sanitizeMediaRunLog(row as unknown as RunLog));
       }
       return history
 

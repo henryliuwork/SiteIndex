@@ -126,7 +126,7 @@ if (!hasSingleInstanceLock) {
       workerPath: join(mainDirectory, "job-worker.js"),
       getSettings: () => settingsStore.get(),
       getBrowserExecutablePath: async (settings) => (await desktopIntegrations.detectBrowser(settings.browser)).path,
-      // Core media Job 接入完成后再打开能力闸；当前必须保持 NOT_IMPLEMENTED。
+      // Core media Job 与 WASM 已接线；完整媒体流水线的安装版验收完成前仍保持关闭。
       isMediaJobReady: () => false,
       getWordPressCredential: async (id) => {
         if (!mediaCore) throw { code: "PROJECT_NOT_FOUND", message: "项目服务尚未就绪。" };
@@ -468,6 +468,8 @@ if (!hasSingleInstanceLock) {
         else if (backgroundSettingsChanged || projectsChanged) await applyBackgroundPreferences();
       },
       jobs,
+      // Core EDM SKU 清单导出仍在 pending；即使服务暴露同名方法，也要等能力通过验收后再开放。
+      isEdmExportIndexReady: () => false,
       scheduler,
       reconcileSchedules,
       reconcileProjectScheduleInBackground,

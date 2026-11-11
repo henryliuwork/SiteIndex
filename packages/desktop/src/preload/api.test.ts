@@ -1,11 +1,83 @@
 import { describe, expect, it, vi } from "vitest";
+import { PENDING_HANDLERS } from "@siteindex/shared";
 import { createApiBridge } from "./api.js";
 
 describe("createApiBridge IPC errors", () => {
-  it("does not expose the optional media API while the Desktop capability is gated", () => {
-    const bridge = createApiBridge({ invoke: vi.fn(), listen: () => () => undefined });
+  it("keeps media preparation unavailable through the bridge while the capability is pending", async () => {
+    const invoke = vi.fn(async () => {
+      throw new Error(
+        'Error invoking remote method \'si:media.prepare\': Error: __SITEINDEX_IPC_ERROR__:{"code":"NOT_IMPLEMENTED","message":"当前桌面版本尚未接入媒体准备 Core Job。","detail":"Core media Job 尚未就绪。"}',
+      );
+    });
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
 
-    expect(bridge.media).toBeUndefined();
+    expect(PENDING_HANDLERS).toContain("media.prepare");
+    await expect(bridge.media?.prepare({ project: "fixture-project", skus: ["fixture-sku"] })).rejects.toMatchObject({
+      code: "NOT_IMPLEMENTED",
+      message: "当前桌面版本尚未接入媒体准备 Core Job。",
+    });
+    expect(invoke).toHaveBeenCalledWith("si:media.prepare", { project: "fixture-project", skus: ["fixture-sku"] });
+  });
+
+  it("forwards EDM index export through the gated API bridge", async () => {
+    const exported = {
+      status: "created" as const,
+      path: "_site-index/edm/sku-index.md" as const,
+      sku_count: 2,
+      missing_image_count: 1,
+    };
+    const invoke = vi.fn(async () => exported);
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+
+    expect(PENDING_HANDLERS).toContain("edm.exportIndex");
+    await expect(bridge.edm.exportIndex?.("fixture-project")).resolves.toEqual(exported);
+    expect(invoke).toHaveBeenCalledWith("si:edm.exportIndex", "fixture-project");
+  });
+
+  it("restores an uncertain EDM export outcome without reporting success", async () => {
+    const bridge = createApiBridge({
+      invoke: async () => {
+        throw new Error(
+          'Error invoking remote method \'si:edm.exportIndex\': Error: __SITEINDEX_IPC_ERROR__:{"code":"EDM_EXPORT_OUTCOME_UNKNOWN","message":"无法确认清单写入结果，请检查文件后重试。","detail":"写入后确认丢失"}',
+        );
+      },
+      listen: () => () => undefined,
+    });
+
+    await expect(bridge.edm.exportIndex?.("fixture-project")).rejects.toMatchObject({
+      code: "EDM_EXPORT_OUTCOME_UNKNOWN",
+      message: "无法确认清单写入结果，请检查文件后重试。",
+      detail: "写入后确认丢失",
+    });
+  });
+
+  it("passes persisted media recovery fields through jobs.history without filling old records", async () => {
+    const rows = [
+      {
+        run_id: "2026-11-10-media-current",
+        job: "media" as const,
+        started_at: "2026-11-10T10:00:00.000Z",
+        finished_at: "2026-11-10T10:05:00.000Z",
+        status: "partial" as const,
+        media_requested_skus: ["fixture-sku-a", "fixture-sku-b"],
+        media_batch_state: "outcome_unknown" as const,
+        media_results: [{ sku: "fixture-sku-a", status: "uploaded" as const }],
+        media_unknown_skus: ["fixture-sku-b"],
+        media_not_started_skus: [],
+      },
+      {
+        run_id: "2026-11-09-media-old",
+        job: "media" as const,
+        started_at: "2026-11-09T10:00:00.000Z",
+        finished_at: "2026-11-09T10:05:00.000Z",
+        status: "failed" as const,
+      },
+    ];
+    const invoke = vi.fn(async () => rows);
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+
+    await expect(bridge.jobs.history("fixture-project", 50)).resolves.toEqual(rows);
+    expect(invoke).toHaveBeenCalledWith("si:jobs.history", "fixture-project", 50);
   });
 
   it("forwards workspace checks, creation, and pending import checks", async () => {

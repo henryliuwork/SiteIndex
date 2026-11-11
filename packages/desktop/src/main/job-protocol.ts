@@ -1,4 +1,5 @@
 import type { AppSettings, JobName, JobProgress, JobRequest, JobResult, JobTrigger } from "@siteindex/shared";
+import { isValidMediaSkuRecoveryPartition, type MediaSkuRecoveryPartition } from "@siteindex/shared";
 import type { WordPressCredential } from "../shared/wordpress-credential-types.js";
 
 export type JobStartRequest = Omit<JobRequest, "trigger"> & { trigger: JobTrigger };
@@ -59,12 +60,25 @@ export function isJobProgress(value: unknown): value is JobProgress {
 
 export function isJobResult(value: unknown): value is JobResult {
   if (!isRecord(value)) return false;
-  return (
+  const isCompleteResult =
     typeof value.runId === "string" &&
     isJobName(value.job) &&
     (value.status === "ok" || value.status === "partial" || value.status === "failed" || value.status === "skipped") &&
     typeof value.exitCode === "number" &&
-    typeof value.summary === "string"
+    typeof value.summary === "string";
+  if (!isCompleteResult) return false;
+  return value.job !== "media" || isValidMediaSkuRecoveryPartition(value);
+}
+
+export function matchesMediaRecoveryRequest(
+  value: unknown,
+  requestedSkus: readonly string[],
+): value is MediaSkuRecoveryPartition {
+  if (!isValidMediaSkuRecoveryPartition(value)) return false;
+  const expected = [...new Set(requestedSkus)];
+  return (
+    value.media_requested_skus.length === expected.length &&
+    value.media_requested_skus.every((sku, index) => sku === expected[index])
   );
 }
 

@@ -9,10 +9,32 @@ export function createEdmHandlers(context: IpcContext): IpcHandlerImplementation
         context.core.edm.listImages(id, args[1] as Parameters<typeof context.core.edm.listImages>[1]),
       ),
     "edm.setManualImage": (...args) =>
-      context.withProject(args[0], (id) => context.core.edm.setManualImage(id, args[1] as string, args[2] as string | null)),
+      context.withProject(args[0], (id) =>
+        context.core.edm.setManualImage(id, args[1] as string, args[2] as string | null),
+      ),
     "edm.buildCommand": (...args) =>
       context.withProject(args[0], (id) =>
         context.core.edm.buildCommand(id, args[1] as Parameters<typeof context.core.edm.buildCommand>[1]),
       ),
+    "edm.exportIndex": async (id) => {
+      if (!context.isEdmExportIndexReady?.()) {
+        throw {
+          code: "NOT_IMPLEMENTED",
+          message: "当前版本尚未接入 EDM SKU 清单生成。",
+          detail: "Core edm.exportIndex 尚未就绪。",
+        };
+      }
+      return context.withProject(id, (projectId) => {
+        const exportIndex = context.core.edm.exportIndex;
+        if (!exportIndex) {
+          throw {
+            code: "NOT_IMPLEMENTED",
+            message: "当前版本尚未接入 EDM SKU 清单生成。",
+            detail: "Core edm.exportIndex 尚未就绪。",
+          };
+        }
+        return exportIndex.call(context.core.edm, projectId);
+      });
+    },
   };
 }

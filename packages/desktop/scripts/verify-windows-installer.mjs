@@ -10,6 +10,12 @@ const desktopRoot = resolve(scriptDirectory, "..");
 const repositoryRoot = resolve(desktopRoot, "../..");
 const desktopPackage = JSON.parse(await readFile(join(desktopRoot, "package.json"), "utf8"));
 const productName = desktopPackage.build.productName;
+const REQUIRED_MEDIA_WASM = [
+  "@jsquash/avif/codec/dec/avif_dec.wasm",
+  "@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm",
+  "@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm",
+  "@jsquash/webp/codec/dec/webp_dec.wasm",
+];
 
 function hasExistingSiteIndexInstall() {
   const uninstallRoots = [
@@ -131,6 +137,25 @@ export async function verifyUiResourceTree(resourcesDirectory, expectedUiDirecto
   return { referencedAssets: references.length, assetFiles: assetFiles.length, uiFiles: uiFiles.length };
 }
 
+export async function verifyMediaWasmResources(resourcesDirectory) {
+  const unpackedDirectory = join(resourcesDirectory, "app.asar.unpacked", "node_modules");
+  for (const modulePath of REQUIRED_MEDIA_WASM) {
+    const wasmPath = join(unpackedDirectory, ...modulePath.split("/"));
+    let bytes;
+    try {
+      bytes = await readFile(wasmPath);
+    } catch {
+      throw new Error("Installed resources are missing a required media WASM module.");
+    }
+    try {
+      await WebAssembly.compile(bytes);
+    } catch {
+      throw new Error("Installed resources contain an invalid media WASM module.");
+    }
+  }
+  return { mediaWasmModules: REQUIRED_MEDIA_WASM.length };
+}
+
 export async function verifyWindowsInstaller(installerPath, attempts = 2) {
   if (process.platform !== "win32") throw new Error("The Windows installer check can run only on Windows.");
   await access(installerPath);
@@ -157,6 +182,7 @@ export async function verifyWindowsInstaller(installerPath, attempts = 2) {
         join(installDirectory, "resources"),
         join(repositoryRoot, "packages", "ui", "dist"),
       );
+      await verifyMediaWasmResources(join(installDirectory, "resources"));
     }
   } catch (error) {
     verificationError = error;

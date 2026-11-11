@@ -18,6 +18,7 @@ export interface IpcDependencies {
   projects: ProjectCatalog;
   settingsChanged: (value: AppSettings, reconcile?: boolean, onTiming?: AddExistingTimingCallback) => Promise<void>;
   jobs: JobManager;
+  isEdmExportIndexReady?: () => boolean;
   scheduler: SystemScheduler;
   reconcileSchedules: (
     allowElevation: boolean,
