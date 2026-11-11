@@ -9,7 +9,8 @@ type MockInventoryApi = Omit<SiteIndexApi["inventory"], "summary"> & {
 
 function parentHistory(children: readonly SkuStockView[]): string {
   return Array.from({ length: 30 }, (_, day) => {
-    const states = children.map((child) => child.history_30d[day]).filter((state) => state !== undefined && state !== "-");
+    // 与 Core 一致："-" 表示尚未上架；短历史越界得到的 undefined 视为未知状态。
+    const states = children.map((child) => child.history_30d[day]).filter((state) => state !== "-");
     if (states.length === 0) return "-";
     if (states.includes("i")) return "i";
     if (states.every((state) => state === "o")) return "o";
@@ -22,6 +23,25 @@ function onlineRate(history: string, days: 7 | 30): number | null {
   const available = [...history.slice(-days)].filter((state) => state !== "-");
   if (available.length === 0) return null;
   return available.filter((state) => state === "i").length / available.length;
+}
+
+function dateAtOffset(date: string, offset: number): string {
+  const result = new Date(`${date}T00:00:00.000Z`);
+  result.setUTCDate(result.getUTCDate() + offset);
+  return result.toISOString().slice(0, 10);
+}
+
+function recentStockChanges(history: string, asOf: string): { count: number; lastChangedAt: string | null } {
+  let count = 0;
+  let lastChangedAt: string | null = null;
+  for (let day = 1; day < history.length; day += 1) {
+    const previous = history[day - 1];
+    const current = history[day];
+    if (previous === "-" || current === "-" || previous === current) continue;
+    count += 1;
+    lastChangedAt = dateAtOffset(asOf, day - 29);
+  }
+  return { count, lastChangedAt };
 }
 
 function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
@@ -43,6 +63,7 @@ function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
       : children.every((child) => child.stock_status === "out_of_stock") ? "out_of_stock"
         : children.some((child) => child.stock_status === "preorder") ? "preorder" : "unknown";
     const history = parentHistory(children);
+    const changes = recentStockChanges(history, FIXED_TODAY);
     return {
       ...representative,
       sku: parentSku,
@@ -55,9 +76,9 @@ function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
       online_rate_7d: onlineRate(history, 7),
       online_rate_30d: onlineRate(history, 30),
       history_30d: history,
-      changes_30d: 0,
-      last_change: null,
-      last_change_at: null,
+      changes_30d: changes.count,
+      last_change: changes.lastChangedAt ? "stock_change" : null,
+      last_change_at: changes.lastChangedAt,
       parent_sku: null,
       price_history: [],
       is_parent: true,

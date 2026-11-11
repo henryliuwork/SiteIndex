@@ -81,4 +81,48 @@ describe("inventory parent view mock", () => {
       rowsByProject.demo = original;
     }
   });
+
+  it("matches Core stock-change dates and treats short histories as unknown", async () => {
+    const api = createInventoryMock();
+    const original = rowsByProject.demo;
+    const sample = original[0]!;
+    rowsByProject.demo = [
+      { ...sample, sku: "DEMO001A01", parent_sku: "DEMO001A", stock_status: "in_stock", history_30d: "-".repeat(20) + "ooiiooouoi" },
+      { ...sample, sku: "DEMO001A02", parent_sku: "DEMO001A", stock_status: "out_of_stock", history_30d: "-".repeat(20) + "oooopppuoo" },
+      { ...sample, sku: "DEMO002B01", parent_sku: "DEMO002B", stock_status: "out_of_stock", history_30d: "-".repeat(30) },
+      { ...sample, sku: "DEMO002B02", parent_sku: "DEMO002B", stock_status: "out_of_stock", history_30d: "-".repeat(30) },
+      // 模拟 Core 尚未补齐 30 天历史的行；越界日期与 Core 一样按未知状态处理。
+      { ...sample, sku: "DEMO003C01", parent_sku: "DEMO003C", stock_status: "in_stock", history_30d: "i" },
+    ];
+
+    try {
+      const result = await api.listSkus("demo", { page: 1, pageSize: 0, filters: { parent_only: true } });
+      expect(result.rows.find((row) => row.sku === "DEMO001A")).toMatchObject({
+        history_30d: "-".repeat(20) + "ooiipppuoi",
+        online_rate_7d: 2 / 7,
+        online_rate_30d: 0.3,
+        changes_30d: 5,
+        last_change: "stock_change",
+        last_change_at: FIXED_TODAY,
+      });
+      expect(result.rows.find((row) => row.sku === "DEMO002B")).toMatchObject({
+        history_30d: "-".repeat(30),
+        online_rate_7d: null,
+        online_rate_30d: null,
+        changes_30d: 0,
+        last_change: null,
+        last_change_at: null,
+      });
+      expect(result.rows.find((row) => row.sku === "DEMO003C")).toMatchObject({
+        history_30d: "i" + "u".repeat(29),
+        online_rate_7d: 0,
+        online_rate_30d: 1 / 30,
+        changes_30d: 1,
+        last_change: "stock_change",
+        last_change_at: "2026-09-24",
+      });
+    } finally {
+      rowsByProject.demo = original;
+    }
+  });
 });

@@ -4,7 +4,7 @@
 
 .si-overview-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.3fr) minmax(0, 1fr);
   min-width: 0;
   align-items: start;
   gap: var(--space-4);
@@ -201,16 +201,6 @@
   white-space: pre-wrap;
 }
 
-.si-overview-changelog {
-  grid-column: 1 / -1;
-}
-
-.si-overview-changelog ul {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
-  column-gap: var(--space-4);
-}
-
 .si-overview-changelog h2 {
   margin: 0 0 var(--space-2);
 }
@@ -233,6 +223,20 @@
   line-height: var(--lh-mono);
 }
 
+@media (max-width: 1400px) {
+  .si-overview-content {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  }
+
+  .si-overview-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .si-overview-changelog {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 1100px) {
   .si-overview-content {
     grid-template-columns: minmax(0, 1fr);
@@ -245,10 +249,6 @@
 
   .si-overview-changelog {
     grid-column: auto;
-  }
-
-  .si-overview-changelog ul {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 
