@@ -167,6 +167,7 @@
 
 - [x] #422：`before-quit` 等待 `jobs.shutdown()`；Desktop 对已启动的 Job 结束 utilityProcess、清理自有锁并将取消/崩溃作为失败结果返回。虚构双项目测试覆盖媒体凭据与进度/历史按项目隔离；不访问用户 vault。
 - [x] #422：媒体能力闸保持关闭；`media.prepare` 在设置、凭据 accessor 与 utilityProcess 之前返回 `NOT_IMPLEMENTED`（PR #427）。
+- [x] #422：JobManager 的锁清理、合成历史写入与 `jobs.history` 查询统一按 Core 的 `pathsForProject()` 解析 legacy/workspace 布局；worker runId 也从对应 `site.json` 读取时区。退出、崩溃、跨项目凭据隔离测试覆盖两种布局；暂停/退出与布局解析并发时不会再启动 worker。
 - [ ] #422：应用重启后的逐 SKU 恢复依赖 shared 历史结果契约及 Core 将脱敏 `media_results` 持久写入原项目 RunLog；当前 `RunLog` 没有该字段，Desktop `jobs.history(project)` 按项目读取但不能恢复未持久化结果。
 - [ ] #422：Core 需定义 media Job 取消/进程中断的部分结果持久化语义；当前退出确认选择“退出并取消任务”，Desktop 只能结束进程并记录通用失败状态。
 - [ ] #423：待 Core 清单生成实现和 shared 导出契约合并后，再接 Desktop IPC/preload；PR #428 已保持 UI 导出入口关闭。

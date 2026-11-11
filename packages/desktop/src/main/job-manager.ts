@@ -1,13 +1,13 @@
-import { readJsonl, writeJsonl } from "@siteindex/core";
+import { pathsForProject, readJsonl, writeJsonl } from "@siteindex/core";
 import {
   EXIT,
-  PATHS,
   type AppSettings,
   type JobProgress,
   type JobRequest,
   type JobResult,
   type JobTrigger,
   type ProjectId,
+  type ProjectPaths,
   type RunLog,
   type SiteIndexError,
 } from "@siteindex/shared";
@@ -49,6 +49,7 @@ export interface JobManagerOptions {
   isMediaJobReady?(): boolean;
   getWordPressCredential?(id: ProjectId, projectPath: string): Promise<WordPressCredential | null>;
   resolveProject(id: ProjectId): string | Promise<string>;
+  resolveProjectPaths?(projectPath: string): Promise<ProjectPaths>;
   fork(modulePath: string): UtilityProcessLike;
   emitProgress(progress: JobProgress): void;
   emitFinished(result: JobResult): void;
@@ -63,6 +64,7 @@ export interface JobManagerOptions {
 interface JobEntry {
   key: string;
   projectPath: string;
+  projectPaths: ProjectPaths;
   projectId: ProjectId;
   request: Omit<JobRequest, "trigger">;
   trigger: JobTrigger;
@@ -179,7 +181,7 @@ export function createJobManager(options: JobManagerOptions) {
   async function releaseOwnedLock(entry: JobEntry): Promise<void> {
     const pid = entry.workerPid;
     if (pid === null) return;
-    const lockPath = path.join(entry.projectPath, PATHS.lock);
+    const lockPath = path.join(entry.projectPath, entry.projectPaths.lock);
     try {
       const identity = await lstat(lockPath);
       const text = await readFile(lockPath, "utf8");
@@ -201,7 +203,7 @@ export function createJobManager(options: JobManagerOptions) {
   async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<void> {
     if (!entry.coreRunId) return;
     try {
-      const filePath = path.join(entry.projectPath, PATHS.runs);
+      const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
       const rows = await readJsonl(filePath);
       const record: RunLog = {
         run_id: entry.coreRunId,
@@ -420,6 +422,8 @@ export function createJobManager(options: JobManagerOptions) {
             }),
       };
       if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
+      const projectPaths = await (options.resolveProjectPaths ?? pathsForProject)(projectPath);
+      if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
       const child = options.fork(options.workerPath);
 
       let resolveStarted!: (runId: string) => void;
@@ -435,6 +439,7 @@ export function createJobManager(options: JobManagerOptions) {
       const entry: JobEntry = {
         key,
         projectPath,
+        projectPaths,
         projectId,
         request: safeRequest,
         trigger,
@@ -518,7 +523,8 @@ export function createJobManager(options: JobManagerOptions) {
     },
     async history(id: ProjectId, limit?: number): Promise<RunLog[]> {
       const projectPath = await options.resolveProject(id);
-      const rows = await readJsonl(path.join(projectPath, PATHS.runs));
+      const projectPaths = await pathsForProject(projectPath);
+      const rows = await readJsonl(path.join(projectPath, projectPaths.runs));
       const history: RunLog[] = [];
       for (const row of rows) {
         if (isRunLog(row)) history.push(row as unknown as RunLog);

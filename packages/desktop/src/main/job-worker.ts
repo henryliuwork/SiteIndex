@@ -1,14 +1,8 @@
 import { createCoreService, type CoreService, type CoreServiceContext } from "@siteindex/core";
-import {
-  EXIT,
-  PATHS,
-  type JobProgress,
-  type JobRequest,
-  type ProgressReporter,
-  type ProjectId,
-} from "@siteindex/shared";
+import { EXIT, type JobProgress, type JobRequest, type ProgressReporter, type ProjectId } from "@siteindex/shared";
 import path from "node:path";
 import { isJobName, isRecord, type JobWorkerMessage, type JobWorkerStartMessage } from "./job-protocol.js";
+import { resolveJobRunId } from "./job-run-id.js";
 import {
   sanitizeJobProgress,
   sanitizeJobResult,
@@ -20,33 +14,6 @@ import {
 const port = process.parentPort;
 
 if (!port) throw new Error("Job Worker 必须由 Electron utilityProcess 启动。");
-
-function localDate(timezone: string, now = new Date()): string {
-  const values = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone || "UTC",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    })
-      .formatToParts(now)
-      .map(({ type, value }) => [type, value]),
-  );
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-async function runIdFor(request: JobWorkerStartMessage["request"]): Promise<string> {
-  if (request.date) return `${request.date}-${request.job}`;
-  try {
-    const { readFile } = await import("node:fs/promises");
-    const content = await readFile(path.join(path.resolve(request.projectPath), PATHS.site), "utf8");
-    const config: unknown = JSON.parse(content);
-    const timezone = isRecord(config) && typeof config.timezone === "string" ? config.timezone : "UTC";
-    return `${localDate(timezone)}-${request.job}`;
-  } catch {
-    return `${new Date().toISOString().slice(0, 10)}-${request.job}`;
-  }
-}
 
 function isStartMessage(value: unknown): value is JobWorkerStartMessage {
   if (!isRecord(value) || value.type !== "run" || !isRecord(value.request) || !isRecord(value.context)) return false;
@@ -142,7 +109,7 @@ async function run(message: JobWorkerStartMessage): Promise<void> {
     ...(message.context.wordpressCredential ? { wordpressCredential: message.context.wordpressCredential } : {}),
   };
   const core = createCoreService(coreContext);
-  const runId = await runIdFor(request);
+  const runId = await resolveJobRunId(request);
   const startedAt = new Date().toISOString();
   port.postMessage({ type: "started", runId, startedAt } satisfies JobWorkerMessage);
 

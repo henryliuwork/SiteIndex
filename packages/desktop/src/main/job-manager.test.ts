@@ -2,7 +2,16 @@ import { EventEmitter } from "node:events";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PATHS, type AppSettings, type JobProgress, type JobResult, type ProjectId } from "@siteindex/shared";
+import { pathsForProject } from "@siteindex/core";
+import {
+  pathsFor,
+  type AppSettings,
+  type JobProgress,
+  type JobResult,
+  type ProjectId,
+  type ProjectLayout,
+  type ProjectPaths,
+} from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createJobManager, type UtilityProcessLike } from "./job-manager.js";
 
@@ -28,7 +37,10 @@ class FakeUtilityProcess extends EventEmitter implements UtilityProcessLike {
   readonly postedReferences: unknown[] = [];
   killed = false;
 
-  constructor(private readonly reportStarted = true, private readonly reportedRunId = "2026-10-23-daily") {
+  constructor(
+    private readonly reportStarted = true,
+    private readonly reportedRunId = "2026-10-23-daily",
+  ) {
     super();
   }
 
@@ -56,16 +68,18 @@ class FakeUtilityProcess extends EventEmitter implements UtilityProcessLike {
   }
 }
 
-async function projectDirectory(): Promise<string> {
+async function projectDirectory(layout: ProjectLayout = "legacy"): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "siteindex-job-manager-"));
   roots.push(root);
-  await mkdir(path.join(root, PATHS.index), { recursive: true });
-  await writeFile(path.join(root, PATHS.site), JSON.stringify({ timezone: "UTC" }), "utf8");
+  const projectPaths = pathsFor(layout);
+  await mkdir(path.join(root, projectPaths.index), { recursive: true });
+  await writeFile(path.join(root, projectPaths.site), JSON.stringify({ timezone: "UTC" }), "utf8");
   return root;
 }
 
 async function writeOwnedLock(projectPath: string, child: FakeUtilityProcess, job: string): Promise<string> {
-  const lockPath = path.join(projectPath, PATHS.lock);
+  const projectPaths = await pathsForProject(projectPath);
+  const lockPath = path.join(projectPath, projectPaths.lock);
   await writeFile(
     lockPath,
     JSON.stringify({
@@ -568,9 +582,9 @@ describe("desktop job manager", () => {
     expect(JSON.stringify(finished)).not.toContain(credential.applicationPassword);
   });
 
-  it("isolates concurrent media jobs by project and cancels each project independently on app shutdown", async () => {
-    const projectA = await projectDirectory();
-    const projectB = await projectDirectory();
+  it("isolates concurrent media jobs across legacy and workspace projects during app shutdown", async () => {
+    const projectA = await projectDirectory("legacy");
+    const projectB = await projectDirectory("workspace");
     const projectAId = path.basename(projectA) as ProjectId;
     const projectBId = path.basename(projectB) as ProjectId;
     const credentialA = { username: "fixture-user-a", applicationPassword: "fixture-password-a" };
@@ -616,6 +630,10 @@ describe("desktop job manager", () => {
     expect(childB.messages[0]).toMatchObject({ context: { wordpressCredential: credentialB } });
     expect(manager.running(projectAId)).toEqual({ runId: runA.runId, job: "media" });
     expect(manager.running(projectBId)).toEqual({ runId: runB.runId, job: "media" });
+    const [lockA, lockB] = await Promise.all([
+      writeOwnedLock(projectA, childA, "media"),
+      writeOwnedLock(projectB, childB, "media"),
+    ]);
 
     childA.emit("message", {
       type: "progress",
@@ -669,6 +687,9 @@ describe("desktop job manager", () => {
     const [historyA, historyB] = await Promise.all([manager.history(projectAId), manager.history(projectBId)]);
     expect(historyA).toMatchObject([{ run_id: "2026-10-23-media", job: "media", status: "failed" }]);
     expect(historyB).toMatchObject([{ run_id: "2026-10-23-media", job: "media", status: "failed" }]);
+    await expect(access(lockA)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(lockB)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(path.join(projectB, pathsFor("legacy").runs))).rejects.toMatchObject({ code: "ENOENT" });
     const persisted = JSON.stringify({ historyA, historyB, progress, finished });
     expect(persisted).not.toContain(credentialA.username);
     expect(persisted).not.toContain(credentialA.applicationPassword);
@@ -676,46 +697,55 @@ describe("desktop job manager", () => {
     expect(persisted).not.toContain(credentialB.applicationPassword);
   });
 
-  it("records a crashed media worker as failed for its original project without exposing credentials", async () => {
-    const projectPath = await projectDirectory();
-    const projectId = path.basename(projectPath) as ProjectId;
-    const credential = { username: "fixture-crash-user", applicationPassword: "fixture-crash-password" };
-    const child = new FakeUtilityProcess(true, "2026-10-23-media");
-    let resolveFinished!: (result: JobResult) => void;
-    const finished = new Promise<JobResult>((resolve) => {
-      resolveFinished = resolve;
-    });
-    const manager = createJobManager({
-      workerPath: "job-worker.js",
-      getSettings: async () => settings(),
-      isMediaJobReady: () => true,
-      getWordPressCredential: async () => credential,
-      resolveProject: async () => projectPath,
-      fork: () => {
-        queueMicrotask(() => child.ready());
-        return child;
-      },
-      emitProgress: vi.fn(),
-      emitFinished: resolveFinished,
-      notify: vi.fn(),
-    });
+  it.each(["legacy", "workspace"] as const)(
+    "records a crashed media worker in the %s project history without exposing credentials",
+    async (layout) => {
+      const projectPath = await projectDirectory(layout);
+      const projectId = path.basename(projectPath) as ProjectId;
+      const credential = { username: "fixture-crash-user", applicationPassword: "fixture-crash-password" };
+      const child = new FakeUtilityProcess(true, "2026-10-23-media");
+      let resolveFinished!: (result: JobResult) => void;
+      const finished = new Promise<JobResult>((resolve) => {
+        resolveFinished = resolve;
+      });
+      const manager = createJobManager({
+        workerPath: "job-worker.js",
+        getSettings: async () => settings(),
+        isMediaJobReady: () => true,
+        getWordPressCredential: async () => credential,
+        resolveProject: async () => projectPath,
+        fork: () => {
+          queueMicrotask(() => child.ready());
+          return child;
+        },
+        emitProgress: vi.fn(),
+        emitFinished: resolveFinished,
+        notify: vi.fn(),
+      });
 
-    const { runId } = await manager.runMedia({ projectPath, job: "media", skus: ["fixture-crash-sku"] });
-    child.emit("exit", 17);
+      const { runId } = await manager.runMedia({ projectPath, job: "media", skus: ["fixture-crash-sku"] });
+      const lockPath = await writeOwnedLock(projectPath, child, "media");
+      child.emit("exit", 17);
 
-    await expect(finished).resolves.toMatchObject({
-      runId,
-      job: "media",
-      status: "failed",
-      errors: ["utilityProcess exit code: 17"],
-    });
-    expect(manager.running(projectId)).toBeNull();
-    const history = JSON.stringify(await manager.history(projectId));
-    expect(history).toContain('"job":"media"');
-    expect(history).toContain('"status":"failed"');
-    expect(history).not.toContain(credential.username);
-    expect(history).not.toContain(credential.applicationPassword);
-  });
+      const result = await finished;
+      expect(result).toMatchObject({
+        runId,
+        job: "media",
+        status: "failed",
+        errors: ["utilityProcess exit code: 17"],
+      });
+      await vi.waitFor(() => expect(manager.activeCount).toBe(0));
+      expect(manager.running(projectId)).toBeNull();
+      const history = JSON.stringify(await manager.history(projectId));
+      expect(history).toContain('"job":"media"');
+      expect(history).toContain('"status":"failed"');
+      await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(JSON.stringify(result)).not.toContain(credential.username);
+      expect(JSON.stringify(result)).not.toContain(credential.applicationPassword);
+      expect(history).not.toContain(credential.username);
+      expect(history).not.toContain(credential.applicationPassword);
+    },
+  );
 
   it("does not put worker fatal text into Desktop run history", async () => {
     const projectPath = await projectDirectory();
@@ -766,7 +796,8 @@ describe("desktop job manager", () => {
     });
 
     const { runId } = await manager.run({ projectPath, job: "daily" });
-    const lockPath = path.join(projectPath, PATHS.lock);
+    const projectPaths = await pathsForProject(projectPath);
+    const lockPath = path.join(projectPath, projectPaths.lock);
     await writeOwnedLock(projectPath, child, "daily");
 
     await manager.cancel(runId);
@@ -1019,4 +1050,34 @@ describe("desktop job manager", () => {
     expect(fork).not.toHaveBeenCalled();
     expect(manager.activeCount).toBe(0);
   });
+
+  it.each(["pause", "shutdown"] as const)(
+    "does not fork a Job when %s starts during project layout resolution",
+    async (lifecycle) => {
+      const projectPath = await projectDirectory();
+      const pendingPaths = deferred<ProjectPaths>();
+      const resolveProjectPaths = vi.fn(() => pendingPaths.promise);
+      const fork = vi.fn(() => new FakeUtilityProcess());
+      const manager = createJobManager({
+        workerPath: "job-worker.js",
+        getSettings: async () => settings(),
+        resolveProject: async () => projectPath,
+        resolveProjectPaths,
+        fork,
+        emitProgress: vi.fn(),
+        emitFinished: vi.fn(),
+        notify: vi.fn(),
+      });
+
+      const starting = manager.run({ projectPath, job: "daily" });
+      await vi.waitFor(() => expect(resolveProjectPaths).toHaveBeenCalledOnce());
+      const draining = lifecycle === "pause" ? manager.pauseAndWaitForIdle() : manager.shutdown();
+      pendingPaths.resolve(pathsFor("legacy"));
+
+      await expect(starting).rejects.toMatchObject({ code: "LOCKED" });
+      await draining;
+      expect(fork).not.toHaveBeenCalled();
+      expect(manager.activeCount).toBe(0);
+    },
+  );
 });
