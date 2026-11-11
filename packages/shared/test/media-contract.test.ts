@@ -10,13 +10,201 @@ import {
   type JobRequest,
   type JobResult,
   type MediaPrepareSkuResult,
+  type RunLog,
   type SiteIndexApi,
   type SiteIndexErrorCode,
   type SkuRecord,
   type SkuMedia,
+  isValidMediaSkuRecoveryPartition,
 } from "../src";
 
 describe("K5 media and stock contracts", () => {
+  it("validates complete, interrupted, and outcome-unknown SKU partitions", () => {
+    const complete: JobResult = {
+      runId: "demo-media-complete",
+      job: "media",
+      status: "ok",
+      exitCode: EXIT.OK,
+      summary: "图片处理完成。",
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      media_batch_state: "complete",
+      media_results: [
+        { sku: "DEMO-WP-001", status: "uploaded" },
+        { sku: "DEMO-WP-002", status: "failed", reason: "虚构失败原因。" },
+      ],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    };
+    const interrupted: JobResult = {
+      runId: "demo-media-interrupted",
+      job: "media",
+      status: "partial",
+      exitCode: EXIT.SOURCE_FAILED,
+      summary: "图片处理被中断。",
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-002", "DEMO-WP-003"],
+      media_batch_state: "interrupted",
+      media_results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      media_unknown_skus: [],
+      media_not_started_skus: ["DEMO-WP-002", "DEMO-WP-003"],
+    };
+    const outcomeUnknown: RunLog = {
+      run_id: "demo-media-outcome-unknown",
+      job: "media",
+      started_at: "2026-11-11T10:00:00+08:00",
+      finished_at: "2026-11-11T10:01:00+08:00",
+      status: "partial",
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-002", "DEMO-WP-003"],
+      media_batch_state: "outcome_unknown",
+      media_results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      media_unknown_skus: ["DEMO-WP-002"],
+      media_not_started_skus: ["DEMO-WP-003"],
+    };
+
+    expect(isValidMediaSkuRecoveryPartition(complete)).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition(interrupted)).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition(outcomeUnknown)).toBe(true);
+  });
+
+  const sparseSkuArray = new Array<string>(1);
+  const sparseResultArray = new Array<unknown>(1);
+
+  it.each([
+    ["overlap", {
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      media_batch_state: "outcome_unknown",
+      media_results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      media_unknown_skus: ["DEMO-WP-001"],
+      media_not_started_skus: [],
+    }],
+    ["missing requested SKU", {
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      media_batch_state: "interrupted",
+      media_results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+    ["misordered results group", {
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-002", "DEMO-WP-003"],
+      media_batch_state: "complete",
+      media_results: [
+        { sku: "DEMO-WP-002", status: "uploaded" },
+        { sku: "DEMO-WP-001", status: "uploaded" },
+        { sku: "DEMO-WP-003", status: "uploaded" },
+      ],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+    ["interrupted state with an unknown SKU", {
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      media_batch_state: "interrupted",
+      media_results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      media_unknown_skus: ["DEMO-WP-002"],
+      media_not_started_skus: [],
+    }],
+    ["SKU outside the request", {
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      media_batch_state: "complete",
+      media_results: [
+        { sku: "DEMO-WP-001", status: "uploaded" },
+        { sku: "DEMO-WP-999", status: "uploaded" },
+      ],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+    ["duplicate requested SKU", {
+      media_requested_skus: ["DEMO-WP-001", "DEMO-WP-001"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+  ] as const)("rejects an invalid %s partition", (_name, partition) => {
+    expect(isValidMediaSkuRecoveryPartition(partition)).toBe(false);
+  });
+
+  it.each([
+    ["null", null],
+    ["missing fields", {}],
+    ["missing not-started group", {
+      media_requested_skus: ["DEMO-WP-001"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      media_unknown_skus: [],
+    }],
+    ["non-array request", {
+      media_requested_skus: "DEMO-WP-001",
+      media_batch_state: "complete",
+      media_results: [],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+    ["sparse SKU array", {
+      media_requested_skus: sparseSkuArray,
+      media_batch_state: "complete",
+      media_results: [],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+    ["non-string SKU", {
+      media_requested_skus: [1],
+      media_batch_state: "complete",
+      media_results: [],
+      media_unknown_skus: [],
+      media_not_started_skus: [1],
+    }],
+    ["invalid batch state", {
+      media_requested_skus: ["DEMO-WP-001"],
+      media_batch_state: "garbage",
+      media_results: [],
+      media_unknown_skus: ["DEMO-WP-001"],
+      media_not_started_skus: [],
+    }],
+    ["invalid result status", {
+      media_requested_skus: ["DEMO-WP-001"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-WP-001", status: "maybe_uploaded" }],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+    ["non-object result", {
+      media_requested_skus: ["DEMO-WP-001"],
+      media_batch_state: "complete",
+      media_results: [null],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+    ["sparse result array", {
+      media_requested_skus: ["DEMO-WP-001"],
+      media_batch_state: "complete",
+      media_results: sparseResultArray,
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+    ["invalid optional result field", {
+      media_requested_skus: ["DEMO-WP-001"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-WP-001", status: "uploaded", reason: 1 }],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    }],
+  ] as const)("returns false for malformed persisted data: %s", (_name, value) => {
+    expect(isValidMediaSkuRecoveryPartition(value)).toBe(false);
+  });
+
+  it("keeps old run logs assignable while making missing recovery data unavailable", () => {
+    const oldLog: RunLog = {
+      run_id: "demo-old-media-run",
+      job: "media",
+      started_at: "2026-11-11T10:00:00+08:00",
+      finished_at: "2026-11-11T10:01:00+08:00",
+      status: "failed",
+    };
+
+    expect(oldLog.media_batch_state).toBeUndefined();
+    expect(oldLog.media_results).toBeUndefined();
+    expect(isValidMediaSkuRecoveryPartition(oldLog)).toBe(false);
+  });
+
   it("keeps the media API additive and models asynchronous per-SKU completion", async () => {
     const legacyApi: Pick<SiteIndexApi, "media"> = {};
     const prepare: NonNullable<SiteIndexApi["media"]>["prepare"] = async ({ project, skus }) => {

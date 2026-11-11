@@ -1,5 +1,5 @@
 import type { SiteIndexErrorCode } from "./errors";
-import type { JobName } from "./models";
+import type { JobName, MediaBatchState, MediaPrepareSkuResult } from "./models";
 
 export const JOB_NAMES: readonly JobName[] = [
   "daily",
@@ -64,23 +64,108 @@ export interface JobResult {
   /** init 任务逐步结果；schedule 由 Desktop 执行。 */
   steps?: { key: string; status: "ok" | "failed" | "skipped"; message?: string }[];
   /**
-   * media 未中断地完成批次时，按请求顺序为每个 SKU 返回一条结果；单个 SKU 可失败而继续处理。
-   * 401/403、取消或 worker 故障会提前终止：保留已完成结果，并可包含当前失败 SKU；尚未开始的 SKU 省略，表示未决。
-   * 认证/权限终止通过 media_error_code 区分；此前至少有一项非失败 SKU 结果时为 partial，否则为 failed。
-   * 通过 jobs.onFinished 按 runId 关联；原因须脱敏，且结果不得包含本机凭据。
+   * media 的完整请求列表，按去重后的请求顺序返回；旧 bridge 可不提供。
+   * 新实现必须同时返回 media_batch_state、media_results、media_unknown_skus 和 media_not_started_skus，
+   * 且后三项按 SKU 将请求列表无重叠地完整分区。旧结果缺少这些字段时表示不可恢复，不能按空结果处理。
+   * complete 表示所有 SKU 都有已确认结果；interrupted 表示未完成项可确认未开始；outcome_unknown 表示存在结果不确定项。
    */
+  media_requested_skus?: string[];
+  media_batch_state?: MediaBatchState;
   media_results?: MediaPrepareSkuResult[];
+  /** 无法确认是否已开始处理或外部副作用结果的 SKU；硬退出时宁可标未知，也不可误报失败或未开始。 */
+  media_unknown_skus?: string[];
+  /** 已确认没有开始处理的 SKU。 */
+  media_not_started_skus?: string[];
   /** media 因 WordPress 认证失败或权限不足停批时，返回 WP_AUTH_FAILED / WP_FORBIDDEN。 */
   media_error_code?: Extract<SiteIndexErrorCode, "WP_AUTH_FAILED" | "WP_FORBIDDEN">;
 }
 
-export interface MediaPrepareSkuResult {
-  sku: string;
-  /** recorded 表示 jpg/png 原图 URL 直接写入台账，没有上传；skipped_has_url 表示台账原本已有 URL。 */
-  status: "uploaded" | "reused" | "recorded" | "skipped_has_url" | "failed";
-  /** 脱敏后的原因；不得包含凭据、授权头、口令或原始认证响应。 */
-  reason?: string;
-  image_url?: string;
+export interface MediaSkuRecoveryPartition {
+  media_requested_skus: readonly string[];
+  media_batch_state: MediaBatchState;
+  media_results: readonly MediaPrepareSkuResult[];
+  media_unknown_skus: readonly string[];
+  media_not_started_skus: readonly string[];
+}
+
+const MEDIA_BATCH_STATES = ["complete", "interrupted", "outcome_unknown"] as const;
+const MEDIA_PREPARE_STATUSES = ["uploaded", "reused", "recorded", "skipped_has_url", "failed"] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index) || typeof value[index] !== "string") return false;
+  }
+  return true;
+}
+
+function isMediaPrepareResult(value: unknown): value is MediaPrepareSkuResult {
+  if (!isRecord(value)) return false;
+  const { sku, status, reason, image_url } = value;
+  return typeof sku === "string"
+    && MEDIA_PREPARE_STATUSES.some((allowed) => allowed === status)
+    && (reason === undefined || typeof reason === "string")
+    && (image_url === undefined || typeof image_url === "string");
+}
+
+function isMediaPrepareResultArray(value: unknown): value is MediaPrepareSkuResult[] {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index) || !isMediaPrepareResult(value[index])) return false;
+  }
+  return true;
+}
+
+/**
+ * 直接校验 JobResult / RunLog 上的 media_* 字段；旧记录缺少任一必需字段时返回 false。
+ * 只验证结构和分区，不验证外部副作用真实性，也不证明 reason/image_url 已脱敏。
+ */
+export function isValidMediaSkuRecoveryPartition(value: unknown): value is MediaSkuRecoveryPartition {
+  try {
+    if (!isRecord(value)) return false;
+    const {
+      media_requested_skus: requested_skus,
+      media_batch_state: state,
+      media_results: results,
+      media_unknown_skus: unknown_skus,
+      media_not_started_skus: not_started_skus,
+    } = value;
+    if (!isStringArray(requested_skus) || !isStringArray(unknown_skus) || !isStringArray(not_started_skus)) return false;
+    if (!isMediaPrepareResultArray(results) || !MEDIA_BATCH_STATES.some((allowed) => allowed === state)) return false;
+
+    const requested = new Set(requested_skus);
+    if (requested.size !== requested_skus.length) return false;
+
+    const resultSkus = results.map(({ sku }) => sku);
+    const assignedSkus = [...resultSkus, ...unknown_skus, ...not_started_skus];
+    if (assignedSkus.length !== requested_skus.length || new Set(assignedSkus).size !== assignedSkus.length) return false;
+    if (assignedSkus.some((sku) => !requested.has(sku))) return false;
+
+    const requestOrder = new Map(requested_skus.map((sku, index) => [sku, index]));
+    const preservesRequestOrder = (skus: readonly string[]): boolean => {
+      let previous = -1;
+      for (const sku of skus) {
+        const current = requestOrder.get(sku);
+        if (current === undefined || current <= previous) return false;
+        previous = current;
+      }
+      return true;
+    };
+    if (!preservesRequestOrder(resultSkus) || !preservesRequestOrder(unknown_skus) || !preservesRequestOrder(not_started_skus)) {
+      return false;
+    }
+
+    if (state === "complete") return unknown_skus.length === 0 && not_started_skus.length === 0;
+    if (state === "interrupted") return unknown_skus.length === 0 && not_started_skus.length > 0;
+    if (state === "outcome_unknown") return unknown_skus.length > 0;
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** 进度回调：core 的每个 Job 接收它；desktop 转发为 IPC 事件，cli 打印到终端 */

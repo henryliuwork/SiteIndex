@@ -10,6 +10,7 @@ import type {
   BlogPost,
   CategoryMode,
   DesignTokens,
+  EdmSkuIndexExportResult,
   FileCheck,
   HistoryRange,
   ISODate,
@@ -579,6 +580,11 @@ export interface SiteIndexApi {
     listImages(id: ProjectId, q: ListQuery<SkuImageFilters>): Promise<PageResult<SkuImageRow>>;
     setManualImage(id: ProjectId, sku: string, url: string | null): Promise<SkuImageRow>;
     buildCommand(id: ProjectId, input: EdmCommandInput): Promise<string>;
+    /**
+     * 仅生成全项目固定清单；不接收 SKU 子集或输出路径。旧 bridge 可不提供。
+     * Promise resolve 表示结果已确认；`EDM_EXPORT_OUTCOME_UNKNOWN` 表示写入可能已落盘但确认丢失，安全重试即可。
+     */
+    exportIndex?(id: ProjectId): Promise<EdmSkuIndexExportResult>;
   };
   /** WordPress 媒体准备以后台 Job 执行；旧 bridge 可不提供此命名空间。 */
   media?: {
