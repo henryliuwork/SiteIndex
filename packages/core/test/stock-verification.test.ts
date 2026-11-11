@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { pathsFor, type ProjectLayout } from "@siteindex/shared";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -21,6 +21,21 @@ import {
   type FakeSiteService,
 } from "../../../fixtures/e-v041-loopback/fake-site-service.mjs";
 
+const atomicWriteFault = vi.hoisted(() => ({ target: null as string | null }));
+vi.mock("../src/io/atomic-write", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/io/atomic-write")>();
+  return {
+    ...actual,
+    atomicWrite: async (filePath: string, data: string | Uint8Array) => {
+      if (atomicWriteFault.target === filePath) {
+        atomicWriteFault.target = null;
+        throw new Error("Injected daily output interruption");
+      }
+      return actual.atomicWrite(filePath, data);
+    },
+  };
+});
+
 interface TestSite extends FeedSiteConfig {
   domain: string;
   crawl: NonNullable<FeedSiteConfig["crawl"]> & {
@@ -40,6 +55,7 @@ const runDate = "2026-10-22";
 const runNow = new Date("2026-10-22T12:00:00Z");
 
 afterEach(async () => {
+  atomicWriteFault.target = null;
   await Promise.all(siteServices.splice(0).map((service) => service.close()));
   await Promise.all(graphqlServices.splice(0).map((service) => service.close()));
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -474,6 +490,57 @@ describe("feed-absence stock verification", () => {
     expect(resumedState.pending_skus).toEqual([]);
     expect(graphqlService.snapshot().totalRequests).toBe(2);
   });
+
+  it("rolls back every partially written daily output before retrying a 404 with a 5xx", async () => {
+    const failureTargets = ["events", "inventoryLatest", "skus", "dailySummary"] as const;
+    for (const targetName of failureTargets) {
+      const siteResponses: Record<string, { status: number; body: string }> = {
+        "DEMO-TRANSACTION": { status: 404, body: "Synthetic not found." },
+      };
+      const siteService = await createSiteService({
+        feedRows: [{ sku: "DEMO-PRESENT" }],
+        productResponsesBySku: siteResponses,
+        defaultProductResponse: { status: 200, body: "<main>No availability stated.</main>" },
+      });
+      const graphqlDefault: { httpStatus: number; body: unknown } = {
+        httpStatus: 200,
+        body: { data: { product: { stock_status: "IN_STOCK" } } },
+      };
+      const graphqlService = await createGraphqlService({ defaultResponse: graphqlDefault });
+      const { root, site } = await newProject(siteService, graphqlService, "legacy", 1);
+      await seed(root, siteService, [
+        { sku: "DEMO-PRESENT", status: "in_stock" },
+        { sku: "DEMO-TRANSACTION", status: "out_of_stock" },
+      ], "legacy");
+      const paths = pathsFor("legacy");
+      const targetPath = targetName === "events"
+        ? path.join(root, paths.eventsDir, "2026-10.jsonl")
+        : path.join(root, paths[targetName]);
+      const cursorPath = path.join(root, paths.jobLogsDir, "stock-verification-cursor.json");
+
+      atomicWriteFault.target = targetPath;
+      await expect(runProjectDaily(root, site)).rejects.toThrow("Injected daily output interruption");
+      const pending = JSON.parse(await readFile(cursorPath, "utf8")) as { last_sku?: string; pending_skus?: string[] };
+      expect(pending.last_sku).toBeUndefined();
+      expect(pending.pending_skus).toEqual(["DEMO-TRANSACTION"]);
+
+      siteResponses["DEMO-TRANSACTION"] = { status: 200, body: "<main>No availability stated.</main>" };
+      graphqlDefault.httpStatus = 503;
+      graphqlDefault.body = { errors: [{ message: "Synthetic service unavailable" }] };
+      const resumed = await runProjectDaily(root, site);
+      const catalog = new Map((await readJsonl(path.join(root, paths.skus))).map((row) => [String(row.sku), row]));
+      const latest = new Map((await readJsonl(path.join(root, paths.inventoryLatest))).map((row) => [String(row.sku), row]));
+      const events = await readJsonl(path.join(root, paths.eventsDir, "2026-10.jsonl"));
+      const committed = JSON.parse(await readFile(cursorPath, "utf8")) as { last_sku?: string; pending_skus?: string[] };
+
+      expect(resumed.status).toBe("partial");
+      expect(catalog.get("DEMO-TRANSACTION")).toMatchObject({ status: "active" });
+      expect(latest.get("DEMO-TRANSACTION")).toMatchObject({ stock_status: "out_of_stock", checked_at: "2026-10-21T12:00:00Z" });
+      expect(events.some((event) => event.sku === "DEMO-TRANSACTION" && event.type === "removed_sku")).toBe(false);
+      expect(committed.last_sku).toBe("DEMO-TRANSACTION");
+      expect(committed.pending_skus).toEqual([]);
+    }
+  }, 60_000);
 
   it("makes no requests when max_per_run is zero and preserves rows whose legacy URL is blank", async () => {
     const siteService = await createSiteService({

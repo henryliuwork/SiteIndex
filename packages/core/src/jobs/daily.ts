@@ -6,6 +6,7 @@ import { compareKeys } from "../io/compare";
 import { readCsv, writeCsv } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { resolveProjectLayout } from "../io/project-layout";
+import { persistDailyOutputTransaction, recoverDailyOutputTransaction } from "./daily-output-transaction";
 import { verifyMissingStock } from "./stock-verifier";
 
 type StockStatus = "in_stock" | "out_of_stock" | "preorder" | "unknown";
@@ -275,6 +276,7 @@ async function appendRun(project: string, relativePath: string, record: JsonReco
 /** 合并一份解析后的 feed 快照，输出每日 SKU、库存、事件、汇总、日报与 runs。 */
 export async function runDaily(project: string, snapshot: readonly DailySnapshot[], options: DailyOptions = {}): Promise<DailyResult> {
   const paths = pathsFor(await resolveProjectLayout(project));
+  await recoverDailyOutputTransaction(project, paths.jobLogsDir);
   const sitePath = path.join(project, paths.site);
   const site = JSON.parse(await readFile(sitePath, "utf8")) as DailySite;
   const now = nowDate(options.now);
@@ -496,11 +498,18 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
     eventKeys.add(key);
     return true;
   });
-  // 事件和快照先落盘，游标最后提交。若中途退出，待处理 SKU 会在下一次 daily 重放。
-  await writeJsonl(eventPath, [...existingEvents, ...appended], "inventory_event");
-  await writeJsonl(path.join(project, paths.inventoryLatest), [...latest.values()], "inventory_latest");
-  await writeJsonl(path.join(project, paths.skus), [...skus.values()], "sku");
-  await writeCsv(summaryPath, summary, CSV_HEADERS.dailySummary, ["date", "category"]);
+  const outputWrites = [
+    { target: eventPath, write: () => writeJsonl(eventPath, [...existingEvents, ...appended], "inventory_event") },
+    { target: path.join(project, paths.inventoryLatest), write: () => writeJsonl(path.join(project, paths.inventoryLatest), [...latest.values()], "inventory_latest") },
+    { target: path.join(project, paths.skus), write: () => writeJsonl(path.join(project, paths.skus), [...skus.values()], "sku") },
+    { target: summaryPath, write: () => writeCsv(summaryPath, summary, CSV_HEADERS.dailySummary, ["date", "category"]) },
+  ];
+  // A verified batch is one recoverable multi-file write; the cursor commits only after it.
+  if (verification?.processedSkus.length) {
+    await persistDailyOutputTransaction(project, paths.jobLogsDir, outputWrites);
+  } else {
+    for (const output of outputWrites) await output.write();
+  }
 
   if (verification && cursorPath && committedCursor) {
     if (verification.statePersistenceFailed) {
