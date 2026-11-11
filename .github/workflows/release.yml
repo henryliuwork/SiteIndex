@@ -37,6 +37,10 @@ jobs:
           if ! gh release view "$GITHUB_REF_NAME" --repo henryliuwork/SiteIndex >/dev/null 2>&1; then
             gh release create "$GITHUB_REF_NAME" --repo henryliuwork/SiteIndex --draft --title "SiteIndex $GITHUB_REF_NAME" --generate-notes
           fi
+          if [ "$(gh release view "$GITHUB_REF_NAME" --repo henryliuwork/SiteIndex --json isDraft --jq '.isDraft')" != "true" ]; then
+            echo "Release 已发布，不能将构建资产上传到已发布版本" >&2
+            exit 1
+          fi
 
   package:
     needs: prepare-release
@@ -72,7 +76,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  verify-release-assets:
     needs: package
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -81,7 +85,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: 校验资产并发布正式 Release
+      - name: 校验草稿 Release 资产
         run: |
           version="${GITHUB_REF_NAME#v}"
           assets="$(gh release view "$GITHUB_REF_NAME" --repo henryliuwork/SiteIndex --json assets --jq '.assets[].name')"
@@ -95,4 +99,8 @@ jobs:
             echo "缺少 Release .blockmap 资产" >&2
             exit 1
           fi
-          gh release edit "$GITHUB_REF_NAME" --repo henryliuwork/SiteIndex --draft=false --prerelease=false
+          if [ "$(gh release view "$GITHUB_REF_NAME" --repo henryliuwork/SiteIndex --json isDraft --jq '.isDraft')" != "true" ]; then
+            echo "Release 必须保持草稿状态，等待验收后手动发布" >&2
+            exit 1
+          fi
+          echo "资产完整；Release 保持草稿，等待验收后手动发布。"
