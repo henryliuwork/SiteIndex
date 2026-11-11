@@ -36,7 +36,9 @@ function sameSnapshot(
 /**
  * Reads one bounded regular file through a single open handle. Path identities are checked before and
  * after the read; the bytes are capped independently of the initial stat size so growth cannot cause
- * an unbounded read. A substituted link/junction to a different file fails closed on descriptor identity.
+ * an unbounded read. Node does not expose portable directory-relative no-follow opens, so this does not
+ * claim an OS-level reparse-proof traversal: it rejects when inode identity is unavailable and checks
+ * the opened descriptor against pre/post file and directory identities before accepting its bytes.
  */
 export async function readStableBoundedFile(
   filePath: string,

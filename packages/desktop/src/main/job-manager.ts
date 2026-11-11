@@ -1,4 +1,4 @@
-import { atomicWrite, compareKeys, pathsForProject, readJsonl, type MediaJobCheckpoint } from "@siteindex/core";
+import { atomicWrite, compareKeys, pathsForProject, readJsonl, type MediaJobCheckpoint, withLock } from "@siteindex/core";
 import {
   EXIT,
   isValidMediaSkuRecoveryPartition,
@@ -13,7 +13,6 @@ import {
   type SiteIndexError,
 } from "@siteindex/shared";
 import { randomUUID } from "node:crypto";
-import { lstat, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { WordPressCredential } from "../shared/wordpress-credential-types.js";
 import {
@@ -400,28 +399,6 @@ export function createJobManager(options: JobManagerOptions) {
     notifyIdleWaitersIfIdle();
   }
 
-  async function releaseOwnedLock(entry: JobEntry): Promise<void> {
-    const pid = entry.workerPid;
-    if (pid === null) return;
-    const lockPath = path.join(entry.projectPath, entry.projectPaths.lock);
-    try {
-      const identity = await lstat(lockPath);
-      const text = await readFile(lockPath, "utf8");
-      const lock: unknown = JSON.parse(text);
-      if (
-        !isRecord(lock) ||
-        lock.pid !== pid ||
-        lock.job !== entry.request.job ||
-        lock.device_id !== entry.settings.device_id
-      )
-        return;
-      const current = await lstat(lockPath);
-      if (current.ino === identity.ino && current.dev === identity.dev) await unlink(lockPath);
-    } catch {
-      // Job 进程异常退出后，锁清理尽力进行；不可读时留给 core 的陈旧锁回收。
-    }
-  }
-
   async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<JobResult> {
     if (!entry.runId) return result;
     try {
@@ -489,7 +466,15 @@ export function createJobManager(options: JobManagerOptions) {
     entry.finalizing = true;
     clearTimeout(entry.startupTimer);
     if (!entry.runId) {
-      await releaseOwnedLock(entry);
+      try {
+        await withLock(entry.projectPath, async () => undefined, {
+          deviceId: entry.settings.device_id,
+          deviceName: entry.settings.device_name,
+          job: "desktop-startup-cleanup",
+        });
+      } catch {
+        // Live, foreign, or unverifiable locks stay untouched.
+      }
       entry.rejectStarted(jobError("UNKNOWN", "Job utilityProcess 未能启动。", `exit code: ${exitCode}`));
       const result = processFailureResult(entry, exitCode);
       entry.resolveDone(result);
@@ -498,16 +483,40 @@ export function createJobManager(options: JobManagerOptions) {
     }
 
     let result = entry.result;
-    try {
-      if (!result) {
-        result = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
-        // The utilityProcess has exited. Read the Core checkpoint and persist recovery history
-        // before releasing the project lock, so a newer run cannot race the JSONL read/modify/write.
-        result = await recoverMediaCheckpoint(entry, result);
-        result = await appendSyntheticRunLog(entry, result);
+    if (!result) {
+      const fallback = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
+      try {
+        // Core's real cross-process lock safely reclaims a dead worker lock or creates a fresh
+        // main-process lock when the worker exited before acquiring Core's lock. It rejects live,
+        // foreign, or unverifiable locks without touching them.
+        result = await withLock(entry.projectPath, async () => {
+          const recovered = await recoverMediaCheckpoint(entry, fallback);
+          return appendSyntheticRunLog(entry, recovered);
+        }, {
+          deviceId: entry.settings.device_id,
+          deviceName: entry.settings.device_name,
+          job: "desktop-media-recovery",
+        });
+      } catch {
+        result = entry.request.job === "media"
+          ? conservativeUnknownMediaResult(entry, fallback)
+          : {
+              ...fallback,
+              errors: [...(fallback.errors ?? []), "无法安全获取项目运行锁；本次恢复历史未写入。"],
+            };
       }
-    } finally {
-      await releaseOwnedLock(entry);
+    } else {
+      try {
+        // Core normally releases its lock before sending finished. This no-op acquisition only
+        // performs Core's safe stale-PID recovery if the utility process exited during cleanup.
+        await withLock(entry.projectPath, async () => undefined, {
+          deviceId: entry.settings.device_id,
+          deviceName: entry.settings.device_name,
+          job: "desktop-finished-cleanup",
+        });
+      } catch {
+        // Do not disturb a lock another task or device currently owns.
+      }
     }
 
     if (!entry.result && entry.cancelled) {

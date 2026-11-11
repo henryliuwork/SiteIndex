@@ -1,9 +1,13 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { atomicWrite, pathsForProject, readJsonl } from "@siteindex/core";
+import type { Readable } from "node:stream";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathsForProject, readJsonl, withLock } from "@siteindex/core";
 import { isValidMediaSkuRecoveryPartition } from "@siteindex/shared";
 import {
   EXIT,
@@ -20,6 +24,56 @@ import { createJobManager, type UtilityProcessLike } from "./job-manager.js";
 import { resolveJobRunId } from "./job-run-id.js";
 
 const roots: string[] = [];
+type LockSubprocess = ChildProcessByStdio<null, Readable, Readable>;
+const coreDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../core");
+const coreRequire = createRequire(path.join(coreDirectory, "package.json"));
+const coreRunnerUrl = pathToFileURL(path.join(coreDirectory, "src/index.ts")).href;
+const tsxLoaderUrl = pathToFileURL(path.join(path.dirname(coreRequire.resolve("tsx/cli")), "loader.mjs")).href;
+
+const coreLockSubprocessSource = `
+import path from "node:path";
+const { atomicWrite, pathsForProject, readJsonl, withLock } = await import(${JSON.stringify(coreRunnerUrl)});
+const projectPath = process.argv[2];
+const mode = process.argv[3];
+const options = { deviceId: "desktop-test-device", deviceName: "Desktop Test", job: "lock-subprocess-test" };
+if (mode === "hold") {
+  await withLock(projectPath, async () => {
+    process.stdout.write("HELD\\n");
+    await new Promise(() => setInterval(() => undefined, 1000));
+  }, options);
+} else if (mode === "try") {
+  try {
+    await withLock(projectPath, async () => undefined, options);
+    process.stdout.write("ACQUIRED\\n");
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "LOCKED") {
+      process.stdout.write("BLOCKED\\n");
+    } else {
+      process.stdout.write("UNEXPECTED\\n");
+      process.exitCode = 2;
+    }
+  }
+} else if (mode === "append") {
+  await withLock(projectPath, async () => {
+    const projectPaths = await pathsForProject(projectPath);
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const rows = await readJsonl(runsPath);
+    rows.push({
+      run_id: "2026-11-12-weekly-next",
+      job: "weekly",
+      trigger: "manual",
+      started_at: "2026-11-12T10:02:00.000Z",
+      finished_at: "2026-11-12T10:03:00.000Z",
+      status: "failed",
+    });
+    await atomicWrite(runsPath, rows.map((row) => JSON.stringify(row)).join("\\n") + "\\n");
+  }, options);
+  process.stdout.write("APPENDED\\n");
+} else {
+  process.stdout.write("INVALID\\n");
+  process.exitCode = 2;
+}
+`;
 
 function coreMediaRunId(): string {
   return `2026-11-11-media-${randomUUID()}`;
@@ -40,7 +94,7 @@ function settings(): AppSettings {
 }
 
 class FakeUtilityProcess extends EventEmitter implements UtilityProcessLike {
-  readonly pid = 45678;
+  readonly pid = 2_147_000_000;
   readonly messages: unknown[] = [];
   readonly postedReferences: unknown[] = [];
   killed = false;
@@ -88,11 +142,18 @@ async function projectDirectory(layout: ProjectLayout = "legacy"): Promise<strin
 async function writeOwnedLock(projectPath: string, child: FakeUtilityProcess, job: string): Promise<string> {
   const projectPaths = await pathsForProject(projectPath);
   const lockPath = path.join(projectPath, projectPaths.lock);
+  let hostId = "";
+  await withLock(projectPath, async () => {
+    const owned = JSON.parse(await readFile(lockPath, "utf8")) as { host_id?: unknown };
+    if (typeof owned.host_id === "string") hostId = owned.host_id;
+  }, { deviceId: settings().device_id, deviceName: settings().device_name, job: "read-test-host-id" });
+  if (!hostId) throw new Error("Core test lock did not expose a host identity.");
   await writeFile(
     lockPath,
     JSON.stringify({
       device_id: settings().device_id,
       device_name: settings().device_name,
+      host_id: hostId,
       pid: child.pid,
       job,
       started_at: "2026-10-23T01:00:00.000Z",
@@ -101,6 +162,57 @@ async function writeOwnedLock(projectPath: string, child: FakeUtilityProcess, jo
     "utf8",
   );
   return lockPath;
+}
+
+async function spawnCoreLockSubprocess(
+  projectPath: string,
+  mode: "hold" | "try" | "append",
+): Promise<LockSubprocess> {
+  const scriptPath = path.join(projectPath, ".synthetic-core-lock-subprocess.mts");
+  await writeFile(scriptPath, coreLockSubprocessSource, "utf8");
+  const child = spawn(process.execPath, ["--import", tsxLoaderUrl, scriptPath, projectPath, mode], {
+    cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../.."),
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stderr.on("data", () => undefined);
+  return child;
+}
+
+async function waitForSubprocessMarker(child: LockSubprocess, marker: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let output = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Core lock subprocess timed out."));
+    }, 20_000);
+    timer.unref?.();
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString("utf8");
+      if (output.includes(marker)) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    child.once("error", () => {
+      clearTimeout(timer);
+      reject(new Error("Core lock subprocess failed to start."));
+    });
+    child.once("exit", () => {
+      if (output.includes(marker)) return;
+      clearTimeout(timer);
+      reject(new Error("Core lock subprocess exited before reporting its state."));
+    });
+  });
+}
+
+async function waitForSubprocessExit(child: LockSubprocess): Promise<number | null> {
+  if (child.exitCode !== null) return child.exitCode;
+  if (child.signalCode !== null) return null;
+  return new Promise((resolve, reject) => {
+    child.once("error", () => reject(new Error("Core lock subprocess failed.")));
+    child.once("exit", (code) => resolve(code));
+  });
 }
 
 async function runIdPairForWorkerResultScenario(
@@ -1291,10 +1403,73 @@ describe("desktop job manager", () => {
     },
   );
 
-  it("keeps the project lock until recovered history commits, so the next run cannot lose its row", async () => {
+  it("takes over a dead Core lock and blocks a real competing withLock until history commits", async () => {
     const projectPath = await projectDirectory("legacy");
     const projectPaths = pathsFor("legacy");
     const runsPath = path.join(projectPath, projectPaths.runs);
+    const lockPath = path.join(projectPath, projectPaths.lock);
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    const holder = await spawnCoreLockSubprocess(projectPath, "hold");
+    await waitForSubprocessMarker(holder, "HELD");
+    const originalLock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; job: string };
+    expect(originalLock).toMatchObject({ pid: holder.pid, job: "lock-subprocess-test" });
+    const holderExit = waitForSubprocessExit(holder);
+    holder.kill();
+    await holderExit;
+    await expect(access(lockPath)).resolves.toBeUndefined();
+
+    let signalHistoryCommit!: () => void;
+    let releaseHistoryCommit!: () => void;
+    const historyCommitEntered = new Promise<void>((resolve) => { signalHistoryCommit = resolve; });
+    const historyCommitGate = new Promise<void>((resolve) => { releaseHistoryCommit = resolve; });
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+      testOnlyBeforeSyntheticRunLogCommit: async () => {
+        signalHistoryCommit();
+        await historyCommitGate;
+      },
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+    child.emit("exit", 1);
+    await historyCommitEntered;
+    await expect(access(lockPath)).resolves.toBeUndefined();
+    const recoveryLock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; job: string };
+    expect(recoveryLock).toMatchObject({ pid: process.pid, job: "desktop-media-recovery" });
+
+    const competitor = await spawnCoreLockSubprocess(projectPath, "try");
+    await waitForSubprocessMarker(competitor, "BLOCKED");
+    await expect(waitForSubprocessExit(competitor)).resolves.toBe(0);
+
+    releaseHistoryCommit();
+    const recovered = await finished;
+    expect(recovered.status).toBe("failed");
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const nextRun = await spawnCoreLockSubprocess(projectPath, "append");
+    await waitForSubprocessMarker(nextRun, "APPENDED");
+    await expect(waitForSubprocessExit(nextRun)).resolves.toBe(0);
+    const rows = await readJsonl(runsPath);
+    expect(rows.map((row) => row.run_id).sort()).toEqual([runId, "2026-11-12-weekly-next"].sort());
+  }, 30_000);
+
+  it("creates a recovery lock when the worker exits before Core acquired its lock", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const lockPath = path.join(projectPath, projectPaths.lock);
     const runId = `media-${randomUUID()}`;
     const child = new FakeUtilityProcess(true, runId);
     let signalHistoryCommit!: () => void;
@@ -1322,41 +1497,67 @@ describe("desktop job manager", () => {
       },
     });
     await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
-    const lockPath = await writeOwnedLock(projectPath, child, "media");
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
     child.emit("exit", 1);
     await historyCommitEntered;
-    await expect(access(lockPath)).resolves.toBeUndefined();
-
-    const nextRunRow = {
-      run_id: "2026-11-12-weekly",
-      job: "weekly",
-      trigger: "manual",
-      started_at: "2026-11-12T10:02:00.000Z",
-      finished_at: "2026-11-12T10:03:00.000Z",
-      status: "failed",
-    };
-    const appendNextRunAfterLock = async (): Promise<boolean> => {
-      try {
-        await access(lockPath);
-        return false;
-      } catch {
-        const rows = await readJsonl(runsPath);
-        rows.push(nextRunRow);
-        rows.sort((left, right) => String(left.run_id).localeCompare(String(right.run_id)));
-        await atomicWrite(runsPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
-        return true;
-      }
-    };
-    await expect(appendNextRunAfterLock()).resolves.toBe(false);
-
+    const recoveryLock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; job: string };
+    expect(recoveryLock).toMatchObject({ pid: process.pid, job: "desktop-media-recovery" });
+    const competitor = await spawnCoreLockSubprocess(projectPath, "try");
+    await waitForSubprocessMarker(competitor, "BLOCKED");
+    await expect(waitForSubprocessExit(competitor)).resolves.toBe(0);
     releaseHistoryCommit();
-    const recovered = await finished;
-    expect(recovered.status).toBe("failed");
+    expect((await finished).status).toBe("failed");
     await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(appendNextRunAfterLock()).resolves.toBe(true);
-    const rows = await readJsonl(runsPath);
-    expect(rows.map((row) => row.run_id)).toEqual([runId, "2026-11-12-weekly"].sort());
-  });
+  }, 30_000);
+
+  it("leaves a third-party live Core lock and its history untouched", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const lockPath = path.join(projectPath, projectPaths.lock);
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    const holder = await spawnCoreLockSubprocess(projectPath, "hold");
+    await waitForSubprocessMarker(holder, "HELD");
+    const originalLock = await readFile(lockPath, "utf8");
+    const originalHistory = `${JSON.stringify({
+      run_id: runId,
+      job: "weekly",
+      started_at: "2026-11-12T10:00:00.000Z",
+      finished_at: "2026-11-12T10:01:00.000Z",
+      status: "failed",
+    })}\n`;
+    await mkdir(path.dirname(runsPath), { recursive: true });
+    await writeFile(runsPath, originalHistory, "utf8");
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+    try {
+      await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+      child.emit("exit", 1);
+      const result = await finished;
+      expect(result).toMatchObject({ status: "failed", media_unknown_skus: ["synthetic-a"], media_results: [] });
+      expect(await readFile(lockPath, "utf8")).toBe(originalLock);
+      expect(await readFile(runsPath, "utf8")).toBe(originalHistory);
+    } finally {
+      const holderExit = waitForSubprocessExit(holder);
+      holder.kill();
+      await holderExit;
+    }
+  }, 30_000);
 
   it.each(["legacy", "workspace"] as const)(
     "reads persisted media recovery fields from the %s history and leaves old records unavailable",
