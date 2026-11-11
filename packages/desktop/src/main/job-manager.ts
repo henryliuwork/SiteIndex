@@ -11,6 +11,7 @@ import {
   type RunLog,
   type SiteIndexError,
 } from "@siteindex/shared";
+import { isValidMediaSkuRecoveryPartition } from "@siteindex/shared";
 import { randomUUID } from "node:crypto";
 import { lstat, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -129,6 +130,7 @@ function cancelledResult(entry: JobEntry): JobResult {
     exitCode: EXIT.GUARD_ABORTED,
     summary: "任务已取消。",
     errors: ["用户已取消任务。"],
+    ...unknownMediaRecovery(entry),
   };
 }
 
@@ -140,6 +142,26 @@ function processFailureResult(entry: JobEntry, code: number): JobResult {
     exitCode: EXIT.SOURCE_FAILED,
     summary: "Job 执行进程异常退出。",
     errors: [`utilityProcess exit code: ${code}`],
+    ...unknownMediaRecovery(entry),
+  };
+}
+
+function unknownMediaRecovery(
+  entry: JobEntry,
+):
+  | Pick<
+      JobResult,
+      "media_requested_skus" | "media_batch_state" | "media_results" | "media_unknown_skus" | "media_not_started_skus"
+    >
+  | Record<string, never> {
+  if (entry.request.job !== "media") return {};
+  const skus = [...new Set(entry.request.skus ?? [])];
+  return {
+    media_requested_skus: skus,
+    media_batch_state: "outcome_unknown",
+    media_results: [],
+    media_unknown_skus: skus,
+    media_not_started_skus: [],
   };
 }
 
@@ -214,6 +236,16 @@ export function createJobManager(options: JobManagerOptions) {
         finished_at: new Date().toISOString(),
         status: result.status,
         ...(result.errors?.length ? { errors: result.errors } : {}),
+        ...(isValidMediaSkuRecoveryPartition(result)
+          ? {
+              media_requested_skus: [...result.media_requested_skus],
+              media_batch_state: result.media_batch_state,
+              media_results: result.media_results.map((item) => ({ ...item })),
+              media_unknown_skus: [...result.media_unknown_skus],
+              media_not_started_skus: [...result.media_not_started_skus],
+              ...(result.media_error_code ? { media_error_code: result.media_error_code } : {}),
+            }
+          : {}),
       };
       const next = rows.filter((row) => row.run_id !== entry.coreRunId);
       next.push(record as unknown as Record<string, unknown>);
@@ -413,7 +445,7 @@ export function createJobManager(options: JobManagerOptions) {
         projectPath,
         job: request.job,
         ...(request.job === "media"
-          ? { skus: request.skus as string[] }
+          ? { skus: [...new Set(request.skus as string[])] }
           : {
               ...(typeof request.only === "string" ? { only: request.only } : {}),
               ...(typeof request.date === "string" ? { date: request.date } : {}),

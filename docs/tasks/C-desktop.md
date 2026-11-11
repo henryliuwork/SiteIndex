@@ -168,6 +168,8 @@
 - [x] #422：`before-quit` 等待 `jobs.shutdown()`；Desktop 对已启动的 Job 结束 utilityProcess、清理自有锁并将取消/崩溃作为失败结果返回。虚构双项目测试覆盖媒体凭据与进度/历史按项目隔离；不访问用户 vault。
 - [x] #422：媒体能力闸保持关闭；`media.prepare` 在设置、凭据 accessor 与 utilityProcess 之前返回 `NOT_IMPLEMENTED`（PR #427）。
 - [x] #422：JobManager 的锁清理、合成历史写入与 `jobs.history` 查询统一按 Core 的 `pathsForProject()` 解析 legacy/workspace 布局；worker runId 也从对应 `site.json` 读取时区。退出、崩溃、跨项目凭据隔离测试覆盖两种布局；暂停/退出与布局解析并发时不会再启动 worker。
-- [ ] #422：应用重启后的逐 SKU 恢复依赖 shared 历史结果契约及 Core 将脱敏 `media_results` 持久写入原项目 RunLog；当前 `RunLog` 没有该字段，Desktop `jobs.history(project)` 按项目读取但不能恢复未持久化结果。
-- [ ] #422：Core 需定义 media Job 取消/进程中断的部分结果持久化语义；当前退出确认选择“退出并取消任务”，Desktop 只能结束进程并记录通用失败状态。
-- [ ] #423：待 Core 清单生成实现和 shared 导出契约合并后，再接 Desktop IPC/preload；PR #428 已保持 UI 导出入口关闭。
+- [x] #422：media worker 结果先校验完整恢复分区；缺字段或分区无效时拒绝把它当成功，取消/崩溃结果把无法确认项记为 `outcome_unknown` 并写入合成 RunLog。legacy/workspace 的退出与崩溃测试覆盖写入路径、项目隔离和凭据不泄漏；`jobs.history` 与 preload 透传字段，不为旧 RunLog 补造空结果。
+- [x] #422：preload 暴露 `media.prepare` 路由；主进程仍在 `isMediaJobReady: false` 下返回 `NOT_IMPLEMENTED`，`media.prepare` 继续留在 `PENDING_HANDLERS`，Core 能力就绪前 UI 保持关闭。
+- [ ] #422：A 尚未实现 Core media Job 及其逐 SKU RunLog 持久化；实时媒体处理与 Core 生成的恢复结果尚不可用。
+- [x] #423：preload 暴露 `edm.exportIndex`；Desktop 将固定项目 ID 转发到 Core 可选方法，方法缺失时返回 `NOT_IMPLEMENTED`；尚未清理 `PENDING_HANDLERS`，UI 仍关闭导出入口。
+- [ ] #423：A 尚未实现 Core SKU 清单生成；Desktop 不生成文件、不返回虚构成功状态。

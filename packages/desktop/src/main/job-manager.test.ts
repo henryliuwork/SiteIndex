@@ -3,6 +3,7 @@ import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathsForProject } from "@siteindex/core";
+import { isValidMediaSkuRecoveryPartition } from "@siteindex/shared";
 import {
   pathsFor,
   type AppSettings,
@@ -322,6 +323,10 @@ describe("desktop job manager", () => {
         summary: `Completed ${credential.applicationPassword}`,
         errors: [basicToken],
         media_results: [{ sku: "sku-a1", status: "failed", reason: credential.username }],
+        media_requested_skus: ["sku-a1"],
+        media_batch_state: "complete",
+        media_unknown_skus: [],
+        media_not_started_skus: [],
       },
     });
 
@@ -614,7 +619,11 @@ describe("desktop job manager", () => {
     });
 
     const [runA, runB] = await Promise.all([
-      manager.runMedia({ projectPath: projectA, job: "media", skus: ["fixture-sku-a"] }),
+      manager.runMedia({
+        projectPath: projectA,
+        job: "media",
+        skus: ["fixture-sku-a", "fixture-sku-a", "fixture-sku-b"],
+      }),
       manager.runMedia({ projectPath: projectB, job: "media", skus: ["fixture-sku-b"] }),
     ]);
     const childForProject = (projectPath: string): FakeUtilityProcess | undefined =>
@@ -628,6 +637,7 @@ describe("desktop job manager", () => {
 
     expect(childA.messages[0]).toMatchObject({ context: { wordpressCredential: credentialA } });
     expect(childB.messages[0]).toMatchObject({ context: { wordpressCredential: credentialB } });
+    expect(childA.messages[0]).toMatchObject({ request: { skus: ["fixture-sku-a", "fixture-sku-b"] } });
     expect(manager.running(projectAId)).toEqual({ runId: runA.runId, job: "media" });
     expect(manager.running(projectBId)).toEqual({ runId: runB.runId, job: "media" });
     const [lockA, lockB] = await Promise.all([
@@ -684,9 +694,45 @@ describe("desktop job manager", () => {
         }),
       ]),
     );
+    const recoveredA = finished.find((result) => result.runId === runA.runId);
+    const recoveredB = finished.find((result) => result.runId === runB.runId);
+    expect(recoveredA).toMatchObject({
+      media_batch_state: "outcome_unknown",
+      media_requested_skus: ["fixture-sku-a", "fixture-sku-b"],
+      media_results: [],
+      media_unknown_skus: ["fixture-sku-a", "fixture-sku-b"],
+      media_not_started_skus: [],
+    });
+    expect(recoveredB).toMatchObject({
+      media_batch_state: "outcome_unknown",
+      media_requested_skus: ["fixture-sku-b"],
+      media_results: [],
+      media_unknown_skus: ["fixture-sku-b"],
+      media_not_started_skus: [],
+    });
+    expect(isValidMediaSkuRecoveryPartition(recoveredA)).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition(recoveredB)).toBe(true);
     const [historyA, historyB] = await Promise.all([manager.history(projectAId), manager.history(projectBId)]);
-    expect(historyA).toMatchObject([{ run_id: "2026-10-23-media", job: "media", status: "failed" }]);
-    expect(historyB).toMatchObject([{ run_id: "2026-10-23-media", job: "media", status: "failed" }]);
+    expect(historyA).toMatchObject([
+      {
+        run_id: "2026-10-23-media",
+        job: "media",
+        status: "failed",
+        media_requested_skus: ["fixture-sku-a", "fixture-sku-b"],
+        media_unknown_skus: ["fixture-sku-a", "fixture-sku-b"],
+      },
+    ]);
+    expect(historyB).toMatchObject([
+      {
+        run_id: "2026-10-23-media",
+        job: "media",
+        status: "failed",
+        media_requested_skus: ["fixture-sku-b"],
+        media_unknown_skus: ["fixture-sku-b"],
+      },
+    ]);
+    expect(isValidMediaSkuRecoveryPartition(historyA[0])).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition(historyB[0])).toBe(true);
     await expect(access(lockA)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(lockB)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(path.join(projectB, pathsFor("legacy").runs))).rejects.toMatchObject({ code: "ENOENT" });
@@ -696,6 +742,53 @@ describe("desktop job manager", () => {
     expect(persisted).not.toContain(credentialB.username);
     expect(persisted).not.toContain(credentialB.applicationPassword);
   });
+
+  it.each(["legacy", "workspace"] as const)(
+    "reads persisted media recovery fields from the %s history and leaves old records unavailable",
+    async (layout) => {
+      const projectPath = await projectDirectory(layout);
+      const projectId = path.basename(projectPath) as ProjectId;
+      const projectPaths = pathsFor(layout);
+      const runsPath = path.join(projectPath, projectPaths.runs);
+      await mkdir(path.dirname(runsPath), { recursive: true });
+      const currentRecord = {
+        run_id: "2026-11-10-media-current",
+        job: "media",
+        started_at: "2026-11-10T10:00:00.000Z",
+        finished_at: "2026-11-10T10:05:00.000Z",
+        status: "partial",
+        media_requested_skus: ["fixture-sku-a", "fixture-sku-b"],
+        media_batch_state: "outcome_unknown",
+        media_results: [{ sku: "fixture-sku-a", status: "uploaded", image_url: "https://cdn.fixture.test/a.jpg" }],
+        media_unknown_skus: ["fixture-sku-b"],
+        media_not_started_skus: [],
+      };
+      const oldRecord = {
+        run_id: "2026-11-09-media-old",
+        job: "media",
+        started_at: "2026-11-09T10:00:00.000Z",
+        finished_at: "2026-11-09T10:05:00.000Z",
+        status: "failed",
+      };
+      await writeFile(runsPath, `${JSON.stringify(currentRecord)}\n${JSON.stringify(oldRecord)}\n`, "utf8");
+      const manager = createJobManager({
+        workerPath: "job-worker.js",
+        getSettings: async () => settings(),
+        resolveProject: async () => projectPath,
+        fork: () => new FakeUtilityProcess(),
+        emitProgress: vi.fn(),
+        emitFinished: vi.fn(),
+        notify: vi.fn(),
+      });
+
+      const history = await manager.history(projectId);
+      expect(history[0]).toMatchObject(currentRecord);
+      expect(isValidMediaSkuRecoveryPartition(history[0])).toBe(true);
+      expect(history[1]).toMatchObject(oldRecord);
+      expect(history[1]).not.toHaveProperty("media_requested_skus");
+      expect(isValidMediaSkuRecoveryPartition(history[1])).toBe(false);
+    },
+  );
 
   it.each(["legacy", "workspace"] as const)(
     "records a crashed media worker in the %s project history without exposing credentials",
@@ -739,6 +832,15 @@ describe("desktop job manager", () => {
       const history = JSON.stringify(await manager.history(projectId));
       expect(history).toContain('"job":"media"');
       expect(history).toContain('"status":"failed"');
+      const historyRows = await manager.history(projectId);
+      expect(historyRows[0]).toMatchObject({
+        media_batch_state: "outcome_unknown",
+        media_requested_skus: ["fixture-crash-sku"],
+        media_results: [],
+        media_unknown_skus: ["fixture-crash-sku"],
+        media_not_started_skus: [],
+      });
+      expect(isValidMediaSkuRecoveryPartition(historyRows[0])).toBe(true);
       await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
       expect(JSON.stringify(result)).not.toContain(credential.username);
       expect(JSON.stringify(result)).not.toContain(credential.applicationPassword);
@@ -746,6 +848,58 @@ describe("desktop job manager", () => {
       expect(history).not.toContain(credential.applicationPassword);
     },
   );
+
+  it("turns a media worker result without a valid recovery partition into outcome-unknown", async () => {
+    const projectPath = await projectDirectory("workspace");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const child = new FakeUtilityProcess();
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-password" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+
+    await manager.runMedia({ projectPath, job: "media", skus: ["fixture-unknown-sku"] });
+    child.emit("message", {
+      type: "finished",
+      oosRate: null,
+      result: {
+        runId: "2026-11-10-media",
+        job: "media",
+        status: "ok",
+        exitCode: 0,
+        summary: "看似成功但缺少恢复字段",
+      },
+    });
+    child.emit("exit", 0);
+
+    const result = await finished;
+    await vi.waitFor(() => expect(manager.activeCount).toBe(0));
+    expect(result).toMatchObject({
+      job: "media",
+      status: "failed",
+      media_batch_state: "outcome_unknown",
+      media_requested_skus: ["fixture-unknown-sku"],
+      media_results: [],
+      media_unknown_skus: ["fixture-unknown-sku"],
+      media_not_started_skus: [],
+    });
+    expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition((await manager.history(projectId))[0])).toBe(true);
+  });
 
   it("does not put worker fatal text into Desktop run history", async () => {
     const projectPath = await projectDirectory();

@@ -1,6 +1,6 @@
-import type { AppSettings, JobResult } from "@siteindex/shared";
+import { isValidMediaSkuRecoveryPartition, type AppSettings, type JobResult } from "@siteindex/shared";
 import { describe, expect, it } from "vitest";
-import { shouldNotify } from "./job-protocol.js";
+import { isJobResult, shouldNotify } from "./job-protocol.js";
 
 const settings: AppSettings = {
   device_id: "test-device",
@@ -32,5 +32,42 @@ describe("job notification policy", () => {
     expect(shouldNotify(settings, result("daily", "ok"), 0.119)).toBe(false);
     expect(shouldNotify(settings, result("weekly", "ok"), 0.9)).toBe(false);
     expect(shouldNotify(settings, result("daily", "skipped"), 1)).toBe(false);
+  });
+});
+
+describe("media Job result protocol", () => {
+  const recovery = {
+    media_requested_skus: ["fixture-sku-a", "fixture-sku-b"],
+    media_batch_state: "outcome_unknown" as const,
+    media_results: [{ sku: "fixture-sku-a", status: "uploaded" as const }],
+    media_unknown_skus: ["fixture-sku-b"],
+    media_not_started_skus: [],
+  };
+
+  it("accepts only complete recovery partitions from a media worker", () => {
+    const message = {
+      runId: "fixture-media-run",
+      job: "media",
+      status: "partial",
+      exitCode: 1,
+      summary: "结果不完整",
+      ...recovery,
+    };
+
+    expect(isValidMediaSkuRecoveryPartition(message)).toBe(true);
+    expect(isJobResult(message)).toBe(true);
+    expect(isJobResult({ ...message, media_unknown_skus: ["fixture-sku-a"] })).toBe(false);
+  });
+
+  it("does not treat an old media result without recovery fields as success data", () => {
+    expect(
+      isJobResult({
+        runId: "fixture-old-media-run",
+        job: "media",
+        status: "ok",
+        exitCode: 0,
+        summary: "旧结果",
+      }),
+    ).toBe(false);
   });
 });

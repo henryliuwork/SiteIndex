@@ -9,7 +9,9 @@ vi.mock("electron", () => ({
 
 import { API_EVENT_METHODS, API_INVOKE_METHODS, PENDING_HANDLERS } from "@siteindex/shared";
 import type { AppSettings, ProjectId } from "@siteindex/shared";
+import { createApiBridge } from "../../preload/api.js";
 import { createJobManager } from "../job-manager.js";
+import { createHandlerRegistry, serializeIpcError } from "../ipc-registry.js";
 import { createIpcHandlerImplementations } from "./handlers.js";
 import type { IpcContext } from "./context.js";
 
@@ -50,6 +52,22 @@ function testContext(): IpcContext {
   } as unknown as IpcContext;
 }
 
+function apiBridgeFor(context: IpcContext) {
+  const registry = createHandlerRegistry(createIpcHandlerImplementations(context));
+  return createApiBridge({
+    invoke: async (channel, ...args) => {
+      const handler = registry.get(channel);
+      if (!handler) throw new Error(`Missing IPC handler for ${channel}`);
+      try {
+        return await handler(...args);
+      } catch (error) {
+        throw serializeIpcError(error);
+      }
+    },
+    listen: () => () => undefined,
+  });
+}
+
 describe("IPC handler completeness", () => {
   it("implements every SiteIndexApi invoke method, including optional namespaces", () => {
     const implementations = createIpcHandlerImplementations(testContext());
@@ -63,6 +81,10 @@ describe("IPC handler completeness", () => {
     expect(PENDING_HANDLERS).toHaveLength(pendingMethods.size);
     expect(registeredMethods.filter((method) => !apiMethods.has(method))).toEqual([]);
     expect(missingMethods.filter((method) => !pendingMethods.has(method))).toEqual([]);
+    expect(pendingMethods).toContain("media.prepare");
+    expect(pendingMethods).toContain("edm.exportIndex");
+    expect(registeredSet.has("media.prepare")).toBe(true);
+    expect(registeredSet.has("edm.exportIndex")).toBe(true);
     expect(API_INVOKE_METHODS).toContain("uiState.get");
     expect(API_INVOKE_METHODS).toContain("updates.check");
     expect(API_EVENT_METHODS).toContain("updates.onStatus");
@@ -148,16 +170,27 @@ describe("IPC handler completeness", () => {
       emitFinished: vi.fn(),
       notify: vi.fn(),
     });
-    const handler = createIpcHandlerImplementations(context)["media.prepare"];
-    if (!handler) throw new Error("media.prepare handler missing");
-
-    await expect(handler({ project: "demo", skus: ["fixture-sku"] })).rejects.toMatchObject({
+    const bridge = apiBridgeFor(context);
+    await expect(bridge.media?.prepare({ project: "demo", skus: ["fixture-sku"] })).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
       message: "当前桌面版本尚未接入媒体准备 Core Job。",
     });
     expect(getSettings).not.toHaveBeenCalled();
     expect(getWordPressCredential).not.toHaveBeenCalled();
     expect(fork).not.toHaveBeenCalled();
+  });
+
+  it("keeps EDM export pending through the handler registry and preload until Core exists", async () => {
+    const context = testContext();
+    Object.assign(context.core, { edm: {} });
+    const bridge = apiBridgeFor(context);
+
+    expect(PENDING_HANDLERS).toContain("edm.exportIndex");
+    await expect(bridge.edm.exportIndex?.("demo")).rejects.toMatchObject({
+      code: "NOT_IMPLEMENTED",
+      message: "当前版本尚未接入 EDM SKU 清单生成。",
+      detail: "Core edm.exportIndex 尚未就绪。",
+    });
   });
 
   it("forwards workspace validation and creation to Core without changing their inputs", async () => {

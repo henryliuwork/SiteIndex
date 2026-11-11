@@ -11,6 +11,7 @@ type UiStateApi = NonNullable<SiteIndexApi["uiState"]>;
 type UpdatesApi = NonNullable<SiteIndexApi["updates"]>;
 type SkuApi = NonNullable<SiteIndexApi["sku"]>;
 type WorkspaceApi = NonNullable<SiteIndexApi["workspace"]>;
+type MediaApi = NonNullable<SiteIndexApi["media"]>;
 
 function decodeIpcError(error: unknown): unknown {
   const message =
@@ -146,6 +147,10 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       listImages: (...args) => invoke<SiteIndexApi["edm"]["listImages"]>("edm.listImages", ...args),
       setManualImage: (...args) => invoke<SiteIndexApi["edm"]["setManualImage"]>("edm.setManualImage", ...args),
       buildCommand: (...args) => invoke<SiteIndexApi["edm"]["buildCommand"]>("edm.buildCommand", ...args),
+      exportIndex: (...args) => invoke<NonNullable<SiteIndexApi["edm"]["exportIndex"]>>("edm.exportIndex", ...args),
+    },
+    media: {
+      prepare: (...args) => invoke<MediaApi["prepare"]>("media.prepare", ...args),
     },
     design: {
       get: (...args) => invoke<SiteIndexApi["design"]["get"]>("design.get", ...args),
