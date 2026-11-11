@@ -65,6 +65,13 @@ const RUNNER_TEMP = process.env.RUNNER_TEMP;
 const TEST_ROOT = await fsMkdtemp();
 const PROFILE_LAYOUT = createWindowsProfileLayout(TEST_ROOT);
 const PROFILE_ENVIRONMENT = windowsProfileEnvironment(PROFILE_LAYOUT, process.env);
+const ROAMING_APP_DATA_REGISTRY_KEYS = [
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders",
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders",
+];
+const roamingAppDataRegistryOriginals = [];
+let roamingAppDataRedirected = false;
+let roamingAppDataRestored = false;
 const APP_DATA_ROOT = PROFILE_LAYOUT.appDataRoot;
 const LOCAL_APP_DATA_ROOT = PROFILE_LAYOUT.localAppDataRoot;
 const PROJECTS_ROOT = PROFILE_LAYOUT.projectRoot;
@@ -129,6 +136,9 @@ const report = {
     candidateSha256: null,
     baselineSettingsProfileReadback: false,
     environmentPaths: {},
+    shellAppDataRedirected: false,
+    shellAppDataRestored: false,
+    nativeAppDataMatchesProfile: false,
     subprocessPathDiagnostics: { observed: false, contained: false, pathCount: 0 },
     preloadPathDiagnostics: { observed: false, contained: false, pathCount: 0 },
     projectRootContained: false,
@@ -326,6 +336,7 @@ async function prepareIsolatedProfile() {
   const directories = [APP_DATA_ROOT, LOCAL_APP_DATA_ROOT, PROFILE_LAYOUT.userProfileRoot, PROFILE_LAYOUT.homeRoot,
     PROFILE_LAYOUT.tempRoot, PROFILE_LAYOUT.tmpRoot, PROJECTS_ROOT, PROFILE_LAYOUT.vaultPath, INSTALL_DIR];
   await Promise.all(directories.map((directory) => mkdir(directory, { recursive: true })));
+  await redirectRoamingAppDataToTestProfile();
   const checks = await inspectWindowsProfileLayout(PROFILE_LAYOUT);
   const environmentKeys = ["APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOME", "TEMP", "TMP"];
   report.credentialIsolation.environmentPaths = Object.fromEntries(environmentKeys.map((key) => [key, checks[key]]));
@@ -333,6 +344,22 @@ async function prepareIsolatedProfile() {
   report.credentialIsolation.vaultContained = Boolean(checks.vault?.withinRoot && checks.vault?.noReparse);
   if (!Object.values(checks).every((check) => check.withinRoot && check.noReparse)) {
     throw new Error("A required GitHub runner path is outside the isolated root or contains a reparse point.");
+  }
+  const nativeAppDataProbe = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+    "$actual = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData); [pscustomobject]@{ matches = [string]::Equals($actual, $env:SITEINDEX_EXPECTED_APPDATA, [StringComparison]::OrdinalIgnoreCase) } | ConvertTo-Json -Compress"], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15_000,
+    env: { ...process.env, SITEINDEX_EXPECTED_APPDATA: APP_DATA_ROOT },
+  });
+  try {
+    report.credentialIsolation.nativeAppDataMatchesProfile = nativeAppDataProbe.status === 0
+      && JSON.parse(nativeAppDataProbe.stdout.trim()).matches === true;
+  } catch {
+    report.credentialIsolation.nativeAppDataMatchesProfile = false;
+  }
+  if (!report.credentialIsolation.nativeAppDataMatchesProfile) {
+    throw new Error("Windows roaming AppData did not resolve to the isolated runner profile.");
   }
 
   const junctionTarget = path.join(RUNNER_TEMP, `siteindex-junction-target-${randomUUID()}`);
@@ -375,6 +402,64 @@ async function prepareIsolatedProfile() {
       throw new Error("Synthetic junction cleanup could not be verified.");
     }
   }
+}
+
+function queryRegistryValue(key, name) {
+  const result = spawnSync("reg.exe", ["query", key, "/v", name], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15_000,
+  });
+  if (result.error) throw new Error("Could not inspect the runner's roaming AppData registry value.");
+  if (result.status !== 0) return { key, name, exists: false, type: null, value: null };
+  const line = result.stdout.split(/\r?\n/u).find((entry) => new RegExp(`^\\s*${name}\\s+REG_\\w+\\s+`).test(entry));
+  if (!line) return { key, name, exists: false, type: null, value: null };
+  const match = new RegExp(`^\\s*${name}\\s+(REG_\\w+)\\s+(.*)$`).exec(line);
+  if (!match) throw new Error("Could not parse the runner's roaming AppData registry value.");
+  return { key, name, exists: true, type: match[1], value: match[2] };
+}
+
+function writeRegistryValue(key, name, type, value) {
+  const result = spawnSync("reg.exe", ["add", key, "/v", name, "/t", type, "/d", value, "/f"], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15_000,
+  });
+  if (result.error || result.status !== 0) throw new Error("Could not redirect the runner's roaming AppData registry value.");
+}
+
+function redirectRoamingAppDataToTestProfile() {
+  for (const [index, key] of ROAMING_APP_DATA_REGISTRY_KEYS.entries()) {
+    const original = queryRegistryValue(key, "AppData");
+    roamingAppDataRegistryOriginals.push(original);
+    writeRegistryValue(key, "AppData", index === 0 ? "REG_EXPAND_SZ" : "REG_SZ", APP_DATA_ROOT);
+  }
+  roamingAppDataRedirected = true;
+  report.credentialIsolation.shellAppDataRedirected = true;
+}
+
+function restoreRoamingAppDataRegistry() {
+  let restored = true;
+  for (const original of [...roamingAppDataRegistryOriginals].reverse()) {
+    if (original.exists) {
+      const result = spawnSync("reg.exe", ["add", original.key, "/v", original.name, "/t", original.type, "/d", original.value, "/f"], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 15_000,
+      });
+      if (result.error || result.status !== 0) restored = false;
+    } else {
+      const result = spawnSync("reg.exe", ["delete", original.key, "/v", original.name, "/f"], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 15_000,
+      });
+      if (result.error || (result.status !== 0 && !/unable to find/iu.test(result.stderr + result.stdout))) restored = false;
+    }
+  }
+  roamingAppDataRestored = restored;
+  report.credentialIsolation.shellAppDataRestored = restored;
+  if (!restored) throw new Error("Could not restore the runner's original roaming AppData registry values.");
 }
 
 async function stopInstalledAppProcesses() {
@@ -589,6 +674,9 @@ async function scanCredentialCanaries({ outputOnly = false } = {}) {
 }
 
 async function removeIsolatedTestRoot() {
+  if (roamingAppDataRegistryOriginals.length > 0 && !roamingAppDataRestored) {
+    throw new Error("Refusing to remove the isolated profile before restoring the runner's AppData registry values.");
+  }
   const before = await inspectContainedPath(RUNNER_TEMP, TEST_ROOT);
   if (!before.withinRoot || !before.noReparse) {
     throw new Error("Refusing recursive cleanup because the test root is no longer contained in RUNNER_TEMP.");
@@ -854,6 +942,8 @@ async function collectPackagedLaunchDiagnostics(processHandle, contextCount) {
     env: isolatedProcessEnvironment({ SITEINDEX_ACCEPTANCE_MAIN_PID: String(processHandle?.pid ?? 0) }),
   });
   let processTree = {
+    collectionAvailable: false,
+    collectionErrorCategory: processTreeResult.error ? "spawn-error" : processTreeResult.status === 0 ? "parse-error" : "query-failed",
     totalCount: 0,
     mainAlive: processHandle?.exitCode === null,
     mainResponding: null,
@@ -863,9 +953,14 @@ async function collectPackagedLaunchDiagnostics(processHandle, contextCount) {
   };
   if (!processTreeResult.error && processTreeResult.status === 0) {
     try {
-      processTree = { ...processTree, ...JSON.parse(processTreeResult.stdout.trim()) };
+      processTree = {
+        ...processTree,
+        ...JSON.parse(processTreeResult.stdout.trim()),
+        collectionAvailable: true,
+        collectionErrorCategory: null,
+      };
     } catch {
-      // Keep the safe zero-count defaults if CIM output was unavailable.
+      // Preserve an explicit parse-error state instead of presenting zero counts as a successful query.
     }
   }
 
@@ -3200,6 +3295,9 @@ async function writeReport() {
       preloadElectron: report.credentialIsolation.preloadPathDiagnostics,
       processExecutableContained: report.credentialIsolation.processExecutableContained,
       installDirectoryContained: report.credentialIsolation.installDirectoryContained,
+      shellAppDataRedirected: report.credentialIsolation.shellAppDataRedirected,
+      shellAppDataRestored: report.credentialIsolation.shellAppDataRestored,
+      nativeAppDataMatchesProfile: report.credentialIsolation.nativeAppDataMatchesProfile,
     })}`,
     `- Disk credential scan counts: ${JSON.stringify(report.credentialIsolation.canary.diskScan)}`,
     `- Windows build: \`${report.windows.build ?? report.windows.version}\``,
@@ -3243,6 +3341,13 @@ try {
     if (candidateInstalled || await exists(path.join(INSTALL_DIR, "Uninstall SiteIndex.exe"))) await uninstallCurrent();
   } catch (error) {
     failed ??= { stage: "cleanup", code: "UNINSTALL_FAILED", reason: safeMessage(error) };
+  }
+  if (roamingAppDataRegistryOriginals.length > 0 && !roamingAppDataRestored) {
+    try {
+      restoreRoamingAppDataRegistry();
+    } catch (error) {
+      failed ??= { stage: "cleanup", code: "APPDATA_REGISTRY_RESTORE_FAILED", reason: safeMessage(error) };
+    }
   }
   try {
     const scan = await scanCredentialCanaries();

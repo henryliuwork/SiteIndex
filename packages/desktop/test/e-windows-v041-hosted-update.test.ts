@@ -241,7 +241,16 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain("mainResponding");
     expect(acceptanceScript).toContain("rendererCount");
     expect(acceptanceScript).toContain("validJson");
+    expect(acceptanceScript).toContain("collectionAvailable");
+    expect(acceptanceScript).toContain("collectionErrorCategory");
     expect(acceptanceScript).not.toContain("$process.CommandLine }");
+  });
+
+  it("redirects Windows roaming AppData into the runner root and restores the registry before cleanup", () => {
+    expect(acceptanceScript).toContain("redirectRoamingAppDataToTestProfile");
+    expect(acceptanceScript).toContain("nativeAppDataMatchesProfile");
+    expect(acceptanceScript).toContain("restoreRoamingAppDataRegistry");
+    expect(acceptanceScript).toContain("Refusing to remove the isolated profile before restoring the runner's AppData registry values.");
   });
 
   it("does not claim an update until the updater has restarted the candidate", async () => {
