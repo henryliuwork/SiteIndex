@@ -158,6 +158,7 @@
 - [x] A4-3：工作区检查、生成、空项目创建、导入检查、README/AGENTS.md 自动区块与布局校验
   - [x] workspace.check：忽略 .git 与系统元数据，稳定返回前 10 个冲突项
   - [x] workspace.create：按模板创建 workspace 目录、数据文件和 skills，初始化 README / AGENTS.md 自动区块；覆盖非空目录保护与失败回滚
+  - [x] 新建 workspace 的 `.env` 为空且被 ignore，不生成空的 WordPress 凭据键；不读取或改写已有 `.env`
   - [x] projects.createWorkspaceOnly：创建空 workspace，不触发抓取；同域查重同时识别 legacy 与 workspace 数据目录及 Desktop 注册回调
   - [x] workspace.importCheck：校验 schema/表格格式；补缺失台账、manifest、自动区块与 CLAUDE.md（仅缺失时从模板独占创建，已有内容不改写）；缺少 site.json.workspace 时列出人工补充字段且不写回现有配置
   - [x] README 与 AGENTS.md 双文件自动区块；保留用户维护区，legacy 仍只刷新 README

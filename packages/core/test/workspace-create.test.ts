@@ -33,7 +33,7 @@ afterEach(async () => {
 });
 
 describe("workspace.create", () => {
-  it("creates the workspace template, empty data files, blank environment keys and automatic blocks", async () => {
+  it("creates the workspace template, empty data files, ignored empty env file and automatic blocks", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-create-"));
     TEMP_DIRS.push(root);
     const target = path.join(root, "project");
@@ -67,7 +67,7 @@ describe("workspace.create", () => {
     expect(manifest.paths["seo.blog"]).toBe("03-seo/blog");
     expect(skills.skills.length).toBeGreaterThan(0);
     expect(skills.skills.some((skill) => skill.name === "edm-builder")).toBe(false);
-    expect(await readFile(path.join(target, ".env"), "utf8")).toBe("wp_base_url=\nwp_username=\nwp_app_password=\n");
+    expect(await readFile(path.join(target, ".env"), "utf8")).toBe("");
     expect(await readFile(path.join(target, ".gitignore"), "utf8")).toContain(".env");
     expect(readme).toContain("workspace-map");
     expect(readme).toContain("03-seo/blog");
