@@ -78,6 +78,15 @@ describe("v0.4.1 synthetic media Job and EDM export acceptance fixtures", () => 
       "EXP-write-completed-response-lost",
       "EXP-path-escape-or-reparse-point",
     ]);
+    for (const testCase of cases.media_job_cases) {
+      const oracle = testCase.core_acceptance_oracle;
+      if (!oracle.media_batch_state) continue;
+      const results = oracle.media_results.map(({ sku }) => sku);
+      const unknown = oracle.media_unknown_skus;
+      const notStarted = oracle.media_not_started_skus;
+      assert.equal(new Set([...results, ...unknown, ...notStarted]).size, testCase.request_skus.length);
+      assert.deepEqual([...results, ...unknown, ...notStarted], testCase.request_skus);
+    }
     assert.match(cases.evidence_scope, /do not invoke SiteIndex Job, Core, CLI, Desktop IPC, or UI/u);
     assert.match(cases.notes.join("\n"), /not evidence that SiteIndex produced it/u);
   });

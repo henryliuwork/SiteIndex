@@ -16,10 +16,13 @@
       "expected_fixture_responses": [201, 401],
       "core_acceptance_oracle": {
         "media_batch_state": "interrupted",
-        "confirmed": ["SYN-M001", "SYN-M002"],
         "media_error_code": "WP_AUTH_FAILED",
-        "unknown": [],
-        "not_started": ["SYN-M003"]
+        "media_results": [
+          { "sku": "SYN-M001", "status": "uploaded" },
+          { "sku": "SYN-M002", "status": "failed" }
+        ],
+        "media_unknown_skus": [],
+        "media_not_started_skus": ["SYN-M003"]
       }
     },
     {
@@ -30,10 +33,13 @@
       "expected_fixture_responses": [201, 403],
       "core_acceptance_oracle": {
         "media_batch_state": "interrupted",
-        "confirmed": ["SYN-M011", "SYN-M012"],
         "media_error_code": "WP_FORBIDDEN",
-        "unknown": [],
-        "not_started": ["SYN-M013"]
+        "media_results": [
+          { "sku": "SYN-M011", "status": "uploaded" },
+          { "sku": "SYN-M012", "status": "failed" }
+        ],
+        "media_unknown_skus": [],
+        "media_not_started_skus": ["SYN-M013"]
       }
     },
     {
@@ -43,9 +49,14 @@
       "fixture_probe_posts": ["SYN-M021", "SYN-M022", "SYN-M023"],
       "expected_fixture_responses": [201, 503, 201],
       "core_acceptance_oracle": {
-        "confirmed": ["SYN-M021", "SYN-M022", "SYN-M023"],
-        "unknown": [],
-        "not_started": [],
+        "media_batch_state": "complete",
+        "media_results": [
+          { "sku": "SYN-M021", "status": "uploaded" },
+          { "sku": "SYN-M022", "status": "failed" },
+          { "sku": "SYN-M023", "status": "uploaded" }
+        ],
+        "media_unknown_skus": [],
+        "media_not_started_skus": [],
         "job_status": "partial"
       }
     },
@@ -57,9 +68,9 @@
       "fixture_probe_lookup_slug": "syn-m031-main",
       "core_acceptance_oracle": {
         "media_batch_state": "outcome_unknown",
-        "confirmed": [],
-        "unknown": ["SYN-M031"],
-        "not_started": ["SYN-M032", "SYN-M033"],
+        "media_results": [],
+        "media_unknown_skus": ["SYN-M031"],
+        "media_not_started_skus": ["SYN-M032", "SYN-M033"],
         "retry_rule": "GET by the deterministic media slug first; if found, recover as reused instead of POSTing blindly"
       }
     },
