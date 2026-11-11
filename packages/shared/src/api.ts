@@ -582,7 +582,9 @@ export interface SiteIndexApi {
     buildCommand(id: ProjectId, input: EdmCommandInput): Promise<string>;
     /**
      * 仅生成全项目固定清单；不接收 SKU 子集或输出路径。旧 bridge 可不提供。
-     * Promise resolve 表示结果已确认；`EDM_EXPORT_OUTCOME_UNKNOWN` 表示写入可能已落盘但确认丢失，安全重试即可。
+     * Promise resolve 表示结果已确认；`EDM_EXPORT_OUTCOME_UNKNOWN` 表示写入可能已落盘但确认丢失。
+     * 调用方不得将其视为未写入或自动盲目重试；重试前，后端必须重新读取并核验目标标记、当前内容和预期输出。
+     * 若后端无法确认当前状态安全，应保持未知/冲突并保留现有文件。
      */
     exportIndex?(id: ProjectId): Promise<EdmSkuIndexExportResult>;
   };
