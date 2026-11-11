@@ -137,17 +137,17 @@ class FakeSmokeLocator {
 }
 
 class FakeSmokePage {
-  constructor({ storageMode = "readable" } = {}) {
+  constructor({ storageMode = "readable", states, operations = [] } = {}) {
     this.currentUrl = "http://127.0.0.1:4178/#/";
     this.origins = ["https://first-store.example.test", "https://second-store.example.test"];
-    this.states = new Map([[this.origins[0], "not_configured"], [this.origins[1], "configured"]]);
+    this.states = states ?? new Map([[this.origins[0], "not_configured"], [this.origins[1], "configured"]]);
     this.storageMode = storageMode;
     this.editorOpen = false;
     this.editingOrigin = null;
     this.pendingDelete = null;
     this.username = "";
     this.password = "";
-    this.operations = [];
+    this.operations = operations;
     this.buttons = new Map();
     this.keyboard = { press: async (key) => {
       if (key === "Escape" && this.editorOpen) {
@@ -204,6 +204,68 @@ describe("WordPress credential UI smoke origin scope", () => {
     ]);
     expect(page.states.get(target)).toBe("not_configured");
     expect(page.states.get(untouched)).toBe("configured");
+  });
+
+  it("supports two-origin configure, replace, delete, and reattached-page status phases", async () => {
+    const first = "https://first-store.example.test";
+    const second = "https://second-store.example.test";
+    const operations = [];
+    const page = new FakeSmokePage({
+      states: new Map([[first, "not_configured"], [second, "not_configured"]]),
+      operations,
+    });
+    const run = (targetPage, origin, phase, expectedState, otherOrigins) => runWordPressCredentialsUiSmoke(targetPage, {
+      runtime: "browser-mock",
+      origin,
+      phase,
+      ...(expectedState ? { expectedState } : {}),
+      otherOrigins,
+    });
+
+    const firstConfigured = await run(page, first, "configure", undefined, [
+      { origin: second, expectedState: "not_configured" },
+    ]);
+    expect(firstConfigured.surface).toBe("ui-only");
+    await run(page, second, "configure", undefined, [
+      { origin: first, expectedState: "configured" },
+    ]);
+
+    const afterFirstRestart = new FakeSmokePage({ states: new Map(page.states), operations });
+    await run(afterFirstRestart, first, "assert-status", "configured", [
+      { origin: second, expectedState: "configured" },
+    ]);
+    await run(afterFirstRestart, second, "assert-status", "configured", [
+      { origin: first, expectedState: "configured" },
+    ]);
+
+    await run(afterFirstRestart, second, "replace", undefined, [
+      { origin: first, expectedState: "configured" },
+    ]);
+    await run(afterFirstRestart, second, "delete", undefined, [
+      { origin: first, expectedState: "configured" },
+    ]);
+
+    const afterSecondRestart = new FakeSmokePage({ states: new Map(afterFirstRestart.states), operations });
+    await run(afterSecondRestart, second, "assert-status", "not_configured", [
+      { origin: first, expectedState: "configured" },
+    ]);
+    await run(afterSecondRestart, first, "delete", undefined, [
+      { origin: second, expectedState: "not_configured" },
+    ]);
+
+    const afterFinalRestart = new FakeSmokePage({ states: new Map(afterSecondRestart.states), operations });
+    await run(afterFinalRestart, first, "assert-status", "not_configured", [
+      { origin: second, expectedState: "not_configured" },
+    ]);
+    expect(operations.map(({ type, origin }) => ({ type, origin }))).toEqual([
+      { type: "save", origin: first },
+      { type: "save", origin: second },
+      { type: "save", origin: second },
+      { type: "clear", origin: second },
+      { type: "clear", origin: first },
+    ]);
+    expect(afterFinalRestart.states.get(first)).toBe("not_configured");
+    expect(afterFinalRestart.states.get(second)).toBe("not_configured");
   });
 
   it.each(["unreadable", "evaluation-rejected"]) ("fails closed when browser storage is %s", async (storageMode) => {
