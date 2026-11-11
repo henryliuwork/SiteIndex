@@ -6,6 +6,7 @@ export interface EdmMediaRunSnapshot {
   projectId: string;
   projectName: string;
   skus: string[];
+  startedAt: number;
   state: "starting" | "running" | "finished" | "failed";
   runId?: string;
   progress: string;
@@ -189,7 +190,7 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
     },
     begin(projectId, projectName, skus) {
       const token = Symbol(projectId);
-      const snapshot: EdmMediaRunSnapshot = { projectId, projectName, skus: [...skus], state: "starting", progress: "正在启动图片处理任务…" };
+      const snapshot: EdmMediaRunSnapshot = { projectId, projectName, skus: [...skus], startedAt: Date.now(), state: "starting", progress: "正在启动图片处理任务…" };
       pendingStarts.set(token, snapshot);
       snapshots.set(projectId, snapshot);
       publish();
