@@ -253,6 +253,11 @@ export function EdmPage() {
     mediaPageVisitRef.current.startedAt,
   );
   const displayedMediaSnapshot = mediaDisplaySelection.kind === "snapshot" ? mediaDisplaySelection.snapshot : null;
+  const recoveredMediaRun = mediaDisplaySelection.kind === "history" ? mediaDisplaySelection.run : null;
+  const recoveredMediaRunKey = recoveredMediaRun
+    ? `${id}\0${recoveredMediaRun.run_id}\0${recoveredMediaRun.started_at}`
+    : "";
+  const refreshedMediaRunKeyRef = useRef("");
   const exportSafetyBlocked = exportSafetyState !== "ready" || exportSafetyUnavailableProjectId === id;
   const currentExportFeedback = exportFeedback?.projectId === id ? exportFeedback : null;
   const exportMutation = useMutation({
@@ -308,10 +313,31 @@ export function EdmPage() {
   const summary = summaryQuery.data;
   const columns = useMemo(() => imageColumns(id), [id]);
   const currentView: ImageView = query.filters?.view ?? "all";
+  const imageCacheState = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", id] })
+    .map(({ queryHash, state }) => `${queryHash}:${state.dataUpdatedAt}:${state.fetchStatus}`)
+    .join("|");
 
   useEffect(() => {
     return edmMediaJobMonitor.connect(api.jobs, queryClient, toast, id);
   }, [api.jobs, id, queryClient, toast]);
+
+  useEffect(() => {
+    if (!recoveredMediaRun || !recoveredMediaRun.finished_at || !recoveredMediaRunKey) return;
+    if (refreshedMediaRunKeyRef.current === recoveredMediaRunKey) return;
+
+    const finishedAt = Date.parse(recoveredMediaRun.finished_at);
+    if (!Number.isFinite(finishedAt)) return;
+    const summaryState = queryClient.getQueryState(["edm", "summary", id]);
+    const imageStates = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", id] }).map(({ state }) => state);
+    if (summaryState?.fetchStatus === "fetching" || imageStates.some(({ fetchStatus }) => fetchStatus === "fetching")) return;
+
+    refreshedMediaRunKeyRef.current = recoveredMediaRunKey;
+    const summaryNeedsRefresh = Boolean(summaryState?.data !== undefined && summaryState.dataUpdatedAt < finishedAt);
+    const imagesNeedRefresh = imageStates.some(({ data, dataUpdatedAt }) => data !== undefined && dataUpdatedAt < finishedAt);
+
+    if (summaryNeedsRefresh) void queryClient.invalidateQueries({ queryKey: ["edm", "summary", id] });
+    if (imagesNeedRefresh) void queryClient.invalidateQueries({ queryKey: ["edm", "images", id] });
+  }, [id, imageCacheState, listQuery.dataUpdatedAt, listQuery.fetchStatus, queryClient, recoveredMediaRun, recoveredMediaRunKey, summaryQuery.dataUpdatedAt, summaryQuery.fetchStatus]);
 
   useEffect(() => {
     if (lastResetProjectIdRef.current === id) return;

@@ -41,6 +41,7 @@ type EdmPageTestOptions = {
   exportResult?: EdmSkuIndexExportResult;
   exportError?: unknown;
   mediaPrepareError?: unknown;
+  queryStaleTime?: number;
 };
 
 async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[], mediaReady = false, deferredMediaPrepare = false, options: EdmPageTestOptions = {}) {
@@ -57,6 +58,8 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
       },
     },
   }));
+  const summary = vi.fn(mockApi.edm.summary);
+  mockApi.edm.summary = summary;
   const listImages = vi.fn(mockApi.edm.listImages);
   if (imageRows) listImages.mockImplementation(async () => ({ rows: imageRows, total: imageRows.length }));
   mockApi.edm.listImages = listImages;
@@ -113,7 +116,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
         : fallback,
   }));
   const [{ EdmPage }, { ToastProvider }] = await Promise.all([import("./EdmPage"), import("../components")]);
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: options.queryStaleTime ?? 0 } } });
   render(
     <ToastProvider>
     <QueryClientProvider client={queryClient}>
@@ -130,7 +133,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   );
   const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
   return {
-    mockApi, listImages, previewGrouping, setManualImage, mediaPrepare, exportIndex, invalidateQueries,
+    mockApi, queryClient, summary, listImages, previewGrouping, setManualImage, mediaPrepare, exportIndex, invalidateQueries,
     emitMediaProgress: (progress: JobProgress) => onMediaProgress?.(progress),
     emitMediaFinished: (result: JobResult) => onMediaFinished?.(result),
     resolveMediaPrepare: (runId = "demo-media-run") => resolvePendingMediaPrepare?.({ runId }),
@@ -627,6 +630,55 @@ describe("EdmPage media preparation prototype", () => {
     expect(within(results).getByText("DEMO-BACKGROUND-002")).toBeTruthy();
     expect(within(results).getByText("虚构测试错误")).toBeTruthy();
     expect(activeSubscriptions()).toEqual({ progress: 1, finished: 1 });
+  }, 15_000);
+
+  it("重新进入时从持久化媒体历史恢复结果，并刷新较旧的 EDM 摘要与图片列表", async () => {
+    const sku = "DEMO-RETURN-001";
+    const rows = [mediaImageRow(sku, null)];
+    const historyByProject: Record<string, RunLog[]> = { demo: [] };
+    const { mockApi, queryClient, summary, listImages } = await renderEdmPage(true, false, rows, false, false, {
+      historyByProject,
+      queryStaleTime: 30_000,
+    });
+    await waitFor(() => {
+      expect(summary).toHaveBeenCalledTimes(1);
+      expect(listImages).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
+    expect(await screen.findByText("运行页面")).toBeTruthy();
+    const finishedAt = new Date(Date.now() + 1_000).toISOString();
+    historyByProject.demo = [{
+      run_id: "demo-persisted-media-run", job: "media", started_at: new Date(Date.now() - 1_000).toISOString(),
+      finished_at: finishedAt, status: "partial",
+      media_requested_skus: [sku, "DEMO-RETURN-002", "DEMO-RETURN-003"],
+      media_batch_state: "outcome_unknown",
+      media_results: [{ sku, status: "recorded" }],
+      media_unknown_skus: ["DEMO-RETURN-002"],
+      media_not_started_skus: ["DEMO-RETURN-003"],
+    }];
+    rows.splice(0, rows.length, {
+      ...mediaImageRow(sku, null, "https://demo.example.test/images/refreshed.png"),
+      title: "虚构更新后的商品",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
+    const recovered = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
+    expect(within(recovered).getByText("原图 URL 已记录")).toBeTruthy();
+    expect(within(recovered).getByText("结果未知")).toBeTruthy();
+    expect(within(recovered).getByText("已确认未开始")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /获取图片 URL/ })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "选择当前页全部行" })).toBeNull();
+
+    await waitFor(() => {
+      expect(summary).toHaveBeenCalledTimes(2);
+      expect(listImages).toHaveBeenCalledTimes(2);
+    });
+    const refreshedImageQueries = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "demo"] });
+    expect(refreshedImageQueries.some(({ state }) =>
+      (state.data as { rows?: SkuImageRow[] } | undefined)?.rows?.some((row) => row.title === "虚构更新后的商品"),
+    )).toBe(true);
+    expect(mockApi.jobs.history).toHaveBeenCalledWith("demo", 100);
   }, 15_000);
 
   it("返回页面时较新的外部历史覆盖旧快照，即使 runId 被复用", async () => {
