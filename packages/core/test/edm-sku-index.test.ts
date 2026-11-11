@@ -4,7 +4,7 @@ import path from "node:path";
 import { EDM_SKU_INDEX_PATHS, pathsFor, type ProductView, type ProjectLayout, type SiteConfig, type SkuRecord, type SkuStockView } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseCsv } from "../src/io/csv";
-import { confirmEdmIndexPostCommit, createEdmSkuIndexFile, renderEdmSkuIndex, type EdmSkuIndexInput } from "../src/edm/sku-index";
+import { createEdmSkuIndexFile, renderEdmSkuIndex, type EdmSkuIndexInput } from "../src/edm/sku-index";
 import { createCoreService } from "../src/service";
 
 const FIXTURE = path.resolve(process.cwd(), "fixtures/a-v041-edm-export");
@@ -96,19 +96,24 @@ describe("EDM SKU index rendering", () => {
     });
   });
 
-  it("keeps only whitelisted, decoded product query parameters", async () => {
+  it("omits every URL query value and fragment from the generated Markdown", async () => {
     const input = await fixtureInput("legacy", "sku-media-legacy.csv");
     const productsText = await readFile(path.join(FIXTURE, "products.jsonl"), "utf8");
+    const skusText = await readFile(path.join(FIXTURE, "skus.jsonl"), "utf8");
     const products = parseJsonl<ProductView>(productsText).map((product) => product.product_id === "PRODUCT-SINGLE"
       ? {
         ...product,
-        url: "https://synthetic-edm.test/products/item?color=blue&username=secret-user&session=secret-session&sig=secret-sig&s%65ssion=encoded-secret&%75sername=encoded-user&%73ig=encoded-sig&%61ccess_token=secret-token&size=small",
+        url: "https://synthetic-edm.test/products/item?color=secret-under-safe-key&username=secret-user&session=secret-session&sig=secret-sig&s%65ssion=encoded-secret&%75sername=encoded-user&%73ig=encoded-sig&%61ccess_token=secret-token&size=small#private-fragment",
       }
       : product);
-    const result = renderEdmSkuIndex({ ...input, products });
+    const skus = parseJsonl<SkuRecord>(skusText).map((sku) => sku.sku === "DEMO-SINGLE"
+      ? { ...sku, image_url: "https://synthetic-cdn.invalid/images/demo-single.png?color=secret-image-value" }
+      : sku);
+    const result = renderEdmSkuIndex({ ...input, products, skus });
 
-    expect(result.content).toContain("https://synthetic-edm.test/products/item?color=blue&size=small");
-    expect(result.content).not.toMatch(/secret-user|secret-session|secret-sig|encoded-secret|encoded-user|encoded-sig|secret-token/u);
+    expect(result.content).toContain("https://synthetic-edm.test/products/item |");
+    expect(result.content).toContain("https://synthetic-cdn.invalid/images/demo-single.png |");
+    expect(result.content).not.toMatch(/secret-under-safe-key|secret-user|secret-session|secret-sig|encoded-secret|encoded-user|encoded-sig|secret-token|secret-image-value|private-fragment/u);
   });
 
   it("renders an empty inventory with exactly one final newline", async () => {
@@ -185,19 +190,6 @@ describe("EDM SKU index safe file boundary", () => {
       .rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
     expect(await fileExists(output)).toBe(false);
     expect(await readdir(path.join(projectPath, "index"))).not.toContain("edm");
-  });
-
-  it("maps a post-commit verification fault to outcome_unknown after the file exists", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-edm-post-commit-"));
-    temporaryRoots.push(root);
-    const committedPath = path.join(root, "committed.md");
-    const committedBytes = Buffer.from("committed bytes\n");
-    await writeFile(committedPath, committedBytes, { flag: "wx" });
-
-    await expect(confirmEdmIndexPostCommit(async () => {
-      throw { code: "EDM_INDEX_CONFLICT", message: "injected post-commit verification failure" };
-    })).rejects.toMatchObject({ code: "EDM_EXPORT_OUTCOME_UNKNOWN" });
-    expect(await readFile(committedPath)).toEqual(committedBytes);
   });
 
   it("preserves unmarked and externally edited existing files", async () => {

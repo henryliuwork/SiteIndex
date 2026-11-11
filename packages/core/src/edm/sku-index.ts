@@ -17,7 +17,6 @@ import type { SiteIndexError } from "@siteindex/shared";
 const GENERATED_MARKER = "<!-- siteindex:generated:edm-sku-index:v1 -->";
 const TABLE_HEADER = "| SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存 |";
 const TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | --- | --- |";
-const SAFE_PUBLIC_QUERY_KEYS = new Set(["color", "size", "variant", "option"]);
 
 export interface EdmSkuIndexInput {
   products: readonly ProductView[];
@@ -61,12 +60,8 @@ function normalizePublicUrl(value: unknown): string | null {
   let url: URL;
   try { url = new URL(value); } catch { return null; }
   if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) return null;
-  const pairs = [...url.searchParams.entries()]
-    .map(([key, queryValue]) => [key.normalize("NFKC").toLowerCase(), queryValue] as const)
-    .filter(([key, queryValue]) => SAFE_PUBLIC_QUERY_KEYS.has(key) && queryValue !== "")
-    .sort(([leftKey, leftValue], [rightKey, rightValue]) => compareKeys(leftKey, rightKey) || compareKeys(leftValue, rightValue));
+  // Query values are opaque and may contain credentials even under an ordinary key such as "color".
   url.search = "";
-  for (const [key, queryValue] of pairs) url.searchParams.append(key, queryValue);
   url.hash = "";
   return url.href;
 }
@@ -225,16 +220,6 @@ async function validateEdmTargetPath(projectPath: string, layout: ProjectLayout)
 interface EdmSkuIndexTestHooks {
   /** Deterministically injects a path race after the read-only validation boundary. */
   afterPathValidation?: () => Promise<void>;
-}
-
-function outcomeUnknown(): SiteIndexError {
-  return safeError("EDM_EXPORT_OUTCOME_UNKNOWN", "清单写入可能已完成，但结果无法确认；请重新生成核对。");
-}
-
-/** Converts any failure after an atomic commit into an explicit unknown outcome. */
-export async function confirmEdmIndexPostCommit<T>(verify: () => Promise<T>): Promise<T> {
-  try { return await verify(); }
-  catch { throw outcomeUnknown(); }
 }
 
 /**
