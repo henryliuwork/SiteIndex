@@ -83,6 +83,7 @@
 - [x] B-2：DataTable v2 默认 fill、内部滚动与固定分页、50/100/200/全部、按 tableId 持久化、行选择与右侧固定操作列；#300 Playwright 回归 — 本 PR
 - [x] B-3：`packages/ui/visual/` 的 `ui:check`，遍历所有路由并输出双视口布局/样式检查报告；干净工作树直接运行时自动生成 mock 数据（#347）— [PR #361](https://github.com/henryliuwork/SiteIndex/pull/361)。基线问题转 [#314](https://github.com/henryliuwork/SiteIndex/issues/314) / [#315](https://github.com/henryliuwork/SiteIndex/issues/315)
 - [x] B-3 follow-up #360：表格页等网络请求完成后，再等待 DataTable、空态或错误态；加载状态优先于残留表格；Products、Inventory、EDM、SEO、分类页纳入双视口检查，填充表格同时检查表体与分页栏可见性。慢响应、空态、错误态和超时有单测 — [PR #369](https://github.com/henryliuwork/SiteIndex/pull/369)；路由与分页边界扩展 — 本 PR
+- [x] B-3 follow-up：所有非表格路由也等待完成内容、显式空态或错误态；mock 请求未完成和持续加载不得提前截图；回归覆盖延迟完成、合法空态、错误态及持续加载超时 — 本 PR
 - [x] B-4a 应用页迁移：项目中心与新建向导使用 PageHeader、Card、EmptyState、Notice、Drawer、Toast；向导步骤采用可插入数组并预留隐藏的 Agent 工作区插槽 — [PR #324](https://github.com/henryliuwork/SiteIndex/pull/324)
 - [x] B-4b 应用页迁移：Skill 中心与软件设置使用 PageHeader、Card、EmptyState、Notice、Toast 和设计 token — [PR #327](https://github.com/henryliuwork/SiteIndex/pull/327)
 - [x] B-4c 应用页迁移：README 与定时任务汇总页使用共享组件和 DataTable v2，页面字号、间距和颜色使用设计 token — [PR #331](https://github.com/henryliuwork/SiteIndex/pull/331)

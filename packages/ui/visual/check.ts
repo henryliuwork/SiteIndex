@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
-import { classifyDataSurface, waitForDataSurface, type DataSurfaceState } from "./readiness";
+import { classifyDataSurface, classifyPageSurface, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
 import { isDataTableRoute } from "./routes";
 
 type BrowserChannel = "msedge" | "chrome";
@@ -40,6 +40,8 @@ const viewports: Viewport[] = [
   { width: 1280, height: 800 },
   { width: 1920, height: 1080 },
 ];
+const mockModeOverride = process.env.SITEINDEX_UI_CHECK_MOCK_MODE;
+const mockModeRoute = process.env.SITEINDEX_UI_CHECK_MOCK_ROUTE ?? "/p/demo/design";
 
 function asErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -113,9 +115,9 @@ async function launchLocalBrowser(): Promise<Browser> {
   throw new Error(`找不到本机 Edge 或 Chrome；不会下载浏览器。${errors.join(" | ")}`);
 }
 
-async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
-  const snapshot = await page.evaluate(() => {
-    const tableScrollVisible = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-scroll")).some((element) => {
+async function readSurfaceSnapshot(page: Page): Promise<PageSurfaceSnapshot> {
+  return page.evaluate(() => {
+    const table = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-scroll")).some((element) => {
       const rect = element.getBoundingClientRect();
       if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
       for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
@@ -124,7 +126,7 @@ async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
       }
       return true;
     });
-    const paginationReady = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-pagination [aria-label='每页条数']")).some((element) => {
+    const pagination = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-pagination [aria-label='每页条数']")).some((element) => {
       const rect = element.getBoundingClientRect();
       if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
       for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
@@ -133,26 +135,19 @@ async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
       }
       return true;
     });
-    const hasVisibleRows = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table")).some((table) => {
-      const tableRect = table.getBoundingClientRect();
-      let tableVisible = tableRect.width > 0 && tableRect.height > 0;
-      for (let current: HTMLElement | null = table; tableVisible && current && current !== document.documentElement; current = current.parentElement) {
-        const style = getComputedStyle(current);
-        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") tableVisible = false;
-      }
-      return tableVisible && Array.from(table.querySelectorAll<HTMLElement>(".si-table tbody tr[data-row-id]")).some((row) => {
+    const hasVisibleRows = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table")).some((tableElement) =>
+      tableElement.getBoundingClientRect().width > 0 && tableElement.getBoundingClientRect().height > 0
+      && Array.from(tableElement.querySelectorAll<HTMLElement>(".si-table tbody tr[data-row-id]")).some((row) => {
         const rect = row.getBoundingClientRect();
-        let rowVisible = rect.width > 0 && rect.height > 0;
-        for (let current: HTMLElement | null = row; rowVisible && current && current !== document.documentElement; current = current.parentElement) {
+        if (!row.isConnected || row.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+        for (let current: HTMLElement | null = row; current && current !== document.documentElement; current = current.parentElement) {
           const style = getComputedStyle(current);
-          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") rowVisible = false;
+          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
         }
-        return rowVisible;
-      });
-    });
-    const emptyElementVisible = Array.from(
-      document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty], .si-content-blog-empty"),
-    ).some((element) => {
+        return true;
+      }),
+    );
+    const emptyElementVisible = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty], .si-content-blog-empty")).some((element) => {
       const rect = element.getBoundingClientRect();
       if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
       for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
@@ -161,38 +156,70 @@ async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
       }
       return true;
     });
-    const mockRequestsPending = (window.__siteindexMockPendingRequests ?? 0) > 0;
+    const pageEmptyElementVisible = Array.from(document.querySelectorAll<HTMLElement>(".si-page [data-table-empty], .si-empty-state, .si-content-blog-empty")).some((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const error = Array.from(document.querySelectorAll<HTMLElement>(".si-page .si-api-error-state, main .si-api-error-state")).some((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const loadingElementVisible = Array.from(document.querySelectorAll<HTMLElement>(
+      ".si-page-loading, .si-query-loading, .si-inventory-query-state, .si-content-blog-empty [role='status']",
+    )).some((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const content = Array.from(document.querySelectorAll<HTMLElement>(
+      "main .si-page > :not(.si-page-header):not(.si-project-header):not(.si-page-loading):not(.si-api-error-state):not(.si-empty-state):not(.si-content-blog-empty), main .si-placeholder",
+    )).some((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
     return {
-      table: tableScrollVisible,
-      pagination: paginationReady,
+      table,
+      pagination,
       empty: emptyElementVisible && !hasVisibleRows,
-      error: Array.from(document.querySelectorAll<HTMLElement>(".si-page .si-api-error-state, main .si-api-error-state")).some((element) => {
-        const rect = element.getBoundingClientRect();
-        if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
-        for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
-          const style = getComputedStyle(current);
-          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
-        }
-        return true;
-      }),
-      loading: mockRequestsPending || Array.from(
-        document.querySelectorAll<HTMLElement>(".si-page-loading, .si-query-loading, .si-inventory-query-state, .si-content-blog-empty [role='status']"),
-      ).some((element) => {
-        const rect = element.getBoundingClientRect();
-        if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
-        for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
-          const style = getComputedStyle(current);
-          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
-        }
-        return true;
-      }),
+      pageEmpty: pageEmptyElementVisible && !hasVisibleRows,
+      error,
+      loading: (window.__siteindexMockPendingRequests ?? 0) > 0 || loadingElementVisible,
+      // PageHeader and ProjectHeader can render before their queries complete.
+      // Require a visible body surface; explicit loading/error/empty states are handled separately.
+      content,
     };
   });
-  return classifyDataSurface(snapshot);
 }
 
-async function waitForRoute(page: Page, route: RouteCase): Promise<DataSurfaceState | undefined> {
-  await page.locator(".si-page, .si-placeholder").first().waitFor({ state: "visible", timeout: 20_000 });
+async function readDataSurfaceState(page: Page): Promise<DataSurfaceState> {
+  return classifyDataSurface(await readSurfaceSnapshot(page));
+}
+
+async function readPageSurfaceState(page: Page): Promise<DataSurfaceState> {
+  return classifyPageSurface(await readSurfaceSnapshot(page));
+}
+
+async function waitForRoute(page: Page, route: RouteCase): Promise<DataSurfaceState> {
+  await page.locator(".si-page, .si-placeholder, .si-api-error-state").first().waitFor({ state: "visible", timeout: 20_000 });
   if (route.waitForDataSurface) {
     await page.waitForLoadState("networkidle", { timeout: 20_000 });
     const state = await waitForDataSurface(() => readDataSurfaceState(page));
@@ -200,9 +227,9 @@ async function waitForRoute(page: Page, route: RouteCase): Promise<DataSurfaceSt
     return state;
   }
   await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined);
+  const state = await waitForPageSurface(() => readPageSurfaceState(page));
   await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(120);
-  return undefined;
+  return state;
 }
 
 async function inspectPage(page: Page): Promise<{
@@ -255,7 +282,18 @@ async function inspectPage(page: Page): Promise<{
       }
       return true;
     });
-    const emptySurface = !hasVisibleRows && Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty]")).some((element) => {
+    const emptySurface = !hasVisibleRows && Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table-empty, .si-page [data-table-empty], .si-empty-state, .si-content-blog-empty")).some((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const contentSurface = Array.from(document.querySelectorAll<HTMLElement>(
+      "main .si-page > :not(.si-page-header):not(.si-project-header):not(.si-page-loading):not(.si-api-error-state):not(.si-empty-state):not(.si-content-blog-empty), main .si-placeholder",
+    )).some((element) => {
       const rect = element.getBoundingClientRect();
       if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
       for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
@@ -361,6 +399,7 @@ async function inspectPage(page: Page): Promise<{
         bodyFirstFontIsGeist: /geist/i.test(firstFont),
         tableCount: tables.length,
         emptySurface,
+        contentSurface,
         errorSurface,
         scheduleTableMissingStandardScroll: Boolean(document.querySelector(".si-schedules-page table")) && !tables.length,
         tables: tableMetrics,
@@ -411,6 +450,7 @@ async function main(): Promise<void> {
     const routes = await discoverRoutes(server, projectId);
 
     console.log(`ui:check: ${routes.length} routes × ${viewports.length} viewports; project=${projectId}`);
+    if (mockModeOverride) console.log(`ui:check mock override: ${mockModeOverride} on ${mockModeRoute}`);
     for (const viewport of viewports) {
       const context = await browser.newContext({ viewport });
       const page = await context.newPage();
@@ -427,11 +467,12 @@ async function main(): Promise<void> {
         let metrics: Record<string, unknown> = {};
         currentConsoleErrors = consoleErrors;
         try {
-          await page.goto(`${baseUrl}/#${route.path}`, { waitUntil: "commit", timeout: 20_000 });
+          const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
+          await page.goto(`${baseUrl}${mockQuery}#${route.path}`, { waitUntil: "commit", timeout: 20_000 });
           const dataSurfaceState = await waitForRoute(page, route);
           const inspection = await inspectPage(page);
           heading = inspection.heading;
-          metrics = dataSurfaceState ? { ...inspection.metrics, dataSurfaceState } : inspection.metrics;
+          metrics = { ...inspection.metrics, dataSurfaceState };
           for (const warning of inspection.styleWarnings) allStyleWarnings.add(warning);
 
           const values = metrics as {
@@ -441,6 +482,7 @@ async function main(): Promise<void> {
             bodyFirstFontIsGeist: boolean;
             tableCount: number;
             emptySurface: boolean;
+            contentSurface: boolean;
             errorSurface: boolean;
             scheduleTableMissingStandardScroll: boolean;
             tables: Array<{ overflowY: string; bottomInViewport: boolean; checkViewport: boolean; hasPagination: boolean; paginationBottom: number | null; paginationInViewport: boolean; hasPageSizeControl: boolean }>;
@@ -456,6 +498,15 @@ async function main(): Promise<void> {
           }
           if (route.waitForDataSurface && values.dataSurfaceState === "error" && !values.errorSurface) {
             failures.push({ rule: "table-readiness-mismatch", message: "就绪判定为错误态，但截图测量没有可见错误。" });
+          }
+          if (!route.waitForDataSurface && values.dataSurfaceState === "content" && !values.contentSurface) {
+            failures.push({ rule: "page-readiness-mismatch", message: "就绪判定为内容完成，但截图测量没有可见页面内容。" });
+          }
+          if (!route.waitForDataSurface && values.dataSurfaceState === "empty" && !values.emptySurface) {
+            failures.push({ rule: "page-readiness-mismatch", message: "就绪判定为空态，但截图测量没有可见空态。" });
+          }
+          if (!route.waitForDataSurface && values.dataSurfaceState === "error" && !values.errorSurface) {
+            failures.push({ rule: "page-readiness-mismatch", message: "就绪判定为错误态，但截图测量没有可见错误。" });
           }
           if (values.verticalOverflow) failures.push({ rule: "vertical-overflow", message: "窗口 document 有纵向滚动；内容应在应用内部滚动。" });
           if (values.horizontalOverflow) failures.push({ rule: "horizontal-overflow", message: "页面内容超出视口宽度。" });

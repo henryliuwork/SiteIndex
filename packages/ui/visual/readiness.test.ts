@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { classifyDataSurface, waitForDataSurface, type DataSurfaceState } from "./readiness";
+import { classifyDataSurface, classifyPageSurface, waitForDataSurface, waitForPageSurface, type DataSurfaceState } from "./readiness";
 
 describe("ui:check data surface readiness", () => {
   it("classifies visible table, loading, empty, and error surfaces", () => {
@@ -44,5 +44,70 @@ describe("ui:check data surface readiness", () => {
     await expect(waitForDataSurface(readState, { timeoutMs: 25, pollMs: 5 }))
       .rejects.toThrow("最后状态：loading");
     expect(readState.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
+describe("ui:check non-table page readiness", () => {
+  it("distinguishes loading, completed content, legal empty, error, and missing surfaces", () => {
+    const base = { table: false, pagination: false, empty: false, error: false, loading: false, content: false, pageEmpty: false };
+    expect(classifyPageSurface({ ...base, loading: true, content: true })).toBe("loading");
+    expect(classifyPageSurface({ ...base, content: true })).toBe("content");
+    expect(classifyPageSurface({ ...base, pageEmpty: true })).toBe("empty");
+    expect(classifyPageSurface({ ...base, error: true })).toBe("error");
+    expect(classifyPageSurface(base)).toBe("missing");
+  });
+
+  it("waits for a mocked design page query to settle before accepting its content", async () => {
+    let mockRequestsPending = true;
+    let contentVisible = true;
+    const readState = vi.fn(async () => classifyPageSurface({
+      table: false,
+      pagination: false,
+      empty: false,
+      error: false,
+      loading: mockRequestsPending,
+      content: contentVisible,
+      pageEmpty: false,
+    }));
+    setTimeout(() => { mockRequestsPending = false; }, 40);
+
+    await expect(waitForPageSurface(readState, { timeoutMs: 250, pollMs: 5, stabilityMs: 10 })).resolves.toBe("content");
+    expect(readState.mock.calls.length).toBeGreaterThan(2);
+  });
+
+  it("accepts only explicit empty and error states when a page has no content body", async () => {
+    for (const terminal of ["empty", "error"] as const) {
+      const readState = async () => classifyPageSurface({
+        table: false,
+        pagination: false,
+        empty: terminal === "empty",
+        error: terminal === "error",
+        loading: false,
+        content: false,
+        pageEmpty: terminal === "empty",
+      });
+      await expect(waitForPageSurface(readState, { stabilityMs: 0 })).resolves.toBe(terminal);
+    }
+  });
+
+  it("fails if the page remains loading instead of screenshotting it as complete", async () => {
+    const readState = vi.fn(async () => classifyPageSurface({
+      table: false,
+      pagination: false,
+      empty: false,
+      error: false,
+      loading: true,
+      content: false,
+      pageEmpty: false,
+    }));
+
+    await expect(waitForPageSurface(readState, { timeoutMs: 25, pollMs: 5 }))
+      .rejects.toThrow("最后状态：loading");
+    expect(readState.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("fails when a route has neither content nor an explicit terminal state", async () => {
+    await expect(waitForPageSurface(async () => "missing", { timeoutMs: 25, pollMs: 5 }))
+      .rejects.toThrow("最后状态：missing");
   });
 });
