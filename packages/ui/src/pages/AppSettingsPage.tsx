@@ -5,6 +5,7 @@ import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { ApiErrorNotice, Button, Card, Chip, Notice, PageHeader, TabPanel, Tabs, useToast } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
+import { WordPressCredentialsCard } from "./app-settings/wordpress-credentials";
 import "./app-settings/page.css";
 
 const RELEASES_URL = "https://github.com/henryliuwork/SiteIndex/releases/latest";
@@ -196,20 +197,7 @@ export function AppSettingsPage() {
         </div>
       </Card>}
 
-      {activeTab === "basic" && <Card className="si-app-settings-card si-wp-credentials-card">
-        <h2>WordPress 图片托管</h2>
-        <div className="si-app-setting-row si-wp-credential-status-row">
-          <strong>凭据状态</strong>
-          <Chip tone="warn">暂不可读</Chip>
-          <span className="si-setting-hint">本机安全存储接口尚未接入，当前无法判断此设备是否已配置。接口接入后这里只显示“已配置 / 未配置”，不会回显密码。</span>
-        </div>
-        <Notice tone="warn" title="当前不可配置">
-          此版本不会从项目 <code>.env</code> 读取或写入 WordPress 凭据，图片上传配置暂不可用。{platformQuery.data === "win32" && <>Windows 的 <code>%APPDATA%</code> 可能随用户配置漫游，不能作为本机凭据存储位置；</>}上方设置文件路径也不代表凭据存储位置。
-        </Notice>
-        <Notice tone="info" title="换机与旧配置">
-          上传凭据的设计要求是仅保存在本机，不写入项目目录或云盘；更换电脑后需要在新电脑重新配置。旧项目 <code>.env</code> 中的凭据不会自动迁移。迁移流程接入前，请勿同步或提交含有凭据的文件，待应用提供迁移提示后再处理。
-        </Notice>
-      </Card>}
+      {activeTab === "basic" && <WordPressCredentialsCard />}
       {activeTab === "basic" && (typeof draft.close_to_tray === "boolean" || typeof draft.launch_at_login === "boolean") && <Card className="si-app-settings-card">
         <h2>启动与关闭</h2>
         {typeof draft.close_to_tray === "boolean" && <div className="si-app-setting-row">

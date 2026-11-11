@@ -21,7 +21,10 @@ function mockProjectIdForPath(normalizedPath: string): string {
   return "mock-" + (hash >>> 0).toString(36);
 }
 
-export function createProjectsMock(workspaceMock: WorkspaceMock = createWorkspaceMock()): SiteIndexApi["projects"] {
+export function createProjectsMock(
+  workspaceMock: WorkspaceMock = createWorkspaceMock(),
+  options: { wordpressImageHostDemo?: boolean } = {},
+): SiteIndexApi["projects"] {
   const createdPaths = new Map<string, string>();
   const addedProjects = new Map<string, ProjectDetail>();
   const removedProjectIds = new Set<string>();
@@ -41,9 +44,13 @@ export function createProjectsMock(workspaceMock: WorkspaceMock = createWorkspac
       if (added) return added;
       const summary = projectSummaries[projectKey(id)];
       const path = createdPaths.get(id);
+      const config = projectConfigs[projectKey(id)];
+      const demoConfig = options.wordpressImageHostDemo && id === "demo"
+        ? { ...config, edm: { ...config.edm, image_host: { type: "wordpress" as const } } }
+        : config;
       return {
         summary: path ? { ...summary, id, path } : summary,
-        config: projectConfigs[projectKey(id)],
+        config: demoConfig,
         runner: runners[projectKey(id)],
       };
     }),

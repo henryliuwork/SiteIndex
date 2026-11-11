@@ -23,7 +23,7 @@ import { createShellMock } from "./shell";
 import { createUpdatesMock } from "./updates";
 import { createWorkspaceMock } from "./workspace";
 
-export function createMockApi(options: { seoIssueStatus?: boolean } = {}): SiteIndexApi {
+export function createMockApi(options: { seoIssueStatus?: boolean; wordpressImageHostDemo?: boolean } = {}): SiteIndexApi {
   const seo = createSeoMock();
   const workspace = createWorkspaceMock();
   if (!options.seoIssueStatus) delete seo.setIssueStatus;
@@ -31,7 +31,7 @@ export function createMockApi(options: { seoIssueStatus?: boolean } = {}): SiteI
     app: createAppMock(),
     uiState: createUiStateMock(),
     settings: createSettingsMock(),
-    projects: createProjectsMock(workspace),
+    projects: createProjectsMock(workspace, { wordpressImageHostDemo: options.wordpressImageHostDemo }),
     sku: createSkuMock(),
     overview: createOverviewMock(),
     inventory: createInventoryMock(),

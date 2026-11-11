@@ -95,8 +95,9 @@
 - [x] B4-2 工作区导入检查 UI：项目中心“更多”菜单提供识别/检查；按 `auto_fixable` 显示补齐与手动处理项，显示 `repaired` 路径；浏览器 mock 验证补齐后仍保留 `site.json.workspace` 手工项
 - [x] B4-3 软件设置与 Skill 中心：呈现托盘/开机选项；Skill 中心显示 Agents 通用目录、退役 `edm-builder` 且阻止安装/更新；mock 与回归测试覆盖 — 本 PR
 
-## v0.4.1 · WordPress 凭据设置准备
-- [x] 软件设置只显示“状态暂不可读”与本机 / 换机 / 旧 .env 迁移提示；不收集、回显或持久化凭据；等待 C 的本机安全存储接口接入后再显示实际配置状态 — 本 PR
+## v0.4.1 · WordPress 凭据设置
+- [x] 软件设置按项目 EDM 图片托管配置，按 HTTPS origin 分组并通过 `window.siteindexWindow.wordpressCredentials` 配置、替换、删除和重读本机凭据状态；用户名/密码不回显，提交后清空输入；浏览器 mock 只保存合成状态，不持久化凭据值 — [PR #412](https://github.com/henryliuwork/SiteIndex/pull/412)
+- [x] 明确区分“本机凭据已保存”和“媒体上传未接通”；提示旧 `.env` 需用户自行迁移/移除，软件不会扫描或删除该文件 — [PR #412](https://github.com/henryliuwork/SiteIndex/pull/412)
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码

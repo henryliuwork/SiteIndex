@@ -6,7 +6,13 @@ const hostApi = typeof window === "undefined" ? undefined : window.siteindex;
 if (!hostApi) {
   if (import.meta.env.DEV || import.meta.env.VITE_MOCK === "1") {
     const module = await import("./mock");
-    mock = module.createMockApi({ seoIssueStatus: true });
+    mock = module.createMockApi({ seoIssueStatus: true, wordpressImageHostDemo: true });
+    if (typeof window !== "undefined") {
+      const { createMockWordPressCredentialsBridge } = await import("./mock/wordpress-credentials");
+      const browserWindow = window as Window & { siteindexWindow?: { wordpressCredentials?: ReturnType<typeof createMockWordPressCredentialsBridge> } };
+      browserWindow.siteindexWindow ??= {};
+      browserWindow.siteindexWindow.wordpressCredentials ??= createMockWordPressCredentialsBridge();
+    }
   } else {
     throw new Error("SiteIndex API 不可用：请从桌面应用打开本应用。");
   }
