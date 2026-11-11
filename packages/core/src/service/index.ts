@@ -136,6 +136,8 @@ export interface CoreServiceContext {
   testOnlyAllowLoopbackHttp?: boolean;
   /** 测试专用：替换媒体图片网络读取，覆盖响应大小和资源限制。 */
   testOnlyMediaFetch?: typeof fetch;
+  /** 测试专用：给 AVIF WASM 线性内存设更低上限，验证解码器越界失败语义。 */
+  testOnlyAvifMemoryLimitBytes?: number;
 }
 
 /**
@@ -1776,6 +1778,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             date: requestedDate,
             rateLimitMs: config.crawl.rate_limit_ms,
             ...(ctx.testOnlyMediaFetch ? { fetchImpl: ctx.testOnlyMediaFetch } : {}),
+            ...(ctx.testOnlyAvifMemoryLimitBytes !== undefined
+              ? { testOnlyAvifMemoryLimitBytes: ctx.testOnlyAvifMemoryLimitBytes }
+              : {}),
             allowLoopbackHttpForTests: ctx.testOnlyAllowLoopbackHttp,
             onProgress: (done, total) => progress(total ? 10 + Math.round(done * 80 / total) : 90, "media", "已处理 " + done + " / " + total + " 个商品图片请求。"),
           });

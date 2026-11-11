@@ -204,6 +204,7 @@ function service(
   credential?: { username: string; applicationPassword: string },
   testOnlyMediaFetch?: typeof fetch,
   onJobStarted?: (runId: string, startedAt: string) => void,
+  testOnlyAvifMemoryLimitBytes?: number,
 ) {
   return createCoreService({
     resolveProject: () => projectPath,
@@ -212,6 +213,7 @@ function service(
     ...(credential ? { wordpressCredential: credential } : {}),
     ...(testOnlyMediaFetch ? { testOnlyMediaFetch } : {}),
     ...(onJobStarted ? { onJobStarted } : {}),
+    ...(testOnlyAvifMemoryLimitBytes !== undefined ? { testOnlyAvifMemoryLimitBytes } : {}),
     testOnlyAllowLoopbackHttp: true,
   });
 }
@@ -563,6 +565,47 @@ describe("media Core Job", () => {
         expect.objectContaining({ sku, width: "1200", height: "600" }),
       );
     }
+  }, 90_000);
+
+  it("contains real AVIF WASM memory exhaustion without uploading and keeps the process usable", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials });
+    const largeAvif = await encodeImageFixture("avif", testImageData(3000, 2000, [40, 90, 140, 255]));
+    const largeServer = await startImageServer(largeAvif, "image/avif");
+    const limitedProject = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: largeServer.origin + "/large.avif",
+      skuIds: ["SYN-LIMITED-AVIF"],
+    });
+    const limited = await service(limitedProject.projectPath, credentials, undefined, undefined, 16 * 1024 * 1024).runJob({
+      projectPath: limitedProject.projectPath,
+      job: "media",
+      trigger: "manual",
+      date: "2026-11-11",
+      skus: ["SYN-LIMITED-AVIF"],
+    }, () => undefined);
+
+    expect(limited.media_results).toMatchObject([{
+      sku: "SYN-LIMITED-AVIF", status: "failed", reason: "图片无法解码或转换为 JPEG。请更换源图片后重试。",
+    }]);
+    expect(wordpress.snapshot().totalRequests).toBe(0);
+    expect(wordpress.snapshot().mediaCount).toBe(0);
+
+    const recoveryProject = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: largeServer.origin + "/large.avif",
+      skuIds: ["SYN-AFTER-LIMITED-AVIF"],
+    });
+    const recovery = await service(recoveryProject.projectPath, credentials).runJob({
+      projectPath: recoveryProject.projectPath,
+      job: "media",
+      trigger: "manual",
+      date: "2026-11-11",
+      skus: ["SYN-AFTER-LIMITED-AVIF"],
+    }, () => undefined);
+
+    expect(recovery.media_results).toMatchObject([{ sku: "SYN-AFTER-LIMITED-AVIF", status: "uploaded" }]);
+    expect(wordpress.snapshot().mediaCount).toBe(1);
   }, 90_000);
 
   it("rejects compressed size and decoded pixel limits before invoking a decoder or WordPress", async () => {

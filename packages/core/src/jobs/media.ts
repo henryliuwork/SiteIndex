@@ -40,6 +40,8 @@ export interface MediaJobOptions {
   date: string;
   rateLimitMs?: number;
   fetchImpl?: typeof fetch;
+  /** 测试专用：给 AVIF WASM 线性内存设更低上限，验证解码器越界失败语义。 */
+  testOnlyAvifMemoryLimitBytes?: number;
   /** 仅允许本地 loopback fixture 使用 HTTP；生产调用保持 HTTPS-only。 */
   allowLoopbackHttpForTests?: boolean;
   onProgress?: (done: number, total: number) => void;
@@ -136,7 +138,7 @@ async function compilePackageWasm(specifier: string): Promise<WebAssembly.Module
 }
 
 let webpDecoderPromise: Promise<(bytes: Buffer) => Raster> | undefined;
-let avifDecoderPromise: Promise<(bytes: Buffer) => Raster> | undefined;
+const avifDecoderPromises = new Map<number, Promise<(bytes: Buffer) => Raster>>();
 let jpegEncoderPromise: Promise<(raster: Raster) => Promise<Buffer>> | undefined;
 let resizePromise: Promise<(raster: Raster, width: number, height: number) => Promise<Raster>> | undefined;
 
@@ -160,15 +162,16 @@ function webpDecoder(): Promise<(bytes: Buffer) => Raster> {
   return webpDecoderPromise;
 }
 
-function avifDecoder(): Promise<(bytes: Buffer) => Raster> {
-  if (!avifDecoderPromise) {
-    avifDecoderPromise = (async () => {
+function avifDecoder(maximumMemoryBytes = MAX_AVIF_WASM_MEMORY_BYTES): Promise<(bytes: Buffer) => Raster> {
+  let decoderPromise = avifDecoderPromises.get(maximumMemoryBytes);
+  if (!decoderPromise) {
+    decoderPromise = (async () => {
       const [{ default: factory }, { initEmscriptenModule }] = await Promise.all([
         import("@jsquash/avif/codec/dec/avif_dec.js"),
         import("@jsquash/avif/utils.js"),
       ]);
       const wasmPath = createRequire(import.meta.url).resolve("@jsquash/avif/codec/dec/avif_dec.wasm");
-      const cappedBytes = capWasmMemory(await readFile(wasmPath), MAX_AVIF_WASM_MEMORY_BYTES);
+      const cappedBytes = capWasmMemory(await readFile(wasmPath), maximumMemoryBytes);
       const wasm = await WebAssembly.compile(Uint8Array.from(cappedBytes).buffer);
       if (WebAssembly.Module.imports(wasm).some((item) => item.kind === "memory")
         || WebAssembly.Module.exports(wasm).filter((item) => item.kind === "memory").length !== 1) {
@@ -181,9 +184,10 @@ function avifDecoder(): Promise<(bytes: Buffer) => Raster> {
         return decoded;
       };
     })();
-    void avifDecoderPromise.catch(() => { avifDecoderPromise = undefined; });
+    avifDecoderPromises.set(maximumMemoryBytes, decoderPromise);
+    void decoderPromise.catch(() => { avifDecoderPromises.delete(maximumMemoryBytes); });
   }
-  return avifDecoderPromise;
+  return decoderPromise;
 }
 
 function jpegEncoder(): Promise<(raster: Raster) => Promise<Buffer>> {
@@ -427,11 +431,17 @@ function flattenOnWhite(source: Raster): Raster {
   return imageData(pixels, source.width, source.height);
 }
 
-async function convertToJpeg(bytes: Buffer, format: SourceFormat): Promise<{ bytes: Buffer; width: number; height: number }> {
+async function convertToJpeg(
+  bytes: Buffer,
+  format: SourceFormat,
+  avifMemoryLimitBytes = MAX_AVIF_WASM_MEMORY_BYTES,
+): Promise<{ bytes: Buffer; width: number; height: number }> {
   if (format !== "webp" && format !== "avif") throw mediaError("failed", "图片格式不支持转换。");
   const headerDimensions = format === "webp" ? preflightWebpDimensions(bytes) : preflightAvifDimensions(bytes);
   try {
-    const decoded = format === "webp" ? await (await webpDecoder())(bytes) : await (await avifDecoder())(bytes);
+    const decoded = format === "webp"
+      ? await (await webpDecoder())(bytes)
+      : await (await avifDecoder(avifMemoryLimitBytes))(bytes);
     if (!dimensionsWithinDecodeLimit({ width: decoded.width, height: decoded.height })
       || headerDimensions.width !== decoded.width || headerDimensions.height !== decoded.height) {
       throw new Error("invalid dimensions");
@@ -801,7 +811,7 @@ async function processSku(
   if (!wordpressBase || !credential) throw mediaError("failed", "WordPress 图片服务未配置，无法上传转换后的商品图片。");
   sourceHash = createHash("sha256").update(fetched.bytes).digest("hex");
   const slug = makeSlug(representativeSku, sourceHash);
-  const converted = await convertToJpeg(fetched.bytes, format);
+  const converted = await convertToJpeg(fetched.bytes, format, options.testOnlyAvifMemoryLimitBytes);
   imageBytes = converted.bytes;
   width = converted.width;
   height = converted.height;
