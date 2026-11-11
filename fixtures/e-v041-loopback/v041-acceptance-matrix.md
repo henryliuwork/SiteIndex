@@ -6,7 +6,7 @@
 
 本矩阵只使用 `synthetic-shop.test`、`SYN-*` 虚构 SKU、内存中的假媒体和 loopback 服务。服务只能绑定 `127.0.0.1`，不记录请求头或请求正文，不访问真实站点，不上传真实媒体，不迁移真实项目，也不安装应用。
 
-截至验收准备时，`main` 基线为 `dab4db0efd4fb384cadb502d5d6b372a0ced7c99`。`media.prepare` 仍列在 `PENDING_HANDLERS`，EDM 页明确将图片处理标为演示且禁用；`edm export-index` 尚无 CLI 命令。库存核验只在开放 PR #417 分支验证，不能记作 main 或安装包通过。
+截至本次复核，`main` 基线为 `4a6b71e39e2e3a99dfd250bef9d16c0cfaabf231`（已含 #433、#417）。`media.prepare` 与 `edm.exportIndex` 仍列在 `PENDING_HANDLERS`，EDM 图片处理仍为演示且禁用。库存核验已合并到 main；代码和 CI 通过不等同于安装包或真实站点实测通过。
 
 ## 证据层级
 
@@ -21,18 +21,30 @@
 
 | ID | 覆盖项与虚构输入 | 步骤 | 通过标准 | 证据层与当前状态 |
 |---|---|---|---|---|
-| INV-01 | Feed 缺席但页面 / GraphQL 有货；另含缺货、预售 | 以完整非空 Feed 跑 daily；仅核验 active 且缺席 SKU | 有货 SKU 保持 active、库存变为 `in_stock`，生成一条 `feed_anomaly` 库存事件与 summary 项；不写 SEO issue。缺货 / 预售按配置更新 | L1：#417 `23c35c7` Core 测试 11/11 通过，覆盖 GraphQL 业务结果；不是 main/安装包证据 |
-| INV-02 | 产品页 5xx、GraphQL 429、损坏响应、未知文案 | daily 对旧库存为有货及缺货的 SKU 分别返回不可用 | 原 `stock_status`、`since`、`checked_at` 保持；Job 标 `partial` 并报告不可用数；不误标 removed | L1：#417 Core 测试覆盖相近错误路径；精确的三轮恢复清单尚未独立执行 |
-| INV-03 | 产品页 404 / 410 | 对当前 Feed 缺席 SKU 分别返回 404、410 | 只移除对应 SKU，`removed_reason=feed_absent_404`，删除其最新库存行，每 SKU 一条移除事件；不得再发 GraphQL 请求 | L1：#417 Core 测试已覆盖；安装包未测 |
-| INV-04 | 两条以上候选、每轮上限 1 或 2；中途有 SKU 加入 / 回到 Feed | 每轮显式传入 `date` 与 UTC `now`；用 `inventory_latest.checked_at` 变化得到无序访问集合，再读取游标 `last_sku` | 每轮不超过上限；已回到 Feed 的 SKU 不再请求；每轮无序访问集合与保存的 `last_sku` 符合预期轮转；候选集合变动后没有饥饿。该组合验证轮转状态一致性，不是网络请求先后顺序的直接观测 | L1：#417 Core 测试 11/11 覆盖轮转、候选变化；无 per-SKU 请求正文记录。测试是函数重跑，不是 OS 进程重启 |
-| INV-05 | 事件、`inventory_latest`、SKU catalog、daily summary 四个输出目标逐一注入写入失败 | 逐个将 one-shot `atomicWrite` 故障注入目标；保留事务清单 / 备份后再次调用并切到 5xx | 重试先恢复同一批次所有目标；待处理游标不提前提交；重跑报告不可用且不产生错误下架或重复事件 | L1：#417 `23c35c7` Core 测试逐一注入四个输出故障，随后同进程重跑；未模拟子进程被杀 |
-| INV-06 | 空 / 损坏恢复清单、指向任意项目文件的路径、缺失备份、恢复期间外部编辑目标文件 | 分别启动恢复逻辑并核查原件和恢复材料 | 必须 fail closed；不得清理唯一备份或清单，不得写入清单允许范围之外的文件，不得静默覆盖外部编辑 | L1：`23c35c7` 尚未覆盖；开发复审指出这四个门槛，A 正修复。该提交不得记为最终通过 |
+| INV-01 | Feed 缺席但页面 / GraphQL 有货；另含缺货、预售 | 以完整非空 Feed 跑 daily；仅核验 active 且缺席 SKU | 有货 SKU 保持 active、库存变为 `in_stock`，生成一条 `feed_anomaly` 库存事件与 summary 项；不写 SEO issue。缺货 / 预售按配置更新 | L1：#417 已并入 main `4a6b71e`；`stock-verification.test.ts` 覆盖 legacy/workspace 与 GraphQL 业务结果；PR head 全平台 CI 通过。正式安装包未测 |
+| INV-02 | 产品页 5xx、GraphQL 429、损坏响应、未知文案 | daily 对旧库存为有货及缺货的 SKU 分别返回不可用 | 原 `stock_status`、`since`、`checked_at` 保持；Job 标 `partial` 并报告不可用数；不误标 removed | L1：#417 已并入 main；测试覆盖 5xx、超时、损坏响应及可靠页面文案回退。请求节流 / 失败保持旧状态由 CI 覆盖；安装包未测 |
+| INV-03 | 产品页 404 / 410 | 对当前 Feed 缺席 SKU 分别返回 404、410 | 只移除对应 SKU，`removed_reason=feed_absent_404`，删除其最新库存行，每 SKU 一条移除事件；不得再发 GraphQL 请求 | L1：#417 已并入 main；Core 测试覆盖；正式安装包未测 |
+| INV-04 | 两条以上候选、每轮上限 1 或 2；中途有 SKU 加入 / 回到 Feed | 每轮显式传入 `date` 与 UTC `now`；用 `inventory_latest.checked_at` 变化得到无序访问集合，再读取游标 `last_sku` | 每轮不超过上限；已回到 Feed 的 SKU 不再请求；每轮无序访问集合与保存的 `last_sku` 符合预期轮转；候选集合变动后没有饥饿。该组合验证轮转状态一致性，不是网络请求先后顺序的直接观测 | L1：#417 已并入 main；测试覆盖轮转、候选集合变化、上限和失败路径；无 per-SKU 请求正文记录。重试测试是函数重跑，不是 OS 进程重启 |
+| INV-05 | 事件、`inventory_latest`、SKU catalog、daily summary 四个输出目标逐一注入写入失败 | 逐个将 one-shot `atomicWrite` 故障注入目标；保留事务清单 / 备份后再次调用并切到 5xx | 重试先恢复同一批次所有目标；待处理游标不提前提交；重跑报告不可用且不产生错误下架或重复事件 | L1：#417 已并入 main；transaction / stock verifier 测试覆盖输出故障回滚、pending 状态和重试；不等同于 Windows 安装版或进程被强杀恢复 |
+| INV-06 | 空 / 损坏恢复清单、越界目标路径、缺失备份、恢复期间外部编辑目标文件 | 分别启动恢复逻辑并核查原件和恢复材料 | 必须 fail closed；不得清理唯一备份或清单，不得写入清单允许范围之外的文件，不得静默覆盖外部编辑 | L1：#417 已并入 main；测试覆盖 JSON-null 清单、缺失备份、junction/symlink 祖先、恢复前后外部编辑保护。空/截断清单与任意越界目标路径未逐项独立证明；候选包未测 |
 | MED-01 | 假 WordPress 当前用户接口：401 与 403；批次含前置成功和未开始 SKU | GET 当前用户能力，再提交多 SKU 媒体 Job | 401 为 `WP_AUTH_FAILED`、403 为 `WP_FORBIDDEN`；立即停批；保留先前成功项，未开始 SKU 保持未决；错误文案不含认证响应或凭据 | L0：假服务支持且自测；L1/L2：媒体 Job 与 handler 未接通，未验证 |
 | MED-02 | 一批 SKU 中分别配置成功、单 SKU 5xx / 429 和后续成功 | 运行批次并检查逐 SKU 结果与汇总 | 普通单 SKU 失败不阻断其他 SKU；总状态为 `partial`；每个已处理 SKU 恰有一条结果。401/403 则按 MED-01 停批 | L0：服务能配置混合结果；产品批次逻辑未验证 |
 | MED-03 | 假上传端保存媒体对象后断开连接，下一次 GET slug 查重命中 | 第一次上传后模拟连接断开；重试同一 SKU、同源图指纹 | 重试复用已存在对象（`reused`），只保留一个假媒体对象、一次成功上传记录和一条台账行；`media_id` / `source_hash` 稳定 | L0：假服务已覆盖“保存后断连”和后续 GET 查重；SiteIndex 客户端是否先查重未验证 |
 | LED-01 | 旧版 8 列 `sku_media.csv` 与两条虚构旧记录 | 先只读导入；再触发第一次真实写入 | 读取 / 导入时文件字节不变；首次写入才将 `media_id,source_hash` 追加为第 9、10 列，保留旧列和旧值，旧行新增列留空 | L1：#390 契约与 shared contract tests 约束表头；Core 文件迁移尚无验收证据 |
 | SEC-01 | 只在测试进程使用的假凭据 canary | 将假值投放到模拟凭据源并扫描模拟日志、Job、IPC、CLI/MCP 与导出边界 | 公开输出不包含假值；扫描器只返回匹配类别 / 数量，不返回命中内容。另核验错误码、提示及结果不回显响应正文 | L0：假 canary 扫描器自测；产品日志/IPC/CLI/MCP 尚未逐层验证 |
+| SEC-02 | 两个不同的虚构 HTTPS origin A / B；只用 #433 的固定假用户名和假密码 | 打包 renderer 中对 A、B 分别 configure；停止并重新启动同一安装版进程；分别读取 status；replace / delete B 后再重启并核对 A/B 状态 | 状态按 origin 隔离并跨进程保留；replace/delete B 不改变 A；preload IPC 结果只含状态，不回显凭据；DOM、浏览器存储、日志和可读导出中均没有 canary 明文 | #433 已合并，helper/设置页 UI 测试通过；当前 runner 未调用 helper，真实打包 IPC 跨进程复测未验证，见 #434 |
+| HOST-01 | 新鲜 GitHub-hosted Windows runner；一个 RUNNER_TEMP 子目录作为唯一测试根 | 启动前将 APPDATA、LOCALAPPDATA、USERPROFILE、HOME、TEMP、TMP 全部重定向到该根；检查 Electron 子进程环境、安装路径和每段 canonical/reparse 路径；退出后只清理并核验该根内数据 | 任一路径逃出测试根、出现重解析点或遗留进程时 fail closed；运行全程不读写 runner 默认用户数据；测试结束无残留 | #424 runner 目前仅把 LOCALAPPDATA 放入临时根，APPDATA 仍用 hosted runner 默认根，其他 profile/temp 根未统一重定向；待 C 改造，见 #434 |
 | EXP-01 | 虚构父子 SKU、synthetic 价格等级、tag、jpg/png/webp 与空图台账 | 调用 `edm export-index`，检查生成的 SKU 清单 | 按父 SKU 聚合；图片选择台账主图优先，其次 feed 首图；只输出 jpg/png；无图标记待补图；应用折扣档并写出短描述；不得输出凭据 | L1：导出命令尚未实现，准备项；L2 页面不可替代 CLI 导出证据 |
+
+## #433 后的托管包凭据验收状态
+
+| 阶段 | 当前证据 | 状态 / 下一步 |
+|---|---|---|
+| L0 loopback 假服务 | `fake-services.test.mjs` 覆盖 GraphQL 请求计数与 429、WordPress 401/403/429、上传保存后断连、混合上传结果和假凭据 canary | 7/7 通过；只验证夹具响应和结构，不证明产品调用路径 |
+| L1 浏览器 UI helper | #433 合并 `runWordPressCredentialsUiSmoke` 的 configure / replace / delete / assert-status 和 otherOrigins 断言；helper 的返回明确为 `ui-only` | #433 的 CI 成功；本地 helper 专项 6/6 通过；不能升级为打包 IPC 证据 |
+| L2 runner 隔离 | #424 脚本只将 LOCALAPPDATA 指向 RUNNER_TEMP 子目录，APPDATA 仍取 runner 默认值；USERPROFILE/HOME/TEMP/TMP 未统一重定向；helper 只校验调用方声明，未核验实际子进程环境与路径重解析点 | 未满足两站点包测前置；#434 已交给 C，要求单一临时根、spawn 环境核验、canonical/reparse 检查及限定清理 |
+| L2 打包 IPC / 跨进程 | 当前 packaged runner 未导入或调用 #433 helper；尚无使用 `window.siteindexWindow.wordpressCredentials` 的安装版 CDP 证据 | 未验证。待 #434 的 runner 接线完成后，在 hosted Windows runner 上以两站点假 origin 配置、退出、重启、replace/delete 并核对状态 |
+| L3 真实 WordPress | 无真实账号或站点访问 | 本轮不执行；仍需单独授权。`media.prepare` / `edm.exportIndex` 未接通，不调用上传流程 |
 
 ## 可观察性与 GraphQL epoch 切换
 
@@ -44,6 +56,7 @@
 
 - Loopback 假服务自测 `node --test fixtures/e-v041-loopback/fake-services.test.mjs`：7/7；仅证明 L0 服务夹具的计数、401/403、429、保存后断连、混合结果与假 canary 扫描。
 - K5 `packages/shared/test/media-contract.test.ts`：在基线 `dab4db0efd4fb384cadb502d5d6b372a0ced7c99` 上 8/8；只证明契约，不证明台账文件迁移或媒体处理。
-- #417 固定提交 `23c35c76c59f7dbcc469bfbd672ae8f1fd808428`：Core `stock-verification.test.ts` 11/11；CLI `cli.test.ts` 8/8；临时 CLI `main()` loopback 日更调用 1/1。CLI 专项调用读取假 Feed 和假 GraphQL 并检查 `feed_anomaly` 输出，但不是打包 CLI，也未做子进程崩溃恢复。
-- #417 目前仍是开放 PR。23c 的事务恢复清单还有 INV-06 四项完整性 / 并发编辑门槛未验证；不得把其 Core 通过数写成 PR 最终通过或发布验收。
+- #417 已合并，main merge commit `4a6b71e39e2e3a99dfd250bef9d16c0cfaabf231`；PR head `1c05ebdc63f2fdddc98f6b6b93ce91f682e16b22` 的 GitHub Actions run `43031610742` 在 Windows / Ubuntu / macOS 均通过。此前 `02b5986` 的 Windows `packages/core/test/io.test.ts` 定向测试 21/21，且 rebase 前后 10 个提交逐项 patch 等价。以上属于 main 代码和 CI 证据，不是安装包或真实站点验收。
+- 历史快照：PR #417 的早期提交 `23c35c76c59f7dbcc469bfbd672ae8f1fd808428` 当时尚未覆盖 INV-06 中的恢复完整性 / 外部编辑保护边界；这只描述该固定历史提交，不代表合并后的当前 main。当前覆盖范围见上表 INV-06，仍未逐项证明空/截断清单与任意越界目标路径。
+- host identity 测试明示为有起跑屏障的并发 smoke test，不保证两个进程命中内部 read-missing/exclusive-create 临界区，也不构成跨设备分布式锁证明。
 - L2 正式候选包和 L3 真实 WordPress 环境均未执行。所有未实现或未接线的 API/UI 维持“未验证”，不得用 mock 自测替代。
