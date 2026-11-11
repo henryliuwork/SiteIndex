@@ -475,6 +475,8 @@ jobs:
           Write-Output "Release EXE SHA256 matches the installer from the successful tag-triggered Windows packaging artifact."
       - name: Install, upgrade, and exercise packaged IPC
         shell: pwsh
+        env:
+          SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           $oldInstaller = $env:SITEINDEX_BASE_INSTALLER_PATH
           $candidateInstaller = if ($env:SITEINDEX_CANDIDATE_INSTALLER_PATH) {

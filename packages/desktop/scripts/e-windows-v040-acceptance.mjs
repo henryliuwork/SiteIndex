@@ -2392,8 +2392,8 @@ async function captureAddExistingTrace(page) {
 
 async function main() {
   if (process.platform !== "win32") throw new Error("This acceptance workflow requires Windows.");
-  if (process.env.GITHUB_ACTIONS !== "true") {
-    throw new Error("Packaged acceptance must run on an ephemeral GitHub Actions Windows runner to isolate APPDATA safely.");
+  if (process.env.GITHUB_ACTIONS !== "true" || process.env.SITEINDEX_RUNNER_ENVIRONMENT !== "github-hosted") {
+    throw new Error("Packaged acceptance must run on a GitHub-hosted Actions Windows runner to isolate APPDATA safely.");
   }
   if (!APP_DATA_ROOT) throw new Error("The GitHub Actions Windows runner did not provide APPDATA.");
   if (!OUTPUT_DIR) throw new Error("SITEINDEX_ACCEPTANCE_OUTPUT is not configured.");

@@ -137,7 +137,9 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
 
   it("requires a disposable GitHub runner before writing under its native APPDATA", () => {
     expect(acceptanceScript).toContain('process.env.GITHUB_ACTIONS !== "true"');
-    expect(acceptanceScript).toContain("Packaged acceptance must run on an ephemeral GitHub Actions Windows runner");
+    expect(acceptanceScript).toContain('process.env.SITEINDEX_RUNNER_ENVIRONMENT !== "github-hosted"');
+    expect(workflow).toContain("SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}");
+    expect(acceptanceScript).toContain("Packaged acceptance must run on a GitHub-hosted Actions Windows runner");
     expect(acceptanceScript).toContain("if (await exists(APP_DATA_DIR)) throw new Error");
     expect(acceptanceScript).toContain("await rm(APP_DATA_DIR, { recursive: true, force: true");
   });
