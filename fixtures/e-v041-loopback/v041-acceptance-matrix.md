@@ -6,7 +6,7 @@
 
 本矩阵只使用 `synthetic-shop.test`、`SYN-*` 虚构 SKU、内存中的假媒体和 loopback 服务。服务只能绑定 `127.0.0.1`，不记录请求头或请求正文，不访问真实站点，不上传真实媒体，不迁移真实项目，也不安装应用。
 
-截至本次复核，`main` 基线为 `4a6b71e39e2e3a99dfd250bef9d16c0cfaabf231`（已含 #433、#417）。`media.prepare` 与 `edm.exportIndex` 仍列在 `PENDING_HANDLERS`，EDM 图片处理仍为演示且禁用。库存核验已合并到 main；代码和 CI 通过不等同于安装包或真实站点实测通过。
+截至本次复核，`main` 基线为 `1301c219972a05e4ab1499ee3fa369ad557201cd`（已含 #433、#417、#436）。`media.prepare` 与 `edm.exportIndex` 仍列在 `PENDING_HANDLERS`，EDM 图片处理仍为演示且禁用。库存核验已合并到 main；代码和 CI 通过不等同于安装包或真实站点实测通过。
 
 ## 证据层级
 
@@ -36,11 +36,26 @@
 | HOST-01 | 新鲜 GitHub-hosted Windows runner；一个 RUNNER_TEMP 子目录作为唯一测试根 | 启动前将 APPDATA、LOCALAPPDATA、USERPROFILE、HOME、TEMP、TMP 全部重定向到该根；检查 Electron 子进程环境、安装路径和每段 canonical/reparse 路径；退出后只清理并核验该根内数据 | 任一路径逃出测试根、出现重解析点或遗留进程时 fail closed；运行全程不读写 runner 默认用户数据；测试结束无残留 | #424 runner 目前仅把 LOCALAPPDATA 放入临时根，APPDATA 仍用 hosted runner 默认根，其他 profile/temp 根未统一重定向；待 C 改造，见 #434 |
 | EXP-01 | 虚构父子 SKU、synthetic 价格等级、tag、jpg/png/webp 与空图台账 | 调用 `edm export-index`，检查生成的 SKU 清单 | 按父 SKU 聚合；图片选择台账主图优先，其次 feed 首图；只输出 jpg/png；无图标记待补图；应用折扣档并写出短描述；不得输出凭据 | L1：导出命令尚未实现，准备项；L2 页面不可替代 CLI 导出证据 |
 
+## #422 / #423 可执行夹具与产品验收边界
+
+`job-export-cases.json` 是 #422 media Job 与 #423 EDM 清单的虚构验收向量；`media-export/` 提供旧 8 列台账、10 列迁移预期、SKU 视图、标签、清单 golden 和冲突目标状态。执行 `node --test fixtures/e-v041-loopback/job-export-acceptance.test.mjs` 只验证 fake WordPress 响应与夹具内部一致性。
+
+| 场景 | 夹具可独立验证 | 仍需 Core / Desktop 产品证据 |
+|---|---|---|
+| 401 / 403 停批，保留先前成功并标出未开始 | Fake service 可按 POST 序列返回 201 后 401/403；记录固定路由和状态计数 | `media.prepare` 是否真的停批、是否恢复逐 SKU 结果与 `media_not_started_skus` |
+| 普通 SKU 失败后继续；保存后断连 | Fake service 可回 503 后续 201；保存后断连可 GET slug 找回唯一对象 | Job 是否继续、未知结果分区是否正确、重试是否先查重并去重 |
+| 重复请求与同日重跑 | manifest 固定去重顺序与 0 次重复上传预期 | Core Job、旧台账解析和实际写入的幂等行为 |
+| 旧台账读取 / 首次写入迁移 | 8 列输入、10 列预期、旧列保留字节可检查 | Core 解析、source 枚举/Schema 更新、迁移时序与真实文件不变性 |
+| 导出同日重跑 / 冲突 / 响应丢失 | 固定输出 golden、unmarked / 并发改写 / 外部新建目标字节样本及错误 oracle | Core no-clobber / 条件替换、路径祖先检查、unknown 恢复和 IPC 返回 |
+| canary 脱敏 | 测试进程运行时生成 canary，扫描器只回报类别和计数 | 产品日志、RunLog、IPC、CLI/MCP、DOM 与导出等每个实际输出面 |
+
+上述用例不是产品结果。当前 Core 仍需实现 media Job、RunLog 恢复字段、旧台账迁移、`edm export-index`、固定安全相对路径、冲突保护与未知写入结果处理；折扣档选择和舍入规则也需在生成产品 golden 前确定。Desktop 仍需完成 #422/#423 IPC 接入。包级测试等待 C 的 #434 runner。
+
 ## #433 后的托管包凭据验收状态
 
 | 阶段 | 当前证据 | 状态 / 下一步 |
 |---|---|---|
-| L0 loopback 假服务 | `fake-services.test.mjs` 覆盖 GraphQL 请求计数与 429、WordPress 401/403/429、上传保存后断连、混合上传结果和假凭据 canary | 7/7 通过；只验证夹具响应和结构，不证明产品调用路径 |
+| L0 loopback 假服务与 #422/#423 用例夹具 | `fake-services.test.mjs` 覆盖 GraphQL 计数/429、WordPress 401/403/429、保存后断连、混合上传和 canary；`job-export-acceptance.test.mjs` 覆盖 401/403 中断序列、503 后续成功、断连后 GET 查找、同日既有行、旧/新台账、旧 RunLog 不可恢复语义、golden 与冲突/unknown 验收 oracle | 两文件合计 17/17 通过；仅验证夹具服务与输入/预期结构，不证明产品调用路径或行为 |
 | L1 浏览器 UI helper | #433 合并 `runWordPressCredentialsUiSmoke` 的 configure / replace / delete / assert-status 和 otherOrigins 断言；helper 的返回明确为 `ui-only` | #433 的 CI 成功；本地 helper 专项 6/6 通过；不能升级为打包 IPC 证据 |
 | L2 runner 隔离 | #424 脚本只将 LOCALAPPDATA 指向 RUNNER_TEMP 子目录，APPDATA 仍取 runner 默认值；USERPROFILE/HOME/TEMP/TMP 未统一重定向；helper 只校验调用方声明，未核验实际子进程环境与路径重解析点 | 未满足两站点包测前置；#434 已交给 C，要求单一临时根、spawn 环境核验、canonical/reparse 检查及限定清理 |
 | L2 打包 IPC / 跨进程 | 当前 packaged runner 未导入或调用 #433 helper；尚无使用 `window.siteindexWindow.wordpressCredentials` 的安装版 CDP 证据 | 未验证。待 #434 的 runner 接线完成后，在 hosted Windows runner 上以两站点假 origin 配置、退出、重启、replace/delete 并核对状态 |

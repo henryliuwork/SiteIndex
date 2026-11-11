@@ -1,0 +1,3 @@
+sku,image_role,image_url,alt_text,source,width,height,updated_at
+SYN-B001,main,https://synthetic-cdn.invalid/images/syn-b001.jpg,Synthetic B main,mailchimp,800,600,2026-11-11
+SYN-C001,lifestyle,https://synthetic-cdn.invalid/images/syn-c001-life.png,Synthetic C lifestyle,cdn,640,480,2026-11-11

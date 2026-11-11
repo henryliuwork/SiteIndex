@@ -18,6 +18,14 @@ Run the service self-tests with:
 node --test fixtures/e-v041-loopback/fake-services.test.mjs
 ```
 
-These tests validate the fixtures. PR #417's Core stock-verification tests fetch the synthetic CSV with `readFeeds`, normalize it with `toSnapshot`, then run daily processing against the fake product and GraphQL responses. They cover both project layouts, removal-threshold protection, GraphQL/page-text fallback, feed-anomaly events, and interrupted output recovery. CLI and packaged IPC acceptance are separate checks; these fixtures never contact a real site or account.
+Run the media Job / EDM export fixture contract checks with:
 
-Current-main and branch evidence are separated in `v041-acceptance-matrix.md`; stock-verifier tests in PR #417 remain branch evidence until merge. Product-dependent package acceptance remains separate from these fixture tests. The K5 media contract remains pending Core and Desktop implementation.
+```sh
+node --test fixtures/e-v041-loopback/job-export-acceptance.test.mjs
+```
+
+`job-export-cases.json` and `media-export/` contain synthetic acceptance vectors for #422 and #423: media 401/403 interruption, an ordinary per-item failure, persisted-upload disconnect recovery, same-day duplicate requests, legacy 8-column media ledger handling, old RunLog recovery semantics, credential canaries, export idempotency, conflicts, path escape and unknown write outcome. The tests validate fake-service responses and fixture integrity only. They do not call product Core, CLI, Job, IPC, or UI, and must not be reported as a SiteIndex product pass. The exported Markdown intentionally leaves discounts blank because the current data spec does not define discount-tier selection or rounding.
+
+These tests validate the fixtures. The merged #417 Core stock-verification tests fetch the synthetic CSV with `readFeeds`, normalize it with `toSnapshot`, then run daily processing against the fake product and GraphQL responses. They cover both project layouts, removal-threshold protection, GraphQL/page-text fallback, feed-anomaly events, and interrupted output recovery. CLI and packaged IPC acceptance are separate checks; these fixtures never contact a real site or account.
+
+Current-main and branch evidence are separated in `v041-acceptance-matrix.md`; #417's stock-verifier tests are main-line Core evidence. Product-dependent package acceptance remains separate from these fixture tests. The K5 media contract remains pending Core and Desktop implementation.

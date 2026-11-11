@@ -1,0 +1,1 @@
+{"run_id":"RUN-SYN-OLD-MEDIA","job":"media","trigger":"manual","device_name":"synthetic-runner","started_at":"2026-11-10T10:00:00Z","finished_at":"2026-11-10T10:00:02Z","status":"partial","counts":{"uploaded":1,"failed":1},"errors":["Synthetic historical media job record."]}

@@ -63,12 +63,20 @@ function sendJson(response, status, body) {
 }
 
 function sendWpError(response, status) {
-  const code = status === 403 ? "rest_forbidden" : status === 429 ? "rest_rate_limited" : "rest_not_logged_in";
-  const message = status === 403
-    ? "Synthetic user does not have upload permission."
-    : status === 429
-      ? "Synthetic service rate limit."
-      : "Synthetic authentication rejected.";
+  const code = status === 401
+    ? "rest_not_logged_in"
+    : status === 403
+      ? "rest_forbidden"
+      : status === 429
+        ? "rest_rate_limited"
+        : "rest_upload_failed";
+  const message = status === 401
+    ? "Synthetic authentication rejected."
+    : status === 403
+      ? "Synthetic user does not have upload permission."
+      : status === 429
+        ? "Synthetic service rate limit."
+        : "Synthetic upload failed.";
   sendJson(response, status, { code, message, data: { status } });
 }
 
