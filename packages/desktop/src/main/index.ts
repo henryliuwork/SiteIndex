@@ -1,4 +1,4 @@
-import { app, dialog, Notification, utilityProcess } from "electron";
+import { app, dialog, ipcMain, Notification, safeStorage, utilityProcess } from "electron";
 import electronUpdater from "electron-updater";
 import { basename, dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -28,6 +28,8 @@ import { createUpdateService } from "./update-service.js";
 import { createWindowManager } from "./window-manager.js";
 import { backgroundPolicy, type BackgroundPolicy } from "./background-policy.js";
 import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type AppTray } from "./app-background.js";
+import { registerWordPressCredentialHandlers } from "./wordpress-credential-ipc.js";
+import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
 
 const isRunJob = process.argv.includes("--run-job");
 const hasSingleInstanceLock = isRunJob || app.requestSingleInstanceLock();
@@ -79,6 +81,23 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
+    const wordpressCredentialVault = createWordPressCredentialVault({
+      platform: process.platform,
+      localAppData: process.env.LOCALAPPDATA,
+      homeDirectory: app.getPath("home"),
+      safeStorage: {
+        isAsyncEncryptionAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
+        encryptStringAsync: (plainText) => safeStorage.encryptStringAsync(plainText),
+        decryptStringAsync: (encrypted) => safeStorage.decryptStringAsync(encrypted),
+      },
+    });
+    registerWordPressCredentialHandlers(
+      (channel, listener) => ipcMain.handle(channel, async (event, ...args) => listener(event, ...args)),
+      {
+        vault: wordpressCredentialVault,
+        isTrustedSender: (sender) => sender === windowManager.getMainWindow()?.webContents,
+      },
+    );
     const scheduler = createSystemScheduler({
       executablePath: app.getPath("exe"),
       runtimeStatePath: join(app.getPath("userData"), "schedule-runtime-state.json"),
@@ -278,7 +297,8 @@ if (!hasSingleInstanceLock) {
             void jobs
               .run({ projectPath: catalog.resolveProject(id as ProjectId), job: "daily" })
               .then(() => {
-                if (Notification.isSupported()) new Notification({ title: "SiteIndex", body: "每日同步已开始。" }).show();
+                if (Notification.isSupported())
+                  new Notification({ title: "SiteIndex", body: "每日同步已开始。" }).show();
               })
               .catch((error: unknown) => {
                 const message = error instanceof Error ? error.message : "请稍后重试。";
@@ -378,7 +398,12 @@ if (!hasSingleInstanceLock) {
         },
       });
     const initialProjects = await catalog.refresh(currentSettings);
-    currentBackgroundPolicy = backgroundPolicy(currentSettings, scheduleMode, process.platform, initialProjects.length > 0);
+    currentBackgroundPolicy = backgroundPolicy(
+      currentSettings,
+      scheduleMode,
+      process.platform,
+      initialProjects.length > 0,
+    );
     await applyBackgroundPreferences();
     if (launchHidden) await reconcileSchedules(false, initialProjects);
     if (launchHidden && scheduleMode === "system") {
