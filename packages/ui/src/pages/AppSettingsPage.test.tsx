@@ -100,7 +100,7 @@ describe("AppSettingsPage background options", () => {
     expect(await screen.findByText("https://demo-store.example.test")).toBeTruthy();
     expect(screen.getByText("尚未配置")).toBeTruthy();
     expect(screen.getByText(/输入不会保存到本机或项目文件/)).toBeTruthy();
-    expect(screen.getByText(/媒体上传接口尚未实现/)).toBeTruthy();
+    expect(screen.getByText(/媒体准备任务尚未就绪/)).toBeTruthy();
     expect(screen.queryByText("https://demo-catalog.example.test")).toBeNull();
   });
 

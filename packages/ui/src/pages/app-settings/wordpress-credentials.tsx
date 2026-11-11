@@ -180,8 +180,8 @@ export function WordPressCredentialsCard() {
         );
       })}
 
-      <Notice tone="warn" title="图片上传尚未接通">
-        保存本机凭据不会启用图片上传。媒体上传接口尚未实现，当前不能上传或替换 WordPress 媒体。
+      <Notice tone="warn" title="图片上传尚未开放">
+        保存本机凭据不会启用图片上传。媒体准备任务尚未就绪，目前不能从 EDM 页面发起或替换 WordPress 媒体。
       </Notice>
       <Notice tone="info" title="旧配置与更换设备">
         软件不会读取、扫描或删除旧的 <code>.env</code> 文件。请在上方重新录入并确认“本机凭据已保存”后，再手动从旧配置中移除凭据。更换电脑后需要在新设备重新配置。
