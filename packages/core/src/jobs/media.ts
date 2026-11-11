@@ -163,6 +163,10 @@ function webpDecoder(): Promise<(bytes: Buffer) => Raster> {
 }
 
 function avifDecoder(maximumMemoryBytes = MAX_AVIF_WASM_MEMORY_BYTES): Promise<(bytes: Buffer) => Raster> {
+  if (!Number.isSafeInteger(maximumMemoryBytes) || maximumMemoryBytes <= 0
+    || maximumMemoryBytes % 65_536 !== 0 || maximumMemoryBytes > MAX_AVIF_WASM_MEMORY_BYTES) {
+    throw mediaError("failed", "AVIF 解码资源限制无效，已拒绝解码。");
+  }
   let decoderPromise = avifDecoderPromises.get(maximumMemoryBytes);
   if (!decoderPromise) {
     decoderPromise = (async () => {
@@ -455,7 +459,8 @@ async function convertToJpeg(
       raster = await (await resizer())(raster, width, height);
     }
     return { bytes: await (await jpegEncoder())(raster), width: raster.width, height: raster.height };
-  } catch {
+  } catch (error) {
+    if (error instanceof MediaOperationError) throw error;
     throw mediaError("failed", "图片无法解码或转换为 JPEG。请更换源图片后重试。");
   }
 }

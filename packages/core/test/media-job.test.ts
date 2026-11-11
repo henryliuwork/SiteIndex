@@ -608,6 +608,37 @@ describe("media Core Job", () => {
     expect(wordpress.snapshot().mediaCount).toBe(1);
   }, 90_000);
 
+  it("fails closed when the test AVIF memory cap is invalid or above production", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials });
+    const bytes = await encodeImageFixture("avif", testImageData(2, 2, [40, 90, 140, 255]));
+    const imageServer = await startImageServer(bytes, "image/avif");
+    const invalidLimits = [512 * 1024 * 1024 + 65_536, 0, 16 * 1024 * 1024 + 1];
+
+    for (const [index, memoryLimit] of invalidLimits.entries()) {
+      const project = await makeProject({
+        wordpressOrigin: wordpress.origin,
+        sourceImageUrl: imageServer.origin + "/invalid-limit.avif",
+        skuIds: [`SYN-INVALID-AVIF-LIMIT-${index}`],
+      });
+      const result = await service(project.projectPath, credentials, undefined, undefined, memoryLimit).runJob({
+        projectPath: project.projectPath,
+        job: "media",
+        trigger: "manual",
+        date: "2026-11-11",
+        skus: [`SYN-INVALID-AVIF-LIMIT-${index}`],
+      }, () => undefined);
+      expect(result.media_results).toMatchObject([{
+        sku: `SYN-INVALID-AVIF-LIMIT-${index}`,
+        status: "failed",
+        reason: "AVIF 解码资源限制无效，已拒绝解码。",
+      }]);
+    }
+
+    expect(wordpress.snapshot().totalRequests).toBe(0);
+    expect(wordpress.snapshot().mediaCount).toBe(0);
+  }, 30_000);
+
   it("rejects compressed size and decoded pixel limits before invoking a decoder or WordPress", async () => {
     const credentials = createFakeCredentialCanary();
     const wordpress = await makeWordPress({ credentials });
