@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { open, readFile, rename, unlink, lstat, mkdir, readdir } from "node:fs/promises";
+import { open, readFile, rename, unlink, lstat, mkdir, readdir, link } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DEFAULT_CONFLICT_PATTERNS, EXIT, pathsFor, type SiteIndexError, type SiteIndexErrorCode } from "@siteindex/shared";
@@ -104,8 +104,22 @@ function localHostIdFile(): string {
   return path.join(stateRoot, "siteindex", "lock-host-id");
 }
 
-async function readOrCreateLocalHostId(): Promise<string> {
-  const filePath = localHostIdFile();
+interface LocalHostIdInitializationHooks {
+  /** Internal synchronization seam for deterministic cross-process I/O tests. */
+  beforePublish?: () => Promise<void>;
+  /** Internal crash seam for deterministic publication recovery tests. */
+  afterPublish?: () => Promise<void>;
+}
+
+/**
+ * Reads or creates the local host identity without exposing a partial final file.
+ * The identity is staged and synced first, then hard-linked into place so only one
+ * process can publish it and every reader sees the complete contents.
+ */
+export async function readOrCreateLocalHostId(
+  filePath: string,
+  hooks: LocalHostIdInitializationHooks = {},
+): Promise<string> {
   await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const readExisting = async (): Promise<string> => {
     for (let attempt = 0; attempt <= LOCK_READ_RETRIES; attempt += 1) {
@@ -134,25 +148,37 @@ async function readOrCreateLocalHostId(): Promise<string> {
   }
 
   const value = randomUUID();
+  const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.tmp-${process.pid}-${randomUUID()}`);
   let handle;
+  let tempCreated = false;
   try {
-    handle = await open(filePath, "wx", 0o600);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    return readExisting();
-  }
-  try {
+    handle = await open(tempPath, "wx", 0o600);
+    tempCreated = true;
     await handle.writeFile(`${value}\n`, "utf8");
     await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await hooks.beforePublish?.();
+    try {
+      // link() atomically adds a directory entry without replacing an existing identity.
+      await link(tempPath, filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw lockError("无法安全发布本机锁身份文件；为避免多设备并发写入，项目锁未创建。");
+      }
+      return readExisting();
+    }
+    await hooks.afterPublish?.();
     return value;
   } finally {
-    await handle.close();
+    await handle?.close().catch(() => undefined);
+    if (tempCreated) await unlink(tempPath).catch(() => undefined);
   }
 }
 
 async function localHostId(): Promise<string> {
   if (!localHostIdPromise) {
-    const pending = readOrCreateLocalHostId();
+    const pending = readOrCreateLocalHostId(localHostIdFile());
     localHostIdPromise = pending;
     void pending.catch(() => { if (localHostIdPromise === pending) localHostIdPromise = undefined; });
   }
