@@ -28,4 +28,4 @@ node --test fixtures/e-v041-loopback/job-export-acceptance.test.mjs
 
 These tests validate the fixtures. The merged #417 Core stock-verification tests fetch the synthetic CSV with `readFeeds`, normalize it with `toSnapshot`, then run daily processing against the fake product and GraphQL responses. They cover both project layouts, removal-threshold protection, GraphQL/page-text fallback, feed-anomaly events, and interrupted output recovery. CLI and packaged IPC acceptance are separate checks; these fixtures never contact a real site or account.
 
-Current-main and branch evidence are separated in `v041-acceptance-matrix.md`; stock-verifier tests in PR #417 remain branch evidence until merge. Product-dependent package acceptance remains separate from these fixture tests. The K5 media contract remains pending Core and Desktop implementation.
+Current-main and branch evidence are separated in `v041-acceptance-matrix.md`; #417's stock-verifier tests are main-line Core evidence. Product-dependent package acceptance remains separate from these fixture tests. The K5 media contract remains pending Core and Desktop implementation.
