@@ -2,8 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import type { SkuImageRow } from "@siteindex/shared";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import type { JobProgress, JobResult, SkuImageRow } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 beforeEach(() => {
@@ -17,20 +17,23 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.doUnmock("../api");
+  vi.doUnmock("@siteindex/shared");
   vi.restoreAllMocks();
   vi.resetModules();
 });
 
 function LocationProbe() {
   const location = useLocation();
-  return <output data-testid="location">{location.pathname + location.search}</output>;
+  const navigate = useNavigate();
+  return <><output data-testid="location">{location.pathname + location.search}</output><button type="button" onClick={() => navigate("/p/other/edm")}>切换项目</button></>;
 }
 
-async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[]) {
+async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[], mediaReady = false, deferredMediaPrepare = false) {
   const mockApi = createMockApi();
   const project = await mockApi.projects.get("demo");
-  mockApi.projects.get = vi.fn(async () => ({
+  mockApi.projects.get = vi.fn(async (projectId) => ({
     ...project,
+    summary: { ...project.summary, id: projectId },
     config: {
       ...project.config,
       sku_grouping: {
@@ -44,6 +47,21 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   mockApi.edm.listImages = listImages;
   const setManualImage = vi.fn(mockApi.edm.setManualImage);
   mockApi.edm.setManualImage = setManualImage;
+  let resolvePendingMediaPrepare: ((run: { runId: string }) => void) | undefined;
+  const mediaPrepare = deferredMediaPrepare
+    ? vi.fn(() => new Promise<{ runId: string }>((resolve) => { resolvePendingMediaPrepare = resolve; }))
+    : vi.fn(async () => ({ runId: "demo-media-run" }));
+  let onMediaProgress: ((progress: JobProgress) => void) | undefined;
+  let onMediaFinished: ((result: JobResult) => void) | undefined;
+  if (mediaReady) {
+    vi.doMock("@siteindex/shared", async () => {
+      const actual = await vi.importActual<typeof import("@siteindex/shared")>("@siteindex/shared");
+      return { ...actual, PENDING_HANDLERS: [] };
+    });
+    mockApi.media = { prepare: mediaPrepare };
+    mockApi.jobs.onProgress = (callback) => { onMediaProgress = callback; return () => { onMediaProgress = undefined; }; };
+    mockApi.jobs.onFinished = (callback) => { onMediaFinished = callback; return () => { onMediaFinished = undefined; }; };
+  }
   const previewGrouping = vi.fn(async () => ({
     parents: 1,
     children: 2,
@@ -75,7 +93,13 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
     </QueryClientProvider>
     </ToastProvider>,
   );
-  return { mockApi, listImages, previewGrouping, setManualImage };
+  const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+  return {
+    mockApi, listImages, previewGrouping, setManualImage, mediaPrepare, invalidateQueries,
+    emitMediaProgress: (progress: JobProgress) => onMediaProgress?.(progress),
+    emitMediaFinished: (result: JobResult) => onMediaFinished?.(result),
+    resolveMediaPrepare: (runId = "demo-media-run") => resolvePendingMediaPrepare?.({ runId }),
+  };
 }
 
 async function openMediaDemo() {
@@ -208,8 +232,78 @@ describe("EdmPage media preparation prototype", () => {
 
   it("桌面 IPC 尚未接入时只说明不可用，不渲染可执行上传按钮", async () => {
     await renderEdmPage(true, false);
-    expect(await screen.findByText(/当前桌面版尚未接通 media\.prepare 与 media Job/)).toBeTruthy();
+    expect(await screen.findByText(/media\.prepare 尚未完成 Core 与 Desktop 接入/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /模拟获取图片 URL|获取图片 URL/ })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: "选择当前页全部行" })).toBeNull();
   });
+
+  it("Core 与 Desktop handler 就绪后调用真实 IPC、展示逐 SKU 结果并刷新 EDM 缓存", async () => {
+    const rows = [
+      mediaImageRow("DEMO-REAL-JPG-001", "https://demo-store.example.test/demo/main.jpg"),
+      mediaImageRow("DEMO-REAL-WEBP-001", "https://demo-store.example.test/demo/main.webp"),
+      mediaImageRow("DEMO-REAL-WEBP-002", "https://demo-store.example.test/demo/second.webp"),
+    ];
+    const { mediaPrepare, invalidateQueries, emitMediaProgress, emitMediaFinished } = await renderEdmPage(true, false, rows, true);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    const button = await screen.findByRole("button", { name: "获取图片 URL（3）" });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mediaPrepare).toHaveBeenCalledWith({ project: "demo", skus: ["DEMO-REAL-JPG-001", "DEMO-REAL-WEBP-001", "DEMO-REAL-WEBP-002"] }));
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(true));
+    emitMediaProgress({ runId: "demo-media-run", projectPath: "C:/fake/demo", job: "media", pct: 40, level: "info", message: "正在处理虚构 SKU", at: "2026-11-11T00:00:00.000Z" });
+    expect(await screen.findByText("正在处理虚构 SKU")).toBeTruthy();
+    emitMediaFinished({
+      runId: "demo-media-run", job: "media", status: "partial", exitCode: 1, summary: "有 1 个 SKU 处理失败",
+      media_error_code: "WP_AUTH_FAILED",
+      media_results: [{ sku: "DEMO-REAL-JPG-001", status: "recorded" }, { sku: "DEMO-REAL-WEBP-001", status: "failed", reason: "虚构测试错误" }],
+    });
+
+    const results = await screen.findByRole("list", { name: "图片准备逐 SKU 结果" });
+    expect(within(results).getByText("原图 URL 已记录")).toBeTruthy();
+    expect(within(results).getByText("失败")).toBeTruthy();
+    expect(within(results).getByText("尚未开始")).toBeTruthy();
+    expect(await screen.findByText(/WordPress 认证失败（401），批次已停止/)).toBeTruthy();
+    await waitFor(() => {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "images", "demo"] });
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "summary", "demo"] });
+    });
+  }, 15_000);
+
+  it("finished 事件先于 prepare 返回时缓存结果，避免任务永远停在处理中", async () => {
+    const rows = [mediaImageRow("DEMO-RACE-001", "https://demo-store.example.test/demo/main.webp")];
+    const { mediaPrepare, resolveMediaPrepare, emitMediaFinished } = await renderEdmPage(true, false, rows, true, true);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（1）" }));
+    await waitFor(() => expect(mediaPrepare).toHaveBeenCalled());
+
+    emitMediaFinished({
+      runId: "demo-media-run", job: "media", status: "ok", exitCode: 0, summary: "图片准备完成",
+      media_results: [{ sku: "DEMO-RACE-001", status: "uploaded" }],
+    });
+    resolveMediaPrepare();
+
+    const results = await screen.findByRole("list", { name: "图片准备逐 SKU 结果" });
+    expect(within(results).getByText("已上传")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("button", { name: "获取图片 URL（1）" }).hasAttribute("disabled")).toBe(false));
+  }, 15_000);
+
+  it("切换项目后旧任务结果不显示在新项目，也只刷新原项目缓存", async () => {
+    const rows = [mediaImageRow("DEMO-OLD-PROJECT-001", "https://demo-store.example.test/demo/main.webp")];
+    const { mediaPrepare, invalidateQueries, emitMediaFinished } = await renderEdmPage(true, false, rows, true);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（1）" }));
+    await waitFor(() => expect(mediaPrepare).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "切换项目" }));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/p/other/edm"));
+
+    emitMediaFinished({
+      runId: "demo-media-run", job: "media", status: "ok", exitCode: 0, summary: "图片准备完成",
+      media_results: [{ sku: "DEMO-OLD-PROJECT-001", status: "uploaded" }],
+    });
+
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "images", "demo"] }));
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ["edm", "images", "other"] });
+    expect(screen.queryByRole("list", { name: "图片准备逐 SKU 结果" })).toBeNull();
+    expect(screen.queryByText("DEMO-OLD-PROJECT-001")).toBeNull();
+  }, 15_000);
 });
