@@ -8,6 +8,7 @@ import path from "node:path";
 import type { Readable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { pathsForProject, readJsonl, withLock } from "@siteindex/core";
+import { withLockForTest } from "../../../core/src/io/runner-lock.js";
 import { isValidMediaSkuRecoveryPartition } from "@siteindex/shared";
 import {
   EXIT,
@@ -1464,6 +1465,99 @@ describe("desktop job manager", () => {
     await expect(waitForSubprocessExit(nextRun)).resolves.toBe(0);
     const rows = await readJsonl(runsPath);
     expect(rows.map((row) => row.run_id).sort()).toEqual([runId, "2026-11-12-weekly-next"].sort());
+  }, 30_000);
+
+  it("uses the Core single-winner reclaim claim when Desktop races another stale-lock reclaimer", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const guardProjectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const lockPath = path.join(projectPath, projectPaths.lock);
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    const holder = await spawnCoreLockSubprocess(projectPath, "hold");
+    await waitForSubprocessMarker(holder, "HELD");
+    const holderExit = waitForSubprocessExit(holder);
+    holder.kill();
+    await holderExit;
+    await expect(access(lockPath)).resolves.toBeUndefined();
+
+    let signalClaimPublished!: () => void;
+    let releaseClaim!: () => void;
+    const claimPublished = new Promise<void>((resolve) => { signalClaimPublished = resolve; });
+    const claimGate = new Promise<void>((resolve) => { releaseClaim = resolve; });
+    let signalHistoryCommit!: () => void;
+    let releaseHistoryCommit!: () => void;
+    const historyCommitEntered = new Promise<void>((resolve) => { signalHistoryCommit = resolve; });
+    const historyCommitGate = new Promise<void>((resolve) => { releaseHistoryCommit = resolve; });
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+      testOnlyBeforeSyntheticRunLogCommit: async () => {
+        signalHistoryCommit();
+        await historyCommitGate;
+      },
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-race"] });
+
+    try {
+      await withLockForTest(guardProjectPath, async () => {
+        child.emit("exit", 1);
+        await claimPublished;
+
+        // Desktop has published the Core reclaim claim but has not yet replaced the stale lock.
+        // A real second Core process now races the same stale generation and must be rejected.
+        const competitor = await spawnCoreLockSubprocess(projectPath, "try");
+        await waitForSubprocessMarker(competitor, "BLOCKED");
+        await expect(waitForSubprocessExit(competitor)).resolves.toBe(0);
+
+        releaseClaim();
+        await historyCommitEntered;
+        const recoveryLock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; job: string };
+        expect(recoveryLock).toMatchObject({ pid: process.pid, job: "desktop-media-recovery" });
+        releaseHistoryCommit();
+
+        const result = await finished;
+        expect(result).toMatchObject({
+          status: "failed",
+          media_batch_state: "outcome_unknown",
+          media_requested_skus: ["synthetic-race"],
+          media_unknown_skus: ["synthetic-race"],
+        });
+        await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+        const rows = await readJsonl(runsPath);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ run_id: runId, job: "media", status: "failed" });
+
+        const afterRecovery = await spawnCoreLockSubprocess(projectPath, "try");
+        await waitForSubprocessMarker(afterRecovery, "ACQUIRED");
+        await expect(waitForSubprocessExit(afterRecovery)).resolves.toBe(0);
+      }, {
+        deviceId: settings().device_id,
+        deviceName: settings().device_name,
+        job: "desktop-test-claim-scope",
+      }, {
+        afterReclaimClaimPublished: async () => {
+          signalClaimPublished();
+          await claimGate;
+        },
+      });
+    } finally {
+      releaseClaim();
+      releaseHistoryCommit();
+    }
   }, 30_000);
 
   it("creates a recovery lock when the worker exits before Core acquired its lock", async () => {
