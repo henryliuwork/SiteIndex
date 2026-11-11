@@ -6,7 +6,7 @@
 
 本矩阵只使用 `synthetic-shop.test`、`SYN-*` 虚构 SKU、内存中的假媒体和 loopback 服务。服务只能绑定 `127.0.0.1`，不记录请求头或请求正文，不访问真实站点，不上传真实媒体，不迁移真实项目，也不在本机安装应用。
 
-本次基线为 `origin/main` `ce3507021df97f06be80061f3e9cbbe4c60bb450`（2026-11-11；已含 #390、#414、#416、#417、#419、#421、#431、#432、#433、#437、#438 等合并项）。`media.prepare` 与 `edm.exportIndex` 仍在 `PENDING_HANDLERS`；Desktop 的 `media.prepare` 能力闸也会在读取凭据或启动 worker 前返回 `NOT_IMPLEMENTED`。库存核验已合并到 main。代码、fixture、UI mock 与三系统 CI 均不能替代打包 IPC 或真实环境证据。
+本次基线为 `origin/main` `b4073524df0fa8fe6487c1a64380ad497e5de659`（2026-11-12 复核；已含 #390、#414、#416、#417、#419、#421、#431、#432、#433、#437、#438、#442、#443 等合并项）。`media.prepare` 与 `edm.exportIndex` 仍在 `PENDING_HANDLERS`；Desktop 的 `media.prepare` 能力闸也会在读取凭据或启动 worker 前返回 `NOT_IMPLEMENTED`。库存核验已合并到 main。代码、fixture、UI mock 与三系统 CI 均不能替代打包 IPC 或真实环境证据。
 
 PR #440（head `708a40f3a1c78cce78fec8738bfcfd3b6e531b51`）尚未合并。其三系统 CI 通过，但专用 Windows 打包验收 run `43046081311` 在旧版 v0.4.0 packaged launch 阶段失败，未进入候选版升级或凭据 IPC 流程；具体证据与隔离缺口见“#440 托管运行结果与未执行项”。
 
@@ -21,7 +21,14 @@ PR #440（head `708a40f3a1c78cce78fec8738bfcfd3b6e531b51`）尚未合并。其�
 
 ## 当前 main 提交与 CI 证据
 
-当前基线是 `ce3507021df97f06be80061f3e9cbbe4c60bb450`。下表只把 CI 与测试归入它们实际验证的证据层；fixture/mock 结果不标成产品验收通过。
+当前基线是 `b4073524df0fa8fe6487c1a64380ad497e5de659`。下表只把 CI 与测试归入它们实际验证的证据层；fixture/mock 结果不标成产品验收通过。
+
+## E 持久化后错误响应与重试夹具
+
+- 在本次 `main` 基线中，`createFakeWordPressService` 可在 POST 成功持久化后断开连接，并可按 slug GET 查到对象；其 `rateLimitAfter` 在 POST 处理和媒体持久化前就返回 429，`mediaPostStatuses` 的非 201 也在持久化前结束。因此，当前 main 不能直接表达“POST 已创建媒体后返回 429”。
+- #439 最新 head `54cfbbd489e9b2a7915c6d18cd65933c49089a39`（截至检查时仍开放）新增 `persistMediaBeforePostFailure`，并加入持久化后 422/429/500/302 用例。其 `job-export-acceptance.test.mjs` 未随 case ID 变更，仍断言旧的固定 ID 列表；直接运行该 Node 测试会拒绝新向量，需 A 更新断言/用例执行。最新 head Actions run `43052780242` 已通过，但这不证明该独立 Node fixture runner 实际执行，也不等于 Core Job 的重试或台账迁移通过。
+- 本分支在独立子目录 `retry-after-persist/` 增加 E 自有 loopback 服务、场景 JSON 和 Node 测试，保留两类批处理语义：①源图/参数等本地校验在发出 HTTP 请求前失败，已知无副作用，可继续处理后续 SKU；②POST 已发出后收到 422/429/500 或连接断开，一律 `outcome_unknown` 并停止后续 SKU；恢复时先按确定性 slug GET 查重，命中则复用、不盲目重发 POST。测试还检查既有旧台账 8 列输入与 10 列首次写入 oracle。独立测试 5/5 通过；与现有 L0 测试合计 22/22 通过。
+- 新增服务只绑定 `127.0.0.1`，假凭据由现有 canary helper 生成，请求体/头不进入快照；这些结果只证明 E 夹具能表达场景、测试 oracle 一致。retry/preflight driver 不是 SiteIndex 客户端，旧台账测试也只是比较输入与迁移期望文件；Core、CLI、Desktop IPC/页面、打包安装和真实 WordPress 的行为均未验证。待 #439 合并后，仍需由 A 对 Core media Job 做实际调用与本地校验继续、持久化后错误/断连停批恢复、旧台账首次写入迁移验收；随后再由 C/E 完成打包接线验收。
 
 | 范围 | 固定提交 | 对应 CI / 结果 | 证据层与限制 |
 |---|---|---|---|
@@ -46,7 +53,7 @@ PR #440（head `708a40f3a1c78cce78fec8738bfcfd3b6e531b51`）尚未合并。其�
 | INV-05 | 事件、`inventory_latest`、SKU catalog、daily summary 四个输出目标逐一注入写入失败 | 逐个将 one-shot `atomicWrite` 故障注入目标；保留事务清单 / 备份后再次调用并切到 5xx | 重试先恢复同一批次所有目标；待处理游标不提前提交；重跑报告不可用且不产生错误下架或重复事件 | L1：#417 已并入 main；transaction / stock verifier 测试覆盖输出故障回滚、pending 状态和重试；不等同于 Windows 安装版或进程被强杀恢复 |
 | INV-06 | 空 / 损坏恢复清单、越界目标路径、缺失备份、恢复期间外部编辑目标文件 | 分别启动恢复逻辑并核查原件和恢复材料 | 必须 fail closed；不得清理唯一备份或清单，不得写入清单允许范围之外的文件，不得静默覆盖外部编辑 | L1：#417 已并入 main；测试覆盖 JSON-null 清单、缺失备份、junction/symlink 祖先、恢复前后外部编辑保护。空/截断清单与任意越界目标路径未逐项独立证明；候选包未测 |
 | MED-01 | 假 WordPress 当前用户接口：401 与 403；批次含前置成功和未开始 SKU | GET 当前用户能力，再提交多 SKU 媒体 Job | 401 为 `WP_AUTH_FAILED`、403 为 `WP_FORBIDDEN`；立即停批；保留先前成功项，未开始 SKU 保持未决；错误文案不含认证响应或凭据 | L0：假服务支持且自测；L1/L2：媒体 Job 与 handler 未接通，未验证 |
-| MED-02 | 一批 SKU 中分别配置成功、单 SKU 5xx / 429 和后续成功 | 运行批次并检查逐 SKU 结果与汇总 | 普通单 SKU 失败不阻断其他 SKU；总状态为 `partial`；每个已处理 SKU 恰有一条结果。401/403 则按 MED-01 停批 | L0：服务能配置混合结果；产品批次逻辑未验证 |
+| MED-02 | 一批 SKU 中包含发送前本地校验失败、后续有效 SKU，以及已发送 POST 后的 422/429/5xx/断连 | 本地校验失败时确认该 SKU 没发出 HTTP 请求，并观察后续 SKU；另对已发出的 POST 分别注入持久化后错误/断连，检查逐 SKU 结果、后续 SKU 与恢复查重 | 只有可证明发生在发送前的本地失败可记为已知失败并继续；任何已发送 POST 的 422/429/5xx/断连都按 `outcome_unknown` 停批，后续 SKU 标为未开始；重试先按确定性 slug GET，命中则 `reused`，不得盲目 POST。401/403 仍按 MED-01 停批 | L0：E 独立夹具 5 项和既有 17 项通过；只证明场景/Oracle。main 旧 `MEDIA-ordinary-partial-then-continue` 把 POST 后 503 作为可继续向量，与此边界冲突，待 A 更新；Core Job 未验证 |
 | MED-03 | 假上传端保存媒体对象后断开连接，下一次 GET slug 查重命中 | 第一次上传后模拟连接断开；重试同一 SKU、同源图指纹 | 重试复用已存在对象（`reused`），只保留一个假媒体对象、一次成功上传记录和一条台账行；`media_id` / `source_hash` 稳定 | L0：假服务已覆盖“保存后断连”和后续 GET 查重；SiteIndex 客户端是否先查重未验证 |
 | LED-01 | 旧版 8 列 `sku_media.csv` 与两条虚构旧记录 | 先只读导入；再触发第一次真实写入 | 读取 / 导入时文件字节不变；首次写入才将 `media_id,source_hash` 追加为第 9、10 列，保留旧列和旧值，旧行新增列留空 | L1：#390 契约与 shared contract tests 约束表头；Core 文件迁移尚无验收证据 |
 | SEC-01 | 只在测试进程使用的假凭据 canary | 将假值投放到模拟凭据源并扫描模拟日志、Job、IPC、CLI/MCP 与导出边界 | 公开输出不包含假值；扫描器只返回匹配类别 / 数量，不返回命中内容。另核验错误码、提示及结果不回显响应正文 | L0：假 canary 扫描器自测；产品日志/IPC/CLI/MCP 尚未逐层验证 |

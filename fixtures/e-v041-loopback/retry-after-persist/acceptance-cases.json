@@ -1,0 +1,115 @@
+{
+  "evidence_scope": "fixture-only; does not invoke SiteIndex Core, CLI, Desktop IPC, or UI",
+  "preflight_continue_case": {
+    "id": "MEDIA-local-preflight-failure-then-continue",
+    "local_failure": {
+      "sku": "SYN-E-NO-SOURCE",
+      "reason": "synthetic source image unavailable",
+      "point": "before_http_request",
+      "http_request_sent": false,
+      "expected_result": "failed_known_no_side_effect"
+    },
+    "next_valid_sku": "SYN-E-FOLLOWUP",
+    "expected_followup_http_status": 201,
+    "core_acceptance_oracle": {
+      "media_batch_state": "complete",
+      "result_statuses": ["failed", "uploaded"],
+      "media_unknown_skus": [],
+      "media_not_started_skus": [],
+      "job_status": "partial",
+      "continue_after_preflight_failure": true
+    }
+  },
+  "persisted_error_cases": [
+    {
+      "id": "MEDIA-persist-then-422-unknown-stop",
+      "first_post_mode": "persist_then_422",
+      "first_post_status": 422,
+      "first_post_outcome": "persisted_then_http_422",
+      "sku_sent": "SYN-E-422-SENT",
+      "sku_not_started": "SYN-E-422-NEXT",
+      "retry_lookup": "GET /wp-json/wp/v2/media?slug=<synthetic-slug>",
+      "retry_result": "reused",
+      "expected_post_attempts_before_retry": 1,
+      "expected_media_count": 1,
+      "core_acceptance_oracle": {
+        "media_batch_state": "outcome_unknown",
+        "media_unknown_skus": ["SYN-E-422-SENT"],
+        "media_not_started_skus": ["SYN-E-422-NEXT"],
+        "stop_batch_after_sent_post": true
+      }
+    },
+    {
+      "id": "MEDIA-persist-then-429-unknown-stop",
+      "first_post_mode": "persist_then_429",
+      "first_post_status": 429,
+      "first_post_outcome": "persisted_then_rate_limited",
+      "sku_sent": "SYN-E-429-SENT",
+      "sku_not_started": "SYN-E-429-NEXT",
+      "retry_lookup": "GET /wp-json/wp/v2/media?slug=<synthetic-slug>",
+      "retry_result": "reused",
+      "expected_post_attempts_before_retry": 1,
+      "expected_media_count": 1,
+      "core_acceptance_oracle": {
+        "media_batch_state": "outcome_unknown",
+        "media_unknown_skus": ["SYN-E-429-SENT"],
+        "media_not_started_skus": ["SYN-E-429-NEXT"],
+        "stop_batch_after_sent_post": true
+      }
+    },
+    {
+      "id": "MEDIA-persist-then-500-unknown-stop",
+      "first_post_mode": "persist_then_500",
+      "first_post_status": 500,
+      "first_post_outcome": "persisted_then_http_500",
+      "sku_sent": "SYN-E-500-SENT",
+      "sku_not_started": "SYN-E-500-NEXT",
+      "retry_lookup": "GET /wp-json/wp/v2/media?slug=<synthetic-slug>",
+      "retry_result": "reused",
+      "expected_post_attempts_before_retry": 1,
+      "expected_media_count": 1,
+      "core_acceptance_oracle": {
+        "media_batch_state": "outcome_unknown",
+        "media_unknown_skus": ["SYN-E-500-SENT"],
+        "media_not_started_skus": ["SYN-E-500-NEXT"],
+        "stop_batch_after_sent_post": true
+      }
+    },
+    {
+      "id": "MEDIA-persist-then-disconnect-unknown-stop",
+      "first_post_mode": "persist_then_disconnect",
+      "first_post_status": "disconnect",
+      "first_post_outcome": "persisted_then_disconnected",
+      "sku_sent": "SYN-E-DISCONNECT-SENT",
+      "sku_not_started": "SYN-E-DISCONNECT-NEXT",
+      "retry_lookup": "GET /wp-json/wp/v2/media?slug=<synthetic-slug>",
+      "retry_result": "reused",
+      "expected_post_attempts_before_retry": 1,
+      "expected_media_count": 1,
+      "core_acceptance_oracle": {
+        "media_batch_state": "outcome_unknown",
+        "media_unknown_skus": ["SYN-E-DISCONNECT-SENT"],
+        "media_not_started_skus": ["SYN-E-DISCONNECT-NEXT"],
+        "stop_batch_after_sent_post": true
+      }
+    }
+  ],
+  "legacy_ledger_case": {
+    "input_fixture": "../media-export/legacy-sku-media.csv",
+    "expected_extended_fixture": "../media-export/extended-sku-media.expected.csv",
+    "legacy_columns": [
+      "sku",
+      "image_role",
+      "image_url",
+      "alt_text",
+      "source",
+      "width",
+      "height",
+      "updated_at"
+    ],
+    "first_write_appends": ["media_id", "source_hash"],
+    "legacy_rows_keep_original_values": true,
+    "legacy_rows_appended_values": ["", ""],
+    "read_only_probe_keeps_original_bytes": true
+  }
+}
