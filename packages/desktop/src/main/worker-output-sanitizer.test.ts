@@ -81,13 +81,13 @@ describe("utilityProcess output sanitization", () => {
       status: "failed",
       exitCode: 1,
       summary: "Authentication failed for user a",
-      errors: ["Could not authenticate user a", "?username=a&user=a"],
+      errors: ["Could not authenticate user a", "?username=a&user=a", "?username=admin"],
       media_results: [
         {
           sku: "sku-a1",
           status: "failed",
           reason: "Account a was rejected",
-          image_url: "https://cdn.example.test/image.jpg?user=a&size=large",
+          image_url: "https://cdn.example.test/catalog/sku-a1/author/a/image.jpg?user=a&campaign=sku-a1&size=large",
         },
       ],
       projectPath: "C:/workspace/a/siteindex",
@@ -104,7 +104,47 @@ describe("utilityProcess output sanitization", () => {
     expect(safe.summary).toBe("Authentication failed for user [已隐藏]");
     expect(safe.errors?.[0]).toBe("Could not authenticate user [已隐藏]");
     expect(safe.errors?.[1]).toBe("?username=[已隐藏]&user=[已隐藏]");
+    expect(safe.errors?.[2]).toBe("?username=admin");
     expect(safe.media_results?.[0]?.reason).toBe("Account [已隐藏] was rejected");
-    expect(safe.media_results?.[0]?.image_url).toBe("https://cdn.example.test/image.jpg?user=[已隐藏]&size=large");
+    expect(safe.media_results?.[0]?.image_url).toBe(
+      "https://cdn.example.test/catalog/sku-a1/author/%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D/image.jpg?user=%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D&campaign=sku-a1&size=large",
+    );
+  });
+
+  it("redacts usernames in URL paths and arbitrary query values, including encoded URLs", () => {
+    const credential = { username: "alice@example.test", applicationPassword: "fictional-password" };
+    const url =
+      "https://alice%40example.test:fictional-password@cdn.example.test/author/alice%40example.test/image.jpg?author=alice%40example.test&user_name=alice%2540example.test&campaign=alice%40example.test";
+    const result: JobResult = {
+      runId: "fictional-run",
+      job: "media",
+      status: "failed",
+      exitCode: 1,
+      summary: `Could not fetch ${url}`,
+      errors: [],
+      media_results: [
+        {
+          sku: "sku-alice-1",
+          status: "failed",
+          image_url: encodeURIComponent(url),
+        },
+      ],
+    };
+
+    const safe = sanitizeJobResult(
+      result,
+      wordpressCredentialSensitiveValues(credential),
+      wordpressCredentialUsernames(credential),
+    );
+    const safeSummary = safe.summary;
+    const safeUrl = safe.media_results?.[0]?.image_url ?? "";
+
+    expect(safeSummary).not.toContain("alice");
+    expect(safeSummary).toContain("/author/%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D/");
+    expect(safeSummary).toContain("author=%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D");
+    expect(safeSummary).toContain("user_name=%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D");
+    expect(safeSummary).toContain("campaign=%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D");
+    expect(safeUrl).not.toContain("alice");
+    expect(safe.media_results?.[0]?.sku).toBe("sku-alice-1");
   });
 });
