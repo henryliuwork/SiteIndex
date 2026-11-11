@@ -723,6 +723,81 @@ describe("EdmPage media preparation prototype", () => {
     expect(mockApi.jobs.history).toHaveBeenCalledWith("demo", 100);
   }, 15_000);
 
+  it("非当前图片筛选的无数据旧请求在媒体完成后返回时仍使该筛选缓存失效", async () => {
+    const sku = "DEMO-INACTIVE-FILTER-001";
+    const staleRow = mediaImageRow(sku, null);
+    const freshRow = { ...mediaImageRow(sku, null, "https://demo.example.test/images/current.png"), title: "虚构刷新后的分类商品" };
+    const historyByProject: Record<string, RunLog[]> = { demo: [] };
+    let resolveOldFilter: ((value: Awaited<ReturnType<SiteIndexApi["edm"]["listImages"]>>) => void) | undefined;
+    let hasManualCalls = 0;
+    const listImagesImplementation: SiteIndexApi["edm"]["listImages"] = async (_projectId, listQuery) => {
+      if (listQuery.filters?.view === "has_manual") {
+        hasManualCalls += 1;
+        if (hasManualCalls === 1) return new Promise((resolve) => { resolveOldFilter = resolve; });
+        return { rows: [freshRow], total: 1 };
+      }
+      return { rows: [staleRow], total: 1 };
+    };
+    const { queryClient, listImages, invalidateQueries } = await renderEdmPage(true, false, undefined, false, false, {
+      historyByProject,
+      queryStaleTime: 30_000,
+      listImagesImplementation,
+    });
+    await waitFor(() => expect(listImages).toHaveBeenCalledTimes(1));
+    queryClient.setQueryData(["edm", "images", "other", { page: 1, pageSize: 50, filters: { view: "has_manual" } }], {
+      rows: [mediaImageRow("DEMO-OTHER-PROJECT-001", null)], total: 1,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "已填手动图" }));
+    await waitFor(() => {
+      expect(resolveOldFilter).toBeTypeOf("function");
+      const query = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "demo"] })
+        .find(({ queryKey }) => (queryKey[3] as { filters?: { view?: string } }).filters?.view === "has_manual");
+      expect(query?.state.data).toBeUndefined();
+      expect(query?.state.fetchStatus).toBe("fetching");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
+    expect(await screen.findByText("运行页面")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "全部" }).getAttribute("aria-pressed")).toBe("true"));
+    const inactiveFilterQuery = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "demo"] })
+      .find(({ queryKey }) => (queryKey[3] as { filters?: { view?: string } }).filters?.view === "has_manual");
+    expect(inactiveFilterQuery?.state.data).toBeUndefined();
+    expect(inactiveFilterQuery?.state.fetchStatus).toBe("fetching");
+
+    const finishedAtMs = Date.now() + 200;
+    historyByProject.demo = [{
+      run_id: "demo-inactive-filter-run", job: "media", started_at: new Date(Date.now() - 1_000).toISOString(),
+      finished_at: new Date(finishedAtMs).toISOString(), status: "ok",
+      media_requested_skus: [sku], media_batch_state: "complete",
+      media_results: [{ sku, status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
+    }];
+    act(() => queryClient.setQueryData(["job-history", "demo"], historyByProject.demo));
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, finishedAtMs - Date.now() + 20)));
+    await act(async () => { resolveOldFilter?.({ rows: [staleRow], total: 1 }); });
+
+    await waitFor(() => {
+      const query = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "demo"] })
+        .find(({ queryKey }) => (queryKey[3] as { filters?: { view?: string } }).filters?.view === "has_manual");
+      expect(query?.state.fetchStatus).toBe("idle");
+      expect(query?.state.isInvalidated).toBe(true);
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: query?.queryKey, exact: true });
+    });
+    expect(hasManualCalls).toBe(1);
+    expect(listImages).toHaveBeenCalledTimes(3);
+    expect(invalidateQueries.mock.calls.some(([filters]) => filters?.queryKey?.[2] === "other")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "已填手动图" }));
+    await waitFor(() => expect(hasManualCalls).toBe(2));
+    await waitFor(() => {
+      const query = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "demo"] })
+        .find(({ queryKey }) => (queryKey[3] as { filters?: { view?: string } }).filters?.view === "has_manual");
+      expect(query?.state.isInvalidated).toBe(false);
+      expect((query?.state.data as { rows: SkuImageRow[] } | undefined)?.rows[0]?.title).toBe("虚构刷新后的分类商品");
+    });
+  }, 15_000);
+
   it("返回页面时较新的外部历史覆盖旧快照，即使 runId 被复用", async () => {
     const rows = [mediaImageRow("DEMO-OLD-SNAPSHOT-001", "https://demo-store.example.test/demo/old.webp")];
     const historyByProject: Record<string, RunLog[]> = { demo: [], other: [] };

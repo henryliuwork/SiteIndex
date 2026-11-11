@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -342,9 +342,7 @@ export function EdmPage() {
   const summary = summaryQuery.data;
   const columns = useMemo(() => imageColumns(id), [id]);
   const currentView: ImageView = query.filters?.view ?? "all";
-  const imageCacheState = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", id] })
-    .map(({ queryHash, queryKey, state }) => `${queryHash}:${state.dataUpdatedAt}:${state.fetchStatus}:${getEdmQueryFetchStartedAt(queryKey) ?? ""}`)
-    .join("|");
+  const imageQueriesFetching = useIsFetching({ queryKey: ["edm", "images", id] });
 
   useEffect(() => {
     return edmMediaJobMonitor.connect(api.jobs, queryClient, toast, id);
@@ -358,20 +356,26 @@ export function EdmPage() {
     if (!Number.isFinite(finishedAt)) return;
     const summaryState = queryClient.getQueryState(["edm", "summary", id]);
     const imageQueries = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", id] });
-    if (summaryState?.fetchStatus === "fetching" || queryClient.getQueryState(imageQueryKey)?.fetchStatus === "fetching") return;
+    const summaryFetchStartedAt = getEdmQueryFetchStartedAt(summaryQueryKey);
+    const oldSummaryRequestInFlight = summaryState?.fetchStatus === "fetching"
+      && summaryFetchStartedAt !== undefined && summaryFetchStartedAt <= finishedAt;
+    const oldImageRequestInFlight = imageQueries.some(({ queryKey, state }) => {
+      const fetchStartedAt = getEdmQueryFetchStartedAt(queryKey);
+      return state.fetchStatus === "fetching" && fetchStartedAt !== undefined && fetchStartedAt <= finishedAt;
+    });
+    if (oldSummaryRequestInFlight || oldImageRequestInFlight) return;
 
     refreshedMediaRunKeyRef.current = recoveredMediaRunKey;
-    const summaryFetchStartedAt = getEdmQueryFetchStartedAt(summaryQueryKey);
     const summaryNeedsRefresh = Boolean(summaryState?.data !== undefined
       && (summaryState.dataUpdatedAt < finishedAt || (summaryFetchStartedAt !== undefined && summaryFetchStartedAt <= finishedAt)));
-    const imagesNeedRefresh = imageQueries.some(({ queryKey, state }) => {
+    const staleImageQueries = imageQueries.filter(({ queryKey, state }) => {
       const fetchStartedAt = getEdmQueryFetchStartedAt(queryKey);
       return state.data !== undefined && (state.dataUpdatedAt < finishedAt || (fetchStartedAt !== undefined && fetchStartedAt <= finishedAt));
     });
 
-    if (summaryNeedsRefresh) void queryClient.invalidateQueries({ queryKey: ["edm", "summary", id] });
-    if (imagesNeedRefresh) void queryClient.invalidateQueries({ queryKey: ["edm", "images", id] });
-  }, [id, imageCacheState, imageQueryKey, listQuery.dataUpdatedAt, listQuery.fetchStatus, queryClient, recoveredMediaRun, recoveredMediaRunKey, summaryQuery.dataUpdatedAt, summaryQuery.fetchStatus, summaryQueryKey]);
+    if (summaryNeedsRefresh) void queryClient.invalidateQueries({ queryKey: summaryQueryKey, exact: true });
+    for (const { queryKey } of staleImageQueries) void queryClient.invalidateQueries({ queryKey, exact: true });
+  }, [id, imageQueriesFetching, listQuery.dataUpdatedAt, listQuery.fetchStatus, queryClient, recoveredMediaRun, recoveredMediaRunKey, summaryQuery.dataUpdatedAt, summaryQuery.fetchStatus, summaryQueryKey]);
 
   useEffect(() => {
     if (lastResetProjectIdRef.current === id) return;
