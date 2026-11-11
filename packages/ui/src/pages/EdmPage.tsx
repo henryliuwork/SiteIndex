@@ -3,18 +3,33 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { EdmCommandInput, Kpi, ListQuery, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
+import type { EdmCommandInput, Kpi, ListQuery, MediaPrepareSkuResult, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
 const viewOptions: { value: ImageView; label: string }[] = [
   { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "no_feed", label: "未抓取到首图" },
-  { value: "has_manual", label: "已填手动图" }, { value: "none", label: "缺图" },
+  { value: "has_manual", label: "已填手动图" }, { value: "none", label: "无 URL" },
 ];
+
+type MediaDemoStatus = "queued" | MediaPrepareSkuResult["status"] | "unresolved";
+type MediaDemoRowState = { status: MediaDemoStatus; reason?: string };
+type MediaDemoOutcome = "complete" | "WP_AUTH_FAILED" | "WP_FORBIDDEN";
+
+const mediaDemoStatusLabels: Record<MediaDemoStatus, string> = {
+  queued: "排队中（模拟）", uploaded: "已上传（模拟）", reused: "已复用（模拟）",
+  recorded: "原图 URL 已记录（模拟）", skipped_has_url: "已有 URL，已跳过（模拟）",
+  failed: "失败（模拟）", unresolved: "尚未开始（模拟）",
+};
+
+const mediaDemoStatusTones: Record<MediaDemoStatus, "neutral" | "info" | "ok" | "warn" | "danger"> = {
+  queued: "warn", uploaded: "ok", reused: "info", recorded: "info",
+  skipped_has_url: "neutral", failed: "danger", unresolved: "warn",
+};
 
 function EdmGroupingPreview({ projectId, rule, enabled }: { projectId: string; rule: SkuGroupingRule; enabled: boolean }) {
   const previewQuery = useQuery({
@@ -90,6 +105,12 @@ export function EdmPage() {
   const toast = useToast();
   const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 50, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
+  const [selectedRows, setSelectedRows] = useState<SkuImageRow[]>([]);
+  const [mediaDemoStatuses, setMediaDemoStatuses] = useState<Record<string, MediaDemoRowState>>({});
+  const [mediaDemoOutcome, setMediaDemoOutcome] = useState<MediaDemoOutcome>("complete");
+  const [mediaDemoRunning, setMediaDemoRunning] = useState(false);
+  const [mediaDemoMessage, setMediaDemoMessage] = useState("");
+  const [mediaDemoOpen, setMediaDemoOpen] = useState(false);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["edm", "summary", id], queryFn: () => api.edm.summary(id) });
@@ -139,6 +160,56 @@ export function EdmPage() {
     try { await api.shell.openExternal(url); toast.success("已打开图片地址。"); }
     catch (cause) { toast.error(apiErrorMessage(cause, "无法打开图片地址。")); }
   };
+  const simulateMediaPreparation = () => {
+    if (!isMockApi || mediaDemoRunning || selectedRows.length === 0) return;
+    const batch = [...selectedRows];
+    setMediaDemoRunning(true);
+    setMediaDemoMessage("");
+    setMediaDemoStatuses((current) => ({
+      ...current,
+      ...Object.fromEntries(batch.map((row) => [row.sku, { status: "queued" as const }])),
+    }));
+    window.setTimeout(() => {
+      const next: Record<string, MediaDemoRowState> = {};
+      const counts = { uploaded: 0, reused: 0, recorded: 0, skipped_has_url: 0, failed: 0, unresolved: 0 };
+      const normalStatuses: MediaPrepareSkuResult["status"][] = ["uploaded", "reused", "recorded", "failed"];
+      let eligibleCount = 0;
+      let stopped = false;
+      for (const row of batch) {
+        if (row.feed_image_url || row.manual_image_url) {
+          next[row.sku] = { status: "skipped_has_url", reason: "已有 Feed 或手动图片 URL" };
+          counts.skipped_has_url += 1;
+        } else if (mediaDemoOutcome !== "complete" && !stopped) {
+          next[row.sku] = { status: "failed", reason: mediaDemoOutcome + "（模拟停批）" };
+          counts.failed += 1;
+          stopped = true;
+        } else if (mediaDemoOutcome !== "complete") {
+          next[row.sku] = { status: "unresolved", reason: "批次提前停止，未开始处理" };
+          counts.unresolved += 1;
+        } else {
+          const status = normalStatuses[eligibleCount % normalStatuses.length]!;
+          next[row.sku] = { status, ...(status === "failed" ? { reason: "模拟单 SKU 失败" } : {}) };
+          counts[status] += 1;
+          eligibleCount += 1;
+        }
+      }
+      setMediaDemoStatuses((current) => ({ ...current, ...next }));
+      const parts = [
+        counts.uploaded && `上传 ${counts.uploaded}`,
+        counts.reused && `复用 ${counts.reused}`,
+        counts.recorded && `记录 ${counts.recorded}`,
+        counts.skipped_has_url && `已有 URL 跳过 ${counts.skipped_has_url}`,
+        counts.failed && `失败 ${counts.failed}`,
+        counts.unresolved && `尚未开始 ${counts.unresolved}`,
+      ].filter(Boolean);
+      const resultText = parts.length ? parts.join("，") : "没有可处理的行";
+      setMediaDemoMessage(mediaDemoOutcome === "complete"
+        ? resultText
+        : `${mediaDemoOutcome}：模拟批次提前停止；${resultText}。`);
+      setMediaDemoRunning(false);
+      toast.info("仅完成本地演示，未执行上传或写入台账。");
+    }, 220);
+  };
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
@@ -146,9 +217,32 @@ export function EdmPage() {
     <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="edm">
     <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+    {isMockApi ? <div className="si-edm-media-demo">
+      <Button type="button" variant="ghost" size="small" className="si-edm-media-demo-toggle" aria-expanded={mediaDemoOpen} aria-controls="si-edm-media-demo-panel" onClick={() => setMediaDemoOpen((open) => !open)}>交互模拟（仅本地演示，不会上传或写入台账）</Button>
+      <div id="si-edm-media-demo-panel" className="si-edm-media-demo-panel" hidden={!mediaDemoOpen}>
+      <Notice tone="info" title="不会上传，也不会写入项目台账。">选择表格行后可预览逐 SKU 结果；该演示不调用 media.prepare、Job 或外部服务。</Notice>
+      <div className="si-edm-media-demo-actions">
+        <Select ariaLabel="模拟媒体准备结果" value={mediaDemoOutcome} onValueChange={(value) => setMediaDemoOutcome(value === "WP_AUTH_FAILED" || value === "WP_FORBIDDEN" ? value : "complete")} options={[
+          { value: "complete", label: "正常结果示例" },
+          { value: "WP_AUTH_FAILED", label: "401 认证失败并停批" },
+          { value: "WP_FORBIDDEN", label: "403 权限不足并停批" },
+        ]} />
+        <Button variant="primary" disabled={selectedRows.length === 0 || mediaDemoRunning} onClick={simulateMediaPreparation}>{mediaDemoRunning ? "模拟处理中…" : `模拟获取图片 URL（${selectedRows.length}）`}</Button>
+      </div>
+      {mediaDemoRunning && <p role="status">模拟批次正在排队处理选中 SKU…</p>}
+      {mediaDemoMessage && <Notice tone={mediaDemoOutcome === "complete" ? "info" : "warn"} title="模拟批次结果">{mediaDemoMessage}</Notice>}
+      {selectedRows.some((row) => mediaDemoStatuses[row.sku]) && <ul className="si-edm-media-demo-results" aria-label="模拟逐 SKU 结果">
+        {selectedRows.filter((row) => mediaDemoStatuses[row.sku]).map((row) => {
+          const state = mediaDemoStatuses[row.sku]!;
+          return <li key={row.sku}><code>{row.sku}</code><Chip tone={mediaDemoStatusTones[state.status]}>{mediaDemoStatusLabels[state.status]}</Chip>{state.reason && <small>{state.reason}</small>}</li>;
+        })}
+      </ul>}
+      </div>
+    </div> : <Notice tone="warn" title="图片 URL 准备尚未接入">当前桌面版尚未接通 media.prepare 与 media Job；不能在此执行上传。既有 URL 编辑与保存功能仍可使用。</Notice>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
+      selectable={isMockApi} onSelectionChange={isMockApi ? setSelectedRows : undefined}
       emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-top"><h2>SKU 宣传图</h2><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />

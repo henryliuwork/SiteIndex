@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, Image as ImageIcon, Plus, Settings2, Tag, Trash2, X } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, StockStatus } from "@siteindex/shared";
+import type { ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, SkuRecord, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, FilterPill, Input, Notice, ProjectHeader, ProjectTabPanel, Select, StatusCells, stockTone, useToast } from "../components";
@@ -21,6 +21,13 @@ function priceLabel(product: ProductView): string {
   if (product.price_min === null) return "—";
   if (product.price_max === null || product.price_min === product.price_max) return product.price_min.toFixed(2);
   return product.price_min.toFixed(2) + "–" + product.price_max.toFixed(2);
+}
+
+function removedSkuReason(sku: SkuRecord): string | null {
+  if (sku.status !== "removed") return null;
+  if (sku.removed_reason === "feed_absent_404") return "商品页返回 404";
+  if (sku.removed_reason === "feed_absent_aged") return "连续多次未见于 Feed";
+  return "已从商品 Feed 移除";
 }
 
 function priceCell(product: ProductView) {
@@ -157,7 +164,10 @@ function ProductDetailContent({
         <div><span>Google 收录</span><p>{detail.seo.google_indexed === true ? "已收录" : detail.seo.google_indexed === false ? "未收录" : "未检查"}</p></div>
       </div> : <p className="si-muted">暂无 SEO 页面数据。</p>}
     </section>
-    {detail.skus.length > 0 && <section><h4>SKU 与变体</h4><ul className="si-product-sku-list">{detail.skus.slice(0, 8).map((sku) => <li key={sku.sku}><code>{sku.sku}</code><span>{sku.variant_title || "默认变体"}</span></li>)}</ul></section>}
+    {detail.skus.length > 0 && <section><h4>SKU 与变体</h4><ul className="si-product-sku-list">{detail.skus.slice(0, 8).map((sku) => {
+      const removalReason = removedSkuReason(sku);
+      return <li key={sku.sku}><code>{sku.sku}</code><span className="si-product-sku-meta"><span>{sku.variant_title || "默认变体"}</span>{removalReason && <><Chip tone="warn">已下架</Chip><small>{removalReason}</small></>}</span></li>;
+    })}</ul></section>}
     <section className="si-product-variant-section">
       <h4>变体库存</h4>
       {detail.variants === undefined

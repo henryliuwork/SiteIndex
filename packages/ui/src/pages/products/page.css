@@ -254,6 +254,14 @@ display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none;
 display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); color: var(--color-ink-2); font-size: var(--fs-body);
 }
 
+.si-product-sku-meta {
+display: inline-flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-1) var(--space-2); text-align: right;
+}
+
+.si-product-sku-meta small {
+color: var(--color-muted); font-size: var(--fs-caption);
+}
+
 .si-product-sku-list code {
 color: var(--color-ink-2); font-family: var(--font-mono);
 }

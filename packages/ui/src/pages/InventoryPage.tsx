@@ -142,8 +142,11 @@ const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCat
   onManage: () => void;
   onSelectCategory: (slug: string) => void;
 }) {
+  const [anomaliesOnly, setAnomaliesOnly] = useState(false);
   const categories = selectInventoryCategoryRates(summary, watchedCategories, showDefaultCategories);
   const rows = expanded ? categories : categories.slice(0, 8);
+  const hasFeedAnomalies = summary.today.some((item) => item.type === "feed_anomaly");
+  const todayEvents = summary.today.filter((item) => !anomaliesOnly || item.type === "feed_anomaly");
   return (
     <aside className="si-category-panel si-panel">
       <div className="si-panel-heading">
@@ -167,11 +170,13 @@ const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCat
       </div>
       {categories.length > 8 && <Button variant="ghost" size="small" className="si-category-expand" onClick={onToggleExpanded}>{expanded ? "收起分类" : "展开全部 " + categories.length + " 个分类"}</Button>}
       <div className="si-today-changes">
-        <h3>今日变化</h3>
-        {summary.today.length > 0 ? summary.today.slice(0, 4).map((item, index) => {
-          const label = item.type === "restock" ? "到货" : item.type === "oos" ? "缺货" : item.type === "price" ? "调价" : item.type === "new" ? "上新" : "移除";
-          const tone = item.type === "oos" || item.type === "removed" ? "danger" : item.type === "restock" ? "ok" : item.type === "new" ? "info" : "warn";
-          return <div className="si-today-change" key={item.sku + "-" + index}><Chip tone={tone}>{label}</Chip><span><strong>{item.sku}</strong> {item.title}</span></div>;
+        <div className="si-today-changes-heading"><h3>今日变化</h3>{isMockApi && <Chip tone="neutral">mock 示例</Chip>}</div>
+        {hasFeedAnomalies && <label className="si-today-anomaly-filter"><input type="checkbox" checked={anomaliesOnly} onChange={(event) => setAnomaliesOnly(event.target.checked)} /><span>仅显示此摘要中的 Feed 异常</span></label>}
+        {todayEvents.length > 0 ? todayEvents.slice(0, 4).map((item, index) => {
+          const label = item.type === "feed_anomaly" ? "Feed 异常" : item.type === "restock" ? "到货" : item.type === "oos" ? "缺货" : item.type === "price" ? "调价" : item.type === "new" ? "上新" : "已下架";
+          const tone = item.type === "feed_anomaly" || item.type === "oos" || item.type === "removed" ? "danger" : item.type === "restock" ? "ok" : item.type === "new" ? "info" : "warn";
+          const description = [item.title, item.detail].filter(Boolean).join(" · ");
+          return <div className="si-today-change" key={item.sku + "-" + index}><Chip tone={tone}>{label}</Chip><span title={item.sku + " " + description}><strong>{item.sku}</strong> {description}</span></div>;
         }) : <p className="si-empty-note">今天没有库存变化。</p>}
       </div>
     </aside>
