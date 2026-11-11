@@ -204,6 +204,69 @@ describe("AppSettingsPage background options", () => {
     expect(within(second).getByText("尚未配置")).toBeTruthy();
   });
 
+  it("keeps both origins configured and shows a safe error when deleting one origin fails", async () => {
+    const bridge = createCredentialBridge("configured");
+    const { mockApi, queryClient } = await renderSettings({ wordpress: true, bridge });
+    const firstOrigin = "https://demo-store.example.test";
+    const secondOrigin = "https://second-store.example.test";
+    const secondId = "demo-wordpress-delete-failure";
+    await screen.findByRole("region", { name: `凭据：${firstOrigin}` });
+    const originalList = mockApi.projects.list.bind(mockApi.projects);
+    const originalGet = mockApi.projects.get.bind(mockApi.projects);
+    const originalProjects = await originalList();
+    const firstProject = originalProjects.find((project) => project.id === "demo");
+    expect(firstProject).toBeDefined();
+    const firstDetail = await originalGet("demo");
+    const secondProject = {
+      ...firstProject!,
+      id: secondId,
+      name: "Secondary WordPress Demo",
+      path: "D:/Synthetic/Secondary WordPress Demo",
+      domain: "second-store.example.test",
+    };
+    const secondDetail = {
+      ...firstDetail,
+      summary: secondProject,
+      config: { ...firstDetail.config, base_url: secondOrigin },
+    };
+    vi.spyOn(mockApi.projects, "list").mockImplementation(async () => [...originalProjects, secondProject]);
+    vi.spyOn(mockApi.projects, "get").mockImplementation(async (id) => id === secondId ? secondDetail : originalGet(id));
+    bridge.states.set(firstOrigin, "configured");
+    bridge.states.set(secondOrigin, "configured");
+    await queryClient.invalidateQueries({ queryKey: ["settings", "wordpress-targets"] });
+
+    const first = await screen.findByRole("region", { name: `凭据：${firstOrigin}` });
+    const second = await screen.findByRole("region", { name: `凭据：${secondOrigin}` });
+    expect(within(first).getByText("本机凭据已保存")).toBeTruthy();
+    expect(within(second).getByText("本机凭据已保存")).toBeTruthy();
+    const statusCallsBeforeDelete = bridge.status.mock.calls.length;
+    const syntheticUsername = "fictional-delete-user-must-not-leak";
+    const syntheticSecret = "synthetic-delete-secret-must-not-leak";
+    const deleteError = Object.assign(new Error("本机安全存储删除失败。"), {
+      code: "VAULT_CLEAR_FAILED",
+      username: syntheticUsername,
+      applicationPassword: syntheticSecret,
+      toString: () => `本机安全存储删除失败。 ${syntheticUsername} ${syntheticSecret}`,
+    });
+    bridge.clear.mockRejectedValueOnce(deleteError);
+
+    fireEvent.click(within(second).getByRole("button", { name: "删除本机凭据" }));
+    const confirmation = screen.getByRole("dialog", { name: "删除本机凭据？" });
+    fireEvent.click(within(confirmation).getByRole("button", { name: "删除本机凭据" }));
+
+    expect(await screen.findByText("删除本机凭据失败：本机安全存储删除失败。（VAULT_CLEAR_FAILED）")).toBeTruthy();
+    expect(bridge.clear).toHaveBeenCalledWith(secondOrigin);
+    expect(bridge.clear).toHaveBeenCalledTimes(1);
+    expect(bridge.status).toHaveBeenCalledTimes(statusCallsBeforeDelete);
+    expect(bridge.states.get(firstOrigin)).toBe("configured");
+    expect(bridge.states.get(secondOrigin)).toBe("configured");
+    expect(within(first).getByText("本机凭据已保存")).toBeTruthy();
+    expect(within(second).getByText("本机凭据已保存")).toBeTruthy();
+    expect(document.body.textContent).not.toContain(syntheticUsername);
+    expect(document.body.textContent).not.toContain(syntheticSecret);
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+  });
+
   it("shows state read errors with their code and allows retry", async () => {
     const bridge = createCredentialBridge();
     bridge.status.mockRejectedValueOnce({ code: "VAULT_READ_FAILED", message: "安全存储读取失败。" });
