@@ -162,3 +162,11 @@
 - [x] `dist:win` 与 `dist:win:release` 增加两次静默自定义目录安装检查；核对全部 UI 文件与本次构建产物的 SHA-256，缺失或不一致时失败。
 - [x] 将 UI 同时收进 `app.asar`；外置 `resources/ui` 缺失时主进程改载归档副本，双重加载都失败才进入 fallback。
 - [ ] issue #345 的间歇性资源缺失根因未复现；继续收集安装器异常退出与覆盖安装证据。
+
+## v0.4.1 · #422 / #423 Desktop 接入边界
+
+- [x] #422：`before-quit` 等待 `jobs.shutdown()`；Desktop 对已启动的 Job 结束 utilityProcess、清理自有锁并将取消/崩溃作为失败结果返回。虚构双项目测试覆盖媒体凭据与进度/历史按项目隔离；不访问用户 vault。
+- [x] #422：媒体能力闸保持关闭；`media.prepare` 在设置、凭据 accessor 与 utilityProcess 之前返回 `NOT_IMPLEMENTED`（PR #427）。
+- [ ] #422：应用重启后的逐 SKU 恢复依赖 shared 历史结果契约及 Core 将脱敏 `media_results` 持久写入原项目 RunLog；当前 `RunLog` 没有该字段，Desktop `jobs.history(project)` 按项目读取但不能恢复未持久化结果。
+- [ ] #422：Core 需定义 media Job 取消/进程中断的部分结果持久化语义；当前退出确认选择“退出并取消任务”，Desktop 只能结束进程并记录通用失败状态。
+- [ ] #423：待 Core 清单生成实现和 shared 导出契约合并后，再接 Desktop IPC/preload；PR #428 已保持 UI 导出入口关闭。
