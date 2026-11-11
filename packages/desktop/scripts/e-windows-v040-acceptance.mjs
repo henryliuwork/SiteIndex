@@ -933,7 +933,7 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
   const issueTable = page.locator(w2DataTableSelector("seo.issues.v2")).first();
   const rows = issueTable.locator("tbody tr[data-row-id]");
   const rowCount = await rows.count();
-  const rowIndex = Math.min(3, Math.max(0, rowCount - 1));
+  const rowIndex = 0;
   const row = rows.nth(rowIndex);
   let actionButton = row.locator("button.si-seo-row-action");
   let actionButtonCount = 0;
@@ -943,7 +943,7 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
   let wheelAfter = null;
   let rowHoverError = null;
   let scrollHoverError = null;
-  const wheelDeltaY = 120;
+  const wheelDeltaY = -120;
   if (rowCount > 0) {
     const scrollRegion = issueTable.locator(".si-table-scroll");
     wheelBefore = await scrollRegion.evaluate((element) => element.scrollTop).catch(() => null);
@@ -1469,7 +1469,7 @@ async function testW2Pages(page, syntheticSite) {
     const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
     if (await checkbox.isChecked()) await checkbox.uncheck();
     await waitForW2Table(page, "products.list");
-    const pagination = await exerciseW2Pagination(page, "products.list", W2_EXPECTED.totalSkus);
+    const pagination = await exerciseW2Pagination(page, "products.list", W2_EXPECTED.products);
     await checkbox.check();
     await page.waitForFunction(() => {
       const table = document.querySelector('.si-data-table[aria-label="products.list 数据表"]');
