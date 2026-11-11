@@ -44,6 +44,8 @@ export interface DailyOptions {
   now?: Date | (() => Date);
   maxRemovedRatio?: number;
   force?: boolean;
+  /** @internal Deterministic gate for testing external edits between calculation and commit. */
+  beforeOutputCommit?: () => Promise<void>;
 }
 export interface DailyResult {
   exitCode: number;
@@ -316,12 +318,11 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
   const summaryPath = path.join(project, paths.dailySummary);
   const eventPath = path.join(project, paths.eventsDir, `${day.slice(0, 7)}.jsonl`);
   const eventRelativePath = `${paths.eventsDir}/${day.slice(0, 7)}.jsonl`;
-  const initialOutputBytes = await captureDailyOutputInputBytes(project, paths, eventPath);
+  const initialOutputBytes = await captureDailyOutputInputBytes(project, [paths.skus, paths.inventoryLatest, paths.dailySummary]);
   const inputText = (relativePath: string) => initialOutputBytes.get(relativePath)?.toString("utf8") ?? "";
   const skuRows = parseJsonl(inputText(paths.skus), path.join(project, paths.skus));
   const latestRows = parseJsonl(inputText(paths.inventoryLatest), path.join(project, paths.inventoryLatest));
   const oldSummary = parseCsv(inputText(paths.dailySummary), summaryPath);
-  const existingEvents = parseJsonl(inputText(eventRelativePath), eventPath);
   await assertDailyOutputInputsUnchanged(project, initialOutputBytes);
   const skus = new Map(skuRows.map((row) => [String(row.sku), row]));
   const latest = new Map(latestRows.map((row) => [String(row.sku), row]));
@@ -501,6 +502,11 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
   }
   if (verification?.unavailable) errors.push(`${verification.unavailable} 个缺席 SKU 的核验结果不可用，原库存状态已保留。`);
   if (verification?.deferred) errors.push(`${verification.deferred} 个缺席 SKU 超出本次核验上限，将在后续 daily 处理中。`);
+  const eventInputBytes = await captureDailyOutputInputBytes(project, [eventRelativePath]);
+  const eventBytes = eventInputBytes.get(eventRelativePath) ?? null;
+  initialOutputBytes.set(eventRelativePath, eventBytes);
+  await assertDailyOutputInputsUnchanged(project, eventInputBytes);
+  const existingEvents = parseJsonl(eventBytes?.toString("utf8") ?? "", eventPath);
   const eventKeys = new Set(existingEvents.map((event) => [event.date, event.sku, event.type].join("\u0000")));
   const appended = events.filter((event) => {
     const key = [event.date, event.sku, event.type].join("\u0000");
@@ -514,12 +520,9 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     { target: path.join(project, paths.skus), writeTo: (destination: string) => writeJsonl(destination, [...skus.values()], "sku") },
     { target: summaryPath, writeTo: (destination: string) => writeCsv(destination, summary, CSV_HEADERS.dailySummary, ["date", "category"]) },
   ];
-  // A verified batch is one recoverable multi-file write; the cursor commits only after it.
-  if (verification?.processedSkus.length) {
-    await persistDailyOutputTransaction(project, paths, outputWrites, undefined, initialOutputBytes);
-  } else {
-    for (const output of outputWrites) await output.writeTo(output.target);
-  }
+  // Every output batch is recoverable; verification cursor state commits only after this transaction.
+  await options.beforeOutputCommit?.();
+  await persistDailyOutputTransaction(project, paths, outputWrites, undefined, initialOutputBytes);
 
   if (verification && cursorPath && committedCursor) {
     if (verification.statePersistenceFailed) {

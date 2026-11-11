@@ -2010,45 +2010,48 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
     setTags: async (id, handle, inputTags) => {
       const projectPath = resolve(id);
-      const snapshot = await load(projectPath);
-      if (!snapshot.products.some((row) => row.handle === handle)) throw siteError("UNKNOWN", "找不到指定产品", handle);
-      const activeSkus = snapshot.skus.filter((row) => row.handle === handle && row.status === "active");
-      const selected = activeSkus.length ? activeSkus : snapshot.skus.filter((row) => row.handle === handle);
-      const tags = normalizedTags(inputTags);
-      const bySku = new Map(snapshot.skuTags.map((row) => [String(row.sku ?? ""), row]));
-      const updatedAt = localDate(snapshot.config.timezone);
-      for (const sku of selected) {
-        const previous = bySku.get(sku.sku);
-        bySku.set(sku.sku, {
-          ...previous,
-          sku: sku.sku,
-          tags: tags.join(";") || null,
-          priority: previous?.priority ?? null,
-          exclude_edm: previous?.exclude_edm ?? "0",
-          email_blurb: previous?.email_blurb ?? null,
-          season: previous?.season ?? null,
-          note: previous?.note ?? null,
-          updated_at: updatedAt,
-        });
-      }
-      const tagRows = [...bySku.values()];
-      try {
-        await writeCsv(await projectFilePath(projectPath, PATHS.skuTags), tagRows, CSV_HEADERS.skuTags, ["sku"]);
-        const viewRows = await readJsonl(await projectFilePath(projectPath, PATHS.productsView));
-        const view = viewRows.find((row) => row.handle === handle);
-        if (view) {
-          Object.assign(view, aggregateTags(snapshot.skus, tagRows, handle));
-          await writeJsonl(await projectFilePath(projectPath, PATHS.productsView), viewRows, {
-            primaryKey: ["handle"], fieldOrder: PRODUCT_FIELDS,
-            floatFields: ["price_min", "price_max", "compare_at_max"],
+      return withLock(projectPath, async () => {
+        await recoverDailyOutputTransaction(projectPath, pathsFor(await resolveProjectLayout(projectPath)));
+        const snapshot = await load(projectPath);
+        if (!snapshot.products.some((row) => row.handle === handle)) throw siteError("UNKNOWN", "找不到指定产品", handle);
+        const activeSkus = snapshot.skus.filter((row) => row.handle === handle && row.status === "active");
+        const selected = activeSkus.length ? activeSkus : snapshot.skus.filter((row) => row.handle === handle);
+        const tags = normalizedTags(inputTags);
+        const bySku = new Map(snapshot.skuTags.map((row) => [String(row.sku ?? ""), row]));
+        const updatedAt = localDate(snapshot.config.timezone);
+        for (const sku of selected) {
+          const previous = bySku.get(sku.sku);
+          bySku.set(sku.sku, {
+            ...previous,
+            sku: sku.sku,
+            tags: tags.join(";") || null,
+            priority: previous?.priority ?? null,
+            exclude_edm: previous?.exclude_edm ?? "0",
+            email_blurb: previous?.email_blurb ?? null,
+            season: previous?.season ?? null,
+            note: previous?.note ?? null,
+            updated_at: updatedAt,
           });
         }
-      } catch (error) {
+        const tagRows = [...bySku.values()];
+        try {
+          await writeCsv(await projectFilePath(projectPath, PATHS.skuTags), tagRows, CSV_HEADERS.skuTags, ["sku"]);
+          const viewRows = await readJsonl(await projectFilePath(projectPath, PATHS.productsView));
+          const view = viewRows.find((row) => row.handle === handle);
+          if (view) {
+            Object.assign(view, aggregateTags(snapshot.skus, tagRows, handle));
+            await writeJsonl(await projectFilePath(projectPath, PATHS.productsView), viewRows, {
+              primaryKey: ["handle"], fieldOrder: PRODUCT_FIELDS,
+              floatFields: ["price_min", "price_max", "compare_at_max"],
+            });
+          }
+        } catch (error) {
+          invalidate(projectPath);
+          throw setError(error);
+        }
         invalidate(projectPath);
-        throw setError(error);
-      }
-      invalidate(projectPath);
-      return tags;
+        return tags;
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "products-set-tags" });
     },
     listTags: async (id) => {
       const projectPath = resolve(id);
@@ -2076,31 +2079,34 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     deleteTag: async (id, tag) => {
       const normalized = tag.trim().toLowerCase();
       const projectPath = resolve(id);
-      createdTags.get(projectPath)?.delete(normalized);
-      const snapshot = await load(projectPath);
-      const changed = snapshot.skuTags.map((row) => ({ ...row }));
-      for (const row of changed) {
-        if (typeof row.tags !== "string") continue;
-        row.tags = row.tags.split(";").map((value) => value.trim().toLowerCase()).filter((value) => value && value !== normalized).join(";") || null;
-      }
-      try {
-        await writeCsv(await projectFilePath(projectPath, PATHS.skuTags), changed, CSV_HEADERS.skuTags, ["sku"]);
-        const viewRows = await readJsonl(await projectFilePath(projectPath, PATHS.productsView));
-        for (const view of viewRows) {
-          if (typeof view.handle === "string") Object.assign(view, aggregateTags(snapshot.skus, changed, view.handle));
+      return withLock(projectPath, async () => {
+        await recoverDailyOutputTransaction(projectPath, pathsFor(await resolveProjectLayout(projectPath)));
+        createdTags.get(projectPath)?.delete(normalized);
+        const snapshot = await load(projectPath);
+        const changed = snapshot.skuTags.map((row) => ({ ...row }));
+        for (const row of changed) {
+          if (typeof row.tags !== "string") continue;
+          row.tags = row.tags.split(";").map((value) => value.trim().toLowerCase()).filter((value) => value && value !== normalized).join(";") || null;
         }
-        await writeJsonl(await projectFilePath(projectPath, PATHS.productsView), viewRows, {
-          primaryKey: ["handle"], fieldOrder: PRODUCT_FIELDS,
-          floatFields: ["price_min", "price_max", "compare_at_max"],
-        });
-      } catch (error) {
-        throw setError(error);
-      }
-      invalidate(projectPath);
-      const refreshed = await load(projectPath);
-      const counts = new Map<string, number>();
-      for (const product of refreshed.products) for (const current of new Set(tagsFor(product))) counts.set(current, (counts.get(current) ?? 0) + 1);
-      return [...counts].sort(([a], [b]) => codeUnitCompare(a, b)).map(([name, products]) => ({ tag: name, products }));
+        try {
+          await writeCsv(await projectFilePath(projectPath, PATHS.skuTags), changed, CSV_HEADERS.skuTags, ["sku"]);
+          const viewRows = await readJsonl(await projectFilePath(projectPath, PATHS.productsView));
+          for (const view of viewRows) {
+            if (typeof view.handle === "string") Object.assign(view, aggregateTags(snapshot.skus, changed, view.handle));
+          }
+          await writeJsonl(await projectFilePath(projectPath, PATHS.productsView), viewRows, {
+            primaryKey: ["handle"], fieldOrder: PRODUCT_FIELDS,
+            floatFields: ["price_min", "price_max", "compare_at_max"],
+          });
+        } catch (error) {
+          throw setError(error);
+        }
+        invalidate(projectPath);
+        const refreshed = await load(projectPath);
+        const counts = new Map<string, number>();
+        for (const product of refreshed.products) for (const current of new Set(tagsFor(product))) counts.set(current, (counts.get(current) ?? 0) + 1);
+        return [...counts].sort(([a], [b]) => codeUnitCompare(a, b)).map(([name, products]) => ({ tag: name, products }));
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "products-delete-tag" });
     },
   };
 

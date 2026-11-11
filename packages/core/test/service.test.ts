@@ -183,6 +183,37 @@ describe("createCoreService initial namespaces", () => {
     expect(await readFile(path.join(projectPath, PATHS.skuMedia), "utf8")).toContain("https://images.example.test/demo.jpg");
   }, 30_000);
 
+  it("recovers an interrupted daily transaction before product tag mutations read SKU inputs", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const productRows = await readJsonl(path.join(projectPath, PATHS.productsView));
+    const handle = String(productRows[0]?.handle ?? "");
+    expect(handle).not.toBe("");
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0, 2] });
+
+    await api.products.setTags("fixture", handle, ["demo-review"]);
+
+    expect(await readFile(transaction.manifestPath).catch(() => null)).toBeNull();
+    expect(await readFile(path.join(projectPath, PATHS.skus), "utf8")).not.toContain("synthetic after 2");
+    expect(await readFile(path.join(projectPath, PATHS.skuTags), "utf8")).toContain("demo-review");
+  }, 30_000);
+
+  it("recovers an interrupted daily transaction before product tag deletion", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const productRows = await readJsonl(path.join(projectPath, PATHS.productsView));
+    const handle = String(productRows[0]?.handle ?? "");
+    expect(handle).not.toBe("");
+    await api.products.setTags("fixture", handle, ["demo-remove"]);
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0, 2] });
+
+    await api.products.deleteTag("fixture", "demo-remove");
+
+    expect(await readFile(transaction.manifestPath).catch(() => null)).toBeNull();
+    expect(await readFile(path.join(projectPath, PATHS.skus), "utf8")).not.toContain("synthetic after 2");
+    expect(await readFile(path.join(projectPath, PATHS.skuTags), "utf8")).not.toContain("demo-remove");
+  }, 30_000);
+
   it("serves query APIs while a runner holds the project job lock", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);

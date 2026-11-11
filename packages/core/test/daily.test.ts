@@ -182,4 +182,53 @@ describe("daily sync", () => {
     await expect(readFile(path.join(project, paths.jobLogsDir, "daily-output-transaction.json")))
       .rejects.toMatchObject({ code: "ENOENT" });
   }, 20_000);
+
+  it.each([
+    { mode: "verification disabled", verify: { enabled: false }, snapshotSku: "DEMO-NEW" },
+    { mode: "no verification candidates", verify: { enabled: true, max_per_run: 1 }, snapshotSku: "DEMO-OLD" },
+    { mode: "zero verification limit", verify: { enabled: true, max_per_run: 0 }, snapshotSku: "DEMO-NEW" },
+  ])("checks the initial bytes in every daily path ($mode)", async ({ verify, snapshotSku }) => {
+    const project = await newProject({
+      domain: "shop.example",
+      base_url: "https://shop.example",
+      timezone: "UTC",
+      crawl: { max_removed_ratio: 1, rate_limit_ms: 0, stock_verify: verify },
+    });
+    const paths = pathsFor("legacy");
+    const skuPath = path.join(project, paths.skus);
+    const latestPath = path.join(project, paths.inventoryLatest);
+    await mkdir(path.dirname(skuPath), { recursive: true });
+    await mkdir(path.dirname(latestPath), { recursive: true });
+    const originalSku = {
+      sku: "DEMO-OLD",
+      title: "Old item",
+      url: "https://shop.example/products/old-item",
+      category: "demo",
+      status: "active",
+      first_seen: "2026-10-01",
+      last_seen: "2026-10-21",
+      updated_at: "2026-10-21",
+    };
+    const externalSkuBytes = Buffer.from(`${JSON.stringify({ ...originalSku, title: "Concurrent user edit" })}\n`);
+    const latestBytes = Buffer.from(`${JSON.stringify({
+      sku: "DEMO-OLD", stock_status: "in_stock", qty: 4, since: "2026-10-01", checked_at: "2026-10-21T00:00:00Z",
+    })}\n`);
+    await writeFile(skuPath, `${JSON.stringify(originalSku)}\n`);
+    await writeFile(latestPath, latestBytes);
+    vi.stubGlobal("fetch", async () => { throw new Error("No network request expected for this case"); });
+    const inputSku = snapshotSku === "DEMO-OLD"
+      ? { sku: "DEMO-OLD", title: "Old item", url: "https://shop.example/products/old-item", category: "demo", stock_status: "in_stock" }
+      : { sku: "DEMO-NEW", title: "New item", url: "https://shop.example/products/new-item", category: "demo", stock_status: "in_stock" };
+
+    await expect(runDaily(project, [inputSku], {
+      date: "2026-10-22",
+      now: fixedNow,
+      beforeOutputCommit: async () => { await writeFile(skuPath, externalSkuBytes); },
+    })).rejects.toThrow("首次读取后目标文件已被其他进程修改");
+
+    expect(await readFile(skuPath)).toEqual(externalSkuBytes);
+    expect(await readFile(latestPath)).toEqual(latestBytes);
+    await expect(readFile(path.join(project, paths.jobLogsDir, "daily-output-transaction.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  }, 20_000);
 });

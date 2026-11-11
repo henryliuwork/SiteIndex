@@ -205,14 +205,14 @@ async function currentHash(project: string, relative: string): Promise<string | 
 /** Read the exact transaction-target bytes used as the starting point for daily business calculations. */
 export async function captureDailyOutputInputBytes(
   projectPath: string,
-  paths: DailyOutputPaths,
-  eventPath: string,
+  relativePaths: readonly string[],
 ): Promise<Map<string, Buffer | null>> {
   const project = path.resolve(projectPath);
-  const eventTarget = relativeProjectFile(project, eventPath);
-  const targets = expectedTargets(paths, eventTarget);
   const inputs = new Map<string, Buffer | null>();
-  for (const target of targets) inputs.set(target, await readBytesIfPresent(project, target));
+  for (const relativePath of relativePaths) {
+    const target = normalizeRelative(relativePath);
+    inputs.set(target, await readBytesIfPresent(project, target));
+  }
   return inputs;
 }
 

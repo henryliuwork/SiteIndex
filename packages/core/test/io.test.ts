@@ -26,6 +26,35 @@ async function currentHostId(project: string): Promise<string> {
   return hostId;
 }
 
+function hostIdentityEnvironment(stateRoot: string): NodeJS.ProcessEnv {
+  if (process.platform === "win32") return { LOCALAPPDATA: stateRoot };
+  if (process.platform === "darwin") return { HOME: stateRoot };
+  return { XDG_STATE_HOME: stateRoot };
+}
+
+function hostIdentityFile(stateRoot: string): string {
+  if (process.platform === "win32") return path.join(stateRoot, "SiteIndex", "lock-host-id");
+  if (process.platform === "darwin") return path.join(stateRoot, "Library", "Application Support", "SiteIndex", "lock-host-id");
+  return path.join(stateRoot, "siteindex", "lock-host-id");
+}
+
+function runChildScript(source: string, cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source], {
+      cwd, env, stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(stderr || `Lock identity child exited (${String(code)} / ${String(signal)})`));
+    });
+  });
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -261,6 +290,73 @@ describe("core io", () => {
       .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
     await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(legacy));
   });
+
+  it("initializes the local host identity consistently across concurrent processes", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const source = [
+      'import { readFile } from "node:fs/promises";',
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'const lockFile = process.env.SITEINDEX_TEST_LOCK_FILE;',
+      'if (!root || !lockFile) throw new Error("Missing test parameters");',
+      'await withLock(root, async () => { const lock = JSON.parse(await readFile(lockFile, "utf8")); process.stdout.write(lock.host_id); }, { heartbeatMs: 60000 });',
+    ].join("\n");
+    const hostEnv = hostIdentityEnvironment(stateRoot);
+    const childRuns = Array.from({ length: 8 }, (_, index) => {
+      const project = path.join(root, `parallel-project-${index}`);
+      return runChildScript(source, coreDirectory, {
+        ...process.env,
+        ...hostEnv,
+        SITEINDEX_TEST_LOCK_ROOT: project,
+        SITEINDEX_TEST_LOCK_FILE: path.join(project, PATHS.lock),
+      });
+    });
+
+    const hostIds = await Promise.all(childRuns);
+
+    expect(new Set(hostIds).size).toBe(1);
+    expect(hostIds[0]).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(await readFile(hostIdentityFile(stateRoot), "utf8")).toBe(`${hostIds[0]}\n`);
+  }, 30_000);
+
+  it("fails closed on a partial local identity left by a crash and documents safe reset behavior", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const lockRoot = path.join(root, "project");
+    const lockPath = path.join(lockRoot, PATHS.lock);
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const source = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing lock root");',
+      'try { await withLock(root, () => "acquired", { heartbeatMs: 60000 }); process.stdout.write("acquired"); }',
+      'catch (error) { const value = error && typeof error === "object" ? error : {}; process.stdout.write(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    const env = {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: lockRoot,
+    };
+    await mkdir(path.dirname(hostIdPath), { recursive: true });
+    await writeFile(hostIdPath, "partial UUID");
+
+    const invalid = await runChildScript(source, coreDirectory, env);
+
+    expect(invalid).toContain("LOCKED:");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    // Recovery requires confirming this local user has no running SiteIndex process, then removing
+    // only the corrupt local identity file; old project locks remain unknown and are never auto-stolen.
+    await rm(hostIdPath);
+    const recovered = await runChildScript(source, coreDirectory, env);
+
+    expect(recovered).toBe("acquired");
+    const lockId = (await readFile(hostIdentityFile(stateRoot), "utf8")).trim();
+    expect(lockId).toMatch(/^[0-9a-f-]{36}$/i);
+  }, 30_000);
 
   it("immediately reclaims a fresh lock after its owning child process exits", async () => {
     const root = await tempDir();
