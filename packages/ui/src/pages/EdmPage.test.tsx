@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import type { EdmSkuIndexExportResult, JobProgress, JobResult, RunLog, SiteIndexApi, SkuImageRow } from "@siteindex/shared";
@@ -42,6 +42,8 @@ type EdmPageTestOptions = {
   exportError?: unknown;
   mediaPrepareError?: unknown;
   queryStaleTime?: number;
+  summaryImplementation?: SiteIndexApi["edm"]["summary"];
+  listImagesImplementation?: SiteIndexApi["edm"]["listImages"];
 };
 
 async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[], mediaReady = false, deferredMediaPrepare = false, options: EdmPageTestOptions = {}) {
@@ -59,9 +61,11 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
     },
   }));
   const summary = vi.fn(mockApi.edm.summary);
+  if (options.summaryImplementation) summary.mockImplementation(options.summaryImplementation);
   mockApi.edm.summary = summary;
   const listImages = vi.fn(mockApi.edm.listImages);
   if (imageRows) listImages.mockImplementation(async () => ({ rows: imageRows, total: imageRows.length }));
+  if (options.listImagesImplementation) listImages.mockImplementation(options.listImagesImplementation);
   mockApi.edm.listImages = listImages;
   const setManualImage = vi.fn(mockApi.edm.setManualImage);
   mockApi.edm.setManualImage = setManualImage;
@@ -632,22 +636,41 @@ describe("EdmPage media preparation prototype", () => {
     expect(activeSubscriptions()).toEqual({ progress: 1, finished: 1 });
   }, 15_000);
 
-  it("重新进入时从持久化媒体历史恢复结果，并刷新较旧的 EDM 摘要与图片列表", async () => {
+  it("较早启动的摘要和图片请求在媒体完成后返回旧快照时仍刷新，并隔离其他项目", async () => {
     const sku = "DEMO-RETURN-001";
     const rows = [mediaImageRow(sku, null)];
     const historyByProject: Record<string, RunLog[]> = { demo: [] };
-    const { mockApi, queryClient, summary, listImages } = await renderEdmPage(true, false, rows, false, false, {
+    let resolveOlderSummary: ((value: Awaited<ReturnType<SiteIndexApi["edm"]["summary"]>>) => void) | undefined;
+    let resolveOlderImages: ((value: Awaited<ReturnType<SiteIndexApi["edm"]["listImages"]>>) => void) | undefined;
+    let summaryCall = 0;
+    let imageCall = 0;
+    const summaryImplementation: SiteIndexApi["edm"]["summary"] = async () => {
+      summaryCall += 1;
+      if (summaryCall === 1) return new Promise((resolve) => { resolveOlderSummary = resolve; });
+      return { total: 1, feed: 0, manual: 1, none: 0 };
+    };
+    const listImagesImplementation: SiteIndexApi["edm"]["listImages"] = async () => {
+      imageCall += 1;
+      if (imageCall === 1) return new Promise((resolve) => { resolveOlderImages = resolve; });
+      return { rows, total: rows.length };
+    };
+    const { mockApi, queryClient, summary, listImages, invalidateQueries } = await renderEdmPage(true, false, rows, false, false, {
       historyByProject,
       queryStaleTime: 30_000,
+      summaryImplementation,
+      listImagesImplementation,
     });
     await waitFor(() => {
       expect(summary).toHaveBeenCalledTimes(1);
       expect(listImages).toHaveBeenCalledTimes(1);
+      expect(resolveOlderSummary).toBeTypeOf("function");
+      expect(resolveOlderImages).toBeTypeOf("function");
     });
 
     fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
     expect(await screen.findByText("运行页面")).toBeTruthy();
-    const finishedAt = new Date(Date.now() + 1_000).toISOString();
+    const finishedAtMs = Date.now() + 200;
+    const finishedAt = new Date(finishedAtMs).toISOString();
     historyByProject.demo = [{
       run_id: "demo-persisted-media-run", job: "media", started_at: new Date(Date.now() - 1_000).toISOString(),
       finished_at: finishedAt, status: "partial",
@@ -661,6 +684,21 @@ describe("EdmPage media preparation prototype", () => {
       ...mediaImageRow(sku, null, "https://demo.example.test/images/refreshed.png"),
       title: "虚构更新后的商品",
     });
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, finishedAtMs - Date.now() + 20)));
+    await act(async () => {
+      resolveOlderSummary?.({ total: 1, feed: 0, manual: 0, none: 1 });
+      resolveOlderImages?.({ rows: [mediaImageRow(sku, null)], total: 1 });
+    });
+    await waitFor(() => {
+      const summaryState = queryClient.getQueryState(["edm", "summary", "demo"]);
+      const imageState = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "demo"] })[0]?.state;
+      expect(summaryState?.fetchStatus).toBe("idle");
+      expect(summaryState?.dataUpdatedAt).toBeGreaterThan(finishedAtMs);
+      expect(imageState?.fetchStatus).toBe("idle");
+      expect(imageState?.dataUpdatedAt).toBeGreaterThan(finishedAtMs);
+    });
+    queryClient.setQueryData(["edm", "summary", "other"], { total: 99, feed: 0, manual: 0, none: 99 });
+    queryClient.setQueryData(["edm", "images", "other", { page: 1, pageSize: 50, filters: {} }], { rows: [], total: 0 });
 
     fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
     const recovered = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
@@ -678,6 +716,10 @@ describe("EdmPage media preparation prototype", () => {
     expect(refreshedImageQueries.some(({ state }) =>
       (state.data as { rows?: SkuImageRow[] } | undefined)?.rows?.some((row) => row.title === "虚构更新后的商品"),
     )).toBe(true);
+    const refreshedSummary = queryClient.getQueryData(["edm", "summary", "demo"]);
+    expect(refreshedSummary).toMatchObject({ manual: 1, none: 0 });
+    expect(invalidateQueries.mock.calls.map(([filters]) => filters?.queryKey)).not.toContainEqual(["edm", "summary", "other"]);
+    expect(invalidateQueries.mock.calls.map(([filters]) => filters?.queryKey)).not.toContainEqual(["edm", "images", "other"]);
     expect(mockApi.jobs.history).toHaveBeenCalledWith("demo", 100);
   }, 15_000);
 

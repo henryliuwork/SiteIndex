@@ -27,6 +27,27 @@ type MediaDemoStatus = "queued" | MediaPrepareSkuResult["status"] | "unresolved"
 type MediaDemoRowState = { status: MediaDemoStatus; reason?: string };
 type MediaDemoOutcome = "complete" | "WP_AUTH_FAILED" | "WP_FORBIDDEN";
 
+const edmQueryFetchStartedAt = new Map<string, number>();
+function edmQueryKeyId(queryKey: readonly unknown[]): string {
+  return JSON.stringify(queryKey) ?? "";
+}
+
+function recordEdmQueryFetchStart(queryKey: readonly unknown[]): void {
+  const key = edmQueryKeyId(queryKey);
+  if (!key) return;
+  edmQueryFetchStartedAt.delete(key);
+  edmQueryFetchStartedAt.set(key, Date.now());
+  while (edmQueryFetchStartedAt.size > 100) {
+    const oldest = edmQueryFetchStartedAt.keys().next().value;
+    if (oldest === undefined) break;
+    edmQueryFetchStartedAt.delete(oldest);
+  }
+}
+
+function getEdmQueryFetchStartedAt(queryKey: readonly unknown[]): number | undefined {
+  return edmQueryFetchStartedAt.get(edmQueryKeyId(queryKey));
+}
+
 const mediaStatusLabels: Record<MediaDemoStatus, string> = {
   queued: "排队中", uploaded: "已上传", reused: "已复用",
   recorded: "原图 URL 已记录", skipped_has_url: "已有 URL，已跳过",
@@ -232,9 +253,17 @@ export function EdmPage() {
   >(null);
   const [exportSafetyUnavailableProjectId, setExportSafetyUnavailableProjectId] = useState<string | null>(null);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
+  const summaryQueryKey = ["edm", "summary", id] as const;
+  const imageQueryKey = ["edm", "images", id, query] as const;
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
-  const summaryQuery = useQuery({ queryKey: ["edm", "summary", id], queryFn: () => api.edm.summary(id) });
-  const listQuery = useQuery({ queryKey: ["edm", "images", id, query], queryFn: () => api.edm.listImages(id, query) });
+  const summaryQuery = useQuery({ queryKey: summaryQueryKey, queryFn: () => {
+    recordEdmQueryFetchStart(summaryQueryKey);
+    return api.edm.summary(id);
+  } });
+  const listQuery = useQuery({ queryKey: imageQueryKey, queryFn: () => {
+    recordEdmQueryFetchStart(imageQueryKey);
+    return api.edm.listImages(id, query);
+  } });
   const mediaHistoryQuery = useQuery({
     queryKey: ["job-history", id],
     queryFn: () => api.jobs.history(id, EDM_MEDIA_HISTORY_LIMIT),
@@ -314,7 +343,7 @@ export function EdmPage() {
   const columns = useMemo(() => imageColumns(id), [id]);
   const currentView: ImageView = query.filters?.view ?? "all";
   const imageCacheState = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", id] })
-    .map(({ queryHash, state }) => `${queryHash}:${state.dataUpdatedAt}:${state.fetchStatus}`)
+    .map(({ queryHash, queryKey, state }) => `${queryHash}:${state.dataUpdatedAt}:${state.fetchStatus}:${getEdmQueryFetchStartedAt(queryKey) ?? ""}`)
     .join("|");
 
   useEffect(() => {
@@ -328,16 +357,21 @@ export function EdmPage() {
     const finishedAt = Date.parse(recoveredMediaRun.finished_at);
     if (!Number.isFinite(finishedAt)) return;
     const summaryState = queryClient.getQueryState(["edm", "summary", id]);
-    const imageStates = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", id] }).map(({ state }) => state);
-    if (summaryState?.fetchStatus === "fetching" || imageStates.some(({ fetchStatus }) => fetchStatus === "fetching")) return;
+    const imageQueries = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", id] });
+    if (summaryState?.fetchStatus === "fetching" || queryClient.getQueryState(imageQueryKey)?.fetchStatus === "fetching") return;
 
     refreshedMediaRunKeyRef.current = recoveredMediaRunKey;
-    const summaryNeedsRefresh = Boolean(summaryState?.data !== undefined && summaryState.dataUpdatedAt < finishedAt);
-    const imagesNeedRefresh = imageStates.some(({ data, dataUpdatedAt }) => data !== undefined && dataUpdatedAt < finishedAt);
+    const summaryFetchStartedAt = getEdmQueryFetchStartedAt(summaryQueryKey);
+    const summaryNeedsRefresh = Boolean(summaryState?.data !== undefined
+      && (summaryState.dataUpdatedAt < finishedAt || (summaryFetchStartedAt !== undefined && summaryFetchStartedAt <= finishedAt)));
+    const imagesNeedRefresh = imageQueries.some(({ queryKey, state }) => {
+      const fetchStartedAt = getEdmQueryFetchStartedAt(queryKey);
+      return state.data !== undefined && (state.dataUpdatedAt < finishedAt || (fetchStartedAt !== undefined && fetchStartedAt <= finishedAt));
+    });
 
     if (summaryNeedsRefresh) void queryClient.invalidateQueries({ queryKey: ["edm", "summary", id] });
     if (imagesNeedRefresh) void queryClient.invalidateQueries({ queryKey: ["edm", "images", id] });
-  }, [id, imageCacheState, listQuery.dataUpdatedAt, listQuery.fetchStatus, queryClient, recoveredMediaRun, recoveredMediaRunKey, summaryQuery.dataUpdatedAt, summaryQuery.fetchStatus]);
+  }, [id, imageCacheState, imageQueryKey, listQuery.dataUpdatedAt, listQuery.fetchStatus, queryClient, recoveredMediaRun, recoveredMediaRunKey, summaryQuery.dataUpdatedAt, summaryQuery.fetchStatus, summaryQueryKey]);
 
   useEffect(() => {
     if (lastResetProjectIdRef.current === id) return;
