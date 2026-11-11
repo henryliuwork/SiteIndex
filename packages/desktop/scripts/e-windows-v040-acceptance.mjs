@@ -22,6 +22,7 @@ import { chromium } from "playwright-core";
 import { runWordPressCredentialsUiSmoke } from "../../ui/visual/wordpress-credentials-smoke.mjs";
 import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
+import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
 import {
   createWindowsProfileLayout,
   inspectContainedPath,
@@ -65,13 +66,6 @@ const RUNNER_TEMP = process.env.RUNNER_TEMP;
 const TEST_ROOT = await fsMkdtemp();
 const PROFILE_LAYOUT = createWindowsProfileLayout(TEST_ROOT);
 const PROFILE_ENVIRONMENT = windowsProfileEnvironment(PROFILE_LAYOUT, process.env);
-const ROAMING_APP_DATA_REGISTRY_KEYS = [
-  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders",
-  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders",
-];
-const roamingAppDataRegistryOriginals = [];
-let roamingAppDataRedirected = false;
-let roamingAppDataRestored = false;
 const APP_DATA_ROOT = PROFILE_LAYOUT.appDataRoot;
 const LOCAL_APP_DATA_ROOT = PROFILE_LAYOUT.localAppDataRoot;
 const PROJECTS_ROOT = PROFILE_LAYOUT.projectRoot;
@@ -86,6 +80,14 @@ const TRACE_SEARCH_ROOTS = [
   path.join(LOCAL_APP_DATA_ROOT, "SiteIndex"),
   path.join(LOCAL_APP_DATA_ROOT, "siteindex"),
 ].filter(Boolean);
+const roamingAppDataRedirect = createWindowsAppDataRedirect({
+  appDataRoot: APP_DATA_ROOT,
+  runRegistry: (args) => spawnSync("reg.exe", args, {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15_000,
+  }),
+});
 const report = {
   sourceCommit: null,
   prHeadCommit: process.env.SITEINDEX_PR_HEAD_SHA || null,
@@ -404,60 +406,13 @@ async function prepareIsolatedProfile() {
   }
 }
 
-function queryRegistryValue(key, name) {
-  const result = spawnSync("reg.exe", ["query", key, "/v", name], {
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: 15_000,
-  });
-  if (result.error) throw new Error("Could not inspect the runner's roaming AppData registry value.");
-  if (result.status !== 0) return { key, name, exists: false, type: null, value: null };
-  const line = result.stdout.split(/\r?\n/u).find((entry) => new RegExp(`^\\s*${name}\\s+REG_\\w+\\s+`).test(entry));
-  if (!line) return { key, name, exists: false, type: null, value: null };
-  const match = new RegExp(`^\\s*${name}\\s+(REG_\\w+)\\s+(.*)$`).exec(line);
-  if (!match) throw new Error("Could not parse the runner's roaming AppData registry value.");
-  return { key, name, exists: true, type: match[1], value: match[2] };
-}
-
-function writeRegistryValue(key, name, type, value) {
-  const result = spawnSync("reg.exe", ["add", key, "/v", name, "/t", type, "/d", value, "/f"], {
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: 15_000,
-  });
-  if (result.error || result.status !== 0) throw new Error("Could not redirect the runner's roaming AppData registry value.");
-}
-
 function redirectRoamingAppDataToTestProfile() {
-  for (const [index, key] of ROAMING_APP_DATA_REGISTRY_KEYS.entries()) {
-    const original = queryRegistryValue(key, "AppData");
-    roamingAppDataRegistryOriginals.push(original);
-    writeRegistryValue(key, "AppData", index === 0 ? "REG_EXPAND_SZ" : "REG_SZ", APP_DATA_ROOT);
-  }
-  roamingAppDataRedirected = true;
-  report.credentialIsolation.shellAppDataRedirected = true;
+  roamingAppDataRedirect.redirect();
+  report.credentialIsolation.shellAppDataRedirected = roamingAppDataRedirect.redirected;
 }
 
 function restoreRoamingAppDataRegistry() {
-  let restored = true;
-  for (const original of [...roamingAppDataRegistryOriginals].reverse()) {
-    if (original.exists) {
-      const result = spawnSync("reg.exe", ["add", original.key, "/v", original.name, "/t", original.type, "/d", original.value, "/f"], {
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 15_000,
-      });
-      if (result.error || result.status !== 0) restored = false;
-    } else {
-      const result = spawnSync("reg.exe", ["delete", original.key, "/v", original.name, "/f"], {
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 15_000,
-      });
-      if (result.error || (result.status !== 0 && !/unable to find/iu.test(result.stderr + result.stdout))) restored = false;
-    }
-  }
-  roamingAppDataRestored = restored;
+  const restored = roamingAppDataRedirect.restore();
   report.credentialIsolation.shellAppDataRestored = restored;
   if (!restored) throw new Error("Could not restore the runner's original roaming AppData registry values.");
 }
@@ -674,7 +629,7 @@ async function scanCredentialCanaries({ outputOnly = false } = {}) {
 }
 
 async function removeIsolatedTestRoot() {
-  if (roamingAppDataRegistryOriginals.length > 0 && !roamingAppDataRestored) {
+  if (!roamingAppDataRedirect.canRemoveProfileRoot) {
     throw new Error("Refusing to remove the isolated profile before restoring the runner's AppData registry values.");
   }
   const before = await inspectContainedPath(RUNNER_TEMP, TEST_ROOT);
@@ -3342,7 +3297,7 @@ try {
   } catch (error) {
     failed ??= { stage: "cleanup", code: "UNINSTALL_FAILED", reason: safeMessage(error) };
   }
-  if (roamingAppDataRegistryOriginals.length > 0 && !roamingAppDataRestored) {
+  if (roamingAppDataRedirect.hasChanges && !roamingAppDataRedirect.restored) {
     try {
       restoreRoamingAppDataRegistry();
     } catch (error) {
