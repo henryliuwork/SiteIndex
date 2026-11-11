@@ -119,9 +119,9 @@ describe("v0.4.1 loopback synthetic services", () => {
       headers: {
         ...authHeaders(credentials),
         "content-type": "image/jpeg",
-        "x-fake-wp-slug": "synthetic-image-02",
+        "content-disposition": 'attachment; filename="../synthetic-image-02.jpg"',
       },
-      body: Buffer.from("synthetic image bytes"),
+      body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
     }));
 
     const lookup = await fetch(service.mediaEndpoint + "?slug=synthetic-image-02", {
@@ -139,6 +139,8 @@ describe("v0.4.1 loopback synthetic services", () => {
     assert.equal(snapshot.routeCounts["GET /wp-json/wp/v2/media"], 1);
     assert.equal(snapshot.outcomeCounts.persisted_then_disconnected, 1);
     assert.equal(snapshot.mediaCount, 1);
+    assert.equal(JSON.stringify(snapshot).includes("synthetic-image-02"), false);
+    assert.equal(JSON.stringify(snapshot).includes("content-disposition"), false);
     assert.equal(scanCredentialCanary({ snapshot, matches }, credentials).passed, true);
   });
 
@@ -170,6 +172,28 @@ describe("v0.4.1 loopback synthetic services", () => {
     assert.equal(snapshot.statusCounts["201"], 1);
     assert.equal(snapshot.statusCounts["403"], 1);
     assert.equal(snapshot.mediaCount, 1);
+  });
+
+  it("decodes filename-star safely and reduces encoded path traversal to a basename", async () => {
+    const credentials = createFakeCredentialCanary();
+    const service = await track(createFakeWordPressService({ credentials }));
+    const upload = await fetch(service.mediaEndpoint, {
+      method: "POST",
+      headers: {
+        ...authHeaders(credentials),
+        "content-type": "image/png",
+        "content-disposition": "attachment; filename*=UTF-8''%2E%2E%2Fsynthetic%20file-03.png",
+      },
+      body: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    });
+    assert.equal(upload.status, 201);
+    assert.equal((await upload.json()).slug, "synthetic-file-03");
+
+    const lookup = await fetch(service.mediaEndpoint + "?slug=synthetic-file-03", {
+      headers: authHeaders(credentials),
+    });
+    assert.equal((await lookup.json()).length, 1);
+    assert.equal(service.snapshot().mediaCount, 1);
   });
 
   it("detects fake credential canaries but returns only categories and counts", () => {

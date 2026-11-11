@@ -18,7 +18,7 @@ describe("E v0.4.1 loopback mock fixtures", () => {
 
     expect(result.error).toBeUndefined();
     expect(result.status, output).toBe(0);
-    expect(output).toMatch(/tests 6/u);
+    expect(output).toMatch(/tests 7/u);
     expect(output).toMatch(/fail 0/u);
   }, 40_000);
 });

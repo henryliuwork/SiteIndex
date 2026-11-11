@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import path from "node:path";
 
 const LOOPBACK_HOST = "127.0.0.1";
 const DEFAULT_GRAPHQL_BODY = { data: { product: { stock_status: "IN_STOCK" } } };
@@ -180,9 +179,45 @@ export async function createFakeGraphqlService({
 
 function normalizeSlug(value) {
   if (typeof value !== "string" || value.length === 0) return null;
-  const base = path.basename(value).replace(/\.[^.]+$/u, "");
-  const slug = base.toLowerCase().replace(/[^a-z0-9_-]+/gu, "-").replace(/^-+|-+$/gu, "");
+  let decoded = value.trim();
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Malformed percent escapes remain subject to the slug character allowlist below.
+  }
+  const filename = decoded
+    .replace(/\\/gu, "/")
+    .split("/")
+    .pop()
+    ?.replace(/[\u0000-\u001f\u007f]/gu, "") ?? "";
+  const base = filename.replace(/\.[^.]+$/u, "");
+  const slug = base.toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 120)
+    .replace(/-+$/u, "");
   return slug || null;
+}
+
+function decodeExtendedFilename(value) {
+  const match = /^([^']*)'[^']*'(.*)$/u.exec(value);
+  if (!match || !["utf-8", "us-ascii"].includes(match[1].toLowerCase())) return null;
+  try {
+    return decodeURIComponent(match[2]);
+  } catch {
+    return null;
+  }
+}
+
+function contentDispositionFilename(header) {
+  if (typeof header !== "string") return null;
+
+  const extended = /(?:^|;)\s*filename\*\s*=\s*(?:"([^"]*)"|([^;]*))/iu.exec(header);
+  if (extended) return decodeExtendedFilename((extended[1] ?? extended[2] ?? "").trim());
+
+  const plain = /(?:^|;)\s*filename\s*=\s*(?:"((?:\\.|[^"])*)"|([^;]*))/iu.exec(header);
+  if (!plain) return null;
+  return (plain[1] ?? plain[2] ?? "").replace(/\\(["\\])/gu, "$1").trim();
 }
 
 function extractMediaSlug(request, url, body) {
@@ -190,6 +225,9 @@ function extractMediaSlug(request, url, body) {
   if (typeof headerSlug === "string") return normalizeSlug(headerSlug);
   const querySlug = url.searchParams.get("slug");
   if (querySlug) return normalizeSlug(querySlug);
+
+  const dispositionFilename = contentDispositionFilename(request.headers["content-disposition"]);
+  if (dispositionFilename) return normalizeSlug(dispositionFilename);
 
   const contentType = request.headers["content-type"] ?? "";
   if (String(contentType).includes("application/json")) {
