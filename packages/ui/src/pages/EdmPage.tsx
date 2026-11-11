@@ -219,7 +219,9 @@ export function EdmPage() {
       const resultText = parts.length ? parts.join("，") : "没有可处理的行";
       setMediaDemoMessage(mediaDemoOutcome === "complete"
         ? resultText
-        : `${mediaDemoOutcome}：模拟批次提前停止；${resultText}。`);
+        : stopped
+          ? `${mediaDemoOutcome}：模拟批次提前停止；${resultText}。`
+          : `${mediaDemoOutcome}：本批次没有触发权限失败；${resultText}。`);
       setMediaDemoRunning(false);
       toast.info("仅完成本地演示，未执行上传或写入台账。");
     }, 220);

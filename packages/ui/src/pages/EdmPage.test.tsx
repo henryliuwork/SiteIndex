@@ -176,6 +176,30 @@ describe("EdmPage media preparation prototype", () => {
     expect(within(results).queryByText("原图 URL 已记录（模拟）")).toBeNull();
   }, 15_000);
 
+  it.each([
+    ["WP_AUTH_FAILED", "401 认证失败并停批"],
+    ["WP_FORBIDDEN", "403 权限不足并停批"],
+  ] as const)("%s 场景没有上传候选时不显示提前停批", async (_errorCode, optionLabel) => {
+    const rows = [
+      mediaImageRow("DEMO-A-LEDGER-001", "https://demo-store.example.test/demo/main.webp", "https://images.example.test/demo/DEMO-A-LEDGER-001.jpg"),
+      mediaImageRow("DEMO-B-FEED-JPG-001", "https://demo-store.example.test/demo/main.jpg"),
+      mediaImageRow("DEMO-C-FEED-PNG-001", "https://demo-store.example.test/demo/main.png"),
+    ];
+    await renderEdmPage(true, true, rows);
+    await openMediaDemo();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("combobox", { name: "模拟媒体准备结果" }));
+    fireEvent.click(await screen.findByRole("option", { name: optionLabel }));
+    fireEvent.click(await screen.findByRole("button", { name: /模拟获取图片 URL/ }));
+
+    expect(await screen.findByText(/本批次没有触发权限失败/)).toBeTruthy();
+    expect(screen.queryByText(/模拟批次提前停止/)).toBeNull();
+    const results = screen.getByRole("list", { name: "模拟逐 SKU 结果" });
+    expect(within(results).getByText("已有 URL，已跳过（模拟）")).toBeTruthy();
+    expect(within(results).getAllByText("原图 URL 已记录（模拟）")).toHaveLength(2);
+    expect(within(results).queryByText("尚未开始（模拟）")).toBeNull();
+  }, 15_000);
+
   it("默认 mock 提供虚构 WebP Feed 图片作为上传候选", async () => {
     const mockApi = createMockApi();
     const page = await mockApi.edm.listImages("demo", { page: 1, pageSize: 50, filters: {} });
