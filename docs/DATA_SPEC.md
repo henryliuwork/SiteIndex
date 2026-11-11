@@ -62,18 +62,21 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；EDM SKU 清单�
 ### 3.1 EDM SKU 清单（生成的 Markdown）
 
 - 固定路径由 `pathsFor(layout).edmSkuIndex` 提供：legacy 为 `index/edm/sku-index.md`，workspace 为 `_site-index/edm/sku-index.md`。导出 API 不接受任意文件名、SKU 子集或输出路径。
-- 这是 `_site-index/edm/` 下唯一由 SiteIndex 管理的文件。输出首行必须是 `<!-- siteindex:generated:edm-sku-index:v1 -->`。目标不存在时创建；目标首行带有该标记时允许原子更新；目标存在但未带有该标记、标记版本不识别或无法安全读取时，返回 `EDM_INDEX_CONFLICT`（中文 message：“目标清单由用户或 EDM 技能维护，未做修改。”），保留原文件字节不变。
+- 这是 `_site-index/edm/` 下唯一由 SiteIndex 管理的文件。输出首行必须是 `<!-- siteindex:generated:edm-sku-index:v1 -->`。目标不存在时走首次创建流程；目标首行带有该标记时走更新流程；目标存在但未带有该标记、标记版本不识别或无法安全读取时，返回 `EDM_INDEX_CONFLICT`（中文 message：“目标清单由用户或 EDM 技能维护，未做修改。”），保留原文件字节不变。
+- 首次创建与更新都必须以规范化后的真实项目根目录为边界，并在读取、暂存和提交前检查目标路径的每级祖先。任何祖先是指向项目外的 symlink/junction、路径解析结果越出项目根目录、或无法确认实际目标时，都必须 fail closed；不得跟随路径写到项目外。
+- SiteIndex 的并发导出必须按项目串行化，并在取得写锁后重新读取目标。首次创建只可在仍确认目标不存在时提交；更新只可在仍确认目标身份、生成标记和内容指纹与读取时一致时提交。临时文件应在同目录创建并完成 flush，再执行提交前的路径与目标复核。复核发现目标已被其他进程新建、替换、改写或移走时，返回 `EDM_INDEX_CONFLICT`，保留当前文件。
+- 上述复核可检测在复核前发生的冲突，但普通“最后检查后调用 rename”不构成跨平台 compare-and-swap/no-clobber。Node 的通用 `rename` 不能保证最后一次复核与目录项替换对用户文件原子绑定；因此不得声称它能绝对防止其他进程在这段窗口内新建或替换目标。实现必须使用并验证当前平台/文件系统的 no-clobber 创建和条件替换原语；若无法提供所需原语，应拒绝提交并保留目标，而不是退回无条件 rename。平台/同步盘仍可能有其自身并发语义，产品不得超出已验证范围承诺保证。
 - 首期只生成全项目 canonical 清单，不受 UI 表格筛选、分页或勾选影响。选择 SKU 导出独立副本不属于本契约。
 - 数据源为布局对应的 `views/products`、`ledgers/sku_media` 与 `ledgers/sku_tags`。兼容 K5 前的旧 `sku_media.csv` 表头以及追加了 `media_id`、`source_hash` 的新表头；导出过程只读台账，不触发台账迁移或改写。
 - 文件骨架固定为生成标记行、`# EDM SKU Index` 标题、空行、Markdown 表格；表头顺序固定为 `SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存`，随后一行使用相同列数的 `---` 分隔符。单元格先将 `\` 写为 `\\`，再将 `|` 写为 `\|`，CR/LF 换行写为 `<br>`；null/缺值为空单元格。金额使用不带千位分隔符和货币符号的十进制数，URL 使用规范化 HTTP(S) 地址。
 - 按父 SKU 聚合时使用 roadmap §4.4 规定的代表子 SKU；图片优先使用 `image_role=main` 的台账图片，其次使用 feed 首图。EDM 清单排除 WebP；无可用图时写“待补图”。短描述来自 `sku_tags.email_blurb`。`edm.discount_tiers` 的类型目前只有 `number[]`，roadmap 未定义某个 SKU 选择哪一档、折后金额舍入规则；A 在实现导出命令前必须补齐此业务规则及黄金 fixture，本契约不替产品作此假设。
 - 除上述待 A 定义的折扣业务规则外，同一份输入必须产生字节一致的清单：SKU 字典序按 `compareKeys`，不含生成时间、不依赖本机 locale、机器路径或遍历顺序；UTF-8 无 BOM、LF、末尾一个换行。内容相同则不重写。
-- `edm.exportIndex(projectId)` resolve 后返回 `created`、`updated` 或 `unchanged`、SKU 计数、待补图计数和固定安全相对路径：`created` 表示此前目标不存在，`updated` 表示受管文件内容有变化，`unchanged` 表示受管文件内容相同且未重写。响应不含绝对项目路径、文件内容或任意来源路径。写入可能已经完成但 IPC 确认丢失时返回 `EDM_EXPORT_OUTCOME_UNKNOWN`（中文 message：“清单写入结果暂无法确认，可重新生成以核对。”）；调用方不能把它当作“未写入”，可安全重试确定性导出。目标占用或无权限等可确认写入错误使用 `WRITE_FAILED`；所有错误 message/detail 不得泄露绝对路径、凭据或原始服务响应。
+- `edm.exportIndex(projectId)` resolve 后返回 `created`、`updated` 或 `unchanged`、SKU 计数、待补图计数和固定安全相对路径：`created` 表示此前目标不存在，`updated` 表示受管文件内容有变化，`unchanged` 表示受管文件内容相同且未重写。响应不含绝对项目路径、文件内容或任意来源路径。写入可能已经完成但 IPC 确认丢失时返回 `EDM_EXPORT_OUTCOME_UNKNOWN`（中文 message：“清单写入结果暂无法确认，可重新生成以核对。”）；调用方不得把它当作“未写入”或自动盲目重试，而应重新读取并验证目标标记、当前内容及预期输出。当前状态无法安全确认时返回冲突/未知结果并保留现有文件。目标占用或无权限等可确认写入错误使用 `WRITE_FAILED`；所有错误 message/detail 不得泄露绝对路径、凭据或原始服务响应。
 
 ### 3.2 EDM media Job 的历史恢复字段
 
 - 新 media Job 的最终 `JobResult` 与 `RunLog` 记录请求 SKU（去重后保持请求顺序）、`media_batch_state`、已确认的 `media_results`、结果未知 SKU、确认未开始 SKU，以及可选的 `WP_AUTH_FAILED` / `WP_FORBIDDEN` 批次错误码。
-- 三组 SKU 必须无重叠且完整分区请求列表：`media_results[].sku`、`media_unknown_skus`、`media_not_started_skus`。`complete` 表示每个请求 SKU 都有已确认结果；`interrupted` 表示批次提前结束、未完成项均能确认尚未开始；`outcome_unknown` 表示至少一个 SKU 的外部副作用结果不能确认。`outcome_unknown` 时不能把不确定项报告为失败或未开始。
+- 三组 SKU 必须无重叠且完整分区请求列表：`media_results[].sku`、`media_unknown_skus`、`media_not_started_skus`；每组成员各自保持请求顺序。`complete` 表示每个请求 SKU 都有已确认结果；`interrupted` 表示批次提前结束、未完成项均能确认尚未开始；`outcome_unknown` 表示至少一个 SKU 无法确认是否已开始处理或其外部副作用结果。`outcome_unknown` 时不能把不确定项报告为失败或未开始。
 - 401/403 停批时，失败 SKU 保留在已确认结果中，`media_error_code` 说明原因，后续且能确认未开始的 SKU 列入 `media_not_started_skus`。硬退出时只保存有持久证据的完成结果；无法确认是否开始或是否成功的 SKU 列入 `media_unknown_skus`。若没有可靠进度检查点，全部未能确认的请求都标未知，不凭数组缺项推断未开始。
 - `jobs.history(projectId)` 只返回该项目的记录，media 字段写回原项目 `runs.jsonl`。旧 `RunLog` 没有这些可选字段时表示结果不可恢复，不等于空结果；读取时不迁移或重写旧行。
 - `reason`、`errors`、`summary` 不得包含 WordPress 用户名/口令、Authorization、凭据、原始认证响应或本机绝对路径。`image_url` 仅返回无 userinfo 和凭据参数的 HTTP(S) 地址；无法确认安全时省略。脱敏必须同时覆盖实时事件和持久历史。

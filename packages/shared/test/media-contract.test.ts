@@ -9,14 +9,115 @@ import {
   type InventorySummary,
   type JobRequest,
   type JobResult,
+  type MediaSkuRecoveryPartition,
   type MediaPrepareSkuResult,
+  type RunLog,
   type SiteIndexApi,
   type SiteIndexErrorCode,
   type SkuRecord,
   type SkuMedia,
+  isValidMediaSkuRecoveryPartition,
 } from "../src";
 
 describe("K5 media and stock contracts", () => {
+  it("validates complete, interrupted, and outcome-unknown SKU partitions", () => {
+    const complete: MediaSkuRecoveryPartition = {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      state: "complete",
+      results: [
+        { sku: "DEMO-WP-001", status: "uploaded" },
+        { sku: "DEMO-WP-002", status: "failed", reason: "虚构失败原因。" },
+      ],
+      unknown_skus: [],
+      not_started_skus: [],
+    };
+    const interrupted: MediaSkuRecoveryPartition = {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-002", "DEMO-WP-003"],
+      state: "interrupted",
+      results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      unknown_skus: [],
+      not_started_skus: ["DEMO-WP-002", "DEMO-WP-003"],
+    };
+    const outcomeUnknown: MediaSkuRecoveryPartition = {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-002", "DEMO-WP-003"],
+      state: "outcome_unknown",
+      results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      unknown_skus: ["DEMO-WP-002"],
+      not_started_skus: ["DEMO-WP-003"],
+    };
+
+    expect(isValidMediaSkuRecoveryPartition(complete)).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition(interrupted)).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition(outcomeUnknown)).toBe(true);
+  });
+
+  it.each([
+    ["overlap", {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      state: "outcome_unknown",
+      results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      unknown_skus: ["DEMO-WP-001"],
+      not_started_skus: [],
+    }],
+    ["missing requested SKU", {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      state: "interrupted",
+      results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+    ["misordered results group", {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-002", "DEMO-WP-003"],
+      state: "complete",
+      results: [
+        { sku: "DEMO-WP-002", status: "uploaded" },
+        { sku: "DEMO-WP-001", status: "uploaded" },
+        { sku: "DEMO-WP-003", status: "uploaded" },
+      ],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+    ["interrupted state with an unknown SKU", {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      state: "interrupted",
+      results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      unknown_skus: ["DEMO-WP-002"],
+      not_started_skus: [],
+    }],
+    ["SKU outside the request", {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-002"],
+      state: "complete",
+      results: [
+        { sku: "DEMO-WP-001", status: "uploaded" },
+        { sku: "DEMO-WP-999", status: "uploaded" },
+      ],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+    ["duplicate requested SKU", {
+      requested_skus: ["DEMO-WP-001", "DEMO-WP-001"],
+      state: "complete",
+      results: [{ sku: "DEMO-WP-001", status: "uploaded" }],
+      unknown_skus: [],
+      not_started_skus: [],
+    }],
+  ] as const)("rejects an invalid %s partition", (_name, partition) => {
+    expect(isValidMediaSkuRecoveryPartition(partition)).toBe(false);
+  });
+
+  it("keeps old run logs assignable while making missing recovery data unavailable", () => {
+    const oldLog: RunLog = {
+      run_id: "demo-old-media-run",
+      job: "media",
+      started_at: "2026-11-11T10:00:00+08:00",
+      finished_at: "2026-11-11T10:01:00+08:00",
+      status: "failed",
+    };
+
+    expect(oldLog.media_batch_state).toBeUndefined();
+    expect(oldLog.media_results).toBeUndefined();
+  });
+
   it("keeps the media API additive and models asynchronous per-SKU completion", async () => {
     const legacyApi: Pick<SiteIndexApi, "media"> = {};
     const prepare: NonNullable<SiteIndexApi["media"]>["prepare"] = async ({ project, skus }) => {

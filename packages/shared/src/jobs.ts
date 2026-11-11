@@ -72,12 +72,50 @@ export interface JobResult {
   media_requested_skus?: string[];
   media_batch_state?: MediaBatchState;
   media_results?: MediaPrepareSkuResult[];
-  /** 请求中已开始但结果不能确认的 SKU；硬退出时宁可标未知，也不可误报失败或未开始。 */
+  /** 无法确认是否已开始处理或外部副作用结果的 SKU；硬退出时宁可标未知，也不可误报失败或未开始。 */
   media_unknown_skus?: string[];
   /** 已确认没有开始处理的 SKU。 */
   media_not_started_skus?: string[];
   /** media 因 WordPress 认证失败或权限不足停批时，返回 WP_AUTH_FAILED / WP_FORBIDDEN。 */
   media_error_code?: Extract<SiteIndexErrorCode, "WP_AUTH_FAILED" | "WP_FORBIDDEN">;
+}
+
+export interface MediaSkuRecoveryPartition {
+  requested_skus: readonly string[];
+  state: MediaBatchState;
+  results: readonly MediaPrepareSkuResult[];
+  unknown_skus: readonly string[];
+  not_started_skus: readonly string[];
+}
+
+/** 验证新格式的逐 SKU 恢复结果完整、互斥且保持各分组的请求顺序。 */
+export function isValidMediaSkuRecoveryPartition(partition: MediaSkuRecoveryPartition): boolean {
+  const { requested_skus, state, results, unknown_skus, not_started_skus } = partition;
+  const requested = new Set(requested_skus);
+  if (requested.size !== requested_skus.length) return false;
+
+  const resultSkus = results.map(({ sku }) => sku);
+  const assignedSkus = [...resultSkus, ...unknown_skus, ...not_started_skus];
+  if (assignedSkus.length !== requested_skus.length || new Set(assignedSkus).size !== assignedSkus.length) return false;
+  if (assignedSkus.some((sku) => !requested.has(sku))) return false;
+
+  const requestOrder = new Map(requested_skus.map((sku, index) => [sku, index]));
+  const preservesRequestOrder = (skus: readonly string[]): boolean => {
+    let previous = -1;
+    for (const sku of skus) {
+      const current = requestOrder.get(sku);
+      if (current === undefined || current <= previous) return false;
+      previous = current;
+    }
+    return true;
+  };
+  if (!preservesRequestOrder(resultSkus) || !preservesRequestOrder(unknown_skus) || !preservesRequestOrder(not_started_skus)) {
+    return false;
+  }
+
+  if (state === "complete") return unknown_skus.length === 0 && not_started_skus.length === 0;
+  if (state === "interrupted") return unknown_skus.length === 0 && not_started_skus.length > 0;
+  return unknown_skus.length > 0;
 }
 
 /** 进度回调：core 的每个 Job 接收它；desktop 转发为 IPC 事件，cli 打印到终端 */
