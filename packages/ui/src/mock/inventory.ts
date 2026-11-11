@@ -7,6 +7,23 @@ type MockInventoryApi = Omit<SiteIndexApi["inventory"], "summary"> & {
   summary(id: ProjectId, range?: MockHistoryRange): Promise<InventorySummary>;
 };
 
+function parentHistory(children: readonly SkuStockView[]): string {
+  return Array.from({ length: 30 }, (_, day) => {
+    const states = children.map((child) => child.history_30d[day]).filter((state) => state !== undefined && state !== "-");
+    if (states.length === 0) return "-";
+    if (states.includes("i")) return "i";
+    if (states.every((state) => state === "o")) return "o";
+    if (states.includes("p")) return "p";
+    return "u";
+  }).join("");
+}
+
+function onlineRate(history: string, days: 7 | 30): number | null {
+  const available = [...history.slice(-days)].filter((state) => state !== "-");
+  if (available.length === 0) return null;
+  return available.filter((state) => state === "i").length / available.length;
+}
+
 function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
   const groups = new Map<string, SkuStockView[]>();
   const existingSkus = new Set(rows.map((row) => row.sku));
@@ -25,6 +42,7 @@ function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
     const stockStatus: SkuStockView["stock_status"] = children.some((child) => child.stock_status === "in_stock") ? "in_stock"
       : children.every((child) => child.stock_status === "out_of_stock") ? "out_of_stock"
         : children.some((child) => child.stock_status === "preorder") ? "preorder" : "unknown";
+    const history = parentHistory(children);
     return {
       ...representative,
       sku: parentSku,
@@ -34,9 +52,9 @@ function parentRows(rows: readonly SkuStockView[]): MockSkuRow[] {
       stock_status: stockStatus,
       since: FIXED_TODAY,
       days_in_status: 0,
-      online_rate_7d: null,
-      online_rate_30d: null,
-      history_30d: "u".repeat(30),
+      online_rate_7d: onlineRate(history, 7),
+      online_rate_30d: onlineRate(history, 30),
+      history_30d: history,
       changes_30d: 0,
       last_change: null,
       last_change_at: null,

@@ -7,7 +7,7 @@ import { InventoryHistoryCell, InventoryRateCell } from "./table-cells";
 const baseRow: SkuStockView = {
   sku: "DEMO-PARENT", title: "虚构演示商品", variant_title: null,
   category: "demo-category", price: 10, stock_status: "in_stock", since: "2026-11-01", days_in_status: 1,
-  online_rate_7d: null, online_rate_30d: null, history_30d: "u".repeat(30), changes_30d: 0,
+  online_rate_7d: null, online_rate_30d: null, history_30d: "-".repeat(30), changes_30d: 0,
   last_change: null, last_change_at: null, parent_sku: null, price_history: [], is_parent: true,
   children_count: 2, in_stock_children_count: 1,
 };

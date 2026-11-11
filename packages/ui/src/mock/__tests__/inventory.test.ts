@@ -51,16 +51,32 @@ describe("inventory parent view mock", () => {
     const original = rowsByProject.demo;
     const sample = original[0]!;
     rowsByProject.demo = [
-      { ...sample, sku: "DEMO001A01", parent_sku: "DEMO001A", stock_status: "in_stock", price: 30 },
-      { ...sample, sku: "DEMO001A02", parent_sku: "DEMO001A", stock_status: "out_of_stock", price: 20 },
+      { ...sample, sku: "DEMO001A01", parent_sku: "DEMO001A", stock_status: "in_stock", history_30d: "i".repeat(30), price: 30 },
+      { ...sample, sku: "DEMO001A02", parent_sku: "DEMO001A", stock_status: "out_of_stock", history_30d: "o".repeat(30), price: 20 },
       { ...sample, sku: "INDEPENDENT", parent_sku: null, stock_status: "unknown" },
     ];
     try {
       const result = await api.listSkus("demo", { page: 1, pageSize: 0, filters: { parent_only: true } });
       expect(result.rows.map((row) => row.sku)).toEqual(["DEMO001A", "INDEPENDENT"]);
-      expect(result.rows[0]).toMatchObject({ price: 20, stock_status: "in_stock", children_count: 2, in_stock_children_count: 1 });
+      expect(result.rows[0]).toMatchObject({
+        price: 20,
+        stock_status: "in_stock",
+        online_rate_7d: 1,
+        online_rate_30d: 1,
+        history_30d: "i".repeat(30),
+        children_count: 2,
+        in_stock_children_count: 1,
+      });
       const found = await api.listSkus("demo", { page: 1, pageSize: 0, search: "DEMO001A02", filters: { parent_only: true } });
       expect(found.rows.map((row) => row.sku)).toEqual(["DEMO001A"]);
+
+      rowsByProject.demo = rowsByProject.demo.map((row) => ({ ...row, history_30d: "-".repeat(30) }));
+      const unavailable = await api.listSkus("demo", { page: 1, pageSize: 0, filters: { parent_only: true } });
+      expect(unavailable.rows[0]).toMatchObject({
+        online_rate_7d: null,
+        online_rate_30d: null,
+        history_30d: "-".repeat(30),
+      });
     } finally {
       rowsByProject.demo = original;
     }
