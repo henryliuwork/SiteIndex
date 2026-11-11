@@ -8,7 +8,7 @@ import {
   assertRunner, atomicWrite, findConflictCopies, readCsv, readJsonl, readRunner,
   withLock, writeCsv, writeJsonl, writeRunner,
 } from "../src";
-import { readOrCreateLocalHostId, unlinkOwnedLock } from "../src/io/runner-lock";
+import { readOrCreateLocalHostId, unlinkOwnedLock, withLockForTest } from "../src/io/runner-lock";
 
 const roots: string[] = [];
 async function tempDir() {
@@ -52,6 +52,28 @@ function runChildScript(source: string, cwd: string, env: NodeJS.ProcessEnv): Pr
       if (code === 0) resolve(stdout.trim());
       else reject(new Error(stderr || `Lock identity child exited (${String(code)} / ${String(signal)})`));
     });
+  });
+}
+
+function waitForMarker(markerPath: string, timeoutMs = 10_000): Promise<string> {
+  const startedAt = Date.now();
+  return new Promise((resolve, reject) => {
+    const check = async () => {
+      try {
+        resolve(await readFile(markerPath, "utf8"));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          reject(error);
+          return;
+        }
+        if (Date.now() - startedAt >= timeoutMs) {
+          reject(new Error(`Timed out waiting for process marker: ${path.basename(markerPath)}`));
+          return;
+        }
+        setTimeout(() => { void check(); }, 5);
+      }
+    };
+    void check();
   });
 }
 
@@ -512,6 +534,225 @@ describe("core io", () => {
         await childClosed;
       }
     }
+  }, 30_000);
+
+  it("allows only one stale-lock reclaimer into the critical section", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const markerDir = path.join(root, "markers");
+    await mkdir(markerDir, { recursive: true });
+    const env = {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: path.join(root, "project"),
+      SITEINDEX_TEST_MARKER_DIR: markerDir,
+    };
+    const ownerSource = [
+      'import { writeFile } from "node:fs/promises";',
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'const markers = process.env.SITEINDEX_TEST_MARKER_DIR;',
+      'if (!root || !markers) throw new Error("Missing test parameters");',
+      'await withLock(root, async () => {',
+      '  await writeFile(`${markers}/owner.entered`, "entered");',
+      '  setInterval(() => undefined, 1000);',
+      '  await new Promise(() => undefined);',
+      '}, { heartbeatMs: 60000 });',
+    ].join("\n");
+    const reclaimerSource = [
+      'import { readFile, writeFile } from "node:fs/promises";',
+      'import { withLockForTest } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'const markers = process.env.SITEINDEX_TEST_MARKER_DIR;',
+      'const role = process.env.SITEINDEX_TEST_ROLE;',
+      'if (!root || !markers || !role) throw new Error("Missing test parameters");',
+      'const wait = async (name) => { while (true) { try { await readFile(`${markers}/${name}`, "utf8"); return; } catch (error) { if (error?.code !== "ENOENT") throw error; await new Promise((resolve) => setTimeout(resolve, 5)); } } };',
+      'try {',
+      '  await withLockForTest(root, async () => {',
+      '    await writeFile(`${markers}/${role}.entered`, "entered");',
+      '    await wait(`${role}.finish`);',
+      '  }, { job: "daily", heartbeatMs: 60000 }, {',
+      '    afterStaleLockValidated: async () => {',
+      '      await writeFile(`${markers}/${role}.validated`, "validated");',
+      '      await wait(`${role}.continue`);',
+      '    },',
+      '  });',
+      '  await writeFile(`${markers}/${role}.result`, "acquired");',
+      '} catch (error) {',
+      '  const value = error && typeof error === "object" ? error : {};',
+      '  await writeFile(`${markers}/${role}.result`, `${value.code ?? "ERROR"}:${value.message ?? String(error)}`);',
+      '}',
+    ].join("\n");
+    const startChild = (source: string, role?: string) => {
+      const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source], {
+        cwd: coreDirectory,
+        env: { ...env, ...(role ? { SITEINDEX_TEST_ROLE: role } : {}) },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let output = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString("utf8"); });
+      child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+      const closed = new Promise<void>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", (code, signal) => {
+          if (code === 0 || signal !== null) resolve();
+          else reject(new Error(stderr || output || `Lock race child exited with code ${String(code)}`));
+        });
+      });
+      return { child, closed };
+    };
+    const owner = startChild(ownerSource);
+    let workers: Array<ReturnType<typeof startChild>> = [];
+    try {
+      await waitForMarker(path.join(markerDir, "owner.entered"));
+      owner.child.kill();
+      await owner.closed;
+
+      const first = startChild(reclaimerSource, "a");
+      workers.push(first);
+      await waitForMarker(path.join(markerDir, "a.validated"));
+      const second = startChild(reclaimerSource, "b");
+      workers.push(second);
+      const secondResult = await waitForMarker(path.join(markerDir, "b.result"));
+      expect(secondResult).toMatch(/^LOCKED:/);
+      await expect(readFile(path.join(markerDir, "b.entered"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+      await writeFile(path.join(markerDir, "a.continue"), "go");
+      await waitForMarker(path.join(markerDir, "a.entered"));
+      await writeFile(path.join(markerDir, "a.finish"), "go");
+      await Promise.all(workers.map((process) => process.closed));
+      expect(await readFile(path.join(markerDir, "a.result"), "utf8")).toBe("acquired");
+
+      const retry = startChild(reclaimerSource, "retry");
+      workers.push(retry);
+      await waitForMarker(path.join(markerDir, "retry.entered"));
+      await writeFile(path.join(markerDir, "retry.finish"), "go");
+      await retry.closed;
+      expect(await readFile(path.join(markerDir, "retry.result"), "utf8")).toBe("acquired");
+    } finally {
+      await writeFile(path.join(markerDir, "a.continue"), "go").catch(() => undefined);
+      await writeFile(path.join(markerDir, "b.continue"), "go").catch(() => undefined);
+      await writeFile(path.join(markerDir, "a.finish"), "go").catch(() => undefined);
+      await writeFile(path.join(markerDir, "b.finish"), "go").catch(() => undefined);
+      await writeFile(path.join(markerDir, "retry.finish"), "go").catch(() => undefined);
+      owner.child.kill();
+      for (const process of workers) process.child.kill();
+      await Promise.all([owner.closed, ...workers.map((process) => process.closed)]).catch(() => undefined);
+    }
+  }, 30_000);
+
+  it("recovers after a stale-lock reclaimer crashes after publishing its claim", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    expect(exitedPid).toBeGreaterThan(0);
+    const now = new Date().toISOString();
+    await writeFile(lockPath, `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`);
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const crashSource = [
+      'import { withLockForTest } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'await withLockForTest(root, () => "must not enter", { heartbeatMs: 60000 }, {',
+      '  afterReclaimClaimPublished: async () => process.exit(73),',
+      '});',
+    ].join("\n");
+    await expect(runChildScript(crashSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).rejects.toThrow(/Lock identity child exited \(73 \/ null\)/);
+
+    const recoverSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'await withLock(root, () => "recovered", { heartbeatMs: 60000 }).then((value) => process.stdout.write(value));',
+    ].join("\n");
+    await expect(runChildScript(recoverSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).resolves.toBe("recovered");
+  }, 30_000);
+
+  it("fails closed when a previous stale-lock reclaim claim is malformed", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const now = new Date().toISOString();
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const crashSource = [
+      'import { withLockForTest } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'await withLockForTest(root, () => "must not enter", { heartbeatMs: 60000 }, {',
+      '  afterReclaimClaimPublished: async () => process.exit(74),',
+      '});',
+    ].join("\n");
+    await expect(runChildScript(crashSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).rejects.toThrow(/Lock identity child exited \(74 \/ null\)/);
+
+    const recoveryDirectory = path.join(path.dirname(hostIdPath), "lock-recovery");
+    const rootClaim = (await readdir(recoveryDirectory)).find((name) => name.endsWith(".root"));
+    expect(rootClaim).toBeDefined();
+    await writeFile(path.join(recoveryDirectory, rootClaim!), "{partial");
+    const attemptSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'try { await withLock(root, () => "must not enter", { heartbeatMs: 60000 }); }',
+      'catch (error) { const value = error && typeof error === "object" ? error : {}; process.stdout.write(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    await expect(runChildScript(attemptSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).resolves.toMatch(/^LOCKED:/);
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
   }, 30_000);
 
   it("handles 200 concurrent lock attempts without exposing partial JSON", async () => {

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
-import { open, readFile, rename, unlink, lstat, mkdir, readdir, link } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { open, readFile, rename, unlink, lstat, mkdir, readdir, link, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DEFAULT_CONFLICT_PATTERNS, EXIT, pathsFor, type SiteIndexError, type SiteIndexErrorCode } from "@siteindex/shared";
@@ -85,6 +85,14 @@ const LOCK_READ_RETRY_MS = 10;
 const HOST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let localHostIdPromise: Promise<string> | undefined;
+
+/** @internal Deterministic synchronization hooks for cross-process lock regression tests. */
+export interface RunnerLockTestHooks {
+  afterStaleLockValidated?: () => Promise<void>;
+  afterReclaimClaimPublished?: () => Promise<void>;
+}
+
+const runnerLockTestHooks = new AsyncLocalStorage<RunnerLockTestHooks>();
 
 /** Persist an opaque identity outside project folders so cloud-synced lock records stay host-specific. */
 function localHostIdFile(): string {
@@ -187,6 +195,19 @@ async function localHostId(): Promise<string> {
 
 type ProcessPresence = "alive" | "dead" | "unknown";
 
+interface ReclaimClaim {
+  version: 1;
+  host_id: string;
+  pid: number;
+  token: string;
+  lock_key: string;
+  previous_token: string | null;
+}
+
+interface ReclaimClaimLease {
+  files: string[];
+}
+
 function processPresence(pid: number): ProcessPresence {
   if (!Number.isSafeInteger(pid) || pid <= 0) return "unknown";
   try {
@@ -252,10 +273,21 @@ async function openOrRecover(lockPath: string, currentHostId: string) {
         || current.size !== identity.size || current.mtimeMs !== identity.mtimeMs || current.ctimeMs !== identity.ctimeMs) {
         throw lockError("项目运行锁刚刚更新，请稍后重试。");
       }
+      const claim = await acquireReclaimClaim(lockPath, identity, text, currentHostId);
+      const claimedPath = await lstat(lockPath);
+      const claimedText = await readFile(lockPath, "utf8");
+      if (claimedPath.ino !== identity.ino || claimedPath.dev !== identity.dev
+        || claimedPath.size !== identity.size || claimedPath.mtimeMs !== identity.mtimeMs
+        || claimedPath.ctimeMs !== identity.ctimeMs || claimedText !== text) {
+        throw lockError("项目运行锁在回收认领期间发生变化；请稍后重试。");
+      }
+      await runnerLockTestHooks.getStore()?.afterStaleLockValidated?.();
       const retired = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
       await rename(lockPath, retired);
       await unlink(retired).catch(() => undefined);
-      return await open(lockPath, "wx");
+      const reservation = await open(lockPath, "wx");
+      await Promise.all(claim.files.map((file) => unlink(file).catch(() => undefined)));
+      return reservation;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "EEXIST") {
@@ -269,6 +301,96 @@ async function openOrRecover(lockPath: string, currentHostId: string) {
   throw lockError("项目运行锁内容尚未写入完成，请稍后重试。");
 }
 
+/**
+ * Claims recovery for one exact stale lock through an append-only chain of atomic
+ * hard-link publications. A crashed claimant is never deleted or replaced: the next
+ * process publishes one deterministic successor, so two reclaimers cannot both own
+ * the same stale generation. Claim records live in per-user state, not the project.
+ */
+async function acquireReclaimClaim(
+  lockPath: string,
+  identity: { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number },
+  lockText: string,
+  currentHostId: string,
+): Promise<ReclaimClaimLease> {
+  let canonicalPath: string;
+  try {
+    canonicalPath = await realpath(lockPath);
+  } catch {
+    throw lockError("项目运行锁路径刚刚变化，请稍后重试。");
+  }
+  const lockKey = createHash("sha256")
+    .update(`${canonicalPath}\0${identity.dev}:${identity.ino}:${identity.size}:${identity.mtimeMs}:${identity.ctimeMs}\0${lockText}`)
+    .digest("hex");
+  const directory = path.join(path.dirname(localHostIdFile()), "lock-recovery");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+
+  let claimPath = path.join(directory, `${lockKey}.root`);
+  let previousToken: string | null = null;
+  const files: string[] = [];
+  for (let generation = 0; generation < 1024; generation += 1) {
+    const claim: ReclaimClaim = {
+      version: 1,
+      host_id: currentHostId,
+      pid: process.pid,
+      token: randomUUID(),
+      lock_key: lockKey,
+      previous_token: previousToken,
+    };
+    const tempPath = `${claimPath}.tmp-${process.pid}-${randomUUID()}`;
+    let handle;
+    let tempCreated = false;
+    try {
+      handle = await open(tempPath, "wx", 0o600);
+      tempCreated = true;
+      await handle.writeFile(`${JSON.stringify(claim)}\n`, "utf8");
+      await handle.sync();
+      await handle.close();
+      handle = undefined;
+      try {
+        await link(tempPath, claimPath);
+        files.push(claimPath);
+        await runnerLockTestHooks.getStore()?.afterReclaimClaimPublished?.();
+        return { files };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw lockError("无法安全登记项目锁回收者；为避免并发写入，项目锁未回收。");
+        }
+      }
+    } catch (error) {
+      if (error instanceof CoreIOError) throw error;
+      throw lockError("无法安全登记项目锁回收者；为避免并发写入，项目锁未回收。");
+    } finally {
+      await handle?.close().catch(() => undefined);
+      if (tempCreated) await unlink(tempPath).catch(() => undefined);
+    }
+
+    let existing: unknown;
+    try {
+      existing = JSON.parse(await readFile(claimPath, "utf8")) as unknown;
+    } catch {
+      throw lockError("项目锁回收状态无效；为避免并发写入，Core 已停止回收锁。");
+    }
+    if (typeof existing !== "object" || existing === null || Array.isArray(existing)) {
+      throw lockError("项目锁回收状态无效；为避免并发写入，Core 已停止回收锁。");
+    }
+    const existingClaim = existing as Partial<ReclaimClaim>;
+    if (existingClaim.version !== 1 || existingClaim.host_id !== currentHostId
+      || typeof existingClaim.pid !== "number" || !Number.isSafeInteger(existingClaim.pid) || existingClaim.pid <= 0
+      || typeof existingClaim.token !== "string" || !HOST_ID_PATTERN.test(existingClaim.token)
+      || existingClaim.lock_key !== lockKey || existingClaim.previous_token !== previousToken) {
+      throw lockError("项目锁回收状态与当前设备或锁不匹配；为避免并发写入，Core 已停止回收锁。");
+    }
+    if (processPresence(existingClaim.pid) !== "dead") {
+      throw lockError("另一个进程正在回收此项目锁，或其状态无法确认；请稍后重试。");
+    }
+    files.push(claimPath);
+    previousToken = existingClaim.token;
+    claimPath = path.join(directory, `${lockKey}.${previousToken}`);
+  }
+  throw lockError("项目锁回收历史过长；为避免并发写入，Core 已停止回收锁。");
+}
+
 async function writeLock(lockPath: string, record: LockRecord): Promise<LockIdentity> {
   await atomicWrite(lockPath, `${JSON.stringify(record)}\n`);
   const written = await lstat(lockPath);
@@ -279,7 +401,11 @@ type LockIdentity = { ino: number; dev: number };
 type LockUnlinkOptions = { unlinkFile?: (filePath: string) => Promise<void>; wait?: (ms: number) => Promise<void> };
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** 只移除仍属于本次任务的锁；Windows 上遇到短暂占用时按原子写策略重试。 */
+/**
+ * 只移除仍属于本次任务的锁；Windows 上遇到短暂占用时按原子写策略重试。
+ * 单回收者认领可以避免其他遵守 Core 锁协议的进程在校验与删除之间换锁；
+ * 普通 Node API 没有按 inode 条件 unlink，无法防止非协作同步程序在最后一次 lstat 后替换路径。
+ */
 export async function unlinkOwnedLock(
   lockPath: string,
   identity: LockIdentity,
@@ -401,6 +527,16 @@ export async function withLock<T>(project: string, fn: () => Promise<T> | T, opt
     // owning file lock is released so later work must acquire a fresh cross-process lock.
     token.active = false;
   }
+}
+
+/** @internal Test-only entry point. This is deliberately not re-exported from the Core package. */
+export async function withLockForTest<T>(
+  project: string,
+  fn: () => Promise<T> | T,
+  options: LockOptions,
+  hooks: RunnerLockTestHooks,
+): Promise<T> {
+  return runnerLockTestHooks.run(hooks, () => withLock(project, fn, options));
 }
 
 export function isConflictCopy(fileName: string, patterns: readonly string[] = DEFAULT_CONFLICT_PATTERNS): boolean {
