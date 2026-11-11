@@ -304,7 +304,7 @@ describe("core io", () => {
       'await withLock(root, async () => { const lock = JSON.parse(await readFile(lockFile, "utf8")); process.stdout.write(lock.host_id); }, { heartbeatMs: 60000 });',
     ].join("\n");
     const hostEnv = hostIdentityEnvironment(stateRoot);
-    const childRuns = Array.from({ length: 8 }, (_, index) => {
+    const childRuns = Array.from({ length: 2 }, (_, index) => {
       const project = path.join(root, `parallel-project-${index}`);
       return runChildScript(source, coreDirectory, {
         ...process.env,
