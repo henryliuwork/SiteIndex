@@ -10,6 +10,14 @@ import {
 
 const roots: string[] = [];
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function fakeSafeStorage(available = true): SafeStorageAdapter {
   const values = new Map<string, string>();
   let nextId = 0;
@@ -198,5 +206,67 @@ describe("WordPress local credential vault", () => {
 
     await expect(vault.status("https://fictional-one.example")).resolves.toEqual({ state: "not_configured" });
     await expect(vault.status("https://fictional-two.example")).resolves.toEqual({ state: "configured" });
+  });
+
+  it("preserves save-then-clear invocation order while encryption availability is gated", async () => {
+    const directory = await tempDirectory();
+    const encryptionEntered = deferred();
+    const releaseEncryption = deferred();
+    const safeStorage = fakeSafeStorage();
+    safeStorage.isAsyncEncryptionAvailable = async () => {
+      encryptionEntered.resolve();
+      await releaseEncryption.promise;
+      return true;
+    };
+    const vault = createWordPressCredentialVault({
+      platform: "darwin",
+      homeDirectory: "/Users/fictional",
+      directoryOverride: path.join(directory, "LocalCredentials"),
+      safeStorage,
+    });
+    const input = {
+      siteUrl: "https://fictional.example",
+      username: "fictional-user",
+      applicationPassword: "fictional-app-password",
+    };
+
+    const saving = vault.save(input);
+    await encryptionEntered.promise;
+    const clearing = vault.clear(input.siteUrl);
+    releaseEncryption.resolve();
+    await Promise.all([saving, clearing]);
+
+    await expect(vault.status(input.siteUrl)).resolves.toEqual({ state: "not_configured" });
+  });
+
+  it("preserves clear-then-save invocation order while clear is gated", async () => {
+    const directory = await tempDirectory();
+    const clearEntered = deferred();
+    const releaseClear = deferred();
+    const vault = createWordPressCredentialVault({
+      platform: "darwin",
+      homeDirectory: "/Users/fictional",
+      directoryOverride: path.join(directory, "LocalCredentials"),
+      safeStorage: fakeSafeStorage(),
+      operationGateForTests: async (operation) => {
+        if (operation === "clear") {
+          clearEntered.resolve();
+          await releaseClear.promise;
+        }
+      },
+    });
+    const input = {
+      siteUrl: "https://fictional.example",
+      username: "fictional-user",
+      applicationPassword: "fictional-app-password",
+    };
+
+    const clearing = vault.clear(input.siteUrl);
+    await clearEntered.promise;
+    const saving = vault.save(input);
+    releaseClear.resolve();
+    await Promise.all([clearing, saving]);
+
+    await expect(vault.status(input.siteUrl)).resolves.toEqual({ state: "configured" });
   });
 });

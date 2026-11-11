@@ -24,6 +24,8 @@ export interface WordPressCredentialVaultOptions {
   safeStorage: SafeStorageAdapter;
   /** Test-only path override; production always resolves a platform-local directory. */
   directoryOverride?: string;
+  /** Test-only async gate for deterministically exercising per-origin write ordering. */
+  operationGateForTests?: (operation: "save" | "clear") => Promise<void>;
 }
 
 export class WordPressCredentialVaultError extends Error {
@@ -222,9 +224,12 @@ export function createWordPressCredentialVault(options: WordPressCredentialVault
     async save(input: WordPressCredentialInput): Promise<void> {
       const { origin, credential } = validateCredential(input);
       const vaultFilePath = filePathFor(directory(), origin);
-      await ensureEncryption();
       const payload = JSON.stringify({ version: VAULT_FORMAT_VERSION, origin, ...credential });
-      await serializeWrite(vaultFilePath, () => writeEncrypted(vaultFilePath, payload));
+      await serializeWrite(vaultFilePath, async () => {
+        await options.operationGateForTests?.("save");
+        await ensureEncryption();
+        await writeEncrypted(vaultFilePath, payload);
+      });
     },
 
     /** Main-process-only accessor for a future media Job; never expose through preload. */
@@ -238,11 +243,14 @@ export function createWordPressCredentialVault(options: WordPressCredentialVault
     async clear(siteUrl: string): Promise<void> {
       const origin = normalizedOrigin(siteUrl);
       const vaultFilePath = filePathFor(directory(), origin);
-      try {
-        await unlink(vaultFilePath);
-      } catch (error) {
-        if (!isMissingFile(error)) throw new WordPressCredentialVaultError("LOCAL_STORAGE_UNAVAILABLE");
-      }
+      await serializeWrite(vaultFilePath, async () => {
+        await options.operationGateForTests?.("clear");
+        try {
+          await unlink(vaultFilePath);
+        } catch (error) {
+          if (!isMissingFile(error)) throw new WordPressCredentialVaultError("LOCAL_STORAGE_UNAVAILABLE");
+        }
+      });
     },
   };
 }
