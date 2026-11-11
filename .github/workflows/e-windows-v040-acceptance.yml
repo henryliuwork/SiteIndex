@@ -9,6 +9,7 @@ on:
       - "packages/desktop/scripts/e-windows-v040-synthetic-fixture.mjs"
       - "packages/desktop/scripts/check-candidate-run.ps1"
       - "packages/desktop/test/e-windows-v040-synthetic-fixture.test.ts"
+      - "packages/desktop/test/e-windows-v041-hosted-update.test.ts"
       - "packages/desktop/test/candidate-run-source.test.ps1"
   workflow_dispatch:
     inputs:
@@ -16,10 +17,47 @@ on:
         description: "验收脚本 checkout commit SHA；用于冻结本轮验收代码"
         required: false
         type: string
-      candidate_version:
-        description: "候选安装包版本；内部验收默认 0.4.0"
+      baseline_version:
+        description: "已发布的旧版本；v0.4.1 托管更新验收使用 0.4.0"
         required: false
         default: "0.4.0"
+        type: string
+      baseline_tag_commit:
+        description: "旧版本 tag 指向的完整 commit SHA"
+        required: false
+        default: "334d5bee76156ad856986031020f51b2bcb7319d"
+        type: string
+      baseline_asset_id:
+        description: "旧版本 SiteIndex-Setup EXE 的 GitHub Release asset ID"
+        required: false
+        default: "734250277"
+        type: string
+      baseline_asset_sha256:
+        description: "旧版本 EXE 的 SHA256"
+        required: false
+        default: "a7414e062a18170ef00f3bb7e09d11cb2b81d2197baff8717b7ee4a9ddda2b90"
+        type: string
+      candidate_version:
+        description: "候选安装包版本；v0.4.1 验收默认值"
+        required: false
+        default: "0.4.1"
+        type: string
+      hosted_update:
+        description: "使用 GitHub Releases 自动更新从 baseline 升级到已发布候选版本"
+        required: false
+        default: true
+        type: boolean
+      candidate_release_commit:
+        description: "候选版本 tag 指向的完整 commit SHA（hosted_update 必填）"
+        required: false
+        type: string
+      candidate_release_asset_id:
+        description: "候选 EXE 的 GitHub Release asset ID（hosted_update 必填）"
+        required: false
+        type: string
+      candidate_release_asset_sha256:
+        description: "候选 EXE 的 GitHub SHA256 digest（hosted_update 必填）"
+        required: false
         type: string
       candidate_installer_url:
         description: "可选：候选 Windows 安装包 HTTPS 地址；与 artifact run 模式互斥"
@@ -69,7 +107,15 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_SOURCE_COMMIT_INPUT: ${{ inputs.expected_source_commit }}
+          BASELINE_VERSION_INPUT: ${{ inputs.baseline_version }}
+          BASELINE_TAG_COMMIT_INPUT: ${{ inputs.baseline_tag_commit }}
+          BASELINE_ASSET_ID_INPUT: ${{ inputs.baseline_asset_id }}
+          BASELINE_ASSET_SHA256_INPUT: ${{ inputs.baseline_asset_sha256 }}
           CANDIDATE_VERSION_INPUT: ${{ inputs.candidate_version }}
+          HOSTED_UPDATE_INPUT: ${{ inputs.hosted_update }}
+          CANDIDATE_RELEASE_COMMIT_INPUT: ${{ inputs.candidate_release_commit }}
+          CANDIDATE_RELEASE_ASSET_ID_INPUT: ${{ inputs.candidate_release_asset_id }}
+          CANDIDATE_RELEASE_ASSET_SHA256_INPUT: ${{ inputs.candidate_release_asset_sha256 }}
           CANDIDATE_SHA256_INPUT: ${{ inputs.candidate_installer_sha256 }}
           CANDIDATE_URL_INPUT: ${{ inputs.candidate_installer_url }}
           CANDIDATE_RUN_ID_INPUT: ${{ inputs.candidate_workflow_run_id }}
@@ -80,7 +126,15 @@ jobs:
         run: |
           $rawInputs = @(
             $env:EXPECTED_SOURCE_COMMIT_INPUT,
+            $env:BASELINE_VERSION_INPUT,
+            $env:BASELINE_TAG_COMMIT_INPUT,
+            $env:BASELINE_ASSET_ID_INPUT,
+            $env:BASELINE_ASSET_SHA256_INPUT,
             $env:CANDIDATE_VERSION_INPUT,
+            $env:HOSTED_UPDATE_INPUT,
+            $env:CANDIDATE_RELEASE_COMMIT_INPUT,
+            $env:CANDIDATE_RELEASE_ASSET_ID_INPUT,
+            $env:CANDIDATE_RELEASE_ASSET_SHA256_INPUT,
             $env:CANDIDATE_SHA256_INPUT,
             $env:CANDIDATE_URL_INPUT,
             $env:CANDIDATE_RUN_ID_INPUT,
@@ -92,8 +146,20 @@ jobs:
             if ($value -match '[\r\n]') { throw "Workflow inputs must be single-line values." }
           }
           $sourceCommit = $env:EXPECTED_SOURCE_COMMIT_INPUT.Trim()
+          $baselineVersion = $env:BASELINE_VERSION_INPUT.Trim()
+          if (-not $baselineVersion) { $baselineVersion = "0.4.0" }
+          $baselineTagCommit = $env:BASELINE_TAG_COMMIT_INPUT.Trim().ToLowerInvariant()
+          if (-not $baselineTagCommit) { $baselineTagCommit = "334d5bee76156ad856986031020f51b2bcb7319d" }
+          $baselineAssetId = $env:BASELINE_ASSET_ID_INPUT.Trim()
+          if (-not $baselineAssetId) { $baselineAssetId = "734250277" }
+          $baselineAssetSha256 = $env:BASELINE_ASSET_SHA256_INPUT.Trim().ToLowerInvariant()
+          if (-not $baselineAssetSha256) { $baselineAssetSha256 = "a7414e062a18170ef00f3bb7e09d11cb2b81d2197baff8717b7ee4a9ddda2b90" }
           $candidateVersion = $env:CANDIDATE_VERSION_INPUT.Trim()
-          if (-not $candidateVersion) { $candidateVersion = "0.4.0" }
+          if (-not $candidateVersion) { $candidateVersion = "0.4.1" }
+          $hostedUpdate = $env:HOSTED_UPDATE_INPUT.Trim().ToLowerInvariant() -eq "true"
+          $candidateReleaseCommit = $env:CANDIDATE_RELEASE_COMMIT_INPUT.Trim().ToLowerInvariant()
+          $candidateReleaseAssetId = $env:CANDIDATE_RELEASE_ASSET_ID_INPUT.Trim()
+          $candidateReleaseAssetSha256 = $env:CANDIDATE_RELEASE_ASSET_SHA256_INPUT.Trim().ToLowerInvariant()
           $candidateSha256 = $env:CANDIDATE_SHA256_INPUT.Trim()
           $candidateUrl = $env:CANDIDATE_URL_INPUT.Trim()
           $candidateRunId = $env:CANDIDATE_RUN_ID_INPUT.Trim()
@@ -103,9 +169,14 @@ jobs:
           if ($sourceCommit -and $sourceCommit -notmatch '^[0-9a-fA-F]{40}$') {
             throw "The expected source commit must be a 40-character hexadecimal SHA."
           }
+          if ($baselineVersion -notmatch '^\d+\.\d+\.\d+$') { throw "The baseline version must use three numeric components." }
+          if ($baselineTagCommit -notmatch '^[0-9a-f]{40}$') { throw "The baseline tag commit must be a 40-character hexadecimal SHA." }
+          if ($baselineAssetId -notmatch '^\d{1,20}$') { throw "The baseline Release asset ID must be numeric." }
+          if ($baselineAssetSha256 -notmatch '^[0-9a-f]{64}$') { throw "The baseline EXE SHA256 must be a 64-character hexadecimal digest." }
           if ($candidateVersion -notmatch '^\d+\.\d+\.\d+$') {
             throw "The candidate version must use three numeric components."
           }
+          if ([version]::Parse($candidateVersion) -le [version]::Parse($baselineVersion)) { throw "The candidate version must be newer than the baseline." }
           if ($candidateSha256 -and $candidateSha256 -notmatch '^[0-9a-fA-F]{64}$') {
             throw "The candidate installer SHA256 must be a 64-character hexadecimal digest."
           }
@@ -114,6 +185,16 @@ jobs:
           }
           $artifactMode = $candidateRunId -or $candidateArtifactId -or $candidateArtifactSha256 -or $candidateSourceCommit
           $candidateArtifactSource = if ($artifactMode) { "workflow-run-artifact" } elseif ($candidateUrl) { "candidate-installer-url" } else { "runner-built-internal-candidate" }
+          if ($hostedUpdate) {
+            if ($candidateUrl -or $artifactMode) { throw "Hosted update mode uses a published Release asset; do not also supply a URL or workflow artifact." }
+            if (-not $sourceCommit) { throw "Hosted update mode requires the frozen acceptance-code commit." }
+            if ($candidateReleaseCommit -notmatch '^[0-9a-f]{40}$') { throw "Hosted update mode requires the candidate tag commit SHA." }
+            if ($candidateReleaseAssetId -notmatch '^\d{1,20}$') { throw "Hosted update mode requires the candidate Release asset ID." }
+            if ($candidateReleaseAssetSha256 -notmatch '^[0-9a-f]{64}$') { throw "Hosted update mode requires the candidate EXE SHA256." }
+            $candidateArtifactSource = "published-hosted-release"
+          } elseif ($candidateReleaseCommit -or $candidateReleaseAssetId -or $candidateReleaseAssetSha256) {
+            throw "Candidate Release provenance inputs require hosted_update=true."
+          }
           if ($candidateUrl -and $artifactMode) {
             throw "Use either a candidate installer URL or a workflow-run artifact, not both."
           }
@@ -136,8 +217,16 @@ jobs:
           "SITEINDEX_RUNNER_IMAGE=$($env:ImageOS)/$($env:ImageVersion)" >> $env:GITHUB_ENV
           "SITEINDEX_PR_HEAD_SHA=$($env:PR_HEAD_SHA_INPUT)" >> $env:GITHUB_ENV
           "SITEINDEX_EXPECTED_SOURCE_COMMIT=$sourceCommit" >> $env:GITHUB_ENV
+          "SITEINDEX_BASELINE_VERSION=$baselineVersion" >> $env:GITHUB_ENV
+          "SITEINDEX_BASELINE_TAG_COMMIT=$baselineTagCommit" >> $env:GITHUB_ENV
+          "SITEINDEX_BASELINE_ASSET_ID=$baselineAssetId" >> $env:GITHUB_ENV
+          "SITEINDEX_BASELINE_ASSET_SHA256=$baselineAssetSha256" >> $env:GITHUB_ENV
           "SITEINDEX_EXPECTED_CANDIDATE_SHA256=$candidateSha256" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_VERSION=$candidateVersion" >> $env:GITHUB_ENV
+          "SITEINDEX_HOSTED_UPDATE=$($hostedUpdate.ToString().ToLowerInvariant())" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_RELEASE_COMMIT=$candidateReleaseCommit" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_RELEASE_ASSET_ID=$candidateReleaseAssetId" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_RELEASE_ASSET_SHA256=$candidateReleaseAssetSha256" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_ARTIFACT_SOURCE=$candidateArtifactSource" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_WORKFLOW_RUN_ID=$candidateRunId" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_ARTIFACT_ID=$candidateArtifactId" >> $env:GITHUB_ENV
@@ -150,7 +239,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Set runner-only candidate version
-        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.candidate_installer_url == '' && inputs.candidate_workflow_run_id == '') }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.candidate_installer_url == '' && inputs.candidate_workflow_run_id == '' && !inputs.hosted_update) }}
         shell: pwsh
         run: |
           $packagePath = Join-Path $PWD "packages/desktop/package.json"
@@ -166,7 +255,7 @@ jobs:
             Write-Output "Runner checkout will package app version $candidateVersion; repository manifest is unchanged."
           }
       - name: Build candidate Windows installer
-        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.candidate_installer_url == '' && inputs.candidate_workflow_run_id == '') }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.candidate_installer_url == '' && inputs.candidate_workflow_run_id == '' && !inputs.hosted_update) }}
         run: pnpm --filter @siteindex/desktop dist:win
       - name: Download and verify supplied official candidate installer
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_installer_url != '' }}
@@ -264,19 +353,90 @@ jobs:
           "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
           Write-Output "Verified original artifact EXE $installerName SHA256 $actual."
-      - name: Download pinned official v0.3.0 installer
+      - name: Verify and download pinned baseline Release installer
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $installer = Join-Path $env:RUNNER_TEMP "SiteIndex-Setup-0.3.0.exe"
-          Invoke-WebRequest -Uri "https://github.com/henryliuwork/SiteIndex/releases/download/v0.3.0/SiteIndex-Setup-0.3.0.exe" -OutFile $installer
+          $apiRoot = $env:GITHUB_API_URL.TrimEnd('/')
+          $repo = $env:GITHUB_REPOSITORY
+          $headers = @{ Accept = "application/vnd.github+json"; Authorization = "Bearer $env:GH_TOKEN"; "X-GitHub-Api-Version" = "2022-11-28" }
+          $version = $env:SITEINDEX_BASELINE_VERSION
+          $tag = "v$version"
+          $expectedCommit = $env:SITEINDEX_BASELINE_TAG_COMMIT
+          $expectedAssetId = [long]$env:SITEINDEX_BASELINE_ASSET_ID
+          $expectedDigest = $env:SITEINDEX_BASELINE_ASSET_SHA256
+          $release = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/releases/tags/$tag" -Headers $headers
+          if ($release.draft -or $release.prerelease -or $release.tag_name -cne $tag) { throw "Baseline Release must be a published stable version." }
+          $tagRef = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/git/ref/tags/$tag" -Headers $headers
+          $tagObject = $tagRef.object
+          for ($depth = 0; $tagObject.type -eq 'tag' -and $depth -lt 5; $depth++) {
+            $tagObject = (Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/git/tags/$($tagObject.sha)" -Headers $headers).object
+          }
+          if ($tagObject.type -ne 'commit' -or $tagObject.sha -cne $expectedCommit) { throw "Baseline version tag does not resolve to the pinned source commit." }
+          $assetName = "SiteIndex-Setup-$version.exe"
+          $asset = @($release.assets | Where-Object { $_.name -ceq $assetName }) | Select-Object -First 1
+          $releaseDigest = ([string]$asset.digest -replace '^sha256:', '').ToLowerInvariant()
+          if (-not $asset -or $asset.id -ne $expectedAssetId -or $releaseDigest -cne $expectedDigest) { throw "Baseline installer asset ID or SHA256 differs from the pinned release metadata." }
+          $installer = Join-Path $env:RUNNER_TEMP $assetName
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $installer
           $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expected = "5b0ffb1e5c74b743c5938bd62349ef0b9fe69a87f05dfc8f56adf25c26f77bdd"
-          if ($actual -ne $expected) { throw "Official v0.3.0 installer SHA256 does not match the pinned GitHub digest." }
-          Write-Output "Official v0.3.0 installer SHA256 verified."
+          if ($actual -cne $expectedDigest) { throw "Downloaded baseline installer SHA256 does not match the pinned GitHub digest." }
+          "SITEINDEX_BASE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
+          "SITEINDEX_BASE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
+          Write-Output "Baseline v$version release tag, asset ID, GitHub digest, and downloaded EXE SHA256 verified."
+      - name: Verify and download published hosted-update candidate
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.hosted_update }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $apiRoot = $env:GITHUB_API_URL.TrimEnd('/')
+          $repo = $env:GITHUB_REPOSITORY
+          $headers = @{ Accept = "application/vnd.github+json"; Authorization = "Bearer $env:GH_TOKEN"; "X-GitHub-Api-Version" = "2022-11-28" }
+          $version = $env:SITEINDEX_CANDIDATE_VERSION
+          $tag = "v$version"
+          $expectedCommit = $env:SITEINDEX_CANDIDATE_RELEASE_COMMIT
+          $expectedAssetId = [long]$env:SITEINDEX_CANDIDATE_RELEASE_ASSET_ID
+          $expectedDigest = $env:SITEINDEX_CANDIDATE_RELEASE_ASSET_SHA256
+          $release = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/releases/tags/$tag" -Headers $headers
+          if ($release.draft -or $release.prerelease -or $release.tag_name -cne $tag) { throw "Candidate Release must be a published stable version." }
+          $latest = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/releases/latest" -Headers $headers
+          if ($latest.tag_name -cne $tag) { throw "Candidate Release is not GitHub's latest stable Release; electron-updater would not offer it." }
+          $tagRef = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/git/ref/tags/$tag" -Headers $headers
+          $tagObject = $tagRef.object
+          for ($depth = 0; $tagObject.type -eq 'tag' -and $depth -lt 5; $depth++) {
+            $tagObject = (Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/git/tags/$($tagObject.sha)" -Headers $headers).object
+          }
+          if ($tagObject.type -ne 'commit' -or $tagObject.sha -cne $expectedCommit) { throw "Candidate version tag does not resolve to the supplied source commit." }
+          $assetName = "SiteIndex-Setup-$version.exe"
+          $asset = @($release.assets | Where-Object { $_.name -ceq $assetName }) | Select-Object -First 1
+          $releaseDigest = ([string]$asset.digest -replace '^sha256:', '').ToLowerInvariant()
+          if (-not $asset -or $asset.id -ne $expectedAssetId -or $releaseDigest -cne $expectedDigest) { throw "Candidate installer asset ID or SHA256 differs from the supplied release metadata." }
+          $feedAsset = @($release.assets | Where-Object { $_.name -ceq "latest.yml" }) | Select-Object -First 1
+          if (-not $feedAsset) { throw "Candidate Release is missing latest.yml; hosted updates cannot be checked." }
+          $feedText = [string](Invoke-WebRequest -Uri $feedAsset.browser_download_url).Content
+          $escapedVersion = [regex]::Escape($version)
+          $escapedAssetName = [regex]::Escape($assetName)
+          if ($feedText -notmatch "(?m)^version:\s*$escapedVersion\s*$") { throw "latest.yml version does not match the candidate Release." }
+          if ($feedText -notmatch "(?m)^\s*url:\s*$escapedAssetName\s*$") { throw "latest.yml does not reference the verified candidate installer filename." }
+          $feedSha512Match = [regex]::Match($feedText, "(?m)^\s+sha512:\s*(\S+)\s*$")
+          if (-not $feedSha512Match.Success) { throw "latest.yml is missing the candidate installer SHA512." }
+          $installer = Join-Path $env:RUNNER_TEMP $assetName
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $installer
+          $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $expectedDigest) { throw "Downloaded candidate EXE SHA256 does not match the pinned GitHub digest." }
+          $actualSha512 = [Convert]::ToBase64String([System.Security.Cryptography.SHA512]::HashData([System.IO.File]::ReadAllBytes($installer)))
+          if ($actualSha512 -cne $feedSha512Match.Groups[1].Value) { throw "latest.yml SHA512 does not match the downloaded candidate installer." }
+          "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_SOURCE_COMMIT=$($tagObject.sha)" >> $env:GITHUB_ENV
+          "SITEINDEX_CANDIDATE_UPDATE_METADATA_VERIFIED=true" >> $env:GITHUB_ENV
+          Write-Output "Published v$version Release tag, source commit, asset ID, GitHub digest, latest.yml version, installer filename, SHA512, and downloaded EXE verified."
       - name: Install, upgrade, and exercise packaged IPC
         shell: pwsh
         run: |
-          $oldInstaller = Join-Path $env:RUNNER_TEMP "SiteIndex-Setup-0.3.0.exe"
+          $oldInstaller = $env:SITEINDEX_BASE_INSTALLER_PATH
           $candidateInstaller = if ($env:SITEINDEX_CANDIDATE_INSTALLER_PATH) {
             $env:SITEINDEX_CANDIDATE_INSTALLER_PATH
           } else {
