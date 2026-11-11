@@ -3,8 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Card, Chip, PageHeader, TabPanel, Tabs, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, Notice, PageHeader, TabPanel, Tabs, useToast } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
+import { WordPressCredentialsCard } from "./app-settings/wordpress-credentials";
 import "./app-settings/page.css";
 
 const RELEASES_URL = "https://github.com/henryliuwork/SiteIndex/releases/latest";
@@ -196,6 +197,7 @@ export function AppSettingsPage() {
         </div>
       </Card>}
 
+      {activeTab === "basic" && <WordPressCredentialsCard />}
       {activeTab === "basic" && (typeof draft.close_to_tray === "boolean" || typeof draft.launch_at_login === "boolean") && <Card className="si-app-settings-card">
         <h2>启动与关闭</h2>
         {typeof draft.close_to_tray === "boolean" && <div className="si-app-setting-row">
