@@ -20,6 +20,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { runWordPressCredentialsUiSmoke } from "../../ui/visual/wordpress-credentials-smoke.mjs";
+import { createCredentialRegionWaitPage } from "./credential-region-wait.mjs";
 import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
 import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
@@ -2866,7 +2867,7 @@ async function captureAddExistingTrace(page) {
 async function runPackagedCredentialPhase(page, { alias, origin, phase, expectedState, otherSites = [] }) {
   let result;
   try {
-    result = await runWordPressCredentialsUiSmoke(page, {
+    result = await runWordPressCredentialsUiSmoke(createCredentialRegionWaitPage(page), {
       runtime: "packaged-electron",
       origin,
       phase,
