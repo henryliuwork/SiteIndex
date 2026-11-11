@@ -160,7 +160,19 @@
           "crawl.feed_url": "site_service.feedUrl",
           "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
           "catalog.url": "site_service.productUrl(sku)"
-        }
+        },
+        "run_plan": [
+          {
+            "phase": "interrupt",
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          },
+          {
+            "phase": "recover",
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:05:00Z"
+          }
+        ]
       },
       "site_service": {
         "productResponsesBySku": {
@@ -212,7 +224,8 @@
         "sku_status": "active",
         "stock_status": "in_stock",
         "event_for_interrupted_sku": "feed_anomaly",
-        "no_duplicate_removed_event": true
+        "no_duplicate_removed_event": true,
+        "checked_at": "2026-10-21T12:05:00Z"
       },
       "safe_observation": {
         "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
@@ -447,7 +460,19 @@
             "enabled": true,
             "max_per_run": 2
           }
-        }
+        },
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          },
+          {
+            "run": 2,
+            "date": "2026-10-22",
+            "now": "2026-10-22T12:00:00Z"
+          }
+        ]
       },
       "site_service": {
         "defaultProductResponse": {
@@ -515,17 +540,11 @@
         }
       },
       "steps": [
-        "Seed the cursor at SYN-CHURN-20, with SYN-CHURN-20 present in the current feed and SYN-CHURN-15 newly absent from it.",
-        "Run daily twice without changing the fixture set.",
-        "Compare synthetic inventory results for the four current candidates and the route request total."
+        "Seed the persisted cursor at SYN-CHURN-20; SYN-CHURN-20 is in the current feed while SYN-CHURN-15 is newly absent.",
+        "Run daily twice using each run_plan entry date and exact UTC now; retain the same synthetic project and update only its job outputs.",
+        "After each run, derive the unordered visited SKU set from inventory_latest checked_at/stock changes and read last_sku from the persisted stock-verification cursor; do not use request-body logs."
       ],
       "expected": {
-        "candidate_visit_order": [
-          "SYN-CHURN-30",
-          "SYN-CHURN-40",
-          "SYN-CHURN-10",
-          "SYN-CHURN-15"
-        ],
         "runs_to_visit_current_candidates": 2,
         "product_page_requests_total": 4,
         "removed_candidate_requested": false,
@@ -556,7 +575,26 @@
             "feed_present_sku_in_stock": "SYN-CHURN-20"
           }
         ],
-        "graphql_requests_total": 4
+        "graphql_requests_total": 4,
+        "candidate_visit_set_by_run": [
+          [
+            "SYN-CHURN-30",
+            "SYN-CHURN-40"
+          ],
+          [
+            "SYN-CHURN-10",
+            "SYN-CHURN-15"
+          ]
+        ],
+        "cursor_last_sku_by_run": [
+          "SYN-CHURN-40",
+          "SYN-CHURN-15"
+        ],
+        "checked_at_utc_by_run": [
+          "2026-10-21T12:00:00Z",
+          "2026-10-22T12:00:00Z"
+        ],
+        "candidate_order_observation": "For a two-SKU set, the exact set plus last_sku proves the order without retaining per-SKU request logs."
       },
       "safe_observation": {
         "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
@@ -680,7 +718,14 @@
           "crawl.feed_url": "site_service.feedUrl",
           "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
           "catalog.url": "site_service.productUrl(sku)"
-        }
+        },
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          }
+        ]
       },
       "site_service": {
         "productResponsesBySku": {
@@ -844,7 +889,14 @@
           "crawl.feed_url": "site_service.feedUrl",
           "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
           "catalog.url": "site_service.productUrl(sku)"
-        }
+        },
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          }
+        ]
       },
       "site_service": {
         "productResponsesBySku": {
@@ -1102,6 +1154,23 @@
           "2026-10-21",
           "2026-10-22",
           "2026-10-23"
+        ],
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          },
+          {
+            "run": 2,
+            "date": "2026-10-22",
+            "now": "2026-10-22T12:00:00Z"
+          },
+          {
+            "run": 3,
+            "date": "2026-10-23",
+            "now": "2026-10-23T12:00:00Z"
+          }
         ]
       },
       "site_service": {
@@ -1170,23 +1239,10 @@
         }
       },
       "steps": [
-        "Run daily three times on the same synthetic project, preserving the cursor between invocations."
+        "Run daily three times on the same synthetic project, applying each run_plan date and exact UTC now while preserving the cursor.",
+        "After each run, derive the unordered visited set from inventory_latest checked_at changes and read the persisted stock-verification cursor last_sku; do not use per-SKU request-body logs."
       ],
       "expected": {
-        "candidate_visit_order_by_run": [
-          [
-            "SYN-ROT-01",
-            "SYN-ROT-02"
-          ],
-          [
-            "SYN-ROT-03",
-            "SYN-ROT-04"
-          ],
-          [
-            "SYN-ROT-05",
-            "SYN-ROT-01"
-          ]
-        ],
         "all_candidates_visited_within_runs": 3,
         "candidate_cap_per_run": 2,
         "all_candidate_skus_remain_active": true,
@@ -1231,7 +1287,32 @@
           }
         ],
         "all_candidates_verified_as_business_results": true,
-        "graphql_responses_match_requested_sku": true
+        "graphql_responses_match_requested_sku": true,
+        "candidate_visit_set_by_run": [
+          [
+            "SYN-ROT-01",
+            "SYN-ROT-02"
+          ],
+          [
+            "SYN-ROT-03",
+            "SYN-ROT-04"
+          ],
+          [
+            "SYN-ROT-01",
+            "SYN-ROT-05"
+          ]
+        ],
+        "cursor_last_sku_by_run": [
+          "SYN-ROT-02",
+          "SYN-ROT-04",
+          "SYN-ROT-01"
+        ],
+        "checked_at_utc_by_run": [
+          "2026-10-21T12:00:00Z",
+          "2026-10-22T12:00:00Z",
+          "2026-10-23T12:00:00Z"
+        ],
+        "candidate_order_observation": "Each run has two distinct visited SKUs; the set plus persisted last_sku proves exact sequence while aggregate service snapshots retain no request bodies."
       },
       "safe_observation": {
         "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
@@ -1257,11 +1338,6 @@
           {
             "sku": "SYN-WRITE-FEED"
           }
-        ],
-        "run_dates": [
-          "2026-10-21",
-          "2026-10-22",
-          "2026-10-23"
         ],
         "site_config": {
           "domain": "synthetic-shop.test",
@@ -1324,7 +1400,27 @@
           }
         ],
         "initial_catalog_rows_complete_for_active_skus": true,
-        "initial_inventory_complete_for_active_skus": true
+        "initial_inventory_complete_for_active_skus": true,
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z",
+            "graphql_epoch": 1
+          },
+          {
+            "run": 2,
+            "date": "2026-10-22",
+            "now": "2026-10-22T12:00:00Z",
+            "graphql_epoch": 2
+          },
+          {
+            "run": 3,
+            "date": "2026-10-23",
+            "now": "2026-10-23T12:00:00Z",
+            "graphql_epoch": 3
+          }
+        ]
       },
       "site_service": {
         "productResponsesBySku": {
@@ -1382,13 +1478,13 @@
       ],
       "project_fault_injection": {
         "cut_point": "after events JSONL has been atomically written and before inventory_latest JSONL is committed",
-        "method": "test-only file-write fault or controlled child-process termination; preserve only synthetic project files"
+        "method": "test-only one-shot atomicWrite failure injected by the Core test harness at the inventory_latest target after the events target succeeds; not an HTTP response toggle and not a product API"
       },
       "steps": [
-        "Run daily with GraphQL epoch 1 and inject interruption at the stated write boundary.",
-        "Record the run outcome, cursor pending journal, catalog status, inventory row, and event row counts.",
-        "Restart with GraphQL epoch 2 returning 429; require a visible partial/unavailable result and verify no false removed status.",
-        "Run again with GraphQL epoch 3 returning IN_STOCK; verify the candidate remains active, the current inventory reaches in_stock, and event/output state is recoverable without duplicate same-key events."
+        "Start fake GraphQL epoch 1 with IN_STOCK and point synthetic site.json crawl.stock_verify.graphql_url at its endpoint; run daily at the exact date/now in run_plan.",
+        "In a test-only Core harness, inject one atomicWrite failure for inventory_latest after the events file write; preserve the project, transaction manifest, backups, and cursor.",
+        "Close epoch 1; create a new fake GraphQL service with epoch 2 response 429, update only the synthetic site.json endpoint to the new loopback endpoint, then run daily with run_plan date/now. Verify rollback/recovery and prior stock preservation.",
+        "Close epoch 2; create a new fake GraphQL service with epoch 3 IN_STOCK, update the synthetic site.json endpoint again, then run daily. Verify the candidate remains active, the latest inventory is in_stock, and the event key is not duplicated."
       ],
       "expected": {
         "retry_with_429_status": "partial",
@@ -1406,6 +1502,16 @@
         "result": "11 passed",
         "method": "deterministic atomicWrite failure injection at each output target, then same-process retry using 404 followed by 200 page plus GraphQL 503",
         "limit": "does not prove OS process termination or execute this manifest three-epoch 429/recovery sequence"
+      },
+      "fake_graphql_epoch_switch": {
+        "service_api": "createFakeGraphqlService({ responsesBySku }) has immutable response configuration; it has no response setter.",
+        "procedure": [
+          "close() the previous fake GraphQL service",
+          "createFakeGraphqlService using the next graphql_service_epochs entry",
+          "write the new service endpoint into the synthetic project site.json crawl.stock_verify.graphql_url",
+          "run daily against the same synthetic project and preserved transaction/cursor files"
+        ],
+        "network_policy": "loopback_only; service snapshots contain aggregate counts only"
       }
     }
   ],
