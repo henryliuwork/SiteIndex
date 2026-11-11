@@ -82,6 +82,21 @@ function lockError(message: string): CoreIOError {
 const LOCK_READ_RETRIES = 8;
 const LOCK_READ_RETRY_MS = 10;
 
+type ProcessPresence = "alive" | "dead" | "unknown";
+
+function processPresence(pid: number): ProcessPresence {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return "unknown";
+  try {
+    process.kill(pid, 0);
+    return "alive";
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return "dead";
+    // EPERM and platform-specific probe failures are ambiguous. Keep the lock conservatively.
+    return "unknown";
+  }
+}
+
 async function openOrRecover(lockPath: string, staleAfterMs: number, now: () => Date) {
   try {
     return await open(lockPath, "wx");
@@ -112,12 +127,18 @@ async function openOrRecover(lockPath: string, staleAfterMs: number, now: () => 
       if (!Number.isFinite(heartbeat)) incomplete = true;
       const lastActivity = Number.isFinite(heartbeat) ? heartbeat : identity.mtimeMs;
       const stale = Number.isFinite(lastActivity) && now().getTime() - lastActivity > staleAfterMs;
+      const presence = typeof record?.pid === "number" ? processPresence(record.pid) : "unknown";
+      const definitelyDead = presence === "dead";
+      // A fresh heartbeat is not evidence that its writer survived a forced process exit.
+      // Conversely, a live or unprobeable PID is never stolen, even after a long stall:
+      // this also treats PID reuse conservatively rather than killing another process's job.
+      const reclaimable = definitelyDead || (stale && !record?.pid);
 
-      if (incomplete && !stale) {
+      if (incomplete && !stale && !definitelyDead) {
         if (attempt < LOCK_READ_RETRIES) continue;
         throw lockError("项目运行锁内容尚未写入完成，请稍后重试。");
       }
-      if (!stale) throw lockError("项目正在运行另一个任务，请稍后重试。");
+      if (!reclaimable) throw lockError("项目正在运行另一个任务，请稍后重试。");
 
       const current = await lstat(lockPath);
       if (current.ino !== identity.ino || current.dev !== identity.dev

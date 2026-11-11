@@ -175,6 +175,82 @@ describe("core io", () => {
     await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("does not steal a stale lock when its owner PID is still alive", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const record = {
+      device_id: "live-owner",
+      device_name: "test",
+      pid: process.pid,
+      job: "synthetic-stalled-job",
+      started_at: "2026-10-22T09:00:00.000Z",
+      heartbeat: "2026-10-22T09:00:00.000Z",
+    };
+    await writeFile(lockPath, JSON.stringify(record));
+
+    await expect(withLock(root, () => "must not enter", {
+      now: () => new Date("2026-10-22T10:00:00.000Z"), staleAfterMs: 60_000,
+    })).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(record));
+  });
+
+  it("immediately reclaims a fresh lock after its owning child process exits", async () => {
+    const root = await tempDir();
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const childSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing lock root");',
+      'await withLock(root, async () => { process.stdout.write("held\\n"); await new Promise(() => undefined); }, { deviceId: "child", job: "daily", heartbeatMs: 60_000 });',
+    ].join("\n");
+    let child: ReturnType<typeof spawn> | undefined;
+    let closed!: () => void;
+    const childClosed = new Promise<void>((resolve) => { closed = resolve; });
+    try {
+      child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", childSource], {
+        cwd: coreDirectory,
+        env: { ...process.env, SITEINDEX_TEST_LOCK_ROOT: root },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let output = "";
+      let signalReady!: () => void;
+      let rejectReady!: (error: Error) => void;
+      const ready = new Promise<void>((resolve, reject) => { signalReady = resolve; rejectReady = reject; });
+      child.stdout?.on("data", (chunk: Buffer) => {
+        output += chunk.toString("utf8");
+        if (output.includes("held\n")) signalReady();
+      });
+      child.once("error", rejectReady);
+      child.once("close", () => closed());
+      let readyTimeout: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          ready,
+          new Promise<never>((_, reject) => { readyTimeout = setTimeout(() => reject(new Error("child did not acquire project lock")), 10_000); }),
+        ]);
+      } finally {
+        if (readyTimeout) clearTimeout(readyTimeout);
+      }
+
+      const lockPath = path.join(root, PATHS.lock);
+      const lock = JSON.parse(await readFile(lockPath, "utf8")) as { pid: number; heartbeat: string };
+      expect(lock.pid).toBe(child.pid);
+      expect(Date.now() - Date.parse(lock.heartbeat)).toBeLessThan(5_000);
+      child.kill();
+      await childClosed;
+      child = undefined;
+
+      await expect(withLock(root, () => "recovered immediately", { heartbeatMs: 60_000 })).resolves.toBe("recovered immediately");
+      await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      if (child && child.exitCode === null) {
+        child.kill();
+        await childClosed;
+      }
+    }
+  }, 30_000);
+
   it("handles 200 concurrent lock attempts without exposing partial JSON", async () => {
     const root = await tempDir();
     let release!: () => void;

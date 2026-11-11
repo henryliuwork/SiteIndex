@@ -74,9 +74,9 @@ import {
   type ValidationReport,
 } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
-import { readCsv, writeCsv, type CsvRow } from "../io/csv";
+import { parseCsv, readCsv, writeCsv, type CsvRow } from "../io/csv";
 import { compareKeys } from "../io/compare";
-import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
+import { parseJsonl, readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { pathsForProject, resolveProjectLayout } from "../io/project-layout";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
 import { groupSkuIds, previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
@@ -91,7 +91,7 @@ import { hasPriceChangeWithin } from "../inventory/price-history";
 import { parentStockRows } from "../inventory/parent-stock-view";
 import { groupProductRows } from "../products/parent-view";
 import { runDaily } from "../jobs/daily";
-import { recoverDailyOutputTransaction } from "../jobs/daily-output-transaction";
+import { readDailyOutputTransactionOverlay, recoverDailyOutputTransaction } from "../jobs/daily-output-transaction";
 import { buildViews } from "../views/build";
 import { assertRunner, readRunner, withLock } from "../io/runner-lock";
 import { cleanFolderName, createConfig, createProjectFiles } from "../projects/create";
@@ -362,9 +362,26 @@ function parseEvents(rows: JsonRecord[]): InventoryEvent[] {
   return rows as unknown as InventoryEvent[];
 }
 
-async function readJsonlAs<T>(projectPath: string, relativePath: string, paths?: ProjectPaths): Promise<T[]> {
+type SnapshotReadOverlay = ReadonlyMap<string, Buffer | null>;
+
+async function readJsonlAs<T>(projectPath: string, relativePath: string, paths?: ProjectPaths, overlay?: SnapshotReadOverlay): Promise<T[]> {
   const projectPaths = paths ?? await pathsForProject(projectPath);
-  return await readJsonl(absoluteProjectPath(projectPath, relativePath, projectPaths)) as unknown as T[];
+  const absolute = absoluteProjectPath(projectPath, relativePath, projectPaths);
+  const key = path.resolve(absolute);
+  if (overlay?.has(key)) {
+    const bytes = overlay.get(key);
+    return bytes === null ? [] : parseJsonl(bytes?.toString("utf8") ?? "", absolute) as unknown as T[];
+  }
+  return await readJsonl(absolute) as unknown as T[];
+}
+
+async function readCsvForSnapshot(filePath: string, overlay?: SnapshotReadOverlay): Promise<CsvRow[]> {
+  const key = path.resolve(filePath);
+  if (overlay?.has(key)) {
+    const bytes = overlay.get(key);
+    return bytes === null ? [] : parseCsv(bytes?.toString("utf8") ?? "", filePath);
+  }
+  return readCsv(filePath);
 }
 
 async function readJsonAs<T>(projectPath: string, relativePath: string, fallback: T, paths?: ProjectPaths): Promise<T> {
@@ -453,7 +470,11 @@ function normalizeSeoIgnoreRules(rules: readonly SeoIgnoreRule[]): SeoIgnoreRule
   return [...unique.values()].sort((left, right) => compareKeys(left.rule, right.rule) || compareKeys(left.url ?? "", right.url ?? ""));
 }
 
-async function snapshotFingerprint(projectPath: string, basePaths: readonly string[] = SNAPSHOT_FILE_PATHS): Promise<string> {
+async function snapshotFingerprint(
+  projectPath: string,
+  basePaths: readonly string[] = SNAPSHOT_FILE_PATHS,
+  ignoredAbsolutePaths?: ReadonlySet<string>,
+): Promise<string> {
   const paths = await pathsForProject(projectPath);
   let eventFiles: string[];
   try {
@@ -467,8 +488,10 @@ async function snapshotFingerprint(projectPath: string, basePaths: readonly stri
 
   const filePaths = [...basePaths, ...eventFiles].sort(compareKeys);
   const entries = await Promise.all(filePaths.map(async (relativePath) => {
+    const absolute = path.resolve(absoluteProjectPath(projectPath, relativePath, paths));
+    if (ignoredAbsolutePaths?.has(absolute)) return `${relativePath}\u0000transaction-overlay`;
     try {
-      const file = await stat(absoluteProjectPath(projectPath, relativePath, paths));
+      const file = await stat(absolute);
       return `${relativePath}\u0000${file.dev}\u0000${file.ino}\u0000${file.size}\u0000${file.mtimeMs}\u0000${file.ctimeMs}`;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return `${relativePath}\u0000missing`;
@@ -478,32 +501,32 @@ async function snapshotFingerprint(projectPath: string, basePaths: readonly stri
   return entries.join("\n");
 }
 
-async function loadSnapshot(projectPath: string): Promise<ProjectSnapshot> {
+async function loadSnapshot(projectPath: string, overlay?: SnapshotReadOverlay): Promise<ProjectSnapshot> {
   const config = await readSiteConfig(projectPath);
   const paths = await pathsForProject(projectPath);
   try {
     const [runner, skus, latest, dailyCsv, products, skuStock, productDetails, seoPages, seoIssues, seoLinks, blogIndex, keywords, skuMedia, campaigns, categories, runs, skuTags] = await Promise.all([
       readRunner(projectPath),
-      readJsonlAs<SkuRecord>(projectPath, PATHS.skus, paths),
-      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest, paths),
-      readCsv(path.join(projectPath, paths.dailySummary)),
-      readJsonlAs<ProductView>(projectPath, PATHS.productsView, paths),
-      readJsonlAs<SkuStockView>(projectPath, PATHS.skuStockView, paths),
-      readJsonlAs<ProductDetails>(projectPath, PATHS.productDetails, paths),
-      readJsonlAs<SeoPage>(projectPath, PATHS.seoPages, paths),
-      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues, paths),
-      readJsonlAs<SeoLink>(projectPath, PATHS.seoLinks, paths),
-      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex, paths),
-      readJsonlAs<Keyword>(projectPath, PATHS.keywords, paths),
-      readCsv(path.join(projectPath, paths.skuMedia)),
-      readJsonlAs<EdmCampaign>(projectPath, PATHS.edmCampaigns, paths),
+      readJsonlAs<SkuRecord>(projectPath, PATHS.skus, paths, overlay),
+      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest, paths, overlay),
+      readCsvForSnapshot(path.join(projectPath, paths.dailySummary), overlay),
+      readJsonlAs<ProductView>(projectPath, PATHS.productsView, paths, overlay),
+      readJsonlAs<SkuStockView>(projectPath, PATHS.skuStockView, paths, overlay),
+      readJsonlAs<ProductDetails>(projectPath, PATHS.productDetails, paths, overlay),
+      readJsonlAs<SeoPage>(projectPath, PATHS.seoPages, paths, overlay),
+      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues, paths, overlay),
+      readJsonlAs<SeoLink>(projectPath, PATHS.seoLinks, paths, overlay),
+      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex, paths, overlay),
+      readJsonlAs<Keyword>(projectPath, PATHS.keywords, paths, overlay),
+      readCsvForSnapshot(path.join(projectPath, paths.skuMedia), overlay),
+      readJsonlAs<EdmCampaign>(projectPath, PATHS.edmCampaigns, paths, overlay),
       readJsonAs<Category[]>(projectPath, PATHS.categories, [], paths),
-      readJsonlAs<RunLog>(projectPath, PATHS.runs, paths),
-      readCsv(path.join(projectPath, paths.skuTags)),
+      readJsonlAs<RunLog>(projectPath, PATHS.runs, paths, overlay),
+      readCsvForSnapshot(path.join(projectPath, paths.skuTags), overlay),
     ]);
     const dailySummary = parseDailySummary(dailyCsv);
     const asOf = dailySummary.map((row) => row.date).sort(codeUnitCompare).at(-1) ?? localDate(config.timezone);
-    const events = parseEvents(await readJsonl(path.join(projectPath, paths.eventsDir, `${monthFor(asOf)}.jsonl`)));
+    const events = parseEvents(await readJsonlAs<InventoryEvent>(projectPath, `${PATHS.eventsDir}/${monthFor(asOf)}.jsonl`, paths, overlay) as unknown as JsonRecord[]);
     return {
       projectPath,
       config,
@@ -533,23 +556,23 @@ async function loadSnapshot(projectPath: string): Promise<ProjectSnapshot> {
   }
 }
 
-async function loadProjectSummarySnapshot(projectPath: string): Promise<ProjectSummarySnapshot> {
+async function loadProjectSummarySnapshot(projectPath: string, overlay?: SnapshotReadOverlay): Promise<ProjectSummarySnapshot> {
   const config = await readSiteConfig(projectPath);
   const paths = await pathsForProject(projectPath);
   try {
     const [runner, skus, latest, dailyCsv, products, seoIssues, blogIndex, runs] = await Promise.all([
       readRunner(projectPath),
-      readJsonlAs<SkuRecord>(projectPath, PATHS.skus, paths),
-      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest, paths),
-      readCsv(path.join(projectPath, paths.dailySummary)),
-      readJsonlAs<ProductView>(projectPath, PATHS.productsView, paths),
-      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues, paths),
-      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex, paths),
-      readJsonlAs<RunLog>(projectPath, PATHS.runs, paths),
+      readJsonlAs<SkuRecord>(projectPath, PATHS.skus, paths, overlay),
+      readJsonlAs<InventoryLatest>(projectPath, PATHS.inventoryLatest, paths, overlay),
+      readCsvForSnapshot(path.join(projectPath, paths.dailySummary), overlay),
+      readJsonlAs<ProductView>(projectPath, PATHS.productsView, paths, overlay),
+      readJsonlAs<SeoIssue>(projectPath, PATHS.seoIssues, paths, overlay),
+      readJsonlAs<BlogPost>(projectPath, PATHS.blogIndex, paths, overlay),
+      readJsonlAs<RunLog>(projectPath, PATHS.runs, paths, overlay),
     ]);
     const dailySummary = parseDailySummary(dailyCsv);
     const asOf = dailySummary.map((row) => row.date).sort(codeUnitCompare).at(-1) ?? localDate(config.timezone);
-    const events = parseEvents(await readJsonl(path.join(projectPath, paths.eventsDir, `${monthFor(asOf)}.jsonl`)));
+    const events = parseEvents(await readJsonlAs<InventoryEvent>(projectPath, `${PATHS.eventsDir}/${monthFor(asOf)}.jsonl`, paths, overlay) as unknown as JsonRecord[]);
     return { projectPath, config, runner, skus, latest, dailySummary, events, products, seoIssues, blogIndex, runs, asOf };
   } catch (error) {
     if (isSiteIndexError(error)) throw error;
@@ -1399,43 +1422,51 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   };
   const load = async (projectPath: string): Promise<ProjectSnapshot> => {
     const key = path.resolve(projectPath);
-    return serializeRead(key, () => withLock(key, async () => {
-      await recoverDailyOutputTransaction(key, pathsFor(await resolveProjectLayout(key)));
-      let fingerprint: string;
-      try {
-        fingerprint = await snapshotFingerprint(key);
-      } catch {
-        cache.delete(key);
-        return loadSnapshot(key);
+    return serializeRead(key, async () => {
+      const paths = pathsFor(await resolveProjectLayout(key));
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const overlay = await readDailyOutputTransactionOverlay(key, paths);
+        const ignored = overlay ? new Set(overlay.files.keys()) : undefined;
+        const before = await snapshotFingerprint(key, SNAPSHOT_FILE_PATHS, ignored);
+        const fingerprint = `${before}\ntransaction:${overlay?.signature ?? "none"}`;
+        const existing = cache.get(key);
+        if (existing?.fingerprint === fingerprint) return existing.snapshot;
+
+        const snapshot = await loadSnapshot(key, overlay?.files);
+        const after = await snapshotFingerprint(key, SNAPSHOT_FILE_PATHS, ignored);
+        const overlayAfter = await readDailyOutputTransactionOverlay(key, paths);
+        if (before !== after || (overlayAfter && overlayAfter.signature !== overlay?.signature)
+          || (!overlay && overlayAfter)) continue;
+
+        cache.set(key, { fingerprint, snapshot: Promise.resolve(snapshot) });
+        return snapshot;
       }
-      const existing = cache.get(key);
-      if (existing?.fingerprint === fingerprint) return existing.snapshot;
-      const pending = loadSnapshot(key);
-      cache.set(key, { fingerprint, snapshot: pending });
-      void pending.catch(() => { if (cache.get(key)?.snapshot === pending) cache.delete(key); });
-      return pending;
-    }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "read-snapshot" }));
+      throw siteError("PROJECT_UNREADABLE", "daily 数据正在变化，无法取得一致快照，请稍后重试。", key);
+    });
   };
   const loadProjectSummary = async (projectPath: string): Promise<ProjectSummarySnapshot> => {
     const key = path.resolve(projectPath);
-    return serializeRead(key, () => withLock(key, async () => {
-      await recoverDailyOutputTransaction(key, pathsFor(await resolveProjectLayout(key)));
-      let fingerprint: string;
-      try {
-        fingerprint = await snapshotFingerprint(key, PROJECT_SUMMARY_FILE_PATHS);
-      } catch {
-        projectSummaryCache.delete(key);
-        return loadProjectSummarySnapshot(key);
+    return serializeRead(key, async () => {
+      const paths = pathsFor(await resolveProjectLayout(key));
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const overlay = await readDailyOutputTransactionOverlay(key, paths);
+        const ignored = overlay ? new Set(overlay.files.keys()) : undefined;
+        const before = await snapshotFingerprint(key, PROJECT_SUMMARY_FILE_PATHS, ignored);
+        const fingerprint = `${before}\ntransaction:${overlay?.signature ?? "none"}`;
+        const existing = projectSummaryCache.get(key);
+        if (existing?.fingerprint === fingerprint) return existing.snapshot;
+
+        const snapshot = await loadProjectSummarySnapshot(key, overlay?.files);
+        const after = await snapshotFingerprint(key, PROJECT_SUMMARY_FILE_PATHS, ignored);
+        const overlayAfter = await readDailyOutputTransactionOverlay(key, paths);
+        if (before !== after || (overlayAfter && overlayAfter.signature !== overlay?.signature)
+          || (!overlay && overlayAfter)) continue;
+
+        projectSummaryCache.set(key, { fingerprint, snapshot: Promise.resolve(snapshot) });
+        return snapshot;
       }
-      const existing = projectSummaryCache.get(key);
-      if (existing?.fingerprint === fingerprint) return existing.snapshot;
-      const pending = loadProjectSummarySnapshot(key);
-      projectSummaryCache.set(key, { fingerprint, snapshot: pending });
-      void pending.catch(() => {
-        if (projectSummaryCache.get(key)?.snapshot === pending) projectSummaryCache.delete(key);
-      });
-      return pending;
-    }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "read-project-summary" }));
+      throw siteError("PROJECT_UNREADABLE", "daily 数据正在变化，无法取得一致快照，请稍后重试。", key);
+    });
   };
 
   const runJob: CoreService["runJob"] = async (req, report) => {
@@ -2327,53 +2358,55 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
     setManualImage: async (id, sku, imageUrl) => {
       const projectPath = resolve(id);
-      const snapshot = await load(projectPath);
-      const record = snapshot.skus.find((row) => row.sku === sku);
-      const activeSkus = snapshot.skus.filter((row) => row.status === "active");
-      let parentGroup: { parent: string; children: string[] } | undefined;
-      if (!record && snapshot.config.sku_grouping?.enabled) {
-        try {
-          parentGroup = groupSkuIds(activeSkus.map((row) => row.sku), snapshot.config.sku_grouping.rule)
-            .groups.find((group) => group.parent === sku);
-        } catch (error) {
-          if (error instanceof SkuGroupingRuleError) throw siteError(error.code, error.message, error.detail);
-          throw error;
+      return withLock(projectPath, async () => {
+        const snapshot = await load(projectPath);
+        const record = snapshot.skus.find((row) => row.sku === sku);
+        const activeSkus = snapshot.skus.filter((row) => row.status === "active");
+        let parentGroup: { parent: string; children: string[] } | undefined;
+        if (!record && snapshot.config.sku_grouping?.enabled) {
+          try {
+            parentGroup = groupSkuIds(activeSkus.map((row) => row.sku), snapshot.config.sku_grouping.rule)
+              .groups.find((group) => group.parent === sku);
+          } catch (error) {
+            if (error instanceof SkuGroupingRuleError) throw siteError(error.code, error.message, error.detail);
+            throw error;
+          }
         }
-      }
-      const targetSkus = parentGroup?.children ?? (record ? [record.sku] : []);
-      if (targetSkus.length === 0) throw siteError("UNKNOWN", "找不到指定 SKU。", sku);
-      let normalizedUrl: string | null = null;
-      if (imageUrl !== null) {
-        try {
-          const parsed = new URL(imageUrl);
-          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("unsupported protocol");
-          normalizedUrl = parsed.href;
-        } catch { throw siteError("UNKNOWN", "图片地址必须是有效的 HTTP 或 HTTPS URL。", imageUrl); }
-      }
-      const updatedAt = localDate(snapshot.config.timezone);
-      const targetSet = new Set(targetSkus);
-      const rows = snapshot.skuMedia.filter((row) => !(targetSet.has(String(row.sku ?? "")) && row.image_role === "main"));
-      if (normalizedUrl) for (const targetSku of targetSkus) rows.push({
-        sku: targetSku, image_role: "main", image_url: normalizedUrl, alt_text: null,
-        source: /mailchimp|mcusercontent\.com/i.test(normalizedUrl) ? "mailchimp" : "cdn",
-        width: null, height: null, updated_at: updatedAt,
-      });
-      await writeCsv(await projectFilePath(projectPath, PATHS.skuMedia), rows, CSV_HEADERS.skuMedia, ["sku", "image_role"]);
-      await buildViews(projectPath, { date: snapshot.asOf });
-      invalidate(projectPath);
-      const after = await load(projectPath);
-      const afterManual = new Map(after.skuMedia.filter((row) => row.image_role === "main")
-        .map((row) => [String(row.sku ?? ""), typeof row.image_url === "string" ? row.image_url : null]));
-      const afterPriority: readonly ("feed" | "manual")[] = after.config.edm?.image_priority ?? ["feed", "manual"];
-      if (parentGroup) {
-        const afterSkuById = new Map(after.skus.filter((row) => row.status === "active").map((row) => [row.sku, row]));
-        const afterLatestBySku = new Map(after.latest.map((row) => [row.sku, row]));
-        const parentRow = parentImageRow(parentGroup.parent, parentGroup.children, afterSkuById, afterLatestBySku, afterManual, afterPriority);
-        if (parentRow) return parentRow;
-      }
-      const afterRecord = after.skus.find((row) => row.sku === sku);
-      if (!afterRecord) throw siteError("UNKNOWN", "找不到指定 SKU。", sku);
-      return imageRowForSku(afterRecord, new Map(after.latest.map((row) => [row.sku, row])), afterManual, afterPriority);
+        const targetSkus = parentGroup?.children ?? (record ? [record.sku] : []);
+        if (targetSkus.length === 0) throw siteError("UNKNOWN", "找不到指定 SKU。", sku);
+        let normalizedUrl: string | null = null;
+        if (imageUrl !== null) {
+          try {
+            const parsed = new URL(imageUrl);
+            if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("unsupported protocol");
+            normalizedUrl = parsed.href;
+          } catch { throw siteError("UNKNOWN", "图片地址必须是有效的 HTTP 或 HTTPS URL。", imageUrl); }
+        }
+        const updatedAt = localDate(snapshot.config.timezone);
+        const targetSet = new Set(targetSkus);
+        const rows = snapshot.skuMedia.filter((row) => !(targetSet.has(String(row.sku ?? "")) && row.image_role === "main"));
+        if (normalizedUrl) for (const targetSku of targetSkus) rows.push({
+          sku: targetSku, image_role: "main", image_url: normalizedUrl, alt_text: null,
+          source: /mailchimp|mcusercontent\.com/i.test(normalizedUrl) ? "mailchimp" : "cdn",
+          width: null, height: null, updated_at: updatedAt,
+        });
+        await writeCsv(await projectFilePath(projectPath, PATHS.skuMedia), rows, CSV_HEADERS.skuMedia, ["sku", "image_role"]);
+        await buildViews(projectPath, { date: snapshot.asOf });
+        invalidate(projectPath);
+        const after = await load(projectPath);
+        const afterManual = new Map(after.skuMedia.filter((row) => row.image_role === "main")
+          .map((row) => [String(row.sku ?? ""), typeof row.image_url === "string" ? row.image_url : null]));
+        const afterPriority: readonly ("feed" | "manual")[] = after.config.edm?.image_priority ?? ["feed", "manual"];
+        if (parentGroup) {
+          const afterSkuById = new Map(after.skus.filter((row) => row.status === "active").map((row) => [row.sku, row]));
+          const afterLatestBySku = new Map(after.latest.map((row) => [row.sku, row]));
+          const parentRow = parentImageRow(parentGroup.parent, parentGroup.children, afterSkuById, afterLatestBySku, afterManual, afterPriority);
+          if (parentRow) return parentRow;
+        }
+        const afterRecord = after.skus.find((row) => row.sku === sku);
+        if (!afterRecord) throw siteError("UNKNOWN", "找不到指定 SKU。", sku);
+        return imageRowForSku(afterRecord, new Map(after.latest.map((row) => [row.sku, row])), afterManual, afterPriority);
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "edm-set-manual-image" });
     },
     buildCommand: async (id, input: EdmCommandInput) => {
       const quote = (value: string) => `"${value.replace(/"/g, '\\"')}"`;
@@ -2446,37 +2479,39 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     preview: async (id, config) => categoryPreview(await load(resolve(id)), config),
     save: async (id, config) => {
       const projectPath = resolve(id);
-      const snapshot = await load(projectPath);
-      const preview = categoryPreview(snapshot, config);
-      const nextConfig: SiteConfig = { ...snapshot.config, categories: config };
-      const skus = applyCategoryConfig(snapshot.skus, config);
-      try {
-        await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
-        await writeJsonl(await projectFilePath(projectPath, PATHS.skus), skus as unknown as JsonRecord[], "sku");
-        const latest = new Map(snapshot.latest.map((row) => [row.sku, row.stock_status]));
-        const categoryRows: Category[] = preview.categories.map((category) => {
-          const members = skus.filter((sku) => sku.status === "active" && (sku.category === category.slug || sku.categories?.includes(category.slug)));
-          return {
-            slug: category.slug,
-            name: category.name,
-            url: category.url,
-            parent: null,
-            source: config.mode,
-            product_count: new Set(members.map((sku) => sku.handle)).size,
-            sku_count: members.length,
-            in_stock_count: members.filter((sku) => latest.get(sku.sku) === "in_stock").length,
-            intro_text_words: null,
-            last_seen: snapshot.asOf,
-          };
-        });
-        await atomicWrite(await projectFilePath(projectPath, PATHS.categories), `${JSON.stringify(categoryRows, null, 2)}\n`);
-        await buildViews(projectPath, { date: snapshot.asOf });
-      } catch (error) {
+      return withLock(projectPath, async () => {
+        const snapshot = await load(projectPath);
+        const preview = categoryPreview(snapshot, config);
+        const nextConfig: SiteConfig = { ...snapshot.config, categories: config };
+        const skus = applyCategoryConfig(snapshot.skus, config);
+        try {
+          await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(nextConfig));
+          await writeJsonl(await projectFilePath(projectPath, PATHS.skus), skus as unknown as JsonRecord[], "sku");
+          const latest = new Map(snapshot.latest.map((row) => [row.sku, row.stock_status]));
+          const categoryRows: Category[] = preview.categories.map((category) => {
+            const members = skus.filter((sku) => sku.status === "active" && (sku.category === category.slug || sku.categories?.includes(category.slug)));
+            return {
+              slug: category.slug,
+              name: category.name,
+              url: category.url,
+              parent: null,
+              source: config.mode,
+              product_count: new Set(members.map((sku) => sku.handle)).size,
+              sku_count: members.length,
+              in_stock_count: members.filter((sku) => latest.get(sku.sku) === "in_stock").length,
+              intro_text_words: null,
+              last_seen: snapshot.asOf,
+            };
+          });
+          await atomicWrite(await projectFilePath(projectPath, PATHS.categories), `${JSON.stringify(categoryRows, null, 2)}\n`);
+          await buildViews(projectPath, { date: snapshot.asOf });
+        } catch (error) {
+          invalidate(projectPath);
+          throw setError(error);
+        }
         invalidate(projectPath);
-        throw setError(error);
-      }
-      invalidate(projectPath);
-      return preview;
+        return preview;
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "categories-save" });
     },
   };
 
@@ -2509,7 +2544,21 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   const validateProject = async (id: ProjectId, selectedPath?: string, trigger: ValidationReport["trigger"] = "manual"): Promise<ValidationReport> => {
     const projectPath = resolve(id);
     try {
-      return await validateProjectFiles(projectPath, { trigger, ...(selectedPath ? { selectedPath } : {}) });
+      const paths = pathsFor(await resolveProjectLayout(projectPath));
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const overlay = await readDailyOutputTransactionOverlay(projectPath, paths);
+        const ignored = overlay ? new Set(overlay.files.keys()) : undefined;
+        const before = await snapshotFingerprint(projectPath, SNAPSHOT_FILE_PATHS, ignored);
+        const report = await validateProjectFiles(projectPath, {
+          trigger,
+          ...(selectedPath ? { selectedPath } : {}),
+          ...(overlay ? { readOverrides: overlay.files } : {}),
+        });
+        const after = await snapshotFingerprint(projectPath, SNAPSHOT_FILE_PATHS, ignored);
+        const overlayAfter = await readDailyOutputTransactionOverlay(projectPath, paths);
+        if (before === after && (!overlayAfter || overlayAfter.signature === overlay?.signature) && (overlay || !overlayAfter)) return report;
+      }
+      throw siteError("PROJECT_UNREADABLE", "daily 数据正在变化，无法完成一致校验，请稍后重试。", projectPath);
     } catch (error) {
       if (error instanceof Error && /路径必须/.test(error.message)) throw siteError("PATH_OUTSIDE_PROJECT", "校验路径必须位于项目目录内。", selectedPath ?? "");
       throw setError(error);
@@ -2523,9 +2572,12 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const projectPath = resolve(id);
       const normalized = relativePath.replaceAll("\\", "/").replace(/^\.\//, "");
       try {
-        await repairProjectFile(projectPath, relativePath, action, {
-          runJob: (job, only) => runJob({ projectPath, job, trigger: "manual", ...(only ? { only } : {}) }, () => undefined),
-        });
+        await withLock(projectPath, async () => {
+          await recoverDailyOutputTransaction(projectPath, pathsFor(await resolveProjectLayout(projectPath)));
+          await repairProjectFile(projectPath, relativePath, action, {
+            runJob: (job, only) => runJob({ projectPath, job, trigger: "manual", ...(only ? { only } : {}) }, () => undefined),
+          });
+        }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "file-repair" });
       } catch (error) {
         if (error instanceof Error && /路径必须/.test(error.message)) throw siteError("PATH_OUTSIDE_PROJECT", "修复路径必须位于项目目录内。", relativePath);
         throw siteError("WRITE_FAILED", error instanceof Error ? error.message : String(error));

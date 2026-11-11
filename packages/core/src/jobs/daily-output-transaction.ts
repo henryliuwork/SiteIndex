@@ -34,6 +34,11 @@ export interface DailyOutputWrite {
   writeTo(destination: string): Promise<void>;
 }
 
+/** Deterministic race gate used by transaction tests; production callers omit it. */
+export interface DailyOutputTransactionHooks {
+  beforeTargetReplace?(relativeTarget: string): Promise<void>;
+}
+
 function transactionError(message: string, cause?: unknown): Error {
   return new Error(message, cause === undefined ? undefined : { cause });
 }
@@ -65,6 +70,88 @@ function projectFile(project: string, relative: string): string {
   return path.resolve(project, ...normalizeRelative(relative).split("/"));
 }
 
+/**
+ * Reject symlinks and Windows junctions in every existing component below the trusted project root.
+ * Node exposes junctions as symbolic links through lstat on Windows. Revalidation immediately before
+ * every mutation narrows path substitution races; Node's portable path APIs cannot pin ancestors by handle.
+ */
+async function safeProjectPath(
+  project: string,
+  relative: string,
+  finalKind: "file" | "directory" | "any" = "any",
+): Promise<string> {
+  const parts = normalizeRelative(relative).split("/");
+  let current = path.resolve(project);
+  for (let index = 0; index < parts.length; index += 1) {
+    current = path.join(current, parts[index]!);
+    let info;
+    try { info = await lstat(current); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return projectFile(project, relative);
+      throw error;
+    }
+    if (info.isSymbolicLink()) {
+      throw transactionError("daily 输出事务路径包含符号链接或目录联接。恢复已停止，请检查项目数据与路径安全性。");
+    }
+    const isLeaf = index === parts.length - 1;
+    if (!isLeaf && !info.isDirectory()) {
+      throw transactionError("daily 输出事务路径的中间组件不是普通目录。恢复已停止，请检查项目数据。");
+    }
+    if (isLeaf && finalKind === "file" && !info.isFile()) {
+      throw transactionError("daily 输出事务文件不是普通文件。恢复已停止，请检查项目数据。");
+    }
+    if (isLeaf && finalKind === "directory" && !info.isDirectory()) {
+      throw transactionError("daily 输出事务目录不是普通目录。恢复已停止，请检查项目数据。");
+    }
+  }
+  return current;
+}
+
+async function ensureProjectDirectory(project: string, relative: string): Promise<string> {
+  let current = "";
+  for (const part of normalizeRelative(relative).split("/")) {
+    current = current ? `${current}/${part}` : part;
+    const absolute = await safeProjectPath(project, current);
+    try { await mkdir(absolute); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    await safeProjectPath(project, current, "directory");
+  }
+  return projectFile(project, relative);
+}
+
+async function safeAtomicWrite(
+  project: string,
+  relative: string,
+  data: string | Uint8Array,
+  expectedCurrentHash?: string | null,
+  beforeReplace?: () => Promise<void>,
+): Promise<void> {
+  const parentRelative = path.posix.dirname(normalizeRelative(relative));
+  if (parentRelative !== ".") await ensureProjectDirectory(project, parentRelative);
+  const filePath = await safeProjectPath(project, relative, "file");
+  await atomicWrite(filePath, data, async () => {
+    await beforeReplace?.();
+    await safeProjectPath(project, relative, "file");
+    if (expectedCurrentHash !== undefined && await currentHash(project, relative) !== expectedCurrentHash) {
+      throw transactionError("daily 输出文件在替换前被其他进程修改。为保护该文件，写入已停止。");
+    }
+    // This is the narrowest portable guard available before path-based rename. Node has no
+    // cross-platform compare-and-swap rename; an uncooperative writer can still race the final syscall.
+  });
+}
+
+async function safeUnlink(project: string, relative: string, expectedCurrentHash?: string | null): Promise<void> {
+  const filePath = await safeProjectPath(project, relative, "file");
+  await safeProjectPath(project, relative, "file");
+  if (expectedCurrentHash !== undefined && await currentHash(project, relative) !== expectedCurrentHash) {
+    throw transactionError("daily 输出文件在删除前被其他进程修改。为保护该文件，删除已停止。");
+  }
+  // unlink is likewise path based and cannot atomically compare the current bytes on every platform.
+  await unlink(filePath);
+}
+
 function relativeProjectFile(project: string, filePath: string): string {
   const relative = path.relative(project, path.resolve(filePath)).split(path.sep).join("/");
   if (!relative || relative === ".." || relative.startsWith("../") || path.posix.isAbsolute(relative)) {
@@ -94,7 +181,8 @@ function expectedTargets(paths: DailyOutputPaths, eventTarget: string): string[]
   ];
 }
 
-async function readBytesIfPresent(filePath: string): Promise<Buffer | null> {
+async function readBytesIfPresent(project: string, relative: string): Promise<Buffer | null> {
+  const filePath = await safeProjectPath(project, relative, "file");
   try {
     const stat = await lstat(filePath);
     if (!stat.isFile() || stat.isSymbolicLink()) {
@@ -107,12 +195,13 @@ async function readBytesIfPresent(filePath: string): Promise<Buffer | null> {
   }
 }
 
-async function currentHash(filePath: string): Promise<string | null> {
-  const bytes = await readBytesIfPresent(filePath);
+async function currentHash(project: string, relative: string): Promise<string | null> {
+  const bytes = await readBytesIfPresent(project, relative);
   return bytes === null ? null : sha256(bytes);
 }
 
-async function assertPrivateArtifactDirectory(directory: string, expectedNames?: ReadonlySet<string>): Promise<string[]> {
+async function assertPrivateArtifactDirectory(project: string, relative: string, expectedNames?: ReadonlySet<string>): Promise<string[]> {
+  const directory = await safeProjectPath(project, relative, "directory");
   try {
     const info = await lstat(directory);
     if (!info.isDirectory() || info.isSymbolicLink()) {
@@ -137,18 +226,18 @@ async function assertPrivateArtifactDirectory(directory: string, expectedNames?:
 }
 
 async function cleanupOrphanArtifacts(project: string, paths: DailyOutputPaths): Promise<void> {
-  const directory = projectFile(project, backupDirectoryRelative(paths));
-  const names = await assertPrivateArtifactDirectory(directory);
-  await removeArtifactDirectory(directory, names);
+  const relative = backupDirectoryRelative(paths);
+  const names = await assertPrivateArtifactDirectory(project, relative);
+  await removeArtifactDirectory(project, relative, names);
 }
 
-async function removeArtifactDirectory(directory: string, names: readonly string[]): Promise<void> {
-  for (const name of names) await unlink(path.join(directory, name));
-  if (names.length) await rmdir(directory);
+async function removeArtifactDirectory(project: string, relative: string, names: readonly string[]): Promise<void> {
+  for (const name of names) await safeUnlink(project, `${relative}/${name}`);
+  if (names.length) await rmdir(await safeProjectPath(project, relative, "directory"));
 }
 
-async function cleanupArtifactDirectory(directory: string, names: readonly string[]): Promise<void> {
-  try { await removeArtifactDirectory(directory, names); }
+async function cleanupArtifactDirectory(project: string, relative: string, names: readonly string[]): Promise<void> {
+  try { await removeArtifactDirectory(project, relative, names); }
   catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") throw error;
@@ -156,9 +245,9 @@ async function cleanupArtifactDirectory(directory: string, names: readonly strin
   }
 }
 
-async function manifestExists(manifestPath: string): Promise<boolean> {
+async function manifestExists(project: string, relative: string): Promise<boolean> {
   try {
-    await lstat(manifestPath);
+    await lstat(await safeProjectPath(project, relative, "file"));
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
@@ -166,15 +255,17 @@ async function manifestExists(manifestPath: string): Promise<boolean> {
   }
 }
 
-async function readManifest(manifestPath: string): Promise<unknown | null> {
+async function readManifest(project: string, relative: string): Promise<{ exists: false } | { exists: true; value: unknown; bytes: Buffer }> {
   try {
+    const manifestPath = await safeProjectPath(project, relative, "file");
     const info = await lstat(manifestPath);
     if (!info.isFile() || info.isSymbolicLink()) {
       throw transactionError("daily 输出事务记录不是安全的普通文件。恢复已停止，请保留事务材料并检查项目数据。");
     }
-    return JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+    const bytes = await readFile(manifestPath);
+    return { exists: true, value: JSON.parse(bytes.toString("utf8")) as unknown, bytes };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { exists: false };
     if (error instanceof SyntaxError) {
       throw transactionError("daily 输出事务记录损坏，已停止同步以避免覆盖不一致的数据。", error);
     }
@@ -237,18 +328,18 @@ async function validateArtifacts(
   paths: DailyOutputPaths,
   manifest: TransactionManifest,
 ): Promise<{ backups: (Buffer | null)[]; staged: Buffer[] }> {
-  const directory = projectFile(project, backupDirectoryRelative(paths));
+  const directory = backupDirectoryRelative(paths);
   const expectedNames = new Set<string>();
   manifest.files.forEach((file, index) => {
     expectedNames.add(`${index}.after`);
     if (file.backup !== null) expectedNames.add(`${index}.before`);
   });
-  await assertPrivateArtifactDirectory(directory, expectedNames);
+  await assertPrivateArtifactDirectory(project, directory, expectedNames);
 
   const backups: (Buffer | null)[] = [];
   const staged: Buffer[] = [];
   for (const file of manifest.files) {
-    const afterBytes = await readBytesIfPresent(projectFile(project, file.staged));
+    const afterBytes = await readBytesIfPresent(project, file.staged);
     if (afterBytes === null || sha256(afterBytes) !== file.after_hash) {
       throw transactionError("daily 输出事务的暂存文件缺失或校验失败。恢复已停止，请保留事务材料并检查项目数据。");
     }
@@ -260,7 +351,7 @@ async function validateArtifacts(
     if (file.backup === null) {
       throw transactionError("daily 输出事务缺少旧文件备份路径。恢复已停止，请保留事务材料并检查项目数据。");
     }
-    const beforeBytes = await readBytesIfPresent(projectFile(project, file.backup));
+    const beforeBytes = await readBytesIfPresent(project, file.backup);
     if (beforeBytes === null || sha256(beforeBytes) !== file.before_hash) {
       throw transactionError("daily 输出事务的旧文件备份缺失或校验失败。恢复已停止，请保留事务材料并检查项目数据。");
     }
@@ -284,19 +375,23 @@ function expectedArtifactNames(manifest: TransactionManifest): Set<string> {
 }
 
 /** Roll back interrupted daily output only after every path and hash has been validated. */
-export async function recoverDailyOutputTransaction(projectPath: string, paths: DailyOutputPaths): Promise<void> {
+export async function recoverDailyOutputTransaction(
+  projectPath: string,
+  paths: DailyOutputPaths,
+  hooks?: DailyOutputTransactionHooks,
+): Promise<void> {
   const project = path.resolve(projectPath);
-  const manifestPath = projectFile(project, manifestRelative(paths));
-  const raw = await readManifest(manifestPath);
-  if (raw === null) {
+  const relativeManifest = manifestRelative(paths);
+  const manifestResult = await readManifest(project, relativeManifest);
+  if (!manifestResult.exists) {
     await cleanupOrphanArtifacts(project, paths);
     return;
   }
 
-  const manifest = validateManifestShape(raw, paths);
+  const manifest = validateManifestShape(manifestResult.value, paths);
   const artifacts = await validateArtifacts(project, paths, manifest);
   for (const file of manifest.files) {
-    const hash = await currentHash(projectFile(project, file.target));
+    const hash = await currentHash(project, file.target);
     if (!isBeforeOrAfter(hash, file)) {
       throw transactionError("daily 输出文件在事务中断后被其他进程修改。为保护该文件，恢复已停止；请保留事务备份并检查项目数据。");
     }
@@ -306,31 +401,68 @@ export async function recoverDailyOutputTransaction(projectPath: string, paths: 
   // immediately before restoring it so an external writer is never silently overwritten.
   for (let index = 0; index < manifest.files.length; index += 1) {
     const file = manifest.files[index]!;
-    const targetPath = projectFile(project, file.target);
-    const current = await currentHash(targetPath);
+    const current = await currentHash(project, file.target);
     if (!isBeforeOrAfter(current, file)) {
       throw transactionError("daily 输出文件在恢复过程中被其他进程修改。已停止并保留事务备份，请检查项目数据。");
     }
     if (current === file.before_hash) continue;
     const backup = artifacts.backups[index];
     if (file.before_hash === null) {
-      await unlink(targetPath);
+      await safeUnlink(project, file.target, current);
     } else if (backup !== null && backup !== undefined) {
-      await atomicWrite(targetPath, backup);
+      await safeAtomicWrite(project, file.target, backup, current, async () => { await hooks?.beforeTargetReplace?.(file.target); });
     } else {
       throw transactionError("daily 输出事务旧文件备份不可用。恢复已停止，请保留事务材料并检查项目数据。");
     }
   }
 
   for (const file of manifest.files) {
-    if (await currentHash(projectFile(project, file.target)) !== file.before_hash) {
+    if (await currentHash(project, file.target) !== file.before_hash) {
       throw transactionError("daily 输出事务回滚后的完整性校验失败。恢复材料已保留，请检查项目数据。");
     }
   }
-  const backupDirectory = projectFile(project, backupDirectoryRelative(paths));
-  const names = await assertPrivateArtifactDirectory(backupDirectory, expectedArtifactNames(manifest));
-  await unlink(manifestPath);
-  await cleanupArtifactDirectory(backupDirectory, names);
+  const backupDirectory = backupDirectoryRelative(paths);
+  const names = await assertPrivateArtifactDirectory(project, backupDirectory, expectedArtifactNames(manifest));
+  await safeUnlink(project, relativeManifest, sha256(manifestResult.bytes));
+  await cleanupArtifactDirectory(project, backupDirectory, names);
+}
+
+export interface DailyOutputTransactionOverlay {
+  /** Absolute target path to the pre-transaction bytes; null means the file did not exist yet. */
+  files: ReadonlyMap<string, Buffer | null>;
+  /** Hash of the journal bytes; changes whenever a different transaction becomes visible. */
+  signature: string;
+}
+
+/** Read the last committed view without recovering or writing files. */
+export async function readDailyOutputTransactionOverlay(
+  projectPath: string,
+  paths: DailyOutputPaths,
+): Promise<DailyOutputTransactionOverlay | null> {
+  const project = path.resolve(projectPath);
+  const relativeManifest = manifestRelative(paths);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await readManifest(project, relativeManifest);
+    if (!result.exists) return null;
+    try {
+      const manifest = validateManifestShape(result.value, paths);
+      const artifacts = await validateArtifacts(project, paths, manifest);
+      const files = new Map<string, Buffer | null>();
+      for (let index = 0; index < manifest.files.length; index += 1) {
+        const item = manifest.files[index]!;
+        if (!isBeforeOrAfter(await currentHash(project, item.target), item)) {
+          throw transactionError("daily 输出文件在事务期间被其他进程修改。读取已停止，请保留事务材料并检查项目数据。");
+        }
+        files.set(projectFile(project, item.target), artifacts.backups[index] ?? null);
+      }
+      return { files, signature: sha256(result.bytes) };
+    } catch (error) {
+      const latest = await readManifest(project, relativeManifest);
+      if (!latest.exists || sha256(latest.bytes) !== sha256(result.bytes)) continue;
+      throw error;
+    }
+  }
+  throw transactionError("daily 输出事务正在清理，无法取得一致快照，请稍后重试。");
 }
 
 /** Stage all four outputs, record hashes, then atomically replace each target under the project lock. */
@@ -338,9 +470,10 @@ export async function persistDailyOutputTransaction(
   projectPath: string,
   paths: DailyOutputPaths,
   writes: readonly DailyOutputWrite[],
+  hooks?: DailyOutputTransactionHooks,
 ): Promise<void> {
   const project = path.resolve(projectPath);
-  await recoverDailyOutputTransaction(project, paths);
+  await recoverDailyOutputTransaction(project, paths, hooks);
   const eventEntry = writes[0];
   if (!eventEntry) throw transactionError("daily 输出事务缺少库存事件文件。");
   const eventTarget = relativeProjectFile(project, eventEntry.target);
@@ -361,24 +494,23 @@ export async function persistDailyOutputTransaction(
   }
 
   const backupDirRelative = backupDirectoryRelative(paths);
-  const backupDir = projectFile(project, backupDirRelative);
-  await mkdir(backupDir, { recursive: true });
+  const backupDir = await ensureProjectDirectory(project, backupDirRelative);
   const files: TransactionFile[] = [];
   try {
     for (const [index, entry] of writes.entries()) {
       const target = targetFiles[index]!;
-      const targetPath = projectFile(project, target);
-      const before = await readBytesIfPresent(targetPath);
+      const before = await readBytesIfPresent(project, target);
       const stagedRelative = artifactRelative(paths, index, "after");
       const stagedPath = projectFile(project, stagedRelative);
+      await safeProjectPath(project, stagedRelative, "file");
       await entry.writeTo(stagedPath);
-      const after = await readBytesIfPresent(stagedPath);
+      const after = await readBytesIfPresent(project, stagedRelative);
       if (after === null) throw transactionError("daily 输出事务暂存文件未生成。");
 
       let backupRelative: string | null = null;
       if (before !== null) {
         backupRelative = artifactRelative(paths, index, "before");
-        await atomicWrite(projectFile(project, backupRelative), before);
+        await safeAtomicWrite(project, backupRelative, before, null);
       }
       files.push({
         target,
@@ -390,7 +522,7 @@ export async function persistDailyOutputTransaction(
     }
 
     for (const file of files) {
-      if (await currentHash(projectFile(project, file.target)) !== file.before_hash) {
+      if (await currentHash(project, file.target) !== file.before_hash) {
         throw transactionError("daily 输出文件在写入前已被其他进程修改。未覆盖该文件，请重试并检查项目数据。");
       }
     }
@@ -398,34 +530,34 @@ export async function persistDailyOutputTransaction(
     const manifest: TransactionManifest = { version: TRANSACTION_VERSION, files };
     // Verify every staged and backup byte before making the recovery journal visible.
     const artifacts = await validateArtifacts(project, paths, manifest);
-    const manifestPath = projectFile(project, manifestRelative(paths));
-    await atomicWrite(manifestPath, `${JSON.stringify(manifest)}\n`);
+    const relativeManifest = manifestRelative(paths);
+    const manifestBytes = `${JSON.stringify(manifest)}\n`;
+    await safeAtomicWrite(project, relativeManifest, manifestBytes, null);
     try {
       for (const [index, file] of files.entries()) {
-        const target = projectFile(project, file.target);
-        if (await currentHash(target) !== file.before_hash) {
+        if (await currentHash(project, file.target) !== file.before_hash) {
           throw transactionError("daily 输出文件在提交期间被其他进程修改。为保护该文件，daily 已停止。");
         }
         const staged = artifacts.staged[index];
         if (!staged || sha256(staged) !== file.after_hash) {
           throw transactionError("daily 输出事务的暂存内容校验失败。");
         }
-        await atomicWrite(target, staged);
-        if (await currentHash(target) !== file.after_hash) {
+        await safeAtomicWrite(project, file.target, staged, file.before_hash, async () => { await hooks?.beforeTargetReplace?.(file.target); });
+        if (await currentHash(project, file.target) !== file.after_hash) {
           throw transactionError("daily 输出文件提交后的校验失败。");
         }
       }
       for (const file of files) {
-        if (await currentHash(projectFile(project, file.target)) !== file.after_hash) {
+        if (await currentHash(project, file.target) !== file.after_hash) {
           throw transactionError("daily 输出在事务提交期间被其他进程修改。");
         }
       }
-      const artifactNames = await assertPrivateArtifactDirectory(backupDir, expectedArtifactNames(manifest));
-      await unlink(manifestPath);
-      await cleanupArtifactDirectory(backupDir, artifactNames);
+      const artifactNames = await assertPrivateArtifactDirectory(project, backupDirRelative, expectedArtifactNames(manifest));
+      await safeUnlink(project, relativeManifest, sha256(Buffer.from(manifestBytes)));
+      await cleanupArtifactDirectory(project, backupDirRelative, artifactNames);
     } catch (writeError) {
       try {
-        await recoverDailyOutputTransaction(project, paths);
+        await recoverDailyOutputTransaction(project, paths, hooks);
       } catch (recoveryError) {
         throw transactionError(
           `daily 输出失败，自动恢复也未完成：${recoveryError instanceof Error ? recoveryError.message : String(recoveryError)}。恢复材料已保留，请检查项目数据。`,
@@ -435,8 +567,7 @@ export async function persistDailyOutputTransaction(
       throw transactionError(`daily 输出失败，已恢复写入前的数据：${writeError instanceof Error ? writeError.message : String(writeError)}`, writeError);
     }
   } catch (error) {
-    const manifestPath = projectFile(project, manifestRelative(paths));
-    if (!await manifestExists(manifestPath)) {
+    if (!await manifestExists(project, manifestRelative(paths))) {
       await cleanupOrphanArtifacts(project, paths).catch(() => undefined);
     }
     throw error;

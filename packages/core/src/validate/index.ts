@@ -7,8 +7,8 @@ import addFormats from "ajv-formats";
 import { CSV_HEADERS, pathsFor, type FileCheck, type FileKind, type JobName, type ProjectPaths, type RepairAction, type SiteConfig, type ValidationReport } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
-import { readCsv, writeCsv } from "../io/csv";
-import { readJsonl, writeJsonl } from "../io/jsonl";
+import { parseCsv, readCsv, writeCsv } from "../io/csv";
+import { parseJsonl, readJsonl, writeJsonl } from "../io/jsonl";
 import { resolveProjectLayout } from "../io/project-layout";
 import { findConflictCopies, isConflictCopy } from "../io/runner-lock";
 
@@ -29,6 +29,8 @@ export interface ValidateOptions {
   now?: Date;
   /** Workspace 导入检查复用格式扫描时设为 false，避免写入校验报告。 */
   writeReport?: boolean;
+  /** Read-only view of files temporarily replaced by a daily output transaction. */
+  readOverrides?: ReadonlyMap<string, Buffer | null>;
 }
 export interface RepairOptions {
   runJob: (job: JobName, only?: string) => Promise<{ status: string; summary: string; errors?: string[] }>;
@@ -185,10 +187,25 @@ async function validateRows(schemaName: string, rows: Record<string, unknown>[])
   }
   return null;
 }
-async function checkData(spec: FileSpec, absolute: string, paths: ProjectPaths): Promise<{ rows: Record<string, unknown>[]; count: number; schemaError?: string; headerError?: string; line?: number }> {
+async function readDataText(absolute: string, readOverrides?: ReadonlyMap<string, Buffer | null>): Promise<string> {
+  const key = path.resolve(absolute);
+  if (readOverrides?.has(key)) {
+    const bytes = readOverrides.get(key);
+    if (bytes === null) throw Object.assign(new Error("File not found"), { code: "ENOENT" });
+    return bytes?.toString("utf8") ?? "";
+  }
+  return readFile(absolute, "utf8");
+}
+
+async function checkData(
+  spec: FileSpec,
+  absolute: string,
+  paths: ProjectPaths,
+  readOverrides?: ReadonlyMap<string, Buffer | null>,
+): Promise<{ rows: Record<string, unknown>[]; count: number; schemaError?: string; headerError?: string; line?: number }> {
   if (spec.format === "text") return { rows: [], count: 1 };
   if (spec.format === "json") {
-    const value: unknown = JSON.parse(await readFile(absolute, "utf8"));
+    const value: unknown = JSON.parse(await readDataText(absolute, readOverrides));
     if (spec.arraySchema) {
       if (!Array.isArray(value)) throw new Error("应为 JSON 数组");
       const rows = value as Record<string, unknown>[];
@@ -201,16 +218,21 @@ async function checkData(spec: FileSpec, absolute: string, paths: ProjectPaths):
     return { rows, count: rows.length, ...(schemaError ? { schemaError } : {}) };
   }
   if (spec.format === "csv") {
-    const source = await readFile(absolute, "utf8");
+    const source = await readDataText(absolute, readOverrides);
     const header = source.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "";
     const expected = spec.headers?.join(",") ?? "";
     if (header !== expected) return { rows: [], count: 0, headerError: "CSV 表头应为 " + expected };
-    const rows = await readCsv(absolute) as Record<string, unknown>[];
+    const rows = readOverrides?.has(path.resolve(absolute))
+      ? parseCsv(source, absolute) as Record<string, unknown>[]
+      : await readCsv(absolute) as Record<string, unknown>[];
     const schemaError = spec.schema ? await validateRows(spec.schema, rows) : null;
     return { rows, count: rows.length, ...(schemaError ? { schemaError } : {}) };
   }
   let rows: Record<string, unknown>[];
-  try { rows = await readJsonl(absolute); }
+  try {
+    const source = readOverrides?.has(path.resolve(absolute)) ? await readDataText(absolute, readOverrides) : undefined;
+    rows = source === undefined ? await readJsonl(absolute) : parseJsonl(source, absolute);
+  }
   catch (error) {
     const match = String(error).match(/:(\d+): JSONL/);
     const parseError = new Error(error instanceof Error ? error.message : String(error));
@@ -236,7 +258,18 @@ export async function validateProjectFiles(projectPath: string, options: Validat
   const specs = allSpecs.filter((spec) => !selected || spec.path === selected || spec.path.startsWith(selected + "/"));
   if (!selected || selected === paths.eventsDir || selected.startsWith(paths.eventsDir + "/")) {
     const eventDirectory = path.join(project, paths.eventsDir);
-    const eventFiles = await readdir(eventDirectory).catch(() => []);
+    const eventNames = new Set((await readdir(eventDirectory).catch(() => []))
+      .filter((name) => /^\d{4}-\d{2}\.jsonl$/.test(name)));
+    for (const [absolute, bytes] of options.readOverrides ?? []) {
+      const relative = path.relative(project, absolute).replaceAll("\\", "/");
+      const prefix = `${paths.eventsDir}/`;
+      if (!relative.startsWith(prefix)) continue;
+      const name = relative.slice(prefix.length);
+      if (!/^\d{4}-\d{2}\.jsonl$/.test(name)) continue;
+      if (bytes === null) eventNames.delete(name);
+      else eventNames.add(name);
+    }
+    const eventFiles = [...eventNames];
     for (const name of eventFiles.filter((item) => /^\d{4}-\d{2}\.jsonl$/.test(item))) {
       const relative = path.posix.join(paths.eventsDir, name);
       if (!selected || relative === selected || relative.startsWith(selected + "/")) {
@@ -249,9 +282,15 @@ export async function validateProjectFiles(projectPath: string, options: Validat
   for (const spec of specs) {
     const absolute = path.join(project, spec.path);
     try {
-      const info = await stat(absolute);
+      const overrideKey = path.resolve(absolute);
+      const hasOverride = options.readOverrides?.has(overrideKey) ?? false;
+      const overrideBytes = options.readOverrides?.get(overrideKey);
+      if (hasOverride && overrideBytes === null) throw Object.assign(new Error("File not found"), { code: "ENOENT" });
+      const info = hasOverride
+        ? await stat(absolute).catch(() => ({ size: overrideBytes?.length ?? 0, mtime: new Date(0) }))
+        : await stat(absolute);
       try {
-        const data = await checkData(spec, absolute, paths);
+        const data = await checkData(spec, absolute, paths, options.readOverrides);
         if (data.headerError) {
           checks.push({ path: spec.path, kind: spec.kind, status: "error", rule: "header", message: data.headerError, records: data.count, size: info.size, modified_at: info.mtime.toISOString(), repair: repairFor(spec, "header") });
           continue;

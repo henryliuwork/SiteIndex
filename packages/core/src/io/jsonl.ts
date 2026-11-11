@@ -27,14 +27,7 @@ async function loadSchema(name: string): Promise<JsonSchema> {
   return schema;
 }
 
-export async function readJsonl(filePath: string): Promise<JsonRecord[]> {
-  let source: string;
-  try {
-    source = await readFile(filePath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
+export function parseJsonl(source: string, filePath: string): JsonRecord[] {
   const rows: JsonRecord[] = [];
   for (const [index, line] of source.split(/\r?\n/).entries()) {
     if (!line.trim()) continue;
@@ -49,6 +42,17 @@ export async function readJsonl(filePath: string): Promise<JsonRecord[]> {
     }
   }
   return rows;
+}
+
+export async function readJsonl(filePath: string): Promise<JsonRecord[]> {
+  let source: string;
+  try {
+    source = await readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  return parseJsonl(source, filePath);
 }
 
 function keyPart(value: unknown): string {

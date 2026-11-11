@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService } from "../src/service";
 import { readCsv, writeCsv } from "../src/io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../src/io/jsonl";
+import { withLock } from "../src/io/runner-lock";
 
 const FIXTURE_PROJECT = path.resolve(process.cwd(), "fixtures/expected/project");
 const TEMP_DIRS: string[] = [];
@@ -127,7 +128,7 @@ describe("createCoreService initial namespaces", () => {
     expect(await api.inventory.dailyReport("fixture", "2026-10-18")).toBeNull();
   }, 30_000);
 
-  it("recovers an interrupted daily transaction before a cached inventory read", async () => {
+  it("reads the last committed inventory view without recovering or writing during an interrupted transaction", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);
     const expected = await api.inventory.summary("fixture", 30);
@@ -135,12 +136,99 @@ describe("createCoreService initial namespaces", () => {
     const originalEvents = await readFile(path.join(projectPath, paths.eventsDir, "2026-10.jsonl"));
     const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0] });
 
-    const recovered = await api.inventory.summary("fixture", 30);
+    const read = await api.inventory.summary("fixture", 30);
 
-    expect(recovered).toEqual(expected);
-    expect(await readFile(path.join(projectPath, paths.eventsDir, "2026-10.jsonl"))).toEqual(originalEvents);
+    expect(read).toEqual(expected);
+    expect(await readFile(path.join(projectPath, paths.eventsDir, "2026-10.jsonl"))).not.toEqual(originalEvents);
+    await expect(readFile(transaction.manifestPath)).resolves.toBeTruthy();
+    await expect(readFile(path.join(transaction.backupDirectory, "0.before"))).resolves.toBeTruthy();
+  }, 30_000);
+
+  it("fails closed on a JSON-null transaction journal without deleting recovery material", async () => {
+    const { projectPath } = await makeProject();
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0] });
+    await writeFile(transaction.manifestPath, "null\n");
+
+    await expect(service(projectPath).projects.get("fixture")).rejects.toThrow("记录不完整");
+
+    await expect(readFile(transaction.manifestPath)).resolves.toEqual(Buffer.from("null\n"));
+    await expect(readFile(path.join(transaction.backupDirectory, "0.before"))).resolves.toBeTruthy();
+    await expect(readFile(path.join(transaction.backupDirectory, "0.after"))).resolves.toBeTruthy();
+  }, 30_000);
+
+  it("serves query APIs while a runner holds the project job lock", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    let signalHeld!: () => void;
+    let releaseHeld!: () => void;
+    const held = new Promise<void>((resolve) => { signalHeld = resolve; });
+    const release = new Promise<void>((resolve) => { releaseHeld = resolve; });
+    const owner = withLock(projectPath, async () => {
+      signalHeld();
+      await release;
+    }, { deviceId: "holder", job: "synthetic-long-job", heartbeatMs: 60_000 });
+    await held;
+    try {
+      const [project, overview, inventory, skuPage, runner, design, validation] = await Promise.race([
+        Promise.all([
+          api.projects.get("fixture"),
+          api.overview.get("fixture"),
+          api.inventory.summary("fixture", 30),
+          api.inventory.listSkus("fixture", { page: 1, pageSize: 20 }),
+          api.runner.get("fixture"),
+          api.design.get("fixture"),
+          api.files.validate("fixture"),
+        ]),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("query APIs waited for the project lock")), 2_000)),
+      ]);
+      expect(project.summary.id).toBe("fixture");
+      expect(overview.kpis.some((kpi) => kpi.key === "products")).toBe(true);
+      expect(inventory.as_of).toBe("2026-10-21");
+      expect(skuPage.total).toBeGreaterThan(0);
+      expect(runner.runner).toBeNull();
+      expect(design).toBeTruthy();
+      expect(validation.files.length).toBeGreaterThan(0);
+    } finally {
+      releaseHeld();
+      await owner;
+    }
+  }, 10_000);
+
+  it("serves read-only queries without creating a lock in a read-only logs directory", async () => {
+    const { projectPath } = await makeProject();
+    const lockPath = path.join(projectPath, PATHS.lock);
+    const lockDirectory = path.dirname(lockPath);
+    await chmod(lockDirectory, 0o555);
+    try {
+      const api = service(projectPath);
+      expect((await api.projects.get("fixture")).summary.id).toBe("fixture");
+      expect((await api.overview.get("fixture")).kpis.some((kpi) => kpi.key === "products")).toBe(true);
+      expect((await api.inventory.summary("fixture", 30)).as_of).toBe("2026-10-21");
+      expect(await api.design.get("fixture")).toBeTruthy();
+      await expect(readFile(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await chmod(lockDirectory, 0o755);
+    }
+  }, 10_000);
+
+  it("validates the last committed files during recovery and serializes repair with recovery", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const baseline = await api.files.validate("fixture");
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0, 2] });
+
+    const [report, design] = await Promise.all([api.files.validate("fixture"), api.design.get("fixture")]);
+
+    const statusByPath = (checks: typeof report.files) => Object.fromEntries(checks
+      .filter((file) => transaction.targets.includes(file.path))
+      .map((file) => [file.path, file.status]));
+    expect(statusByPath(report.files)).toEqual(statusByPath(baseline.files));
+    expect(design).toBeTruthy();
+    await expect(readFile(transaction.manifestPath)).resolves.toBeTruthy();
+
+    await api.files.repair("fixture", PATHS.inventoryLatest, "autofix");
+
     await expect(readFile(transaction.manifestPath)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(path.join(transaction.backupDirectory, "0.before"))).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
   it("fails closed before weekly reads when an interrupted daily output was externally changed", async () => {

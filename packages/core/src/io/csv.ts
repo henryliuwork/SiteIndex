@@ -5,7 +5,7 @@ import { compareKeys } from "./compare";
 
 export type CsvRow = Record<string, string | null>;
 
-function parseCsv(text: string, filePath: string): CsvRow[] {
+export function parseCsv(text: string, filePath: string): CsvRow[] {
   const source = text.replace(/^\uFEFF/, "");
   const table: string[][] = [];
   let row: string[] = [];

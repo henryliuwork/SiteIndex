@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { pathsFor } from "@siteindex/shared";
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   persistDailyOutputTransaction,
+  readDailyOutputTransactionOverlay,
   recoverDailyOutputTransaction,
   type DailyOutputPaths,
   type DailyOutputWrite,
@@ -146,6 +147,50 @@ describe("daily output recovery transaction", () => {
     expect(await exists(filePath(root, `${backupDirRelative}/0.before`))).toBe(true);
   });
 
+  it("treats JSON null as a corrupt manifest and preserves every recovery artifact", async () => {
+    const root = await newProject();
+    await createInterruptedTransaction(root, [0]);
+    const manifestPath = filePath(root, manifestRelative);
+    await writeFile(manifestPath, "null\n");
+
+    await expect(recoverDailyOutputTransaction(root, paths)).rejects.toThrow("记录不完整");
+
+    expect(await readFile(filePath(root, targets[0]!))).toEqual(afterBytes[0]);
+    expect(await readFile(manifestPath)).toEqual(Buffer.from("null\n"));
+    expect(await readFile(filePath(root, `${backupDirRelative}/0.before`))).toEqual(beforeBytes[0]);
+    expect(await readFile(filePath(root, `${backupDirRelative}/0.after`))).toEqual(afterBytes[0]);
+  });
+
+  it("uses pre-transaction bytes for lock-free snapshots while the manifest is present", async () => {
+    const root = await newProject();
+    await createInterruptedTransaction(root, [0, 2]);
+
+    const overlay = await readDailyOutputTransactionOverlay(root, paths);
+
+    expect(overlay?.files.get(filePath(root, targets[0]!))).toEqual(beforeBytes[0]);
+    expect(overlay?.files.get(filePath(root, targets[1]!))).toEqual(beforeBytes[1]);
+    expect(overlay?.files.get(filePath(root, targets[2]!))).toEqual(beforeBytes[2]);
+    expect(overlay?.files.get(filePath(root, targets[3]!))).toEqual(beforeBytes[3]);
+    expect(overlay?.signature).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("rejects a symlink or junction ancestor before touching its external target", async () => {
+    const root = await newProject();
+    await createInterruptedTransaction(root, [0]);
+    const outside = await mkdtemp(path.join(os.tmpdir(), "siteindex-output-outside-"));
+    roots.push(outside);
+    const indexPath = path.join(root, "index");
+    const outsideIndex = path.join(outside, "index");
+    await rename(indexPath, outsideIndex);
+    await symlink(outsideIndex, indexPath, process.platform === "win32" ? "junction" : "dir");
+
+    await expect(recoverDailyOutputTransaction(root, paths)).rejects.toThrow("符号链接或目录联接");
+
+    expect(await readFile(path.join(outside, ...targets[0]!.split("/")))).toEqual(afterBytes[0]);
+    expect((await readFile(path.join(outside, ...manifestRelative.split("/")))).toString("utf8")).toContain('"version":2');
+    expect(await readFile(path.join(outside, backupDirRelative, "0.before"))).toEqual(beforeBytes[0]);
+  });
+
   it.each(["before backup hash", "after staging hash"])("validates the %s before rollback", async (artifact) => {
     const root = await newProject();
     await createInterruptedTransaction(root, [0]);
@@ -169,6 +214,30 @@ describe("daily output recovery transaction", () => {
 
     expect(await readFile(filePath(root, targets[0]!))).toEqual(afterBytes[0]);
     expect(await readFile(filePath(root, targets[1]!))).toEqual(external);
+    expect(await exists(filePath(root, manifestRelative))).toBe(true);
+    expect(await exists(filePath(root, `${backupDirRelative}/0.before`))).toBe(true);
+  });
+
+  it("rechecks for an external edit after staging and before the target replace", async () => {
+    const root = await newProject();
+    const writes: DailyOutputWrite[] = targets.map((target, index) => ({
+      target: filePath(root, target),
+      writeTo: (destination) => writeFile(destination, afterBytes[index]!),
+    }));
+    const external = Buffer.from("synthetic cloud-sync edit in the replace window\n");
+    let injected = false;
+
+    await expect(persistDailyOutputTransaction(root, paths, writes, {
+      beforeTargetReplace: async (relativeTarget) => {
+        if (relativeTarget !== targets[0] || injected) return;
+        injected = true;
+        await writeFile(filePath(root, relativeTarget), external);
+      },
+    })).rejects.toThrow("自动恢复也未完成");
+
+    expect(injected).toBe(true);
+    expect(await readFile(filePath(root, targets[0]!))).toEqual(external);
+    expect(await readFile(filePath(root, targets[1]!))).toEqual(beforeBytes[1]);
     expect(await exists(filePath(root, manifestRelative))).toBe(true);
     expect(await exists(filePath(root, `${backupDirRelative}/0.before`))).toBe(true);
   });
