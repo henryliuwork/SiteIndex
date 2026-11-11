@@ -811,8 +811,11 @@ async function main(): Promise<void> {
   let phaseName: "crash-worker" | "read-recovery" = "crash-worker";
   try {
     phaseName = phase();
+    await writeFile(reportPath(), JSON.stringify({ status: "running", phase: phaseName }), "utf8");
+    process.stdout.write(`media-recovery:${phaseName}:started\n`);
     const result = phaseName === "crash-worker" ? await crashWorkerPhase() : await readRecoveryPhase();
     await writeFile(reportPath(), JSON.stringify(result), "utf8");
+    process.stdout.write(`media-recovery:${phaseName}:passed\n`);
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.destroy();
     app.quit();
   } catch (error) {
@@ -839,6 +842,7 @@ async function main(): Promise<void> {
       failureCode,
     };
     await writeFile(reportPath(), JSON.stringify(result), "utf8").catch(() => undefined);
+    process.stderr.write(`media-recovery:${phaseName}:failed:${failureCode}\n`);
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.destroy();
     app.exit(1);
   }

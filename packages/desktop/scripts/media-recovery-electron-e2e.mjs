@@ -25,8 +25,9 @@ function assertSafeTempRoot(root) {
   }
 }
 
-function runPhase(root, phaseName) {
+async function runPhase(root, phaseName) {
   const resultPath = path.join(root, `${phaseName}.json`);
+  await writeFile(resultPath, JSON.stringify({ status: "running", phase: phaseName }), "utf8");
   const isolatedLocalAppData = path.join(root, "local-app-data");
   const isolatedRoamingAppData = path.join(root, "roaming-app-data");
   const inheritedEnvironment = Object.fromEntries(
@@ -66,8 +67,10 @@ function runPhase(root, phaseName) {
       }
       try {
         const result = JSON.parse(await readFile(resultPath, "utf8"));
-        if (code !== 0 || result.status !== "passed") {
-          reject(new Error(`Packaged phase ${phaseName} failed (exit ${code ?? "unknown"}; ${result.failureCode ?? "no report"}).`));
+        if (code !== 0 || result.status !== "passed" || result.phase !== phaseName) {
+          const state = typeof result.status === "string" ? result.status : "invalid-status";
+          const reportPhase = typeof result.phase === "string" ? result.phase : "invalid-phase";
+          reject(new Error(`Packaged phase ${phaseName} failed (exit ${code ?? "unknown"}; status ${state}; report phase ${reportPhase}; ${result.failureCode ?? "no failure code"}).`));
           return;
         }
         resolve(result);
@@ -82,7 +85,7 @@ function runPhase(root, phaseName) {
           .join("\n");
         const exit = code === null ? "unknown" : String(code);
         const category = error instanceof Error && "code" in error && error.code === "ENOENT" ? "no-phase-report" : "invalid-phase-report";
-        reject(new Error(`Packaged phase ${phaseName} failed (${category}; exit ${exit}).${safeOutput ? `\n${safeOutput}` : ""}`));
+        reject(new Error(`Packaged phase ${phaseName} failed (${category}; exit ${exit}; output lines ${safeOutput ? safeOutput.split(/\r?\n/u).length : 0}).${safeOutput ? `\n${safeOutput}` : ""}`));
       }
     });
   });
