@@ -177,4 +177,4 @@
 - [x] `runJob(job="media")`：凭据仅由 Core 内存上下文注入；WASM 将 WebP/AVIF 转为白底 JPEG；逐 SKU 记录；每次执行有唯一 runId，并在 `pathsForProject(...).jobLogsDir/<runId>.media.json` 原子写恢复 checkpoint；服从 K5 分区语义及 #438 虚构验收向量
 
 ### v0.4.1 · EDM SKU 清单导出
-- [ ] #423 Core 尚未完成：实现确定性读取/渲染、legacy/workspace 路径；生成 URL 删除全部 query 与 fragment，避免不透明值进入 Markdown；因现有 Node 路径 API 无法把 no-follow 目录身份与最终创建绑定，当前 fail closed，不创建或覆盖固定清单；更新门禁保留，折扣档选择/舍入规则仍待产品确认
+- [ ] #423 Core 尚未完成：实现确定性读取/渲染、legacy/workspace 路径；已知追踪 query 剥离，仅保留精确匹配导出 SKU 的 variant 参数，其余 query/fragment 显示确认提示而不输出损坏 URL；因现有 Node 路径 API 无法把 no-follow 目录身份与最终创建绑定，当前 fail closed，不创建或覆盖固定清单；更新门禁保留，折扣档选择/舍入规则仍待产品确认

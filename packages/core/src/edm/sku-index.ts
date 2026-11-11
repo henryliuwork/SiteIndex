@@ -17,6 +17,7 @@ import type { SiteIndexError } from "@siteindex/shared";
 const GENERATED_MARKER = "<!-- siteindex:generated:edm-sku-index:v1 -->";
 const TABLE_HEADER = "| SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存 |";
 const TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | --- | --- |";
+const TRACKING_QUERY = /^(utm_|gclid$|gbraid$|wbraid$|srsltid$|fbclid$|mc_|_ga$)/u;
 
 export interface EdmSkuIndexInput {
   products: readonly ProductView[];
@@ -55,22 +56,41 @@ function conflict(message = "目标清单由用户或 EDM 技能维护，未做�
   return safeError("EDM_INDEX_CONFLICT", message);
 }
 
-function normalizePublicUrl(value: unknown): string | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  let url: URL;
-  try { url = new URL(value); } catch { return null; }
-  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) return null;
-  // Query values are opaque and may contain credentials even under an ordinary key such as "color".
-  url.search = "";
-  url.hash = "";
-  return url.href;
+interface PublicUrlResult {
+  url: string | null;
+  needsReview: boolean;
 }
 
-function supportedImageUrl(value: unknown): string | null {
+function normalizePublicUrl(value: unknown, variantSkus: readonly string[] = []): PublicUrlResult {
+  if (typeof value !== "string" || !value.trim()) return { url: null, needsReview: false };
+  let url: URL;
+  try { url = new URL(value); } catch { return { url: null, needsReview: true }; }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password || url.hash) {
+    return { url: null, needsReview: true };
+  }
+  const safePairs: Array<[string, string]> = [];
+  for (const [rawKey, queryValue] of url.searchParams.entries()) {
+    const key = rawKey.normalize("NFKC").toLowerCase();
+    if (TRACKING_QUERY.test(key)) continue;
+    if (key === "variant" && variantSkus.includes(queryValue) && safePairs.length === 0) {
+      safePairs.push(["variant", queryValue]);
+      continue;
+    }
+    // An opaque value under a familiar key can still be a token. Keep the source URL out and ask for review.
+    return { url: null, needsReview: true };
+  }
+  url.search = "";
+  for (const [key, queryValue] of safePairs) url.searchParams.append(key, queryValue);
+  return { url: url.href, needsReview: false };
+}
+
+function supportedImageUrl(value: unknown): PublicUrlResult {
   const normalized = normalizePublicUrl(value);
-  if (!normalized) return null;
-  const extension = path.posix.extname(new URL(normalized).pathname).toLowerCase();
-  return extension === ".jpg" || extension === ".jpeg" || extension === ".png" ? normalized : null;
+  if (!normalized.url) return normalized;
+  const extension = path.posix.extname(new URL(normalized.url).pathname).toLowerCase();
+  return extension === ".jpg" || extension === ".jpeg" || extension === ".png"
+    ? normalized
+    : { url: null, needsReview: false };
 }
 
 function markdownCell(value: string | number | null | undefined): string {
@@ -154,16 +174,16 @@ export function renderEdmSkuIndex(input: EdmSkuIndexInput): RenderedEdmSkuIndex 
     const representative = activeBySku.get(representativeSku);
     const manualImage = supportedImageUrl(mediaBySku.get(representativeSku)?.image_url);
     const feedImage = supportedImageUrl(representative?.image_url);
-    const image = manualImage ?? feedImage;
-    if (!image) missingImageCount += 1;
+    const image = manualImage.url ? manualImage : feedImage;
     const tag = tagsBySku.get(sku) ?? tagsBySku.get(representativeSku);
-    const url = normalizePublicUrl(product.url);
+    if (!image.url) missingImageCount += 1;
+    const url = normalizePublicUrl(product.url, product.skus);
     const cells = [
       sku,
       product.title,
       typeof tag?.email_blurb === "string" ? tag.email_blurb : "",
-      url ?? "",
-      image ?? "待补图",
+      url.url ?? (url.needsReview ? "链接待确认（原链接含未识别参数）" : ""),
+      image.url ?? (manualImage.needsReview || feedImage.needsReview ? "待补图（原图片链接含未识别参数）" : "待补图"),
       money(originalPrice),
       "", // Discount tier selection and rounding are intentionally pending product decisions.
       stockStatus,

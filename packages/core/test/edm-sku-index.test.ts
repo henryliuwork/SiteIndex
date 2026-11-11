@@ -96,7 +96,7 @@ describe("EDM SKU index rendering", () => {
     });
   });
 
-  it("omits every URL query value and fragment from the generated Markdown", async () => {
+  it("marks unrecognized product and image query values for review instead of emitting stripped URLs", async () => {
     const input = await fixtureInput("legacy", "sku-media-legacy.csv");
     const productsText = await readFile(path.join(FIXTURE, "products.jsonl"), "utf8");
     const skusText = await readFile(path.join(FIXTURE, "skus.jsonl"), "utf8");
@@ -111,9 +111,35 @@ describe("EDM SKU index rendering", () => {
       : sku);
     const result = renderEdmSkuIndex({ ...input, products, skus });
 
-    expect(result.content).toContain("https://synthetic-edm.test/products/item |");
-    expect(result.content).toContain("https://synthetic-cdn.invalid/images/demo-single.png |");
+    expect(result.content).toContain("链接待确认（原链接含未识别参数）");
+    expect(result.content).toContain("待补图（原图片链接含未识别参数）");
     expect(result.content).not.toMatch(/secret-under-safe-key|secret-user|secret-session|secret-sig|encoded-secret|encoded-user|encoded-sig|secret-token|secret-image-value|private-fragment/u);
+    expect(result.missingImageCount).toBe(2);
+  });
+
+  it("preserves a variant selector only when it exactly matches an exported SKU", async () => {
+    const input = await fixtureInput("legacy", "sku-media-legacy.csv");
+    const productsText = await readFile(path.join(FIXTURE, "products.jsonl"), "utf8");
+    const products = parseJsonl<ProductView>(productsText).map((product) => product.product_id === "PRODUCT-SINGLE"
+      ? { ...product, url: "https://synthetic-edm.test/products/item?gclid=tracking-id&variant=DEMO-SINGLE&utm_source=fixture" }
+      : product);
+    const result = renderEdmSkuIndex({ ...input, products });
+
+    expect(result.content).toContain("https://synthetic-edm.test/products/item?variant=DEMO-SINGLE |");
+    expect(result.content).not.toContain("tracking-id");
+    expect(result.content).not.toContain("utm_source");
+  });
+
+  it("marks an unrecognized variant selector for review", async () => {
+    const input = await fixtureInput("legacy", "sku-media-legacy.csv");
+    const productsText = await readFile(path.join(FIXTURE, "products.jsonl"), "utf8");
+    const products = parseJsonl<ProductView>(productsText).map((product) => product.product_id === "PRODUCT-SINGLE"
+      ? { ...product, url: "https://synthetic-edm.test/products/item?variant=not-a-feed-sku" }
+      : product);
+    const result = renderEdmSkuIndex({ ...input, products });
+
+    expect(result.content).toContain("链接待确认（原链接含未识别参数）");
+    expect(result.content).not.toContain("not-a-feed-sku");
   });
 
   it("renders an empty inventory with exactly one final newline", async () => {
