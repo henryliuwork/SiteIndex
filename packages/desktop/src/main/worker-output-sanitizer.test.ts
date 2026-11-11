@@ -147,4 +147,61 @@ describe("utilityProcess output sanitization", () => {
     expect(safeUrl).not.toContain("alice");
     expect(safe.media_results?.[0]?.sku).toBe("sku-alice-1");
   });
+
+  it("redacts username tokens inside URL paths, compound query values, and fragments", () => {
+    const credential = { username: "alice", applicationPassword: "fictional-password" };
+    const url = "https://cdn.example.test/avatars/alice.jpg?author=user%3Aalice&campaign=sku-a1#alice";
+    const result: JobResult = {
+      runId: "fictional-run",
+      job: "media",
+      status: "failed",
+      exitCode: 1,
+      summary: `Could not fetch ${url}`,
+      errors: [],
+      media_results: [{ sku: "sku-a1", status: "failed", image_url: url }],
+    };
+
+    const safe = sanitizeJobResult(
+      result,
+      wordpressCredentialSensitiveValues(credential),
+      wordpressCredentialUsernames(credential),
+    );
+    const safeUrl = safe.media_results?.[0]?.image_url ?? "";
+
+    expect(safe.summary).not.toContain("/alice");
+    expect(safe.summary).toContain("/avatars/%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D.jpg");
+    expect(safe.summary).toContain("author=user%3A%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D");
+    expect(safe.summary).toContain("campaign=sku-a1");
+    expect(safe.summary).toContain("#%5B%E5%B7%B2%E9%9A%90%E8%97%8F%5D");
+    expect(safeUrl).not.toContain("alice");
+    expect(safe.media_results?.[0]?.sku).toBe("sku-a1");
+  });
+
+  it("redacts multi-encoded usernames and case-insensitive percent-encoded passwords", () => {
+    const credential = { username: "alice", applicationPassword: "a/b" };
+    const url = "https://cdn.example.test/avatars/%2561lice.jpg?author=user%253aalice&one=a%2fb&two=a%252fb#%2561lice";
+    const result: JobResult = {
+      runId: "fictional-run",
+      job: "media",
+      status: "failed",
+      exitCode: 1,
+      summary: `Could not fetch ${url}`,
+      errors: ["remote returned https://cdn.example.test/?password=a%2fb&nested=a%252fb"],
+      media_results: [{ sku: "sku-a1", status: "failed", image_url: encodeURIComponent(url) }],
+    };
+
+    const safe = sanitizeJobResult(
+      result,
+      wordpressCredentialSensitiveValues(credential),
+      wordpressCredentialUsernames(credential),
+    );
+    const serialized = JSON.stringify(safe);
+
+    expect(serialized).not.toContain("alice");
+    expect(serialized).not.toContain("a%2fb");
+    expect(serialized).not.toContain("a%2Fb");
+    expect(serialized).not.toContain("a%252fb");
+    expect(serialized).not.toContain("a%252Fb");
+    expect(serialized).toContain("sku-a1");
+  });
 });

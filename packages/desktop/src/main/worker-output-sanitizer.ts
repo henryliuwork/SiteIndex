@@ -30,11 +30,26 @@ function sanitizeString(
   let safe = value;
   if (context === "url") safe = redactUrlUsernames(safe, sensitiveUsernames);
   else if (context === "text") safe = redactUrlsInText(safe, sensitiveUsernames);
-  const variants = sensitiveValues.flatMap((secret) =>
-    secret ? [secret, encodeURIComponent(secret), secret.replace(/\s+/g, "")] : [],
-  );
-  for (const secret of [...new Set(variants)].sort((left, right) => right.length - left.length)) {
-    safe = safe.split(secret).join("[已隐藏]");
+  const variants = new Map<string, boolean>();
+  for (const secret of sensitiveValues) {
+    if (!secret) continue;
+    variants.set(secret, false);
+    const compact = secret.replace(/\s+/g, "");
+    if (compact) variants.set(compact, false);
+
+    let encoded = secret;
+    for (let layer = 0; layer < 4; layer += 1) {
+      encoded = encodeURIComponent(encoded);
+      if (encoded !== secret) variants.set(encoded, true);
+    }
+  }
+  for (const [secret, isEncoded] of [...variants.entries()].sort(([left], [right]) => right.length - left.length)) {
+    if (isEncoded) {
+      // Percent-encoding hex digits are case-insensitive, including at nested encoding layers.
+      safe = safe.replace(new RegExp(escapeRegExp(secret), "gi"), "[已隐藏]");
+    } else {
+      safe = safe.split(secret).join("[已隐藏]");
+    }
   }
   safe = safe
     .replace(CREDENTIAL_VALUE_PATTERN, "$1[已隐藏]")
@@ -58,6 +73,19 @@ function redactUsernameTokens(value: string, usernames: readonly string[]): stri
     safe = safe.replace(tokenPattern, "[已隐藏]");
   }
   return safe;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function redactUsernameInUrlComponent(
+  value: string,
+  usernames: readonly string[],
+): { value: string; changed: boolean } {
+  const decoded = decodeRepeatedly(value);
+  const redacted = redactUsernameTokens(decoded, usernames);
+  return { value: redacted, changed: redacted !== decoded };
 }
 
 function decodeRepeatedly(value: string): string {
@@ -105,24 +133,35 @@ function redactUrlUsernames(value: string, usernames: readonly string[]): string
   let changed = false;
   const pathSegments = url.pathname.split("/");
   for (let index = 0; index < pathSegments.length; index += 1) {
-    if (matchesUsername(pathSegments[index] ?? "", usernames)) {
-      pathSegments[index] = encodeURIComponent("[已隐藏]");
-      changed = true;
-    }
+    const redacted = redactUsernameInUrlComponent(pathSegments[index] ?? "", usernames);
+    if (!redacted.changed) continue;
+    pathSegments[index] = encodeURIComponent(redacted.value);
+    changed = true;
   }
   if (changed) url.pathname = pathSegments.join("/");
 
   const queryEntries = [...url.searchParams.entries()];
   const nextQuery = new URLSearchParams();
+  let queryChanged = false;
   for (const [key, queryValue] of queryEntries) {
-    if (matchesUsername(queryValue, usernames)) {
-      nextQuery.append(key, "[已隐藏]");
+    const redacted = redactUsernameInUrlComponent(queryValue, usernames);
+    if (redacted.changed) {
+      nextQuery.append(key, redacted.value);
       changed = true;
+      queryChanged = true;
     } else {
       nextQuery.append(key, queryValue);
     }
   }
-  if (changed && queryEntries.length > 0) url.search = nextQuery.toString();
+  if (queryChanged) url.search = nextQuery.toString();
+
+  if (url.hash) {
+    const redacted = redactUsernameInUrlComponent(url.hash.slice(1), usernames);
+    if (redacted.changed) {
+      url.hash = encodeURIComponent(redacted.value);
+      changed = true;
+    }
+  }
   if (!changed) return value;
 
   const pathAndQuery = `${url.pathname}${url.search}${url.hash}`;
