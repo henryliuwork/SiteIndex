@@ -24,6 +24,8 @@ export interface WordPressCredentialVaultOptions {
   safeStorage: SafeStorageAdapter;
   /** Test-only path override; production always resolves a platform-local directory. */
   directoryOverride?: string;
+  /** Packaged E2E only: allow credentials for the local synthetic HTTP service. Never set in production. */
+  testOnlyAllowLoopbackHttp?: boolean;
   /** Test-only async gate for deterministically exercising per-origin write ordering. */
   operationGateForTests?: (operation: "save" | "clear") => Promise<void>;
 }
@@ -68,10 +70,13 @@ export function resolveWordPressCredentialDirectory(
   throw new WordPressCredentialVaultError("UNSUPPORTED_PLATFORM");
 }
 
-function normalizedOrigin(siteUrl: string): string {
+function normalizedOrigin(siteUrl: string, testOnlyAllowLoopbackHttp = false): string {
   try {
     const url = new URL(siteUrl);
-    if (url.protocol !== "https:" || !url.hostname || url.username || url.password) {
+    const secureProtocol = url.protocol === "https:";
+    const syntheticLoopback =
+      testOnlyAllowLoopbackHttp && url.protocol === "http:" && url.hostname === "127.0.0.1";
+    if ((!secureProtocol && !syntheticLoopback) || !url.hostname || url.username || url.password) {
       throw new Error("invalid origin");
     }
     return url.origin;
@@ -93,7 +98,10 @@ function isMissingFile(error: unknown): boolean {
   return isRecord(error) && error.code === "ENOENT";
 }
 
-function validateCredential(value: WordPressCredentialInput): { origin: string; credential: WordPressCredential } {
+function validateCredential(
+  value: WordPressCredentialInput,
+  testOnlyAllowLoopbackHttp = false,
+): { origin: string; credential: WordPressCredential } {
   if (
     typeof value.siteUrl !== "string" ||
     value.siteUrl.length > 2048 ||
@@ -107,7 +115,7 @@ function validateCredential(value: WordPressCredentialInput): { origin: string; 
     throw new WordPressCredentialVaultError("INVALID_INPUT");
   }
   return {
-    origin: normalizedOrigin(value.siteUrl),
+    origin: normalizedOrigin(value.siteUrl, testOnlyAllowLoopbackHttp),
     credential: { username: value.username.trim(), applicationPassword: value.applicationPassword },
   };
 }
@@ -208,7 +216,7 @@ export function createWordPressCredentialVault(options: WordPressCredentialVault
     async status(siteUrl: string): Promise<WordPressCredentialStatus> {
       let origin: string;
       try {
-        origin = normalizedOrigin(siteUrl);
+        origin = normalizedOrigin(siteUrl, options.testOnlyAllowLoopbackHttp);
         directory();
         await ensureEncryption();
       } catch {
@@ -222,7 +230,7 @@ export function createWordPressCredentialVault(options: WordPressCredentialVault
     },
 
     async save(input: WordPressCredentialInput): Promise<void> {
-      const { origin, credential } = validateCredential(input);
+      const { origin, credential } = validateCredential(input, options.testOnlyAllowLoopbackHttp);
       const vaultFilePath = filePathFor(directory(), origin);
       const payload = JSON.stringify({ version: VAULT_FORMAT_VERSION, origin, ...credential });
       await serializeWrite(vaultFilePath, async () => {
@@ -232,16 +240,16 @@ export function createWordPressCredentialVault(options: WordPressCredentialVault
       });
     },
 
-    /** Main-process-only accessor for a future media Job; never expose through preload. */
+    /** Main-process-only accessor for JobManager; never expose through preload or the renderer. */
     async getForHost(siteUrl: string): Promise<WordPressCredential | null> {
-      const origin = normalizedOrigin(siteUrl);
+      const origin = normalizedOrigin(siteUrl, options.testOnlyAllowLoopbackHttp);
       directory();
       await ensureEncryption();
       return readForOrigin(origin);
     },
 
     async clear(siteUrl: string): Promise<void> {
-      const origin = normalizedOrigin(siteUrl);
+      const origin = normalizedOrigin(siteUrl, options.testOnlyAllowLoopbackHttp);
       const vaultFilePath = filePathFor(directory(), origin);
       await serializeWrite(vaultFilePath, async () => {
         await options.operationGateForTests?.("clear");
