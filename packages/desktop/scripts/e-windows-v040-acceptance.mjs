@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
+import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
 
 const OLD_RELEASE = {
@@ -31,7 +32,7 @@ const W2_EXPECTED = W2_SYNTHETIC_EXPECTED;
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
 const TEST_ROOT = await fsMkdtemp();
-const APP_DATA_ROOT = path.join(TEST_ROOT, "roaming-app-data");
+const APP_DATA_ROOT = process.env.APPDATA;
 const LOCAL_APP_DATA_ROOT = path.join(TEST_ROOT, "local-app-data");
 const PROJECTS_ROOT = path.join(TEST_ROOT, "projects");
 const W2_PROJECT_DIRECTORY = path.join(PROJECTS_ROOT, W2_PROJECT_ID);
@@ -59,7 +60,7 @@ const report = {
   candidateSourceCommit: process.env.SITEINDEX_CANDIDATE_SOURCE_COMMIT || process.env.SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT || null,
   expectedCandidateSourceCommit: process.env.SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT || null,
   hostedUpdate: HOSTED_UPDATE,
-  userDataIsolation: "temporary APPDATA and LOCALAPPDATA; no real credential vault read or written",
+  userDataIsolation: "ephemeral GitHub runner APPDATA with a clean per-run SiteIndex directory; isolated temporary LOCALAPPDATA vault",
   candidateReleaseCommit: process.env.SITEINDEX_CANDIDATE_RELEASE_COMMIT || null,
   candidateReleaseAssetId: process.env.SITEINDEX_CANDIDATE_RELEASE_ASSET_ID || null,
   candidateReleaseAssetSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ASSET_SHA256 || null,
@@ -69,7 +70,14 @@ const report = {
   candidateReleaseArtifactExeSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_EXE_SHA256 || null,
   candidateUpdateMetadataVerified: process.env.SITEINDEX_CANDIDATE_UPDATE_METADATA_VERIFIED === "true",
   updateMode: HOSTED_UPDATE ? "published-github-release" : "candidate-installer",
-  updaterRestart: { detected: false, hadRemoteDebugPort: false, harnessRelaunchedForIpc: false, executableVersion: null },
+  updaterRestart: {
+    detected: false,
+    hadRemoteDebugPort: false,
+    harnessRelaunchedForIpc: false,
+    originalRestartProfile: "not-applicable",
+    harnessProfileVerified: false,
+    executableVersion: null,
+  },
   runnerBuildVersionOverride: process.env.SITEINDEX_CANDIDATE_ARTIFACT_SOURCE === "runner-built-internal-candidate",
   previousRelease: { ...OLD_RELEASE },
   candidateInstallerSha256: null,
@@ -521,61 +529,42 @@ async function connectToInstalledApp({ processHandle = null } = {}) {
 }
 
 async function waitForHostedUpdatedApp() {
-  const deadline = Date.now() + 180_000;
-  let lastVersion = null;
-  let lastError = null;
-  let candidateExeVersion = null;
-  let autoRestartDetected = false;
-  while (Date.now() < deadline) {
-    try {
+  const result = await waitForUpdatedWindowsApp({
+    candidateVersion: CANDIDATE_VERSION,
+    connectExisting: async () => {
       const endpoint = await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`).catch(() => null);
-      if (!endpoint?.ok) {
-        await delay(1000);
-        continue;
-      }
+      if (!endpoint?.ok) return null;
       if (browserConnection) {
         await browserConnection.close().catch(() => undefined);
         browserConnection = null;
       }
-      const page = await connectToInstalledApp();
-      const state = await appState(page);
-      lastVersion = state.version;
-      if (state.version === CANDIDATE_VERSION) {
-        candidateExeVersion = installedExecutableVersion();
-        report.updaterRestart = { detected: true, hadRemoteDebugPort: true, harnessRelaunchedForIpc: false, executableVersion: candidateExeVersion };
-        return page;
-      }
-      await browserConnection?.close().catch(() => undefined);
-      browserConnection = null;
-    } catch (error) {
-      lastError = error;
-      await browserConnection?.close().catch(() => undefined);
-      browserConnection = null;
-    }
-    candidateExeVersion = installedExecutableVersion();
-    const normalizedExecutableVersion = candidateExeVersion?.replace(/^v/iu, "");
-    if (normalizedExecutableVersion === CANDIDATE_VERSION || normalizedExecutableVersion?.startsWith(`${CANDIDATE_VERSION}.`)) {
-      if (applicationProcess && applicationProcess.exitCode === null) {
-        await delay(1000);
-        continue;
-      }
-      autoRestartDetected ||= installedAppProcessCount() > 0;
-      if (autoRestartDetected) {
-        stopInstalledAppProcesses();
-        report.updaterRestart = { detected: true, hadRemoteDebugPort: false, harnessRelaunchedForIpc: true, executableVersion: candidateExeVersion };
-        const page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: true });
+      try {
+        const page = await connectToInstalledApp();
         const state = await appState(page);
-        lastVersion = state.version;
-        if (state.version !== CANDIDATE_VERSION) {
-          throw new Error(`Reopened candidate app reports ${state.version}; expected ${CANDIDATE_VERSION}.`);
-        }
-        return page;
+        return { page, version: state.version };
+      } catch (error) {
+        await browserConnection?.close().catch(() => undefined);
+        browserConnection = null;
+        throw error;
       }
-    }
-    await delay(1000);
-  }
-  const detail = lastVersion ? `latest observed version ${lastVersion}` : lastError ? safeMessage(lastError) : "no app window observed";
-  throw new Error(`GitHub hosted update did not relaunch v${CANDIDATE_VERSION} within three minutes (${detail}).`);
+    },
+    getInstalledExecutableVersion: async () => installedExecutableVersion(),
+    isOriginalProcessRunning: async () => Boolean(applicationProcess && applicationProcess.exitCode === null),
+    getInstalledProcessCount: async () => installedAppProcessCount(),
+    stopInstalledProcesses: async () => stopInstalledAppProcesses(),
+    launchForVerification: async () => {
+      const page = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: true });
+      const state = await appState(page);
+      return { page, version: state.version };
+    },
+    now: () => Date.now(),
+    wait: delay,
+    intervalMs: 1000,
+    timeoutMs: 180_000,
+    formatError: safeMessage,
+  });
+  report.updaterRestart = result.updaterRestart;
+  return result.connected.page;
 }
 
 async function findTraceLogs(root, depth = 5) {
@@ -2403,6 +2392,10 @@ async function captureAddExistingTrace(page) {
 
 async function main() {
   if (process.platform !== "win32") throw new Error("This acceptance workflow requires Windows.");
+  if (process.env.GITHUB_ACTIONS !== "true") {
+    throw new Error("Packaged acceptance must run on an ephemeral GitHub Actions Windows runner to isolate APPDATA safely.");
+  }
+  if (!APP_DATA_ROOT) throw new Error("The GitHub Actions Windows runner did not provide APPDATA.");
   if (!OUTPUT_DIR) throw new Error("SITEINDEX_ACCEPTANCE_OUTPUT is not configured.");
   if (hasInstalledSiteIndex()) throw new Error("The Windows runner already has a SiteIndex install; refusing to touch it.");
   if (await exists(APP_DATA_DIR)) throw new Error("The Windows runner already has SiteIndex user data; refusing to alter it.");
@@ -2518,8 +2511,18 @@ async function main() {
   report.w2Acceptance.seed = await makeW2SyntheticProject(path.join(PROJECTS_ROOT, W2_PROJECT_ID), syntheticSite.origin);
   const candidateState = await appState(page);
   assert(candidateState.version === CANDIDATE_VERSION, "upgraded packaged app reports candidate version through preload IPC", { version: candidateState.version });
-  assert(candidateState.settings.projects_root === PROJECTS_ROOT,
-    "restarted candidate app continues to use the isolated temporary profile", { projectRootMatchesTemporaryProfile: candidateState.settings.projects_root === PROJECTS_ROOT });
+  const candidateProfileIsolated = candidateState.settings.projects_root === PROJECTS_ROOT;
+  if (HOSTED_UPDATE && report.updaterRestart.harnessRelaunchedForIpc) {
+    report.updaterRestart.harnessProfileVerified = candidateProfileIsolated;
+    assert(candidateProfileIsolated,
+      "harness-reopened candidate uses the isolated temporary profile; original updater-launched profile remains unverified",
+      { harnessProfileVerified: candidateProfileIsolated, originalRestartProfile: "unknown" });
+  } else {
+    if (HOSTED_UPDATE) report.updaterRestart.originalRestartProfile = candidateProfileIsolated ? "verified-isolated" : "profile-mismatch";
+    assert(candidateProfileIsolated,
+      HOSTED_UPDATE ? "original updater-restarted candidate uses the isolated temporary profile" : "candidate installer app uses the isolated temporary profile",
+      { profileMatchesTemporaryRoot: candidateProfileIsolated, originalRestartProfile: report.updaterRestart.originalRestartProfile });
+  }
   assert(candidateState.projectIds.includes("synthetic-legacy-project")
     && candidateState.projectIds.includes(W2_PROJECT_ID)
     && candidateState.projectCount === 2, "synthetic legacy and W2 projects are listed by the upgraded package", {

@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/e-windows-v040-acceptance.yml"
       - "packages/desktop/scripts/e-windows-v040-acceptance.mjs"
+      - "packages/desktop/scripts/e-windows-v041-reconnect.mjs"
       - "packages/desktop/scripts/e-windows-v040-synthetic-fixture.mjs"
       - "packages/desktop/scripts/check-candidate-run.ps1"
       - "packages/desktop/test/e-windows-v040-synthetic-fixture.test.ts"
