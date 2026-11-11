@@ -15,6 +15,7 @@ export function createMediaHandlers(context: IpcContext): IpcHandlerImplementati
       if (
         typeof record.project !== "string" ||
         !Array.isArray(skus) ||
+        skus.length === 0 ||
         skus.some((sku: unknown) => typeof sku !== "string" || !sku.trim())
       )
         throw invalidMediaRequest();

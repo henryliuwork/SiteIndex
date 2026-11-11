@@ -109,6 +109,9 @@ describe("IPC handler completeness", () => {
     ).rejects.toMatchObject({
       code: "CONFIG_INVALID",
     });
+    await expect(Promise.resolve().then(() => handler({ project: "demo", skus: [] }))).rejects.toMatchObject({
+      code: "CONFIG_INVALID",
+    });
     expect(context.jobs.runMedia).not.toHaveBeenCalled();
   });
 

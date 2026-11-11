@@ -45,6 +45,7 @@ export interface JobManagerOptions {
   workerPath: string;
   getSettings(): Promise<AppSettings>;
   getBrowserExecutablePath?(settings: AppSettings): Promise<string | null>;
+  isMediaJobReady?(): boolean;
   getWordPressCredential?(id: ProjectId, projectPath: string): Promise<WordPressCredential | null>;
   resolveProject(id: ProjectId): string | Promise<string>;
   fork(modulePath: string): UtilityProcessLike;
@@ -88,6 +89,16 @@ interface JobEntry {
 
 function jobError(code: SiteIndexError["code"], message: string, detail?: string): SiteIndexError {
   return { code, message, ...(detail ? { detail } : {}) };
+}
+
+function mediaJobNotImplementedError(): Error & { code: "NOT_IMPLEMENTED"; detail: string } {
+  const error = new Error("当前桌面版本尚未接入媒体准备 Core Job。") as Error & {
+    code: "NOT_IMPLEMENTED";
+    detail: string;
+  };
+  error.code = "NOT_IMPLEMENTED";
+  error.detail = "Core media Job 尚未就绪。";
+  return error;
 }
 
 function projectKey(projectPath: string): string {
@@ -135,9 +146,21 @@ function normalizeLimit(limit: number | undefined): number {
 
 export function createJobManager(options: JobManagerOptions) {
   const entriesByProject = new Map<string, JobEntry>();
+  const startingByProject = new Set<string>();
   const entriesByRunId = new Map<string, JobEntry>();
   const idleWaiters = new Set<() => void>();
   let acceptingJobs = true;
+
+  function notifyIdleWaitersIfIdle(): void {
+    if (entriesByProject.size !== 0 || startingByProject.size !== 0) return;
+    for (const resolve of idleWaiters) resolve();
+    idleWaiters.clear();
+  }
+
+  function waitForIdle(): Promise<void> {
+    if (entriesByProject.size === 0 && startingByProject.size === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => idleWaiters.add(resolve));
+  }
 
   function removeEntry(entry: JobEntry): void {
     if (entriesByProject.get(entry.key) === entry) entriesByProject.delete(entry.key);
@@ -146,10 +169,7 @@ export function createJobManager(options: JobManagerOptions) {
     entry.wordpressCredential = null;
     entry.sensitiveValues.fill("");
     entry.sensitiveValues.length = 0;
-    if (entriesByProject.size === 0) {
-      for (const resolve of idleWaiters) resolve();
-      idleWaiters.clear();
-    }
+    notifyIdleWaitersIfIdle();
   }
 
   async function releaseOwnedLock(entry: JobEntry): Promise<void> {
@@ -346,111 +366,127 @@ export function createJobManager(options: JobManagerOptions) {
       throw jobError("CONFIG_INVALID", "Job 请求无效。");
     }
     if ((request.job === "media") !== allowMedia) throw jobError("CONFIG_INVALID", "media 任务只能通过专用接口启动。");
+    if (request.job === "media" && !options.isMediaJobReady?.()) throw mediaJobNotImplementedError();
     if (
       request.job === "media" &&
-      (!Array.isArray(request.skus) || request.skus.some((sku) => typeof sku !== "string" || !sku.trim()))
+      (!Array.isArray(request.skus) ||
+        request.skus.length === 0 ||
+        request.skus.some((sku) => typeof sku !== "string" || !sku.trim()))
     ) {
       throw jobError("CONFIG_INVALID", "媒体准备 SKU 列表无效。");
     }
     const projectPath = path.resolve(request.projectPath);
     const key = projectKey(projectPath);
-    if (entriesByProject.has(key)) throw jobError("LOCKED", "此项目已有任务正在运行。", projectPath);
-    const settings = await options.getSettings();
-    const browserPath = options.getBrowserExecutablePath
-      ? await options.getBrowserExecutablePath(settings)
-      : settings.browser.executable_path;
-    if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
-    const projectId = path.basename(projectPath) as ProjectId;
-    const wordpressCredential =
-      request.job === "media" ? await options.getWordPressCredential?.(projectId, projectPath) : null;
-    if (request.job === "media" && !wordpressCredential) {
-      throw jobError("WP_NOT_CONFIGURED", "尚未配置此项目的 WordPress 应用程序密码。");
+    if (entriesByProject.has(key) || startingByProject.has(key)) {
+      throw jobError("LOCKED", "此项目已有任务正在运行。", projectPath);
     }
-    const sensitiveValues = wordpressCredential ? wordpressCredentialSensitiveValues(wordpressCredential) : [];
-    if (
-      sensitiveValues.some(
-        (secret) =>
-          secret && (projectPath.includes(secret) || (request.skus ?? []).some((sku) => sku.includes(secret))),
-      )
-    ) {
-      throw jobError("CONFIG_INVALID", "媒体准备请求包含不允许的敏感内容。");
-    }
-    const safeRequest: Omit<JobRequest, "trigger"> = {
-      projectPath,
-      job: request.job,
-      ...(request.job === "media"
-        ? { skus: request.skus as string[] }
-        : {
-            ...(typeof request.only === "string" ? { only: request.only } : {}),
-            ...(typeof request.date === "string" ? { date: request.date } : {}),
-            ...(typeof request.force === "boolean" ? { force: request.force } : {}),
-            ...(typeof request.dryRun === "boolean" ? { dryRun: request.dryRun } : {}),
-          }),
-    };
-    const child = options.fork(options.workerPath);
-
-    let resolveStarted!: (runId: string) => void;
-    let rejectStarted!: (error: SiteIndexError) => void;
-    let resolveDone!: (result: JobResult) => void;
-    const started = new Promise<string>((resolveStartedValue, rejectStartedValue) => {
-      resolveStarted = resolveStartedValue;
-      rejectStarted = rejectStartedValue;
-    });
-    const done = new Promise<JobResult>((resolveDoneValue) => {
-      resolveDone = resolveDoneValue;
-    });
-    const entry: JobEntry = {
-      key,
-      projectPath,
-      projectId,
-      request: safeRequest,
-      trigger,
-      settings,
-      browserPath,
-      wordpressCredential: wordpressCredential ?? null,
-      sensitiveValues,
-      child,
-      started,
-      resolveStarted,
-      rejectStarted,
-      done,
-      resolveDone,
-      runId: null,
-      coreRunId: null,
-      startedAt: null,
-      result: null,
-      oosRate: null,
-      workerPid: child.pid ?? null,
-      readySent: false,
-      cancelled: false,
-      finalizing: false,
-      startupTimer: setTimeout(() => {
-        entry.cancelled = true;
-        child.kill();
-        rejectStarted(jobError("UNKNOWN", "Job utilityProcess 启动超时。"));
-      }, START_TIMEOUT_MS),
-    };
-    entry.startupTimer.unref?.();
-    entriesByProject.set(key, entry);
-    child.on("message", (message) => handleMessage(entry, message));
-    child.once("exit", (code) => {
-      void finishEntry(entry, code);
-    });
-
+    startingByProject.add(key);
+    let transferredToEntry = false;
     try {
-      const runId = await started;
-      return { runId, done };
-    } catch (error) {
-      await done;
-      throw error;
+      const settings = await options.getSettings();
+      const browserPath = options.getBrowserExecutablePath
+        ? await options.getBrowserExecutablePath(settings)
+        : settings.browser.executable_path;
+      const projectId = path.basename(projectPath) as ProjectId;
+      const wordpressCredential =
+        request.job === "media" ? await options.getWordPressCredential?.(projectId, projectPath) : null;
+      if (request.job === "media" && !wordpressCredential) {
+        throw jobError("WP_NOT_CONFIGURED", "尚未配置此项目的 WordPress 应用程序密码。");
+      }
+      const sensitiveValues = wordpressCredential ? wordpressCredentialSensitiveValues(wordpressCredential) : [];
+      if (
+        sensitiveValues.some(
+          (secret) =>
+            secret && (projectPath.includes(secret) || (request.skus ?? []).some((sku) => sku.includes(secret))),
+        )
+      ) {
+        throw jobError("CONFIG_INVALID", "媒体准备请求包含不允许的敏感内容。");
+      }
+      const safeRequest: Omit<JobRequest, "trigger"> = {
+        projectPath,
+        job: request.job,
+        ...(request.job === "media"
+          ? { skus: request.skus as string[] }
+          : {
+              ...(typeof request.only === "string" ? { only: request.only } : {}),
+              ...(typeof request.date === "string" ? { date: request.date } : {}),
+              ...(typeof request.force === "boolean" ? { force: request.force } : {}),
+              ...(typeof request.dryRun === "boolean" ? { dryRun: request.dryRun } : {}),
+            }),
+      };
+      if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
+      const child = options.fork(options.workerPath);
+
+      let resolveStarted!: (runId: string) => void;
+      let rejectStarted!: (error: SiteIndexError) => void;
+      let resolveDone!: (result: JobResult) => void;
+      const started = new Promise<string>((resolveStartedValue, rejectStartedValue) => {
+        resolveStarted = resolveStartedValue;
+        rejectStarted = rejectStartedValue;
+      });
+      const done = new Promise<JobResult>((resolveDoneValue) => {
+        resolveDone = resolveDoneValue;
+      });
+      const entry: JobEntry = {
+        key,
+        projectPath,
+        projectId,
+        request: safeRequest,
+        trigger,
+        settings,
+        browserPath,
+        wordpressCredential: wordpressCredential ?? null,
+        sensitiveValues,
+        child,
+        started,
+        resolveStarted,
+        rejectStarted,
+        done,
+        resolveDone,
+        runId: null,
+        coreRunId: null,
+        startedAt: null,
+        result: null,
+        oosRate: null,
+        workerPid: child.pid ?? null,
+        readySent: false,
+        cancelled: false,
+        finalizing: false,
+        startupTimer: setTimeout(() => {
+          entry.cancelled = true;
+          child.kill();
+          rejectStarted(jobError("UNKNOWN", "Job utilityProcess 启动超时。"));
+        }, START_TIMEOUT_MS),
+      };
+      entry.startupTimer.unref?.();
+      startingByProject.delete(key);
+      entriesByProject.set(key, entry);
+      transferredToEntry = true;
+      child.on("message", (message) => handleMessage(entry, message));
+      child.once("exit", (code) => {
+        void finishEntry(entry, code);
+      });
+      notifyIdleWaitersIfIdle();
+
+      try {
+        const runId = await started;
+        return { runId, done };
+      } catch (error) {
+        await done;
+        throw error;
+      }
+    } finally {
+      if (!transferredToEntry) {
+        startingByProject.delete(key);
+        notifyIdleWaitersIfIdle();
+      }
     }
   }
 
   return {
     async pauseAndWaitForIdle(): Promise<void> {
       acceptingJobs = false;
-      if (entriesByProject.size === 0) return;
-      await new Promise<void>((resolve) => idleWaiters.add(resolve));
+      await waitForIdle();
     },
     resumeJobs(): void {
       acceptingJobs = true;
@@ -493,6 +529,7 @@ export function createJobManager(options: JobManagerOptions) {
       return null;
     },
     async shutdown(): Promise<void> {
+      acceptingJobs = false;
       const active = [...entriesByProject.values()];
       for (const entry of active) {
         if (!entry.result) {
@@ -501,9 +538,10 @@ export function createJobManager(options: JobManagerOptions) {
         }
       }
       await Promise.all(active.map((entry) => entry.done));
+      await waitForIdle();
     },
     get activeCount(): number {
-      return entriesByProject.size;
+      return entriesByProject.size + startingByProject.size;
     },
   };
 }

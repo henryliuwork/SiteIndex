@@ -126,6 +126,8 @@ if (!hasSingleInstanceLock) {
       workerPath: join(mainDirectory, "job-worker.js"),
       getSettings: () => settingsStore.get(),
       getBrowserExecutablePath: async (settings) => (await desktopIntegrations.detectBrowser(settings.browser)).path,
+      // Core media Job 接入完成后再打开能力闸；当前必须保持 NOT_IMPLEMENTED。
+      isMediaJobReady: () => false,
       getWordPressCredential: async (id) => {
         if (!mediaCore) throw { code: "PROJECT_NOT_FOUND", message: "项目服务尚未就绪。" };
         const project = await mediaCore.projects.get(id);

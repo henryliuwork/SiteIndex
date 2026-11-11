@@ -2,7 +2,7 @@ import type { JobResult, JobProgress } from "@siteindex/shared";
 import type { WordPressCredential } from "../shared/wordpress-credential-types.js";
 
 const CREDENTIAL_VALUE_PATTERN =
-  /([?&](?:user(?:name)?|pass(?:word)?|app_password|application_password|token|secret|authorization)=)[^&#\s]*/gi;
+  /([?&](?:pass(?:word)?|app_password|application_password|token|secret|authorization)=)[^&#\s]*/gi;
 const AUTH_HEADER_PATTERN = /(\b(?:proxy-)?authorization\s*[:=]\s*)(?:basic|bearer)?\s*[^\s,;"']+/gi;
 const AUTH_SCHEME_PATTERN = /\b(basic|bearer)\s+[A-Za-z0-9._~+/=-]+/gi;
 const URL_USER_INFO_PATTERN = /(https?:\/\/)[^/@\s]+@/gi;
@@ -27,7 +27,6 @@ export function sanitizeWorkerText(value: string, sensitiveValues: readonly stri
 export function wordpressCredentialSensitiveValues(credential: WordPressCredential): string[] {
   const basicToken = Buffer.from(`${credential.username}:${credential.applicationPassword}`, "utf8").toString("base64");
   return [
-    credential.username,
     credential.applicationPassword,
     `${credential.username}:${credential.applicationPassword}`,
     basicToken,
