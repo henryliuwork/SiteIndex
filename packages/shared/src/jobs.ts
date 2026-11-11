@@ -1,5 +1,5 @@
 import type { SiteIndexErrorCode } from "./errors";
-import type { JobName } from "./models";
+import type { JobName, MediaBatchState, MediaPrepareSkuResult } from "./models";
 
 export const JOB_NAMES: readonly JobName[] = [
   "daily",
@@ -64,23 +64,20 @@ export interface JobResult {
   /** init 任务逐步结果；schedule 由 Desktop 执行。 */
   steps?: { key: string; status: "ok" | "failed" | "skipped"; message?: string }[];
   /**
-   * media 未中断地完成批次时，按请求顺序为每个 SKU 返回一条结果；单个 SKU 可失败而继续处理。
-   * 401/403、取消或 worker 故障会提前终止：保留已完成结果，并可包含当前失败 SKU；尚未开始的 SKU 省略，表示未决。
-   * 认证/权限终止通过 media_error_code 区分；此前至少有一项非失败 SKU 结果时为 partial，否则为 failed。
-   * 通过 jobs.onFinished 按 runId 关联；原因须脱敏，且结果不得包含本机凭据。
+   * media 的完整请求列表，按去重后的请求顺序返回；旧 bridge 可不提供。
+   * 新实现必须同时返回 media_batch_state、media_results、media_unknown_skus 和 media_not_started_skus，
+   * 且后三项按 SKU 将请求列表无重叠地完整分区。旧结果缺少这些字段时表示不可恢复，不能按空结果处理。
+   * complete 表示所有 SKU 都有已确认结果；interrupted 表示未完成项可确认未开始；outcome_unknown 表示存在结果不确定项。
    */
+  media_requested_skus?: string[];
+  media_batch_state?: MediaBatchState;
   media_results?: MediaPrepareSkuResult[];
+  /** 请求中已开始但结果不能确认的 SKU；硬退出时宁可标未知，也不可误报失败或未开始。 */
+  media_unknown_skus?: string[];
+  /** 已确认没有开始处理的 SKU。 */
+  media_not_started_skus?: string[];
   /** media 因 WordPress 认证失败或权限不足停批时，返回 WP_AUTH_FAILED / WP_FORBIDDEN。 */
   media_error_code?: Extract<SiteIndexErrorCode, "WP_AUTH_FAILED" | "WP_FORBIDDEN">;
-}
-
-export interface MediaPrepareSkuResult {
-  sku: string;
-  /** recorded 表示 jpg/png 原图 URL 直接写入台账，没有上传；skipped_has_url 表示台账原本已有 URL。 */
-  status: "uploaded" | "reused" | "recorded" | "skipped_has_url" | "failed";
-  /** 脱敏后的原因；不得包含凭据、授权头、口令或原始认证响应。 */
-  reason?: string;
-  image_url?: string;
 }
 
 /** 进度回调：core 的每个 Job 接收它；desktop 转发为 IPC 事件，cli 打印到终端 */

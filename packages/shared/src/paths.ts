@@ -3,6 +3,13 @@
  * 所有包读写项目文件必须用这里的常量，禁止在代码里手写路径字符串。
  */
 
+export const EDM_SKU_INDEX_PATHS = {
+  legacy: "index/edm/sku-index.md",
+  workspace: "_site-index/edm/sku-index.md",
+} as const;
+
+export type EdmSkuIndexPath = (typeof EDM_SKU_INDEX_PATHS)[keyof typeof EDM_SKU_INDEX_PATHS];
+
 export const PATHS = {
   readme: "README.md",
   agentsMd: "AGENTS.md",
@@ -40,6 +47,9 @@ export const PATHS = {
   skuTags: "index/ledgers/sku_tags.csv",
   edmCampaigns: "index/ledgers/edm_campaigns.jsonl",
   outreach: "index/ledgers/outreach.jsonl",
+
+  /** 仅由 EDM 清单导出功能管理的固定生成文件。 */
+  edmSkuIndex: EDM_SKU_INDEX_PATHS.legacy,
 
   designTokens: "index/design/tokens.json",
   designBrand: "index/design/brand.md",
@@ -91,6 +101,7 @@ const WORKSPACE_PATHS: ProjectPaths = {
   skuTags: "_site-index/ledgers/sku_tags.csv",
   edmCampaigns: "_site-index/ledgers/edm_campaigns.jsonl",
   outreach: "_site-index/ledgers/outreach.jsonl",
+  edmSkuIndex: EDM_SKU_INDEX_PATHS.workspace,
   designTokens: "_site-index/design/tokens.json",
   designBrand: "_site-index/design/brand.md",
   designScreenshots: "_site-index/design/screenshots",

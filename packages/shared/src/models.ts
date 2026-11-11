@@ -3,6 +3,7 @@
  * 字段名保持 snake_case（与磁盘上的 JSON 完全一致），不要转换为 camelCase。
  * 修改需走契约流程（见 docs/WORKSTREAMS.md §4）。
  */
+import type { EdmSkuIndexPath } from "./paths";
 
 export type ISODate = string; // YYYY-MM-DD
 export type ISODateTime = string; // ISO 8601 带时区
@@ -431,6 +432,14 @@ export interface EdmCampaign {
   revenue?: number | null; // 预留
 }
 
+/** EDM 全项目 SKU 清单导出的确认结果；path 始终是固定的项目根目录相对路径。 */
+export interface EdmSkuIndexExportResult {
+  status: "created" | "updated" | "unchanged";
+  path: EdmSkuIndexPath;
+  sku_count: number;
+  missing_image_count: number;
+}
+
 export interface OutreachContact {
   domain: string;
   added_at: ISODate;
@@ -529,6 +538,18 @@ export interface RunLogStep {
   message?: string;
 }
 
+export type MediaBatchState = "complete" | "interrupted" | "outcome_unknown";
+
+export interface MediaPrepareSkuResult {
+  sku: string;
+  /** recorded 表示 jpg/png 原图 URL 直接写入台账，没有上传；skipped_has_url 表示台账原本已有 URL。 */
+  status: "uploaded" | "reused" | "recorded" | "skipped_has_url" | "failed";
+  /** 脱敏后的原因；不得包含凭据、授权头、口令或原始认证响应。 */
+  reason?: string;
+  /** 只返回无 userinfo、无凭据参数的 HTTP(S) 图片地址；无法安全返回时省略。 */
+  image_url?: Url;
+}
+
 export interface RunLog {
   run_id: string;
   job: JobName;
@@ -540,6 +561,14 @@ export interface RunLog {
   counts?: Record<string, number>;
   errors?: string[];
   steps?: RunLogStep[];
+  /** 仅 media Job 使用；历史 RunLog 缺少这些字段时表示旧记录无法恢复逐 SKU 结果。 */
+  media_requested_skus?: string[];
+  media_batch_state?: MediaBatchState;
+  /** 已确认的逐 SKU 结果，保持请求顺序；未知和未开始项分别列在下方字段。 */
+  media_results?: MediaPrepareSkuResult[];
+  media_unknown_skus?: string[];
+  media_not_started_skus?: string[];
+  media_error_code?: "WP_AUTH_FAILED" | "WP_FORBIDDEN";
 }
 
 export type FileKind = "sync" | "ledger" | "config" | "view" | "doc";

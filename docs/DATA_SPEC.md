@@ -25,6 +25,7 @@
 │   ├── ledgers/     sku_media.csv · sku_tags.csv · edm_campaigns.jsonl · outreach.jsonl
 │   ├── design/      tokens.json · brand.md · screenshots/
 │   ├── views/       products.jsonl · sku_stock.jsonl
+│   ├── edm/         sku-index.md（仅此固定生成文件由 SiteIndex 管理）
 │   ├── reports/     daily/YYYY-MM-DD.md · weekly/YYYY-Www.md
 │   ├── archive/     YYYY-MM/*.gz
 │   └── logs/        runs.jsonl · validation.json · jobs/{runId}.log
@@ -32,11 +33,14 @@
 ```
 本机缓存（不进云盘）：`{cache_dir}/{projectId}/index.db`、`{cache_dir}/{projectId}/ui-state.json`
 
+workspace 布局使用 `_site-index/` 替代上图的 `index/`；EDM SKU 清单固定映射为 `_site-index/edm/sku-index.md`。除该精确文件外，workspace 的 `_site-index/edm/` 仍由 EDM 技能/用户维护。
+
 ## 2. 写入权限
 
 | 路径 | 写入方 |
 |---|---|
 | `index/`（下列台账除外） | 仅 SiteIndex（执行设备的定时任务，或用户手动触发） |
+| `index/edm/sku-index.md`（legacy）与 `_site-index/edm/sku-index.md`（workspace） | 仅 SiteIndex 可创建或更新带有规范生成标记的固定清单；未标记同名文件冲突并原样保留。`_site-index/edm/` 内其他文件仍归 EDM 技能或用户所有 |
 | `index/site.json` | SiteIndex 设置界面 / 用户手改 |
 | `index/content/keywords.jsonl`、`index/ledgers/*` | agent 与用户，经 `siteindex ledger` 或软件界面；手写须严格遵守格式与排序 |
 | `README.md` 用户区块 | 用户、agent、软件（README 页） |
@@ -54,6 +58,25 @@
 - URL 为绝对地址，去掉 utm_*、gclid、gbraid、wbraid、srsltid、fbclid、mc_*、_ga 与空值参数
 - 空值为 `null`
 - 所有写入为原子写（临时文件 → fsync → rename，Windows 占用重试）
+
+### 3.1 EDM SKU 清单（生成的 Markdown）
+
+- 固定路径由 `pathsFor(layout).edmSkuIndex` 提供：legacy 为 `index/edm/sku-index.md`，workspace 为 `_site-index/edm/sku-index.md`。导出 API 不接受任意文件名、SKU 子集或输出路径。
+- 这是 `_site-index/edm/` 下唯一由 SiteIndex 管理的文件。输出首行必须是 `<!-- siteindex:generated:edm-sku-index:v1 -->`。目标不存在时创建；目标首行带有该标记时允许原子更新；目标存在但未带有该标记、标记版本不识别或无法安全读取时，返回 `EDM_INDEX_CONFLICT`（中文 message：“目标清单由用户或 EDM 技能维护，未做修改。”），保留原文件字节不变。
+- 首期只生成全项目 canonical 清单，不受 UI 表格筛选、分页或勾选影响。选择 SKU 导出独立副本不属于本契约。
+- 数据源为布局对应的 `views/products`、`ledgers/sku_media` 与 `ledgers/sku_tags`。兼容 K5 前的旧 `sku_media.csv` 表头以及追加了 `media_id`、`source_hash` 的新表头；导出过程只读台账，不触发台账迁移或改写。
+- 文件骨架固定为生成标记行、`# EDM SKU Index` 标题、空行、Markdown 表格；表头顺序固定为 `SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存`，随后一行使用相同列数的 `---` 分隔符。单元格先将 `\` 写为 `\\`，再将 `|` 写为 `\|`，CR/LF 换行写为 `<br>`；null/缺值为空单元格。金额使用不带千位分隔符和货币符号的十进制数，URL 使用规范化 HTTP(S) 地址。
+- 按父 SKU 聚合时使用 roadmap §4.4 规定的代表子 SKU；图片优先使用 `image_role=main` 的台账图片，其次使用 feed 首图。EDM 清单排除 WebP；无可用图时写“待补图”。短描述来自 `sku_tags.email_blurb`。`edm.discount_tiers` 的类型目前只有 `number[]`，roadmap 未定义某个 SKU 选择哪一档、折后金额舍入规则；A 在实现导出命令前必须补齐此业务规则及黄金 fixture，本契约不替产品作此假设。
+- 除上述待 A 定义的折扣业务规则外，同一份输入必须产生字节一致的清单：SKU 字典序按 `compareKeys`，不含生成时间、不依赖本机 locale、机器路径或遍历顺序；UTF-8 无 BOM、LF、末尾一个换行。内容相同则不重写。
+- `edm.exportIndex(projectId)` resolve 后返回 `created`、`updated` 或 `unchanged`、SKU 计数、待补图计数和固定安全相对路径：`created` 表示此前目标不存在，`updated` 表示受管文件内容有变化，`unchanged` 表示受管文件内容相同且未重写。响应不含绝对项目路径、文件内容或任意来源路径。写入可能已经完成但 IPC 确认丢失时返回 `EDM_EXPORT_OUTCOME_UNKNOWN`（中文 message：“清单写入结果暂无法确认，可重新生成以核对。”）；调用方不能把它当作“未写入”，可安全重试确定性导出。目标占用或无权限等可确认写入错误使用 `WRITE_FAILED`；所有错误 message/detail 不得泄露绝对路径、凭据或原始服务响应。
+
+### 3.2 EDM media Job 的历史恢复字段
+
+- 新 media Job 的最终 `JobResult` 与 `RunLog` 记录请求 SKU（去重后保持请求顺序）、`media_batch_state`、已确认的 `media_results`、结果未知 SKU、确认未开始 SKU，以及可选的 `WP_AUTH_FAILED` / `WP_FORBIDDEN` 批次错误码。
+- 三组 SKU 必须无重叠且完整分区请求列表：`media_results[].sku`、`media_unknown_skus`、`media_not_started_skus`。`complete` 表示每个请求 SKU 都有已确认结果；`interrupted` 表示批次提前结束、未完成项均能确认尚未开始；`outcome_unknown` 表示至少一个 SKU 的外部副作用结果不能确认。`outcome_unknown` 时不能把不确定项报告为失败或未开始。
+- 401/403 停批时，失败 SKU 保留在已确认结果中，`media_error_code` 说明原因，后续且能确认未开始的 SKU 列入 `media_not_started_skus`。硬退出时只保存有持久证据的完成结果；无法确认是否开始或是否成功的 SKU 列入 `media_unknown_skus`。若没有可靠进度检查点，全部未能确认的请求都标未知，不凭数组缺项推断未开始。
+- `jobs.history(projectId)` 只返回该项目的记录，media 字段写回原项目 `runs.jsonl`。旧 `RunLog` 没有这些可选字段时表示结果不可恢复，不等于空结果；读取时不迁移或重写旧行。
+- `reason`、`errors`、`summary` 不得包含 WordPress 用户名/口令、Authorization、凭据、原始认证响应或本机绝对路径。`image_url` 仅返回无 userinfo 和凭据参数的 HTTP(S) 地址；无法确认安全时省略。脱敏必须同时覆盖实时事件和持久历史。
 
 ## 4. 配置文件
 
