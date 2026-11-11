@@ -662,6 +662,21 @@ async function attemptW2(name, evidenceType, action) {
   }
 }
 
+async function acceptNextW2Dialog(page, trigger) {
+  const dialogPromise = page.waitForEvent("dialog", { timeout: 10_000 });
+  try {
+    await trigger();
+    const dialog = await dialogPromise;
+    const message = dialog.message();
+    await dialog.accept();
+    return message;
+  } catch (error) {
+    const dialog = await dialogPromise.catch(() => null);
+    await dialog?.dismiss().catch(() => undefined);
+    throw error;
+  }
+}
+
 async function readW2SeoStatusCounts(page, rule) {
   return page.evaluate(async ({ projectId, targetRule }) => {
     const api = window.siteindex;
@@ -758,9 +773,12 @@ async function testW2Pages(page, syntheticSite) {
 
   await attemptW2("SEO issue action marks a row processed and restores it through the UI", "ui", async () => {
     const before = await readW2SeoStatusCounts(page, "title_missing");
-    await page.once("dialog", (dialog) => { void dialog.accept(); });
-    await page.getByRole("button", { name: /问题操作：/u }).first().click();
-    await page.getByRole("menuitem", { name: "标记已处理", exact: true }).click();
+    const processedConfirmation = await acceptNextW2Dialog(page, async () => {
+      await page.getByRole("button", { name: /问题操作：/u }).first().click();
+      await page.getByRole("menuitem", { name: "标记已处理", exact: true }).click();
+    });
+    const processedConfirmationMatches = processedConfirmation.includes("标记为已处理？")
+      && processedConfirmation.includes("单条 SEO 问题");
     await waitForW2SeoCount(page, "title_missing", "fixed", 1);
     await page.waitForFunction((expected) => {
       const count = document.querySelector(".si-data-table .si-pagination-count")?.textContent ?? "";
@@ -771,16 +789,20 @@ async function testW2Pages(page, syntheticSite) {
     await statusFilter.click();
     await page.getByRole("group", { name: "状态" }).getByRole("button", { name: "已处理", exact: true }).click();
     await waitForW2Table(page);
-    await page.once("dialog", (dialog) => { void dialog.accept(); });
-    await page.getByRole("button", { name: /问题操作：/u }).first().click();
-    await page.getByRole("menuitem", { name: "恢复为待处理", exact: true }).click();
+    const restoreConfirmation = await acceptNextW2Dialog(page, async () => {
+      await page.getByRole("button", { name: /问题操作：/u }).first().click();
+      await page.getByRole("menuitem", { name: "恢复为待处理", exact: true }).click();
+    });
+    const restoreConfirmationMatches = restoreConfirmation.includes("恢复")
+      && restoreConfirmation.includes("单条 SEO 问题");
     await waitForW2SeoCount(page, "title_missing", "open", W2_EXPECTED.issues - 6);
     const statusCounts = await readW2SeoStatusCounts(page, "title_missing");
     const passed = before.open === W2_EXPECTED.issues - 6
+      && processedConfirmationMatches && restoreConfirmationMatches
       && afterFixed.fixed === before.fixed + 1
       && statusCounts.open === W2_EXPECTED.issues - 6
       && statusCounts.fixed === 0;
-    return { passed, evidence: { before, afterFixed, afterRestore: statusCounts, restoredToOpen: statusCounts.open === before.open } };
+    return { passed, evidence: { before, afterFixed, afterRestore: statusCounts, processedConfirmationMatches, restoreConfirmationMatches, restoredToOpen: statusCounts.open === before.open } };
   });
 
   await attemptW2("SEO rules Drawer ignores and restores a rule class", "ui", async () => {
@@ -790,21 +812,22 @@ async function testW2Pages(page, syntheticSite) {
     const ruleSection = page.locator(".si-seo-rule-setting").filter({ hasText: "Title 缺失" }).first();
     await ruleSection.waitFor({ state: "visible", timeout: 15_000 });
     const before = await readW2SeoStatusCounts(page, "title_missing");
-    await page.once("dialog", (dialog) => { void dialog.accept(); });
-    await ruleSection.getByRole("button", { name: "忽略此规则", exact: true }).click();
+    const ignoreConfirmation = await acceptNextW2Dialog(page, () => ruleSection.getByRole("button", { name: "忽略此规则", exact: true }).click());
+    const ignoreConfirmationMatches = ignoreConfirmation.includes("忽略") && ignoreConfirmation.includes("全站同一规则");
     await ruleSection.getByRole("button", { name: "恢复此规则", exact: true }).waitFor({ state: "visible", timeout: 10_000 });
     await waitForW2SeoCount(page, "title_missing", "ignored", W2_EXPECTED.issues - 6);
     const ignored = await readW2SeoStatusCounts(page, "title_missing");
-    await page.once("dialog", (dialog) => { void dialog.accept(); });
-    await ruleSection.getByRole("button", { name: "恢复此规则", exact: true }).click();
+    const restoreRuleConfirmation = await acceptNextW2Dialog(page, () => ruleSection.getByRole("button", { name: "恢复此规则", exact: true }).click());
+    const restoreRuleConfirmationMatches = restoreRuleConfirmation.includes("恢复") && restoreRuleConfirmation.includes("全站同一规则");
     await waitForW2SeoCount(page, "title_missing", "open", W2_EXPECTED.issues - 6);
     const restored = await readW2SeoStatusCounts(page, "title_missing");
     const passed = before.open === W2_EXPECTED.issues - 6
+      && ignoreConfirmationMatches && restoreRuleConfirmationMatches
       && ignored.ignored === before.open
       && restored.open === before.open
       && restored.ignored === 0;
     await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
-    return { passed, evidence: { before, ignored, restored, drawerOpened: true } };
+    return { passed, evidence: { before, ignored, restored, ignoreConfirmationMatches, restoreRuleConfirmationMatches, drawerOpened: true } };
   });
 
   await attemptW2("Inventory table renders rows and paginates", "ui", async () => {
