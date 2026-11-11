@@ -46,6 +46,8 @@ export interface DailyResult {
 }
 
 const STOCK_STATES: readonly StockStatus[] = ["in_stock", "out_of_stock", "preorder", "unknown"];
+const STOCK_VERIFY_CURSOR_VERSION = 1;
+const STOCK_VERIFY_CURSOR_FILE = "stock-verification-cursor.json";
 const TRACKED = ["product_id", "handle", "title", "variant_title", "url", "category", "categories", "category_source",
   "price", "compare_at_price", "currency", "image_url"] as const;
 
@@ -73,6 +75,22 @@ function dayInZone(date: Date, timezone = "UTC"): string {
 
 function isStockStatus(value: unknown): value is StockStatus {
   return typeof value === "string" && (STOCK_STATES as readonly string[]).includes(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readStockVerifyCursor(filePath: string): Promise<string | undefined> {
+  try {
+    const value: unknown = JSON.parse(await readFile(filePath, "utf8"));
+    if (!isRecord(value)) return undefined;
+    return value.version === STOCK_VERIFY_CURSOR_VERSION && typeof value.last_sku === "string" && value.last_sku
+      ? value.last_sku
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function slugify(value: string): string {
@@ -321,7 +339,21 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
 
   const shouldVerifyMissing = site.crawl?.stock_verify?.enabled === true && !ratioExceeded;
   const verification = shouldVerifyMissing
-    ? await verifyMissingStock(gone.map((sku) => ({ sku, url: String(skus.get(sku)?.url ?? "") })), site)
+    ? await (async () => {
+      const cursorPath = path.join(project, paths.jobLogsDir, STOCK_VERIFY_CURSOR_FILE);
+      const startAfterSku = await readStockVerifyCursor(cursorPath);
+      return verifyMissingStock(
+        gone.map((sku) => ({ sku, url: String(skus.get(sku)?.url ?? "") })),
+        site,
+        {
+          startAfterSku,
+          async beforeCandidate(sku) {
+            // 只在独立 Job 元数据文件中保存轮转位置，不改 site.json、SKU 行或 last_seen。
+            await atomicWrite(cursorPath, `${JSON.stringify({ version: STOCK_VERIFY_CURSOR_VERSION, last_sku: sku })}\n`);
+          },
+        },
+      );
+    })()
     : null;
   const missingAs = site.crawl?.missing_as ?? "removed";
   const removedAfter = site.crawl?.missing_removed_after_days ?? 30;

@@ -170,4 +170,4 @@
 - [x] 加入 WordPress 配置、认证、权限、REST 与图片处理错误码；Desktop handler 留待 C 实现
 
 ### v0.4.1 · 库存核验
-- [x] daily 在完整 feed 合并后核验缺席 active SKU；重用 loopback 假 feed / 产品页 / GraphQL 夹具覆盖 legacy 与 workspace；空 feed 与缺席比例保护在请求前短路，支持 GraphQL/page-text、404/410、限速与单次上限；网络失败保留原状态
+- [x] daily 在完整 feed 合并后核验缺席 active SKU；重用 loopback 假 feed / 产品页 / GraphQL 夹具覆盖 legacy 与 workspace；空 feed 与缺席比例保护在请求前短路，支持 GraphQL/page-text、404/410、限速与单次上限；游标在独立 Job 元数据文件持久化并公平轮转；GraphQL 错误/损坏响应与无 URL 失败保留原状态

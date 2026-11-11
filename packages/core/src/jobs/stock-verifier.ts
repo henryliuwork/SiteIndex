@@ -33,6 +33,8 @@ export interface StockVerifierRuntime {
   fetcher?: typeof fetch;
   wait?: (milliseconds: number) => Promise<void>;
   timeoutMs?: number;
+  startAfterSku?: string;
+  beforeCandidate?: (sku: string) => Promise<void>;
 }
 
 type HtmlNode = { type: string; name?: string; data?: string; children?: HtmlNode[] };
@@ -60,8 +62,10 @@ function allowedHttpOrigin(value: string): URL | null {
 }
 
 function sameOriginUrl(value: string, base: URL): URL | null {
+  const normalized = value.trim();
+  if (!normalized) return null;
   try {
-    const url = new URL(value, base);
+    const url = new URL(normalized, base);
     if (url.origin !== base.origin || url.username || url.password || url.hash) return null;
     return url;
   } catch {
@@ -90,18 +94,24 @@ function statusFromValue(value: unknown): StockStatus | undefined {
     case "PREORDER":
     case "PRE-ORDER":
       return "preorder";
+    case "UNKNOWN":
+      return "unknown";
     default:
       return undefined;
   }
 }
 
-function graphqlStatus(payload: unknown): StockStatus | undefined {
-  if (!isRecord(payload) || !isRecord(payload.data)) return undefined;
+function graphqlStatus(payload: unknown, expectedSku: string): StockStatus | undefined {
+  if (!isRecord(payload)) return undefined;
+  if ("errors" in payload && (!Array.isArray(payload.errors) || payload.errors.length > 0)) return undefined;
+  if (!isRecord(payload.data)) return undefined;
   const data = payload.data;
-  const direct = isRecord(data.product) ? statusFromValue(data.product.stock_status) : undefined;
+  const direct = isRecord(data.product) && data.product.sku === expectedSku
+    ? statusFromValue(data.product.stock_status)
+    : undefined;
   if (direct) return direct;
   if (!isRecord(data.products) || !Array.isArray(data.products.items)) return undefined;
-  const product = data.products.items.find(isRecord);
+  const product = data.products.items.find((item) => isRecord(item) && item.sku === expectedSku);
   return product ? statusFromValue(product.stock_status) : undefined;
 }
 
@@ -114,7 +124,7 @@ function textOf(node: HtmlNode): string {
 function pageTextStatus(html: string, rules: StockRules | undefined): StockStatus | undefined {
   if (!rules) return undefined;
   const root = parseDocument(html) as unknown as HtmlNode;
-  const text = textOf(root).replace(/\s+/g, " ").toLowerCase();
+  const text = textOf(root).normalize("NFKC").replace(/\s+/g, " ").toLowerCase();
   const matches: StockStatus[] = [];
   const phrases = (value: unknown): readonly string[] => Array.isArray(value)
     ? value.filter((phrase): phrase is string => typeof phrase === "string")
@@ -125,7 +135,10 @@ function pageTextStatus(html: string, rules: StockRules | undefined): StockStatu
     ["preorder", phrases(rules.preorder)],
   ];
   for (const [status, phrases] of candidates) {
-    if (phrases.some((phrase) => phrase.trim() && text.includes(phrase.trim().toLowerCase()))) matches.push(status);
+    if (phrases.some((phrase) => {
+      const normalized = phrase.trim().normalize("NFKC").toLowerCase();
+      return normalized && text.includes(normalized);
+    })) matches.push(status);
   }
   return matches.length === 1 ? matches[0] : undefined;
 }
@@ -135,7 +148,7 @@ function responseStatus(response: Response): "ok" | "not_found" | "unavailable" 
   return response.status >= 200 && response.status < 300 ? "ok" : "unavailable";
 }
 
-/** 核验 feed 缺席的 SKU。按 SKU 排序、串行限速；结果不包含请求 URL 或服务端响应正文。 */
+/** 核验 feed 缺席的 SKU。按 SKU 确定性轮转、串行限速；结果不包含 URL 或响应正文。 */
 export async function verifyMissingStock(
   candidates: readonly { sku: string; url: string }[],
   site: StockVerificationSite,
@@ -150,7 +163,12 @@ export async function verifyMissingStock(
 
   const limit = Math.max(0, Math.floor(config.max_per_run ?? DEFAULT_MAX_PER_RUN));
   const ordered = [...candidates].sort((a, b) => compareKeys(a.sku, b.sku));
-  const pending = ordered.slice(0, limit);
+  const cursor = runtime.startAfterSku;
+  const startIndex = cursor === undefined
+    ? 0
+    : ordered.findIndex(({ sku }) => compareKeys(sku, cursor) > 0);
+  const rotated = startIndex > 0 ? [...ordered.slice(startIndex), ...ordered.slice(0, startIndex)] : ordered;
+  const pending = rotated.slice(0, limit);
   const rateLimitMs = Math.max(0, Number(site.crawl?.rate_limit_ms ?? 1500));
   const timeoutMs = Math.max(1, runtime.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const fetcher = runtime.fetcher ?? fetch;
@@ -169,7 +187,17 @@ export async function verifyMissingStock(
   const results = new Map<string, MissingStockResult>();
   let checked = 0;
   let unavailable = 0;
+  let processed = 0;
   for (const candidate of pending) {
+    try {
+      await runtime.beforeCandidate?.(candidate.sku);
+    } catch {
+      results.set(candidate.sku, { kind: "unavailable" });
+      unavailable += 1;
+      processed += 1;
+      break;
+    }
+    processed += 1;
     checked += 1;
     const productUrl = sameOriginUrl(candidate.url, base);
     if (!productUrl) {
@@ -206,7 +234,7 @@ export async function verifyMissingStock(
       continue;
     }
 
-    let graphqlAvailable = false;
+    let graphqlBusinessUnknown = false;
     try {
       const response = await request(graphql, {
         method: "POST",
@@ -214,12 +242,12 @@ export async function verifyMissingStock(
         body: JSON.stringify({ query: GRAPHQL_QUERY, variables: { sku: candidate.sku } }),
       });
       if (responseStatus(response) === "ok") {
-        graphqlAvailable = true;
-        const status = graphqlStatus(await response.json().catch(() => null));
-        if (status) {
+        const status = graphqlStatus(await response.json().catch(() => null), candidate.sku);
+        if (status && status !== "unknown") {
           results.set(candidate.sku, { kind: "status", status });
           continue;
         }
+        graphqlBusinessUnknown = status === "unknown";
       }
     } catch {
       // The page-text fallback is still useful when the optional GraphQL endpoint is unavailable.
@@ -227,12 +255,12 @@ export async function verifyMissingStock(
 
     const status = pageTextStatus(html, site.crawl?.stock_rules);
     if (status) results.set(candidate.sku, { kind: "status", status });
-    else if (graphqlAvailable) results.set(candidate.sku, { kind: "status", status: "unknown" });
+    else if (graphqlBusinessUnknown) results.set(candidate.sku, { kind: "status", status: "unknown" });
     else {
       results.set(candidate.sku, { kind: "unavailable" });
       unavailable += 1;
     }
   }
 
-  return { results, checked, unavailable, deferred: ordered.length - pending.length };
+  return { results, checked, unavailable, deferred: ordered.length - processed };
 }

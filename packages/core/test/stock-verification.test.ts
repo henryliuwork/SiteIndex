@@ -129,8 +129,9 @@ async function loadSnapshot(site: TestSite) {
   return toSnapshot(await readFeeds(site), site, runDate).rows;
 }
 
-async function runProjectDaily(root: string, site: TestSite) {
-  return runDaily(root, await loadSnapshot(site), { date: runDate, now: runNow });
+async function runProjectDaily(root: string, site: TestSite, date = runDate) {
+  const now = date === runDate ? runNow : new Date(`${date}T12:00:00Z`);
+  return runDaily(root, await loadSnapshot(site), { date, now });
 }
 
 describe("feed-absence stock verification", () => {
@@ -193,13 +194,21 @@ describe("feed-absence stock verification", () => {
         "DEMO-410": { status: 410 },
         "DEMO-5XX": { status: 503 },
         "DEMO-TEXT-IN-STOCK": { body: inStockHtml },
-        "DEMO-TEXT-OOS": { body: oosHtml },
+        "DEMO-TEXT-OOS": { body: "<html><body>Availability: ｏｕｔ　ｏｆ　ｓｔｏｃｋ</body></html>" },
         "DEMO-TEXT-PREORDER": { body: preorderHtml },
         "DEMO-UNKNOWN": { status: 200, body: "<html><body>Availability is not stated.</body></html>" },
+        "DEMO-GRAPHQL-WRONG-SKU": { status: 200, body: oosHtml },
+        "DEMO-THROTTLED": { status: 200, body: "<html><body>Availability is not stated.</body></html>" },
+        "DEMO-THROTTLED-TEXT": { status: 200, body: "<html><body>Sold Out!</body></html>" },
       },
     });
     const graphqlService = await createGraphqlService({
-      responsesBySku: { "DEMO-UNKNOWN": { body: { data: { products: { items: [{ sku: "DEMO-UNKNOWN", stock_status: "UNKNOWN" }] } } } } },
+      responsesBySku: {
+        "DEMO-UNKNOWN": { body: { data: { products: { items: [{ sku: "DEMO-UNKNOWN", stock_status: "UNKNOWN" }] } } } },
+        "DEMO-GRAPHQL-WRONG-SKU": { body: { data: { products: { items: [{ sku: "OTHER-SKU", stock_status: "IN_STOCK" }] } } } },
+        "DEMO-THROTTLED": { body: { errors: [{ message: "THROTTLED", extensions: { category: "graphql-throttled" } }] } },
+        "DEMO-THROTTLED-TEXT": { body: { errors: [{ message: "THROTTLED", extensions: { category: "graphql-throttled" } }] } },
+      },
       defaultResponse: { httpStatus: 503, body: { errors: [{ message: "synthetic failure" }] } },
     });
     const { root, site } = await newProject(siteService, graphqlService);
@@ -212,6 +221,9 @@ describe("feed-absence stock verification", () => {
       { sku: "DEMO-TEXT-OOS", status: "in_stock" },
       { sku: "DEMO-TEXT-PREORDER", status: "in_stock" },
       { sku: "DEMO-UNKNOWN", status: "in_stock" },
+      { sku: "DEMO-GRAPHQL-WRONG-SKU", status: "in_stock" },
+      { sku: "DEMO-THROTTLED", status: "in_stock" },
+      { sku: "DEMO-THROTTLED-TEXT", status: "in_stock" },
     ], "legacy");
     const result = await runProjectDaily(root, site);
     const paths = pathsFor("legacy");
@@ -219,7 +231,7 @@ describe("feed-absence stock verification", () => {
     const latest = new Map((await readJsonl(path.join(root, paths.inventoryLatest))).map((row) => [String(row.sku), row]));
 
     expect(result.status).toBe("partial");
-    expect(result.counts.stock_verify_unavailable).toBe(1);
+    expect(result.counts.stock_verify_unavailable).toBe(2);
     expect(catalog.get("DEMO-404")).toMatchObject({ status: "removed", removed_reason: "feed_absent_404" });
     expect(catalog.get("DEMO-410")).toMatchObject({ status: "removed", removed_reason: "feed_absent_404" });
     expect(catalog.get("DEMO-UNKNOWN")).toMatchObject({ status: "removed" });
@@ -228,10 +240,38 @@ describe("feed-absence stock verification", () => {
     expect(latest.get("DEMO-TEXT-OOS")).toMatchObject({ stock_status: "out_of_stock" });
     expect(latest.get("DEMO-TEXT-IN-STOCK")).toMatchObject({ stock_status: "in_stock" });
     expect(latest.get("DEMO-TEXT-PREORDER")).toMatchObject({ stock_status: "preorder" });
+    expect(latest.get("DEMO-GRAPHQL-WRONG-SKU")).toMatchObject({ stock_status: "out_of_stock" });
+    expect(catalog.get("DEMO-THROTTLED")).toMatchObject({ status: "active" });
+    expect(latest.get("DEMO-THROTTLED")).toMatchObject({ stock_status: "in_stock", checked_at: "2026-10-21T12:00:00Z" });
+    expect(catalog.get("DEMO-THROTTLED-TEXT")).toMatchObject({ status: "active" });
+    expect(latest.get("DEMO-THROTTLED-TEXT")).toMatchObject({ stock_status: "out_of_stock" });
     expect((await readJsonl(path.join(root, paths.eventsDir, "2026-10.jsonl"))).some((row) => row.type === "feed_anomaly" && row.sku === "DEMO-TEXT-IN-STOCK")).toBe(true);
     expect(catalog.get("DEMO-5XX")).toMatchObject({ status: "active" });
     expect(latest.get("DEMO-5XX")).toMatchObject({ stock_status: "in_stock", checked_at: "2026-10-21T12:00:00Z" });
-    expect(graphqlService.snapshot().routeCounts["POST /graphql"]).toBe(4);
+    expect(graphqlService.snapshot().routeCounts["POST /graphql"]).toBe(7);
+  });
+
+  it("treats malformed GraphQL JSON as unavailable and only uses reliable page-text fallback", async () => {
+    const siteService = await createSiteService();
+    const graphqlService = await createGraphqlService();
+    const { site } = await newProject(siteService, graphqlService);
+    const result = await verifyMissingStock([
+      { sku: "DEMO-MALFORMED-FALLBACK", url: siteService.productUrl("DEMO-MALFORMED-FALLBACK") },
+      { sku: "DEMO-MALFORMED-UNKNOWN", url: siteService.productUrl("DEMO-MALFORMED-UNKNOWN") },
+    ], site, {
+      async fetcher(input, init) {
+        const url = new URL(String(input));
+        if (init?.method === "POST") return new Response("{invalid-json", { status: 200 });
+        const html = url.pathname.toLowerCase().endsWith("demo-malformed-fallback.html")
+          ? "<main>In stock</main>"
+          : "<main>No availability information</main>";
+        return new Response(html, { status: 200 });
+      },
+    });
+
+    expect(result.results.get("DEMO-MALFORMED-FALLBACK")).toEqual({ kind: "status", status: "in_stock" });
+    expect(result.results.get("DEMO-MALFORMED-UNKNOWN")).toEqual({ kind: "unavailable" });
+    expect(result.unavailable).toBe(1);
   });
 
   it("does not request product or GraphQL pages for an empty feed or tripped removal-ratio guard", async () => {
@@ -274,7 +314,7 @@ describe("feed-absence stock verification", () => {
       [{ sku: "DEMO-GQL-TIMEOUT", url: siteService.productUrl("DEMO-GQL-TIMEOUT") }],
       site,
       {
-        timeoutMs: 10,
+        timeoutMs: 10_000,
         async fetcher(input, init) {
           requestedMethods.push(init?.method ?? "GET");
           if (init?.method === "POST") throw new Error("Synthetic GraphQL timeout");
@@ -322,6 +362,122 @@ describe("feed-absence stock verification", () => {
     expect(requests).toEqual(["GET /products/DEMO-A", "POST /graphql"]);
     expect(waits).toHaveLength(1);
     expect(waits[0]).toBeGreaterThan(0);
+  });
+
+  it("rotates a persisted cursor across same-day reruns, candidate changes, layouts, and failures", async () => {
+    for (const layout of ["legacy", "workspace"] as const) {
+      const siteService = await createSiteService({
+        feedRows: [{ sku: "DEMO-PRESENT" }],
+        defaultProductResponse: { status: 200, body: "<main>Demo product.</main>" },
+        productResponsesBySku: { "DEMO-A": { status: 503 } },
+      });
+      const graphqlService = await createGraphqlService({
+        responsesBySku: Object.fromEntries(["DEMO-B", "DEMO-C", "DEMO-D", "DEMO-E", "DEMO-AA"].map((sku) => [sku, {
+          body: { data: { product: { sku, stock_status: "IN_STOCK" } } },
+        }])),
+      });
+      const { root, site } = await newProject(siteService, graphqlService, layout, 2);
+      const absent = ["DEMO-A", "DEMO-B", "DEMO-C", "DEMO-D", "DEMO-E"];
+      await seed(root, siteService, [
+        { sku: "DEMO-PRESENT", status: "in_stock" },
+        ...absent.map((sku) => ({ sku, status: "out_of_stock" as const })),
+      ], layout);
+      const paths = pathsFor(layout);
+      const cursorPath = path.join(root, paths.jobLogsDir, "stock-verification-cursor.json");
+      const readLatest = async () => new Map((await readJsonl(path.join(root, paths.inventoryLatest))).map((row) => [String(row.sku), row]));
+      const readCursor = async () => {
+        const value: unknown = JSON.parse(await readFile(cursorPath, "utf8"));
+        if (typeof value !== "object" || value === null || !("last_sku" in value) || typeof value.last_sku !== "string") {
+          throw new Error("Invalid stock verification cursor fixture");
+        }
+        return value.last_sku;
+      };
+
+      const first = await runProjectDaily(root, site);
+      expect(first.counts).toMatchObject({ stock_verified: 2, stock_verify_unavailable: 1, stock_verify_deferred: 3 });
+      expect((await readLatest()).get("DEMO-B")).toMatchObject({ stock_status: "in_stock" });
+      expect((await readLatest()).get("DEMO-C")).toMatchObject({ stock_status: "out_of_stock" });
+      expect(await readCursor()).toBe("DEMO-B");
+
+      // A fresh daily invocation on the same date reads the persisted cursor and continues after B.
+      const second = await runProjectDaily(root, site);
+      expect(second.counts).toMatchObject({ stock_verified: 2, stock_verify_deferred: 3 });
+      expect((await readLatest()).get("DEMO-C")).toMatchObject({ stock_status: "in_stock" });
+      expect((await readLatest()).get("DEMO-D")).toMatchObject({ stock_status: "in_stock" });
+      expect(await readCursor()).toBe("DEMO-D");
+
+      // The cursor SKU can disappear from candidates; a new SKU before it is reached after wraparound.
+      const skuPath = path.join(root, paths.skus);
+      const skuRows = await readJsonl(skuPath);
+      await writeJsonl(skuPath, [
+        ...skuRows.map((row) => row.sku === "DEMO-D" ? { ...row, status: "removed" } : row),
+        { ...catalogRow("DEMO-AA", siteService), status: "active", first_seen: "2026-10-20", last_seen: "2026-10-21", updated_at: "2026-10-21" },
+      ], "sku");
+      const latestPath = path.join(root, paths.inventoryLatest);
+      const latestRows = await readJsonl(latestPath);
+      await writeJsonl(latestPath, [...latestRows, {
+        sku: "DEMO-AA", stock_status: "out_of_stock", qty: null, since: "2026-10-21", checked_at: "2026-10-21T12:00:00Z",
+      }], "inventory_latest");
+
+      const third = await runProjectDaily(root, site, "2026-10-23");
+      expect(third.counts).toMatchObject({ stock_verified: 2, stock_verify_unavailable: 1, stock_verify_deferred: 3 });
+      expect((await readLatest()).get("DEMO-E")).toMatchObject({ stock_status: "in_stock" });
+      expect((await readLatest()).get("DEMO-AA")).toMatchObject({ stock_status: "out_of_stock" });
+      expect(await readCursor()).toBe("DEMO-A");
+
+      const fourth = await runProjectDaily(root, site, "2026-10-24");
+      expect(fourth.counts).toMatchObject({ stock_verified: 2, stock_verify_deferred: 3 });
+      expect((await readLatest()).get("DEMO-AA")).toMatchObject({ stock_status: "in_stock" });
+      expect((await readLatest()).get("DEMO-B")).toMatchObject({ stock_status: "in_stock" });
+    }
+  });
+
+  it("makes no requests when max_per_run is zero and preserves rows whose legacy URL is blank", async () => {
+    const siteService = await createSiteService({
+      feedRows: [{ sku: "DEMO-PRESENT" }],
+      defaultProductResponse: { status: 404 },
+    });
+    const graphqlService = await createGraphqlService();
+    const { root, site } = await newProject(siteService, graphqlService);
+    await seed(root, siteService, [
+      { sku: "DEMO-PRESENT", status: "in_stock" },
+      { sku: "DEMO-NO-URL", status: "in_stock" },
+      { sku: "DEMO-BLANK-URL", status: "in_stock" },
+    ], "legacy");
+    const paths = pathsFor("legacy");
+    const skuPath = path.join(root, paths.skus);
+    const skuRows = await readJsonl(skuPath);
+    await writeJsonl(skuPath, skuRows.map((row) => row.sku === "DEMO-NO-URL"
+      ? { ...row, url: null }
+      : row.sku === "DEMO-BLANK-URL" ? { ...row, url: "   " } : row), "sku");
+
+    const beforeSites = siteService.snapshot().routeCounts;
+    const beforeGraphql = graphqlService.snapshot().routeCounts;
+    const result = await runProjectDaily(root, site);
+    const catalog = new Map((await readJsonl(skuPath)).map((row) => [String(row.sku), row]));
+    const latest = new Map((await readJsonl(path.join(root, paths.inventoryLatest))).map((row) => [String(row.sku), row]));
+
+    expect(result.status).toBe("partial");
+    expect(result.counts).toMatchObject({ stock_verified: 2, stock_verify_unavailable: 2 });
+    expect(catalog.get("DEMO-NO-URL")).toMatchObject({ status: "active", url: null });
+    expect(catalog.get("DEMO-BLANK-URL")).toMatchObject({ status: "active", url: "   " });
+    expect(latest.get("DEMO-NO-URL")).toMatchObject({ stock_status: "in_stock" });
+    expect(latest.get("DEMO-BLANK-URL")).toMatchObject({ stock_status: "in_stock" });
+    expect((siteService.snapshot().routeCounts["GET /products/:sku"] ?? 0) - (beforeSites["GET /products/:sku"] ?? 0)).toBe(0);
+    expect((graphqlService.snapshot().routeCounts["POST /graphql"] ?? 0) - (beforeGraphql["POST /graphql"] ?? 0)).toBe(0);
+
+    const requests: string[] = [];
+    let beforeCandidateCalls = 0;
+    const zeroCap = await verifyMissingStock([
+      { sku: "DEMO-ZERO-A", url: siteService.productUrl("DEMO-ZERO-A") },
+      { sku: "DEMO-ZERO-B", url: siteService.productUrl("DEMO-ZERO-B") },
+    ], { ...site, crawl: { ...site.crawl, stock_verify: { enabled: true, graphql_url: graphqlService.endpoint, max_per_run: 0 } } }, {
+      async beforeCandidate() { beforeCandidateCalls += 1; },
+      async fetcher(input) { requests.push(String(input)); return new Response("", { status: 200 }); },
+    });
+    expect(zeroCap).toMatchObject({ checked: 0, unavailable: 0, deferred: 2 });
+    expect(beforeCandidateCalls).toBe(0);
+    expect(requests).toEqual([]);
   });
 
   it("preserves state on timeout and rejects non-loopback HTTP and cross-origin product URLs", async () => {
