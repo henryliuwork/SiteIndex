@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathsForProject } from "@siteindex/core";
+import { atomicWrite, pathsForProject, readJsonl } from "@siteindex/core";
 import { isValidMediaSkuRecoveryPartition } from "@siteindex/shared";
 import {
+  EXIT,
   pathsFor,
   type AppSettings,
   type JobProgress,
@@ -1166,6 +1167,21 @@ describe("desktop job manager", () => {
     };
     const originalRuns = `${JSON.stringify(successfulRow)}\n`;
     await writeFile(runsPath, originalRuns, "utf8");
+    const checkpointPath = path.join(projectPath, projectPaths.jobLogsDir, `${runId}.media.json`);
+    await mkdir(path.dirname(checkpointPath), { recursive: true });
+    await writeFile(
+      checkpointPath,
+      JSON.stringify({
+        run_id: runId,
+        checkpoint_state: "finished",
+        media_requested_skus: ["synthetic-a"],
+        media_batch_state: "complete",
+        media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+        media_unknown_skus: [],
+        media_not_started_skus: [],
+      }),
+      "utf8",
+    );
     let resolveFinished!: (result: JobResult) => void;
     const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
     const manager = createJobManager({
@@ -1185,12 +1201,161 @@ describe("desktop job manager", () => {
     await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
     child.emit("exit", 1);
 
-    await finished;
+    const currentCrash = await finished;
+    expect(currentCrash).toMatchObject({
+      runId,
+      job: "media",
+      status: "failed",
+      exitCode: EXIT.SOURCE_FAILED,
+      media_requested_skus: ["synthetic-a"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+      media_unknown_skus: [],
+    });
     expect(await readFile(runsPath, "utf8")).toBe(originalRuns);
     const [history] = await manager.history(projectId);
     if (!history) throw new Error("Existing successful run history is missing.");
     expect(history).toMatchObject(successfulRow);
     expect(isValidMediaSkuRecoveryPartition(history)).toBe(true);
+  });
+
+  it.each(["wrong-job", "wrong-requested-skus", "wrong-partition"] as const)(
+    "preserves a same-run-ID media row that has %s and reports unknown for the current crash",
+    async (mutation) => {
+      const projectPath = await projectDirectory("legacy");
+      const projectId = path.basename(projectPath) as ProjectId;
+      const runId = `media-${randomUUID()}`;
+      const child = new FakeUtilityProcess(true, runId);
+      const projectPaths = pathsFor("legacy");
+      const runsPath = path.join(projectPath, projectPaths.runs);
+      await mkdir(path.dirname(runsPath), { recursive: true });
+      const existingRow = mutation === "wrong-job"
+        ? { run_id: runId, job: "weekly", started_at: "2026-11-12T10:00:00.000Z", finished_at: "2026-11-12T10:01:00.000Z", status: "failed" }
+        : mutation === "wrong-requested-skus"
+          ? {
+              run_id: runId,
+              job: "media",
+              started_at: "2026-11-12T10:00:00.000Z",
+              finished_at: "2026-11-12T10:01:00.000Z",
+              status: "failed",
+              media_requested_skus: ["other-a", "other-b"],
+              media_batch_state: "outcome_unknown",
+              media_results: [],
+              media_unknown_skus: ["other-a", "other-b"],
+              media_not_started_skus: [],
+            }
+          : {
+              run_id: runId,
+              job: "media",
+              started_at: "2026-11-12T10:00:00.000Z",
+              finished_at: "2026-11-12T10:01:00.000Z",
+              status: "failed",
+              media_requested_skus: ["synthetic-a", "synthetic-b"],
+              media_batch_state: "outcome_unknown",
+              media_results: [{ sku: "synthetic-a", status: "uploaded" }],
+              media_unknown_skus: ["synthetic-b"],
+              media_not_started_skus: [],
+            };
+      const originalRows = `${JSON.stringify(existingRow)}\n`;
+      await writeFile(runsPath, originalRows, "utf8");
+      let resolveFinished!: (result: JobResult) => void;
+      const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+      const manager = createJobManager({
+        workerPath: "job-worker.js",
+        getSettings: async () => settings(),
+        isMediaJobReady: () => true,
+        getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+        resolveProject: async () => projectPath,
+        fork: () => {
+          queueMicrotask(() => child.ready());
+          return child;
+        },
+        emitProgress: vi.fn(),
+        emitFinished: resolveFinished,
+        notify: vi.fn(),
+      });
+      await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a", "synthetic-b"] });
+      child.emit("exit", 1);
+
+      const result = await finished;
+      expect(result).toMatchObject({
+        status: "failed",
+        media_requested_skus: ["synthetic-a", "synthetic-b"],
+        media_batch_state: "outcome_unknown",
+        media_results: [],
+        media_unknown_skus: ["synthetic-a", "synthetic-b"],
+        media_not_started_skus: [],
+      });
+      expect(await readFile(runsPath, "utf8")).toBe(originalRows);
+      await expect(manager.history(projectId)).resolves.toMatchObject([existingRow]);
+    },
+  );
+
+  it("keeps the project lock until recovered history commits, so the next run cannot lose its row", async () => {
+    const projectPath = await projectDirectory("legacy");
+    const projectPaths = pathsFor("legacy");
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    const runId = `media-${randomUUID()}`;
+    const child = new FakeUtilityProcess(true, runId);
+    let signalHistoryCommit!: () => void;
+    let releaseHistoryCommit!: () => void;
+    const historyCommitEntered = new Promise<void>((resolve) => { signalHistoryCommit = resolve; });
+    const historyCommitGate = new Promise<void>((resolve) => { releaseHistoryCommit = resolve; });
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => { resolveFinished = resolve; });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-secret" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+      testOnlyBeforeSyntheticRunLogCommit: async () => {
+        signalHistoryCommit();
+        await historyCommitGate;
+      },
+    });
+    await manager.runMedia({ projectPath, job: "media", skus: ["synthetic-a"] });
+    const lockPath = await writeOwnedLock(projectPath, child, "media");
+    child.emit("exit", 1);
+    await historyCommitEntered;
+    await expect(access(lockPath)).resolves.toBeUndefined();
+
+    const nextRunRow = {
+      run_id: "2026-11-12-weekly",
+      job: "weekly",
+      trigger: "manual",
+      started_at: "2026-11-12T10:02:00.000Z",
+      finished_at: "2026-11-12T10:03:00.000Z",
+      status: "failed",
+    };
+    const appendNextRunAfterLock = async (): Promise<boolean> => {
+      try {
+        await access(lockPath);
+        return false;
+      } catch {
+        const rows = await readJsonl(runsPath);
+        rows.push(nextRunRow);
+        rows.sort((left, right) => String(left.run_id).localeCompare(String(right.run_id)));
+        await atomicWrite(runsPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+        return true;
+      }
+    };
+    await expect(appendNextRunAfterLock()).resolves.toBe(false);
+
+    releaseHistoryCommit();
+    const recovered = await finished;
+    expect(recovered.status).toBe("failed");
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(appendNextRunAfterLock()).resolves.toBe(true);
+    const rows = await readJsonl(runsPath);
+    expect(rows.map((row) => row.run_id)).toEqual([runId, "2026-11-12-weekly"].sort());
   });
 
   it.each(["legacy", "workspace"] as const)(
