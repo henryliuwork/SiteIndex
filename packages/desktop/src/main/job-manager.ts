@@ -327,15 +327,22 @@ function hasSameMediaRecoveryPartition(left: unknown, right: JobResult): boolean
   });
 }
 
-function conservativeUnknownMediaResult(entry: JobEntry, result: JobResult): JobResult {
+function conservativeUnknownMediaResult(
+  entry: JobEntry,
+  result: JobResult,
+  reason: { summary: string; error: string } = {
+    summary: "媒体任务历史与当前请求不一致；为避免显示错误结果，逐 SKU 状态按未知处理。",
+    error: "同 run_id 的媒体历史与当前请求不匹配；原历史已保留。",
+  },
+): JobResult {
   const recovery = unknownMediaRecovery(entry);
   const skuCount = recovery.media_requested_skus?.length ?? 0;
   const { media_error_code: _ignoredErrorCode, ...withoutCheckpointError } = result;
   return sanitizeMediaJobResult(
     {
       ...withoutCheckpointError,
-      summary: "媒体任务历史与当前请求不一致；为避免显示错误结果，逐 SKU 状态按未知处理。",
-      errors: [...(result.errors ?? []), "同 run_id 的媒体历史与当前请求不匹配；原历史已保留。"],
+      summary: reason.summary,
+      errors: [...(result.errors ?? []), reason.error],
       counts: {
         uploaded: 0,
         reused: 0,
@@ -485,11 +492,13 @@ export function createJobManager(options: JobManagerOptions) {
     let result = entry.result;
     if (!result) {
       const fallback = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
+      let recoveryLockAcquired = false;
       try {
         // Core's real cross-process lock safely reclaims a dead worker lock or creates a fresh
         // main-process lock when the worker exited before acquiring Core's lock. It rejects live,
         // foreign, or unverifiable locks without touching them.
         result = await withLock(entry.projectPath, async () => {
+          recoveryLockAcquired = true;
           const recovered = await recoverMediaCheckpoint(entry, fallback);
           return appendSyntheticRunLog(entry, recovered);
         }, {
@@ -499,7 +508,15 @@ export function createJobManager(options: JobManagerOptions) {
         });
       } catch {
         result = entry.request.job === "media"
-          ? conservativeUnknownMediaResult(entry, fallback)
+          ? conservativeUnknownMediaResult(entry, fallback, recoveryLockAcquired
+              ? {
+                  summary: "媒体任务恢复未能确认持久化；逐 SKU 状态按未知处理，请人工核查运行记录。",
+                  error: "已取得项目运行锁，但恢复历史未能确认持久化；请人工检查 runs.jsonl 与媒体端实际状态后再重试。",
+                }
+              : {
+                  summary: "无法安全取得项目运行锁，恢复历史未写入；逐 SKU 状态按未知处理，请人工核查运行记录。",
+                  error: "无法安全取得项目运行锁，原有历史保持不变；请人工检查项目锁、runs.jsonl 与媒体端实际状态后再重试。",
+                })
           : {
               ...fallback,
               errors: [...(fallback.errors ?? []), "无法安全获取项目运行锁；本次恢复历史未写入。"],

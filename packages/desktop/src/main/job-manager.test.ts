@@ -1550,6 +1550,11 @@ describe("desktop job manager", () => {
       child.emit("exit", 1);
       const result = await finished;
       expect(result).toMatchObject({ status: "failed", media_unknown_skus: ["synthetic-a"], media_results: [] });
+      expect(result.summary).toContain("无法安全取得项目运行锁");
+      expect(result.errors).toContain(
+        "无法安全取得项目运行锁，原有历史保持不变；请人工检查项目锁、runs.jsonl 与媒体端实际状态后再重试。",
+      );
+      expect(result.errors?.join(" ")).not.toContain("历史与当前请求不匹配");
       expect(await readFile(lockPath, "utf8")).toBe(originalLock);
       expect(await readFile(runsPath, "utf8")).toBe(originalHistory);
     } finally {
