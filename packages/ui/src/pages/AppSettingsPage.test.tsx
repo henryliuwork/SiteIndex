@@ -33,7 +33,6 @@ afterEach(() => {
 
 async function renderSettings(options: { settings?: AppSettings; wordpress?: boolean; bridge?: CredentialBridgeMock | null } = {}) {
   const mockApi = createMockApi({ wordpressImageHostDemo: options.wordpress ?? false });
-  vi.spyOn(mockApi.app, "platform").mockResolvedValue("win32");
   const defaultSettings = await mockApi.settings.get();
   let savedSettings = options.settings ?? defaultSettings;
   vi.spyOn(mockApi.settings, "get").mockImplementation(async () => savedSettings);

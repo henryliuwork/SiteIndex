@@ -170,7 +170,7 @@ export function AppSettingsPage() {
 
   return (
     <div className="si-page si-app-settings-page">
-      <PageHeader title="设置" meta={<code>设置文件：{settingsPath}</code>} />
+      <PageHeader title="设置" meta={<code>{settingsPath} · 只对本机生效</code>} />
       <Tabs value={activeTab} options={settingsTabs} onChange={setActiveTab} ariaLabel="软件设置分区" tabIdPrefix="app-settings-tab" panelIdPrefix="app-settings-panel" />
       {platformQuery.isError && <ApiErrorNotice label="系统平台信息读取失败。" error={platformQuery.error} onRetry={() => void platformQuery.refetch()} />}
 
