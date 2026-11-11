@@ -49,6 +49,7 @@ export interface JobManagerOptions {
   isMediaJobReady?(): boolean;
   getWordPressCredential?(id: ProjectId, projectPath: string): Promise<WordPressCredential | null>;
   resolveProject(id: ProjectId): string | Promise<string>;
+  resolveProjectPaths?(projectPath: string): Promise<ProjectPaths>;
   fork(modulePath: string): UtilityProcessLike;
   emitProgress(progress: JobProgress): void;
   emitFinished(result: JobResult): void;
@@ -421,7 +422,8 @@ export function createJobManager(options: JobManagerOptions) {
             }),
       };
       if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
-      const projectPaths = await pathsForProject(projectPath);
+      const projectPaths = await (options.resolveProjectPaths ?? pathsForProject)(projectPath);
+      if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
       const child = options.fork(options.workerPath);
 
       let resolveStarted!: (runId: string) => void;

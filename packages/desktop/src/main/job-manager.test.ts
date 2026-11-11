@@ -10,6 +10,7 @@ import {
   type JobResult,
   type ProjectId,
   type ProjectLayout,
+  type ProjectPaths,
 } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createJobManager, type UtilityProcessLike } from "./job-manager.js";
@@ -1049,4 +1050,34 @@ describe("desktop job manager", () => {
     expect(fork).not.toHaveBeenCalled();
     expect(manager.activeCount).toBe(0);
   });
+
+  it.each(["pause", "shutdown"] as const)(
+    "does not fork a Job when %s starts during project layout resolution",
+    async (lifecycle) => {
+      const projectPath = await projectDirectory();
+      const pendingPaths = deferred<ProjectPaths>();
+      const resolveProjectPaths = vi.fn(() => pendingPaths.promise);
+      const fork = vi.fn(() => new FakeUtilityProcess());
+      const manager = createJobManager({
+        workerPath: "job-worker.js",
+        getSettings: async () => settings(),
+        resolveProject: async () => projectPath,
+        resolveProjectPaths,
+        fork,
+        emitProgress: vi.fn(),
+        emitFinished: vi.fn(),
+        notify: vi.fn(),
+      });
+
+      const starting = manager.run({ projectPath, job: "daily" });
+      await vi.waitFor(() => expect(resolveProjectPaths).toHaveBeenCalledOnce());
+      const draining = lifecycle === "pause" ? manager.pauseAndWaitForIdle() : manager.shutdown();
+      pendingPaths.resolve(pathsFor("legacy"));
+
+      await expect(starting).rejects.toMatchObject({ code: "LOCKED" });
+      await draining;
+      expect(fork).not.toHaveBeenCalled();
+      expect(manager.activeCount).toBe(0);
+    },
+  );
 });
