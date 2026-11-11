@@ -81,11 +81,11 @@ export interface JobResult {
 }
 
 export interface MediaSkuRecoveryPartition {
-  requested_skus: readonly string[];
-  state: MediaBatchState;
-  results: readonly MediaPrepareSkuResult[];
-  unknown_skus: readonly string[];
-  not_started_skus: readonly string[];
+  media_requested_skus: readonly string[];
+  media_batch_state: MediaBatchState;
+  media_results: readonly MediaPrepareSkuResult[];
+  media_unknown_skus: readonly string[];
+  media_not_started_skus: readonly string[];
 }
 
 const MEDIA_BATCH_STATES = ["complete", "interrupted", "outcome_unknown"] as const;
@@ -120,11 +120,20 @@ function isMediaPrepareResultArray(value: unknown): value is MediaPrepareSkuResu
   return true;
 }
 
-/** 校验来自磁盘或 IPC 的新格式逐 SKU 结果；旧/损坏数据返回 false，不抛异常。 */
+/**
+ * 直接校验 JobResult / RunLog 上的 media_* 字段；旧记录缺少任一必需字段时返回 false。
+ * 只验证结构和分区，不验证外部副作用真实性，也不证明 reason/image_url 已脱敏。
+ */
 export function isValidMediaSkuRecoveryPartition(value: unknown): value is MediaSkuRecoveryPartition {
   try {
     if (!isRecord(value)) return false;
-    const { requested_skus, state, results, unknown_skus, not_started_skus } = value;
+    const {
+      media_requested_skus: requested_skus,
+      media_batch_state: state,
+      media_results: results,
+      media_unknown_skus: unknown_skus,
+      media_not_started_skus: not_started_skus,
+    } = value;
     if (!isStringArray(requested_skus) || !isStringArray(unknown_skus) || !isStringArray(not_started_skus)) return false;
     if (!isMediaPrepareResultArray(results) || !MEDIA_BATCH_STATES.some((allowed) => allowed === state)) return false;
 

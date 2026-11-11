@@ -79,6 +79,7 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；EDM SKU 清单�
 - 三组 SKU 必须无重叠且完整分区请求列表：`media_results[].sku`、`media_unknown_skus`、`media_not_started_skus`；每组成员各自保持请求顺序。`complete` 表示每个请求 SKU 都有已确认结果；`interrupted` 表示批次提前结束、未完成项均能确认尚未开始；`outcome_unknown` 表示至少一个 SKU 无法确认是否已开始处理或其外部副作用结果。`outcome_unknown` 时不能把不确定项报告为失败或未开始。
 - 401/403 停批时，失败 SKU 保留在已确认结果中，`media_error_code` 说明原因，后续且能确认未开始的 SKU 列入 `media_not_started_skus`。硬退出时只保存有持久证据的完成结果；无法确认是否开始或是否成功的 SKU 列入 `media_unknown_skus`。若没有可靠进度检查点，全部未能确认的请求都标未知，不凭数组缺项推断未开始。
 - `jobs.history(projectId)` 只返回该项目的记录，media 字段写回原项目 `runs.jsonl`。旧 `RunLog` 没有这些可选字段时表示结果不可恢复，不等于空结果；读取时不迁移或重写旧行。
+- shared 的 `isValidMediaSkuRecoveryPartition(value)` 直接接收 `JobResult` 或 `RunLog` 原对象，并读取 `media_requested_skus`、`media_batch_state`、`media_results`、`media_unknown_skus`、`media_not_started_skus`，调用方无需改名映射；缺少字段的旧记录返回 `false`。验证器只检查对象/数组/字段类型、枚举和 SKU 分区结构，不证明外部操作的真实结果，也不证明 `reason` / `image_url` 已脱敏，脱敏责任仍在产生实时结果与历史记录的实现层。
 - `reason`、`errors`、`summary` 不得包含 WordPress 用户名/口令、Authorization、凭据、原始认证响应或本机绝对路径。`image_url` 仅返回无 userinfo 和凭据参数的 HTTP(S) 地址；无法确认安全时省略。脱敏必须同时覆盖实时事件和持久历史。
 
 ## 4. 配置文件
