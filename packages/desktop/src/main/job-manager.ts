@@ -6,12 +6,12 @@ import {
   type JobRequest,
   type JobResult,
   type JobTrigger,
+  type MediaSkuRecoveryPartition,
   type ProjectId,
   type ProjectPaths,
   type RunLog,
   type SiteIndexError,
 } from "@siteindex/shared";
-import { isValidMediaSkuRecoveryPartition } from "@siteindex/shared";
 import { randomUUID } from "node:crypto";
 import { lstat, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -21,6 +21,7 @@ import {
   isJobProgress,
   isJobResult,
   isRecord,
+  matchesMediaRecoveryRequest,
   shouldNotify,
   type JobWorkerMessage,
   type JobWorkerStartMessage,
@@ -146,14 +147,7 @@ function processFailureResult(entry: JobEntry, code: number): JobResult {
   };
 }
 
-function unknownMediaRecovery(
-  entry: JobEntry,
-):
-  | Pick<
-      JobResult,
-      "media_requested_skus" | "media_batch_state" | "media_results" | "media_unknown_skus" | "media_not_started_skus"
-    >
-  | Record<string, never> {
+function unknownMediaRecovery(entry: JobEntry): Partial<JobResult> {
   if (entry.request.job !== "media") return {};
   const skus = [...new Set(entry.request.skus ?? [])];
   return {
@@ -163,6 +157,28 @@ function unknownMediaRecovery(
     media_unknown_skus: skus,
     media_not_started_skus: [],
   };
+}
+
+function copyMediaRecovery(value: MediaSkuRecoveryPartition & { media_error_code?: unknown }): Partial<JobResult> {
+  return {
+    media_requested_skus: [...value.media_requested_skus],
+    media_batch_state: value.media_batch_state,
+    media_results: value.media_results.map((item) => ({ ...item })),
+    media_unknown_skus: [...value.media_unknown_skus],
+    media_not_started_skus: [...value.media_not_started_skus],
+    ...(value.media_error_code === "WP_AUTH_FAILED" || value.media_error_code === "WP_FORBIDDEN"
+      ? { media_error_code: value.media_error_code }
+      : {}),
+  };
+}
+
+function persistedMediaRecovery(entry: JobEntry, rows: Record<string, unknown>[]): Partial<JobResult> {
+  if (entry.request.job !== "media") return {};
+  const prior = rows.find((row) => row.run_id === entry.coreRunId && row.job === "media");
+  if (prior && matchesMediaRecoveryRequest(prior, entry.request.skus ?? [])) {
+    return copyMediaRecovery(prior);
+  }
+  return unknownMediaRecovery(entry);
 }
 
 function normalizeLimit(limit: number | undefined): number {
@@ -222,11 +238,13 @@ export function createJobManager(options: JobManagerOptions) {
     }
   }
 
-  async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<void> {
-    if (!entry.coreRunId) return;
+  async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<JobResult> {
+    if (!entry.coreRunId) return result;
     try {
       const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
       const rows = await readJsonl(filePath);
+      const recovery = persistedMediaRecovery(entry, rows);
+      const safeResult = { ...result, ...recovery };
       const record: RunLog = {
         run_id: entry.coreRunId,
         job: entry.request.job,
@@ -236,22 +254,15 @@ export function createJobManager(options: JobManagerOptions) {
         finished_at: new Date().toISOString(),
         status: result.status,
         ...(result.errors?.length ? { errors: result.errors } : {}),
-        ...(isValidMediaSkuRecoveryPartition(result)
-          ? {
-              media_requested_skus: [...result.media_requested_skus],
-              media_batch_state: result.media_batch_state,
-              media_results: result.media_results.map((item) => ({ ...item })),
-              media_unknown_skus: [...result.media_unknown_skus],
-              media_not_started_skus: [...result.media_not_started_skus],
-              ...(result.media_error_code ? { media_error_code: result.media_error_code } : {}),
-            }
-          : {}),
+        ...recovery,
       };
       const next = rows.filter((row) => row.run_id !== entry.coreRunId);
       next.push(record as unknown as Record<string, unknown>);
       await writeJsonl(filePath, next, "run_log");
+      return safeResult;
     } catch {
       // 项目文件不可写时仍把失败结果发回界面。
+      return result;
     }
   }
 
@@ -272,7 +283,7 @@ export function createJobManager(options: JobManagerOptions) {
     let result = entry.result;
     if (!result) {
       result = entry.cancelled ? cancelledResult(entry) : processFailureResult(entry, exitCode);
-      await appendSyntheticRunLog(entry, result);
+      result = await appendSyntheticRunLog(entry, result);
       if (entry.cancelled) {
         options.emitProgress({
           runId: result.runId,
@@ -382,7 +393,11 @@ export function createJobManager(options: JobManagerOptions) {
       return;
     }
     if (message.type === "finished") {
-      if (!isJobResult(message.result)) return;
+      if (
+        !isJobResult(message.result) ||
+        (entry.request.job === "media" && !matchesMediaRecoveryRequest(message.result, entry.request.skus ?? []))
+      )
+        return;
       entry.result = sanitizeJobResult(message.result, entry.sensitiveValues, entry.sensitiveUsernames);
       entry.oosRate = typeof message.oosRate === "number" ? message.oosRate : null;
       entry.child.kill();

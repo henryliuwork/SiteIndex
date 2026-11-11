@@ -180,9 +180,10 @@ describe("IPC handler completeness", () => {
     expect(fork).not.toHaveBeenCalled();
   });
 
-  it("keeps EDM export pending through the handler registry and preload until Core exists", async () => {
+  it("keeps EDM export gated through the handler registry and preload while readiness is pending", async () => {
     const context = testContext();
-    Object.assign(context.core, { edm: {} });
+    const exportIndex = vi.fn(async () => ({ status: "created" }));
+    Object.assign(context.core, { edm: { exportIndex } });
     const bridge = apiBridgeFor(context);
 
     expect(PENDING_HANDLERS).toContain("edm.exportIndex");
@@ -191,6 +192,7 @@ describe("IPC handler completeness", () => {
       message: "当前版本尚未接入 EDM SKU 清单生成。",
       detail: "Core edm.exportIndex 尚未就绪。",
     });
+    expect(exportIndex).not.toHaveBeenCalled();
   });
 
   it("forwards workspace validation and creation to Core without changing their inputs", async () => {

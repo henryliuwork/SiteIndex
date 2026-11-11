@@ -468,6 +468,8 @@ if (!hasSingleInstanceLock) {
         else if (backgroundSettingsChanged || projectsChanged) await applyBackgroundPreferences();
       },
       jobs,
+      // Core EDM SKU 清单导出仍在 pending；即使服务暴露同名方法，也要等能力通过验收后再开放。
+      isEdmExportIndexReady: () => false,
       scheduler,
       reconcileSchedules,
       reconcileProjectScheduleInBackground,

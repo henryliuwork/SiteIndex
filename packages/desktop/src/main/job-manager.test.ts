@@ -849,7 +849,11 @@ describe("desktop job manager", () => {
     },
   );
 
-  it("turns a media worker result without a valid recovery partition into outcome-unknown", async () => {
+  it.each([
+    { label: "underreports a SKU", reportedSkus: ["fixture-a"] },
+    { label: "adds an unrequested SKU", reportedSkus: ["fixture-a", "fixture-b", "fixture-extra"] },
+    { label: "reorders requested SKUs", reportedSkus: ["fixture-b", "fixture-a"] },
+  ])("downgrades a media result that $label to outcome-unknown", async ({ reportedSkus }) => {
     const projectPath = await projectDirectory("workspace");
     const projectId = path.basename(projectPath) as ProjectId;
     const child = new FakeUtilityProcess();
@@ -872,7 +876,7 @@ describe("desktop job manager", () => {
       notify: vi.fn(),
     });
 
-    await manager.runMedia({ projectPath, job: "media", skus: ["fixture-unknown-sku"] });
+    await manager.runMedia({ projectPath, job: "media", skus: ["fixture-a", "fixture-a", "fixture-b"] });
     child.emit("message", {
       type: "finished",
       oosRate: null,
@@ -881,7 +885,12 @@ describe("desktop job manager", () => {
         job: "media",
         status: "ok",
         exitCode: 0,
-        summary: "看似成功但缺少恢复字段",
+        summary: "看似成功但请求 SKU 列表不匹配",
+        media_requested_skus: reportedSkus,
+        media_batch_state: "outcome_unknown",
+        media_results: [],
+        media_unknown_skus: reportedSkus,
+        media_not_started_skus: [],
       },
     });
     child.emit("exit", 0);
@@ -892,13 +901,87 @@ describe("desktop job manager", () => {
       job: "media",
       status: "failed",
       media_batch_state: "outcome_unknown",
-      media_requested_skus: ["fixture-unknown-sku"],
+      media_requested_skus: ["fixture-a", "fixture-b"],
       media_results: [],
-      media_unknown_skus: ["fixture-unknown-sku"],
+      media_unknown_skus: ["fixture-a", "fixture-b"],
       media_not_started_skus: [],
     });
     expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
     expect(isValidMediaSkuRecoveryPartition((await manager.history(projectId))[0])).toBe(true);
+  });
+
+  it("preserves verified media recovery rows and marks only the remaining SKUs unknown after a crash", async () => {
+    const projectPath = await projectDirectory("workspace");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const projectPaths = pathsFor("workspace");
+    const child = new FakeUtilityProcess(true, "2026-10-23-media");
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-password" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+
+    await manager.runMedia({
+      projectPath,
+      job: "media",
+      skus: ["fixture-confirmed", "fixture-unknown", "fixture-not-started"],
+    });
+    const runsPath = path.join(projectPath, projectPaths.runs);
+    await mkdir(path.dirname(runsPath), { recursive: true });
+    await writeFile(
+      runsPath,
+      `${JSON.stringify({
+        run_id: "2026-10-23-media",
+        job: "media",
+        trigger: "manual",
+        device_name: settings().device_name,
+        started_at: "2026-10-23T01:00:00.000Z",
+        finished_at: "2026-10-23T01:05:00.000Z",
+        status: "partial",
+        media_requested_skus: ["fixture-confirmed", "fixture-unknown", "fixture-not-started"],
+        media_batch_state: "outcome_unknown",
+        media_results: [{ sku: "fixture-confirmed", status: "uploaded", image_url: "https://cdn.fixture.test/a.jpg" }],
+        media_unknown_skus: ["fixture-unknown"],
+        media_not_started_skus: ["fixture-not-started"],
+      })}\n`,
+      "utf8",
+    );
+    const lockPath = await writeOwnedLock(projectPath, child, "media");
+    child.emit("exit", 17);
+
+    const result = await finished;
+    await vi.waitFor(() => expect(manager.activeCount).toBe(0));
+    expect(result).toMatchObject({
+      status: "failed",
+      media_batch_state: "outcome_unknown",
+      media_requested_skus: ["fixture-confirmed", "fixture-unknown", "fixture-not-started"],
+      media_results: [{ sku: "fixture-confirmed", status: "uploaded", image_url: "https://cdn.fixture.test/a.jpg" }],
+      media_unknown_skus: ["fixture-unknown"],
+      media_not_started_skus: ["fixture-not-started"],
+    });
+    const history = await manager.history(projectId);
+    expect(history[0]).toMatchObject({
+      status: "failed",
+      media_results: [{ sku: "fixture-confirmed", status: "uploaded", image_url: "https://cdn.fixture.test/a.jpg" }],
+      media_unknown_skus: ["fixture-unknown"],
+      media_not_started_skus: ["fixture-not-started"],
+    });
+    expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition(history[0])).toBe(true);
+    await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not put worker fatal text into Desktop run history", async () => {

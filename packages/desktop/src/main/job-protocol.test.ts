@@ -1,6 +1,6 @@
 import { isValidMediaSkuRecoveryPartition, type AppSettings, type JobResult } from "@siteindex/shared";
 import { describe, expect, it } from "vitest";
-import { isJobResult, shouldNotify } from "./job-protocol.js";
+import { isJobResult, matchesMediaRecoveryRequest, shouldNotify } from "./job-protocol.js";
 
 const settings: AppSettings = {
   device_id: "test-device",
@@ -69,5 +69,24 @@ describe("media Job result protocol", () => {
         summary: "旧结果",
       }),
     ).toBe(false);
+  });
+
+  it("requires the reported requested SKU list to exactly match the deduplicated request in order", () => {
+    const partition = (requested: string[]) => ({
+      media_requested_skus: requested,
+      media_batch_state: "outcome_unknown" as const,
+      media_results: [],
+      media_unknown_skus: requested,
+      media_not_started_skus: [],
+    });
+
+    expect(
+      matchesMediaRecoveryRequest(partition(["fixture-a", "fixture-b"]), ["fixture-a", "fixture-a", "fixture-b"]),
+    ).toBe(true);
+    expect(matchesMediaRecoveryRequest(partition(["fixture-a"]), ["fixture-a", "fixture-b"])).toBe(false);
+    expect(
+      matchesMediaRecoveryRequest(partition(["fixture-a", "fixture-b", "fixture-extra"]), ["fixture-a", "fixture-b"]),
+    ).toBe(false);
+    expect(matchesMediaRecoveryRequest(partition(["fixture-b", "fixture-a"]), ["fixture-a", "fixture-b"])).toBe(false);
   });
 });

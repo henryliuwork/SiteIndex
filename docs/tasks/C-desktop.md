@@ -171,5 +171,5 @@
 - [x] #422：media worker 结果先校验完整恢复分区；缺字段或分区无效时拒绝把它当成功，取消/崩溃结果把无法确认项记为 `outcome_unknown` 并写入合成 RunLog。legacy/workspace 的退出与崩溃测试覆盖写入路径、项目隔离和凭据不泄漏；`jobs.history` 与 preload 透传字段，不为旧 RunLog 补造空结果。
 - [x] #422：preload 暴露 `media.prepare` 路由；主进程仍在 `isMediaJobReady: false` 下返回 `NOT_IMPLEMENTED`，`media.prepare` 继续留在 `PENDING_HANDLERS`，Core 能力就绪前 UI 保持关闭。
 - [ ] #422：A 尚未实现 Core media Job 及其逐 SKU RunLog 持久化；实时媒体处理与 Core 生成的恢复结果尚不可用。
-- [x] #423：preload 暴露 `edm.exportIndex`；Desktop 将固定项目 ID 转发到 Core 可选方法，方法缺失时返回 `NOT_IMPLEMENTED`；尚未清理 `PENDING_HANDLERS`，UI 仍关闭导出入口。
+- [x] #423：preload 暴露 `edm.exportIndex`；Desktop 先检查显式 readiness 门禁，再转发到 Core 可选方法。main readiness 当前固定为 false，即使 Core 暴露同名方法仍返回 `NOT_IMPLEMENTED`；尚未清理 `PENDING_HANDLERS`，UI 仍关闭导出入口。
 - [ ] #423：A 尚未实现 Core SKU 清单生成；Desktop 不生成文件、不返回虚构成功状态。
