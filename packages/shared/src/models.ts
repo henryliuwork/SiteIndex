@@ -176,6 +176,7 @@ export interface SkuRecord {
   mpn?: string | null;
   brand?: string | null;
   status: "active" | "removed";
+  removed_reason?: "feed_absent_404" | "feed_absent_aged";
   first_seen: ISODate;
   last_seen: ISODate;
   updated_at: ISODate;
@@ -219,7 +220,7 @@ export interface InventoryLatest {
   checked_at: ISODateTime;
 }
 
-export type InventoryEventType = "stock_change" | "price_change" | "new_sku" | "removed_sku" | "restored_sku";
+export type InventoryEventType = "stock_change" | "price_change" | "new_sku" | "removed_sku" | "restored_sku" | "feed_anomaly";
 
 export interface InventoryEvent {
   date: ISODate;
@@ -390,10 +391,13 @@ export interface SkuMedia {
   image_role: "main" | "alt" | "lifestyle";
   image_url: Url;
   alt_text: string | null;
-  source: "mailchimp" | "cdn";
+  source: "mailchimp" | "cdn" | "wordpress";
   width?: number | null;
   height?: number | null;
   updated_at: ISODate;
+  media_id?: number | null;
+  /** 原始图片内容指纹；重试遇到同一 SKU 和指纹时应复用仍可用的已上传媒体。 */
+  source_hash?: string | null;
 }
 
 export interface SkuTags {
@@ -517,7 +521,7 @@ export type ProductVariantStock = Pick<
 
 // ---------- 日志与校验 ----------
 
-export type JobName = "daily" | "weekly" | "monthly" | "validate" | "readme" | "design" | "index-check" | "views" | "init";
+export type JobName = "daily" | "weekly" | "monthly" | "validate" | "readme" | "design" | "index-check" | "views" | "init" | "media";
 
 export interface RunLogStep {
   key: string;

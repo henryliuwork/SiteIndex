@@ -60,6 +60,7 @@ export const API_INVOKE_METHODS = [
   "edm.listImages",
   "edm.setManualImage",
   "edm.buildCommand",
+  "media.prepare",
   "design.get",
   "readme.get",
   "readme.saveUserBlocks",
@@ -106,7 +107,7 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = [];
+export const PENDING_HANDLERS: readonly string[] = ["media.prepare"];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 

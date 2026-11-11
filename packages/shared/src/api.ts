@@ -268,7 +268,7 @@ export interface InventorySummary {
   category_source: CategoryMode;
   timezone?: string;
   uncategorized: number;
-  today: { type: "restock" | "oos" | "price" | "new" | "removed"; sku: string; title: string; detail?: string }[];
+  today: { type: "restock" | "oos" | "price" | "new" | "removed" | "feed_anomaly"; sku: string; title: string; detail?: string }[];
 }
 
 export interface SkuStockFilters {
@@ -579,6 +579,10 @@ export interface SiteIndexApi {
     listImages(id: ProjectId, q: ListQuery<SkuImageFilters>): Promise<PageResult<SkuImageRow>>;
     setManualImage(id: ProjectId, sku: string, url: string | null): Promise<SkuImageRow>;
     buildCommand(id: ProjectId, input: EdmCommandInput): Promise<string>;
+  };
+  /** WordPress 媒体准备以后台 Job 执行；旧 bridge 可不提供此命名空间。 */
+  media?: {
+    prepare(input: { project: ProjectId; skus: string[] }): Promise<{ runId: string }>;
   };
   design: {
     get(id: ProjectId): Promise<{

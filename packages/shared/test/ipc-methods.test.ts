@@ -55,8 +55,8 @@ describe("shared IPC method contract", () => {
     expect(emptyWorkspaceError).toBe("WORKSPACE_NOT_EMPTY");
     for (const method of workspaceMethods) {
       expect(API_INVOKE_METHODS).toContain(method);
+      expect(PENDING_HANDLERS).not.toContain(method);
     }
-    expect(PENDING_HANDLERS).toEqual([]);
   });
 
   it("adds optional layout-resolved design artifact paths without changing the invoke methods", () => {

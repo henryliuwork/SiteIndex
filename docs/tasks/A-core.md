@@ -162,3 +162,8 @@
   - [x] workspace.importCheck：校验 schema/表格格式；补缺失台账、manifest、自动区块与 CLAUDE.md（仅缺失时从模板独占创建，已有内容不改写）；缺少 site.json.workspace 时列出人工补充字段且不写回现有配置
   - [x] README 与 AGENTS.md 双文件自动区块；保留用户维护区，legacy 仍只刷新 README
   - [x] workspace validate 检查 .env 被 .gitignore 忽略，并保留 _site-index/edm/ 技能白名单
+
+### v0.4.1 · K5 契约
+- [x] 新增 media 后台 Job、`media.prepare` 异步入口及逐 SKU 结果类型；接口不接受或返回 WordPress 凭据
+- [x] 扩展 feed 缺席原因、`feed_anomaly` 事件、WordPress 台账来源与尾部可选列；旧台账行仍可按旧字段读取
+- [x] 加入 WordPress 配置、认证、权限、REST 与图片处理错误码；Desktop handler 留待 C 实现
