@@ -7,7 +7,9 @@ on:
       - ".github/workflows/e-windows-v040-acceptance.yml"
       - "packages/desktop/scripts/e-windows-v040-acceptance.mjs"
       - "packages/desktop/scripts/e-windows-v040-synthetic-fixture.mjs"
+      - "packages/desktop/scripts/check-candidate-run.ps1"
       - "packages/desktop/test/e-windows-v040-synthetic-fixture.test.ts"
+      - "packages/desktop/test/candidate-run-source.test.ps1"
   workflow_dispatch:
     inputs:
       expected_source_commit:
@@ -213,9 +215,19 @@ jobs:
           $actualDigest = ([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant()
 
           if ($sourceRun.workflow_id -ne $releaseWorkflow.id) { throw "Candidate run did not use the repository Release workflow." }
-          if ($sourceRun.event -ne "workflow_dispatch" -or $sourceRun.head_branch -ne "main") { throw "Candidate run must be a successful workflow_dispatch from main." }
-          if ($sourceRun.status -ne "completed" -or $sourceRun.conclusion -ne "success") { throw "Candidate Release workflow run did not complete successfully." }
-          if ($sourceRun.head_sha -ne $expectedSource) { throw "Candidate run source commit does not match the supplied commit." }
+          $tagRef = $null
+          $tagCommit = ''
+          if ($sourceRun.event -ceq 'push' -and $sourceRun.head_branch -ceq "v$version") {
+            $tagRef = Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/git/ref/tags/v$version" -Headers $headers
+            $tagObject = $tagRef.object
+            for ($depth = 0; $tagObject.type -eq 'tag' -and $depth -lt 5; $depth++) {
+              $tagObject = (Invoke-RestMethod -Method Get -Uri "$apiRoot/repos/$repo/git/tags/$($tagObject.sha)" -Headers $headers).object
+            }
+            if ($tagObject.type -ne 'commit') { throw 'Candidate version tag must resolve to a commit.' }
+            $tagCommit = [string]$tagObject.sha
+          }
+          . ./packages/desktop/scripts/check-candidate-run.ps1
+          Assert-CandidateRunSource -Run $sourceRun -Version $version -ExpectedSource $expectedSource -TagRef $tagRef -TagCommit $tagCommit
           if ($artifact.id -ne $artifactId -or $artifact.name -ne "siteindex-win" -or $artifact.expired) { throw "The supplied artifact is not a live siteindex-win artifact." }
           if ($artifact.workflow_run.id -ne $runId -or $artifact.workflow_run.head_sha -ne $expectedSource) { throw "Artifact provenance does not match the supplied run and source commit." }
           if ($actualDigest -ne $expectedDigest) { throw "GitHub artifact SHA256 digest does not match the supplied digest." }

@@ -29,6 +29,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: ./packages/desktop/test/candidate-run-source.test.ps1
       - name: Scan public skills and templates (warning only)
         run: node packages/desktop/scripts/security-scan.mjs
       - if: matrix.os == 'windows-latest'
