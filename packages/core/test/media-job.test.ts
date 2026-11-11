@@ -103,23 +103,38 @@ function isoBmffBox(type: string, payload: Buffer): Buffer {
   return Buffer.concat([header, payload]);
 }
 
-function avifWithImageSize(width: number, height: number): Buffer {
-  const ftyp = isoBmffBox("ftyp", Buffer.concat([Buffer.from("avif"), Buffer.alloc(4), Buffer.from("avif")]));
-  const imageSize = Buffer.alloc(12);
-  imageSize.writeUInt32BE(width, 4);
-  imageSize.writeUInt32BE(height, 8);
-  const properties = isoBmffBox("ipco", isoBmffBox("ispe", imageSize));
-  const propertyContainer = isoBmffBox("iprp", properties);
-  const meta = isoBmffBox("meta", Buffer.concat([Buffer.alloc(4), propertyContainer]));
-  return Buffer.concat([ftyp, meta]);
+interface IsoBmffBox {
+  type: string;
+  payloadStart: number;
+  end: number;
 }
 
-function avifWithUnassociatedIspe(width: number, height: number): Buffer {
-  const ftyp = isoBmffBox("ftyp", Buffer.concat([Buffer.from("avif"), Buffer.alloc(4), Buffer.from("avif")]));
-  const imageSize = Buffer.alloc(12);
-  imageSize.writeUInt32BE(width, 4);
-  imageSize.writeUInt32BE(height, 8);
-  return Buffer.concat([ftyp, isoBmffBox("free", isoBmffBox("ispe", imageSize))]);
+function isoBmffBoxes(bytes: Buffer, start: number, end: number): IsoBmffBox[] | null {
+  const boxes: IsoBmffBox[] = [];
+  for (let offset = start; offset < end;) {
+    if (offset + 8 > end) return null;
+    const size = bytes.readUInt32BE(offset);
+    if (size < 8 || offset + size > end) return null;
+    boxes.push({ type: bytes.toString("ascii", offset + 4, offset + 8), payloadStart: offset + 8, end: offset + size });
+    offset += size;
+  }
+  return boxes;
+}
+
+function avifWithPrimaryImageSize(bytes: Buffer, width: number, height: number): Buffer {
+  const output = Buffer.from(bytes);
+  const topLevel = isoBmffBoxes(output, 0, output.length);
+  const meta = topLevel?.find((box) => box.type === "meta");
+  const metaChildren = meta ? isoBmffBoxes(output, meta.payloadStart + 4, meta.end) : null;
+  const iprp = metaChildren?.find((box) => box.type === "iprp");
+  const propertyChildren = iprp ? isoBmffBoxes(output, iprp.payloadStart, iprp.end) : null;
+  const ipco = propertyChildren?.find((box) => box.type === "ipco");
+  const properties = ipco ? isoBmffBoxes(output, ipco.payloadStart, ipco.end) : null;
+  const ispe = properties?.find((box) => box.type === "ispe");
+  if (!ispe || ispe.end - ispe.payloadStart !== 12) throw new Error("AVIF fixture did not contain an ispe property.");
+  output.writeUInt32BE(width, ispe.payloadStart + 4);
+  output.writeUInt32BE(height, ispe.payloadStart + 8);
+  return output;
 }
 
 async function makeProject(options: {
@@ -514,7 +529,7 @@ describe("media Core Job", () => {
     expect(checkpoint).toMatchObject({ run_id: result.runId, checkpoint_state: "finished", media_batch_state: "complete" });
   });
 
-  it("converts transparent WebP to white-background JPEG and refuses AVIF before decoding", async () => {
+  it("converts transparent WebP and AVIF to white-background JPEG", async () => {
     const credentials = createFakeCredentialCanary();
     const uploads: { slug: string; source_url: string; body: Uint8Array }[] = [];
     const wordpress = await makeWordPress({ credentials, onMediaPersist: (media) => { uploads.push(media); } });
@@ -536,16 +551,6 @@ describe("media Core Job", () => {
         projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: [sku],
       }, () => undefined);
 
-      if (item.format === "avif") {
-        expect(result.status).toBe("failed");
-        expect(result.media_results).toMatchObject([{
-          sku, status: "failed", reason: "AVIF 解码前尺寸无法安全确认，已拒绝解码。",
-        }]);
-        expect(uploads).toHaveLength(1);
-        expect(wordpress.snapshot().routeCounts["POST /wp-json/wp/v2/media"]).toBe(1);
-        continue;
-      }
-
       expect(result.status).toBe("ok");
       expect(result.media_results).toMatchObject([{ sku, status: "uploaded" }]);
       const uploaded = await decodeJpegFixture(uploads.at(-1)!.body);
@@ -563,7 +568,8 @@ describe("media Core Job", () => {
   it("rejects compressed size and decoded pixel limits before invoking a decoder or WordPress", async () => {
     const credentials = createFakeCredentialCanary();
     const wordpress = await makeWordPress({ credentials });
-    const largeDimensionServer = await startImageServer(avifWithImageSize(6000, 5000), "image/avif");
+    const validAvif = await encodeImageFixture("avif", testImageData(2, 2, [100, 80, 60, 255]));
+    const largeDimensionServer = await startImageServer(avifWithPrimaryImageSize(validAvif, 6000, 5000), "image/avif");
     const largeDimensions = await makeProject({
       wordpressOrigin: wordpress.origin,
       sourceImageUrl: largeDimensionServer.origin + "/oversized.avif",
@@ -573,21 +579,21 @@ describe("media Core Job", () => {
       projectPath: largeDimensions.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-OVERSIZED-DIMENSIONS"],
     }, () => undefined);
     expect(dimensionResult.media_results).toMatchObject([{
-      status: "failed", reason: "AVIF 解码前尺寸无法安全确认，已拒绝解码。",
+      status: "failed", reason: "图片尺寸超过解码安全上限，已拒绝解码。",
     }]);
     expect(wordpress.snapshot().totalRequests).toBe(0);
 
-    const forgedDimensionServer = await startImageServer(avifWithUnassociatedIspe(6000, 5000), "image/avif");
+    const forgedDimensionServer = await startImageServer(avifWithPrimaryImageSize(validAvif, 1, 1), "image/avif");
     const forgedDimensions = await makeProject({
       wordpressOrigin: wordpress.origin,
-      sourceImageUrl: forgedDimensionServer.origin + "/forged-ispe.avif",
+      sourceImageUrl: forgedDimensionServer.origin + "/forged-primary-size.avif",
       skuIds: ["SYN-FORGED-ISPE"],
     });
     const forgedResult = await service(forgedDimensions.projectPath, credentials).runJob({
       projectPath: forgedDimensions.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-FORGED-ISPE"],
     }, () => undefined);
     expect(forgedResult.media_results).toMatchObject([{
-      status: "failed", reason: "AVIF 解码前尺寸无法安全确认，已拒绝解码。",
+      status: "failed", reason: "图片无法解码或转换为 JPEG。请更换源图片后重试。",
     }]);
     expect(wordpress.snapshot().totalRequests).toBe(0);
 

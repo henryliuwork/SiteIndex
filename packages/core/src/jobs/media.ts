@@ -13,9 +13,12 @@ import { compareKeys } from "../io/compare";
 import { atomicWrite } from "../io/atomic-write";
 import { readCsv, writeCsv, type CsvRow } from "../io/csv";
 import { groupSkuIds } from "../inventory/sku-grouping";
+import { capWasmMemory } from "./wasm-memory";
 
 const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 25_000_000;
+// AVIF runs in a WASM heap with a hard 512 MiB ceiling; larger decoded images fail closed.
+const MAX_AVIF_WASM_MEMORY_BYTES = 512 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 20_000;
 const DEFAULT_RATE_LIMIT_MS = 250;
 
@@ -133,6 +136,7 @@ async function compilePackageWasm(specifier: string): Promise<WebAssembly.Module
 }
 
 let webpDecoderPromise: Promise<(bytes: Buffer) => Raster> | undefined;
+let avifDecoderPromise: Promise<(bytes: Buffer) => Raster> | undefined;
 let jpegEncoderPromise: Promise<(raster: Raster) => Promise<Buffer>> | undefined;
 let resizePromise: Promise<(raster: Raster, width: number, height: number) => Promise<Raster>> | undefined;
 
@@ -154,6 +158,32 @@ function webpDecoder(): Promise<(bytes: Buffer) => Raster> {
     void webpDecoderPromise.catch(() => { webpDecoderPromise = undefined; });
   }
   return webpDecoderPromise;
+}
+
+function avifDecoder(): Promise<(bytes: Buffer) => Raster> {
+  if (!avifDecoderPromise) {
+    avifDecoderPromise = (async () => {
+      const [{ default: factory }, { initEmscriptenModule }] = await Promise.all([
+        import("@jsquash/avif/codec/dec/avif_dec.js"),
+        import("@jsquash/avif/utils.js"),
+      ]);
+      const wasmPath = createRequire(import.meta.url).resolve("@jsquash/avif/codec/dec/avif_dec.wasm");
+      const cappedBytes = capWasmMemory(await readFile(wasmPath), MAX_AVIF_WASM_MEMORY_BYTES);
+      const wasm = await WebAssembly.compile(Uint8Array.from(cappedBytes).buffer);
+      if (WebAssembly.Module.imports(wasm).some((item) => item.kind === "memory")
+        || WebAssembly.Module.exports(wasm).filter((item) => item.kind === "memory").length !== 1) {
+        throw new Error("AVIF decoder must use one bounded internal memory.");
+      }
+      const module = await initEmscriptenModule(factory, wasm);
+      return (bytes) => {
+        const decoded = module.decode(bytes, 8);
+        if (!decoded) throw new Error("decode");
+        return decoded;
+      };
+    })();
+    void avifDecoderPromise.catch(() => { avifDecoderPromise = undefined; });
+  }
+  return avifDecoderPromise;
 }
 
 function jpegEncoder(): Promise<(raster: Raster) => Promise<Buffer>> {
@@ -232,6 +262,134 @@ function webpDimensions(bytes: Buffer): ImageDimensions | null {
   return null;
 }
 
+interface IsoBmffBox {
+  type: string;
+  payloadStart: number;
+  end: number;
+}
+
+function isoBmffBoxes(bytes: Buffer, start: number, end: number): IsoBmffBox[] | null {
+  const boxes: IsoBmffBox[] = [];
+  for (let offset = start; offset < end;) {
+    if (offset + 8 > end) return null;
+    const size32 = bytes.readUInt32BE(offset);
+    const type = bytes.toString("ascii", offset + 4, offset + 8);
+    let headerSize = 8;
+    let size: number;
+    if (size32 === 1) {
+      if (offset + 16 > end) return null;
+      const extendedSize = bytes.readBigUInt64BE(offset + 8);
+      if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+      size = Number(extendedSize);
+      headerSize = 16;
+    } else if (size32 === 0) {
+      size = end - offset;
+    } else {
+      size = size32;
+    }
+    if (size < headerSize || offset + size > end) return null;
+    const boxEnd = offset + size;
+    boxes.push({ type, payloadStart: offset + headerSize, end: boxEnd });
+    offset = boxEnd;
+  }
+  return boxes;
+}
+
+function avifPrimaryItemId(bytes: Buffer, box: IsoBmffBox): number | null {
+  if (box.end - box.payloadStart < 6) return null;
+  const version = bytes[box.payloadStart]!;
+  const flags = bytes.readUIntBE(box.payloadStart + 1, 3);
+  if (flags !== 0) return null;
+  if (version === 0 && box.end - box.payloadStart === 6) return bytes.readUInt16BE(box.payloadStart + 4);
+  if (version === 1 && box.end - box.payloadStart === 8) return bytes.readUInt32BE(box.payloadStart + 4);
+  return null;
+}
+
+function primaryItemPropertyIndices(bytes: Buffer, box: IsoBmffBox, primaryId: number): number[] | null {
+  if (box.end - box.payloadStart < 8) return null;
+  const version = bytes[box.payloadStart]!;
+  const flags = bytes.readUIntBE(box.payloadStart + 1, 3);
+  if ((version !== 0 && version !== 1) || (flags & ~1) !== 0) return null;
+  let offset = box.payloadStart + 4;
+  const entryCount = bytes.readUInt32BE(offset);
+  offset += 4;
+  const indices: number[] = [];
+  const itemIdSize = version === 0 ? 2 : 4;
+  const wideAssociations = (flags & 1) !== 0;
+  for (let entry = 0; entry < entryCount; entry += 1) {
+    if (offset + itemIdSize + 1 > box.end) return null;
+    const itemId = itemIdSize === 2 ? bytes.readUInt16BE(offset) : bytes.readUInt32BE(offset);
+    offset += itemIdSize;
+    const associationCount = bytes[offset]!;
+    offset += 1;
+    for (let association = 0; association < associationCount; association += 1) {
+      const associationSize = wideAssociations ? 2 : 1;
+      if (offset + associationSize > box.end) return null;
+      const raw = wideAssociations ? bytes.readUInt16BE(offset) : bytes[offset]!;
+      offset += associationSize;
+      if (itemId === primaryId) indices.push(wideAssociations ? raw & 0x7fff : raw & 0x7f);
+    }
+  }
+  return offset === box.end ? indices : null;
+}
+
+function avifDimensions(bytes: Buffer): ImageDimensions | null {
+  const topLevel = isoBmffBoxes(bytes, 0, bytes.length);
+  if (!topLevel) return null;
+  let hasAvifBrand = false;
+  let meta: IsoBmffBox | undefined;
+  for (const box of topLevel) {
+    if (box.type === "ftyp") {
+      if (box.end - box.payloadStart < 8 || (box.end - box.payloadStart - 8) % 4 !== 0) return null;
+      const brands = [bytes.toString("ascii", box.payloadStart, box.payloadStart + 4)];
+      for (let offset = box.payloadStart + 8; offset + 4 <= box.end; offset += 4) {
+        brands.push(bytes.toString("ascii", offset, offset + 4));
+      }
+      hasAvifBrand ||= brands.some((brand) => brand === "avif" || brand === "avis");
+    }
+    if (box.type === "meta") {
+      if (meta) return null;
+      meta = box;
+    }
+  }
+  if (!hasAvifBrand || !meta || meta.end - meta.payloadStart < 4) return null;
+  const metaChildren = isoBmffBoxes(bytes, meta.payloadStart + 4, meta.end);
+  if (!metaChildren) return null;
+  const primaryBoxes = metaChildren.filter((box) => box.type === "pitm");
+  const propertyContainers = metaChildren.filter((box) => box.type === "iprp");
+  if (primaryBoxes.length !== 1 || propertyContainers.length !== 1) return null;
+  const primaryId = avifPrimaryItemId(bytes, primaryBoxes[0]!);
+  if (primaryId === null || primaryId === 0) return null;
+
+  const propertyContainerChildren = isoBmffBoxes(bytes, propertyContainers[0]!.payloadStart, propertyContainers[0]!.end);
+  if (!propertyContainerChildren) return null;
+  const propertyTables = propertyContainerChildren.filter((box) => box.type === "ipco");
+  const associationTables = propertyContainerChildren.filter((box) => box.type === "ipma");
+  if (propertyTables.length !== 1 || associationTables.length === 0) return null;
+  const properties = isoBmffBoxes(bytes, propertyTables[0]!.payloadStart, propertyTables[0]!.end);
+  if (!properties) return null;
+
+  const associatedIndices: number[] = [];
+  for (const table of associationTables) {
+    const indices = primaryItemPropertyIndices(bytes, table, primaryId);
+    if (!indices) return null;
+    associatedIndices.push(...indices);
+  }
+  const primaryPropertyIndices = associatedIndices.filter((index) => index > 0);
+  if (primaryPropertyIndices.some((index) => index > properties.length)) return null;
+  const imageSizeProperties = primaryPropertyIndices
+    .map((index) => properties[index - 1])
+    .filter((property): property is IsoBmffBox => property !== undefined && property.type === "ispe");
+  if (imageSizeProperties.length !== 1) return null;
+  const imageSize = imageSizeProperties[0]!;
+  if (imageSize.end - imageSize.payloadStart !== 12
+    || bytes.readUInt32BE(imageSize.payloadStart) !== 0) return null;
+  return {
+    width: bytes.readUInt32BE(imageSize.payloadStart + 4),
+    height: bytes.readUInt32BE(imageSize.payloadStart + 8),
+  };
+}
+
 function dimensionsWithinDecodeLimit(dimensions: ImageDimensions): boolean {
   return Number.isSafeInteger(dimensions.width) && Number.isSafeInteger(dimensions.height)
     && dimensions.width > 0 && dimensions.height > 0
@@ -240,6 +398,15 @@ function dimensionsWithinDecodeLimit(dimensions: ImageDimensions): boolean {
 
 function preflightWebpDimensions(bytes: Buffer): ImageDimensions {
   const dimensions = webpDimensions(bytes);
+  if (!dimensions) throw mediaError("failed", "图片尺寸无法安全校验，已拒绝解码。");
+  if (!dimensionsWithinDecodeLimit(dimensions)) {
+    throw mediaError("failed", "图片尺寸超过解码安全上限，已拒绝解码。");
+  }
+  return dimensions;
+}
+
+function preflightAvifDimensions(bytes: Buffer): ImageDimensions {
+  const dimensions = avifDimensions(bytes);
   if (!dimensions) throw mediaError("failed", "图片尺寸无法安全校验，已拒绝解码。");
   if (!dimensionsWithinDecodeLimit(dimensions)) {
     throw mediaError("failed", "图片尺寸超过解码安全上限，已拒绝解码。");
@@ -261,11 +428,10 @@ function flattenOnWhite(source: Raster): Raster {
 }
 
 async function convertToJpeg(bytes: Buffer, format: SourceFormat): Promise<{ bytes: Buffer; width: number; height: number }> {
-  if (format === "avif") throw mediaError("failed", "AVIF 解码前尺寸无法安全确认，已拒绝解码。");
-  if (format !== "webp") throw mediaError("failed", "图片格式不支持转换。");
-  const headerDimensions = preflightWebpDimensions(bytes);
+  if (format !== "webp" && format !== "avif") throw mediaError("failed", "图片格式不支持转换。");
+  const headerDimensions = format === "webp" ? preflightWebpDimensions(bytes) : preflightAvifDimensions(bytes);
   try {
-    const decoded = await (await webpDecoder())(bytes);
+    const decoded = format === "webp" ? await (await webpDecoder())(bytes) : await (await avifDecoder())(bytes);
     if (!dimensionsWithinDecodeLimit({ width: decoded.width, height: decoded.height })
       || headerDimensions.width !== decoded.width || headerDimensions.height !== decoded.height) {
       throw new Error("invalid dimensions");
@@ -630,7 +796,7 @@ async function processSku(
     return { result: { sku: requestedSku, status, image_url: outputUrl } };
   }
   if (format !== "webp" && format !== "avif") {
-    throw mediaError("failed", "仅支持 JPG、PNG 与 WebP 商品图片；AVIF 暂因无法安全限制解码资源而拒绝处理。");
+    throw mediaError("failed", "仅支持 JPG、PNG、WebP 与 AVIF 商品图片。");
   }
   if (!wordpressBase || !credential) throw mediaError("failed", "WordPress 图片服务未配置，无法上传转换后的商品图片。");
   sourceHash = createHash("sha256").update(fetched.bytes).digest("hex");
