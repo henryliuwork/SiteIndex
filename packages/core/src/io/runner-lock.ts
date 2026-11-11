@@ -86,12 +86,25 @@ const HOST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f
 
 let localHostIdPromise: Promise<string> | undefined;
 
+/**
+ * Process-local proof that this module instance is still using a claim, or that its
+ * failed recovery has finished mutating the project lock even if durable release failed.
+ * Other processes still require a durable marker or a dead PID and therefore fail closed.
+ */
+type LocalReclaimClaimStatus = "active" | "abandoned";
+const localReclaimClaimStatuses = new Map<string, LocalReclaimClaimStatus>();
+
+function localReclaimClaimStatusKey(file: string, token: string): string {
+  return `${path.resolve(file)}\0${token}`;
+}
+
 /** @internal Deterministic synchronization hooks for cross-process lock regression tests. */
 export interface RunnerLockTestHooks {
   afterStaleLockValidated?: () => Promise<void>;
   afterReclaimClaimPublished?: () => Promise<void>;
   afterReclaimClaimReadBeforePathCheck?: () => Promise<void>;
   renameStaleLock?: (lockPath: string, retiredPath: string) => Promise<void>;
+  linkReclaimClaimState?: (tempPath: string, statePath: string) => Promise<void>;
 }
 
 const runnerLockTestHooks = new AsyncLocalStorage<RunnerLockTestHooks>();
@@ -369,6 +382,7 @@ async function acquireReclaimClaim(
     let handle;
     let tempCreated = false;
     let published = false;
+    let localStatusKey: string | undefined;
     let stagedIdentity: { dev: number; ino: number };
     try {
       handle = await open(tempPath, "wx", 0o600);
@@ -379,10 +393,17 @@ async function acquireReclaimClaim(
       stagedIdentity = { dev: staged.dev, ino: staged.ino };
       await handle.close();
       handle = undefined;
+      localStatusKey = localReclaimClaimStatusKey(claimPath, claim.token);
+      // Register before link() makes the claim visible to a same-process competitor.
+      localReclaimClaimStatuses.set(localStatusKey, "active");
       try {
         await link(tempPath, claimPath);
         published = true;
       } catch (error) {
+        if (localReclaimClaimStatuses.get(localStatusKey) === "active") {
+          localReclaimClaimStatuses.delete(localStatusKey);
+        }
+        localStatusKey = undefined;
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       }
     } catch (error) {
@@ -391,8 +412,17 @@ async function acquireReclaimClaim(
     } finally {
       await handle?.close().catch(() => undefined);
       if (tempCreated) await unlink(tempPath).catch(() => undefined);
+      if (!published && localStatusKey
+        && localReclaimClaimStatuses.get(localStatusKey) === "active") {
+        localReclaimClaimStatuses.delete(localStatusKey);
+      }
     }
     if (published) {
+      for (const predecessor of entries) {
+        localReclaimClaimStatuses.delete(
+          localReclaimClaimStatusKey(predecessor.file, predecessor.claim.token),
+        );
+      }
       const entry = { file: claimPath, claim, identity: stagedIdentity };
       const lease: ReclaimClaimLease = { entries: [...entries, entry], directory, lockKey };
       try {
@@ -445,7 +475,11 @@ async function acquireReclaimClaim(
     if (state === "completed") {
       throw lockError("此过期锁已完成回收；请检查项目锁状态后重试。");
     }
-    if (state !== "released" && processPresence(existingClaim.pid) !== "dead") {
+    const localStatus = localReclaimClaimStatuses.get(
+      localReclaimClaimStatusKey(existingEntry.file, existingEntry.claim.token),
+    );
+    const sameProcessAbandonedClaim = existingClaim.pid === process.pid && localStatus === "abandoned";
+    if (state !== "released" && !sameProcessAbandonedClaim && processPresence(existingClaim.pid) !== "dead") {
       throw lockError("另一个进程正在回收此项目锁，或其状态无法确认；请稍后重试。");
     }
     entries.push(existingEntry);
@@ -505,7 +539,8 @@ async function publishReclaimClaimState(
     await handle.close();
     handle = undefined;
     try {
-      await link(tempPath, statePath);
+      const linkState = runnerLockTestHooks.getStore()?.linkReclaimClaimState ?? link;
+      await linkState(tempPath, statePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const existing = await readReclaimClaimState(entry, lockKey);
@@ -523,13 +558,21 @@ async function releaseOwnedReclaimClaim(lease: ReclaimClaimLease): Promise<void>
   if (!owner || owner.claim.pid !== process.pid) {
     throw lockError("当前进程无法确认项目锁回收认领归属；为避免并发写入，Core 已停止回收锁。");
   }
+  const ownerKey = localReclaimClaimStatusKey(owner.file, owner.claim.token);
+  const abandonLocalClaim = () => {
+    if (localReclaimClaimStatuses.get(ownerKey) === "active") {
+      localReclaimClaimStatuses.set(ownerKey, "abandoned");
+    }
+  };
   const successor = path.join(lease.directory, `${lease.lockKey}.${owner.claim.token}`);
   try {
     await lstat(successor);
+    abandonLocalClaim();
     throw lockError("项目锁回收认领已有后继；为避免并发写入，Core 未释放当前认领。");
   } catch (error) {
     if (error instanceof CoreIOError) throw error;
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      abandonLocalClaim();
       throw lockError("无法确认项目锁回收认领是否有后继；Core 已停止回收锁。");
     }
   }
@@ -537,10 +580,12 @@ async function releaseOwnedReclaimClaim(lease: ReclaimClaimLease): Promise<void>
   for (let attempt = 0; attempt <= 10; attempt += 1) {
     try {
       await publishReclaimClaimState(owner, lease.lockKey, "released");
+      localReclaimClaimStatuses.delete(ownerKey);
       return;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if ((code !== "EPERM" && code !== "EBUSY") || attempt >= 10) {
+        abandonLocalClaim();
         throw error instanceof CoreIOError ? error
           : lockError("无法安全释放本机锁回收认领；为避免并发写入，Core 已停止回收锁。");
       }
@@ -552,7 +597,11 @@ async function releaseOwnedReclaimClaim(lease: ReclaimClaimLease): Promise<void>
 async function completeReclaimClaim(lease: ReclaimClaimLease): Promise<void> {
   const owner = lease.entries.at(-1);
   if (!owner) return;
-  await publishReclaimClaimState(owner, lease.lockKey, "completed");
+  try {
+    await publishReclaimClaimState(owner, lease.lockKey, "completed");
+  } finally {
+    localReclaimClaimStatuses.delete(localReclaimClaimStatusKey(owner.file, owner.claim.token));
+  }
 }
 
 async function writeLock(lockPath: string, record: LockRecord): Promise<LockIdentity> {

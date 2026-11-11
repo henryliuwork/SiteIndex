@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { lstat, link, mkdtemp, mkdir, readFile, readdir, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, link, mkdtemp, mkdir, readFile, readdir, realpath, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -673,6 +673,57 @@ describe("core io", () => {
     await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
+  it("does not steal an active same-process claim and retries after a release marker write failure", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    const hostId = await currentHostId(root);
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: new Date().toISOString(),
+      heartbeat: new Date().toISOString(),
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+
+    let published!: () => void;
+    const claimPublished = new Promise<void>((resolve) => { published = resolve; });
+    let continueFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { continueFirst = resolve; });
+    let failStateLink = true;
+    const renameFailure = Object.assign(new Error("injected transient rename failure"), { code: "EPERM" });
+    const stateWriteFailure = Object.assign(new Error("injected local-state write failure"), { code: "ENOSPC" });
+
+    const firstAttempt = withLockForTest(root, () => "must not enter", { heartbeatMs: 60_000 }, {
+      afterReclaimClaimPublished: async () => { published(); await firstGate; },
+      renameStaleLock: async () => { throw renameFailure; },
+      linkReclaimClaimState: async (tempPath, statePath) => {
+        if (failStateLink) {
+          failStateLink = false;
+          throw stateWriteFailure;
+        }
+        await link(tempPath, statePath);
+      },
+    });
+    await claimPublished;
+    await expect(withLock(root, () => "must not steal active same-process claim", { heartbeatMs: 60_000 }))
+      .rejects.toMatchObject({ code: "LOCKED" });
+
+    continueFirst();
+    await expect(firstAttempt).rejects.toMatchObject({ code: "LOCKED" });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+    await expect(withLock(root, () => "recovered after local state returned", { heartbeatMs: 60_000 }))
+      .resolves.toBe("recovered after local state returned");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
   it("recovers after a stale-lock reclaimer crashes after publishing its claim", async () => {
     const root = await tempDir();
     const stateRoot = path.join(root, "isolated-local-state");
@@ -893,6 +944,76 @@ describe("core io", () => {
     })).resolves.toMatch(/^LOCKED:/);
     await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
   }, 30_000);
+
+  it("fails closed at 1024 reclaim generations and recovers after offline local-state reset", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: new Date().toISOString(),
+      heartbeat: new Date().toISOString(),
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+    const lockIdentity = await lstat(lockPath);
+    const lockKey = createHash("sha256")
+      .update(`${await realpath(lockPath)}\0${lockIdentity.dev}:${lockIdentity.ino}:${lockIdentity.size}:${lockIdentity.mtimeMs}:${lockIdentity.ctimeMs}\0${staleLock}`)
+      .digest("hex");
+    const recoveryDirectory = path.join(path.dirname(hostIdPath), "lock-recovery");
+    await mkdir(recoveryDirectory, { recursive: true, mode: 0o700 });
+    let previousToken: string | null = null;
+    for (let generation = 0; generation < 1024; generation += 1) {
+      const token = randomUUID();
+      const claimPath = path.join(recoveryDirectory, generation === 0
+        ? `${lockKey}.root`
+        : `${lockKey}.${previousToken}`);
+      await writeFile(claimPath, `${JSON.stringify({
+        version: 1,
+        host_id: hostId,
+        pid: exitedPid,
+        token,
+        lock_key: lockKey,
+        previous_token: previousToken,
+      })}\n`, { flag: "wx", mode: 0o600 });
+      previousToken = token;
+    }
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
+    const attemptSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'try { const value = await withLock(root, () => "must not enter", { heartbeatMs: 60000 }); process.stdout.write(value); }',
+      'catch (error) { const value = error && typeof error === "object" ? error : {}; process.stdout.write(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    const env = {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    };
+    await expect(runChildScript(attemptSource, coreDirectory, env)).resolves.toMatch(/^LOCKED:.*历史过长/);
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+
+    // This isolated test models the documented reset: all SiteIndex processes are stopped,
+    // then only per-user recovery metadata is cleared; project files are untouched.
+    await rm(recoveryDirectory, { recursive: true, force: true });
+    const recoveredSource = attemptSource.replace('() => "must not enter"', '() => "recovered"');
+    await expect(runChildScript(recoveredSource, coreDirectory, env)).resolves.toBe("recovered");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  }, 60_000);
 
   it("returns a structured LOCKED error when the local reclaim directory is unavailable", async () => {
     const root = await tempDir();
