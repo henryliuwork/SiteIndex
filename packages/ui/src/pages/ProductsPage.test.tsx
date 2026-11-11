@@ -171,6 +171,27 @@ describe("ProductsPage 父 SKU 与变体库存交互", () => {
     expect(tableCell(singleRow, "有货变体")).toBe("—");
   });
 
+  it("只把 Core 标记 removed 的产品显示为已下架，active 缺货和旧数据不误标", async () => {
+    const activeOutOfStock = makeProduct({
+      handle: "demo-active-oos", title: "虚构在售商品", status: "active", stock_status: "out_of_stock",
+    });
+    const removed = makeProduct({
+      handle: "demo-removed", title: "虚构已下架商品", status: "removed",
+    });
+    const legacyProduct = Object.fromEntries(
+      Object.entries(makeProduct({ handle: "demo-legacy", title: "虚构旧数据商品" })).filter(([key]) => key !== "status"),
+    ) as unknown as ProductView;
+    await renderProductsPage({ products: [activeOutOfStock, removed, legacyProduct] });
+
+    const activeRow = (await screen.findByText("虚构在售商品", { selector: "strong" })).closest("tr")!;
+    const removedRow = screen.getByText("虚构已下架商品", { selector: "strong" }).closest("tr")!;
+    const legacyRow = screen.getByText("虚构旧数据商品", { selector: "strong" }).closest("tr")!;
+    expect(within(activeRow).getByText("缺货")).toBeTruthy();
+    expect(within(activeRow).queryByText("已下架")).toBeNull();
+    expect(within(removedRow).getByText("已下架")).toBeTruthy();
+    expect(within(legacyRow).queryByText("已下架")).toBeNull();
+  });
+
   it("点击产品行打开真实详情 Drawer 并显示 Core 返回的变体库存表", async () => {
     const variants: ProductVariantStock[] = [
       { sku: "DEMO-KIT-01", title: "蓝色款", stock_status: "in_stock", since: "2026-11-01", days_in_status: 4, price: 24, history_30d: "i".repeat(30), online_rate_30d: 0.8 },
