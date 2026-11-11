@@ -656,6 +656,33 @@ describe("EdmPage media preparation prototype", () => {
     expect(within(results).queryByText("DEMO-OLD-SNAPSHOT-001")).toBeNull();
   }, 15_000);
 
+  it("当前窗口接到另一窗口的媒体完成事件后刷新历史、摘要和图片列表", async () => {
+    const historyByProject: Record<string, RunLog[]> = { demo: [] };
+    const { mockApi, invalidateQueries, emitMediaFinished } = await renderEdmPage(true, false, undefined, true, false, { historyByProject });
+    await waitFor(() => expect(mockApi.jobs.history).toHaveBeenCalledWith("demo", 100));
+    const externalStartedAt = Date.now();
+    historyByProject.demo = [{
+      run_id: "external-media-run", job: "media", started_at: new Date(externalStartedAt).toISOString(),
+      finished_at: new Date(externalStartedAt + 1000).toISOString(), status: "ok",
+      media_requested_skus: ["DEMO-OTHER-WINDOW-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-OTHER-WINDOW-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
+    }];
+
+    emitMediaFinished({
+      runId: "external-media-run", job: "media", status: "ok", exitCode: 0, summary: "媒体处理完成",
+      media_requested_skus: ["DEMO-OTHER-WINDOW-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-OTHER-WINDOW-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
+    });
+
+    const historyResults = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
+    expect(within(historyResults).getByText("DEMO-OTHER-WINDOW-001")).toBeTruthy();
+    await waitFor(() => {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "images", "demo"] });
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "summary", "demo"] });
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["job-history", "demo"] });
+    });
+  }, 15_000);
+
   it("较新的同 runId 历史可以展示，但不会隐藏活动进度或解除防重", async () => {
     const rows = [mediaImageRow("DEMO-ACTIVE-001", "https://demo-store.example.test/demo/active.webp")];
     const { mediaPrepare, emitMediaProgress, setHistoryData } = await renderEdmPage(true, false, rows, true);

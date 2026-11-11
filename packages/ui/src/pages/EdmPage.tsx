@@ -310,8 +310,8 @@ export function EdmPage() {
   const currentView: ImageView = query.filters?.view ?? "all";
 
   useEffect(() => {
-    return edmMediaJobMonitor.connect(api.jobs, queryClient, toast);
-  }, [api.jobs, queryClient, toast]);
+    return edmMediaJobMonitor.connect(api.jobs, queryClient, toast, id);
+  }, [api.jobs, id, queryClient, toast]);
 
   useEffect(() => {
     if (lastResetProjectIdRef.current === id) return;

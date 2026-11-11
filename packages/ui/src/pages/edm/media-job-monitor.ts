@@ -23,7 +23,7 @@ interface MediaRunContext {
 type JobsApi = Pick<SiteIndexApi["jobs"], "onProgress" | "onFinished">;
 
 export interface EdmMediaJobMonitor {
-  connect: (jobs: JobsApi, queryClient: QueryClient, toast: ToastApi) => () => void;
+  connect: (jobs: JobsApi, queryClient: QueryClient, toast: ToastApi, projectId: string) => () => void;
   begin: (projectId: string, projectName: string, skus: string[]) => symbol;
   associate: (token: symbol, runId: string) => void;
   fail: (token: symbol, message: string) => void;
@@ -34,7 +34,7 @@ export interface EdmMediaJobMonitor {
 export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
   const snapshots = new Map<string, EdmMediaRunSnapshot>();
   const listeners = new Set<() => void>();
-  const consumers = new Set<symbol>();
+  const consumers = new Map<symbol, string>();
   const pendingStarts = new Map<symbol, EdmMediaRunSnapshot>();
   const contextsByRunId = new Map<string, MediaRunContext>();
   const earlyProgress = new Map<string, JobProgress>();
@@ -137,9 +137,12 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
 
   function handleResult(result: JobResult): void {
     if (result.job !== "media") return;
+    // JobResult 不含 projectId/projectPath；只有 Desktop/Core 保证 runId 全局唯一时，
+    // 才能把事件归给本地上下文。多窗口并发隔离必须由真实执行身份契约和集成测试证明。
     const context = contextsByRunId.get(result.runId);
     if (!context) {
       rememberRecent(earlyResults, result.runId, result);
+      for (const projectId of new Set(consumers.values())) invalidateMediaQueries(projectId);
       return;
     }
     handleFinished(result, context);
@@ -177,11 +180,11 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
   }
 
   return {
-    connect(jobs, queryClient, toast) {
+    connect(jobs, queryClient, toast, projectId) {
       activeQueryClient = queryClient;
       activeToast = toast;
       const consumer = Symbol("edm-page");
-      consumers.add(consumer);
+      consumers.set(consumer, projectId);
       bindJobs(jobs);
       return () => {
         consumers.delete(consumer);

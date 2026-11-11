@@ -41,7 +41,7 @@ describe("EDM media job monitor lifecycle", () => {
     const secondInvalidate = vi.spyOn(secondClient, "invalidateQueries");
     const firstToast = createToast();
     const secondToast = createToast();
-    const disconnectFirst = monitor.connect(firstJobs.api, firstClient, firstToast);
+    const disconnectFirst = monitor.connect(firstJobs.api, firstClient, firstToast, "demo");
     const demoToken = monitor.begin("demo", "虚构项目甲", ["DEMO-001"]);
     const otherToken = monitor.begin("other", "虚构项目乙", ["DEMO-002"]);
 
@@ -49,7 +49,7 @@ describe("EDM media job monitor lifecycle", () => {
     expect(firstJobs.progressListeners.size).toBe(1);
     expect(firstJobs.finishedListeners.size).toBe(1);
 
-    const disconnectSecond = monitor.connect(secondJobs.api, secondClient, secondToast);
+    const disconnectSecond = monitor.connect(secondJobs.api, secondClient, secondToast, "demo");
     expect(firstJobs.progressListeners.size).toBe(0);
     expect(firstJobs.finishedListeners.size).toBe(0);
     expect(secondJobs.progressListeners.size).toBe(1);
@@ -85,7 +85,7 @@ describe("EDM media job monitor lifecycle", () => {
     expect(secondJobs.progressListeners.size).toBe(0);
     expect(secondJobs.finishedListeners.size).toBe(0);
 
-    const disconnectRemount = monitor.connect(secondJobs.api, secondClient, secondToast);
+    const disconnectRemount = monitor.connect(secondJobs.api, secondClient, secondToast, "demo");
     expect(secondJobs.progressListeners.size).toBe(1);
     expect(secondJobs.finishedListeners.size).toBe(1);
     disconnectRemount();
@@ -99,7 +99,7 @@ describe("EDM media job monitor lifecycle", () => {
     const monitor = createEdmMediaJobMonitor();
     const firstJobs = createJobsApi();
     const firstClient = new QueryClient();
-    const disconnect = monitor.connect(firstJobs.api, firstClient, createToast());
+    const disconnect = monitor.connect(firstJobs.api, firstClient, createToast(), "demo");
     const token = monitor.begin("demo", "虚构项目", ["DEMO-001"]);
     monitor.associate(token, "media-run-window");
 
@@ -111,12 +111,107 @@ describe("EDM media job monitor lifecycle", () => {
 
     disconnect();
     const recreatedJobs = createJobsApi();
-    const disconnectAfterRecreate = monitor.connect(recreatedJobs.api, firstClient, createToast());
+    const disconnectAfterRecreate = monitor.connect(recreatedJobs.api, firstClient, createToast(), "demo");
     expect(recreatedJobs.progressListeners.size).toBe(1);
     expect(recreatedJobs.finishedListeners.size).toBe(1);
     disconnectAfterRecreate();
     expect(recreatedJobs.progressListeners.size).toBe(0);
     expect(recreatedJobs.finishedListeners.size).toBe(0);
     firstClient.clear();
+  });
+
+  it("refreshes open EDM queries when a media task finishes without local run context", async () => {
+    const monitor = createEdmMediaJobMonitor();
+    const jobs = createJobsApi();
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const disconnect = monitor.connect(jobs.api, client, createToast(), "demo");
+
+    jobs.emitFinished({
+      runId: "external-media-run", job: "media", status: "ok", exitCode: 0, summary: "媒体处理完成",
+      media_requested_skus: ["DEMO-EXTERNAL-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-EXTERNAL-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
+    });
+
+    await vi.waitFor(() => {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["edm", "images", "demo"] });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["edm", "summary", "demo"] });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job-history", "demo"] });
+    });
+    disconnect();
+    client.clear();
+  });
+
+  it("refreshes only the newly selected project after the EDM consumer switches projects", async () => {
+    const monitor = createEdmMediaJobMonitor();
+    const jobs = createJobsApi();
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const disconnectDemo = monitor.connect(jobs.api, client, createToast(), "demo");
+    disconnectDemo();
+    const disconnectNext = monitor.connect(jobs.api, client, createToast(), "demo-next");
+
+    jobs.emitFinished({
+      runId: "external-media-after-switch", job: "media", status: "ok", exitCode: 0, summary: "媒体处理完成",
+      media_requested_skus: ["DEMO-NEXT-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-NEXT-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
+    });
+
+    await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job-history", "demo-next"] }));
+    const invalidatedKeys = invalidate.mock.calls.map(([options]) => options?.queryKey);
+    expect(invalidatedKeys).toEqual(expect.arrayContaining([
+      ["edm", "images", "demo-next"], ["edm", "summary", "demo-next"], ["job-history", "demo-next"],
+    ]));
+    expect(invalidatedKeys).not.toContainEqual(["edm", "images", "demo"]);
+    expect(invalidatedKeys).not.toContainEqual(["edm", "summary", "demo"]);
+    expect(invalidatedKeys).not.toContainEqual(["job-history", "demo"]);
+
+    disconnectNext();
+    client.clear();
+  });
+
+  it("ignores non-media completion events", async () => {
+    const monitor = createEdmMediaJobMonitor();
+    const jobs = createJobsApi();
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const toast = createToast();
+    const disconnect = monitor.connect(jobs.api, client, toast, "demo");
+
+    jobs.emitFinished({ runId: "weekly-run", job: "weekly", status: "ok", exitCode: 0, summary: "周任务完成" });
+
+    await Promise.resolve();
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    disconnect();
+    client.clear();
+  });
+
+  it("does not refresh queries for an EDM consumer that has unmounted", async () => {
+    const monitor = createEdmMediaJobMonitor();
+    const jobs = createJobsApi();
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const disconnectDemo = monitor.connect(jobs.api, client, createToast(), "demo");
+    const disconnectOther = monitor.connect(jobs.api, client, createToast(), "demo-other");
+    disconnectDemo();
+
+    jobs.emitFinished({
+      runId: "external-media-with-mounted-consumer", job: "media", status: "partial", exitCode: 1, summary: "部分完成",
+      media_requested_skus: ["DEMO-OTHER-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-OTHER-001", status: "failed", reason: "虚构失败" }], media_unknown_skus: [], media_not_started_skus: [],
+    });
+
+    await vi.waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job-history", "demo-other"] }));
+    const invalidatedKeys = invalidate.mock.calls.map(([options]) => options?.queryKey);
+    expect(invalidatedKeys).toEqual(expect.arrayContaining([
+      ["edm", "images", "demo-other"], ["edm", "summary", "demo-other"], ["job-history", "demo-other"],
+    ]));
+    expect(invalidatedKeys).not.toContainEqual(["edm", "images", "demo"]);
+    expect(invalidatedKeys).not.toContainEqual(["edm", "summary", "demo"]);
+    expect(invalidatedKeys).not.toContainEqual(["job-history", "demo"]);
+
+    disconnectOther();
+    client.clear();
   });
 });
