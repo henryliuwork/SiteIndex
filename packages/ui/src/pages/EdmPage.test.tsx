@@ -134,6 +134,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
     emitMediaProgress: (progress: JobProgress) => onMediaProgress?.(progress),
     emitMediaFinished: (result: JobResult) => onMediaFinished?.(result),
     resolveMediaPrepare: (runId = "demo-media-run") => resolvePendingMediaPrepare?.({ runId }),
+    setHistoryData: (projectId: string, runs: RunLog[]) => queryClient.setQueryData(["job-history", projectId], runs),
     activeSubscriptions: () => ({ progress: activeProgressSubscriptions, finished: activeFinishedSubscriptions }),
   };
 }
@@ -653,5 +654,28 @@ describe("EdmPage media preparation prototype", () => {
     const results = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
     expect(within(results).getByText("DEMO-EXTERNAL-NEWER-001")).toBeTruthy();
     expect(within(results).queryByText("DEMO-OLD-SNAPSHOT-001")).toBeNull();
+  }, 15_000);
+
+  it("较新的同 runId 历史可以展示，但不会隐藏活动进度或解除防重", async () => {
+    const rows = [mediaImageRow("DEMO-ACTIVE-001", "https://demo-store.example.test/demo/active.webp")];
+    const { mediaPrepare, emitMediaProgress, setHistoryData } = await renderEdmPage(true, false, rows, true);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    const button = await screen.findByRole("button", { name: "获取图片 URL（1）" });
+    fireEvent.click(button);
+    await waitFor(() => expect(mediaPrepare).toHaveBeenCalledWith({ project: "demo", skus: ["DEMO-ACTIVE-001"] }));
+    emitMediaProgress({ runId: "demo-media-run", projectPath: "C:/fake/demo", job: "media", pct: 40, level: "info", message: "活动任务仍在处理虚构 SKU", at: new Date().toISOString() });
+
+    const historyStartedAt = new Date(Date.now() + 30_000);
+    setHistoryData("demo", [{
+      run_id: "demo-media-run", job: "media", started_at: historyStartedAt.toISOString(),
+      finished_at: new Date(historyStartedAt.getTime() + 1000).toISOString(), status: "ok",
+      media_requested_skus: ["DEMO-EXTERNAL-NEWER-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-EXTERNAL-NEWER-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
+    }]);
+
+    const historyResults = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
+    expect(within(historyResults).getByText("DEMO-EXTERNAL-NEWER-001")).toBeTruthy();
+    expect(await screen.findByText("活动任务仍在处理虚构 SKU")).toBeTruthy();
+    expect(button.hasAttribute("disabled")).toBe(true);
   }, 15_000);
 });

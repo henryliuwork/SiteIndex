@@ -294,8 +294,9 @@ export function EdmPage() {
     }
     exportMutation.mutate({ projectId: id, attemptId });
   };
-  const mediaRunBusy = displayedMediaSnapshot?.state === "starting" || displayedMediaSnapshot?.state === "running";
-  const mediaRunProgress = displayedMediaSnapshot?.state === "starting" || displayedMediaSnapshot?.state === "running" ? displayedMediaSnapshot.progress : "";
+  // History display selection must not release the active task's in-page guard.
+  const mediaRunBusy = mediaSnapshotActive;
+  const mediaRunProgress = mediaSnapshotActive ? mediaRunSnapshot.progress : "";
   const mediaRunMessage = displayedMediaSnapshot?.state === "failed" ? displayedMediaSnapshot.error ?? "图片处理任务启动失败。"
     : displayedMediaSnapshot?.result ? summarizeMediaRun(displayedMediaSnapshot.skus, displayedMediaSnapshot.result) : "";
   const mediaRunRecovery = displayedMediaSnapshot?.result ? getMediaRecoveryDisplay(displayedMediaSnapshot.result, displayedMediaSnapshot.skus) : null;
