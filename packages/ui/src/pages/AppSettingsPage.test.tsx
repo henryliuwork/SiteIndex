@@ -24,6 +24,8 @@ function createCredentialBridge(initial: CredentialState = "not_configured"): Cr
   return { status, save, clear, states };
 }
 
+type CredentialBridgeInput = Partial<Pick<CredentialBridgeMock, "status" | "save" | "clear">>;
+
 afterEach(() => {
   cleanup();
   Reflect.deleteProperty(window, "siteindexWindow");
@@ -31,7 +33,7 @@ afterEach(() => {
   vi.resetModules();
 });
 
-async function renderSettings(options: { settings?: AppSettings; wordpress?: boolean; bridge?: CredentialBridgeMock | null } = {}) {
+async function renderSettings(options: { settings?: AppSettings; wordpress?: boolean; bridge?: CredentialBridgeInput | null } = {}) {
   const mockApi = createMockApi({ wordpressImageHostDemo: options.wordpress ?? false });
   const defaultSettings = await mockApi.settings.get();
   let savedSettings = options.settings ?? defaultSettings;
@@ -301,6 +303,21 @@ describe("AppSettingsPage background options", () => {
     await waitFor(() => expect(bridge.status.mock.calls.length).toBeGreaterThan(callsBeforeRetry));
   });
 
+  it("updates credential controls when secure storage recovers after retry", async () => {
+    const bridge = createCredentialBridge("unavailable");
+    bridge.status
+      .mockResolvedValueOnce({ state: "unavailable" })
+      .mockResolvedValueOnce({ state: "not_configured" });
+    await renderSettings({ wordpress: true, bridge });
+
+    expect(await screen.findByText("安全存储不可用")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
+
+    expect(await screen.findByRole("button", { name: "配置凭据" })).toBeTruthy();
+    expect(screen.queryByText("安全存储不可用")).toBeNull();
+    expect(screen.queryByRole("button", { name: "重新检查" })).toBeNull();
+  });
+
   it("identifies a missing desktop credential bridge without a no-op retry or credential actions", async () => {
     await renderSettings({ wordpress: true, bridge: null });
     expect(await screen.findByText("桌面接口不可用")).toBeTruthy();
@@ -310,5 +327,21 @@ describe("AppSettingsPage background options", () => {
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
     expect(screen.queryByRole("button", { name: "配置凭据" })).toBeNull();
     expect(screen.queryByRole("button", { name: "删除本机凭据" })).toBeNull();
+  });
+
+  it("treats a partially implemented desktop credential bridge as unavailable", async () => {
+    const status = vi.fn(async () => ({ state: "configured" as const }));
+    const clear = vi.fn(async () => undefined);
+    await renderSettings({ wordpress: true, bridge: { status, clear } });
+
+    expect(await screen.findByText("桌面接口不可用")).toBeTruthy();
+    expect(screen.queryByText("本机凭据已保存")).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重新检查" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "配置凭据" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "替换凭据" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "删除本机凭据" })).toBeNull();
+    expect(status).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
   });
 });
