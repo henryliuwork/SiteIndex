@@ -139,6 +139,16 @@ describe("DesignPage Token v2", () => {
     expect(screen.getAllByText("未识别", { selector: ".si-design-role-value" }).length).toBeGreaterThan(0);
   });
 
+  it("整份 Token 未识别时保留颜色、字号和按钮空状态", async () => {
+    const { api } = createDesignApi(null);
+    await renderDesignPage(api);
+
+    expect(await screen.findByRole("heading", { name: "颜色角色" })).toBeTruthy();
+    expect(screen.getByText("当前 tokens.json 尚未提供 Token v2 颜色角色。")).toBeTruthy();
+    expect(screen.getByText("提取结果尚未提供 h1–h6、正文、小字或说明字号。")).toBeTruthy();
+    expect(screen.getByText("当前 tokens.json 尚未提供 Token v2 按钮样式。")).toBeTruthy();
+  });
+
   it("复制按钮会把当前完整 Token JSON 交给剪贴板 API", async () => {
     const { api, copyText } = createDesignApi();
     await renderDesignPage(api);
