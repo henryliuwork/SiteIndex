@@ -186,7 +186,7 @@ async function readSurfaceSnapshot(page: Page): Promise<PageSurfaceSnapshot> {
       return true;
     });
     const content = Array.from(document.querySelectorAll<HTMLElement>(
-      "main .si-page > :not(.si-page-header):not(.si-project-header):not(.si-page-loading):not(.si-api-error-state):not(.si-empty-state):not(.si-content-blog-empty), main .si-placeholder",
+        "main .si-page > :not(.si-page-header):not(.si-project-header):not(.si-page-loading):not(.si-api-error-state):not(.si-empty-state):not(.si-content-blog-empty):not(.si-tab-panel), main .si-tab-panel > :not(.si-page-loading):not(.si-query-loading):not(.si-api-error-state):not(.si-empty-state):not(.si-content-blog-empty), main .si-placeholder",
     )).some((element) => {
       const rect = element.getBoundingClientRect();
       if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
@@ -219,7 +219,7 @@ async function readPageSurfaceState(page: Page): Promise<DataSurfaceState> {
 }
 
 async function waitForRoute(page: Page, route: RouteCase): Promise<DataSurfaceState> {
-  await page.locator(".si-page, .si-placeholder, .si-api-error-state").first().waitFor({ state: "visible", timeout: 20_000 });
+  await page.locator(".si-page, .si-placeholder, .si-api-error-state, .si-empty-state, [data-table-empty], .si-content-blog-empty").first().waitFor({ state: "visible", timeout: 20_000 });
   if (route.waitForDataSurface) {
     await page.waitForLoadState("networkidle", { timeout: 20_000 });
     const state = await waitForDataSurface(() => readDataSurfaceState(page));
@@ -292,7 +292,7 @@ async function inspectPage(page: Page): Promise<{
       return true;
     });
     const contentSurface = Array.from(document.querySelectorAll<HTMLElement>(
-      "main .si-page > :not(.si-page-header):not(.si-project-header):not(.si-page-loading):not(.si-api-error-state):not(.si-empty-state):not(.si-content-blog-empty), main .si-placeholder",
+      "main .si-page > :not(.si-page-header):not(.si-project-header):not(.si-page-loading):not(.si-api-error-state):not(.si-empty-state):not(.si-content-blog-empty):not(.si-tab-panel), main .si-tab-panel > :not(.si-page-loading):not(.si-query-loading):not(.si-api-error-state):not(.si-empty-state):not(.si-content-blog-empty), main .si-placeholder",
     )).some((element) => {
       const rect = element.getBoundingClientRect();
       if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;

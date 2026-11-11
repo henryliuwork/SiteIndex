@@ -34,16 +34,30 @@ describe("ui:check data surface readiness", () => {
   });
 
   it("fails when the table remains missing after the timeout", async () => {
-    await expect(waitForDataSurface(async () => "missing", { timeoutMs: 25, pollMs: 5 }))
-      .rejects.toThrow("最后状态：missing");
+    vi.useFakeTimers();
+    try {
+      const pending = waitForDataSurface(async () => "missing", { timeoutMs: 25, pollMs: 5 });
+      const timedOut = expect(pending).rejects.toThrow("最后状态：missing");
+      await vi.advanceTimersByTimeAsync(30);
+      await timedOut;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not treat a continuously loading content surface as ready", async () => {
     const readState = vi.fn(async () => "loading" as const);
 
-    await expect(waitForDataSurface(readState, { timeoutMs: 25, pollMs: 5 }))
-      .rejects.toThrow("最后状态：loading");
-    expect(readState.mock.calls.length).toBeGreaterThan(1);
+    vi.useFakeTimers();
+    try {
+      const pending = waitForDataSurface(readState, { timeoutMs: 25, pollMs: 5 });
+      const timedOut = expect(pending).rejects.toThrow("最后状态：loading");
+      await vi.advanceTimersByTimeAsync(30);
+      await timedOut;
+      expect(readState.mock.calls.length).toBe(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -53,26 +67,43 @@ describe("ui:check non-table page readiness", () => {
     expect(classifyPageSurface({ ...base, loading: true, content: true })).toBe("loading");
     expect(classifyPageSurface({ ...base, content: true })).toBe("content");
     expect(classifyPageSurface({ ...base, pageEmpty: true })).toBe("empty");
+    expect(classifyPageSurface({ ...base, content: true, pageEmpty: true })).toBe("content");
     expect(classifyPageSurface({ ...base, error: true })).toBe("error");
     expect(classifyPageSurface(base)).toBe("missing");
   });
 
   it("waits for a mocked design page query to settle before accepting its content", async () => {
-    let mockRequestsPending = true;
-    let contentVisible = true;
-    const readState = vi.fn(async () => classifyPageSurface({
+    const loadingState = classifyPageSurface({
       table: false,
       pagination: false,
       empty: false,
       error: false,
-      loading: mockRequestsPending,
-      content: contentVisible,
+      loading: true,
+      content: true,
       pageEmpty: false,
-    }));
-    setTimeout(() => { mockRequestsPending = false; }, 40);
+    });
+    const contentState = classifyPageSurface({
+      table: false,
+      pagination: false,
+      empty: false,
+      error: false,
+      loading: false,
+      content: true,
+      pageEmpty: false,
+    });
+    const states = [loadingState, loadingState, contentState, contentState];
+    const readState = vi.fn(async () => states.shift() ?? contentState);
 
-    await expect(waitForPageSurface(readState, { timeoutMs: 250, pollMs: 5, stabilityMs: 10 })).resolves.toBe("content");
-    expect(readState.mock.calls.length).toBeGreaterThan(2);
+    vi.useFakeTimers();
+    try {
+      const pending = waitForPageSurface(readState, { timeoutMs: 250, pollMs: 5, stabilityMs: 10 });
+      const completed = expect(pending).resolves.toBe("content");
+      await vi.advanceTimersByTimeAsync(25);
+      await completed;
+      expect(readState.mock.calls.length).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("accepts only explicit empty and error states when a page has no content body", async () => {
@@ -101,13 +132,27 @@ describe("ui:check non-table page readiness", () => {
       pageEmpty: false,
     }));
 
-    await expect(waitForPageSurface(readState, { timeoutMs: 25, pollMs: 5 }))
-      .rejects.toThrow("最后状态：loading");
-    expect(readState.mock.calls.length).toBeGreaterThan(1);
+    vi.useFakeTimers();
+    try {
+      const pending = waitForPageSurface(readState, { timeoutMs: 25, pollMs: 5 });
+      const timedOut = expect(pending).rejects.toThrow("最后状态：loading");
+      await vi.advanceTimersByTimeAsync(30);
+      await timedOut;
+      expect(readState.mock.calls.length).toBe(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("fails when a route has neither content nor an explicit terminal state", async () => {
-    await expect(waitForPageSurface(async () => "missing", { timeoutMs: 25, pollMs: 5 }))
-      .rejects.toThrow("最后状态：missing");
+    vi.useFakeTimers();
+    try {
+      const pending = waitForPageSurface(async () => "missing", { timeoutMs: 25, pollMs: 5 });
+      const timedOut = expect(pending).rejects.toThrow("最后状态：missing");
+      await vi.advanceTimersByTimeAsync(30);
+      await timedOut;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -3,7 +3,10 @@ import { clone, mockSkillBodies, mockSkillTargets, mockSkills, reply } from "./c
 
 export function createSkillsMock(): SiteIndexApi["skills"] {
   return {
-    list: () => reply(() => clone(mockSkills)),
+    list: () => reply(() => {
+      const emptyListMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mock") === "empty-skills";
+      return emptyListMode ? [] : clone(mockSkills);
+    }),
     get: (name) => reply(() => {
       const info = mockSkills.find((skill) => skill.name === name);
       if (!info) throw new Error("找不到 Skill：" + name);

@@ -12,6 +12,20 @@ afterEach(() => {
 });
 
 describe("SkillsPage retired skills", () => {
+  it("renders a top-level empty state when the Skills API returns no items", async () => {
+    const mockApi = createMockApi();
+    vi.spyOn(mockApi.skills, "list").mockResolvedValue([]);
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ SkillsPage }, { ToastProvider }] = await Promise.all([import("./SkillsPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={queryClient}><ToastProvider><MemoryRouter><SkillsPage /></MemoryRouter></ToastProvider></QueryClientProvider>);
+
+    const emptyHeading = await screen.findByRole("heading", { name: "当前没有可用的 Skill" });
+    expect(emptyHeading.closest(".si-empty-state")).toBeTruthy();
+    expect(container.querySelector(".si-page")).toBeNull();
+    expect(screen.getByRole("button", { name: "重新检查" })).toBeTruthy();
+  });
+
   it("labels retired edm-builder, retains its Agents directory copy, and offers no install action", async () => {
     const mockApi = createMockApi();
     const install = vi.spyOn(mockApi.skills, "install");
