@@ -16,5 +16,8 @@ const siteindex = createApiBridge({
 contextBridge.exposeInMainWorld("siteindex", siteindex);
 contextBridge.exposeInMainWorld(
   "siteindexWindow",
-  createWindowApi((channel, payload) => ipcRenderer.send(channel, payload)),
+  createWindowApi({
+    send: (channel, payload) => ipcRenderer.send(channel, payload),
+    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  }),
 );

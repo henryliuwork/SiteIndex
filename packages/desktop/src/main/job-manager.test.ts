@@ -141,6 +141,130 @@ describe("desktop job manager", () => {
     await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("redacts authorization material from utilityProcess progress and finished results", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    const progress = vi.fn();
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: progress,
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+
+    await manager.run({ projectPath, job: "weekly" });
+    const startMessage = JSON.stringify(child.messages[0]);
+    expect(startMessage).not.toContain("fictional-user");
+    expect(startMessage).not.toContain("fictional-password");
+    expect(startMessage).not.toContain("ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk");
+    child.emit("message", {
+      type: "progress",
+      progress: {
+        runId: "2026-10-23-weekly",
+        projectPath,
+        job: "weekly",
+        pct: null,
+        level: "error",
+        message:
+          "Authorization: Bearer fictional-token; Authorization: Basic ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk",
+        at: "2026-10-23T01:00:01.000Z",
+      },
+    });
+    child.emit("message", {
+      type: "finished",
+      result: {
+        runId: "2026-10-23-weekly",
+        job: "weekly",
+        status: "failed",
+        exitCode: 1,
+        summary: "请求 https://fictional-user:fictional-password@example.test 失败",
+        errors: ["Authorization: Basic ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk"],
+      },
+    });
+
+    await expect(finished).resolves.toMatchObject({ status: "failed" });
+    expect(progress.mock.calls[0]?.[0].message).not.toContain("fictional-token");
+    expect(progress.mock.calls[0]?.[0].message).not.toContain("ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk");
+    const resultText = JSON.stringify(await finished);
+    expect(resultText).not.toContain("fictional-user");
+    expect(resultText).not.toContain("fictional-password");
+    expect(resultText).not.toContain("ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk");
+  });
+
+  it("redacts utilityProcess fatal errors before rejecting a Desktop Job request", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess(false);
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const starting = manager.run({ projectPath, job: "weekly" });
+    await vi.waitFor(() => expect(child.messages).toHaveLength(1));
+    child.emit("message", {
+      type: "fatal",
+      message: "upload failed: Authorization: Basic ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk",
+    });
+
+    let detail = "";
+    try {
+      await starting;
+    } catch (error) {
+      detail = String(error && typeof error === "object" && "detail" in error ? error.detail : error);
+    }
+    expect(detail).not.toContain("ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk");
+    expect(detail).toContain("[已隐藏]");
+  });
+
+  it("does not put worker fatal text into Desktop run history", async () => {
+    const projectPath = await projectDirectory();
+    const child = new FakeUtilityProcess();
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+
+    await manager.run({ projectPath, job: "weekly" });
+    child.emit("message", {
+      type: "fatal",
+      message: "upload failed: Authorization: Basic ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk",
+    });
+
+    await expect(finished).resolves.toMatchObject({ status: "failed" });
+    const history = JSON.stringify(await manager.history(path.basename(projectPath) as ProjectId));
+    expect(history).not.toContain("ZmljdGlvbmFsLXVzZXI6ZmljdGlvbmFsLXBhc3N3b3Jk");
+  });
+
   it("cancels a process, releases its owned lock and records the cancellation", async () => {
     const projectPath = await projectDirectory();
     const child = new FakeUtilityProcess();

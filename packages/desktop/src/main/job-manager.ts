@@ -23,6 +23,7 @@ import {
   type JobWorkerMessage,
   type JobWorkerStartMessage,
 } from "./job-protocol.js";
+import { sanitizeJobProgress, sanitizeJobResult, sanitizeWorkerText } from "./worker-output-sanitizer.js";
 
 const START_TIMEOUT_MS = 30_000;
 
@@ -299,19 +300,30 @@ export function createJobManager(options: JobManagerOptions) {
     if (message.type === "progress") {
       if (isJobProgress(message.progress)) {
         if (entry.request.job === "init" && message.progress.step === "schedule") return;
-        options.emitProgress({ ...message.progress, runId: entry.runId ?? message.progress.runId });
+        // Media Jobs do not receive vault credentials yet. When they are wired,
+        // inject transient credential-derived values here and pass them to every
+        // sanitizer call; pattern redaction alone cannot guarantee removal of a
+        // raw password or unlabeled Base64 value.
+        options.emitProgress({
+          ...sanitizeJobProgress(message.progress),
+          runId: entry.runId ?? message.progress.runId,
+        });
       }
       return;
     }
     if (message.type === "finished") {
       if (!isJobResult(message.result)) return;
-      entry.result = message.result;
+      // The sanitizer supports injected known values, but currently receives none:
+      // media Jobs are not wired and credentials never enter a worker request.
+      entry.result = sanitizeJobResult(message.result);
       entry.oosRate = typeof message.oosRate === "number" ? message.oosRate : null;
       entry.child.kill();
       return;
     }
     if (message.type === "fatal") {
-      const detail = typeof message.message === "string" ? message.message : "未知 Worker 错误。";
+      // Keep this path on the same value-level redaction boundary when credential
+      // injection is added for media Jobs.
+      const detail = typeof message.message === "string" ? sanitizeWorkerText(message.message) : "未知 Worker 错误。";
       if (!entry.runId) entry.rejectStarted(jobError("UNKNOWN", "Job utilityProcess 执行失败。", detail));
       entry.child.kill();
     }
