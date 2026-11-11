@@ -81,6 +81,8 @@ interface JobEntry {
   rejectStarted(error: SiteIndexError): void;
   done: Promise<JobResult>;
   resolveDone(result: JobResult): void;
+  /** Core 的日期+Job 日志 ID；不作为 Desktop 的活动 ID 暴露。 */
+  coreRunId: string | null;
   runId: string | null;
   startedAt: string | null;
   result: JobResult | null;
@@ -126,12 +128,17 @@ function isSafeMediaImageUrl(value: unknown): value is string {
   if (typeof value !== "string" || !value.trim()) return false;
   try {
     const url = new URL(value);
-    if ((url.protocol !== "https:" && url.protocol !== "http:") || !url.hostname || url.username || url.password) {
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      !url.hostname ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
       return false;
     }
-    return ![...url.searchParams.keys()].some((key) =>
-      /token|secret|pass(?:word)?|auth|credential|signature|api.?key/iu.test(key),
-    );
+    return true;
   } catch {
     return false;
   }
@@ -145,53 +152,55 @@ function sanitizeMediaJobResult(
   const sanitized = sanitizeJobResult(result, sensitiveValues, sensitiveUsernames);
   if (sanitized.job !== "media" || !isValidMediaSkuRecoveryPartition(sanitized)) return sanitized;
   return {
-    ...sanitized,
-    media_results: sanitized.media_results.map(({ image_url, ...item }) => ({
-      ...item,
+    runId: sanitized.runId,
+    job: "media",
+    status: sanitized.status,
+    exitCode: sanitized.exitCode,
+    summary: sanitized.summary,
+    ...(sanitized.counts ? { counts: sanitized.counts } : {}),
+    ...(sanitized.errors ? { errors: sanitized.errors } : {}),
+    media_requested_skus: [...sanitized.media_requested_skus],
+    media_batch_state: sanitized.media_batch_state,
+    media_results: sanitized.media_results.map(({ sku, status, reason, image_url }) => ({
+      sku,
+      status,
+      ...(reason ? { reason } : {}),
       ...(isSafeMediaImageUrl(image_url) ? { image_url } : {}),
     })),
+    media_unknown_skus: [...sanitized.media_unknown_skus],
+    media_not_started_skus: [...sanitized.media_not_started_skus],
+    ...(sanitized.media_error_code ? { media_error_code: sanitized.media_error_code } : {}),
   };
 }
 
 function sanitizeMediaRunLog(row: RunLog): RunLog {
   if (row.job !== "media") return row;
-  const copy = { ...row } as RunLog & Partial<JobResult>;
-  if (!isValidMediaSkuRecoveryPartition(row)) {
-    delete copy.media_requested_skus;
-    delete copy.media_batch_state;
-    delete copy.media_results;
-    delete copy.media_unknown_skus;
-    delete copy.media_not_started_skus;
-    delete copy.media_error_code;
-    return copy;
+  const safe: RunLog = {
+    run_id: row.run_id,
+    job: "media",
+    started_at: row.started_at,
+    finished_at: row.finished_at,
+    status: row.status,
+    ...(row.trigger === "schedule" || row.trigger === "manual" || row.trigger === "cli"
+      ? { trigger: row.trigger }
+      : {}),
+    ...(row.errors?.length ? { errors: ["媒体任务存在未公开的错误详情。"] } : {}),
+  };
+  if (!isValidMediaSkuRecoveryPartition(row)) return safe;
+
+  safe.media_requested_skus = [...row.media_requested_skus];
+  safe.media_batch_state = row.media_batch_state;
+  safe.media_results = row.media_results.map(({ sku, status, image_url }) => ({
+    sku,
+    status,
+    ...(isSafeMediaImageUrl(image_url) ? { image_url } : {}),
+  }));
+  safe.media_unknown_skus = [...row.media_unknown_skus];
+  safe.media_not_started_skus = [...row.media_not_started_skus];
+  if (row.media_error_code === "WP_AUTH_FAILED" || row.media_error_code === "WP_FORBIDDEN") {
+    safe.media_error_code = row.media_error_code;
   }
-  const safe = sanitizeMediaJobResult(
-    {
-      runId: row.run_id,
-      job: "media",
-      status: row.status,
-      exitCode: EXIT.OK,
-      summary: "",
-      media_requested_skus: [...row.media_requested_skus],
-      media_batch_state: row.media_batch_state,
-      media_results: row.media_results.map((item) => ({ ...item })),
-      media_unknown_skus: [...row.media_unknown_skus],
-      media_not_started_skus: [...row.media_not_started_skus],
-      ...(row.media_error_code === "WP_AUTH_FAILED" || row.media_error_code === "WP_FORBIDDEN"
-        ? { media_error_code: row.media_error_code }
-        : {}),
-    },
-    [],
-    [],
-  );
-  copy.media_requested_skus = safe.media_requested_skus;
-  copy.media_batch_state = safe.media_batch_state;
-  copy.media_results = safe.media_results?.map(({ reason: _reason, ...item }) => item);
-  copy.media_unknown_skus = safe.media_unknown_skus;
-  copy.media_not_started_skus = safe.media_not_started_skus;
-  if (safe.media_error_code) copy.media_error_code = safe.media_error_code;
-  else delete copy.media_error_code;
-  return copy;
+  return safe;
 }
 
 function cancelledResult(entry: JobEntry): JobResult {
@@ -427,9 +436,9 @@ export function createJobManager(options: JobManagerOptions) {
     }
     if (message.type === "started") {
       if (typeof message.runId !== "string" || typeof message.startedAt !== "string" || entry.runId) return;
-      entry.runId = message.runId;
+      entry.coreRunId = message.runId;
+      entry.runId = `${message.runId}-${randomUUID()}`;
       entry.startedAt = message.startedAt;
-      if (entry.request.job === "media") entry.runId = `${message.runId}-${randomUUID()}`;
       entry.workerPid = entry.child.pid ?? null;
       clearTimeout(entry.startupTimer);
       entriesByRunId.set(entry.runId, entry);
@@ -450,6 +459,7 @@ export function createJobManager(options: JobManagerOptions) {
     if (message.type === "finished") {
       if (
         !isJobResult(message.result) ||
+        message.result.runId !== entry.coreRunId ||
         (entry.request.job === "media" && !matchesMediaRecoveryRequest(message.result, entry.request.skus ?? []))
       )
         return;
@@ -556,6 +566,7 @@ export function createJobManager(options: JobManagerOptions) {
         rejectStarted,
         done,
         resolveDone,
+        coreRunId: null,
         runId: null,
         startedAt: null,
         result: null,

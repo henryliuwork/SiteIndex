@@ -168,7 +168,7 @@
 - [x] #422：`before-quit` 等待 `jobs.shutdown()`；Desktop 对已启动的 Job 结束 utilityProcess、清理自有锁并将取消/崩溃作为失败结果返回。虚构双项目测试覆盖媒体凭据与进度/历史按项目隔离；不访问用户 vault。
 - [x] #422：媒体能力闸保持关闭；`media.prepare` 在设置、凭据 accessor 与 utilityProcess 之前返回 `NOT_IMPLEMENTED`（PR #427）。
 - [x] #422：JobManager 的锁清理、合成历史写入与 `jobs.history` 查询统一按 Core 的 `pathsForProject()` 解析 legacy/workspace 布局；worker runId 也从对应 `site.json` 读取时区。退出、崩溃、跨项目凭据隔离测试覆盖两种布局；暂停/退出与布局解析并发时不会再启动 worker。
-- [x] #422：media worker 结果校验请求 SKU 与完整恢复分区；缺字段、少报、多报或乱序时拒绝当成功。取消/崩溃按 Desktop 唯一 runId 写合成记录，不按 Core 的日期+Job run_id 认领旧 checkpoint；当前 Core 无法证明 checkpoint 属于本次执行，因此本次 SKU 保守记为 `outcome_unknown`。media 结果在转发前脱敏，历史读取不返回未经 Core 验证的 reason，并丢弃不安全 image URL；legacy/workspace 测试覆盖隔离、锁清理与旧同日记录不被覆盖。
+- [x] #422：所有 Desktop 对外活动 runId 都由 Core 日期+Job ID 加随机执行 ID 组成，Core 日志 ID 只内部保留；不同项目同名 Job 可分别取消。media worker 结果校验请求 SKU 与完整恢复分区；缺字段、少报、多报或乱序时拒绝当成功。取消/崩溃写入唯一 Desktop RunLog，不按 Core 日期+Job ID 认领旧 checkpoint；当前 Core 无法证明 checkpoint 属于本次执行，因此本次 SKU 保守记为 `outcome_unknown`。media 结果转发前白名单化与脱敏；历史读取对 media RunLog 使用安全字段白名单、固定错误文案、不透传 steps/reason/未知字段，并仅保留无 userinfo/query/fragment 的 HTTP(S) image URL；legacy/workspace 测试覆盖隔离、锁清理与旧同日记录不被覆盖。
 - [x] #422：preload 暴露 `media.prepare` 路由；主进程仍在 `isMediaJobReady: false` 下返回 `NOT_IMPLEMENTED`，`media.prepare` 继续留在 `PENDING_HANDLERS`，Core 能力就绪前 UI 保持关闭。
 - [ ] #422：A 尚未实现 Core media Job、跨 worker 唯一 execution ID 及 checkpoint 持久化；Desktop 不能将日期+Job 形式的旧 run_id 归属到本次执行，因而当前不能恢复同一次中断前已确认的逐 SKU 结果。媒体处理仍不可用。
 - [x] #423：preload 暴露 `edm.exportIndex`；Desktop 先检查显式 readiness 门禁，再转发到 Core 可选方法。main readiness 当前固定为 false，即使 Core 暴露同名方法仍返回 `NOT_IMPLEMENTED`；尚未清理 `PENDING_HANDLERS`，UI 仍关闭导出入口。

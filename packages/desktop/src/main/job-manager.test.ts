@@ -136,7 +136,7 @@ describe("desktop job manager", () => {
     const { runId } = await start;
     expect(child.messages[0]).toMatchObject({ context: { browserPath: "C:/Browser/msedge.exe" } });
     await expect(manager.run({ projectPath, job: "weekly" })).rejects.toMatchObject({ code: "LOCKED" });
-    expect(runId).toBe("2026-10-23-daily");
+    expect(runId).not.toBe("2026-10-23-daily");
     expect(manager.running(path.basename(projectPath) as ProjectId)).toEqual({ runId, job: "daily" });
     const lockPath = await writeOwnedLock(projectPath, child, "daily");
 
@@ -172,9 +172,61 @@ describe("desktop job manager", () => {
     await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("uses unique external run IDs for same-name jobs in different projects and cancels only the selected project", async () => {
+    const projectA = await projectDirectory();
+    const projectB = await projectDirectory();
+    const projectIdA = path.basename(projectA) as ProjectId;
+    const projectIdB = path.basename(projectB) as ProjectId;
+    const childA = new FakeUtilityProcess(true, "2026-10-23-daily");
+    const childB = new FakeUtilityProcess(true, "2026-10-23-daily");
+    const children = [childA, childB];
+    const projectPaths = new Map([
+      [projectIdA, projectA],
+      [projectIdB, projectB],
+    ]);
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      resolveProject: async (id) => {
+        const project = projectPaths.get(id);
+        if (!project) throw new Error("fixture project not found");
+        return project;
+      },
+      fork: () => {
+        const child = children.shift();
+        if (!child) throw new Error("unexpected extra worker");
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    const [runA, runB] = await Promise.all([
+      manager.run({ projectPath: projectA, job: "daily" }),
+      manager.run({ projectPath: projectB, job: "daily" }),
+    ]);
+    expect(runA.runId).not.toBe(runB.runId);
+    expect(runA.runId).not.toBe("2026-10-23-daily");
+    expect(runB.runId).not.toBe("2026-10-23-daily");
+    await writeOwnedLock(projectA, childA, "daily");
+    await writeOwnedLock(projectB, childB, "daily");
+
+    await manager.cancel(runB.runId);
+
+    expect(childB.killed).toBe(true);
+    expect(childA.killed).toBe(false);
+    expect(manager.running(projectIdA)).toEqual({ runId: runA.runId, job: "daily" });
+    await expect(manager.history(projectIdB)).resolves.toMatchObject([{ run_id: runB.runId, status: "failed" }]);
+    await manager.cancel(runA.runId);
+    expect(childA.killed).toBe(true);
+    await expect(manager.history(projectIdA)).resolves.toMatchObject([{ run_id: runA.runId, status: "failed" }]);
+  });
+
   it("redacts authorization material from utilityProcess progress and finished results", async () => {
     const projectPath = await projectDirectory();
-    const child = new FakeUtilityProcess();
+    const child = new FakeUtilityProcess(true, "2026-10-23-weekly");
     const progress = vi.fn();
     let resolveFinished!: (result: JobResult) => void;
     const finished = new Promise<JobResult>((resolve) => {
@@ -267,7 +319,7 @@ describe("desktop job manager", () => {
 
   it("injects media credentials only through worker context and redacts every returned value", async () => {
     const projectPath = await projectDirectory();
-    const child = new FakeUtilityProcess();
+    const child = new FakeUtilityProcess(true, "2026-10-23-media");
     const credential = { username: "a", applicationPassword: "fictional-media-password" };
     const basicToken = Buffer.from(`${credential.username}:${credential.applicationPassword}`).toString("base64");
     let resolveFinished!: (result: JobResult) => void;
@@ -327,6 +379,8 @@ describe("desktop job manager", () => {
         media_batch_state: "complete",
         media_unknown_skus: [],
         media_not_started_skus: [],
+        steps: [{ key: "media", status: "failed", message: "fixture-user fixture-password" }],
+        credential_canary: "fixture-password",
       },
     });
 
@@ -334,6 +388,8 @@ describe("desktop job manager", () => {
     const exposed = `${JSON.stringify(progress.mock.calls)} ${JSON.stringify(await finished)}`;
     expect(exposed).not.toContain(credential.applicationPassword);
     expect(exposed).not.toContain(basicToken);
+    expect(exposed).not.toContain("fixture-password");
+    expect(exposed).not.toContain("credential_canary");
     expect(exposed).toContain("sku-a1");
     expect(exposed).toContain('"reason":"[已隐藏]"');
     expect(progress.mock.calls[0]?.[0].projectPath).toBe(projectPath);
@@ -958,11 +1014,14 @@ describe("desktop job manager", () => {
             sku: "fixture-confirmed",
             status: "uploaded",
             reason: "Application password fixture-password",
-            image_url: "https://fixture-user:fixture-password@cdn.fixture.test/a.jpg",
+            image_url: "https://cdn.fixture.test/a.jpg?user=fixture-user#fixture-password",
           },
         ],
         media_unknown_skus: ["fixture-unknown"],
         media_not_started_skus: ["fixture-not-started"],
+        errors: ["fixture-user fixture-password"],
+        steps: [{ key: "media", status: "failed", message: "fixture-user fixture-password" }],
+        credential_canary: "fixture-password",
       })}\n`,
       "utf8",
     );
@@ -996,6 +1055,10 @@ describe("desktop job manager", () => {
     expect(JSON.stringify(history)).not.toContain("fixture-password");
     expect(JSON.stringify(history)).not.toContain("fixture-user");
     expect(JSON.stringify(history)).not.toContain("image_url");
+    expect(JSON.stringify(history)).not.toContain("credential_canary");
+    expect(history[1]).toMatchObject({ errors: ["媒体任务存在未公开的错误详情。"] });
+    expect(history[1]).not.toHaveProperty("steps");
+    expect(history[1]).not.toHaveProperty("credential_canary");
     expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
     expect(isValidMediaSkuRecoveryPartition(history[0])).toBe(true);
     expect(isValidMediaSkuRecoveryPartition(history[1])).toBe(true);
@@ -1004,7 +1067,7 @@ describe("desktop job manager", () => {
 
   it("redacts current media worker reasons and drops unsafe image URLs before forwarding", async () => {
     const projectPath = await projectDirectory("workspace");
-    const child = new FakeUtilityProcess();
+    const child = new FakeUtilityProcess(true, "2026-10-23-media");
     let resolveFinished!: (result: JobResult) => void;
     const finished = new Promise<JobResult>((resolve) => {
       resolveFinished = resolve;
@@ -1042,7 +1105,7 @@ describe("desktop job manager", () => {
             sku: "fixture-unsafe",
             status: "failed",
             reason: "Application password fixture-password",
-            image_url: "javascript:alert(1)",
+            image_url: "https://cdn.fixture.test/unsafe.jpg?user=fixture-user#fixture-password",
           },
         ],
         media_unknown_skus: [],
@@ -1060,6 +1123,8 @@ describe("desktop job manager", () => {
     });
     expect(result.media_results?.[1]).not.toHaveProperty("image_url");
     expect(JSON.stringify(result)).not.toContain("fixture-password");
+    expect(JSON.stringify(result)).not.toContain("credential_canary");
+    expect(result).not.toHaveProperty("credential_canary");
     expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
   });
 
