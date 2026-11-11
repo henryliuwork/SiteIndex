@@ -14,6 +14,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { lstat, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
+import type { WordPressCredential } from "../shared/wordpress-credential-types.js";
 import {
   isJobName,
   isJobProgress,
@@ -23,7 +24,12 @@ import {
   type JobWorkerMessage,
   type JobWorkerStartMessage,
 } from "./job-protocol.js";
-import { sanitizeJobProgress, sanitizeJobResult, sanitizeWorkerText } from "./worker-output-sanitizer.js";
+import {
+  sanitizeJobProgress,
+  sanitizeJobResult,
+  sanitizeWorkerText,
+  wordpressCredentialSensitiveValues,
+} from "./worker-output-sanitizer.js";
 
 const START_TIMEOUT_MS = 30_000;
 
@@ -39,6 +45,7 @@ export interface JobManagerOptions {
   workerPath: string;
   getSettings(): Promise<AppSettings>;
   getBrowserExecutablePath?(settings: AppSettings): Promise<string | null>;
+  getWordPressCredential?(id: ProjectId, projectPath: string): Promise<WordPressCredential | null>;
   resolveProject(id: ProjectId): string | Promise<string>;
   fork(modulePath: string): UtilityProcessLike;
   emitProgress(progress: JobProgress): void;
@@ -59,6 +66,8 @@ interface JobEntry {
   trigger: JobTrigger;
   settings: AppSettings;
   browserPath: string | null;
+  wordpressCredential: WordPressCredential | null;
+  sensitiveValues: string[];
   child: UtilityProcessLike;
   started: Promise<string>;
   resolveStarted(runId: string): void;
@@ -134,6 +143,9 @@ export function createJobManager(options: JobManagerOptions) {
     if (entriesByProject.get(entry.key) === entry) entriesByProject.delete(entry.key);
     if (entry.runId && entriesByRunId.get(entry.runId) === entry) entriesByRunId.delete(entry.runId);
     clearTimeout(entry.startupTimer);
+    entry.wordpressCredential = null;
+    entry.sensitiveValues.fill("");
+    entry.sensitiveValues.length = 0;
     if (entriesByProject.size === 0) {
       for (const resolve of idleWaiters) resolve();
       idleWaiters.clear();
@@ -280,9 +292,12 @@ export function createJobManager(options: JobManagerOptions) {
           deviceName: entry.settings.device_name,
           cacheDir: entry.settings.cache_dir,
           browserPath: entry.browserPath,
+          ...(entry.wordpressCredential ? { wordpressCredential: entry.wordpressCredential } : {}),
         },
       };
       entry.child.postMessage(workerMessage);
+      workerMessage.context.wordpressCredential = undefined;
+      entry.wordpressCredential = null;
       return;
     }
     if (message.type === "started") {
@@ -300,12 +315,9 @@ export function createJobManager(options: JobManagerOptions) {
     if (message.type === "progress") {
       if (isJobProgress(message.progress)) {
         if (entry.request.job === "init" && message.progress.step === "schedule") return;
-        // Media Jobs do not receive vault credentials yet. When they are wired,
-        // inject transient credential-derived values here and pass them to every
-        // sanitizer call; pattern redaction alone cannot guarantee removal of a
-        // raw password or unlabeled Base64 value.
+        // Known credential-derived values are redacted even without recognizable auth labels.
         options.emitProgress({
-          ...sanitizeJobProgress(message.progress),
+          ...sanitizeJobProgress(message.progress, entry.sensitiveValues),
           runId: entry.runId ?? message.progress.runId,
         });
       }
@@ -313,26 +325,32 @@ export function createJobManager(options: JobManagerOptions) {
     }
     if (message.type === "finished") {
       if (!isJobResult(message.result)) return;
-      // The sanitizer supports injected known values, but currently receives none:
-      // media Jobs are not wired and credentials never enter a worker request.
-      entry.result = sanitizeJobResult(message.result);
+      entry.result = sanitizeJobResult(message.result, entry.sensitiveValues);
       entry.oosRate = typeof message.oosRate === "number" ? message.oosRate : null;
       entry.child.kill();
       return;
     }
     if (message.type === "fatal") {
-      // Keep this path on the same value-level redaction boundary when credential
-      // injection is added for media Jobs.
-      const detail = typeof message.message === "string" ? sanitizeWorkerText(message.message) : "未知 Worker 错误。";
+      const detail =
+        typeof message.message === "string"
+          ? sanitizeWorkerText(message.message, entry.sensitiveValues)
+          : "未知 Worker 错误。";
       if (!entry.runId) entry.rejectStarted(jobError("UNKNOWN", "Job utilityProcess 执行失败。", detail));
       entry.child.kill();
     }
   }
 
-  async function start(request: Omit<JobRequest, "trigger">, trigger: JobTrigger) {
+  async function start(request: Omit<JobRequest, "trigger">, trigger: JobTrigger, allowMedia = false) {
     if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
     if (!request || typeof request.projectPath !== "string" || !request.projectPath.trim() || !isJobName(request.job)) {
       throw jobError("CONFIG_INVALID", "Job 请求无效。");
+    }
+    if ((request.job === "media") !== allowMedia) throw jobError("CONFIG_INVALID", "media 任务只能通过专用接口启动。");
+    if (
+      request.job === "media" &&
+      (!Array.isArray(request.skus) || request.skus.some((sku) => typeof sku !== "string" || !sku.trim()))
+    ) {
+      throw jobError("CONFIG_INVALID", "媒体准备 SKU 列表无效。");
     }
     const projectPath = path.resolve(request.projectPath);
     const key = projectKey(projectPath);
@@ -342,6 +360,33 @@ export function createJobManager(options: JobManagerOptions) {
       ? await options.getBrowserExecutablePath(settings)
       : settings.browser.executable_path;
     if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
+    const projectId = path.basename(projectPath) as ProjectId;
+    const wordpressCredential =
+      request.job === "media" ? await options.getWordPressCredential?.(projectId, projectPath) : null;
+    if (request.job === "media" && !wordpressCredential) {
+      throw jobError("WP_NOT_CONFIGURED", "尚未配置此项目的 WordPress 应用程序密码。");
+    }
+    const sensitiveValues = wordpressCredential ? wordpressCredentialSensitiveValues(wordpressCredential) : [];
+    if (
+      sensitiveValues.some(
+        (secret) =>
+          secret && (projectPath.includes(secret) || (request.skus ?? []).some((sku) => sku.includes(secret))),
+      )
+    ) {
+      throw jobError("CONFIG_INVALID", "媒体准备请求包含不允许的敏感内容。");
+    }
+    const safeRequest: Omit<JobRequest, "trigger"> = {
+      projectPath,
+      job: request.job,
+      ...(request.job === "media"
+        ? { skus: request.skus as string[] }
+        : {
+            ...(typeof request.only === "string" ? { only: request.only } : {}),
+            ...(typeof request.date === "string" ? { date: request.date } : {}),
+            ...(typeof request.force === "boolean" ? { force: request.force } : {}),
+            ...(typeof request.dryRun === "boolean" ? { dryRun: request.dryRun } : {}),
+          }),
+    };
     const child = options.fork(options.workerPath);
 
     let resolveStarted!: (runId: string) => void;
@@ -357,11 +402,13 @@ export function createJobManager(options: JobManagerOptions) {
     const entry: JobEntry = {
       key,
       projectPath,
-      projectId: path.basename(projectPath) as ProjectId,
-      request,
+      projectId,
+      request: safeRequest,
       trigger,
       settings,
       browserPath,
+      wordpressCredential: wordpressCredential ?? null,
+      sensitiveValues,
       child,
       started,
       resolveStarted,
@@ -410,6 +457,10 @@ export function createJobManager(options: JobManagerOptions) {
     },
     async run(request: Omit<JobRequest, "trigger">) {
       const started = await start(request, "manual");
+      return { runId: started.runId };
+    },
+    async runMedia(request: Omit<JobRequest, "trigger" | "job"> & { job: "media" }) {
+      const started = await start(request, "manual", true);
       return { runId: started.runId };
     },
     async runAndWait(request: Omit<JobRequest, "trigger">, trigger: JobTrigger): Promise<JobResult> {

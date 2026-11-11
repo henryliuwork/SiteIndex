@@ -25,7 +25,7 @@ describe("utilityProcess output sanitization", () => {
   it("sanitizes worker progress and finished errors before they reach IPC or run history", () => {
     const progress: JobProgress = {
       runId: "fictional-run",
-      projectPath: "C:/fictional/project",
+      projectPath: "C:/fictional-token/project",
       job: "weekly",
       pct: null,
       level: "error",
@@ -42,7 +42,8 @@ describe("utilityProcess output sanitization", () => {
       steps: [{ key: "upload", status: "failed", message: "fictional-password" }],
     };
 
-    expect(JSON.stringify(sanitizeJobProgress(progress, ["fictional-token"]))).not.toContain("fictional-token");
+    const safeProgress = JSON.stringify(sanitizeJobProgress(progress, ["fictional-token"]));
+    expect(safeProgress).not.toContain("fictional-token");
     const safeResult = JSON.stringify(
       sanitizeJobResult(result, ["fictional-user", "fictional-password", "fictional-token"]),
     );

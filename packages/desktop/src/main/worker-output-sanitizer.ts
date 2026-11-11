@@ -36,17 +36,18 @@ export function wordpressCredentialSensitiveValues(credential: WordPressCredenti
 }
 
 export function sanitizeJobProgress(progress: JobProgress, sensitiveValues: readonly string[] = []): JobProgress {
-  return { ...progress, message: sanitizeWorkerText(progress.message, sensitiveValues) };
+  return sanitizeDeep(progress, sensitiveValues) as JobProgress;
 }
 
 export function sanitizeJobResult(result: JobResult, sensitiveValues: readonly string[] = []): JobResult {
-  const sanitizeDeep = (value: unknown): unknown => {
-    if (typeof value === "string") return sanitizeWorkerText(value, sensitiveValues);
-    if (Array.isArray(value)) return value.map(sanitizeDeep);
-    if (typeof value === "object" && value !== null) {
-      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeDeep(item)]));
-    }
-    return value;
-  };
-  return sanitizeDeep(result) as JobResult;
+  return sanitizeDeep(result, sensitiveValues) as JobResult;
+}
+
+function sanitizeDeep(value: unknown, sensitiveValues: readonly string[]): unknown {
+  if (typeof value === "string") return sanitizeWorkerText(value, sensitiveValues);
+  if (Array.isArray(value)) return value.map((item) => sanitizeDeep(item, sensitiveValues));
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeDeep(item, sensitiveValues)]));
+  }
+  return value;
 }

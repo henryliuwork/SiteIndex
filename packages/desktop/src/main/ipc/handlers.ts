@@ -9,6 +9,7 @@ import { createFilesHandlers } from "./files.js";
 import { createFoldersHandlers } from "./folders.js";
 import { createInventoryHandlers } from "./inventory.js";
 import { createJobsHandlers } from "./jobs.js";
+import { createMediaHandlers } from "./media.js";
 import { createOverviewHandlers } from "./overview.js";
 import { createProductsHandlers } from "./products.js";
 import { createProjectsHandlers } from "./projects.js";
@@ -45,6 +46,7 @@ export function createIpcHandlerImplementations(context: IpcContext): IpcHandler
     ...createFilesHandlers(context),
     ...createFoldersHandlers(context),
     ...createJobsHandlers(context),
+    ...createMediaHandlers(context),
     ...createScheduleHandlers(context),
     ...createRunnerHandlers(context),
     ...createShellHandlers(),
