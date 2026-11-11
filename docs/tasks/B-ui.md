@@ -99,6 +99,7 @@
 ## v0.4.1 · WordPress 凭据设置
 - [x] 软件设置按项目 EDM 图片托管配置，按 HTTPS origin 分组并通过 `window.siteindexWindow.wordpressCredentials` 配置、替换、删除和重读本机凭据状态；用户名/密码不回显，提交后清空输入；浏览器 mock 只保存合成状态，不持久化凭据值 — [PR #412](https://github.com/henryliuwork/SiteIndex/pull/412)
 - [x] 明确区分“本机凭据已保存”和“媒体上传未接通”；提示旧 `.env` 需用户自行迁移/移除，软件不会扫描或删除该文件 — [PR #412](https://github.com/henryliuwork/SiteIndex/pull/412)
+- [x] 凭据 UI 区分 Desktop bridge 缺失与本机安全存储不可用；bridge 缺失时不显示无效重试或凭据管理操作 — 本 PR
 - [x] WordPress 凭据 UI smoke helper：按唯一 HTTPS origin 区块执行配置、实际替换、清除与无回显断言 — [PR #425](https://github.com/henryliuwork/SiteIndex/pull/425)；本 PR 增加 `configure` / `replace` / `delete` / `assert-status` 阶段及 `otherOrigins` 状态断言，供 E 在真实 stop/relaunch 后传入新 Page 检查双站点状态；进程生命周期仍由 E 管理。packaged Electron 调用方必须声明 APPDATA、LOCALAPPDATA、USERPROFILE、HOME、TEMP、TMP、项目根和 vault 均位于同一临时隔离根。helper 只做路径字符串检查，不证明实际环境或 junction 隔离，结果固定标为 UI-only，不代表真实 IPC
 - [ ] 打包 Electron 凭据 UI/IPC 验收：等待 C/E 提供隔离 APPDATA、LOCALAPPDATA、合成项目根与临时 vault 的安全启动入口；mock 与 Desktop 假 transport/handler/vault 测试不能代替该验收
 ## 交付给其他工作流

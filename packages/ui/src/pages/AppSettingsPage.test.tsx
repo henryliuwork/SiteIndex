@@ -296,13 +296,19 @@ describe("AppSettingsPage background options", () => {
     expect(await screen.findByText("安全存储不可用")).toBeTruthy();
     expect(screen.getByText(/本机安全存储不可用/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "配置凭据" })).toBeNull();
+    const callsBeforeRetry = bridge.status.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
-    await waitFor(() => expect(bridge.status.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(bridge.status.mock.calls.length).toBeGreaterThan(callsBeforeRetry));
   });
 
-  it("shows no configure action when the optional bridge is missing", async () => {
+  it("identifies a missing desktop credential bridge without a no-op retry or credential actions", async () => {
     await renderSettings({ wordpress: true, bridge: null });
-    expect(await screen.findByText("安全存储不可用")).toBeTruthy();
+    expect(await screen.findByText("桌面接口不可用")).toBeTruthy();
+    expect(screen.getByText(/当前桌面版本未提供完整的本机凭据管理接口/)).toBeTruthy();
+    expect(screen.queryByText("安全存储不可用")).toBeNull();
+    expect(screen.queryByRole("button", { name: "重新检查" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
     expect(screen.queryByRole("button", { name: "配置凭据" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "删除本机凭据" })).toBeNull();
   });
 });

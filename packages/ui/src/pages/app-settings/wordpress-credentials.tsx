@@ -150,9 +150,9 @@ export function WordPressCredentialsCard() {
 
       {targets.map((target, index) => {
         const statusQuery = statusQueries[index];
-        const state = statusQuery?.data?.state ?? (bridgeReady ? undefined : "unavailable");
+        const state = bridgeReady ? statusQuery?.data?.state : undefined;
         const presentation = state ? statusPresentation(state) : null;
-        const statusError = statusQuery?.isError ? errorMessage(statusQuery.error, "状态读取失败。") : null;
+        const statusError = bridgeReady && statusQuery?.isError ? errorMessage(statusQuery.error, "状态读取失败。") : null;
         return (
           <section className="si-wp-credential-origin" key={target.origin} aria-label={`凭据：${target.origin}`}>
             <div className="si-wp-credential-origin-main">
@@ -161,7 +161,7 @@ export function WordPressCredentialsCard() {
                 <small>关联项目：{target.projects.join("、")}</small>
               </div>
               <div className="si-wp-credential-origin-actions">
-                {statusQuery?.isLoading && <span role="status" className="si-setting-hint">正在读取状态…</span>}
+                {bridgeReady && statusQuery?.isLoading && <span role="status" className="si-setting-hint">正在读取状态…</span>}
                 {presentation && <Chip tone={presentation.tone}>{presentation.label}</Chip>}
                 {bridgeReady && state && state !== "unavailable" && <>
                   <Button size="small" onClick={() => { setUsername(""); setApplicationPassword(""); setEditing(target); }}>
@@ -169,13 +169,14 @@ export function WordPressCredentialsCard() {
                   </Button>
                   {(state === "configured" || state === "needs_reentry") && <Button size="small" variant="danger" onClick={() => setPendingDelete(target)}>删除本机凭据</Button>}
                 </>}
-                {statusQuery?.isError && <Button size="small" onClick={() => void statusQuery.refetch()}>重试</Button>}
+                {bridgeReady && statusQuery?.isError && <Button size="small" onClick={() => void statusQuery.refetch()}>重试</Button>}
                 {bridgeReady && state === "unavailable" && <Button size="small" onClick={() => void statusQuery?.refetch()}>重新检查</Button>}
-                {!bridgeReady && <Button size="small" onClick={() => void targetsQuery.refetch()}>重新检查</Button>}
+                {!bridgeReady && <Chip tone="warn">桌面接口不可用</Chip>}
               </div>
             </div>
             {statusError && <p className="si-setting-error si-wp-origin-error">读取凭据状态失败：{statusError}</p>}
-            {state === "unavailable" && <p className="si-setting-error si-wp-origin-error">当前系统的本机安全存储不可用，请更新桌面应用或在支持的设备上重试。</p>}
+            {!bridgeReady && <p className="si-setting-error si-wp-origin-error">当前桌面版本未提供完整的本机凭据管理接口，无法读取或管理此网站的凭据。请更新并重新启动 SiteIndex 后重试。</p>}
+            {bridgeReady && state === "unavailable" && <p className="si-setting-error si-wp-origin-error">当前设备的本机安全存储不可用。请检查系统安全存储后重新检查。</p>}
           </section>
         );
       })}
