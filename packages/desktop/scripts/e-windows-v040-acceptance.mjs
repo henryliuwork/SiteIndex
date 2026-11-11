@@ -93,6 +93,7 @@ let failed = null;
 let workspaceProbeData = null;
 let syntheticSiteServer = null;
 let w2RuntimeDiagnostics = [];
+let activeW2CheckNumber = null;
 
 function record(name, passed, evidence = {}) {
   report.checks.push({ name, status: passed ? "passed" : "failed", evidence });
@@ -529,13 +530,18 @@ async function clickProjectTab(page, label) {
 }
 
 async function waitForW2Table(page) {
-  await page.locator(".si-data-table").first().waitFor({ state: "visible", timeout: 20_000 });
-  await page.locator(".si-data-table .si-pagination-count").first().waitFor({ state: "visible", timeout: 20_000 });
+  await page.locator(".si-data-table:visible").first().waitFor({ state: "visible", timeout: 20_000 });
+  await page.locator(".si-data-table:visible .si-pagination-count").first().waitFor({ state: "visible", timeout: 20_000 });
 }
 
 async function readW2TableMetrics(page) {
   return page.evaluate(() => {
-    const table = document.querySelector(".si-data-table");
+    const visibleTables = [...document.querySelectorAll(".si-data-table")].filter((item) => {
+      const rect = item.getBoundingClientRect();
+      const style = getComputedStyle(item);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    });
+    const table = visibleTables[0] ?? null;
     const count = table?.querySelector(".si-pagination-count")?.textContent?.trim() ?? "";
     const match = count.match(/\/(\s*[\d,]+)/u);
     return {
@@ -549,37 +555,97 @@ async function readW2TableMetrics(page) {
       nextEnabled: table?.querySelector('button[aria-label="下一页"]') instanceof HTMLButtonElement
         && !table.querySelector('button[aria-label="下一页"]').disabled,
       headerCount: table?.querySelectorAll("thead th").length ?? 0,
+      visibleTableCount: visibleTables.length,
     };
+  });
+}
+
+async function readW2VisibleRowKeys(page) {
+  return page.evaluate(() => {
+    const table = [...document.querySelectorAll(".si-data-table")].find((item) => {
+      const rect = item.getBoundingClientRect();
+      const style = getComputedStyle(item);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    });
+    return [...(table?.querySelectorAll("tbody tr") ?? [])].map((row) => row.getAttribute("data-row-id") ?? row.textContent?.trim() ?? "");
   });
 }
 
 async function exerciseW2Pagination(page, expectedTotal) {
   const before = await readW2TableMetrics(page);
+  const table = page.locator(".si-data-table:visible").first();
+  const nextButton = table.getByRole("button", { name: "下一页", exact: true });
+  const nextButtonCount = await nextButton.count();
+  const firstPageRows = await readW2VisibleRowKeys(page);
   let advanced = false;
   let returned = false;
-  if (before.nextEnabled) {
-    await page.getByRole("button", { name: "下一页", exact: true }).click();
-    await page.waitForFunction((oldText) => {
-      const count = document.querySelector(".si-data-table .si-pagination-count")?.textContent?.trim();
-      return Boolean(count && count !== oldText);
-    }, before.paginationText, { timeout: 10_000 });
-    const secondPage = await readW2TableMetrics(page);
-    advanced = secondPage.paginationText !== before.paginationText && secondPage.total === expectedTotal;
-    if (await page.getByRole("button", { name: "上一页", exact: true }).isEnabled()) {
-      await page.getByRole("button", { name: "上一页", exact: true }).click();
-      await page.waitForFunction((oldText) => document.querySelector(".si-data-table .si-pagination-count")?.textContent?.trim() === oldText,
-        before.paginationText, { timeout: 10_000 });
-      returned = true;
+  let clickCompleted = false;
+  let advanceError = null;
+  let returnError = null;
+  let secondPage = null;
+  let secondPageRows = [];
+  let restoredPageRows = [];
+  if (before.nextEnabled && nextButtonCount === 1) {
+    try {
+      await nextButton.click({ timeout: 5_000 });
+      clickCompleted = true;
+      await page.waitForFunction((oldText) => {
+        const visibleTable = [...document.querySelectorAll(".si-data-table")].find((item) => {
+          const rect = item.getBoundingClientRect();
+          const style = getComputedStyle(item);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        });
+        const count = visibleTable?.querySelector(".si-pagination-count")?.textContent?.trim();
+        return Boolean(count && count !== oldText);
+      }, before.paginationText, { timeout: 10_000 });
+      secondPage = await readW2TableMetrics(page);
+      secondPageRows = await readW2VisibleRowKeys(page);
+      advanced = secondPage.paginationText !== before.paginationText
+        && secondPage.total === expectedTotal
+        && secondPage.renderedRows > 0
+        && firstPageRows.join("\n") !== secondPageRows.join("\n");
+    } catch (error) {
+      advanceError = safeMessage(error);
+      secondPage = await readW2TableMetrics(page).catch(() => null);
+      secondPageRows = await readW2VisibleRowKeys(page).catch(() => []);
+    }
+    const previousButton = table.getByRole("button", { name: "上一页", exact: true });
+    if (clickCompleted && secondPage?.paginationText !== before.paginationText
+      && await previousButton.count() === 1 && await previousButton.isEnabled().catch(() => false)) {
+      try {
+        await previousButton.click({ timeout: 5_000 });
+        await page.waitForFunction((oldText) => {
+          const visibleTable = [...document.querySelectorAll(".si-data-table")].find((item) => {
+            const rect = item.getBoundingClientRect();
+            const style = getComputedStyle(item);
+            return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+          });
+          return visibleTable?.querySelector(".si-pagination-count")?.textContent?.trim() === oldText;
+        }, before.paginationText, { timeout: 10_000 });
+        restoredPageRows = await readW2VisibleRowKeys(page);
+        returned = restoredPageRows.join("\n") === firstPageRows.join("\n");
+      } catch (error) {
+        returnError = safeMessage(error);
+      }
     }
   }
-  return {
+  const passed = before.tableVisible && before.scrollRegionVisible && before.paginationVisible
+    && before.total === expectedTotal && before.headerCount > 0 && before.nextEnabled
+    && nextButtonCount === 1 && clickCompleted && advanced && returned;
+  return { passed, evidence: {
     before,
     expectedTotal,
-    advanced,
+    nextButtonCount,
+    clickCompleted,
+    firstPageRowCount: firstPageRows.length,
+    secondPage,
+    secondPageRowCount: secondPageRows.length,
+    secondPageRowsDiffer: firstPageRows.join("\n") !== secondPageRows.join("\n"),
+    advanceError,
     returned,
-    passed: before.tableVisible && before.scrollRegionVisible && before.paginationVisible
-      && before.total === expectedTotal && before.headerCount > 0 && advanced && returned,
-  };
+    restoredFirstPageRows: restoredPageRows.length,
+    returnError,
+  } };
 }
 
 async function packagedW2Baseline(page) {
@@ -655,6 +721,7 @@ async function packagedW2Baseline(page) {
 async function attemptW2(name, evidenceType, action) {
   const diagnosticsStart = w2RuntimeDiagnostics.length;
   const checkNumber = report.w2Acceptance.checks.length + 1;
+  activeW2CheckNumber = checkNumber;
   try {
     const result = await action();
     const evidence = result.evidence ?? result;
@@ -680,18 +747,25 @@ async function attemptW2(name, evidenceType, action) {
     }
     recordW2(name, false, evidenceType, evidence);
     return null;
+  } finally {
+    activeW2CheckNumber = null;
   }
 }
 
 let pageForW2Diagnostics = null;
 
-async function captureW2FailureScreenshot(page, checkNumber) {
+async function captureW2FailureScreenshot(page, checkNumber, kind = "failure") {
   if (!page || page.isClosed()) return null;
   const outputDirectory = OUTPUT_DIR ? path.join(OUTPUT_DIR, "w2-failures") : path.join(TEST_ROOT, "w2-failures");
   await mkdir(outputDirectory, { recursive: true });
-  const fileName = `w2-check-${String(checkNumber).padStart(2, "0")}-failure.png`;
+  const fileName = `w2-check-${String(checkNumber).padStart(2, "0")}-${kind}.png`;
   await page.screenshot({ path: path.join(outputDirectory, fileName), fullPage: true });
   return path.join("w2-failures", fileName);
+}
+
+async function captureW2InteractionScreenshot(page) {
+  if (activeW2CheckNumber === null) return null;
+  return captureW2FailureScreenshot(page, activeW2CheckNumber, "interaction");
 }
 
 async function acceptNextW2Dialog(page, trigger) {
@@ -740,6 +814,63 @@ async function readW2SeoStatusCounts(page, rule) {
   }, { projectId: W2_PROJECT_ID, targetRule: rule });
 }
 
+async function readW2SeoRuleState(page, rule) {
+  return page.evaluate(async ({ projectId, targetRule }) => {
+    const api = window.siteindex;
+    const [settings, summary, open, ignored] = await Promise.all([
+      api.seo.getRuleSettings(projectId),
+      api.seo.summary(projectId),
+      api.seo.listIssues(projectId, { page: 1, pageSize: 0, filters: { rules: [targetRule], status: "open" } }),
+      api.seo.listIssues(projectId, { page: 1, pageSize: 0, filters: { rules: [targetRule], status: "ignored" } }),
+    ]);
+    const setting = settings.find((item) => item.rule === targetRule);
+    const openSummary = summary.kpis.find((item) => item.key === "issues")?.value ?? "";
+    return {
+      ruleIgnored: setting?.ignored ?? null,
+      rulePendingCount: setting?.pending_count ?? null,
+      summaryOpenCount: Number(openSummary),
+      ruleOpenCount: open.total,
+      ruleIgnoredCount: ignored.total,
+    };
+  }, { projectId: W2_PROJECT_ID, targetRule: rule });
+}
+
+async function waitForW2SeoRuleState(page, rule, expected) {
+  await page.waitForFunction(async ({ projectId, targetRule, state }) => {
+    const api = window.siteindex;
+    const [settings, summary, open, ignored] = await Promise.all([
+      api.seo.getRuleSettings(projectId),
+      api.seo.summary(projectId),
+      api.seo.listIssues(projectId, { page: 1, pageSize: 0, filters: { rules: [targetRule], status: "open" } }),
+      api.seo.listIssues(projectId, { page: 1, pageSize: 0, filters: { rules: [targetRule], status: "ignored" } }),
+    ]);
+    const setting = settings.find((item) => item.rule === targetRule);
+    const summaryOpen = Number(summary.kpis.find((item) => item.key === "issues")?.value ?? NaN);
+    return setting?.ignored === state.ruleIgnored
+      && setting.pending_count === state.rulePendingCount
+      && summaryOpen === state.summaryOpenCount
+      && open.total === state.ruleOpenCount
+      && ignored.total === state.ruleIgnoredCount;
+  }, { projectId: W2_PROJECT_ID, targetRule: rule, state: expected }, { timeout: 15_000 });
+}
+
+async function readW2SeoOpenKpi(page) {
+  return page.evaluate(() => {
+    const region = document.querySelector(".si-seo-kpis");
+    const text = region?.innerText ?? "";
+    const match = text.match(/开放问题\s*([\d,]+)/u);
+    return match ? Number(match[1].replaceAll(",", "")) : null;
+  });
+}
+
+async function waitForW2SeoOpenKpi(page, expectedCount) {
+  await page.waitForFunction((expected) => {
+    const region = document.querySelector(".si-seo-kpis");
+    const match = region?.innerText.match(/开放问题\s*([\d,]+)/u);
+    return Boolean(match && Number(match[1].replaceAll(",", "")) === expected);
+  }, expectedCount, { timeout: 15_000 });
+}
+
 async function readW2SeoUiContext(page) {
   return page.evaluate(() => {
     const [, query = ""] = window.location.hash.split("?");
@@ -749,16 +880,21 @@ async function readW2SeoUiContext(page) {
       onSeoRoute: /\/seo(?:\?|$)/u.test(window.location.hash),
       rule: params.get("rule"),
       status: params.get("status"),
-      issueRowCount: document.querySelectorAll(".si-data-table tbody tr").length,
+      issueRowCount: [...document.querySelectorAll(".si-data-table")].find((table) => {
+        const rect = table.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      })?.querySelectorAll("tbody tr").length ?? 0,
       statusLabelPresent: Boolean(statusControl),
     };
   });
 }
 
 async function clickW2IssueActionWithConfirmation(page, menuItemName) {
-  const row = page.locator(".si-data-table tbody tr").first();
+  const rows = page.locator(".si-data-table:visible tbody tr");
+  const rowCount = await rows.count();
+  const rowIndex = Math.min(3, Math.max(0, rowCount - 1));
+  const row = rows.nth(rowIndex);
   const actionButton = row.getByRole("button", { name: /问题操作：/u });
-  const rowCount = await page.locator(".si-data-table tbody tr").count();
   const actionButtonCount = await actionButton.count();
   if (rowCount === 0 || actionButtonCount !== 1) {
     return {
@@ -770,6 +906,7 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
       message: null,
       dialogError: null,
       rowCount,
+      rowIndex,
       actionButtonCount,
       menuItemCount: 0,
       menuItemVisible: false,
@@ -778,12 +915,38 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
 
   let menuItemCount = 0;
   let menuItemVisible = false;
+  let targetGeometry = null;
+  let wheelBefore = null;
+  let wheelAfter = null;
+  let wheelDeltaY = 0;
   try {
+    const scrollRegion = page.locator(".si-table-scroll:visible").first();
+    wheelBefore = await scrollRegion.evaluate((element) => element.scrollTop).catch(() => null);
+    await scrollRegion.hover({ timeout: 5_000 });
+    wheelDeltaY = 120;
+    await page.mouse.wheel(0, wheelDeltaY);
+    await delay(150);
+    wheelAfter = await scrollRegion.evaluate((element) => element.scrollTop).catch(() => null);
+    const readTargetGeometry = () => actionButton.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      const header = button.closest("table")?.querySelector("thead th.is-sticky-right");
+      const headerRect = header?.getBoundingClientRect();
+      const overlapWidth = headerRect ? Math.max(0, Math.min(rect.right, headerRect.right) - Math.max(rect.left, headerRect.left)) : 0;
+      const overlapHeight = headerRect ? Math.max(0, Math.min(rect.bottom, headerRect.bottom) - Math.max(rect.top, headerRect.top)) : 0;
+      return {
+        button: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        stickyHeader: headerRect ? { x: Math.round(headerRect.x), y: Math.round(headerRect.y), width: Math.round(headerRect.width), height: Math.round(headerRect.height) } : null,
+        stickyHeaderOverlapsButton: overlapWidth > 0 && overlapHeight > 0,
+        buttonBelowStickyHeader: !headerRect || rect.top >= headerRect.bottom,
+      };
+    });
+    targetGeometry = await readTargetGeometry();
     await actionButton.click({ timeout: 5_000 });
     const menuItem = page.getByRole("menuitem", { name: menuItemName, exact: true });
     menuItemCount = await menuItem.count();
     menuItemVisible = menuItemCount === 1 && await menuItem.isVisible();
     if (!menuItemVisible) {
+      const failureScreenshot = await captureW2InteractionScreenshot(page).catch(() => null);
       return {
         confirmationType: "native-window.confirm",
         actionCompleted: false,
@@ -796,11 +959,29 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
         actionButtonCount,
         menuItemCount,
         menuItemVisible,
+        targetGeometry,
+        rowIndex,
+        normalWheel: { deltaY: wheelDeltaY, scrollTopBefore: wheelBefore, scrollTopAfter: wheelAfter },
+        failureScreenshot,
       };
     }
     const confirmation = await acceptNextW2Dialog(page, () => menuItem.click({ timeout: 5_000 }));
-    return { ...confirmation, rowCount, actionButtonCount, menuItemCount, menuItemVisible };
+    return { ...confirmation, rowCount, rowIndex, actionButtonCount, menuItemCount, menuItemVisible, targetGeometry, normalWheel: { deltaY: wheelDeltaY, scrollTopBefore: wheelBefore, scrollTopAfter: wheelAfter } };
   } catch (error) {
+    targetGeometry = await actionButton.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      const header = button.closest("table")?.querySelector("thead th.is-sticky-right");
+      const headerRect = header?.getBoundingClientRect();
+      const overlapWidth = headerRect ? Math.max(0, Math.min(rect.right, headerRect.right) - Math.max(rect.left, headerRect.left)) : 0;
+      const overlapHeight = headerRect ? Math.max(0, Math.min(rect.bottom, headerRect.bottom) - Math.max(rect.top, headerRect.top)) : 0;
+      return {
+        button: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        stickyHeader: headerRect ? { x: Math.round(headerRect.x), y: Math.round(headerRect.y), width: Math.round(headerRect.width), height: Math.round(headerRect.height) } : null,
+        stickyHeaderOverlapsButton: overlapWidth > 0 && overlapHeight > 0,
+        buttonBelowStickyHeader: !headerRect || rect.top >= headerRect.bottom,
+      };
+    }).catch(() => targetGeometry);
+    const failureScreenshot = await captureW2InteractionScreenshot(page).catch(() => null);
     return {
       confirmationType: "native-window.confirm",
       actionCompleted: false,
@@ -810,9 +991,13 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
       message: null,
       dialogError: null,
       rowCount,
+      rowIndex,
       actionButtonCount,
       menuItemCount,
       menuItemVisible,
+      targetGeometry,
+      normalWheel: { deltaY: wheelDeltaY, scrollTopBefore: wheelBefore, scrollTopAfter: wheelAfter },
+      failureScreenshot,
     };
   }
 }
@@ -913,7 +1098,7 @@ async function testW2Pages(page, syntheticSite) {
     const initialUi = await readW2SeoUiContext(page);
     const before = await readW2SeoStatusCounts(page, "title_missing");
     const routeAndFilterReady = initialUi.onSeoRoute && initialUi.rule === "title_missing"
-      && initialUi.status === "open" && initialUi.issueRowCount > 0;
+      && initialUi.status === "open" && initialUi.statusLabelPresent && initialUi.issueRowCount > 0;
     const processedConfirmation = routeAndFilterReady
       ? await clickW2IssueActionWithConfirmation(page, "标记已处理")
       : {
@@ -943,7 +1128,11 @@ async function testW2Pages(page, syntheticSite) {
     let openPaginationWaitError = null;
     try {
       await page.waitForFunction((expected) => {
-        const count = document.querySelector(".si-data-table .si-pagination-count")?.textContent ?? "";
+        const table = [...document.querySelectorAll(".si-data-table")].find((item) => {
+          const rect = item.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        const count = table?.querySelector(".si-pagination-count")?.textContent ?? "";
         return count.includes(`/ ${expected}`);
       }, String(expectedOpenAfterProcess), { timeout: 10_000 });
     } catch (error) {
@@ -961,7 +1150,7 @@ async function testW2Pages(page, syntheticSite) {
     } catch (error) {
       restoreFilterError = safeMessage(error);
     }
-    const restoreActionButtonCount = await page.getByRole("button", { name: /问题操作：/u }).count();
+    const restoreActionButtonCount = await page.locator(".si-data-table:visible tbody tr").getByRole("button", { name: /问题操作：/u }).count();
     let restoreConfirmation = {
       confirmationType: "native-window.confirm",
       actionCompleted: false,
@@ -1029,58 +1218,105 @@ async function testW2Pages(page, syntheticSite) {
     await clickProjectTab(page, "SEO");
     await page.locator(".si-seo-controls").waitFor({ state: "visible", timeout: 15_000 });
     await page.getByRole("button", { name: "规则设置", exact: true }).click();
-    const ruleSection = page.locator(".si-seo-rule-setting").filter({ hasText: "Title 缺失" }).first();
+    let ruleSection = page.locator(".si-seo-rule-setting").filter({ hasText: "Title 缺失" }).first();
     await ruleSection.waitFor({ state: "visible", timeout: 15_000 });
-    const before = await readW2SeoStatusCounts(page, "title_missing");
+    const before = await readW2SeoRuleState(page, "title_missing");
+    const beforeCounts = await readW2SeoStatusCounts(page, "title_missing");
+    const beforeUiOpenCount = await readW2SeoOpenKpi(page);
     const ignoreButton = ruleSection.getByRole("button", { name: "忽略此规则", exact: true });
     const ignoreButtonCount = await ignoreButton.count();
-    const ignoreConfirmation = await acceptNextW2Dialog(page, () => ignoreButton.click());
+    const ignoreButtonVisible = ignoreButtonCount === 1 && await ignoreButton.isVisible();
+    const ignoreConfirmation = await acceptNextW2Dialog(page, () => ignoreButton.click({ timeout: 5_000 }));
     const ignoreConfirmationMatches = ignoreConfirmation.dialogObserved
       && ignoreConfirmation.dialogAccepted
       && ignoreConfirmation.message?.includes("忽略")
       && ignoreConfirmation.message?.includes("全站同一规则");
     let ignoreWaitError = null;
+    const expectedIgnoredState = {
+      ruleIgnored: true,
+      rulePendingCount: 0,
+      summaryOpenCount: before.summaryOpenCount - before.rulePendingCount,
+      ruleOpenCount: 0,
+      ruleIgnoredCount: beforeCounts.open,
+    };
     try {
-      await waitForW2SeoCount(page, "title_missing", "ignored", before.open);
+      await waitForW2SeoRuleState(page, "title_missing", expectedIgnoredState);
     } catch (error) {
       ignoreWaitError = safeMessage(error);
     }
-    const ignored = await readW2SeoStatusCounts(page, "title_missing");
+    let ignoreUiWaitError = null;
+    try {
+      await waitForW2SeoOpenKpi(page, expectedIgnoredState.summaryOpenCount);
+    } catch (error) {
+      ignoreUiWaitError = safeMessage(error);
+    }
+    const ignored = await readW2SeoRuleState(page, "title_missing");
+    const ignoredCounts = await readW2SeoStatusCounts(page, "title_missing");
+    const ignoredUiOpenCount = await readW2SeoOpenKpi(page);
+    const ruleDrawer = page.locator(".si-drawer");
+    let drawerReopenedForRestore = false;
+    if (!await ruleDrawer.isVisible().catch(() => false)) {
+      await page.getByRole("button", { name: "规则设置", exact: true }).click();
+      drawerReopenedForRestore = true;
+      ruleSection = page.locator(".si-seo-rule-setting").filter({ hasText: "Title 缺失" }).first();
+      await ruleSection.waitFor({ state: "visible", timeout: 15_000 });
+    }
     const restoreButton = ruleSection.getByRole("button", { name: "恢复此规则", exact: true });
     const restoreButtonCount = await restoreButton.count();
+    const restoreButtonVisible = restoreButtonCount === 1 && await restoreButton.isVisible();
     let restoreRuleConfirmation = {
       confirmationType: "native-window.confirm",
       actionCompleted: false,
-      actionError: "忽略后未出现可恢复规则按钮",
+      actionError: "规则设置未显示可恢复状态",
       dialogObserved: false,
       dialogAccepted: false,
       message: null,
       dialogError: null,
     };
-    if (restoreButtonCount === 1) {
-      restoreRuleConfirmation = await acceptNextW2Dialog(page, () => restoreButton.click());
+    if (restoreButtonVisible && ignored.ruleIgnored === true) {
+      restoreRuleConfirmation = await acceptNextW2Dialog(page, () => restoreButton.click({ timeout: 5_000 }));
     }
     const restoreRuleConfirmationMatches = restoreRuleConfirmation.dialogObserved
       && restoreRuleConfirmation.dialogAccepted
       && restoreRuleConfirmation.message?.includes("恢复")
       && restoreRuleConfirmation.message?.includes("全站同一规则");
     let restoreWaitError = null;
+    let restoreUiWaitError = null;
     if (restoreRuleConfirmation.dialogAccepted) {
       try {
-        await waitForW2SeoCount(page, "title_missing", "open", before.open);
+        await waitForW2SeoRuleState(page, "title_missing", before);
       } catch (error) {
         restoreWaitError = safeMessage(error);
       }
+      try {
+        await waitForW2SeoOpenKpi(page, before.summaryOpenCount);
+      } catch (error) {
+        restoreUiWaitError = safeMessage(error);
+      }
     }
-    const restored = await readW2SeoStatusCounts(page, "title_missing");
+    const restored = await readW2SeoRuleState(page, "title_missing");
+    const restoredCounts = await readW2SeoStatusCounts(page, "title_missing");
+    const restoredUiOpenCount = await readW2SeoOpenKpi(page);
     const passed = ignoreConfirmation.actionCompleted
-      && ignoreButtonCount === 1 && restoreRuleConfirmation.actionCompleted
-      && restoreButtonCount === 1
-      && before.open === W2_EXPECTED.issues - 6
+      && ignoreButtonCount === 1 && ignoreButtonVisible && restoreRuleConfirmation.actionCompleted
+      && restoreButtonCount === 1 && restoreButtonVisible
+      && before.ruleIgnored === false
+      && before.rulePendingCount === beforeCounts.open
+      && beforeUiOpenCount === before.summaryOpenCount
+      && beforeCounts.open === W2_EXPECTED.issues - 6
       && ignoreConfirmationMatches && restoreRuleConfirmationMatches
-      && ignored.ignored === before.open
-      && restored.open === before.open
-      && restored.ignored === 0;
+      && ignored.ruleIgnored === true && ignored.rulePendingCount === 0
+      && ignored.ruleOpenCount === 0 && ignored.ruleIgnoredCount === beforeCounts.open
+      && ignored.summaryOpenCount === expectedIgnoredState.summaryOpenCount
+      && ignoredUiOpenCount === expectedIgnoredState.summaryOpenCount && ignoreUiWaitError === null
+      && ignoredCounts.ignored === beforeCounts.open && ignoredCounts.open === 0
+      && restored.ruleIgnored === false
+      && restored.rulePendingCount === before.rulePendingCount
+      && restored.ruleOpenCount === beforeCounts.open
+      && restored.ruleIgnoredCount === 0
+      && restored.summaryOpenCount === before.summaryOpenCount
+      && restoredUiOpenCount === before.summaryOpenCount && restoreUiWaitError === null
+      && restoredCounts.open === beforeCounts.open && restoredCounts.ignored === 0;
     const closeDrawerButton = page.getByRole("button", { name: "关闭抽屉", exact: true });
     if (await closeDrawerButton.count()) await closeDrawerButton.click();
     return {
@@ -1088,10 +1324,17 @@ async function testW2Pages(page, syntheticSite) {
       evidence: {
         confirmationType: "native-window.confirm",
         before,
-        ignoreAction: { ...ignoreConfirmation, message: undefined, buttonCount: ignoreButtonCount, messageMatchesExpectedScope: Boolean(ignoreConfirmationMatches), stateWaitError: ignoreWaitError },
+        beforeCounts,
+        beforeUiOpenCount,
+        ignoreAction: { ...ignoreConfirmation, message: undefined, buttonCount: ignoreButtonCount, buttonVisible: ignoreButtonVisible, messageMatchesExpectedScope: Boolean(ignoreConfirmationMatches), stateWaitError: ignoreWaitError },
         ignored,
-        restoreAction: { ...restoreRuleConfirmation, message: undefined, buttonCount: restoreButtonCount, messageMatchesExpectedScope: Boolean(restoreRuleConfirmationMatches), stateWaitError: restoreWaitError },
+        ignoredCounts,
+        ignoredUiOpenCount,
+        ignoreUiWaitError,
+        restoreAction: { ...restoreRuleConfirmation, message: undefined, buttonCount: restoreButtonCount, buttonVisible: restoreButtonVisible, drawerReopenedForRestore, messageMatchesExpectedScope: Boolean(restoreRuleConfirmationMatches), stateWaitError: restoreWaitError, uiWaitError: restoreUiWaitError },
         restored,
+        restoredCounts,
+        restoredUiOpenCount,
         drawerOpened: true,
       },
     };
@@ -1107,12 +1350,18 @@ async function testW2Pages(page, syntheticSite) {
   await attemptW2("Inventory parent-only UI renders the deterministic parent's 30-day trend and rate", "ui", async () => {
     const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
     await checkbox.check();
-    await page.waitForFunction(() => document.querySelector(".si-pagination-count")?.textContent?.includes("/ 80"), null, { timeout: 10_000 });
+    await page.waitForFunction(() => {
+      const table = [...document.querySelectorAll(".si-data-table")].find((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      return table?.querySelector(".si-pagination-count")?.textContent?.includes("/ 80") ?? false;
+    }, null, { timeout: 10_000 });
     const metrics = await readW2TableMetrics(page);
     const toolbarText = await page.locator(".si-table-total").innerText();
-    const rowIds = await page.locator(".si-data-table tbody tr[data-row-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id") ?? ""));
+    const rowIds = await page.locator(".si-data-table:visible tbody tr[data-row-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id") ?? ""));
     const childrenVisible = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
-    const parentRow = page.locator('.si-data-table tbody tr[data-row-id="SYN-P001"]');
+    const parentRow = page.locator('.si-data-table:visible tbody tr[data-row-id="SYN-P001"]');
     await parentRow.waitFor({ state: "visible", timeout: 10_000 });
     const trendBar = parentRow.locator(".si-status-cells");
     const trendLabel = await trendBar.getAttribute("aria-label") ?? "";
@@ -1122,7 +1371,7 @@ async function testW2Pages(page, syntheticSite) {
       return counts;
     }, {});
     const rateCellTexts = (await parentRow.locator(".si-rate-cell").allInnerTexts()).map((value) => value.trim());
-    const onlineRateHeaders = (await page.locator(".si-data-table thead th").allInnerTexts())
+    const onlineRateHeaders = (await page.locator(".si-data-table:visible thead th").allInnerTexts())
       .map((value) => value.trim())
       .filter((value) => value.includes("在线率"));
     const trendVisible = await trendBar.isVisible();
@@ -1148,19 +1397,33 @@ async function testW2Pages(page, syntheticSite) {
     const pagination = await exerciseW2Pagination(page, W2_EXPECTED.products);
     const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
     await checkbox.check();
-    await page.waitForFunction(() => document.querySelector(".si-data-table")?.innerText.includes("3/3"), null, { timeout: 10_000 });
+    await page.waitForFunction(() => {
+      const table = [...document.querySelectorAll(".si-data-table")].find((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      return table?.innerText.includes("3/3") ?? false;
+    }, null, { timeout: 10_000 });
     const metrics = await readW2TableMetrics(page);
-    const row = page.locator('.si-data-table tbody tr[data-row-id]').filter({ hasText: "Synthetic grouped product 000" }).first();
+    const row = page.locator('.si-data-table:visible tbody tr[data-row-id]').filter({ hasText: "Synthetic grouped product 000" }).first();
+    const selectedRowId = await row.getAttribute("data-row-id");
     await row.click();
-    const panel = page.locator(".si-detail-panel");
+    const panel = page.locator(".si-drawer");
     await panel.waitFor({ state: "visible", timeout: 15_000 });
-    const inventoryHeading = await panel.getByText("变体库存", { exact: true }).isVisible();
-    const variantRows = await panel.locator(".si-data-table tbody tr[data-row-id]").count();
+    const detail = panel.locator(".si-product-detail");
+    await detail.waitFor({ state: "visible", timeout: 10_000 });
+    const inventoryHeading = await detail.getByText("变体库存", { exact: true }).isVisible();
+    const selectedTitle = await detail.locator("h3").innerText();
+    const selectedHandle = await detail.locator(".si-product-detail-handle code").innerText();
+    const variantSkuIds = await detail.locator(".si-data-table:visible tbody tr[data-row-id]").evaluateAll((rows) => rows.map((item) => item.getAttribute("data-row-id") ?? ""));
+    const expectedVariantSkuIds = ["SYN-P000-CH-01", "SYN-P000-CH-02", "SYN-P000-CH-03"];
     await page.keyboard.press("Escape");
     await panel.waitFor({ state: "hidden", timeout: 10_000 });
     const passed = pagination.passed && metrics.total === W2_EXPECTED.products
-      && await checkbox.isChecked() && inventoryHeading && variantRows === W2_EXPECTED.childrenPerGroup;
-    return { passed, evidence: { pagination, parentOnlyTotal: metrics.total, groupedVariantCellVisible: true, productDrawerShowsStock: inventoryHeading, visibleVariantRows: variantRows } };
+      && await checkbox.isChecked() && selectedRowId === "group-000"
+      && selectedTitle === "Synthetic grouped product 000" && selectedHandle === "group-000"
+      && inventoryHeading && JSON.stringify(variantSkuIds) === JSON.stringify(expectedVariantSkuIds);
+    return { passed, evidence: { pagination, parentOnlyTotal: metrics.total, selectedRowId, selectedTitle, selectedHandle, productDrawerShowsStock: inventoryHeading, variantSkuIds, expectedVariantSkuIds } };
   });
 
   await attemptW2("EDM table paginates and parent-only UI hides child SKU rows", "ui", async () => {
@@ -1169,9 +1432,15 @@ async function testW2Pages(page, syntheticSite) {
     const pagination = await exerciseW2Pagination(page, W2_EXPECTED.totalSkus);
     const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
     await checkbox.check();
-    await page.waitForFunction(() => document.querySelector(".si-pagination-count")?.textContent?.includes("/ 80"), null, { timeout: 10_000 });
+    await page.waitForFunction(() => {
+      const table = [...document.querySelectorAll(".si-data-table")].find((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      return table?.querySelector(".si-pagination-count")?.textContent?.includes("/ 80") ?? false;
+    }, null, { timeout: 10_000 });
     const metrics = await readW2TableMetrics(page);
-    const rowIds = await page.locator(".si-data-table tbody tr[data-row-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id") ?? ""));
+    const rowIds = await page.locator(".si-data-table:visible tbody tr[data-row-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id") ?? ""));
     const childrenVisible = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
     const passed = pagination.passed && metrics.total === W2_EXPECTED.products && await checkbox.isChecked() && !childrenVisible;
     return { passed, evidence: { pagination, parentOnlyTotal: metrics.total, childrenVisible } };
@@ -1205,7 +1474,13 @@ async function testW2Pages(page, syntheticSite) {
       const noSchema = summary.kpis.find((item) => item.key === "no_schema")?.value;
       return blogs.total === 2 && value === "2" && noSchema === "0";
     }, W2_PROJECT_ID, { timeout: 90_000 });
-    await page.waitForFunction(() => document.querySelector(".si-data-table .si-pagination-count")?.textContent?.includes("/ 2"), null, { timeout: 20_000 });
+    await page.waitForFunction(() => {
+      const table = [...document.querySelectorAll(".si-data-table")].find((item) => {
+        const rect = item.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      return table?.querySelector(".si-pagination-count")?.textContent?.includes("/ 2") ?? false;
+    }, null, { timeout: 20_000 });
     const uiKpi = await page.locator(".si-content-kpis").innerText();
     const schemaKpi = await page.evaluate(async (projectId) => {
       const summary = await window.siteindex.content.summary(projectId);
