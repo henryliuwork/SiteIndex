@@ -78,6 +78,12 @@
   justify-items: start;
 }
 
+.si-edm-history-limit {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
+}
+
 .si-edm-media-demo-toggle {
   justify-self: start;
   color: var(--color-muted);

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SiteIndexApi } from "@siteindex/shared";
-import { getEdmExportCapability, isEdmExportOutcomeUnknown } from "./export-capability";
+import { getEdmExportCapability, isEdmExportDefinitiveNoWrite, isEdmExportOutcomeUnknown } from "./export-capability";
 
 function apiWithExport(): SiteIndexApi {
   return { edm: { exportIndex: vi.fn(async () => ({ status: "created", path: "index/edm/sku-index.md", sku_count: 1, missing_image_count: 0 })) } } as unknown as SiteIndexApi;
@@ -16,7 +16,9 @@ describe("getEdmExportCapability", () => {
   });
 
   it("handler 移出 pending 且方法存在后才开放", () => {
-    expect(getEdmExportCapability(apiWithExport(), []).available).toBe(true);
+    const capability = getEdmExportCapability(apiWithExport(), []);
+    expect(capability.available).toBe(true);
+    expect(capability.reconciliationVerified).toBe(false);
   });
 });
 
@@ -25,5 +27,14 @@ describe("isEdmExportOutcomeUnknown", () => {
     expect(isEdmExportOutcomeUnknown({ code: "EDM_EXPORT_OUTCOME_UNKNOWN", message: "确认超时" })).toBe(true);
     expect(isEdmExportOutcomeUnknown({ code: "WRITE_FAILED", message: "写入失败" })).toBe(false);
     expect(isEdmExportOutcomeUnknown(new Error("EDM_EXPORT_OUTCOME_UNKNOWN"))).toBe(false);
+  });
+});
+
+describe("isEdmExportDefinitiveNoWrite", () => {
+  it("只把冲突和明确写入失败作为确认未写入", () => {
+    expect(isEdmExportDefinitiveNoWrite({ code: "EDM_INDEX_CONFLICT" })).toBe(true);
+    expect(isEdmExportDefinitiveNoWrite({ code: "WRITE_FAILED" })).toBe(true);
+    expect(isEdmExportDefinitiveNoWrite({ code: "EDM_EXPORT_OUTCOME_UNKNOWN" })).toBe(false);
+    expect(isEdmExportDefinitiveNoWrite(new Error("unknown"))).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import type { EdmSkuIndexExportResult, JobProgress, JobResult, RunLog, SiteIndex
 import { createMockApi } from "../mock";
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.stubGlobal("ResizeObserver", class {
     observe(): void {}
     unobserve(): void {}
@@ -16,6 +17,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.doUnmock("../api");
   vi.doUnmock("@siteindex/shared");
   vi.restoreAllMocks();
@@ -38,6 +40,7 @@ type EdmPageTestOptions = {
   exportReady?: boolean;
   exportResult?: EdmSkuIndexExportResult;
   exportError?: unknown;
+  mediaPrepareError?: unknown;
 };
 
 async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[], mediaReady = false, deferredMediaPrepare = false, options: EdmPageTestOptions = {}) {
@@ -68,7 +71,10 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   let resolvePendingMediaPrepare: ((run: { runId: string }) => void) | undefined;
   const mediaPrepare = deferredMediaPrepare
     ? vi.fn(() => new Promise<{ runId: string }>((resolve) => { resolvePendingMediaPrepare = resolve; }))
-    : vi.fn(async () => ({ runId: "demo-media-run" }));
+    : vi.fn(async () => {
+      if (options.mediaPrepareError) throw options.mediaPrepareError;
+      return { runId: "demo-media-run" };
+    });
   let onMediaProgress: ((progress: JobProgress) => void) | undefined;
   let onMediaFinished: ((result: JobResult) => void) | undefined;
   let activeProgressSubscriptions = 0;
@@ -381,7 +387,7 @@ describe("EdmPage media preparation prototype", () => {
     expect(within(control).getByText("_site-index/edm/sku-index.md")).toBeTruthy();
   });
 
-  it("导出确认结果未知时明确提示可能已写入且按钮可安全重试", async () => {
+  it("导出确认结果未知时明确提示可能已写入并保持重试禁用", async () => {
     const unknownError = Object.assign(new Error("写入确认超时"), { code: "EDM_EXPORT_OUTCOME_UNKNOWN" });
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportError: unknownError });
     const button = await screen.findByRole("button", { name: "导出全项目 SKU 清单" });
@@ -389,9 +395,31 @@ describe("EdmPage media preparation prototype", () => {
 
     const control = exportControlFor(button);
     expect(await within(control).findByText(/写入结果尚未确认；清单可能已经生成/)).toBeTruthy();
-    expect(within(control).getByText(/契约允许安全重试/)).toBeTruthy();
-    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    expect(within(control).getByText(/此页面不会盲目重试/)).toBeTruthy();
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(true));
+    fireEvent.click(button);
     expect(exportIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("本机已有结果未知标记时跨页面进入仍禁用导出", async () => {
+    window.localStorage.setItem("siteindex:edm-export-attempt:demo", "unknown");
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true });
+    const button = await screen.findByRole("button", { name: "导出全项目 SKU 清单" });
+
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(await screen.findByText(/在后端提供并验证每次调用前的完整核验前/)).toBeTruthy();
+    fireEvent.click(button);
+    expect(exportIndex).not.toHaveBeenCalled();
+  });
+
+  it("无法持久化导出门闩时不调用 IPC，并提供本机恢复路径", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable"); });
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true });
+    fireEvent.click(await screen.findByRole("button", { name: "导出全项目 SKU 清单" }));
+
+    expect(await screen.findAllByText(/请求尚未发送，导出操作已暂停/)).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: "导出全项目 SKU 清单" }).hasAttribute("disabled")).toBe(true);
+    expect(exportIndex).not.toHaveBeenCalled();
   });
 
   it("清单目标冲突时明确说明没有覆盖已有文件", async () => {
@@ -417,6 +445,7 @@ describe("EdmPage media preparation prototype", () => {
     expect(screen.queryByRole("list", { name: "最近任务逐 SKU 恢复结果" })).toBeNull();
     expect(mockApi.jobs.history).toHaveBeenCalledWith("demo", 100);
     expect(screen.queryByText("已确认未开始")).toBeNull();
+    expect(screen.getByText(/最近 100 条任务记录（包含所有任务类型）/)).toBeTruthy();
   });
 
   it("按恢复契约显示结果未知、已确认未开始与认证停批码", async () => {
@@ -436,6 +465,23 @@ describe("EdmPage media preparation prototype", () => {
     expect(within(results).getByText("结果未知")).toBeTruthy();
     expect(within(results).getByText("已确认未开始")).toBeTruthy();
     expect(within(results).getByText("失败")).toBeTruthy();
+  });
+
+  it("媒体任务启动失败不会遮住最近已持久化的媒体历史", async () => {
+    const historicalRun: RunLog = {
+      run_id: "persisted-media-run", job: "media", started_at: new Date(Date.now() - 60_000).toISOString(),
+      finished_at: new Date(Date.now() - 59_000).toISOString(), status: "ok",
+      media_requested_skus: ["DEMO-PERSISTED-HISTORY-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-PERSISTED-HISTORY-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
+    };
+    const rows = [mediaImageRow("DEMO-START-FAIL-001", "https://demo-store.example.test/demo/item.webp")];
+    await renderEdmPage(true, false, rows, true, false, { history: [historicalRun], mediaPrepareError: new Error("虚构 IPC 启动失败") });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（1）" }));
+
+    expect(await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" })).toBeTruthy();
+    expect(screen.getByText("DEMO-PERSISTED-HISTORY-001")).toBeTruthy();
+    expect(screen.getByText("虚构 IPC 启动失败")).toBeTruthy();
   });
 
   it("切换项目后只恢复新项目自己的媒体历史", async () => {
@@ -579,5 +625,33 @@ describe("EdmPage media preparation prototype", () => {
     expect(within(results).getByText("DEMO-BACKGROUND-002")).toBeTruthy();
     expect(within(results).getByText("虚构测试错误")).toBeTruthy();
     expect(activeSubscriptions()).toEqual({ progress: 1, finished: 1 });
+  }, 15_000);
+
+  it("返回页面时较新的外部历史覆盖旧快照，即使 runId 被复用", async () => {
+    const rows = [mediaImageRow("DEMO-OLD-SNAPSHOT-001", "https://demo-store.example.test/demo/old.webp")];
+    const historyByProject: Record<string, RunLog[]> = { demo: [], other: [] };
+    const { mediaPrepare, emitMediaFinished } = await renderEdmPage(true, false, rows, true, false, { historyByProject });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（1）" }));
+    await waitFor(() => expect(mediaPrepare).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
+    expect(await screen.findByText("运行页面")).toBeTruthy();
+    emitMediaFinished({
+      runId: "demo-media-run", job: "media", status: "ok", exitCode: 0, summary: "已处理旧快照",
+      media_requested_skus: ["DEMO-OLD-SNAPSHOT-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-OLD-SNAPSHOT-001", status: "uploaded" }], media_unknown_skus: [], media_not_started_skus: [],
+    });
+    const newerStartedAt = Date.now() + 60 * 60 * 1000;
+    historyByProject.demo = [{
+      run_id: "demo-media-run", job: "media", started_at: new Date(newerStartedAt).toISOString(),
+      finished_at: new Date(newerStartedAt + 1000).toISOString(), status: "ok",
+      media_requested_skus: ["DEMO-EXTERNAL-NEWER-001"], media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-EXTERNAL-NEWER-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
+    }];
+
+    fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
+    const results = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
+    expect(within(results).getByText("DEMO-EXTERNAL-NEWER-001")).toBeTruthy();
+    expect(within(results).queryByText("DEMO-OLD-SNAPSHOT-001")).toBeNull();
   }, 15_000);
 });

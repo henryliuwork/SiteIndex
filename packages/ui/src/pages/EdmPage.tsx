@@ -10,8 +10,10 @@ import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPil
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { edmMediaJobMonitor, type EdmMediaRunSnapshot } from "./edm/media-job-monitor";
-import { getEdmExportCapability, isEdmExportOutcomeUnknown } from "./edm/export-capability";
+import { getEdmExportCapability, isEdmExportDefinitiveNoWrite, isEdmExportOutcomeUnknown } from "./edm/export-capability";
+import { beginEdmExportAttempt, getEdmExportSafetyState, keepEdmExportAttemptBlocked, resolveEdmExportAttempt, subscribeEdmExportSafety } from "./edm/export-retry-state";
 import { getMediaRecoveryDisplay, mediaRecoveryErrorMessage, type MediaRecoveryDisplay, type MediaRecoveryRowStatus } from "./edm/media-recovery";
+import { EDM_MEDIA_HISTORY_LIMIT, selectEdmMediaDisplay } from "./edm/media-history";
 import { EdmWorkflowPrototype } from "./edm/workflow-prototype";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
@@ -84,11 +86,12 @@ function mediaRecoverySummary(recovery: MediaRecoveryDisplay): string {
   return [authMessage, batchMessage].filter(Boolean).join(" ");
 }
 
-function MediaHistoryRecovery({ run }: { run: RunLog }) {
+function MediaHistoryRecovery({ run, stale = false }: { run: RunLog; stale?: boolean }) {
   const recovery = getMediaRecoveryDisplay(run);
-  const tone = recovery.errorCode ? "error" : recovery.kind === "available" && recovery.batchState === "complete" ? "info" : "warn";
+  const tone = recovery.errorCode ? "error" : !stale && recovery.kind === "available" && recovery.batchState === "complete" ? "info" : "warn";
   return <section className="si-edm-history-recovery" aria-label="最近一次图片处理恢复结果">
     <Notice tone={tone} title="最近一次图片处理记录">{mediaRecoverySummary(recovery)}</Notice>
+    <p className="si-edm-history-limit">{stale && "历史刷新失败，以下为缓存记录，可能不是最新。"}查询范围：最近 {EDM_MEDIA_HISTORY_LIMIT} 条任务记录（包含所有任务类型）；更早记录可能不在结果中。</p>
     {recovery.rows.length > 0 && <ul className="si-edm-media-demo-results" aria-label="最近任务逐 SKU 恢复结果">
       {recovery.rows.map(({ sku, status, reason }) => <li key={sku}>
         <code>{sku}</code><Chip tone={mediaStatusTones[status]}>{mediaStatusLabels[status]}</Chip>{reason && <small>{reason}</small>}
@@ -105,14 +108,17 @@ function exportResultMessage(result: EdmSkuIndexExportResult): string {
 
 function getExportErrorMessage(error: unknown): { tone: "warn" | "error"; message: string } {
   if (isEdmExportOutcomeUnknown(error)) {
-    return { tone: "warn", message: "写入结果尚未确认；清单可能已经生成。契约允许安全重试，也可以先检查项目清单。" };
+    return { tone: "warn", message: "写入结果尚未确认；清单可能已经生成。此页面不会盲目重试，请先核对目标标记、当前内容与预期输出。" };
   }
   if (error && typeof error === "object" && "code" in error && error.code === "EDM_INDEX_CONFLICT") {
     return { tone: "error", message: "清单目标存在冲突，未覆盖已有文件。请先检查目标文件后重试。" };
   }
+  if (error && typeof error === "object" && "code" in error && error.code === "WRITE_FAILED") {
+    return { tone: "error", message: "清单写入失败，后端确认目标未写入。请检查目标文件和权限后再试。" };
+  }
   return {
-    tone: "error",
-    message: "清单生成失败，未确认目标文件已更新。请稍后重试。",
+    tone: "warn",
+    message: "导出请求失败且无法确认目标文件是否已更新。此页面不会盲目重试，请先核对目标标记、当前内容与预期输出。",
   };
 }
 
@@ -195,6 +201,8 @@ function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
 export function EdmPage() {
   const { id = "demo" } = useParams();
   const lastResetProjectIdRef = useRef(id);
+  const mediaPageVisitRef = useRef({ projectId: id, startedAt: Date.now() });
+  if (mediaPageVisitRef.current.projectId !== id) mediaPageVisitRef.current = { projectId: id, startedAt: Date.now() };
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -202,6 +210,12 @@ export function EdmPage() {
     edmMediaJobMonitor.subscribe,
     () => edmMediaJobMonitor.getSnapshot(id),
     () => null,
+  );
+  const mediaSnapshotActive = mediaRunSnapshot?.state === "starting" || mediaRunSnapshot?.state === "running";
+  const exportSafetyState = useSyncExternalStore(
+    (listener) => subscribeEdmExportSafety(id, listener),
+    () => getEdmExportSafetyState(id),
+    () => "unavailable" as const,
   );
   const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 50, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
@@ -212,18 +226,19 @@ export function EdmPage() {
   const [mediaDemoMessage, setMediaDemoMessage] = useState("");
   const [mediaDemoOpen, setMediaDemoOpen] = useState(false);
   const [exportFeedback, setExportFeedback] = useState<
-    | { projectId: string; result: EdmSkuIndexExportResult }
+    | { projectId: string; result: EdmSkuIndexExportResult; safetyWarning?: string }
     | { projectId: string; error: { tone: "warn" | "error"; message: string } }
     | null
   >(null);
+  const [exportSafetyUnavailableProjectId, setExportSafetyUnavailableProjectId] = useState<string | null>(null);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["edm", "summary", id], queryFn: () => api.edm.summary(id) });
   const listQuery = useQuery({ queryKey: ["edm", "images", id, query], queryFn: () => api.edm.listImages(id, query) });
   const mediaHistoryQuery = useQuery({
     queryKey: ["job-history", id],
-    queryFn: () => api.jobs.history(id, 100),
-    enabled: !isMockApi && !mediaRunSnapshot,
+    queryFn: () => api.jobs.history(id, EDM_MEDIA_HISTORY_LIMIT),
+    enabled: !isMockApi && !mediaSnapshotActive,
     staleTime: 0,
   });
   const project = projectQuery.data?.summary;
@@ -231,35 +246,62 @@ export function EdmPage() {
   const mediaCapability = getEdmMediaCapability(api);
   const exportCapability = getEdmExportCapability(api);
   const exportIndex = api.edm.exportIndex;
-  const latestMediaHistory = mediaHistoryQuery.data?.find((run) => run.job === "media");
+  const mediaDisplaySelection = selectEdmMediaDisplay(
+    mediaRunSnapshot,
+    mediaHistoryQuery.data,
+    mediaHistoryQuery.isError ? "error" : mediaHistoryQuery.isLoading ? "loading" : "success",
+    mediaPageVisitRef.current.startedAt,
+  );
+  const displayedMediaSnapshot = mediaDisplaySelection.kind === "snapshot" ? mediaDisplaySelection.snapshot : null;
+  const exportSafetyBlocked = exportSafetyState !== "ready" || exportSafetyUnavailableProjectId === id;
   const currentExportFeedback = exportFeedback?.projectId === id ? exportFeedback : null;
   const exportMutation = useMutation({
-    mutationFn: async (projectId: string) => {
+    mutationFn: async ({ projectId }: { projectId: string; attemptId: string }) => {
       if (!exportCapability.available || !exportIndex) throw new Error("EDM 清单导出尚未就绪。");
       return exportIndex(projectId);
     },
     onMutate: () => setExportFeedback(null),
-    onSuccess: (result, projectId) => {
-      setExportFeedback({ projectId, result });
+    onSuccess: (result, { projectId, attemptId }) => {
+      const markerResolved = resolveEdmExportAttempt(projectId, attemptId, exportCapability.reconciliationVerified);
+      const safetyWarning = markerResolved ? undefined : "结果已确认，但本机无法解除导出状态门闩；请检查本地存储后再继续。";
+      setExportFeedback({ projectId, result, ...(safetyWarning ? { safetyWarning } : {}) });
       const message = exportResultMessage(result);
-      if (result.status === "unchanged") toast.info(message);
+      if (safetyWarning) toast.error(safetyWarning);
+      else if (result.status === "unchanged") toast.info(message);
       else toast.success(message);
     },
-    onError: (error, projectId) => {
+    onError: (error, { projectId, attemptId }) => {
       const feedback = getExportErrorMessage(error);
+      if (isEdmExportDefinitiveNoWrite(error)) resolveEdmExportAttempt(projectId, attemptId, exportCapability.reconciliationVerified);
+      else if (!exportCapability.reconciliationVerified) keepEdmExportAttemptBlocked(projectId, attemptId);
       setExportFeedback({ projectId, error: feedback });
       if (feedback.tone === "warn") toast.info(feedback.message);
       else toast.error(feedback.message);
     },
   });
-  const mediaRunBusy = mediaRunSnapshot?.state === "starting" || mediaRunSnapshot?.state === "running";
-  const mediaRunProgress = mediaRunSnapshot?.state === "starting" || mediaRunSnapshot?.state === "running" ? mediaRunSnapshot.progress : "";
-  const mediaRunMessage = mediaRunSnapshot?.state === "failed" ? mediaRunSnapshot.error ?? "图片处理任务启动失败。"
-    : mediaRunSnapshot?.result ? summarizeMediaRun(mediaRunSnapshot.skus, mediaRunSnapshot.result) : "";
-  const mediaRunRecovery = mediaRunSnapshot?.result ? getMediaRecoveryDisplay(mediaRunSnapshot.result, mediaRunSnapshot.skus) : null;
-  const mediaRunTone = mediaRunSnapshot?.state === "failed" || mediaRunSnapshot?.result?.status === "failed" || mediaRunRecovery?.errorCode ? "error"
-    : mediaRunSnapshot?.result?.status === "partial" || mediaRunRecovery?.kind === "invalid" || mediaRunRecovery?.kind === "legacy" || (mediaRunRecovery?.kind === "available" && mediaRunRecovery.batchState !== "complete") ? "warn" : "info";
-  const mediaRunStatuses = mediaRunSnapshot ? getMediaRunStatuses(mediaRunSnapshot.skus, mediaRunSnapshot.state, mediaRunSnapshot.result) : {};
+  const startExport = () => {
+    if (!exportCapability.available || !exportIndex || exportSafetyBlocked) return;
+    const attemptId = beginEdmExportAttempt(id, exportCapability.reconciliationVerified);
+    if (!attemptId) {
+      const safetyState = getEdmExportSafetyState(id, exportCapability.reconciliationVerified);
+      if (safetyState === "unavailable") setExportSafetyUnavailableProjectId(id);
+      const message = safetyState === "blocked"
+        ? "本机已有未确认的导出门闩；请求尚未发送。请先核查目标文件。"
+        : "无法保存本次导出的确认状态，请检查本地存储。请求尚未发送，导出操作已暂停。";
+      setExportFeedback({ projectId: id, error: { tone: "warn", message } });
+      toast.error(message);
+      return;
+    }
+    exportMutation.mutate({ projectId: id, attemptId });
+  };
+  const mediaRunBusy = displayedMediaSnapshot?.state === "starting" || displayedMediaSnapshot?.state === "running";
+  const mediaRunProgress = displayedMediaSnapshot?.state === "starting" || displayedMediaSnapshot?.state === "running" ? displayedMediaSnapshot.progress : "";
+  const mediaRunMessage = displayedMediaSnapshot?.state === "failed" ? displayedMediaSnapshot.error ?? "图片处理任务启动失败。"
+    : displayedMediaSnapshot?.result ? summarizeMediaRun(displayedMediaSnapshot.skus, displayedMediaSnapshot.result) : "";
+  const mediaRunRecovery = displayedMediaSnapshot?.result ? getMediaRecoveryDisplay(displayedMediaSnapshot.result, displayedMediaSnapshot.skus) : null;
+  const mediaRunTone = displayedMediaSnapshot?.state === "failed" || displayedMediaSnapshot?.result?.status === "failed" || mediaRunRecovery?.errorCode ? "error"
+    : displayedMediaSnapshot?.result?.status === "partial" || mediaRunRecovery?.kind === "invalid" || mediaRunRecovery?.kind === "legacy" || (mediaRunRecovery?.kind === "available" && mediaRunRecovery.batchState !== "complete") ? "warn" : "info";
+  const mediaRunStatuses = displayedMediaSnapshot ? getMediaRunStatuses(displayedMediaSnapshot.skus, displayedMediaSnapshot.state, displayedMediaSnapshot.result) : {};
   const groupingEnabled = skuGrouping?.enabled === true;
   const groupingRule: SkuGroupingRule = skuGrouping?.rule ?? { type: "separator", value: "-" };
   const summary = summaryQuery.data;
@@ -397,20 +439,32 @@ export function EdmPage() {
     <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     {!isMockApi && <div className="si-edm-live-workflows">
       {exportCapability.available ? <div className="si-edm-export-control">
-        <Button variant="primary" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate(id)}>
+        <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>
           {exportMutation.isPending ? "正在生成全项目清单…" : "导出全项目 SKU 清单"}
         </Button>
-        {currentExportFeedback && "result" in currentExportFeedback && <Notice tone="info" title="EDM SKU 清单导出结果">
-          {exportResultMessage(currentExportFeedback.result)} 路径：<code>{currentExportFeedback.result.path}</code>
+        {exportSafetyBlocked && !exportMutation.isPending && exportSafetyState === "blocked" && <Notice tone="warn" title="导出操作已暂停">
+          上次操作可能中断或写入结果未知，清单可能已经生成。请先核对生成标记、当前内容与预期输出；在后端提供并验证每次调用前的完整核验前，此页不会重新发送导出请求。
         </Notice>}
-        {currentExportFeedback && "error" in currentExportFeedback && <Notice tone={currentExportFeedback.error.tone} title={currentExportFeedback.error.tone === "warn" ? "导出结果尚未确认" : "清单导出失败"}>
+        {(exportSafetyState === "unavailable" || exportSafetyUnavailableProjectId === id) && <Notice tone="warn" title="无法记录导出确认状态">
+          本机存储不可用，导出请求不会发送。请恢复应用本地存储后重新进入此页；本地状态恢复后可重新尝试。
+        </Notice>}
+        {currentExportFeedback && "result" in currentExportFeedback && <Notice tone={currentExportFeedback.safetyWarning ? "warn" : "info"} title="EDM SKU 清单导出结果">
+          {exportResultMessage(currentExportFeedback.result)} 路径：<code>{currentExportFeedback.result.path}</code>{currentExportFeedback.safetyWarning && <> {currentExportFeedback.safetyWarning}</>}
+        </Notice>}
+        {currentExportFeedback && "error" in currentExportFeedback && <Notice tone={currentExportFeedback.error.tone} title={exportSafetyUnavailableProjectId === id ? "导出请求未发送" : currentExportFeedback.error.tone === "warn" ? "导出结果尚未确认" : "清单导出失败"}>
           {currentExportFeedback.error.message}
         </Notice>}
       </div> : <Notice tone="info" title="全项目 SKU 清单导出尚未就绪">
         Core 与 Desktop IPC 未同时提供并开放 `edm.exportIndex` 前，不显示可执行的导出操作。
       </Notice>}
-      {!mediaRunSnapshot && mediaHistoryQuery.isError && <ApiErrorNotice label="最近图片处理记录加载失败。" error={mediaHistoryQuery.error} onRetry={() => void mediaHistoryQuery.refetch()} />}
-      {!mediaRunSnapshot && latestMediaHistory && <MediaHistoryRecovery run={latestMediaHistory} />}
+      {mediaDisplaySelection.kind === "loading" && <div className="si-query-loading" role="status">正在核对最近 {EDM_MEDIA_HISTORY_LIMIT} 条任务记录（包含所有任务类型）…</div>}
+      {mediaHistoryQuery.isError && !mediaSnapshotActive && <ApiErrorNotice label="最近 100 条任务记录加载失败，无法核对最新媒体任务。" error={mediaHistoryQuery.error} onRetry={() => void mediaHistoryQuery.refetch()} />}
+      {mediaDisplaySelection.kind === "history" && <MediaHistoryRecovery run={mediaDisplaySelection.run} stale={mediaHistoryQuery.isError} />}
+      {mediaDisplaySelection.kind === "history" && mediaRunSnapshot?.state === "failed" && !mediaRunSnapshot.runId && <Notice tone="error" title="最近一次图片任务启动失败">{mediaRunSnapshot.error ?? "任务未能启动。"}</Notice>}
+      {mediaDisplaySelection.kind === "empty" && <Notice tone="info" title="最近任务记录中没有媒体任务">最近 100 条任务记录（包含所有任务类型）没有媒体任务；更早的记录不在本次查询范围内。</Notice>}
+      {mediaDisplaySelection.kind === "history-truncated" && <Notice tone="warn" title="无法确认最近媒体任务">
+        页面保留的媒体快照早于最近 100 条任务记录范围；为避免显示过期结果，此处不展示它。请在运行页查找更早记录。
+      </Notice>}
     </div>}
     {isMockApi ? <div className="si-edm-media-demo">
       <Button type="button" variant="ghost" size="small" className="si-edm-media-demo-toggle" aria-expanded={mediaDemoOpen} aria-controls="si-edm-media-demo-panel" onClick={() => setMediaDemoOpen((open) => !open)}>交互模拟（仅本地演示，不会上传或写入台账）</Button>
