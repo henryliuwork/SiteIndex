@@ -8,7 +8,8 @@ vi.mock("electron", () => ({
 }));
 
 import { API_EVENT_METHODS, API_INVOKE_METHODS, PENDING_HANDLERS } from "@siteindex/shared";
-import type { ProjectId } from "@siteindex/shared";
+import type { AppSettings, ProjectId } from "@siteindex/shared";
+import { createJobManager } from "../job-manager.js";
 import { createIpcHandlerImplementations } from "./handlers.js";
 import type { IpcContext } from "./context.js";
 
@@ -113,6 +114,50 @@ describe("IPC handler completeness", () => {
       code: "CONFIG_INVALID",
     });
     expect(context.jobs.runMedia).not.toHaveBeenCalled();
+  });
+
+  it("keeps the real media IPC handler away from the credential vault until Core is ready", async () => {
+    const settings: AppSettings = {
+      device_id: "fixture-device",
+      device_name: "Fixture Device",
+      projects_root: "",
+      extra_projects: [],
+      cache_dir: "C:/Fixture/cache",
+      browser: { channel: "msedge", executable_path: "C:/Fixture/msedge.exe" },
+      notify: { on_failure: true, on_success: false, oos_threshold: 0.12, dingtalk_webhook: null },
+      skill_platforms: [],
+      conflict_patterns: [],
+    };
+    const getSettings = vi.fn(async () => settings);
+    const getWordPressCredential = vi.fn(async () => ({
+      username: "fixture-user",
+      applicationPassword: "fixture-app-password",
+    }));
+    const fork = vi.fn(() => {
+      throw new Error("media worker must stay gated");
+    });
+    const context = testContext();
+    context.jobs = createJobManager({
+      workerPath: "fixture-worker.js",
+      getSettings,
+      isMediaJobReady: () => false,
+      getWordPressCredential,
+      resolveProject: () => "C:/projects/demo",
+      fork,
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+    const handler = createIpcHandlerImplementations(context)["media.prepare"];
+    if (!handler) throw new Error("media.prepare handler missing");
+
+    await expect(handler({ project: "demo", skus: ["fixture-sku"] })).rejects.toMatchObject({
+      code: "NOT_IMPLEMENTED",
+      message: "当前桌面版本尚未接入媒体准备 Core Job。",
+    });
+    expect(getSettings).not.toHaveBeenCalled();
+    expect(getWordPressCredential).not.toHaveBeenCalled();
+    expect(fork).not.toHaveBeenCalled();
   });
 
   it("forwards workspace validation and creation to Core without changing their inputs", async () => {

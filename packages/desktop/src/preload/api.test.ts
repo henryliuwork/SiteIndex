@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiBridge } from "./api.js";
 
 describe("createApiBridge IPC errors", () => {
+  it("does not expose the optional media API while the Desktop capability is gated", () => {
+    const bridge = createApiBridge({ invoke: vi.fn(), listen: () => () => undefined });
+
+    expect(bridge.media).toBeUndefined();
+  });
+
   it("forwards workspace checks, creation, and pending import checks", async () => {
     const check = { ok: true, invalid_entries: [] };
     const created = { path: "C:/Fixture/workspace", created: ["README.md"] };
