@@ -38,6 +38,7 @@ function authHeaders(credentials) {
 function upload(service, credentials, slug) {
   return fetch(service.mediaEndpoint, {
     method: "POST",
+    redirect: "manual",
     headers: {
       ...authHeaders(credentials),
       "content-type": "image/jpeg",
@@ -61,7 +62,11 @@ describe("v0.4.1 synthetic media Job and EDM export acceptance fixtures", () => 
     assert.deepEqual(mediaCaseIds, [
       "MEDIA-401-after-confirmed-item",
       "MEDIA-403-after-confirmed-item",
-      "MEDIA-ordinary-partial-then-continue",
+      "MEDIA-422-after-persist",
+      "MEDIA-local-missing-image-then-continue",
+      "MEDIA-429-after-persist",
+      "MEDIA-500-after-persist",
+      "MEDIA-302-after-persist",
       "MEDIA-save-then-disconnect",
       "MEDIA-same-day-rerun-and-deduplicate-request",
       "MEDIA-legacy-ledger-read-before-first-write",
@@ -124,30 +129,48 @@ describe("v0.4.1 synthetic media Job and EDM export acceptance fixtures", () => 
     }
   });
 
-  it("serves a transient per-upload failure while allowing later fixture requests", async () => {
+  it("serves ambiguous 422, 429, 5xx, and redirect outcomes after persistence, then exposes exact-slug recovery", async () => {
     const cases = await readCases();
-    const testCase = cases.media_job_cases.find(({ id }) => id === "MEDIA-ordinary-partial-then-continue");
-    const credentials = createFakeCredentialCanary();
-    const service = await track({
-      credentials,
-      mediaPostStatuses: testCase.fake_wordpress.media_post_statuses,
-    });
+    const ambiguous = cases.media_job_cases.filter(({ id }) => [
+      "MEDIA-422-after-persist", "MEDIA-429-after-persist", "MEDIA-500-after-persist", "MEDIA-302-after-persist",
+    ].includes(id));
 
-    const statuses = [];
-    for (const sku of testCase.fixture_probe_posts) {
-      const response = await upload(service, credentials, sku.toLowerCase() + "-main");
-      statuses.push(response.status);
-      if (response.status === 503) {
+    for (const testCase of ambiguous) {
+      const credentials = createFakeCredentialCanary();
+      const service = await track({
+        credentials,
+        mediaPostStatuses: testCase.fake_wordpress.media_post_statuses,
+        persistMediaBeforePostFailure: testCase.fake_wordpress.persist_before_post_failure,
+      });
+      const sku = testCase.fixture_probe_posts[0];
+      const slug = sku.toLowerCase() + "-main";
+      const response = await upload(service, credentials, slug);
+      assert.equal(response.status, testCase.expected_fixture_responses[0]);
+      if (response.status !== 302) {
         const error = await response.json();
-        assert.equal(error.code, "rest_upload_failed");
-        assert.equal(error.data.status, 503);
+        assert.equal(error.data.status, response.status);
       }
-    }
 
-    assert.deepEqual(statuses, testCase.expected_fixture_responses);
-    assert.equal(service.snapshot().totalRequests, 3);
-    assert.equal(service.snapshot().mediaCount, 2);
-    assert.equal(service.snapshot().statusCounts["503"], 1);
+      const lookup = await fetch(service.mediaEndpoint + "?slug=" + slug, { headers: authHeaders(credentials) });
+      assert.equal(lookup.status, 200);
+      assert.equal((await lookup.json())[0].slug, slug);
+      assert.equal(service.snapshot().routeCounts["POST /wp-json/wp/v2/media"], 1);
+      assert.equal(service.snapshot().routeCounts["GET /wp-json/wp/v2/media"], 1);
+      assert.equal(service.snapshot().mediaCount, 1);
+      assert.equal(service.snapshot().statusCounts[String(response.status)], 1);
+    }
+  });
+
+  it("records a deterministic local missing-image case whose later SKU can still be processed", async () => {
+    const cases = await readCases();
+    const testCase = cases.media_job_cases.find(({ id }) => id === "MEDIA-local-missing-image-then-continue");
+    assert.deepEqual(testCase.missing_image_skus, [testCase.request_skus[0]]);
+    assert.deepEqual(testCase.fixture_probe_posts, [testCase.request_skus[1]]);
+    assert.deepEqual(testCase.expected_fixture_responses, [201]);
+    assert.deepEqual(testCase.core_acceptance_oracle.media_results, [
+      { sku: testCase.request_skus[0], status: "failed" },
+      { sku: testCase.request_skus[1], status: "uploaded" },
+    ]);
   });
 
   it("keeps a saved upload discoverable after a lost response without retrying POST", async () => {
