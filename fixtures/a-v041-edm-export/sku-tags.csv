@@ -1,0 +1,4 @@
+sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at
+DEMO-GROUP02,synthetic,1,0,Synthetic parent | short copy,all-year,Fixture-only row,2026-11-11
+DEMO-SINGLE,synthetic,1,0,Single synthetic blurb,all-year,Fixture-only row,2026-11-11
+DEMO-SUPPRESSED,synthetic,1,1,Must not export,all-year,Fixture-only row,2026-11-11
