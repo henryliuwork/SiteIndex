@@ -6,6 +6,7 @@ import {
   readFile,
   readdir,
   rm,
+  stat as statFile,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -28,6 +29,7 @@ const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
 const APP_DATA_ROOT = process.env.APPDATA;
 const TEST_ROOT = await fsMkdtemp();
 const PROJECTS_ROOT = path.join(TEST_ROOT, "projects");
+const W2_PROJECT_DIRECTORY = path.join(PROJECTS_ROOT, W2_PROJECT_ID);
 const INSTALL_DIR = path.join(TEST_ROOT, "installed-app");
 const APP_DATA_DIR = APP_DATA_ROOT ? path.join(APP_DATA_ROOT, "SiteIndex") : "";
 const SETTINGS_FILE = APP_DATA_DIR ? path.join(APP_DATA_DIR, "settings.json") : "";
@@ -852,9 +854,183 @@ async function readW2SeoStatusCounts(page, rule) {
       pageSize: 0,
       filters: { rules: [targetRule], ...(status ? { status } : {}) },
     });
-    const [all, open, fixed, ignored] = await Promise.all([read(undefined), read("open"), read("fixed"), read("ignored")]);
+    const all = await read(undefined);
+    const open = await read("open");
+    const fixed = await read("fixed");
+    const ignored = await read("ignored");
     return { all: all.total, open: open.total, fixed: fixed.total, ignored: ignored.total };
   }, { projectId: W2_PROJECT_ID, targetRule: rule });
+}
+
+async function readW2SeoSnapshotSerial(page, rule, rowId) {
+  const api = await page.evaluate(async ({ projectId, targetRule, targetRowId }) => {
+    const api = window.siteindex;
+    const read = (status) => api.seo.listIssues(projectId, {
+      page: 1,
+      pageSize: 0,
+      filters: { rules: [targetRule], ...(status ? { status } : {}) },
+    });
+    const all = await read(undefined);
+    const open = await read("open");
+    const fixed = await read("fixed");
+    const ignored = await read("ignored");
+    const rows = await api.seo.listIssues(projectId, {
+      page: 1,
+      pageSize: 200,
+      filters: { rules: [targetRule] },
+    });
+    const target = rows.rows.find((issue) => `${issue.url}:${issue.rule}` === targetRowId);
+    return {
+      counts: { all: all.total, open: open.total, fixed: fixed.total, ignored: ignored.total },
+      targetFound: Boolean(target),
+      targetStatus: target?.status ?? null,
+    };
+  }, { projectId: W2_PROJECT_ID, targetRule: rule, targetRowId: rowId });
+  const syntheticFile = await readW2SyntheticSeoState(rowId, rule);
+  return { mode: "serial", api, syntheticFile };
+}
+
+async function readW2SeoSnapshotConcurrent(page, rule, rowId) {
+  const api = await page.evaluate(async ({ projectId, targetRule, targetRowId }) => {
+    const api = window.siteindex;
+    const read = (status) => api.seo.listIssues(projectId, {
+      page: 1,
+      pageSize: 0,
+      filters: { rules: [targetRule], ...(status ? { status } : {}) },
+    });
+    const [all, open, fixed, ignored, rows] = await Promise.all([
+      read(undefined),
+      read("open"),
+      read("fixed"),
+      read("ignored"),
+      api.seo.listIssues(projectId, {
+        page: 1,
+        pageSize: 200,
+        filters: { rules: [targetRule] },
+      }),
+    ]);
+    const target = rows.rows.find((issue) => `${issue.url}:${issue.rule}` === targetRowId);
+    return {
+      counts: { all: all.total, open: open.total, fixed: fixed.total, ignored: ignored.total },
+      targetFound: Boolean(target),
+      targetStatus: target?.status ?? null,
+    };
+  }, { projectId: W2_PROJECT_ID, targetRule: rule, targetRowId: rowId });
+  const syntheticFile = await readW2SyntheticSeoState(rowId, rule);
+  return { mode: "concurrent", api, syntheticFile };
+}
+
+function w2SeoSnapshotMatches(snapshot, expectedCounts, expectedTargetStatus) {
+  return Boolean(snapshot?.api?.targetFound)
+    && snapshot.api.targetStatus === expectedTargetStatus
+    && Object.entries(expectedCounts).every(([key, value]) => snapshot.api.counts?.[key] === value)
+    && Boolean(snapshot?.syntheticFile?.targetFound)
+    && snapshot.syntheticFile.targetStatus === expectedTargetStatus
+    && Object.entries(expectedCounts).every(([key, value]) => snapshot.syntheticFile.counts?.[key] === value);
+}
+
+function fingerprintW2RowIdentity(rowId) {
+  return typeof rowId === "string" && rowId.length > 0
+    ? createHash("sha256").update(rowId).digest("hex").slice(0, 16)
+    : null;
+}
+
+async function readW2SyntheticSeoState(rowId, rule) {
+  if (!rowId) return { targetFound: false, targetStatus: null, counts: { all: 0, open: 0, fixed: 0, ignored: 0 } };
+  const issuesPath = path.join(W2_PROJECT_DIRECTORY, "index", "seo", "issues.jsonl");
+  try {
+    const [source, metadata] = await Promise.all([readFile(issuesPath, "utf8"), statFile(issuesPath)]);
+    const issues = source.split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line));
+    const ruleIssues = issues.filter((issue) => issue.rule === rule);
+    const target = ruleIssues.find((issue) => `${issue.url}:${issue.rule}` === rowId);
+    return {
+      targetFound: Boolean(target),
+      targetStatus: target?.status ?? null,
+      counts: {
+        all: ruleIssues.length,
+        open: ruleIssues.filter((issue) => issue.status === "open").length,
+        fixed: ruleIssues.filter((issue) => issue.status === "fixed").length,
+        ignored: ruleIssues.filter((issue) => issue.status === "ignored").length,
+      },
+      file: { sizeBytes: metadata.size, modifiedAt: metadata.mtime.toISOString() },
+      readError: null,
+    };
+  } catch (error) {
+    return {
+      targetFound: false,
+      targetStatus: null,
+      counts: { all: null, open: null, fixed: null, ignored: null },
+      file: null,
+      readError: safeMessage(error),
+    };
+  }
+}
+
+async function waitForW2SeoStateEvidence(page, rule, rowId, expectedCounts, expectedTargetStatus, timeoutMs = 15_000) {
+  const startedAt = Date.now();
+  const samples = [];
+  let consecutiveMatches = 0;
+  while (Date.now() - startedAt < timeoutMs) {
+    let snapshot;
+    let matched = false;
+    try {
+      snapshot = await readW2SeoSnapshotSerial(page, rule, rowId);
+      matched = w2SeoSnapshotMatches(snapshot, expectedCounts, expectedTargetStatus);
+    } catch (error) {
+      snapshot = { mode: "serial", readError: safeMessage(error) };
+    }
+    consecutiveMatches = matched ? consecutiveMatches + 1 : 0;
+    samples.push({ ...snapshot, matched });
+    if (consecutiveMatches >= 3) {
+      const concurrentSnapshot = await readW2SeoSnapshotConcurrent(page, rule, rowId);
+      const concurrentMatches = w2SeoSnapshotMatches(concurrentSnapshot, expectedCounts, expectedTargetStatus);
+      return {
+        passed: concurrentMatches,
+        expectedCounts,
+        expectedTargetStatus,
+        consecutiveMatches,
+        consecutiveReadMode: "serial IPC reads with target status and synthetic JSONL state",
+        rowIdentityFingerprint: fingerprintW2RowIdentity(rowId),
+        samples: samples.slice(-3),
+        concurrentSnapshot,
+        concurrentMatches,
+      };
+    }
+    await delay(200);
+  }
+  return {
+    passed: false,
+    expectedCounts,
+    expectedTargetStatus,
+    consecutiveMatches,
+    consecutiveReadMode: "serial IPC reads with target status and synthetic JSONL state",
+    rowIdentityFingerprint: fingerprintW2RowIdentity(rowId),
+    samples: samples.slice(-5),
+    concurrentSnapshot: await readW2SeoSnapshotConcurrent(page, rule, rowId).catch((error) => ({ mode: "concurrent", readError: safeMessage(error) })),
+  };
+}
+
+async function readW2UpdateResultToast(page) {
+  const texts = await page.locator(".si-toast-region .si-toast").allTextContents().catch(() => []);
+  const text = texts.map((value) => value.trim()).filter(Boolean).at(-1) ?? null;
+  const match = text?.match(/^已更新\s*(\d+)\s*条$/u);
+  return { count: texts.length, text, updated: match ? Number(match[1]) : null };
+}
+
+async function waitForW2UpdateResultToast(page, expectedUpdated = 1, previousCount = 0, timeoutMs = 5_000) {
+  const startedAt = Date.now();
+  let last = { count: 0, text: null, updated: null };
+  while (Date.now() - startedAt < timeoutMs) {
+    last = await readW2UpdateResultToast(page);
+    if (last.count > previousCount && last.updated === expectedUpdated) return { observed: true, previousCount, ...last };
+    await delay(100);
+  }
+  return { observed: false, previousCount, ...last };
+}
+
+function withoutW2RawRowIdentity(action) {
+  const { targetRowIdentity, ...safeAction } = action;
+  return safeAction;
 }
 
 async function readW2SeoRuleState(page, rule) {
@@ -929,12 +1105,18 @@ async function readW2SeoUiContext(page) {
   });
 }
 
-async function clickW2IssueActionWithConfirmation(page, menuItemName) {
+async function clickW2IssueActionWithConfirmation(page, menuItemName, rule) {
   const issueTable = page.locator(w2DataTableSelector("seo.issues.v2")).first();
   const rows = issueTable.locator("tbody tr[data-row-id]");
   const rowCount = await rows.count();
   const rowIndex = 0;
   const row = rows.nth(rowIndex);
+  const targetRowIdentity = rowCount > 0 ? await row.getAttribute("data-row-id").catch(() => null) : null;
+  const targetRowIdentityFingerprint = fingerprintW2RowIdentity(targetRowIdentity);
+  const targetBeforeState = targetRowIdentity
+    ? await readW2SeoSnapshotSerial(page, rule, targetRowIdentity).catch((error) => ({ mode: "serial", readError: safeMessage(error) }))
+    : null;
+  const toastCountBefore = await page.locator(".si-toast-region .si-toast").count().catch(() => 0);
   let actionButton = row.locator("button.si-seo-row-action");
   let actionButtonCount = 0;
   let accessibleActionButtonCount = 0;
@@ -986,6 +1168,10 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
       dialogError: null,
       rowCount,
       rowIndex,
+      targetRowIdentity,
+      targetRowIdentityFingerprint,
+      targetBeforeState,
+      toastCountBefore,
       actionButtonCount,
       accessibleActionButtonCount,
       rowDiagnostics,
@@ -1035,13 +1221,30 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
         menuItemCount,
         menuItemVisible,
         targetGeometry,
+        targetRowIdentity,
+        targetRowIdentityFingerprint,
+        targetBeforeState,
+        toastCountBefore,
         rowIndex,
         normalWheel: { deltaY: wheelDeltaY, scrollTopBefore: wheelBefore, scrollTopAfter: wheelAfter },
         failureScreenshot,
       };
     }
     const confirmation = await acceptNextW2Dialog(page, () => menuItem.click({ timeout: 5_000 }));
-    return { ...confirmation, rowCount, rowIndex, actionButtonCount, menuItemCount, menuItemVisible, targetGeometry, normalWheel: { deltaY: wheelDeltaY, scrollTopBefore: wheelBefore, scrollTopAfter: wheelAfter } };
+    return {
+      ...confirmation,
+      rowCount,
+      rowIndex,
+      targetRowIdentity,
+      targetRowIdentityFingerprint,
+      targetBeforeState,
+      toastCountBefore,
+      actionButtonCount,
+      menuItemCount,
+      menuItemVisible,
+      targetGeometry,
+      normalWheel: { deltaY: wheelDeltaY, scrollTopBefore: wheelBefore, scrollTopAfter: wheelAfter },
+    };
   } catch (error) {
     targetGeometry = await actionButton.first().evaluate((button) => {
       const rect = button.getBoundingClientRect();
@@ -1067,6 +1270,10 @@ async function clickW2IssueActionWithConfirmation(page, menuItemName) {
       dialogError: null,
       rowCount,
       rowIndex,
+      targetRowIdentity,
+      targetRowIdentityFingerprint,
+      targetBeforeState,
+      toastCountBefore,
       actionButtonCount,
       menuItemCount,
       menuItemVisible,
@@ -1175,7 +1382,7 @@ async function testW2Pages(page, syntheticSite) {
     const routeAndFilterReady = initialUi.onSeoRoute && initialUi.rule === "title_missing"
       && initialUi.status === "open" && initialUi.statusLabelPresent && initialUi.issueRowCount > 0;
     const processedConfirmation = routeAndFilterReady
-      ? await clickW2IssueActionWithConfirmation(page, "标记已处理")
+      ? await clickW2IssueActionWithConfirmation(page, "标记已处理", "title_missing")
       : {
         confirmationType: "native-window.confirm",
         actionCompleted: false,
@@ -1185,6 +1392,10 @@ async function testW2Pages(page, syntheticSite) {
         message: null,
         dialogError: null,
         rowCount: initialUi.issueRowCount,
+        targetRowIdentity: null,
+        targetRowIdentityFingerprint: null,
+        targetBeforeState: null,
+        toastCountBefore: 0,
         actionButtonCount: 0,
         menuItemCount: 0,
         menuItemVisible: false,
@@ -1193,13 +1404,24 @@ async function testW2Pages(page, syntheticSite) {
       && processedConfirmation.dialogAccepted
       && processedConfirmation.message?.includes("标记为已处理？")
       && processedConfirmation.message?.includes("单条 SEO 问题");
-    let processedWaitError = null;
-    try {
-      await waitForW2SeoCount(page, "title_missing", "fixed", before.fixed + 1);
-    } catch (error) {
-      processedWaitError = safeMessage(error);
-    }
+    const processedBeforeStateMatches = Boolean(processedConfirmation.targetBeforeState)
+      && w2SeoSnapshotMatches(processedConfirmation.targetBeforeState, before, "open");
+    const processedToast = processedConfirmation.dialogAccepted
+      ? await waitForW2UpdateResultToast(page, 1, processedConfirmation.toastCountBefore ?? 0)
+      : { observed: false, previousCount: processedConfirmation.toastCountBefore ?? 0, count: null, text: null, updated: null };
     const expectedOpenAfterProcess = before.open - 1;
+    const expectedAfterProcess = { ...before, open: expectedOpenAfterProcess, fixed: before.fixed + 1 };
+    const processedStateEvidence = processedConfirmation.dialogAccepted && processedConfirmation.targetRowIdentity
+      ? await waitForW2SeoStateEvidence(page, "title_missing", processedConfirmation.targetRowIdentity, expectedAfterProcess, "fixed")
+      : { passed: false, reason: "processed action was not confirmed or target row identity was missing", samples: [] };
+    let processedWaitError = null;
+    if (processedConfirmation.dialogAccepted) {
+      try {
+        await waitForW2SeoCount(page, "title_missing", "fixed", before.fixed + 1);
+      } catch (error) {
+        processedWaitError = safeMessage(error);
+      }
+    }
     let openPaginationWaitError = null;
     try {
       await page.waitForFunction((expected) => {
@@ -1232,19 +1454,34 @@ async function testW2Pages(page, syntheticSite) {
       message: null,
       dialogError: null,
       rowCount: 0,
+      targetRowIdentity: null,
+      targetRowIdentityFingerprint: null,
+      targetBeforeState: null,
+      toastCountBefore: 0,
       actionButtonCount: 0,
       menuItemCount: 0,
       menuItemVisible: false,
     };
     if (restoreFilterError === null && restoreActionButtonCount > 0) {
       restoreConfirmation = restoredUi?.onSeoRoute && restoredUi.rule === "title_missing" && restoredUi.status === "fixed"
-        ? await clickW2IssueActionWithConfirmation(page, "恢复为待处理")
+        ? await clickW2IssueActionWithConfirmation(page, "恢复为待处理", "title_missing")
         : { ...restoreConfirmation, actionError: "恢复操作前的 SEO 页面或已处理筛选不符合预期" };
     }
     const restoreConfirmationMatches = restoreConfirmation.dialogObserved
       && restoreConfirmation.dialogAccepted
       && restoreConfirmation.message?.includes("恢复")
       && restoreConfirmation.message?.includes("单条 SEO 问题");
+    const sameTargetRow = Boolean(processedConfirmation.targetRowIdentity)
+      && processedConfirmation.targetRowIdentity === restoreConfirmation.targetRowIdentity
+      && processedConfirmation.targetRowIdentityFingerprint === restoreConfirmation.targetRowIdentityFingerprint;
+    const restoreBeforeStateMatches = Boolean(restoreConfirmation.targetBeforeState)
+      && w2SeoSnapshotMatches(restoreConfirmation.targetBeforeState, expectedAfterProcess, "fixed");
+    const restoreToast = restoreConfirmation.dialogAccepted
+      ? await waitForW2UpdateResultToast(page, 1, restoreConfirmation.toastCountBefore ?? 0)
+      : { observed: false, previousCount: restoreConfirmation.toastCountBefore ?? 0, count: null, text: null, updated: null };
+    const restoreStateEvidence = restoreConfirmation.dialogAccepted && restoreConfirmation.targetRowIdentity
+      ? await waitForW2SeoStateEvidence(page, "title_missing", restoreConfirmation.targetRowIdentity, before, "open")
+      : { passed: false, reason: "restore action was not confirmed or target row identity was missing", samples: [] };
     let restoreWaitError = null;
     if (restoreConfirmation.dialogAccepted) {
       try {
@@ -1263,23 +1500,32 @@ async function testW2Pages(page, syntheticSite) {
       && routeAndFilterReady
       && before.open === W2_EXPECTED.issues - 6
       && processedConfirmationMatches && restoreConfirmationMatches
+      && processedBeforeStateMatches && restoreBeforeStateMatches && sameTargetRow
+      && processedToast.observed && processedToast.updated === 1
+      && restoreToast.observed && restoreToast.updated === 1
+      && processedStateEvidence.passed && restoreStateEvidence.passed
       && afterFixed.fixed === before.fixed + 1
       && afterFixed.open === expectedOpenAfterProcess
+      && afterFixed.all === before.all && afterFixed.ignored === before.ignored
       && statusCounts.open === before.open
       && statusCounts.fixed === before.fixed
+      && statusCounts.all === before.all && statusCounts.ignored === before.ignored
       && openPaginationWaitError === null;
+    const processedActionEvidence = withoutW2RawRowIdentity(processedConfirmation);
+    const restoreActionEvidence = withoutW2RawRowIdentity(restoreConfirmation);
     return {
       passed,
       evidence: {
         confirmationType: "native-window.confirm",
         initialUi,
         before,
-        processedAction: { ...processedConfirmation, message: undefined, messageMatchesExpectedScope: Boolean(processedConfirmationMatches), stateWaitError: processedWaitError },
+        sameTargetRow,
+        processedAction: { ...processedActionEvidence, message: undefined, messageMatchesExpectedScope: Boolean(processedConfirmationMatches), beforeStateMatches: processedBeforeStateMatches, toast: processedToast, stableState: processedStateEvidence, stateWaitError: processedWaitError },
         afterFixed,
         openPaginationWaitError,
         restoreFilterError,
         restoredUi,
-        restoreAction: { ...restoreConfirmation, message: undefined, messageMatchesExpectedScope: Boolean(restoreConfirmationMatches), stateWaitError: restoreWaitError },
+        restoreAction: { ...restoreActionEvidence, message: undefined, messageMatchesExpectedScope: Boolean(restoreConfirmationMatches), beforeStateMatches: restoreBeforeStateMatches, toast: restoreToast, stableState: restoreStateEvidence, stateWaitError: restoreWaitError },
         afterRestore: statusCounts,
         restoredToOpen: statusCounts.open === before.open && statusCounts.fixed === before.fixed,
       },
