@@ -3,13 +3,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { EdmCommandInput, JobResult, Kpi, ListQuery, MediaPrepareSkuResult, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
+import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, Kpi, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { edmMediaJobMonitor, type EdmMediaRunSnapshot } from "./edm/media-job-monitor";
+import { getEdmExportCapability, isEdmExportOutcomeUnknown } from "./edm/export-capability";
+import { getMediaRecoveryDisplay, mediaRecoveryErrorMessage, type MediaRecoveryDisplay, type MediaRecoveryRowStatus } from "./edm/media-recovery";
 import { EdmWorkflowPrototype } from "./edm/workflow-prototype";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
@@ -19,34 +21,48 @@ const viewOptions: { value: ImageView; label: string }[] = [
   { value: "has_manual", label: "已填手动图" }, { value: "none", label: "缺图" },
 ];
 
-type MediaDemoStatus = "queued" | MediaPrepareSkuResult["status"] | "unresolved";
+type MediaDemoStatus = "queued" | MediaPrepareSkuResult["status"] | "unresolved" | MediaRecoveryRowStatus;
 type MediaDemoRowState = { status: MediaDemoStatus; reason?: string };
 type MediaDemoOutcome = "complete" | "WP_AUTH_FAILED" | "WP_FORBIDDEN";
 
 const mediaStatusLabels: Record<MediaDemoStatus, string> = {
   queued: "排队中", uploaded: "已上传", reused: "已复用",
   recorded: "原图 URL 已记录", skipped_has_url: "已有 URL，已跳过",
-  failed: "失败", unresolved: "尚未开始",
+  failed: "失败", unresolved: "尚未开始", unknown: "结果未知",
+  not_started: "已确认未开始", unavailable: "无法恢复",
 };
 
 const mediaStatusTones: Record<MediaDemoStatus, "neutral" | "info" | "ok" | "warn" | "danger"> = {
   queued: "warn", uploaded: "ok", reused: "info", recorded: "info",
-  skipped_has_url: "neutral", failed: "danger", unresolved: "warn",
+  skipped_has_url: "neutral", failed: "danger", unresolved: "warn", unknown: "warn",
+  not_started: "neutral", unavailable: "warn",
 };
 
 function summarizeMediaRun(skus: string[], result: JobResult): string {
   const labels: Record<MediaPrepareSkuResult["status"], string> = {
     uploaded: "上传", reused: "复用", recorded: "记录原图 URL", skipped_has_url: "已有 URL 跳过", failed: "失败",
   };
-  const results = result.media_results ?? [];
+  const recovery = getMediaRecoveryDisplay(result, skus);
+  const authMessage = recovery.errorCode ? mediaRecoveryErrorMessage(recovery.errorCode) : "";
+  if (recovery.kind !== "available") {
+    const note = recovery.kind === "legacy"
+      ? "旧版任务结果没有逐 SKU 恢复字段，无法确认各 SKU 状态；请先核对图片 URL 与台账。"
+      : "任务返回的逐 SKU 恢复字段不完整或与请求范围不一致，无法确认状态；请先核对图片 URL 与台账。";
+    return [authMessage, result.summary, note].filter(Boolean).join(" ") || note;
+  }
+
   const counts = new Map<MediaPrepareSkuResult["status"], number>();
-  for (const item of results) counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
+  for (const row of recovery.rows) {
+    if (row.status in labels) counts.set(row.status as MediaPrepareSkuResult["status"], (counts.get(row.status as MediaPrepareSkuResult["status"]) ?? 0) + 1);
+  }
   const summaryParts = [...counts].map(([status, count]) => `${labels[status]} ${count}`);
-  const unresolved = skus.length - results.length;
-  if (unresolved > 0) summaryParts.push(`尚未开始 ${unresolved}`);
-  const authMessage = result.media_error_code === "WP_AUTH_FAILED" ? "WordPress 认证失败（401），批次已停止。"
-    : result.media_error_code === "WP_FORBIDDEN" ? "WordPress 权限不足（403），批次已停止。" : "";
-  return [authMessage, result.summary, summaryParts.join("，")].filter(Boolean).join(" ") || "图片准备任务已结束。";
+  const unknownCount = recovery.rows.filter(({ status }) => status === "unknown").length;
+  const notStartedCount = recovery.rows.filter(({ status }) => status === "not_started").length;
+  if (unknownCount) summaryParts.push(`结果未知 ${unknownCount}`);
+  if (notStartedCount) summaryParts.push(`已确认未开始 ${notStartedCount}`);
+  const batchNote = recovery.batchState === "interrupted" ? "批次已中断。"
+    : recovery.batchState === "outcome_unknown" ? "部分外部处理结果未知。" : "";
+  return [authMessage, result.summary, batchNote, summaryParts.join("，")].filter(Boolean).join(" ") || "图片准备任务已结束。";
 }
 
 function getMediaRunStatuses(skus: string[], state: EdmMediaRunSnapshot["state"], result?: JobResult): Record<string, MediaDemoRowState> {
@@ -54,13 +70,50 @@ function getMediaRunStatuses(skus: string[], state: EdmMediaRunSnapshot["state"]
     return Object.fromEntries(skus.map((sku) => [sku, { status: "queued" as const }]));
   }
   if (!result) return {};
-  const resultsBySku = new Map((result.media_results ?? []).map((item) => [item.sku, item]));
-  return Object.fromEntries(skus.map((sku) => {
-    const item = resultsBySku.get(sku);
-    return [sku, item
-      ? { status: item.status, ...(item.reason ? { reason: item.reason } : {}) }
-      : { status: "unresolved" as const, reason: "批次提前结束，尚未开始处理" }];
-  }));
+  const recovery = getMediaRecoveryDisplay(result, skus);
+  return Object.fromEntries(recovery.rows.map(({ sku, status, reason }) => [sku, { status, ...(reason ? { reason } : {}) }]));
+}
+
+function mediaRecoverySummary(recovery: MediaRecoveryDisplay): string {
+  const authMessage = recovery.errorCode ? mediaRecoveryErrorMessage(recovery.errorCode) : "";
+  if (recovery.kind === "legacy") return [authMessage, "旧版任务记录没有逐 SKU 恢复字段，无法确认已处理、结果未知或尚未开始的 SKU。请先核对图片 URL 与台账，再决定是否重新处理。"].filter(Boolean).join(" ");
+  if (recovery.kind === "invalid") return [authMessage, "任务恢复数据不完整或分区不一致，无法安全推断 SKU 状态。请先核对图片 URL 与台账。"].filter(Boolean).join(" ");
+  const batchMessage = recovery.batchState === "interrupted" ? "最近批次已中断；“已确认未开始”仅来自 Core 明确返回的未开始清单。"
+    : recovery.batchState === "outcome_unknown" ? "至少一个 SKU 的外部处理结果未知。请先核对图片 URL 与台账，再决定是否重试。"
+      : "最近批次的逐 SKU 结果已确认。";
+  return [authMessage, batchMessage].filter(Boolean).join(" ");
+}
+
+function MediaHistoryRecovery({ run }: { run: RunLog }) {
+  const recovery = getMediaRecoveryDisplay(run);
+  const tone = recovery.errorCode ? "error" : recovery.kind === "available" && recovery.batchState === "complete" ? "info" : "warn";
+  return <section className="si-edm-history-recovery" aria-label="最近一次图片处理恢复结果">
+    <Notice tone={tone} title="最近一次图片处理记录">{mediaRecoverySummary(recovery)}</Notice>
+    {recovery.rows.length > 0 && <ul className="si-edm-media-demo-results" aria-label="最近任务逐 SKU 恢复结果">
+      {recovery.rows.map(({ sku, status, reason }) => <li key={sku}>
+        <code>{sku}</code><Chip tone={mediaStatusTones[status]}>{mediaStatusLabels[status]}</Chip>{reason && <small>{reason}</small>}
+      </li>)}
+    </ul>}
+  </section>;
+}
+
+function exportResultMessage(result: EdmSkuIndexExportResult): string {
+  const status = result.status === "created" ? "清单已创建"
+    : result.status === "updated" ? "清单已更新" : "清单已是最新";
+  return `${status}：${result.sku_count} 个 SKU，待补图 ${result.missing_image_count} 个。`;
+}
+
+function getExportErrorMessage(error: unknown): { tone: "warn" | "error"; message: string } {
+  if (isEdmExportOutcomeUnknown(error)) {
+    return { tone: "warn", message: "写入结果尚未确认；清单可能已经生成。契约允许安全重试，也可以先检查项目清单。" };
+  }
+  if (error && typeof error === "object" && "code" in error && error.code === "EDM_INDEX_CONFLICT") {
+    return { tone: "error", message: "清单目标存在冲突，未覆盖已有文件。请先检查目标文件后重试。" };
+  }
+  return {
+    tone: "error",
+    message: "清单生成失败，未确认目标文件已更新。请稍后重试。",
+  };
 }
 
 function isRecordableFeedImage(url: string): boolean {
@@ -158,19 +211,54 @@ export function EdmPage() {
   const [mediaDemoRunning, setMediaDemoRunning] = useState(false);
   const [mediaDemoMessage, setMediaDemoMessage] = useState("");
   const [mediaDemoOpen, setMediaDemoOpen] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<
+    | { projectId: string; result: EdmSkuIndexExportResult }
+    | { projectId: string; error: { tone: "warn" | "error"; message: string } }
+    | null
+  >(null);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["edm", "summary", id], queryFn: () => api.edm.summary(id) });
   const listQuery = useQuery({ queryKey: ["edm", "images", id, query], queryFn: () => api.edm.listImages(id, query) });
+  const mediaHistoryQuery = useQuery({
+    queryKey: ["job-history", id],
+    queryFn: () => api.jobs.history(id, 100),
+    enabled: !isMockApi && !mediaRunSnapshot,
+    staleTime: 0,
+  });
   const project = projectQuery.data?.summary;
   const skuGrouping = projectQuery.data?.config.sku_grouping;
   const mediaCapability = getEdmMediaCapability(api);
+  const exportCapability = getEdmExportCapability(api);
+  const exportIndex = api.edm.exportIndex;
+  const latestMediaHistory = mediaHistoryQuery.data?.find((run) => run.job === "media");
+  const currentExportFeedback = exportFeedback?.projectId === id ? exportFeedback : null;
+  const exportMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      if (!exportCapability.available || !exportIndex) throw new Error("EDM 清单导出尚未就绪。");
+      return exportIndex(projectId);
+    },
+    onMutate: () => setExportFeedback(null),
+    onSuccess: (result, projectId) => {
+      setExportFeedback({ projectId, result });
+      const message = exportResultMessage(result);
+      if (result.status === "unchanged") toast.info(message);
+      else toast.success(message);
+    },
+    onError: (error, projectId) => {
+      const feedback = getExportErrorMessage(error);
+      setExportFeedback({ projectId, error: feedback });
+      if (feedback.tone === "warn") toast.info(feedback.message);
+      else toast.error(feedback.message);
+    },
+  });
   const mediaRunBusy = mediaRunSnapshot?.state === "starting" || mediaRunSnapshot?.state === "running";
   const mediaRunProgress = mediaRunSnapshot?.state === "starting" || mediaRunSnapshot?.state === "running" ? mediaRunSnapshot.progress : "";
   const mediaRunMessage = mediaRunSnapshot?.state === "failed" ? mediaRunSnapshot.error ?? "图片处理任务启动失败。"
     : mediaRunSnapshot?.result ? summarizeMediaRun(mediaRunSnapshot.skus, mediaRunSnapshot.result) : "";
-  const mediaRunTone = mediaRunSnapshot?.state === "failed" || mediaRunSnapshot?.result?.status === "failed" ? "error"
-    : mediaRunSnapshot?.result?.status === "partial" ? "warn" : "info";
+  const mediaRunRecovery = mediaRunSnapshot?.result ? getMediaRecoveryDisplay(mediaRunSnapshot.result, mediaRunSnapshot.skus) : null;
+  const mediaRunTone = mediaRunSnapshot?.state === "failed" || mediaRunSnapshot?.result?.status === "failed" || mediaRunRecovery?.errorCode ? "error"
+    : mediaRunSnapshot?.result?.status === "partial" || mediaRunRecovery?.kind === "invalid" || mediaRunRecovery?.kind === "legacy" || (mediaRunRecovery?.kind === "available" && mediaRunRecovery.batchState !== "complete") ? "warn" : "info";
   const mediaRunStatuses = mediaRunSnapshot ? getMediaRunStatuses(mediaRunSnapshot.skus, mediaRunSnapshot.state, mediaRunSnapshot.result) : {};
   const groupingEnabled = skuGrouping?.enabled === true;
   const groupingRule: SkuGroupingRule = skuGrouping?.rule ?? { type: "separator", value: "-" };
@@ -307,6 +395,23 @@ export function EdmPage() {
     <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="edm">
     <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+    {!isMockApi && <div className="si-edm-live-workflows">
+      {exportCapability.available ? <div className="si-edm-export-control">
+        <Button variant="primary" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate(id)}>
+          {exportMutation.isPending ? "正在生成全项目清单…" : "导出全项目 SKU 清单"}
+        </Button>
+        {currentExportFeedback && "result" in currentExportFeedback && <Notice tone="info" title="EDM SKU 清单导出结果">
+          {exportResultMessage(currentExportFeedback.result)} 路径：<code>{currentExportFeedback.result.path}</code>
+        </Notice>}
+        {currentExportFeedback && "error" in currentExportFeedback && <Notice tone={currentExportFeedback.error.tone} title={currentExportFeedback.error.tone === "warn" ? "导出结果尚未确认" : "清单导出失败"}>
+          {currentExportFeedback.error.message}
+        </Notice>}
+      </div> : <Notice tone="info" title="全项目 SKU 清单导出尚未就绪">
+        Core 与 Desktop IPC 未同时提供并开放 `edm.exportIndex` 前，不显示可执行的导出操作。
+      </Notice>}
+      {!mediaRunSnapshot && mediaHistoryQuery.isError && <ApiErrorNotice label="最近图片处理记录加载失败。" error={mediaHistoryQuery.error} onRetry={() => void mediaHistoryQuery.refetch()} />}
+      {!mediaRunSnapshot && latestMediaHistory && <MediaHistoryRecovery run={latestMediaHistory} />}
+    </div>}
     {isMockApi ? <div className="si-edm-media-demo">
       <Button type="button" variant="ghost" size="small" className="si-edm-media-demo-toggle" aria-expanded={mediaDemoOpen} aria-controls="si-edm-media-demo-panel" onClick={() => setMediaDemoOpen((open) => !open)}>交互模拟（仅本地演示，不会上传或写入台账）</Button>
       <div id="si-edm-media-demo-panel" className="si-edm-media-demo-panel" hidden={!mediaDemoOpen}>
