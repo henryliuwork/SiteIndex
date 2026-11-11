@@ -643,6 +643,35 @@ describe("core io", () => {
     }
   }, 30_000);
 
+  it("retries stale-lock recovery in the same process after one rename failure", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    const hostId = await currentHostId(root);
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const now = new Date().toISOString();
+    await writeFile(lockPath, `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`);
+    const injected = Object.assign(new Error("injected transient rename failure"), { code: "EPERM" });
+
+    await expect(withLockForTest(root, () => "must not enter", { heartbeatMs: 60_000 }, {
+      renameStaleLock: async () => { throw injected; },
+    })).rejects.toMatchObject({ code: "EPERM" });
+    await expect(withLock(root, () => "recovered on same-process retry", { heartbeatMs: 60_000 }))
+      .resolves.toBe("recovered on same-process retry");
+    await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
   it("recovers after a stale-lock reclaimer crashes after publishing its claim", async () => {
     const root = await tempDir();
     const stateRoot = path.join(root, "isolated-local-state");
@@ -694,6 +723,7 @@ describe("core io", () => {
       ...hostIdentityEnvironment(stateRoot),
       SITEINDEX_TEST_LOCK_ROOT: project,
     })).resolves.toBe("recovered");
+    await expect(readdir(path.join(path.dirname(hostIdPath), "lock-recovery"))).resolves.toEqual([]);
   }, 30_000);
 
   it("fails closed when a previous stale-lock reclaim claim is malformed", async () => {
@@ -740,6 +770,48 @@ describe("core io", () => {
     const rootClaim = (await readdir(recoveryDirectory)).find((name) => name.endsWith(".root"));
     expect(rootClaim).toBeDefined();
     await writeFile(path.join(recoveryDirectory, rootClaim!), "{partial");
+    const attemptSource = [
+      'import { withLock } from "./src/io/runner-lock.ts";',
+      'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
+      'if (!root) throw new Error("Missing project path");',
+      'try { await withLock(root, () => "must not enter", { heartbeatMs: 60000 }); }',
+      'catch (error) { const value = error && typeof error === "object" ? error : {}; process.stdout.write(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`); }',
+    ].join("\n");
+    await expect(runChildScript(attemptSource, coreDirectory, {
+      ...process.env,
+      ...hostIdentityEnvironment(stateRoot),
+      SITEINDEX_TEST_LOCK_ROOT: project,
+    })).resolves.toMatch(/^LOCKED:/);
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+  }, 30_000);
+
+  it("returns a structured LOCKED error when the local reclaim directory is unavailable", async () => {
+    const root = await tempDir();
+    const stateRoot = path.join(root, "isolated-local-state");
+    const hostIdPath = hostIdentityFile(stateRoot);
+    const hostId = await readOrCreateLocalHostId(hostIdPath);
+    const project = path.join(root, "project");
+    const lockPath = path.join(project, PATHS.lock);
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    const exitedPid = await new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      child.once("error", reject);
+      child.once("close", () => resolve(child.pid ?? 0));
+    });
+    const now = new Date().toISOString();
+    const staleLock = `${JSON.stringify({
+      device_id: "fixture-device",
+      device_name: "Fixture",
+      host_id: hostId,
+      pid: exitedPid,
+      job: "daily",
+      started_at: now,
+      heartbeat: now,
+    })}\n`;
+    await writeFile(lockPath, staleLock);
+    await writeFile(path.join(path.dirname(hostIdPath), "lock-recovery"), "not a directory");
+
+    const coreDirectory = path.resolve(process.cwd(), "packages/core");
     const attemptSource = [
       'import { withLock } from "./src/io/runner-lock.ts";',
       'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',

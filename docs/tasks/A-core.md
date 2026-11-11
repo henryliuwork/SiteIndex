@@ -14,7 +14,7 @@
 - [x] `atomicWrite(path, data)`：同目录临时文件 → fsync → rename；Windows `EPERM/EBUSY` 重试 10 次（200ms 递增）
 - [x] JSONL 读写：按主键排序（`compareKeys`，不用 localeCompare）、键顺序固定、末尾换行，与参考实现逐字节一致
 - [x] CSV 读写：表头来自 `CSV_HEADERS`，引号规则与 Python `csv` 模块一致
-- [x] `index/.lock`：`wx` 创建、原子写入初始记录与 30 秒心跳、10 分钟僵尸锁回收；仅回收同主机且确认进程已退出的锁；通过用户本机状态目录中的原子认领链串行化多个 Core 回收者，回收者崩溃后由下一认领者续接；空、损坏或未知认领状态 fail closed；`withLock(project, fn)`。项目 `.lock` 仍在项目目录以供其他设备观察，云盘同步不是跨设备原子互斥；非协作同步程序若恰在最后一次 `lstat` 后替换 `.lock`，Node 可移植 API 无法条件删除该路径。
+- [x] `index/.lock`：`wx` 创建、原子写入初始记录与 30 秒心跳、10 分钟僵尸锁回收；仅回收同主机且确认进程已退出的锁；通过用户本机状态目录中的原子认领链串行化多个 Core 回收者，回收者崩溃后由下一认领者续接；瞬时失败只释放仍由本进程持有且没有后继的认领；空、损坏或未知认领状态及认领目录不可用时 fail closed；`withLock(project, fn)`。项目 `.lock` 仍在项目目录以供其他设备观察，云盘同步不是跨设备原子互斥；非协作同步程序若恰在最后一次 `lstat` 后替换 `.lock`，Node 可移植 API 无法条件删除该路径。
 - [x] `.runner.json` 读写；`assertRunner(project, deviceId, trigger)`（定时模式下非执行设备 → 退出码 5）
 - [x] 云盘冲突副本检测（`DEFAULT_CONFLICT_PATTERNS`）
 - **验收**：单测覆盖并发写同一文件、锁超时、冲突副本识别

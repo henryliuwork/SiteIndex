@@ -90,6 +90,7 @@ let localHostIdPromise: Promise<string> | undefined;
 export interface RunnerLockTestHooks {
   afterStaleLockValidated?: () => Promise<void>;
   afterReclaimClaimPublished?: () => Promise<void>;
+  renameStaleLock?: (lockPath: string, retiredPath: string) => Promise<void>;
 }
 
 const runnerLockTestHooks = new AsyncLocalStorage<RunnerLockTestHooks>();
@@ -205,7 +206,14 @@ interface ReclaimClaim {
 }
 
 interface ReclaimClaimLease {
-  files: string[];
+  entries: Array<{
+    file: string;
+    tempFile: string;
+    claim: ReclaimClaim;
+    identity: { dev: number; ino: number };
+  }>;
+  directory: string;
+  lockKey: string;
 }
 
 function processPresence(pid: number): ProcessPresence {
@@ -274,20 +282,27 @@ async function openOrRecover(lockPath: string, currentHostId: string) {
         throw lockError("项目运行锁刚刚更新，请稍后重试。");
       }
       const claim = await acquireReclaimClaim(lockPath, identity, text, currentHostId);
-      const claimedPath = await lstat(lockPath);
-      const claimedText = await readFile(lockPath, "utf8");
-      if (claimedPath.ino !== identity.ino || claimedPath.dev !== identity.dev
-        || claimedPath.size !== identity.size || claimedPath.mtimeMs !== identity.mtimeMs
-        || claimedPath.ctimeMs !== identity.ctimeMs || claimedText !== text) {
-        throw lockError("项目运行锁在回收认领期间发生变化；请稍后重试。");
+      let recovered = false;
+      try {
+        const claimedPath = await lstat(lockPath);
+        const claimedText = await readFile(lockPath, "utf8");
+        if (claimedPath.ino !== identity.ino || claimedPath.dev !== identity.dev
+          || claimedPath.size !== identity.size || claimedPath.mtimeMs !== identity.mtimeMs
+          || claimedPath.ctimeMs !== identity.ctimeMs || claimedText !== text) {
+          throw lockError("项目运行锁在回收认领期间发生变化；请稍后重试。");
+        }
+        await runnerLockTestHooks.getStore()?.afterStaleLockValidated?.();
+        const retired = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+        const renameStaleLock = runnerLockTestHooks.getStore()?.renameStaleLock ?? rename;
+        await renameStaleLock(lockPath, retired);
+        await unlink(retired).catch(() => undefined);
+        const reservation = await open(lockPath, "wx");
+        recovered = true;
+        await releaseReclaimClaimChain(claim);
+        return reservation;
+      } finally {
+        if (!recovered) await releaseOwnedReclaimClaim(claim).catch(() => undefined);
       }
-      await runnerLockTestHooks.getStore()?.afterStaleLockValidated?.();
-      const retired = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
-      await rename(lockPath, retired);
-      await unlink(retired).catch(() => undefined);
-      const reservation = await open(lockPath, "wx");
-      await Promise.all(claim.files.map((file) => unlink(file).catch(() => undefined)));
-      return reservation;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "EEXIST") {
@@ -323,11 +338,15 @@ async function acquireReclaimClaim(
     .update(`${canonicalPath}\0${identity.dev}:${identity.ino}:${identity.size}:${identity.mtimeMs}:${identity.ctimeMs}\0${lockText}`)
     .digest("hex");
   const directory = path.join(path.dirname(localHostIdFile()), "lock-recovery");
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  try {
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+  } catch {
+    throw lockError("无法访问本机锁回收状态目录；为避免并发写入，Core 已停止回收锁。");
+  }
 
   let claimPath = path.join(directory, `${lockKey}.root`);
   let previousToken: string | null = null;
-  const files: string[] = [];
+  const entries: ReclaimClaimLease["entries"] = [];
   for (let generation = 0; generation < 1024; generation += 1) {
     const claim: ReclaimClaim = {
       version: 1,
@@ -337,25 +356,25 @@ async function acquireReclaimClaim(
       lock_key: lockKey,
       previous_token: previousToken,
     };
-    const tempPath = `${claimPath}.tmp-${process.pid}-${randomUUID()}`;
+    const tempPath = `${claimPath}.tmp-${process.pid}-${claim.token}`;
     let handle;
     let tempCreated = false;
+    let published = false;
+    let stagedIdentity: { dev: number; ino: number };
     try {
       handle = await open(tempPath, "wx", 0o600);
       tempCreated = true;
       await handle.writeFile(`${JSON.stringify(claim)}\n`, "utf8");
       await handle.sync();
+      const staged = await handle.stat();
+      stagedIdentity = { dev: staged.dev, ino: staged.ino };
       await handle.close();
       handle = undefined;
       try {
         await link(tempPath, claimPath);
-        files.push(claimPath);
-        await runnerLockTestHooks.getStore()?.afterReclaimClaimPublished?.();
-        return { files };
+        published = true;
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-          throw lockError("无法安全登记项目锁回收者；为避免并发写入，项目锁未回收。");
-        }
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       }
     } catch (error) {
       if (error instanceof CoreIOError) throw error;
@@ -364,10 +383,24 @@ async function acquireReclaimClaim(
       await handle?.close().catch(() => undefined);
       if (tempCreated) await unlink(tempPath).catch(() => undefined);
     }
+    if (published) {
+      const entry = { file: claimPath, tempFile: tempPath, claim, identity: stagedIdentity };
+      const lease: ReclaimClaimLease = { entries: [...entries, entry], directory, lockKey };
+      try {
+        await runnerLockTestHooks.getStore()?.afterReclaimClaimPublished?.();
+      } catch (error) {
+        await releaseOwnedReclaimClaim(lease).catch(() => undefined);
+        throw error;
+      }
+      return lease;
+    }
 
     let existing: unknown;
+    let existingIdentity: { dev: number; ino: number };
     try {
       existing = JSON.parse(await readFile(claimPath, "utf8")) as unknown;
+      const stat = await lstat(claimPath);
+      existingIdentity = { dev: stat.dev, ino: stat.ino };
     } catch {
       throw lockError("项目锁回收状态无效；为避免并发写入，Core 已停止回收锁。");
     }
@@ -384,11 +417,74 @@ async function acquireReclaimClaim(
     if (processPresence(existingClaim.pid) !== "dead") {
       throw lockError("另一个进程正在回收此项目锁，或其状态无法确认；请稍后重试。");
     }
-    files.push(claimPath);
+    entries.push({
+      file: claimPath,
+      tempFile: `${claimPath}.tmp-${existingClaim.pid}-${existingClaim.token}`,
+      claim: existingClaim as ReclaimClaim,
+      identity: existingIdentity,
+    });
     previousToken = existingClaim.token;
     claimPath = path.join(directory, `${lockKey}.${previousToken}`);
   }
   throw lockError("项目锁回收历史过长；为避免并发写入，Core 已停止回收锁。");
+}
+
+async function releaseOwnedReclaimClaim(lease: ReclaimClaimLease): Promise<void> {
+  const owner = lease.entries.at(-1);
+  if (!owner) return;
+  const successor = path.join(lease.directory, `${lease.lockKey}.${owner.claim.token}`);
+  try {
+    await lstat(successor);
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
+  }
+
+  for (let attempt = 0; attempt <= 10; attempt += 1) {
+    try {
+      const current = await lstat(owner.file);
+      if (current.dev !== owner.identity.dev || current.ino !== owner.identity.ino) return;
+      const text = await readFile(owner.file, "utf8");
+      const record: unknown = JSON.parse(text);
+      if (typeof record !== "object" || record === null || Array.isArray(record)) return;
+      const value = record as Partial<ReclaimClaim>;
+      if (value.token !== owner.claim.token || value.pid !== process.pid
+        || value.host_id !== owner.claim.host_id || value.lock_key !== lease.lockKey
+        || value.previous_token !== owner.claim.previous_token) return;
+      const latest = await lstat(owner.file);
+      if (latest.dev !== owner.identity.dev || latest.ino !== owner.identity.ino) return;
+      await unlink(owner.file);
+      await unlink(owner.tempFile).catch(() => undefined);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return;
+      if ((code !== "EPERM" && code !== "EBUSY") || attempt >= 10) return;
+      await wait(200 * (attempt + 1));
+    }
+  }
+}
+
+async function releaseReclaimClaimChain(lease: ReclaimClaimLease): Promise<void> {
+  for (const entry of [...lease.entries].reverse()) {
+    try {
+      const current = await lstat(entry.file);
+      if (current.dev !== entry.identity.dev || current.ino !== entry.identity.ino) continue;
+      const text = await readFile(entry.file, "utf8");
+      const record: unknown = JSON.parse(text);
+      if (typeof record !== "object" || record === null || Array.isArray(record)) continue;
+      const value = record as Partial<ReclaimClaim>;
+      if (value.token !== entry.claim.token || value.pid !== entry.claim.pid
+        || value.host_id !== entry.claim.host_id || value.lock_key !== lease.lockKey
+        || value.previous_token !== entry.claim.previous_token) continue;
+      const latest = await lstat(entry.file);
+      if (latest.dev !== entry.identity.dev || latest.ino !== entry.identity.ino) continue;
+      await unlink(entry.file).catch(() => undefined);
+      await unlink(entry.tempFile).catch(() => undefined);
+    } catch {
+      // Claim cleanup is best effort after the project lock has been reserved.
+    }
+  }
 }
 
 async function writeLock(lockPath: string, record: LockRecord): Promise<LockIdentity> {
