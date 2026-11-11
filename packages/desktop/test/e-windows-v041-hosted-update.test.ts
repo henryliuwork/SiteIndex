@@ -235,6 +235,15 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(acceptanceScript).toContain('launch_at_login: false');
   });
 
+  it("records only process, CDP, and settings state when a packaged window is missing", () => {
+    expect(acceptanceScript).toContain("collectPackagedLaunchDiagnostics(processHandle");
+    expect(acceptanceScript).toContain("cdpPageTargetCount");
+    expect(acceptanceScript).toContain("mainResponding");
+    expect(acceptanceScript).toContain("rendererCount");
+    expect(acceptanceScript).toContain("validJson");
+    expect(acceptanceScript).not.toContain("$process.CommandLine }");
+  });
+
   it("does not claim an update until the updater has restarted the candidate", async () => {
     let now = 0;
     const launchForVerification = vi.fn();

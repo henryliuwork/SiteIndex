@@ -123,7 +123,7 @@ const report = {
   },
   checks: [],
   processOutput: [],
-  rendererDiagnostics: { targets: [], consoleErrors: [], pageErrors: [] },
+  rendererDiagnostics: { targets: [], consoleErrors: [], pageErrors: [], packagedLaunch: null },
   credentialIsolation: {
     candidateVersion: CANDIDATE_VERSION,
     candidateSha256: null,
@@ -812,6 +812,88 @@ async function verifyElectronProfileDiagnostics(page) {
   });
 }
 
+async function collectPackagedLaunchDiagnostics(processHandle, contextCount) {
+  let cdpVersionReachable = false;
+  let cdpTargetCount = 0;
+  let cdpPageTargetCount = 0;
+  try {
+    const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`);
+    cdpVersionReachable = response.ok;
+  } catch {
+    // The boolean is enough for the public acceptance report.
+  }
+  try {
+    const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
+    if (response.ok) {
+      const targets = await response.json();
+      if (Array.isArray(targets)) {
+        cdpTargetCount = targets.length;
+        cdpPageTargetCount = targets.filter((target) => target?.type === "page").length;
+      }
+    }
+  } catch {
+    // The boolean and target counts are enough for the public acceptance report.
+  }
+
+  const processTreeScript = [
+    "$installDir = [System.IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_DIR)",
+    "$expectedExe = Join-Path $installDir 'SiteIndex.exe'",
+    "$mainPid = [int]$env:SITEINDEX_ACCEPTANCE_MAIN_PID",
+    "$siteProcesses = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $expectedExe })",
+    "$main = $siteProcesses | Where-Object { $_.ProcessId -eq $mainPid } | Select-Object -First 1",
+    "$responding = $false; if ($main) { $windowProcess = Get-Process -Id $mainPid -ErrorAction SilentlyContinue; if ($windowProcess) { $responding = [bool]$windowProcess.Responding } }",
+    "$rendererCount = @($siteProcesses | Where-Object { $_.CommandLine -match '--type=renderer' }).Count",
+    "$utilityCount = @($siteProcesses | Where-Object { $_.CommandLine -match '--type=utility' }).Count",
+    "$gpuCount = @($siteProcesses | Where-Object { $_.CommandLine -match '--type=gpu-process' }).Count",
+    "[pscustomobject]@{ totalCount = $siteProcesses.Count; mainAlive = [bool]$main; mainResponding = $responding; rendererCount = $rendererCount; utilityCount = $utilityCount; gpuCount = $gpuCount } | ConvertTo-Json -Compress",
+  ].join("; ");
+  const processTreeResult = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", processTreeScript], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15_000,
+    env: isolatedProcessEnvironment({ SITEINDEX_ACCEPTANCE_MAIN_PID: String(processHandle?.pid ?? 0) }),
+  });
+  let processTree = {
+    totalCount: 0,
+    mainAlive: processHandle?.exitCode === null,
+    mainResponding: null,
+    rendererCount: 0,
+    utilityCount: 0,
+    gpuCount: 0,
+  };
+  if (!processTreeResult.error && processTreeResult.status === 0) {
+    try {
+      processTree = { ...processTree, ...JSON.parse(processTreeResult.stdout.trim()) };
+    } catch {
+      // Keep the safe zero-count defaults if CIM output was unavailable.
+    }
+  }
+
+  let settingsFile = { exists: false, validJson: false, hasProjectsRoot: false, trayDisabled: false };
+  try {
+    const settings = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
+    settingsFile = {
+      exists: true,
+      validJson: true,
+      hasProjectsRoot: typeof settings.projects_root === "string" && settings.projects_root.length > 0,
+      trayDisabled: settings.close_to_tray === false,
+    };
+  } catch {
+    // Do not include file paths or contents in the report.
+  }
+
+  report.rendererDiagnostics.packagedLaunch = {
+    processAlive: processHandle?.exitCode === null,
+    processExitCode: processHandle?.exitCode ?? null,
+    cdpVersionReachable,
+    cdpTargetCount,
+    cdpPageTargetCount,
+    browserContextCount: contextCount,
+    processTree,
+    settingsFile,
+  };
+}
+
 async function connectToInstalledApp({ processHandle = null, verifyProfile = true } = {}) {
   const endpoint = `http://127.0.0.1:${CDP_PORT}`;
   const deadline = Date.now() + 60_000;
@@ -853,6 +935,7 @@ async function connectToInstalledApp({ processHandle = null, verifyProfile = tru
     await delay(300);
   }
   if (!page) {
+    await collectPackagedLaunchDiagnostics(processHandle, browserConnection.contexts().length);
     report.rendererDiagnostics.targets = await Promise.all(
       browserConnection.contexts().flatMap((context) => context.pages()).map(async (target) => ({
         url: safeMessage(target.url()),
