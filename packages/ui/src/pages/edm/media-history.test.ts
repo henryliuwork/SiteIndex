@@ -23,7 +23,7 @@ function history(runId: string, startedAt: number, job: RunLog["job"] = "media")
 describe("selectEdmMediaDisplay", () => {
   it("活动快照优先显示，并在历史读取中不被覆盖", () => {
     const active = snapshot(10_000, "media-running", "running");
-    expect(selectEdmMediaDisplay(active, [history("external", 50_000)], "loading", 80_000)).toEqual({ kind: "snapshot", snapshot: active });
+    expect(selectEdmMediaDisplay(active, [history("external", 5_000)], "loading", 80_000)).toEqual({ kind: "snapshot", snapshot: active });
   });
 
   it("重新进入时先隐藏旧终态，避免历史查询期间旧结果闪现", () => {
@@ -45,12 +45,24 @@ describe("selectEdmMediaDisplay", () => {
     expect(selectEdmMediaDisplay(currentFailure, [persistedRun], "success", 1_500_000)).toEqual({ kind: "history", run: persistedRun });
   });
 
-  it("同一 runId 只有可信时间接近时才视为同一执行", () => {
+  it("同日复用 runId 时，30 秒后的新历史优先于旧快照", () => {
     const runTime = 1_000_000;
-    const matchingRun = history("daily-media", runTime + 30_000);
-    expect(selectEdmMediaDisplay(snapshot(runTime, "daily-media"), [matchingRun], "success", runTime - 1000).kind).toBe("snapshot");
-    const reusedRun = history("daily-media", runTime + 10 * 60_000);
-    expect(selectEdmMediaDisplay(snapshot(runTime, "daily-media"), [reusedRun], "success", runTime - 1000)).toEqual({ kind: "history", run: reusedRun });
+    const oldSnapshot = snapshot(runTime, "daily-media");
+    const newerRun = history("daily-media", runTime + 30_000);
+    expect(selectEdmMediaDisplay(oldSnapshot, [newerRun], "success", runTime - 1000)).toEqual({ kind: "history", run: newerRun });
+  });
+
+  it("较新的持久化历史也不被较旧活动快照遮住", () => {
+    const runTime = 1_000_000;
+    const oldSnapshot = snapshot(runTime, "daily-media", "running");
+    const newerRun = history("daily-media", runTime + 30_000);
+    expect(selectEdmMediaDisplay(oldSnapshot, [newerRun], "success", runTime - 1000)).toEqual({ kind: "history", run: newerRun });
+  });
+
+  it("较新的本地快照优先于较旧历史，不依赖 runId 判断身份", () => {
+    const olderRun = history("daily-media", 1_000_000);
+    const newerSnapshot = snapshot(1_030_000, "daily-media");
+    expect(selectEdmMediaDisplay(newerSnapshot, [olderRun], "success", 900_000)).toEqual({ kind: "snapshot", snapshot: newerSnapshot });
   });
 
   it("旧快照早于已截断的最近 100 条历史窗口时不冒充最近记录", () => {

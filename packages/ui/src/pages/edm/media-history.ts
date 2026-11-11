@@ -2,7 +2,6 @@ import type { RunLog } from "@siteindex/shared";
 import type { EdmMediaRunSnapshot } from "./media-job-monitor";
 
 export const EDM_MEDIA_HISTORY_LIMIT = 100;
-const RUN_ID_TIME_TOLERANCE_MS = 2 * 60 * 1000;
 
 export type EdmMediaDisplaySelection =
   | { kind: "snapshot"; snapshot: EdmMediaRunSnapshot }
@@ -20,14 +19,14 @@ function isActive(snapshot: EdmMediaRunSnapshot): boolean {
 
 function latestMediaRun(history: readonly RunLog[]): RunLog | undefined {
   return history
-    .filter((run) => run.job === "media")
+    .filter((run) => run.job === "media" && Number.isFinite(Date.parse(run.started_at)))
     .sort((left, right) => Date.parse(right.started_at) - Date.parse(left.started_at))[0];
 }
 
 /**
- * Selects the newest evidenced media result. runId alone is not treated as an
- * execution identity because legacy producers may reuse IDs; timestamps must
- * corroborate a same-ID match.
+ * Selects the newest evidenced media result. runId is not an execution identity:
+ * legacy producers may reuse it, so the trusted start timestamps decide which
+ * terminal result is newer.
  */
 export function selectEdmMediaDisplay(
   snapshot: EdmMediaRunSnapshot | null,
@@ -35,13 +34,18 @@ export function selectEdmMediaDisplay(
   historyState: MediaHistoryQueryState,
   pageMountedAt: number,
 ): EdmMediaDisplaySelection {
-  if (snapshot && isActive(snapshot)) return { kind: "snapshot", snapshot };
+  const latestHistory = latestMediaRun(history ?? []);
+  if (snapshot && isActive(snapshot)) {
+    if (latestHistory && Date.parse(latestHistory.started_at) > snapshot.startedAt) {
+      return { kind: "history", run: latestHistory };
+    }
+    return { kind: "snapshot", snapshot };
+  }
 
   const snapshotIsCurrentVisit = Boolean(snapshot && snapshot.startedAt >= pageMountedAt);
   if (historyState === "loading") {
     return snapshotIsCurrentVisit && snapshot ? { kind: "snapshot", snapshot } : { kind: "loading" };
   }
-  const latestHistory = latestMediaRun(history ?? []);
   const startupFailure = snapshot?.state === "failed" && !snapshot.runId && !snapshot.result;
   if (historyState === "error" && !latestHistory) {
     return snapshotIsCurrentVisit && snapshot ? { kind: "snapshot", snapshot } : { kind: "history-error" };
@@ -49,10 +53,7 @@ export function selectEdmMediaDisplay(
   if (startupFailure && latestHistory) return { kind: "history", run: latestHistory };
   if (snapshot && latestHistory) {
     const historyStartedAt = Date.parse(latestHistory.started_at);
-    const sameTimedExecution = snapshot.runId === latestHistory.run_id
-      && Number.isFinite(historyStartedAt)
-      && Math.abs(snapshot.startedAt - historyStartedAt) <= RUN_ID_TIME_TOLERANCE_MS;
-    if (sameTimedExecution || snapshot.startedAt > historyStartedAt) return { kind: "snapshot", snapshot };
+    if (snapshot.startedAt > historyStartedAt) return { kind: "snapshot", snapshot };
     return { kind: "history", run: latestHistory };
   }
   if (latestHistory) return { kind: "history", run: latestHistory };
