@@ -723,27 +723,39 @@ describe("EdmPage media preparation prototype", () => {
     expect(mockApi.jobs.history).toHaveBeenCalledWith("demo", 100);
   }, 15_000);
 
-  it("非当前图片筛选的无数据旧请求在媒体完成后返回时仍使该筛选缓存失效", async () => {
+  it("非当前筛选长请求不阻塞摘要与当前列表刷新，完成后单独刷新旧筛选", async () => {
     const sku = "DEMO-INACTIVE-FILTER-001";
     const staleRow = mediaImageRow(sku, null);
-    const freshRow = { ...mediaImageRow(sku, null, "https://demo.example.test/images/current.png"), title: "虚构刷新后的分类商品" };
+    const freshFilterRow = { ...mediaImageRow(sku, null, "https://demo.example.test/images/current.png"), title: "虚构刷新后的分类商品" };
+    const freshCurrentRow = { ...mediaImageRow("DEMO-CURRENT-FILTER-001", "https://demo.example.test/images/feed.png"), title: "虚构刷新后的全部图片商品" };
     const historyByProject: Record<string, RunLog[]> = { demo: [] };
     let resolveOldFilter: ((value: Awaited<ReturnType<SiteIndexApi["edm"]["listImages"]>>) => void) | undefined;
     let hasManualCalls = 0;
+    let allCalls = 0;
+    let summaryCalls = 0;
     const listImagesImplementation: SiteIndexApi["edm"]["listImages"] = async (_projectId, listQuery) => {
       if (listQuery.filters?.view === "has_manual") {
         hasManualCalls += 1;
         if (hasManualCalls === 1) return new Promise((resolve) => { resolveOldFilter = resolve; });
-        return { rows: [freshRow], total: 1 };
+        return { rows: [freshFilterRow], total: 1 };
       }
-      return { rows: [staleRow], total: 1 };
+      allCalls += 1;
+      return { rows: [allCalls === 1 ? staleRow : freshCurrentRow], total: 1 };
     };
-    const { queryClient, listImages, invalidateQueries } = await renderEdmPage(true, false, undefined, false, false, {
+    const summaryImplementation: SiteIndexApi["edm"]["summary"] = async () => {
+      summaryCalls += 1;
+      return summaryCalls === 1
+        ? { total: 1, feed: 0, manual: 0, none: 1 }
+        : { total: 1, feed: 1, manual: 0, none: 0 };
+    };
+    const { queryClient, summary, listImages, invalidateQueries } = await renderEdmPage(true, false, undefined, false, false, {
       historyByProject,
       queryStaleTime: 30_000,
       listImagesImplementation,
+      summaryImplementation,
     });
     await waitFor(() => expect(listImages).toHaveBeenCalledTimes(1));
+    queryClient.setQueryData(["edm", "summary", "other"], { total: 8, feed: 4, manual: 2, none: 2 });
     queryClient.setQueryData(["edm", "images", "other", { page: 1, pageSize: 50, filters: { view: "has_manual" } }], {
       rows: [mediaImageRow("DEMO-OTHER-PROJECT-001", null)], total: 1,
     });
@@ -766,15 +778,36 @@ describe("EdmPage media preparation prototype", () => {
     expect(inactiveFilterQuery?.state.data).toBeUndefined();
     expect(inactiveFilterQuery?.state.fetchStatus).toBe("fetching");
 
-    const finishedAtMs = Date.now() + 200;
+    const finishedAtMs = Date.now() + 150;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, finishedAtMs - Date.now())));
+    const finishedAt = new Date(finishedAtMs).toISOString();
     historyByProject.demo = [{
       run_id: "demo-inactive-filter-run", job: "media", started_at: new Date(Date.now() - 1_000).toISOString(),
-      finished_at: new Date(finishedAtMs).toISOString(), status: "ok",
+      finished_at: finishedAt, status: "ok",
       media_requested_skus: [sku], media_batch_state: "complete",
       media_results: [{ sku, status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
     }];
     act(() => queryClient.setQueryData(["job-history", "demo"], historyByProject.demo));
-    await new Promise((resolve) => setTimeout(resolve, Math.max(0, finishedAtMs - Date.now() + 20)));
+
+    await waitFor(() => {
+      expect(summary).toHaveBeenCalledTimes(2);
+      expect(allCalls).toBe(2);
+      const bQuery = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "demo"] })
+        .find(({ queryKey }) => !(queryKey[3] as { filters?: { view?: string } }).filters?.view);
+      expect(bQuery?.state.dataUpdatedAt).toBeGreaterThan(finishedAtMs);
+      expect((bQuery?.state.data as { rows: SkuImageRow[] } | undefined)?.rows[0]?.title).toBe("虚构刷新后的全部图片商品");
+      const aQuery = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "demo"] })
+        .find(({ queryKey }) => (queryKey[3] as { filters?: { view?: string } }).filters?.view === "has_manual");
+      expect(aQuery?.state.data).toBeUndefined();
+      expect(aQuery?.state.fetchStatus).toBe("fetching");
+      expect(aQuery?.state.isInvalidated).toBe(false);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(summary).toHaveBeenCalledTimes(2);
+    expect(allCalls).toBe(2);
+    expect(hasManualCalls).toBe(1);
+    expect(listImages).toHaveBeenCalledTimes(3);
+
     await act(async () => { resolveOldFilter?.({ rows: [staleRow], total: 1 }); });
 
     await waitFor(() => {
@@ -787,6 +820,10 @@ describe("EdmPage media preparation prototype", () => {
     expect(hasManualCalls).toBe(1);
     expect(listImages).toHaveBeenCalledTimes(3);
     expect(invalidateQueries.mock.calls.some(([filters]) => filters?.queryKey?.[2] === "other")).toBe(false);
+    expect(invalidateQueries.mock.calls.some(([filters]) => filters?.queryKey?.[1] === "summary" && filters.queryKey[2] === "other")).toBe(false);
+    expect(invalidateQueries.mock.calls.some(([filters]) => filters?.queryKey?.[1] === "images" && filters.queryKey[2] === "other")).toBe(false);
+    expect(queryClient.getQueryState(["edm", "summary", "other"])?.isInvalidated).toBe(false);
+    expect(queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", "other"] })[0]?.state.isInvalidated).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "已填手动图" }));
     await waitFor(() => expect(hasManualCalls).toBe(2));
@@ -796,6 +833,9 @@ describe("EdmPage media preparation prototype", () => {
       expect(query?.state.isInvalidated).toBe(false);
       expect((query?.state.data as { rows: SkuImageRow[] } | undefined)?.rows[0]?.title).toBe("虚构刷新后的分类商品");
     });
+    expect(summary).toHaveBeenCalledTimes(2);
+    expect(allCalls).toBe(2);
+    expect(listImages).toHaveBeenCalledTimes(4);
   }, 15_000);
 
   it("返回页面时较新的外部历史覆盖旧快照，即使 runId 被复用", async () => {

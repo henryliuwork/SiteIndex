@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -27,25 +28,19 @@ type MediaDemoStatus = "queued" | MediaPrepareSkuResult["status"] | "unresolved"
 type MediaDemoRowState = { status: MediaDemoStatus; reason?: string };
 type MediaDemoOutcome = "complete" | "WP_AUTH_FAILED" | "WP_FORBIDDEN";
 
-const edmQueryFetchStartedAt = new Map<string, number>();
+const edmQueryFetchStartedAt = new WeakMap<object, number>();
 function edmQueryKeyId(queryKey: readonly unknown[]): string {
   return JSON.stringify(queryKey) ?? "";
 }
 
-function recordEdmQueryFetchStart(queryKey: readonly unknown[]): void {
-  const key = edmQueryKeyId(queryKey);
-  if (!key) return;
-  edmQueryFetchStartedAt.delete(key);
-  edmQueryFetchStartedAt.set(key, Date.now());
-  while (edmQueryFetchStartedAt.size > 100) {
-    const oldest = edmQueryFetchStartedAt.keys().next().value;
-    if (oldest === undefined) break;
-    edmQueryFetchStartedAt.delete(oldest);
-  }
+function recordEdmQueryFetchStart(queryClient: QueryClient, queryKey: readonly unknown[]): void {
+  const query = queryClient.getQueryCache().find({ queryKey, exact: true });
+  if (query) edmQueryFetchStartedAt.set(query, Date.now());
 }
 
-function getEdmQueryFetchStartedAt(queryKey: readonly unknown[]): number | undefined {
-  return edmQueryFetchStartedAt.get(edmQueryKeyId(queryKey));
+function getEdmQueryFetchStartedAt(queryClient: QueryClient, queryKey: readonly unknown[]): number | undefined {
+  const query = queryClient.getQueryCache().find({ queryKey, exact: true });
+  return query ? edmQueryFetchStartedAt.get(query) : undefined;
 }
 
 const mediaStatusLabels: Record<MediaDemoStatus, string> = {
@@ -257,11 +252,11 @@ export function EdmPage() {
   const imageQueryKey = ["edm", "images", id, query] as const;
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: summaryQueryKey, queryFn: () => {
-    recordEdmQueryFetchStart(summaryQueryKey);
+    recordEdmQueryFetchStart(queryClient, summaryQueryKey);
     return api.edm.summary(id);
   } });
   const listQuery = useQuery({ queryKey: imageQueryKey, queryFn: () => {
-    recordEdmQueryFetchStart(imageQueryKey);
+    recordEdmQueryFetchStart(queryClient, imageQueryKey);
     return api.edm.listImages(id, query);
   } });
   const mediaHistoryQuery = useQuery({
@@ -286,7 +281,7 @@ export function EdmPage() {
   const recoveredMediaRunKey = recoveredMediaRun
     ? `${id}\0${recoveredMediaRun.run_id}\0${recoveredMediaRun.started_at}`
     : "";
-  const refreshedMediaRunKeyRef = useRef("");
+  const refreshedMediaCacheStateRef = useRef({ runKey: "", handledQueryKeys: new Set<string>() });
   const exportSafetyBlocked = exportSafetyState !== "ready" || exportSafetyUnavailableProjectId === id;
   const currentExportFeedback = exportFeedback?.projectId === id ? exportFeedback : null;
   const exportMutation = useMutation({
@@ -350,31 +345,32 @@ export function EdmPage() {
 
   useEffect(() => {
     if (!recoveredMediaRun || !recoveredMediaRun.finished_at || !recoveredMediaRunKey) return;
-    if (refreshedMediaRunKeyRef.current === recoveredMediaRunKey) return;
-
     const finishedAt = Date.parse(recoveredMediaRun.finished_at);
     if (!Number.isFinite(finishedAt)) return;
+    if (refreshedMediaCacheStateRef.current.runKey !== recoveredMediaRunKey) {
+      refreshedMediaCacheStateRef.current = { runKey: recoveredMediaRunKey, handledQueryKeys: new Set() };
+    }
+    const handledQueryKeys = refreshedMediaCacheStateRef.current.handledQueryKeys;
     const summaryState = queryClient.getQueryState(["edm", "summary", id]);
     const imageQueries = queryClient.getQueryCache().findAll({ queryKey: ["edm", "images", id] });
-    const summaryFetchStartedAt = getEdmQueryFetchStartedAt(summaryQueryKey);
-    const oldSummaryRequestInFlight = summaryState?.fetchStatus === "fetching"
-      && summaryFetchStartedAt !== undefined && summaryFetchStartedAt <= finishedAt;
-    const oldImageRequestInFlight = imageQueries.some(({ queryKey, state }) => {
-      const fetchStartedAt = getEdmQueryFetchStartedAt(queryKey);
-      return state.fetchStatus === "fetching" && fetchStartedAt !== undefined && fetchStartedAt <= finishedAt;
-    });
-    if (oldSummaryRequestInFlight || oldImageRequestInFlight) return;
+    const summaryQueryId = edmQueryKeyId(summaryQueryKey);
+    const summaryFetchStartedAt = getEdmQueryFetchStartedAt(queryClient, summaryQueryKey);
+    if (!handledQueryKeys.has(summaryQueryId) && summaryState?.fetchStatus !== "fetching") {
+      const summaryNeedsRefresh = Boolean(summaryState?.data !== undefined
+        && (summaryState.dataUpdatedAt < finishedAt || (summaryFetchStartedAt !== undefined && summaryFetchStartedAt <= finishedAt)));
+      handledQueryKeys.add(summaryQueryId);
+      if (summaryNeedsRefresh) void queryClient.invalidateQueries({ queryKey: summaryQueryKey, exact: true });
+    }
 
-    refreshedMediaRunKeyRef.current = recoveredMediaRunKey;
-    const summaryNeedsRefresh = Boolean(summaryState?.data !== undefined
-      && (summaryState.dataUpdatedAt < finishedAt || (summaryFetchStartedAt !== undefined && summaryFetchStartedAt <= finishedAt)));
-    const staleImageQueries = imageQueries.filter(({ queryKey, state }) => {
-      const fetchStartedAt = getEdmQueryFetchStartedAt(queryKey);
-      return state.data !== undefined && (state.dataUpdatedAt < finishedAt || (fetchStartedAt !== undefined && fetchStartedAt <= finishedAt));
-    });
-
-    if (summaryNeedsRefresh) void queryClient.invalidateQueries({ queryKey: summaryQueryKey, exact: true });
-    for (const { queryKey } of staleImageQueries) void queryClient.invalidateQueries({ queryKey, exact: true });
+    for (const { queryKey, state } of imageQueries) {
+      const queryId = edmQueryKeyId(queryKey);
+      if (handledQueryKeys.has(queryId) || state.fetchStatus === "fetching") continue;
+      const fetchStartedAt = getEdmQueryFetchStartedAt(queryClient, queryKey);
+      const needsRefresh = state.data !== undefined
+        && (state.dataUpdatedAt < finishedAt || (fetchStartedAt !== undefined && fetchStartedAt <= finishedAt));
+      handledQueryKeys.add(queryId);
+      if (needsRefresh) void queryClient.invalidateQueries({ queryKey, exact: true });
+    }
   }, [id, imageQueriesFetching, listQuery.dataUpdatedAt, listQuery.fetchStatus, queryClient, recoveredMediaRun, recoveredMediaRunKey, summaryQuery.dataUpdatedAt, summaryQuery.fetchStatus, summaryQueryKey]);
 
   useEffect(() => {
