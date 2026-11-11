@@ -18,14 +18,27 @@ export interface SiteIndexWindowApi {
   };
 }
 
-export function createWindowApi(transport: WindowApiTransport): SiteIndexWindowApi {
+export type WordPressCredentialIpcMethod = "status" | "save" | "clear";
+
+export function createWindowApi(
+  transport: WindowApiTransport,
+  traceCredentialIpc?: (method: WordPressCredentialIpcMethod) => void,
+): SiteIndexWindowApi {
   return {
     setTitleBarOverlayColor: (color) => transport.send(TITLE_BAR_OVERLAY_COLOR_CHANNEL, color),
     wordpressCredentials: {
-      status: (siteUrl) =>
-        transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.status, siteUrl) as Promise<WordPressCredentialStatus>,
-      save: (input) => transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.save, input) as Promise<void>,
-      clear: (siteUrl) => transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.clear, siteUrl) as Promise<void>,
+      status: (siteUrl) => {
+        traceCredentialIpc?.("status");
+        return transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.status, siteUrl) as Promise<WordPressCredentialStatus>;
+      },
+      save: (input) => {
+        traceCredentialIpc?.("save");
+        return transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.save, input) as Promise<void>;
+      },
+      clear: (siteUrl) => {
+        traceCredentialIpc?.("clear");
+        return transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.clear, siteUrl) as Promise<void>;
+      },
     },
   };
 }

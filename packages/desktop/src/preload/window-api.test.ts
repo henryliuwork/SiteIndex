@@ -33,4 +33,23 @@ describe("Desktop window bridge", () => {
     ]);
     await expect(invoke.mock.results[1]?.value).resolves.toBeUndefined();
   });
+
+  it("traces credential IPC method names only, without passing request values to the trace", async () => {
+    const invoke = vi.fn(async () => ({ state: "configured" }));
+    const trace = vi.fn();
+    const api = createWindowApi({ send: vi.fn(), invoke }, trace);
+
+    await api.wordpressCredentials.status("https://site-a.example.invalid");
+    await api.wordpressCredentials.save({
+      siteUrl: "https://site-a.example.invalid",
+      username: "synthetic-user",
+      applicationPassword: "synthetic-password",
+    });
+    await api.wordpressCredentials.clear("https://site-a.example.invalid");
+
+    expect(trace.mock.calls).toEqual([["status"], ["save"], ["clear"]]);
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("synthetic-user");
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("synthetic-password");
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("example.invalid");
+  });
 });

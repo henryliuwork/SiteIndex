@@ -2,11 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import {
   access,
+  copyFile,
+  lstat,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
   rm,
   stat as statFile,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -14,8 +18,15 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
+import { runWordPressCredentialsUiSmoke } from "../../ui/visual/wordpress-credentials-smoke.mjs";
 import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
+import {
+  createWindowsProfileLayout,
+  inspectContainedPath,
+  inspectWindowsProfileLayout,
+  windowsProfileEnvironment,
+} from "./e-windows-profile-isolation.mjs";
 
 const OLD_RELEASE = {
   version: process.env.SITEINDEX_BASELINE_VERSION?.trim() || "0.4.0",
@@ -28,17 +39,29 @@ const OLD_RELEASE = {
 const CANDIDATE_VERSION = process.env.SITEINDEX_CANDIDATE_VERSION?.trim() || "0.4.1";
 const HOSTED_UPDATE = process.env.SITEINDEX_HOSTED_UPDATE === "true";
 const W2_PROJECT_ID = "synthetic-w2-pages";
+const CREDENTIAL_SITE_A_ID = "credential-site-a";
+const CREDENTIAL_SITE_B_ID = "credential-site-b";
+const CREDENTIAL_SITE_A_ORIGIN = "https://site-a.synthetic.invalid";
+const CREDENTIAL_SITE_B_ORIGIN = "https://site-b.synthetic.invalid";
+const CREDENTIAL_OUTPUT_MARKERS = [
+  "siteindex-synthetic-user",
+  "siteindex-synthetic-credential-not-valid",
+  "siteindex-synthetic-user-replacement",
+  "siteindex-synthetic-credential-not-valid-replacement",
+];
 const W2_EXPECTED = W2_SYNTHETIC_EXPECTED;
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
 const TEST_ROOT = await fsMkdtemp();
-const APP_DATA_ROOT = process.env.APPDATA;
-const LOCAL_APP_DATA_ROOT = path.join(TEST_ROOT, "local-app-data");
-const PROJECTS_ROOT = path.join(TEST_ROOT, "projects");
+const PROFILE_LAYOUT = createWindowsProfileLayout(TEST_ROOT);
+const PROFILE_ENVIRONMENT = windowsProfileEnvironment(PROFILE_LAYOUT, process.env);
+const APP_DATA_ROOT = PROFILE_LAYOUT.appDataRoot;
+const LOCAL_APP_DATA_ROOT = PROFILE_LAYOUT.localAppDataRoot;
+const PROJECTS_ROOT = PROFILE_LAYOUT.projectRoot;
 const W2_PROJECT_DIRECTORY = path.join(PROJECTS_ROOT, W2_PROJECT_ID);
-const INSTALL_DIR = path.join(TEST_ROOT, "installed-app");
-const APP_DATA_DIR = APP_DATA_ROOT ? path.join(APP_DATA_ROOT, "SiteIndex") : "";
-const SETTINGS_FILE = APP_DATA_DIR ? path.join(APP_DATA_DIR, "settings.json") : "";
+const INSTALL_DIR = PROFILE_LAYOUT.installDir;
+const APP_DATA_DIR = path.join(APP_DATA_ROOT, "SiteIndex");
+const SETTINGS_FILE = path.join(APP_DATA_DIR, "settings.json");
 const TRACE_LOG_NAME = "siteindex-trace.log";
 const TRACE_SEARCH_ROOTS = [
   APP_DATA_DIR,
@@ -91,6 +114,19 @@ const report = {
   checks: [],
   processOutput: [],
   rendererDiagnostics: { targets: [], consoleErrors: [], pageErrors: [] },
+  credentialIsolation: {
+    candidateVersion: CANDIDATE_VERSION,
+    candidateSha256: null,
+    environmentPaths: {},
+    projectRootContained: false,
+    vaultContained: false,
+    installerExeInRoot: false,
+    junctionEscapeRejected: false,
+    restarts: [],
+    siteStates: [],
+    ipcCounts: { status: 0, save: 0, clear: 0 },
+    canary: { type: "synthetic username and application password", echoedCount: 0, browserStorageMatchCount: 0 },
+  },
   addExistingTrace: null,
   traceEnvironmentPassedToSpawn: false,
   visualEvidence: null,
@@ -149,6 +185,7 @@ function recordW2(name, passed, evidenceType, evidence = {}) {
 function safeMessage(error) {
   const source = error instanceof Error ? error.message : String(error);
   let safe = source.replaceAll(TEST_ROOT, "<TEST_ROOT>").replaceAll(INSTALL_DIR, "<INSTALL_DIR>");
+  for (const marker of CREDENTIAL_OUTPUT_MARKERS) safe = safe.replaceAll(marker, "<CREDENTIAL>");
   if (APP_DATA_DIR) safe = safe.replaceAll(APP_DATA_DIR, "<APP_DATA>");
   return safe
     .replace(/\bhttps?:\/\/[^\s)]+/giu, "<URL>")
@@ -164,9 +201,7 @@ async function fileSha256(filePath) {
 }
 
 async function fsMkdtemp() {
-  const root = path.join(os.tmpdir(), `siteindex-e-acceptance-${randomUUID()}`);
-  await mkdir(root, { recursive: true });
-  return root;
+  return mkdtemp(path.join(os.tmpdir(), "siteindex-e-acceptance-"));
 }
 
 function run(file, args, options = {}) {
@@ -206,7 +241,53 @@ function hasInstalledSiteIndex() {
 }
 
 async function install(installerPath) {
-  run(installerPath, ["/S", `/D=${INSTALL_DIR}`]);
+  run(installerPath, ["/S", `/D=${INSTALL_DIR}`], { env: isolatedProcessEnvironment() });
+}
+
+function isolatedProcessEnvironment(overrides = {}) {
+  const environment = {
+    ...PROFILE_ENVIRONMENT,
+    SITEINDEX_ACCEPTANCE_INSTALL_DIR: INSTALL_DIR,
+    ELECTRON_RENDERER_URL: "",
+    SITEINDEX_UI_URL: "",
+    SITEINDEX_CREDENTIAL_IPC_TRACE: "1",
+    ...overrides,
+  };
+  for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "NODE_AUTH_TOKEN", "NPM_TOKEN"]) {
+    delete environment[key];
+  }
+  return environment;
+}
+
+async function prepareIsolatedProfile() {
+  const rootStats = await lstat(TEST_ROOT);
+  if (rootStats.isSymbolicLink() || (typeof rootStats.attributes === "number" && (rootStats.attributes & 0x400) !== 0)) {
+    throw new Error("The temporary acceptance root is a reparse point.");
+  }
+  const directories = [APP_DATA_ROOT, LOCAL_APP_DATA_ROOT, PROFILE_LAYOUT.userProfileRoot, PROFILE_LAYOUT.homeRoot,
+    PROFILE_LAYOUT.tempRoot, PROFILE_LAYOUT.tmpRoot, PROJECTS_ROOT, PROFILE_LAYOUT.vaultPath, INSTALL_DIR];
+  await Promise.all(directories.map((directory) => mkdir(directory, { recursive: true })));
+  const checks = await inspectWindowsProfileLayout(PROFILE_LAYOUT);
+  const environmentKeys = ["APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOME", "TEMP", "TMP"];
+  report.credentialIsolation.environmentPaths = Object.fromEntries(environmentKeys.map((key) => [key, checks[key]]));
+  report.credentialIsolation.projectRootContained = Boolean(checks.projects?.withinRoot && checks.projects?.noReparse);
+  report.credentialIsolation.vaultContained = Boolean(checks.vault?.withinRoot && checks.vault?.noReparse);
+  if (!Object.values(checks).every((check) => check.withinRoot && check.noReparse)) {
+    throw new Error("A required GitHub runner path is outside the isolated root or contains a reparse point.");
+  }
+
+  const junctionTarget = path.join(path.dirname(TEST_ROOT), `siteindex-junction-target-${randomUUID()}`);
+  const junctionPath = path.join(TEST_ROOT, "junction-probe");
+  try {
+    await mkdir(path.join(junctionTarget, "child"), { recursive: true });
+    await symlink(junctionTarget, junctionPath, "junction");
+    const probe = await inspectContainedPath(TEST_ROOT, path.join(junctionPath, "child"));
+    report.credentialIsolation.junctionEscapeRejected = !probe.withinRoot || !probe.noReparse;
+    if (!report.credentialIsolation.junctionEscapeRejected) throw new Error("Isolation validation did not reject a synthetic junction.");
+  } finally {
+    await rm(junctionPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    await rm(junctionTarget, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
 }
 
 function stopInstalledAppProcesses() {
@@ -219,7 +300,7 @@ function stopInstalledAppProcesses() {
     encoding: "utf8",
     windowsHide: true,
     timeout: 15_000,
-    env: { ...process.env, SITEINDEX_ACCEPTANCE_INSTALL_DIR: INSTALL_DIR },
+    env: isolatedProcessEnvironment(),
   });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error("Could not stop only the SiteIndex process from the isolated acceptance install.");
@@ -236,7 +317,7 @@ function installedAppProcessCount() {
     encoding: "utf8",
     windowsHide: true,
     timeout: 15_000,
-    env: { ...process.env, SITEINDEX_ACCEPTANCE_INSTALL_DIR: INSTALL_DIR },
+    env: isolatedProcessEnvironment(),
   });
   if (result.error) throw result.error;
   if (result.status !== 0) return 0;
@@ -252,7 +333,7 @@ function installedExecutableVersion() {
     encoding: "utf8",
     windowsHide: true,
     timeout: 15_000,
-    env: { ...process.env, SITEINDEX_ACCEPTANCE_INSTALL_DIR: INSTALL_DIR },
+    env: isolatedProcessEnvironment(),
   });
   if (result.error || result.status !== 0) return null;
   return result.stdout.trim() || null;
@@ -328,6 +409,16 @@ async function makeLegacyProject(directory, name = "Synthetic legacy project") {
   await writeFile(path.join(directory, "index", "site.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
   await writeFile(path.join(directory, "index", "catalog", "skus.jsonl"), '{"sku":"SYN-001","handle":"fixture-item","status":"active"}\n', "utf8");
   await writeFile(path.join(directory, "user-owned.txt"), "synthetic-data-survives-upgrade\n", "utf8");
+}
+
+async function makeWordPressCredentialProject(directory, name, origin) {
+  await makeLegacyProject(directory, name);
+  const configPath = path.join(directory, "index", "site.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.domain = new URL(origin).hostname;
+  config.base_url = origin;
+  config.edm = { image_host: { type: "wordpress" } };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
 async function writeJsonlFile(filePath, rows) {
@@ -452,18 +543,9 @@ async function launchInstalledApp({ executablePath, trace = false }) {
   } catch (error) {
     if (error instanceof Error && error.message === "CDP acceptance port is already in use.") throw error;
   }
-  const environment = {
-    ...process.env,
-    APPDATA: APP_DATA_ROOT,
-    LOCALAPPDATA: LOCAL_APP_DATA_ROOT,
-    ELECTRON_RENDERER_URL: "",
-    SITEINDEX_UI_URL: "",
-  };
+  const environment = isolatedProcessEnvironment();
   if (HOSTED_UPDATE && process.env.GITHUB_ACTIONS !== "true") {
     throw new Error("Hosted update acceptance must run on a fresh GitHub Actions Windows runner.");
-  }
-  for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "NODE_AUTH_TOKEN", "NPM_TOKEN"]) {
-    delete environment[key];
   }
   if (trace) environment.SITEINDEX_TRACE = "1";
   else delete environment.SITEINDEX_TRACE;
@@ -504,7 +586,13 @@ async function connectToInstalledApp({ processHandle = null } = {}) {
       if (instrumentedPages.has(candidate)) continue;
       instrumentedPages.add(candidate);
       candidate.on("console", (message) => {
-        if (message.type() === "error") report.rendererDiagnostics.consoleErrors.push(safeMessage(message.text()).slice(0, 600));
+        const text = message.text();
+        const credentialCall = /^__SITEINDEX_CREDENTIAL_IPC__ (status|save|clear)$/u.exec(text);
+        if (credentialCall) {
+          report.credentialIsolation.ipcCounts[credentialCall[1]] += 1;
+          return;
+        }
+        if (message.type() === "error") report.rendererDiagnostics.consoleErrors.push(safeMessage(text).slice(0, 600));
       });
       candidate.on("pageerror", (error) => report.rendererDiagnostics.pageErrors.push(safeMessage(error).slice(0, 600)));
     }
@@ -2390,28 +2478,165 @@ async function captureAddExistingTrace(page) {
   );
 }
 
+async function runPackagedCredentialPhase(page, { alias, origin, phase, expectedState, otherSites = [] }) {
+  const result = await runWordPressCredentialsUiSmoke(page, {
+    runtime: "packaged-electron",
+    origin,
+    phase,
+    ...(expectedState ? { expectedState } : {}),
+    otherOrigins: otherSites.map((site) => ({ origin: site.origin, expectedState: site.expectedState })),
+    electronIsolation: {
+      callerConfirmedBeforeLaunch: true,
+      root: TEST_ROOT,
+      appDataRoot: APP_DATA_ROOT,
+      localAppDataRoot: LOCAL_APP_DATA_ROOT,
+      userProfileRoot: PROFILE_LAYOUT.userProfileRoot,
+      homeRoot: PROFILE_LAYOUT.homeRoot,
+      tempRoot: PROFILE_LAYOUT.tempRoot,
+      tmpRoot: PROFILE_LAYOUT.tmpRoot,
+      projectRoot: PROJECTS_ROOT,
+      vaultPath: PROFILE_LAYOUT.vaultPath,
+    },
+  });
+  const state = phase === "assert-status" ? expectedState : phase === "delete" ? "not_configured" : "configured";
+  report.credentialIsolation.siteStates.push({ alias, stage: phase, state });
+  for (const site of otherSites) report.credentialIsolation.siteStates.push({ alias: site.alias, stage: phase, state: site.expectedState });
+  if (result.credentialValuesEchoed === true) report.credentialIsolation.canary.echoedCount += 1;
+  if (result.browserStorageLeak === true) report.credentialIsolation.canary.browserStorageMatchCount += 1;
+  return result;
+}
+
+async function restartCandidateWithSameProfile(page, stage) {
+  const previousPid = applicationProcess?.pid ?? null;
+  const previousRenderer = await page.evaluate(() => performance.timeOrigin);
+  await stopApplication();
+  const previousProcessStopped = installedAppProcessCount() === 0;
+  const nextPage = await launchInstalledApp({ executablePath: path.join(INSTALL_DIR, "SiteIndex.exe"), trace: true });
+  const nextPid = applicationProcess?.pid ?? null;
+  const nextRenderer = await nextPage.evaluate(() => performance.timeOrigin);
+  const restart = {
+    stage,
+    previousProcessStopped,
+    processDistinct: previousPid !== null && nextPid !== null && previousPid !== nextPid,
+    rendererDistinct: previousRenderer !== nextRenderer,
+  };
+  report.credentialIsolation.restarts.push(restart);
+  assert(restart.previousProcessStopped && restart.processDistinct && restart.rendererDistinct,
+    "credential verification restarted the isolated packaged process and renderer", { stage, ...restart });
+  return nextPage;
+}
+
+async function testWordPressCredentialIsolation(page) {
+  currentStage = "isolated WordPress credential setup";
+  await makeWordPressCredentialProject(path.join(PROJECTS_ROOT, CREDENTIAL_SITE_A_ID), "Synthetic Credential Site A", CREDENTIAL_SITE_A_ORIGIN);
+  await makeWordPressCredentialProject(path.join(PROJECTS_ROOT, CREDENTIAL_SITE_B_ID), "Synthetic Credential Site B", CREDENTIAL_SITE_B_ORIGIN);
+  page = await restartCandidateWithSameProfile(page, "credential-projects-registered");
+  const registeredState = await appState(page);
+  assert(registeredState.projectIds.includes(CREDENTIAL_SITE_A_ID) && registeredState.projectIds.includes(CREDENTIAL_SITE_B_ID),
+    "both synthetic credential projects are discovered under the isolated project root", {
+      siteAFound: registeredState.projectIds.includes(CREDENTIAL_SITE_A_ID),
+      siteBFound: registeredState.projectIds.includes(CREDENTIAL_SITE_B_ID),
+    });
+
+  await runPackagedCredentialPhase(page, {
+    alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, phase: "assert-status", expectedState: "not_configured",
+    otherSites: [{ alias: "B", origin: CREDENTIAL_SITE_B_ORIGIN, expectedState: "not_configured" }],
+  });
+  const configureA = await runPackagedCredentialPhase(page, {
+    alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, phase: "configure",
+    otherSites: [{ alias: "B", origin: CREDENTIAL_SITE_B_ORIGIN, expectedState: "not_configured" }],
+  });
+  const configureB = await runPackagedCredentialPhase(page, {
+    alias: "B", origin: CREDENTIAL_SITE_B_ORIGIN, phase: "configure",
+    otherSites: [{ alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, expectedState: "configured" }],
+  });
+  assert(configureA.credentialValuesEchoed === false && configureA.browserStorageLeak === false
+    && configureB.credentialValuesEchoed === false && configureB.browserStorageLeak === false,
+  "both synthetic credential canaries stay out of renderer text and browser storage", {
+    echoedCount: report.credentialIsolation.canary.echoedCount,
+    browserStorageMatchCount: report.credentialIsolation.canary.browserStorageMatchCount,
+  });
+
+  page = await restartCandidateWithSameProfile(page, "both-sites-configured");
+  await runPackagedCredentialPhase(page, {
+    alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, phase: "assert-status", expectedState: "configured",
+    otherSites: [{ alias: "B", origin: CREDENTIAL_SITE_B_ORIGIN, expectedState: "configured" }],
+  });
+  await runPackagedCredentialPhase(page, {
+    alias: "B", origin: CREDENTIAL_SITE_B_ORIGIN, phase: "replace",
+    otherSites: [{ alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, expectedState: "configured" }],
+  });
+
+  page = await restartCandidateWithSameProfile(page, "site-b-replaced");
+  await runPackagedCredentialPhase(page, {
+    alias: "B", origin: CREDENTIAL_SITE_B_ORIGIN, phase: "assert-status", expectedState: "configured",
+    otherSites: [{ alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, expectedState: "configured" }],
+  });
+  await runPackagedCredentialPhase(page, {
+    alias: "B", origin: CREDENTIAL_SITE_B_ORIGIN, phase: "delete",
+    otherSites: [{ alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, expectedState: "configured" }],
+  });
+
+  page = await restartCandidateWithSameProfile(page, "site-b-deleted");
+  await runPackagedCredentialPhase(page, {
+    alias: "B", origin: CREDENTIAL_SITE_B_ORIGIN, phase: "assert-status", expectedState: "not_configured",
+    otherSites: [{ alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, expectedState: "configured" }],
+  });
+  await runPackagedCredentialPhase(page, { alias: "A", origin: CREDENTIAL_SITE_A_ORIGIN, phase: "delete" });
+
+  const ipcCounts = report.credentialIsolation.ipcCounts;
+  assert(ipcCounts.status > 0 && ipcCounts.save >= 3 && ipcCounts.clear >= 2,
+    "packaged preload records credential IPC method names and counts without arguments", { ...ipcCounts });
+  assert(report.credentialIsolation.canary.echoedCount === 0 && report.credentialIsolation.canary.browserStorageMatchCount === 0,
+    "synthetic credential values are absent from renderer text and browser storage", { ...report.credentialIsolation.canary });
+  await page.evaluate(() => { window.location.hash = "/"; });
+  await delay(300);
+  return page;
+}
+
 async function main() {
   if (process.platform !== "win32") throw new Error("This acceptance workflow requires Windows.");
   if (process.env.GITHUB_ACTIONS !== "true" || process.env.SITEINDEX_RUNNER_ENVIRONMENT !== "github-hosted") {
-    throw new Error("Packaged acceptance must run on a GitHub-hosted Actions Windows runner to isolate APPDATA safely.");
+    throw new Error("Packaged acceptance must run on a GitHub-hosted Actions Windows runner to isolate the complete process profile safely.");
   }
-  if (!APP_DATA_ROOT) throw new Error("The GitHub Actions Windows runner did not provide APPDATA.");
   if (!OUTPUT_DIR) throw new Error("SITEINDEX_ACCEPTANCE_OUTPUT is not configured.");
   if (hasInstalledSiteIndex()) throw new Error("The Windows runner already has a SiteIndex install; refusing to touch it.");
+  await prepareIsolatedProfile();
   if (await exists(APP_DATA_DIR)) throw new Error("The Windows runner already has SiteIndex user data; refusing to alter it.");
-  const oldInstaller = path.resolve(process.argv[2] || "");
-  const candidateInstaller = path.resolve(process.argv[3] || "");
-  if (!oldInstaller || !candidateInstaller || !(await exists(oldInstaller)) || !(await exists(candidateInstaller))) {
+  const oldInstallerSource = path.resolve(process.argv[2] || "");
+  const candidateInstallerSource = path.resolve(process.argv[3] || "");
+  if (!oldInstallerSource || !candidateInstallerSource || !(await exists(oldInstallerSource)) || !(await exists(candidateInstallerSource))) {
     throw new Error("The official and candidate installers must both exist.");
   }
-  const actualOldHash = await fileSha256(oldInstaller);
+  const actualOldHash = await fileSha256(oldInstallerSource);
   assert(actualOldHash === OLD_RELEASE.sha256, `official ${OLD_RELEASE.tag} installer matches pinned GitHub digest`, {
     tag: OLD_RELEASE.tag,
     commit: OLD_RELEASE.commit,
     assetId: OLD_RELEASE.assetId,
     sha256: actualOldHash,
   });
-  report.candidateInstallerSha256 = await fileSha256(candidateInstaller);
+  report.candidateInstallerSha256 = await fileSha256(candidateInstallerSource);
+  report.credentialIsolation.candidateSha256 = report.candidateInstallerSha256;
+  const installerInputDir = path.join(TEST_ROOT, "installer-inputs");
+  await mkdir(installerInputDir, { recursive: true });
+  const oldInstaller = path.join(installerInputDir, "baseline-setup.exe");
+  const candidateInstaller = path.join(installerInputDir, "candidate-setup.exe");
+  await Promise.all([
+    copyFile(oldInstallerSource, oldInstaller),
+    copyFile(candidateInstallerSource, candidateInstaller),
+  ]);
+  const installerPaths = await Promise.all([
+    inspectContainedPath(TEST_ROOT, oldInstaller),
+    inspectContainedPath(TEST_ROOT, candidateInstaller),
+  ]);
+  report.credentialIsolation.installerExeInRoot = installerPaths.every((check) => check.withinRoot && check.noReparse);
+  assert(
+    report.credentialIsolation.installerExeInRoot
+      && await fileSha256(oldInstaller) === actualOldHash
+      && await fileSha256(candidateInstaller) === report.candidateInstallerSha256,
+    "both installer EXEs are copied inside the isolated root without reparse paths and retain their source hashes",
+    { installersContained: report.credentialIsolation.installerExeInRoot },
+  );
   if (HOSTED_UPDATE) {
     assert(report.candidateUpdateMetadataVerified,
       "published latest.yml version, installer filename, and SHA512 match the candidate EXE");
@@ -2577,13 +2802,14 @@ async function main() {
     syntheticLegacyPresent: finalState.projectIds.includes("synthetic-legacy-project"),
     w2SyntheticProjectPresent: finalState.projectIds.includes(W2_PROJECT_ID),
   });
+  page = await testWordPressCredentialIsolation(page);
   await safeCandidateScreenshot(page);
 }
 
 async function uninstallCurrent() {
   const uninstaller = path.join(INSTALL_DIR, "Uninstall SiteIndex.exe");
   if (await exists(uninstaller)) {
-    run(uninstaller, ["/S", `_?=${INSTALL_DIR}`], { timeout: 300_000 });
+    run(uninstaller, ["/S", `_?=${INSTALL_DIR}`], { timeout: 300_000, env: isolatedProcessEnvironment() });
   }
 }
 
@@ -2619,6 +2845,7 @@ async function writeReport() {
     `- Candidate workflow run / artifact: \`${report.candidateWorkflowRunId ?? "n/a"}\` / \`${report.candidateArtifactId ?? "n/a"}\``,
     `- Candidate artifact SHA256: \`${report.candidateArtifactSha256 ?? "n/a"}\``,
     `- Candidate installer SHA256: \`${report.candidateInstallerSha256 ?? "unavailable"}\``,
+    `- Synthetic credential isolation: ${report.credentialIsolation.siteStates.length} state checks, ${report.credentialIsolation.restarts.length} isolated restarts, IPC counts ${JSON.stringify(report.credentialIsolation.ipcCounts)}, canary matches ${report.credentialIsolation.canary.echoedCount + report.credentialIsolation.canary.browserStorageMatchCount}`,
     `- Windows build: \`${report.windows.build ?? report.windows.version}\``,
     `- Checks passed: ${report.checks.filter((check) => check.status === "passed").length}/${report.checks.length}`,
     `- Add-existing handler total: ${report.addExistingTrace?.handlerTotalMs ?? "not measured"} ms (target < 5000 ms)`,

@@ -9,6 +9,7 @@ const workflow = readFileSync(
 );
 const releaseWorkflow = readFileSync(new URL("../../../.github/workflows/release.yml", import.meta.url), "utf8");
 const acceptanceScript = readFileSync(new URL("../scripts/e-windows-v040-acceptance.mjs", import.meta.url), "utf8");
+const profileIsolation = readFileSync(new URL("../scripts/e-windows-profile-isolation.mjs", import.meta.url), "utf8");
 
 describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
   it("pins the verified v0.4.0 tag, asset, and installer digest as the baseline", () => {
@@ -68,13 +69,51 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
   });
 
   it("isolates roaming and machine-local data for the installed application", () => {
-    expect(acceptanceScript).toContain("APPDATA: APP_DATA_ROOT");
-    expect(acceptanceScript).toContain("LOCALAPPDATA: LOCAL_APP_DATA_ROOT");
-    expect(acceptanceScript).toContain("APP_DATA_ROOT = process.env.APPDATA");
-    expect(acceptanceScript).not.toContain("process.env.LOCALAPPDATA");
+    expect(acceptanceScript).toContain("const PROFILE_LAYOUT = createWindowsProfileLayout(TEST_ROOT)");
+    expect(acceptanceScript).toContain("const APP_DATA_ROOT = PROFILE_LAYOUT.appDataRoot");
+    expect(acceptanceScript).toContain("windowsProfileEnvironment(PROFILE_LAYOUT, process.env)");
+    expect(acceptanceScript).not.toContain("APP_DATA_ROOT = process.env.APPDATA");
+    expect(acceptanceScript).not.toContain('LOCAL_APP_DATA_ROOT = path.join(TEST_ROOT, "local-app-data")');
+    for (const key of ["APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOME", "TEMP", "TMP"]) {
+      expect(profileIsolation).toContain(`"${key}"`);
+    }
+    expect(profileIsolation).toContain("inspectWindowsProfileLayout");
+    expect(acceptanceScript).toContain("await prepareIsolatedProfile()");
+    expect(acceptanceScript).toContain("report.credentialIsolation.junctionEscapeRejected");
+    expect(acceptanceScript).toContain("installerExeInRoot");
     expect(acceptanceScript).toContain('process.env.GITHUB_ACTIONS !== "true"');
     expect(acceptanceScript).toContain("before its UI target appeared");
     expect(acceptanceScript).toContain("rendererDiagnostics.targets");
+  });
+
+  it("runs two-site credential isolation through the packaged UI and reports only aliases, states, method counts and canary counts", () => {
+    expect(acceptanceScript).toContain(
+      'import { runWordPressCredentialsUiSmoke } from "../../ui/visual/wordpress-credentials-smoke.mjs"',
+    );
+    expect(acceptanceScript).toContain('CREDENTIAL_SITE_A_ORIGIN = "https://site-a.synthetic.invalid"');
+    expect(acceptanceScript).toContain('CREDENTIAL_SITE_B_ORIGIN = "https://site-b.synthetic.invalid"');
+    expect(acceptanceScript).toContain('phase: "configure"');
+    expect(acceptanceScript).toContain('phase: "replace"');
+    expect(acceptanceScript).toContain('phase: "delete"');
+    expect(acceptanceScript).toContain('restartCandidateWithSameProfile(page, "both-sites-configured")');
+    expect(acceptanceScript).toContain('restartCandidateWithSameProfile(page, "site-b-replaced")');
+    expect(acceptanceScript).toContain('restartCandidateWithSameProfile(page, "site-b-deleted")');
+    expect(acceptanceScript).toContain("ipcCounts: { status: 0, save: 0, clear: 0 }");
+    expect(acceptanceScript).toContain(
+      'canary: { type: "synthetic username and application password", echoedCount: 0, browserStorageMatchCount: 0 }',
+    );
+    expect(acceptanceScript).toContain("credentialIsolation.siteStates.push({ alias, stage: phase, state })");
+    expect(acceptanceScript).not.toContain("credentialIsolation.siteStates.push({ alias, origin");
+  });
+
+  it("copies both installers under the isolated root and sanitizes synthetic credential markers in diagnostics", () => {
+    expect(acceptanceScript).toContain("copyFile(oldInstallerSource, oldInstaller)");
+    expect(acceptanceScript).toContain("copyFile(candidateInstallerSource, candidateInstaller)");
+    expect(acceptanceScript).toContain("inspectContainedPath(TEST_ROOT, oldInstaller)");
+    expect(acceptanceScript).toContain("inspectContainedPath(TEST_ROOT, candidateInstaller)");
+    expect(acceptanceScript).toContain("page = await testWordPressCredentialIsolation(page)");
+    expect(acceptanceScript).toContain('safe = safe.replaceAll(marker, "<CREDENTIAL>")');
+    expect(acceptanceScript).toContain("env: isolatedProcessEnvironment() });");
   });
 
   it("checks the installed version and updater process without a CDP endpoint, then reopens under the isolated profile", async () => {
@@ -135,12 +174,15 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     });
   });
 
-  it("requires a disposable GitHub runner before writing under its native APPDATA", () => {
+  it("requires a disposable GitHub runner and the isolated profile before installing", () => {
     expect(acceptanceScript).toContain('process.env.GITHUB_ACTIONS !== "true"');
     expect(acceptanceScript).toContain('process.env.SITEINDEX_RUNNER_ENVIRONMENT !== "github-hosted"');
     expect(workflow).toContain("SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}");
-    expect(acceptanceScript).toContain("Packaged acceptance must run on a GitHub-hosted Actions Windows runner");
-    expect(acceptanceScript).toContain("if (await exists(APP_DATA_DIR)) throw new Error");
+    expect(acceptanceScript).toContain(
+      "Packaged acceptance must run on a GitHub-hosted Actions Windows runner to isolate the complete process profile safely",
+    );
+    expect(acceptanceScript).toContain("await prepareIsolatedProfile()");
+    expect(acceptanceScript).toContain("if (await exists(APP_DATA_DIR))");
     expect(acceptanceScript).toContain("await rm(APP_DATA_DIR, { recursive: true, force: true");
   });
 
