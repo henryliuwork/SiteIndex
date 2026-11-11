@@ -36,6 +36,15 @@
         "missing_as": { "enum": ["out_of_stock", "removed"] },
         "missing_removed_after_days": { "type": "integer", "minimum": 0 },
         "max_removed_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "stock_verify": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "graphql_url": { "type": "string", "format": "uri" },
+            "max_per_run": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["enabled"]
+        },
         "feed_generated_at": { "type": "string" },
         "blog_url_patterns": { "type": "array", "items": { "type": "string" } },
         "exclude_url_patterns": { "type": "array", "items": { "type": "string" } },
@@ -44,7 +53,15 @@
         "rate_limit_ms": { "type": "integer", "minimum": 200 },
         "user_agent": { "type": "string" },
         "overrides": { "type": "object" },
-        "stock_rules": { "type": "object" }
+        "stock_rules": {
+          "type": "object",
+          "properties": {
+            "in_stock": { "type": "array", "items": { "type": "string" } },
+            "out_of_stock": { "type": "array", "items": { "type": "string" } },
+            "preorder": { "type": "array", "items": { "type": "string" } }
+          },
+          "required": ["in_stock", "out_of_stock"]
+        }
       },
       "required": ["adapter", "feed_url", "rate_limit_ms"]
     },

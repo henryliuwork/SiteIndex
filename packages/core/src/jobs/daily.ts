@@ -6,9 +6,10 @@ import { compareKeys } from "../io/compare";
 import { readCsv, writeCsv } from "../io/csv";
 import { readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { resolveProjectLayout } from "../io/project-layout";
+import { verifyMissingStock } from "./stock-verifier";
 
 type StockStatus = "in_stock" | "out_of_stock" | "preorder" | "unknown";
-type EventType = "stock_change" | "price_change" | "new_sku" | "removed_sku" | "restored_sku";
+type EventType = "stock_change" | "price_change" | "new_sku" | "removed_sku" | "restored_sku" | "feed_anomaly";
 type DailyStatus = "ok" | "partial" | "failed";
 type StockCounts = Record<"total" | StockStatus, number>;
 
@@ -16,12 +17,16 @@ interface CategoryMatch { type: "product_type_contains" | "sku_prefix" | "url_co
 interface ManualCategory { slug: string; match?: CategoryMatch[] }
 interface DailySite {
   domain: string;
+  base_url?: string;
   timezone?: string;
   schema_version?: string;
   crawl?: {
     missing_as?: "out_of_stock" | "removed";
     missing_removed_after_days?: number;
     max_removed_ratio?: number;
+    rate_limit_ms?: number;
+    stock_verify?: { enabled: boolean; graphql_url?: string; max_per_run?: number };
+    stock_rules?: { in_stock: string[]; out_of_stock: string[]; preorder?: string[] };
     overrides?: Record<string, Record<string, unknown>>;
   };
   categories?: { mode: CategoryMode; url_pattern?: string; manual?: ManualCategory[] };
@@ -189,6 +194,7 @@ function renderReport(
   section("调价", "price_change", (event) => `：${formatReportValue(event.from)} → ${formatReportValue(event.to)}`);
   section("上新", "new_sku", (event) => `：${formatReportValue(event.to)}`);
   section("下架/消失", "removed_sku", () => "");
+  section("Feed 缺席但页面有货", "feed_anomaly", () => "（页面仍显示有货，请检查 feed）");
 
   lines.push("## 分类概览", "", "| 分类 | 在售 | 有货 | 缺货 | 有货率 | 较前日缺货 |", "|---|---:|---:|---:|---:|---:|");
   for (const category of [...agg.keys()].filter((key) => key !== "_all").sort(compareKeys)) {
@@ -279,7 +285,8 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
   const seenLast = [...active].filter((sku) => skus.get(sku)?.last_seen === previousRunDate);
   const newlyGone = gone.filter((sku) => seenLast.includes(sku));
   const ratio = options.maxRemovedRatio ?? site.crawl?.max_removed_ratio ?? 0.1;
-  if (seenLast.length && newlyGone.length / seenLast.length > ratio && !options.force) {
+  const ratioExceeded = seenLast.length > 0 && newlyGone.length / seenLast.length > ratio;
+  if (ratioExceeded && !options.force) {
     const message = `本次有 ${newlyGone.length}/${seenLast.length} 个 SKU 从数据源消失，超过 ${(ratio * 100).toFixed(0)}% 保护阈值，疑似抓取/feed 不完整`;
     const result = await fail(EXIT.GUARD_ABORTED, message, { snapshot: snapBy.size, missing: gone.length });
     result.errors = [`${message}。确认无误后加 --force 重跑。`];
@@ -300,7 +307,10 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
       addEvent(sku, "new_sku", null, row.price ?? null, row);
       continue;
     }
-    if (old.status === "removed") addEvent(sku, "restored_sku", "removed", "active", row);
+    if (old.status === "removed") {
+      addEvent(sku, "restored_sku", "removed", "active", row);
+      delete old.removed_reason;
+    }
     if (old.price !== null && old.price !== undefined && old.price !== rowForCatalog.price) {
       addEvent(sku, "price_change", old.price, rowForCatalog.price, row);
     }
@@ -309,10 +319,39 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
     if (changed) old.updated_at = day;
   }
 
+  const shouldVerifyMissing = site.crawl?.stock_verify?.enabled === true && !ratioExceeded;
+  const verification = shouldVerifyMissing
+    ? await verifyMissingStock(gone.map((sku) => ({ sku, url: String(skus.get(sku)?.url ?? "") })), site)
+    : null;
   const missingAs = site.crawl?.missing_as ?? "removed";
   const removedAfter = site.crawl?.missing_removed_after_days ?? 30;
   for (const sku of gone) {
     const row = skus.get(sku)!;
+    const verified = verification?.results.get(sku);
+    if (verification && !verified) continue;
+    if (verified?.kind === "unavailable") continue;
+    if (verified?.kind === "not_found") {
+      row.status = "removed";
+      row.removed_reason = "feed_absent_404";
+      row.updated_at = day;
+      addEvent(sku, "removed_sku", "active", "removed", row);
+      latest.delete(sku);
+      continue;
+    }
+    if (verified?.kind === "status" && verified.status !== "unknown") {
+      const current = latest.get(sku);
+      if (!current) {
+        latest.set(sku, { sku, stock_status: verified.status, qty: null, since: day, checked_at: startedAt });
+      } else {
+        if (current.stock_status !== verified.status) {
+          addEvent(sku, "stock_change", current.stock_status, verified.status, row);
+          current.since = day;
+        }
+        Object.assign(current, { stock_status: verified.status, qty: null, checked_at: startedAt });
+      }
+      if (verified.status === "in_stock") addEvent(sku, "feed_anomaly", "feed_absent", "in_stock", row);
+      continue;
+    }
     if (missingAs === "out_of_stock") {
       const idle = (Date.parse(`${day}T00:00:00Z`) - Date.parse(`${String(row.last_seen)}T00:00:00Z`)) / 86_400_000;
       if (idle < removedAfter) {
@@ -327,6 +366,7 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
       }
     }
     row.status = "removed";
+    if (missingAs === "out_of_stock") row.removed_reason = "feed_absent_aged";
     row.updated_at = day;
     addEvent(sku, "removed_sku", "active", "removed", row);
     latest.delete(sku);
@@ -374,9 +414,20 @@ export async function runDaily(project: string, snapshot: readonly DailySnapshot
     new_sku: eventCount("new_sku"),
     removed_sku: eventCount("removed_sku"),
     unknown: all.unknown,
+    ...(verification ? {
+      stock_verified: verification.checked,
+      stock_verify_unavailable: verification.unavailable,
+      stock_verify_deferred: verification.deferred,
+      feed_anomaly: eventCount("feed_anomaly"),
+    } : {}),
   };
-  const status: DailyStatus = counts.unknown > 0.05 * Math.max(counts.active, 1) ? "partial" : "ok";
-  const errors = status === "partial" ? [`unknown 库存占比过高: ${counts.unknown}/${counts.active}，请检查 feed 的 availability 字段或 stock_rules`] : [];
+  const errors: string[] = [];
+  if (counts.unknown > 0.05 * Math.max(counts.active, 1)) {
+    errors.push(`unknown 库存占比过高: ${counts.unknown}/${counts.active}，请检查 feed 的 availability 字段或 stock_rules`);
+  }
+  if (verification?.unavailable) errors.push(`${verification.unavailable} 个缺席 SKU 核验请求失败，原库存状态已保留。`);
+  if (verification?.deferred) errors.push(`${verification.deferred} 个缺席 SKU 超出本次核验上限，将在后续 daily 处理中。`);
+  const status: DailyStatus = errors.length ? "partial" : "ok";
   const report = renderReport(site, day, aggregate, previous, events, skus, latest);
 
   await writeJsonl(path.join(project, paths.skus), [...skus.values()], "sku");

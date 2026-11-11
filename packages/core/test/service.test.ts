@@ -84,6 +84,34 @@ describe("createCoreService initial namespaces", () => {
     expect(await api.inventory.dailyReport("fixture", "2026-10-18")).toBeNull();
   }, 30_000);
 
+  it("surfaces feed-anomaly events in the inventory summary without treating them as SEO issues", async () => {
+    const { projectPath } = await makeProject();
+    const eventPath = path.join(projectPath, PATHS.eventsDir, "2026-10.jsonl");
+    const seoIssuesPath = path.join(projectPath, PATHS.seoIssues);
+    const events = await readJsonl(eventPath);
+    const seoIssuesBefore = await readJsonl(seoIssuesPath);
+    await writeJsonl(eventPath, [...events, {
+      date: "2026-10-21",
+      sku: "DEMO-ANOMALY",
+      type: "feed_anomaly",
+      from: "feed_absent",
+      to: "in_stock",
+      category: "demo",
+      title: "Demo item",
+    }], "inventory_event");
+    const api = service(projectPath);
+    api.invalidate(projectPath);
+
+    const summary = await api.inventory.summary("fixture", 30);
+
+    expect(summary.today).toContainEqual(expect.objectContaining({
+      type: "feed_anomaly",
+      sku: "DEMO-ANOMALY",
+      detail: "Feed 缺席，但页面仍显示有货。",
+    }));
+    expect(await readJsonl(seoIssuesPath)).toEqual(seoIssuesBefore);
+  });
+
   it("serves 14, 30, 60, 90 and all recorded business dates through CoreService", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);

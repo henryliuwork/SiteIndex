@@ -662,11 +662,14 @@ function inventoryEvents(snapshot: ProjectSnapshot): InventorySummary["today"] {
     else if (event.type === "price_change") type = "price";
     else if (event.type === "new_sku" || event.type === "restored_sku") type = "new";
     else if (event.type === "removed_sku") type = "removed";
+    else if (event.type === "feed_anomaly") type = "feed_anomaly";
     if (type) entries.push({
       type,
       sku: event.sku,
       title: event.title,
-      detail: event.type === "stock_change" || event.type === "price_change" ? `${String(event.from)} → ${String(event.to)}` : undefined,
+      detail: event.type === "stock_change" || event.type === "price_change"
+        ? `${String(event.from)} → ${String(event.to)}`
+        : event.type === "feed_anomaly" ? "Feed 缺席，但页面仍显示有货。" : undefined,
     });
   }
   return entries.sort((a, b) => codeUnitCompare(a.sku, b.sku) || codeUnitCompare(a.type, b.type));
