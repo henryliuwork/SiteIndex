@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { AppSettings } from "@siteindex/shared";
@@ -65,7 +65,7 @@ async function renderSettings(options: { settings?: AppSettings; wordpress?: boo
       </ToastProvider>
     </QueryClientProvider>,
   );
-  return { mockApi, save };
+  return { mockApi, save, queryClient };
 }
 
 describe("AppSettingsPage background options", () => {
@@ -139,6 +139,69 @@ describe("AppSettingsPage background options", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "删除本机凭据" }).at(-1)!);
     await waitFor(() => expect(bridge.clear).toHaveBeenCalledWith("https://demo-store.example.test"));
     expect(await screen.findByText("尚未配置")).toBeTruthy();
+  });
+
+  it("keeps configure, replace, and delete actions scoped to the selected origin", async () => {
+    const bridge = createCredentialBridge("configured");
+    const { mockApi, queryClient } = await renderSettings({ wordpress: true, bridge });
+    const firstOrigin = "https://demo-store.example.test";
+    const secondOrigin = "https://second-store.example.test";
+    const secondId = "demo-wordpress-secondary";
+    await screen.findByRole("region", { name: `凭据：${firstOrigin}` });
+    const originalList = mockApi.projects.list.bind(mockApi.projects);
+    const originalGet = mockApi.projects.get.bind(mockApi.projects);
+    const originalProjects = await originalList();
+    const firstProject = originalProjects.find((project) => project.id === "demo");
+    expect(firstProject).toBeDefined();
+    const firstDetail = await originalGet("demo");
+    const secondProject = {
+      ...firstProject!,
+      id: secondId,
+      name: "Secondary WordPress Demo",
+      path: "D:/Synthetic/Secondary WordPress Demo",
+      domain: "second-store.example.test",
+    };
+    const secondDetail = {
+      ...firstDetail,
+      summary: secondProject,
+      config: { ...firstDetail.config, base_url: secondOrigin },
+    };
+    vi.spyOn(mockApi.projects, "list").mockImplementation(async () => [...originalProjects, secondProject]);
+    vi.spyOn(mockApi.projects, "get").mockImplementation(async (id) => id === secondId ? secondDetail : originalGet(id));
+    bridge.states.set(firstOrigin, "configured");
+    bridge.states.set(secondOrigin, "not_configured");
+    await queryClient.invalidateQueries({ queryKey: ["settings", "wordpress-targets"] });
+
+    const first = await screen.findByRole("region", { name: `凭据：${firstOrigin}` });
+    const second = await screen.findByRole("region", { name: `凭据：${secondOrigin}` });
+    expect(within(first).getByText("本机凭据已保存")).toBeTruthy();
+    expect(within(second).getByText("尚未配置")).toBeTruthy();
+
+    fireEvent.click(within(second).getByRole("button", { name: "配置凭据" }));
+    fireEvent.change(await screen.findByLabelText("WordPress 用户名"), { target: { value: "second-fictional-user" } });
+    fireEvent.change(screen.getByLabelText("应用程序密码"), { target: { value: "second-fictional-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存到本机" }));
+    expect(await screen.findByText(/本机凭据已保存。此状态不代表 WordPress 已验证/)).toBeTruthy();
+    expect(bridge.save).toHaveBeenLastCalledWith({ siteUrl: secondOrigin, username: "second-fictional-user", applicationPassword: "second-fictional-secret" });
+    expect(bridge.states.get(firstOrigin)).toBe("configured");
+    expect(within(first).getByText("本机凭据已保存")).toBeTruthy();
+
+    fireEvent.click(within(second).getByRole("button", { name: "替换凭据" }));
+    fireEvent.change(await screen.findByLabelText("WordPress 用户名"), { target: { value: "second-replacement-user" } });
+    fireEvent.change(screen.getByLabelText("应用程序密码"), { target: { value: "second-replacement-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存到本机" }));
+    await waitFor(() => expect(bridge.save).toHaveBeenLastCalledWith({ siteUrl: secondOrigin, username: "second-replacement-user", applicationPassword: "second-replacement-secret" }));
+    expect(bridge.states.get(firstOrigin)).toBe("configured");
+
+    fireEvent.click(within(second).getByRole("button", { name: "删除本机凭据" }));
+    const confirmation = screen.getByRole("dialog", { name: "删除本机凭据？" });
+    expect(within(confirmation).getByText(new RegExp(secondOrigin))).toBeTruthy();
+    fireEvent.click(within(confirmation).getByRole("button", { name: "删除本机凭据" }));
+    await waitFor(() => expect(bridge.clear).toHaveBeenLastCalledWith(secondOrigin));
+    expect(bridge.states.get(firstOrigin)).toBe("configured");
+    expect(bridge.states.get(secondOrigin)).toBe("not_configured");
+    expect(within(first).getByText("本机凭据已保存")).toBeTruthy();
+    expect(within(second).getByText("尚未配置")).toBeTruthy();
   });
 
   it("shows state read errors with their code and allows retry", async () => {
