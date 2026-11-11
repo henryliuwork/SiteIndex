@@ -230,6 +230,11 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     );
   });
 
+  it("starts the pinned baseline with tray and login startup disabled", () => {
+    expect(acceptanceScript).toContain('close_to_tray: false');
+    expect(acceptanceScript).toContain('launch_at_login: false');
+  });
+
   it("does not claim an update until the updater has restarted the candidate", async () => {
     let now = 0;
     const launchForVerification = vi.fn();

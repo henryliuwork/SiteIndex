@@ -495,6 +495,10 @@ async function writeRunnerSettings() {
       projects_root: PROJECTS_ROOT,
       extra_projects: [],
       hidden_projects: [],
+      // The 0.4.0 baseline defaults close_to_tray to true. Keep this launch
+      // focused on the packaged window and avoid waiting on tray icon setup.
+      close_to_tray: false,
+      launch_at_login: false,
       cache_dir: path.join(TEST_ROOT, "cache"),
       browser: { channel: "msedge", executable_path: null },
       notify: { on_failure: true, on_success: true, oos_threshold: null, dingtalk_webhook: null },
