@@ -1,8 +1,10 @@
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { EDM_SKU_INDEX_PATHS, pathsFor, type ProjectLayout } from "@siteindex/shared";
+import { EDM_SKU_INDEX_PATHS, pathsFor, type ProductView, type ProjectLayout, type SiteConfig, type SkuRecord, type SkuStockView } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { parseCsv } from "../src/io/csv";
+import { confirmEdmIndexPostCommit, createEdmSkuIndexFile, renderEdmSkuIndex, type EdmSkuIndexInput } from "../src/edm/sku-index";
 import { createCoreService } from "../src/service";
 
 const FIXTURE = path.resolve(process.cwd(), "fixtures/a-v041-edm-export");
@@ -11,6 +13,10 @@ const temporaryRoots: string[] = [];
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+
+function parseJsonl<T>(source: string): T[] {
+  return source.split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line) as T);
+}
 
 async function projectFor(layout: ProjectLayout, mediaFile: string): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-edm-export-"));
@@ -33,6 +39,30 @@ async function projectFor(layout: ProjectLayout, mediaFile: string): Promise<str
   return projectPath;
 }
 
+async function fixtureInput(layout: ProjectLayout, mediaFile: string): Promise<EdmSkuIndexInput> {
+  const [productsText, skusText, stockText, siteText, mediaText, tagsText] = await Promise.all([
+    readFile(path.join(FIXTURE, "products.jsonl"), "utf8"),
+    readFile(path.join(FIXTURE, "skus.jsonl"), "utf8"),
+    readFile(path.join(FIXTURE, "sku-stock.jsonl"), "utf8"),
+    readFile(path.join(FIXTURE, "site.json"), "utf8"),
+    readFile(path.join(FIXTURE, mediaFile), "utf8"),
+    readFile(path.join(FIXTURE, "sku-tags.csv"), "utf8"),
+  ]);
+  const site = JSON.parse(siteText) as SiteConfig;
+  return {
+    products: parseJsonl<ProductView>(productsText),
+    skus: parseJsonl<SkuRecord>(skusText),
+    stock: parseJsonl<SkuStockView>(stockText),
+    skuMedia: parseCsv(mediaText, mediaFile),
+    skuTags: parseCsv(tagsText, "sku-tags.csv"),
+    grouping: site.sku_grouping,
+  };
+}
+
+async function renderFixture(layout: ProjectLayout, mediaFile: string) {
+  return renderEdmSkuIndex(await fixtureInput(layout, mediaFile));
+}
+
 function core(projectPath: string) {
   return createCoreService({
     resolveProject: (id) => id === "synthetic" ? projectPath : path.join(projectPath, "missing"),
@@ -48,74 +78,143 @@ async function exportIndex(projectPath: string) {
   return run("synthetic");
 }
 
-describe("EDM SKU index export", () => {
+async function fileExists(filePath: string): Promise<boolean> {
+  try { await stat(filePath); return true; }
+  catch { return false; }
+}
+
+describe("EDM SKU index rendering", () => {
   it.each([
     ["legacy", "sku-media-legacy.csv"],
     ["workspace", "sku-media-extended.csv"],
-  ] as const)("renders synthetic parent/SKU data in %s layout and reads ledgers without migrating them", async (layout, mediaFile) => {
-    const projectPath = await projectFor(layout, mediaFile);
-    const projectPaths = pathsFor(layout);
-    const mediaPath = path.join(projectPath, projectPaths.skuMedia);
-    const tagsPath = path.join(projectPath, projectPaths.skuTags);
-    const mediaBefore = await readFile(mediaPath);
-    const tagsBefore = await readFile(tagsPath);
-    const outputPath = path.join(projectPath, projectPaths.edmSkuIndex);
-
-    const first = await exportIndex(projectPath);
-    expect(first).toEqual({
-      status: "created",
-      path: EDM_SKU_INDEX_PATHS[layout],
-      sku_count: 3,
-      missing_image_count: 1,
+  ] as const)("renders the synthetic %s layout deterministically without migrating ledgers", async (layout, mediaFile) => {
+    const result = await renderFixture(layout, mediaFile);
+    expect(result).toEqual({
+      content: await readFile(path.join(FIXTURE, "sku-index.expected.md"), "utf8"),
+      skuCount: 3,
+      missingImageCount: 1,
     });
-    expect(await readFile(outputPath, "utf8")).toBe(await readFile(path.join(FIXTURE, "sku-index.expected.md"), "utf8"));
-    expect(await readFile(mediaPath)).toEqual(mediaBefore);
-    expect(await readFile(tagsPath)).toEqual(tagsBefore);
-
-    const outputMtime = (await stat(outputPath)).mtimeMs;
-    const repeated = await exportIndex(projectPath);
-    expect(repeated).toMatchObject({ status: "unchanged", path: EDM_SKU_INDEX_PATHS[layout], sku_count: 3, missing_image_count: 1 });
-    expect((await stat(outputPath)).mtimeMs).toBe(outputMtime);
   });
 
-  it("keeps an unmarked user file byte-for-byte and reports a structured conflict", async () => {
-    const projectPath = await projectFor("legacy", "sku-media-legacy.csv");
-    const outputPath = path.join(projectPath, pathsFor("legacy").edmSkuIndex);
-    const userFile = Buffer.from("# User-maintained EDM list\r\nkeep these bytes exactly\r\n");
-    await mkdir(path.dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, userFile);
+  it("keeps only whitelisted, decoded product query parameters", async () => {
+    const input = await fixtureInput("legacy", "sku-media-legacy.csv");
+    const productsText = await readFile(path.join(FIXTURE, "products.jsonl"), "utf8");
+    const products = parseJsonl<ProductView>(productsText).map((product) => product.product_id === "PRODUCT-SINGLE"
+      ? {
+        ...product,
+        url: "https://synthetic-edm.test/products/item?color=blue&username=secret-user&session=secret-session&sig=secret-sig&s%65ssion=encoded-secret&%75sername=encoded-user&%73ig=encoded-sig&%61ccess_token=secret-token&size=small",
+      }
+      : product);
+    const result = renderEdmSkuIndex({ ...input, products });
+
+    expect(result.content).toContain("https://synthetic-edm.test/products/item?color=blue&size=small");
+    expect(result.content).not.toMatch(/secret-user|secret-session|secret-sig|encoded-secret|encoded-user|encoded-sig|secret-token/u);
+  });
+
+  it("renders an empty inventory with exactly one final newline", async () => {
+    const input = await fixtureInput("legacy", "sku-media-legacy.csv");
+    const result = renderEdmSkuIndex({ ...input, products: [] });
+    expect(result.content).toBe([
+      "<!-- siteindex:generated:edm-sku-index:v1 -->",
+      "# EDM SKU Index",
+      "",
+      "| SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存 |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      "",
+    ].join("\n"));
+    expect(result.content.endsWith("\n\n")).toBe(false);
+  });
+});
+
+describe("EDM SKU index safe file boundary", () => {
+  it.each([
+    ["legacy", "sku-media-legacy.csv"],
+    ["workspace", "sku-media-extended.csv"],
+  ] as const)("refuses to create in %s when no bound-directory no-follow writer exists", async (layout, mediaFile) => {
+    const projectPath = await projectFor(layout, mediaFile);
+    const paths = pathsFor(layout);
+    const output = path.join(projectPath, paths.edmSkuIndex);
 
     await expect(exportIndex(projectPath)).rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
-    expect(await readFile(outputPath)).toEqual(userFile);
+    expect(await fileExists(output)).toBe(false);
+    expect(await fileExists(path.dirname(output))).toBe(false);
   });
 
-  it("does not replace a changed marked file while conditional update is unavailable", async () => {
+  it("does not write outside the project when an ancestor becomes a junction after validation", async () => {
+    const projectPath = await projectFor("legacy", "sku-media-legacy.csv");
+    const parent = path.join(projectPath, path.dirname(pathsFor("legacy").edmSkuIndex));
+    const movedParent = `${parent}.moved`;
+    const outside = path.join(path.dirname(projectPath), "outside-target");
+    await mkdir(parent, { recursive: true });
+    await mkdir(outside, { recursive: true });
+    const sentinel = path.join(outside, "sentinel.txt");
+    const sentinelBytes = Buffer.from("keep external bytes\n");
+    await writeFile(sentinel, sentinelBytes);
+
+    await expect(createEdmSkuIndexFile(projectPath, "legacy", "generated\n", {
+      afterPathValidation: async () => {
+        await rename(parent, movedParent);
+        await symlink(outside, parent, process.platform === "win32" ? "junction" : "dir");
+      },
+    })).rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
+
+    expect(await readFile(sentinel)).toEqual(sentinelBytes);
+    expect(await readdir(outside)).toEqual(["sentinel.txt"]);
+    await rm(parent, { recursive: true, force: true });
+    await rename(movedParent, parent);
+  });
+
+  it("preserves an external creator that wins after validation", async () => {
     const projectPath = await projectFor("workspace", "sku-media-extended.csv");
-    const outputPath = path.join(projectPath, pathsFor("workspace").edmSkuIndex);
-    const created = await exportIndex(projectPath);
-    expect(created.status).toBe("created");
-    const externallyEdited = Buffer.from("<!-- siteindex:generated:edm-sku-index:v1 -->\nexternal change\n");
-    await writeFile(outputPath, externallyEdited);
+    const output = path.join(projectPath, pathsFor("workspace").edmSkuIndex);
+    await mkdir(path.dirname(output), { recursive: true });
+    const externalBytes = Buffer.from("external first creator\n");
 
-    await expect(exportIndex(projectPath)).rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
-    expect(await readFile(outputPath)).toEqual(externallyEdited);
+    await expect(createEdmSkuIndexFile(projectPath, "workspace", "generated\n", {
+      afterPathValidation: async () => writeFile(output, externalBytes, { flag: "wx" }),
+    })).rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
+
+    expect(await readFile(output)).toEqual(externalBytes);
   });
 
-  it("does not overwrite when Core exports contend for the project lock", async () => {
+  it("fails closed when the filesystem has no safe hard-link/no-follow capability", async () => {
     const projectPath = await projectFor("legacy", "sku-media-legacy.csv");
-    const api = core(projectPath);
-    const run = api.edm.exportIndex;
-    if (!run) throw new Error("Core EDM index export is not registered.");
+    const output = path.join(projectPath, pathsFor("legacy").edmSkuIndex);
 
-    const results = await Promise.allSettled([run("synthetic"), run("synthetic")]);
-    const fulfilled = results.filter((result) => result.status === "fulfilled");
-    const rejected = results.filter((result) => result.status === "rejected");
-    expect(fulfilled.some((result) => result.value.status === "created")).toBe(true);
-    expect(fulfilled.every((result) => result.value.status === "created" || result.value.status === "unchanged")).toBe(true);
-    expect(rejected.every((result) => typeof result.reason === "object" && result.reason !== null
-      && "code" in result.reason && result.reason.code === "LOCKED")).toBe(true);
-    expect(fulfilled.length + rejected.length).toBe(2);
-    expect(await readFile(path.join(projectPath, pathsFor("legacy").edmSkuIndex), "utf8"))
-      .toBe(await readFile(path.join(FIXTURE, "sku-index.expected.md"), "utf8"));
+    await expect(createEdmSkuIndexFile(projectPath, "legacy", "generated\n"))
+      .rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
+    expect(await fileExists(output)).toBe(false);
+    expect(await readdir(path.join(projectPath, "index"))).not.toContain("edm");
+  });
+
+  it("maps a post-commit verification fault to outcome_unknown after the file exists", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-edm-post-commit-"));
+    temporaryRoots.push(root);
+    const committedPath = path.join(root, "committed.md");
+    const committedBytes = Buffer.from("committed bytes\n");
+    await writeFile(committedPath, committedBytes, { flag: "wx" });
+
+    await expect(confirmEdmIndexPostCommit(async () => {
+      throw { code: "EDM_INDEX_CONFLICT", message: "injected post-commit verification failure" };
+    })).rejects.toMatchObject({ code: "EDM_EXPORT_OUTCOME_UNKNOWN" });
+    expect(await readFile(committedPath)).toEqual(committedBytes);
+  });
+
+  it("preserves unmarked and externally edited existing files", async () => {
+    for (const [layout, mediaFile] of [
+      ["legacy", "sku-media-legacy.csv"],
+      ["workspace", "sku-media-extended.csv"],
+    ] as const) {
+      const projectPath = await projectFor(layout, mediaFile);
+      const output = path.join(projectPath, pathsFor(layout).edmSkuIndex);
+      await mkdir(path.dirname(output), { recursive: true });
+      const bytes = Buffer.from(layout === "legacy"
+        ? "# user-maintained list\r\nkeep these bytes\r\n"
+        : "<!-- siteindex:generated:edm-sku-index:v1 -->\nexternal edit\n");
+      await writeFile(output, bytes);
+
+      await expect(exportIndex(projectPath)).rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
+      expect(await readFile(output)).toEqual(bytes);
+    }
   });
 });

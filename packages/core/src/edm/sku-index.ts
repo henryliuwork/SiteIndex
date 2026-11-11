@@ -1,5 +1,4 @@
-import { open, lstat, link, mkdir, readFile, realpath, unlink } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import type {
   EdmSkuIndexExportResult,
@@ -18,8 +17,7 @@ import type { SiteIndexError } from "@siteindex/shared";
 const GENERATED_MARKER = "<!-- siteindex:generated:edm-sku-index:v1 -->";
 const TABLE_HEADER = "| SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存 |";
 const TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | --- | --- |";
-const TRACKING_QUERY = /^(utm_|gclid$|gbraid$|wbraid$|srsltid$|fbclid$|mc_|_ga$)/i;
-const SENSITIVE_QUERY = /(?:token|secret|password|credential|authorization|api[_-]?key|access[_-]?key|signature)/i;
+const SAFE_PUBLIC_QUERY_KEYS = new Set(["color", "size", "variant", "option"]);
 
 export interface EdmSkuIndexInput {
   products: readonly ProductView[];
@@ -63,9 +61,9 @@ function normalizePublicUrl(value: unknown): string | null {
   let url: URL;
   try { url = new URL(value); } catch { return null; }
   if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) return null;
-  for (const key of url.searchParams.keys()) if (SENSITIVE_QUERY.test(key)) return null;
   const pairs = [...url.searchParams.entries()]
-    .filter(([key, queryValue]) => queryValue !== "" && !TRACKING_QUERY.test(key))
+    .map(([key, queryValue]) => [key.normalize("NFKC").toLowerCase(), queryValue] as const)
+    .filter(([key, queryValue]) => SAFE_PUBLIC_QUERY_KEYS.has(key) && queryValue !== "")
     .sort(([leftKey, leftValue], [rightKey, rightValue]) => compareKeys(leftKey, rightKey) || compareKeys(leftValue, rightValue));
   url.search = "";
   for (const [key, queryValue] of pairs) url.searchParams.append(key, queryValue);
@@ -177,244 +175,83 @@ export function renderEdmSkuIndex(input: EdmSkuIndexInput): RenderedEdmSkuIndex 
     ];
     return `| ${cells.map(markdownCell).join(" | ")} |`;
   });
-  const content = `${GENERATED_MARKER}\n# EDM SKU Index\n\n${TABLE_HEADER}\n${TABLE_SEPARATOR}\n${table.join("\n")}\n`;
+  const content = `${[
+    GENERATED_MARKER,
+    "# EDM SKU Index",
+    "",
+    TABLE_HEADER,
+    TABLE_SEPARATOR,
+    ...table,
+  ].join("\n")}\n`;
   return { content, skuCount: rows.length, missingImageCount };
 }
 
-interface DirectoryIdentity {
-  path: string;
-  dev: number;
-  ino: number;
-}
-
-type SafeTargetState =
-  | { kind: "missing" }
-  | {
-    kind: "file";
-    dev: number;
-    ino: number;
-    size: number;
-    mtimeMs: number;
-    ctimeMs: number;
-    content: Buffer;
-  };
-
-function sameIdentity(left: { dev: number; ino: number }, right: { dev: number; ino: number }): boolean {
-  return left.dev !== 0 && left.ino !== 0 && left.dev === right.dev && left.ino === right.ino;
-}
-
-async function projectRootIdentity(projectPath: string): Promise<{ root: string; identity: DirectoryIdentity }> {
+async function validateEdmTargetPath(projectPath: string, layout: ProjectLayout): Promise<void> {
   let root: string;
   try { root = await realpath(projectPath); }
   catch { throw safeError("PROJECT_UNREADABLE", "无法确认项目目录，未写入清单。"); }
-  const stats = await lstat(root).catch(() => null);
-  if (!stats?.isDirectory() || stats.isSymbolicLink() || stats.ino === 0) {
+  const rootStats = await lstat(root).catch(() => null);
+  if (!rootStats?.isDirectory() || rootStats.isSymbolicLink()) {
     throw conflict("无法安全确认项目根目录，未写入清单。");
   }
-  return { root, identity: { path: root, dev: stats.dev, ino: stats.ino } };
-}
 
-function targetAbsolutePath(root: string, relativePath: string): string {
-  const target = path.resolve(root, relativePath);
-  const relative = path.relative(root, target);
-  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw conflict("清单路径超出项目目录，未写入文件。");
-  }
-  return target;
-}
-
-async function ensureSafeParent(projectPath: string, relativePath: string): Promise<{
-  root: string;
-  target: string;
-  parent: string;
-  chain: DirectoryIdentity[];
-}> {
-  const { root, identity } = await projectRootIdentity(projectPath);
-  const paths = relativePath.split(/[\\/]/u);
-  if (paths.some((part) => !part || part === "." || part === "..") || path.isAbsolute(relativePath)) {
+  const relativePath = pathsFor(layout).edmSkuIndex;
+  if (path.isAbsolute(relativePath) || relativePath.split(/[\\/]/u).some((part) => !part || part === "." || part === "..")) {
     throw conflict("清单路径无效，未写入文件。");
   }
-  const target = targetAbsolutePath(root, relativePath);
-  const parent = path.dirname(target);
-  const directoryNames = path.relative(root, parent).split(path.sep).filter(Boolean);
-  const chain = [identity];
-  let current = root;
+  const target = path.resolve(root, relativePath);
+  const relative = path.relative(root, target);
+  if (!relative || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
+    throw conflict("清单路径超出项目目录，未写入文件。");
+  }
 
-  for (const name of directoryNames) {
-    current = path.join(current, name);
+  let current = root;
+  for (const part of path.relative(root, path.dirname(target)).split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
     let stats;
     try { stats = await lstat(current); }
     catch (error) {
-      if (errorCode(error) !== "ENOENT") throw conflict("无法安全检查清单目录，未写入文件。");
-      try { await mkdir(current); }
-      catch (createError) {
-        if (errorCode(createError) !== "EEXIST") throw safeError("WRITE_FAILED", "无法创建清单目录，未写入清单。");
-      }
-      try { stats = await lstat(current); }
-      catch { throw conflict("清单目录在检查期间发生变化，未写入文件。"); }
+      if (errorCode(error) === "ENOENT") break;
+      throw conflict("无法安全检查清单目录，未写入文件。");
     }
-    if (!stats.isDirectory() || stats.isSymbolicLink() || stats.ino === 0) {
-      throw conflict("清单目录包含符号链接或类型异常，未写入文件。");
-    }
+    if (!stats.isDirectory() || stats.isSymbolicLink()) throw conflict("清单目录包含符号链接或类型异常，未写入文件。");
     let canonical: string;
     try { canonical = await realpath(current); }
     catch { throw conflict("无法确认清单目录，未写入文件。"); }
-    if (path.resolve(canonical) !== path.resolve(current)) {
-      throw conflict("清单目录指向项目外部，未写入文件。");
-    }
-    chain.push({ path: current, dev: stats.dev, ino: stats.ino });
-  }
-  await assertSafeChain(projectPath, root, chain);
-  return { root, target, parent, chain };
-}
-
-async function assertSafeChain(projectPath: string, root: string, chain: readonly DirectoryIdentity[]): Promise<void> {
-  let canonicalRoot: string;
-  try { canonicalRoot = await realpath(projectPath); }
-  catch { throw conflict("项目路径在写入期间发生变化，未修改清单。"); }
-  if (path.resolve(canonicalRoot) !== path.resolve(root)) {
-    throw conflict("项目路径在写入期间发生变化，未修改清单。");
-  }
-  for (const expected of chain) {
-    let stats;
-    try { stats = await lstat(expected.path); }
-    catch { throw conflict("清单目录在写入期间发生变化，未修改清单。"); }
-    if (!stats.isDirectory() || stats.isSymbolicLink() || !sameIdentity(expected, stats)) {
-      throw conflict("清单目录在写入期间被替换，未修改清单。");
-    }
-    let canonical: string;
-    try { canonical = await realpath(expected.path); }
-    catch { throw conflict("清单目录在写入期间发生变化，未修改清单。"); }
-    if (path.resolve(canonical) !== path.resolve(expected.path)) {
-      throw conflict("清单目录指向项目外部，未修改清单。");
-    }
+    if (path.resolve(canonical) !== path.resolve(current)) throw conflict("清单目录指向项目外部，未写入文件。");
   }
 }
 
-async function inspectTarget(target: string): Promise<SafeTargetState> {
-  let before;
-  try { before = await lstat(target); }
-  catch (error) {
-    if (errorCode(error) === "ENOENT") return { kind: "missing" };
-    throw conflict("无法安全读取现有清单，未修改文件。");
-  }
-  if (!before.isFile() || before.isSymbolicLink() || before.ino === 0) {
-    throw conflict("目标清单不是可安全管理的普通文件，未做修改。");
-  }
-  let content: Buffer;
-  try { content = await readFile(target); }
-  catch { throw conflict("无法安全读取现有清单，未修改文件。"); }
-  let after;
-  try { after = await lstat(target); }
-  catch { throw conflict("目标清单在读取期间发生变化，未修改文件。"); }
-  if (!after.isFile() || after.isSymbolicLink() || !sameIdentity(before, after)
-    || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
-    throw conflict("目标清单在读取期间发生变化，未修改文件。");
-  }
-  return {
-    kind: "file", dev: after.dev, ino: after.ino, size: after.size,
-    mtimeMs: after.mtimeMs, ctimeMs: after.ctimeMs, content,
-  };
+interface EdmSkuIndexTestHooks {
+  /** Deterministically injects a path race after the read-only validation boundary. */
+  afterPathValidation?: () => Promise<void>;
 }
 
-function isManagedMarkdown(content: Buffer): boolean {
-  try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(content);
-    return text.split(/\r?\n/u, 1)[0] === GENERATED_MARKER;
-  } catch { return false; }
+function outcomeUnknown(): SiteIndexError {
+  return safeError("EDM_EXPORT_OUTCOME_UNKNOWN", "清单写入可能已完成，但结果无法确认；请重新生成核对。");
 }
 
-function assertExistingContent(state: SafeTargetState, expected: Buffer): "unchanged" {
-  if (state.kind !== "file" || !state.content || !isManagedMarkdown(state.content)) throw conflict();
-  if (!state.content.equals(expected)) {
-    throw conflict("受管清单内容已变化；当前文件系统没有可验证的条件替换操作，本次保留原文件。");
-  }
-  return "unchanged";
+/** Converts any failure after an atomic commit into an explicit unknown outcome. */
+export async function confirmEdmIndexPostCommit<T>(verify: () => Promise<T>): Promise<T> {
+  try { return await verify(); }
+  catch { throw outcomeUnknown(); }
 }
 
-async function removeTemp(tempPath: string): Promise<void> {
-  for (let attempt = 0; ; attempt += 1) {
-    try { await unlink(tempPath); return; }
-    catch (error) {
-      const code = errorCode(error);
-      if (code === "ENOENT") return;
-      if ((code !== "EPERM" && code !== "EBUSY") || attempt >= 8) throw error;
-      await new Promise<void>((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
-    }
-  }
-}
-
-/** Safely creates the fixed generated file without replacing a concurrent creator. Updates remain gated until a CAS primitive is verified. */
+/**
+ * Validates the destination read-only, then refuses to write because Node's path-based APIs
+ * cannot bind a no-follow directory identity to the final create/link operation.
+ * A native bound-directory writer must be added before enabling file creation.
+ */
 export async function createEdmSkuIndexFile(
   projectPath: string,
   layout: ProjectLayout,
-  content: string,
+  _content: string,
+  testHooks?: EdmSkuIndexTestHooks,
 ): Promise<"created" | "unchanged"> {
-  const relativePath = pathsFor(layout).edmSkuIndex;
-  const { root, target, parent, chain } = await ensureSafeParent(projectPath, relativePath);
-  const expected = Buffer.from(content, "utf8");
-  const initial = await inspectTarget(target);
-  if (initial.kind === "file") return assertExistingContent(initial, expected);
-
-  const tempPath = path.join(parent, `.${path.basename(target)}.tmp-${process.pid}-${randomUUID()}`);
-  let handle;
-  let tempCreated = false;
-  let linked = false;
-  try {
-    handle = await open(tempPath, "wx");
-    tempCreated = true;
-    await handle.writeFile(expected);
-    await handle.sync();
-    const tempIdentity = await handle.stat();
-    await handle.close();
-    handle = undefined;
-
-    await assertSafeChain(projectPath, root, chain);
-    const beforeCommit = await inspectTarget(target);
-    if (beforeCommit.kind === "file") return assertExistingContent(beforeCommit, expected);
-
-    try {
-      await link(tempPath, target);
-      linked = true;
-    } catch (error) {
-      if (errorCode(error) === "EEXIST") {
-        const raced = await inspectTarget(target);
-        if (raced.kind === "file") return assertExistingContent(raced, expected);
-        throw conflict("清单目标在创建期间发生变化，未覆盖现有文件。");
-      }
-      const current = await inspectTarget(target).catch(() => null);
-      if (current?.kind === "file" && current.content?.equals(expected) && isManagedMarkdown(current.content)) return "unchanged";
-      if (!current) throw safeError("EDM_EXPORT_OUTCOME_UNKNOWN", "清单写入结果暂无法确认，可重新生成以核对。");
-      if (current.kind === "file") throw conflict("清单目标在创建期间发生变化，未覆盖现有文件。");
-      throw safeError("WRITE_FAILED", "无法安全创建 EDM SKU 清单；目标文件未确认写入。");
-    }
-
-    await assertSafeChain(projectPath, root, chain);
-    const committed = await inspectTarget(target);
-    if (committed.kind !== "file" || !sameIdentity(tempIdentity, committed)
-      || !committed.content?.equals(expected) || !isManagedMarkdown(committed.content)) {
-      throw conflict("清单目标在创建期间被替换或改写；保留当前文件。");
-    }
-    await removeTemp(tempPath);
-    tempCreated = false;
-    await assertSafeChain(projectPath, root, chain);
-    const verified = await inspectTarget(target);
-    if (verified.kind !== "file" || !sameIdentity(tempIdentity, verified)
-      || !verified.content?.equals(expected) || !isManagedMarkdown(verified.content)) {
-      throw safeError("EDM_EXPORT_OUTCOME_UNKNOWN", "清单写入结果暂无法确认，可重新生成以核对。");
-    }
-    return "created";
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error
-      && (error.code === "EDM_INDEX_CONFLICT" || error.code === "EDM_EXPORT_OUTCOME_UNKNOWN" || error.code === "WRITE_FAILED")) throw error;
-    if (linked) throw safeError("EDM_EXPORT_OUTCOME_UNKNOWN", "清单写入结果暂无法确认，可重新生成以核对。");
-    throw safeError("WRITE_FAILED", "无法安全创建 EDM SKU 清单；目标文件未修改。");
-  } finally {
-    await handle?.close().catch(() => undefined);
-    if (tempCreated) await removeTemp(tempPath).catch(() => undefined);
-  }
+  await validateEdmTargetPath(projectPath, layout);
+  await testHooks?.afterPathValidation?.();
+  throw conflict("当前 Core 没有可验证的目录句柄/no-follow 写入能力，未创建或覆盖清单。");
 }
-
 export function edmIndexResult(
   status: "created" | "updated" | "unchanged",
   path: EdmSkuIndexExportResult["path"],
