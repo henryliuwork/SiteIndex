@@ -62,23 +62,20 @@ describe("Issue #300 SEO row action hit testing", () => {
     try {
       // 预热 SEO 懒加载路由，避免首次依赖扫描的重载打断真实回归步骤。
       await page.goto(`${baseUrl}/#/p/demo/seo`, { waitUntil: "domcontentloaded" });
-      await page.locator('.si-seo-issue-actions summary[aria-label="问题操作：页面 4xx"]').first().waitFor({ state: "visible" });
+      await page.locator(".si-seo-row-action").first().waitFor({ state: "visible" });
       await page.waitForLoadState("networkidle");
       await page.goto(`${baseUrl}/#/p/demo`, { waitUntil: "domcontentloaded" });
       await page.getByRole("link", { name: "查看" }).first().waitFor({ state: "visible" });
       await page.getByRole("link", { name: "查看" }).first().click();
       await page.waitForURL(/#\/p\/demo\/seo/);
 
-      const actionTrigger = page.locator('.si-seo-issue-actions summary[aria-label="问题操作：页面 4xx"]').first();
+      const actionTrigger = page.locator(".si-seo-row-action").first();
       await actionTrigger.waitFor({ state: "visible" });
       await actionTrigger.click();
-      const actionMenu = actionTrigger.locator("xpath=..");
-      const menuState = await actionMenu.evaluate((element) => ({
-        open: (element as HTMLDetailsElement).open,
-        text: element.textContent ?? "",
-      }));
-      if (!menuState.open || !menuState.text.includes("标记已处理")) {
-        throw new Error(`Issue action menu did not open after clicking its trigger: ${JSON.stringify(menuState)}`);
+      const actionMenu = page.locator(".si-seo-issue-menu").first();
+      await actionMenu.waitFor({ state: "visible" });
+      if (!(await actionMenu.innerText()).includes("标记已处理")) {
+        throw new Error(`Issue action menu did not contain the expected action: ${await actionMenu.innerText()}`);
       }
       const menuItem = actionMenu.getByRole("menuitem", { name: "标记已处理" });
       await menuItem.waitFor({ state: "visible" });
@@ -89,6 +86,140 @@ describe("Issue #300 SEO row action hit testing", () => {
       expect(dialogType).toBe("confirm");
     } finally {
       await page.close();
+    }
+  }, 60_000);
+
+  browserRegression("allows an SEO row action after ordinary wheel scrolling at 1100×720", async () => {
+    const page = await browser!.newPage({ viewport: { width: 1100, height: 720 } });
+    try {
+      await page.goto(`${baseUrl}/#/p/demo/seo`, { waitUntil: "domcontentloaded" });
+      const scroll = page.locator(".si-table-scroll").first();
+      await scroll.waitFor({ state: "attached" });
+      const hideTableStyle = await page.addStyleTag({ content: ".si-seo-page .si-data-table.is-fill { display: none !important; }" });
+      await page.waitForFunction(() => (document.querySelector(".si-table-scroll") as HTMLElement | null)?.clientHeight === 0);
+      expect(await scroll.evaluate((element) => element.clientHeight)).toBe(0);
+      expect(await page.locator(".si-data-table").first().evaluate((element) => element.classList.contains("is-compact-fill"))).toBe(false);
+      await hideTableStyle.evaluate((element) => element.parentNode?.removeChild(element));
+      await scroll.waitFor({ state: "visible" });
+      // Reproduce the 1100×720 packaged layout recorded by E: a fill table collapsed to a 55px scroll viewport.
+      const compactLayoutStyle = await page.addStyleTag({ content: `
+        .si-seo-page .si-data-table.is-fill { height: 144px; min-height: 0; flex: 0 1 auto; }
+        .si-seo-page .si-data-table.is-fill > .si-table-scroll { height: 55px; min-height: 0; flex: none; }
+      ` });
+      await page.waitForFunction(() => document.querySelector(".si-data-table")?.classList.contains("is-compact-fill"));
+      await page.evaluate(() => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      }));
+      const stableCompactLayout = await page.evaluate(() => {
+        const table = document.querySelector(".si-data-table");
+        const scrollArea = document.querySelector(".si-table-scroll") as HTMLElement | null;
+        return {
+          compact: Boolean(table?.classList.contains("is-compact-fill")),
+          tableHeight: table?.getBoundingClientRect().height ?? 0,
+          scrollHeight: scrollArea?.clientHeight ?? 0,
+        };
+      });
+      expect(stableCompactLayout).toEqual({ compact: true, tableHeight: 180, scrollHeight: 80 });
+      const actionTrigger = page.locator(".si-seo-row-action").first();
+      await actionTrigger.waitFor({ state: "visible" });
+      const scrollBox = await scroll.boundingBox();
+      if (!scrollBox) throw new Error("SEO table scroll area has no visible bounds.");
+      const beforeScroll = await actionTrigger.evaluate((button) => {
+        const target = button as HTMLElement;
+        const bounds = target.getBoundingClientRect();
+        const header = document.querySelector(".si-table th.is-sticky-right")?.getBoundingClientRect();
+        const scrollArea = target.closest(".si-table-scroll") as HTMLElement | null;
+        const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+        return {
+          overlapsHeader: Boolean(header && bounds.top < header.bottom && bounds.bottom > header.top),
+          scrollClientHeight: scrollArea?.clientHeight ?? 0,
+          targetReceivesPointer: hit === target || target.contains(hit),
+        };
+      });
+      expect(beforeScroll.scrollClientHeight).toBeGreaterThanOrEqual(80);
+      expect(await page.locator(".si-data-table").first().evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(180);
+      expect(beforeScroll.overlapsHeader).toBe(false);
+      expect(beforeScroll.targetReceivesPointer).toBe(true);
+      await page.mouse.move(scrollBox.x + scrollBox.width - 24, scrollBox.y + scrollBox.height / 2);
+      await page.mouse.wheel(0, -120);
+      await page.waitForTimeout(100);
+
+      // This is an ordinary Playwright pointer click: no force option and no DOM-dispatched click.
+      await actionTrigger.click({ timeout: 5_000 });
+      await page.locator(".si-seo-issue-menu").first().waitFor({ state: "visible" });
+      await page.keyboard.press("Escape");
+
+      // Parent growth, without a window resize, must clear the fallback and restore natural fill sizing.
+      await compactLayoutStyle.evaluate((element) => element.parentNode?.removeChild(element));
+      await scroll.evaluate((scrollElement) => {
+        const layoutParent = (scrollElement as HTMLElement).parentElement?.parentElement;
+        layoutParent?.style.setProperty("min-height", "1100px", "important");
+      });
+      await page.waitForTimeout(250);
+      const afterParentExpansion = await scroll.evaluate((scrollElement) => {
+        const layoutParent = (scrollElement as HTMLElement).parentElement?.parentElement;
+        const table = (scrollElement as HTMLElement).parentElement;
+        return {
+          compact: Boolean(table?.classList.contains("is-compact-fill")),
+          tableHeight: table?.getBoundingClientRect().height ?? 0,
+          scrollHeight: (scrollElement as HTMLElement).clientHeight,
+          parentHeight: layoutParent?.getBoundingClientRect().height ?? 0,
+        };
+      });
+      expect(afterParentExpansion.compact).toBe(false);
+      expect(afterParentExpansion.parentHeight).toBeGreaterThanOrEqual(1100);
+      expect(afterParentExpansion.scrollHeight).toBeGreaterThan(80);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  browserRegression("keeps the table and pagination reachable at compact and desktop viewports", async () => {
+    for (const viewport of [{ width: 1100, height: 720 }, { width: 1440, height: 900 }]) {
+      const page = await browser!.newPage({ viewport });
+      try {
+        await page.goto(`${baseUrl}/#/p/demo/seo`, { waitUntil: "domcontentloaded" });
+        const table = page.locator(".si-data-table").first();
+        const scroll = table.locator(".si-table-scroll");
+        const pagination = table.locator(".si-pagination");
+        await scroll.waitFor({ state: "visible" });
+        await pagination.waitFor({ state: "visible" });
+        const scrollClientHeight = await scroll.evaluate((element) => element.clientHeight);
+        expect(scrollClientHeight).toBeGreaterThanOrEqual(80);
+
+        const content = page.locator(".si-content");
+        const contentBox = await content.boundingBox();
+        if (!contentBox) throw new Error("Main content area has no visible bounds.");
+        const before = await page.evaluate(() => {
+          const contentElement = document.querySelector(".si-content") as HTMLElement;
+          const scrollElement = document.querySelector(".si-table-scroll") as HTMLElement;
+          const paginationElement = document.querySelector(".si-pagination") as HTMLElement;
+          const paginationBox = paginationElement.getBoundingClientRect();
+          return {
+            outer: { scrollTop: contentElement.scrollTop, clientHeight: contentElement.clientHeight, scrollHeight: contentElement.scrollHeight },
+            tableScroll: { clientHeight: scrollElement.clientHeight, scrollHeight: scrollElement.scrollHeight },
+            pagination: { top: paginationBox.top, bottom: paginationBox.bottom, height: paginationBox.height },
+          };
+        });
+        await page.mouse.move(contentBox.x + 5, contentBox.y + Math.min(120, contentBox.height / 2));
+        await page.mouse.wheel(0, 640);
+        await page.waitForTimeout(100);
+        const after = await page.evaluate(() => {
+          const contentElement = document.querySelector(".si-content") as HTMLElement;
+          const paginationBox = (document.querySelector(".si-pagination") as HTMLElement).getBoundingClientRect();
+          return {
+            outerScrollTop: contentElement.scrollTop,
+            pagination: { top: paginationBox.top, bottom: paginationBox.bottom, height: paginationBox.height },
+          };
+        });
+        console.info(`[seo-table-layout ${viewport.width}x${viewport.height}] ${JSON.stringify({ before, after })}`);
+        const paginationBox = await pagination.boundingBox();
+        if (!paginationBox) throw new Error("DataTable pagination has no visible bounds.");
+        expect(after.pagination.top).toBeGreaterThanOrEqual(0);
+        expect(after.pagination.bottom).toBeLessThanOrEqual(viewport.height);
+      } finally {
+        await page.close();
+      }
     }
   }, 60_000);
 });

@@ -15,6 +15,9 @@ import { useColumnPrefs, useTablePageSize } from "./utils";
 import { assertCompatibleRowText, calculateColumnWidths, findColumnsWithoutWidthContract } from "./table-layout";
 
 const warnedWidthContracts = new Set<string>();
+const FILL_SCROLL_COMPACT_THRESHOLD = 80;
+const FILL_SCROLL_COMPACT_MIN_HEIGHT = 80;
+const FILL_TABLE_COMPACT_MIN_HEIGHT = 180;
 
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends RowData, TValue> {
@@ -74,6 +77,7 @@ export function DataTable<T, F = Record<string, unknown>>({
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [pinnedActionRowIds, setPinnedActionRowIds] = useState<string[]>([]);
   const [availableWidth, setAvailableWidth] = useState(0);
+  const [compactFillFallback, setCompactFillFallback] = useState(false);
   const columnIds = useMemo(() => columns.map(getColumnId), [columns]);
   const defaultVisible = useMemo(() => columns.flatMap((column, index) => column.meta?.defaultHidden ? [] : [getColumnId(column, index)]), [columns]);
   const columnPrefs = useColumnPrefs(tableId, scopeId);
@@ -171,12 +175,75 @@ export function DataTable<T, F = Record<string, unknown>>({
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
-    const updateWidth = () => setAvailableWidth(element.clientWidth);
-    updateWidth();
-    const observer = new ResizeObserver(updateWidth);
+    if (!isFill) setCompactFillFallback(false);
+    let fallbackApplied = false;
+    let fallbackBaselineReady = false;
+    let fallbackParentHeight = 0;
+    let fallbackBaselineFrame = 0;
+    const layoutParent = element.parentElement?.parentElement;
+    const readLayoutParentHeight = () => layoutParent?.getBoundingClientRect().height ?? 0;
+    const captureFallbackBaseline = () => {
+      fallbackBaselineReady = false;
+      if (typeof window.requestAnimationFrame !== "function") {
+        fallbackParentHeight = readLayoutParentHeight();
+        fallbackBaselineReady = true;
+        return;
+      }
+      if (fallbackBaselineFrame) window.cancelAnimationFrame(fallbackBaselineFrame);
+      fallbackBaselineFrame = window.requestAnimationFrame(() => {
+        fallbackBaselineFrame = 0;
+        if (!fallbackApplied) return;
+        fallbackParentHeight = readLayoutParentHeight();
+        fallbackBaselineReady = true;
+      });
+    };
+    const updateLayout = () => {
+      setAvailableWidth(element.clientWidth);
+      if (!isFill) return;
+      const hasLayoutBox = element.getClientRects().length > 0;
+      if (!hasLayoutBox) return;
+      if (!fallbackApplied && element.clientHeight < FILL_SCROLL_COMPACT_THRESHOLD) {
+        fallbackApplied = true;
+        captureFallbackBaseline();
+        setCompactFillFallback(true);
+      }
+    };
+    const clearFallbackOnParentExpansion = () => {
+      if (!isFill || !fallbackApplied || !fallbackBaselineReady) return;
+      if (readLayoutParentHeight() > fallbackParentHeight + 1) {
+        fallbackApplied = false;
+        fallbackBaselineReady = false;
+        setCompactFillFallback(false);
+        updateLayout();
+      }
+    };
+    const resetFallbackAfterViewportResize = () => {
+      if (fallbackApplied) {
+        fallbackApplied = false;
+        fallbackBaselineReady = false;
+        if (fallbackBaselineFrame && typeof window.cancelAnimationFrame === "function") {
+          window.cancelAnimationFrame(fallbackBaselineFrame);
+          fallbackBaselineFrame = 0;
+        }
+        setCompactFillFallback(false);
+      }
+      updateLayout();
+    };
+    updateLayout();
+    const observer = new ResizeObserver(updateLayout);
     observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+    const parentObserver = isFill ? new ResizeObserver(clearFallbackOnParentExpansion) : undefined;
+    if (layoutParent && parentObserver) parentObserver.observe(layoutParent);
+    window.addEventListener("resize", resetFallbackAfterViewportResize);
+    return () => {
+      observer.disconnect();
+      parentObserver?.disconnect();
+      window.removeEventListener("resize", resetFallbackAfterViewportResize);
+      if (fallbackBaselineFrame && typeof window.cancelAnimationFrame === "function") {
+        window.cancelAnimationFrame(fallbackBaselineFrame);
+      }
+    };
+  }, [isFill]);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -280,7 +347,11 @@ export function DataTable<T, F = Record<string, unknown>>({
   const trailingSpacerHeight = Math.max(0, virtualizer.getTotalSize() - previousVirtualEnd);
 
   return (
-    <section className={`si-data-table${isFill ? " is-fill si-table-region" : ""}`} aria-label={tableId + " 数据表"}>
+    <section
+      className={`si-data-table${isFill ? " is-fill si-table-region" : ""}${compactFillFallback ? " is-compact-fill" : ""}`}
+      style={compactFillFallback ? { minHeight: FILL_TABLE_COMPACT_MIN_HEIGHT } : undefined}
+      aria-label={tableId + " 数据表"}
+    >
       <div className="si-table-toolbar">
         <div className="si-table-toolbar-content">{toolbar}</div>
         <div className="si-table-toolbar-settings">
@@ -289,7 +360,7 @@ export function DataTable<T, F = Record<string, unknown>>({
           </Popover>
         </div>
       </div>
-      <div className="si-table-scroll" ref={scrollRef} style={isFill ? undefined : { height }}>
+      <div className="si-table-scroll" ref={scrollRef} style={compactFillFallback ? { minHeight: FILL_SCROLL_COMPACT_MIN_HEIGHT } : isFill ? undefined : { height }}>
         <table className="si-table" style={{ width: tableWidth }}>
           <colgroup>
             {selectable && <col style={{ width: `${selectionWidth}px` }} />}
