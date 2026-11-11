@@ -55,6 +55,53 @@ function runChildScript(source: string, cwd: string, env: NodeJS.ProcessEnv): Pr
   });
 }
 
+function runBarrierChildScripts(sources: readonly string[], cwd: string, envs: readonly NodeJS.ProcessEnv[]): Promise<string[]> {
+  const children = sources.map((source, index) => spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", source], {
+    cwd, env: envs[index], stdio: ["pipe", "pipe", "pipe"],
+  }));
+  const output = children.map(() => "");
+  const errors = children.map(() => "");
+  const ready = children.map((child, index) => new Promise<void>((resolve, reject) => {
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output[index] = `${output[index] ?? ""}${chunk.toString("utf8")}`;
+      if ((output[index] ?? "").includes("READY\n")) resolve();
+    });
+    child.stderr?.on("data", (chunk: Buffer) => { errors[index] = `${errors[index] ?? ""}${chunk.toString("utf8")}`; });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (!(output[index] ?? "").includes("READY\n")) {
+        reject(new Error(errors[index] || `Lock identity child exited before ready (${String(code)} / ${String(signal)})`));
+      }
+    });
+  }));
+  const completed = children.map((child, index) => new Promise<string>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (code === 0) resolve(output[index]!.replace(/^READY\n/, "").trim());
+      else reject(new Error(errors[index] || `Lock identity child exited (${String(code)} / ${String(signal)})`));
+    });
+  }));
+
+  return (async () => {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        Promise.all(ready),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Lock identity children did not reach the test barrier")), 15_000);
+        }),
+      ]);
+      if (timeout) clearTimeout(timeout);
+      for (const child of children) child.stdin?.end("go\n");
+      return await Promise.all(completed);
+    } catch (error) {
+      if (timeout) clearTimeout(timeout);
+      for (const child of children) child.kill();
+      throw error;
+    }
+  })();
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -291,7 +338,7 @@ describe("core io", () => {
     await expect(readFile(lockPath, "utf8")).resolves.toBe(JSON.stringify(legacy));
   });
 
-  it("initializes the local host identity consistently across concurrent processes", async () => {
+  it("smoke-tests concurrent local host identity initialization with a start barrier", async () => {
     const root = await tempDir();
     const stateRoot = path.join(root, "isolated-local-state");
     const coreDirectory = path.resolve(process.cwd(), "packages/core");
@@ -301,20 +348,24 @@ describe("core io", () => {
       'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
       'const lockFile = process.env.SITEINDEX_TEST_LOCK_FILE;',
       'if (!root || !lockFile) throw new Error("Missing test parameters");',
+      'process.stdout.write("READY\\n");',
+      'await new Promise((resolve) => process.stdin.once("data", resolve));',
       'await withLock(root, async () => { const lock = JSON.parse(await readFile(lockFile, "utf8")); process.stdout.write(lock.host_id); }, { heartbeatMs: 60000 });',
     ].join("\n");
     const hostEnv = hostIdentityEnvironment(stateRoot);
-    const childRuns = Array.from({ length: 2 }, (_, index) => {
+    const childEnvs = Array.from({ length: 2 }, (_, index) => {
       const project = path.join(root, `parallel-project-${index}`);
-      return runChildScript(source, coreDirectory, {
+      return {
         ...process.env,
         ...hostEnv,
         SITEINDEX_TEST_LOCK_ROOT: project,
         SITEINDEX_TEST_LOCK_FILE: path.join(project, PATHS.lock),
-      });
+      };
     });
 
-    const hostIds = await Promise.all(childRuns);
+    // The barrier synchronizes entry into host identity initialization. It does not force both
+    // processes into the internal read-missing-to-exclusive-create interval without a runtime hook.
+    const hostIds = await runBarrierChildScripts([source, source], coreDirectory, childEnvs);
 
     expect(new Set(hostIds).size).toBe(1);
     expect(hostIds[0]).toMatch(/^[0-9a-f-]{36}$/i);
