@@ -169,8 +169,9 @@
 - [x] #422：媒体能力闸保持关闭；`media.prepare` 在设置、凭据 accessor 与 utilityProcess 之前返回 `NOT_IMPLEMENTED`（PR #427）。
 - [x] #422：JobManager 的锁清理、合成历史写入与 `jobs.history` 查询统一按 Core 的 `pathsForProject()` 解析 legacy/workspace 布局；worker runId 也从对应 `site.json` 读取时区。退出、崩溃、跨项目凭据隔离测试覆盖两种布局；暂停/退出与布局解析并发时不会再启动 worker。
 - [x] #422：非 media Job 的 Desktop 活动 runId 由 Core ID 加随机 Desktop UUID 组成；media Job 必须直接使用 Core 为该次执行生成的全局唯一 ID，保持 started、progress、finished/result 与取消映射一致，并拒绝重复活动 ID。不同项目同名 Job 可分别取消。finished 结果按 utilityProcess 归属并校验 Job 名；非 media 结果统一为 Desktop 活动 ID。media 结果转发前白名单化与脱敏；历史读取对 media RunLog 使用安全字段白名单、固定错误文案、不透传 steps/reason/未知字段，并仅保留无 userinfo/query/fragment 的 HTTP(S) image URL；legacy/workspace 测试覆盖隔离、锁清理与旧同日记录不被覆盖。
-- [ ] #439 依赖：Core `onJobStarted` 提供执行 ID 后，由 worker 原样转发；Desktop 不得重算或追加 ID。接入后补真实 `createCoreService`→worker 连接、checkpoint `run_id`/请求 SKU 校验，以及跨项目并发、重启和早到 finished 事件测试。当前 media readiness 继续关闭；缺失或无效 checkpoint 时未确认 SKU 保守标记 `outcome_unknown`。
+- [x] #439 Core 已合并 `onJobStarted` 与媒体 checkpoint。Desktop worker 现在仅用该回调 ID 发送媒体 `started`，progress/result 校验并沿用同一 ID；不会为媒体任务运行日期型 fallback。真实 Core 配置读取早退、缺失回调、结果 ID 不匹配与异常路径有 worker 执行层测试；JobManager 已覆盖媒体崩溃、双项目并发/取消、SKU 分区和先到 finished 事件。
+- [x] #439 Desktop worker 接线的 Windows Electron 实测：utilityProcess 从构建输出与 `app.asar/out/main/job-worker.js` 各运行一次合成坏配置请求；真实 Core 在配置读取失败前发送 `media-<UUID>`，worker `finished` 沿用同一 ID，并将请求 SKU 标为未开始。`app.asar.unpacked` 中解包的 AVIF/WebP decoder、JPEG encoder、resize 四个 WASM 均从 Electron 中成功解析并 `WebAssembly.compile`；安装器检查也会验证这些文件。
+- [ ] 媒体流水线端到端验收：本轮没有通过真实 WordPress HTTP 交互运行完整上传、崩溃后 checkpoint 恢复及安装器安装后的 media Job。`isMediaJobReady` 必须保持 false，`media.prepare` 继续返回 `NOT_IMPLEMENTED`，直到另行完成完整安全验收。
 - [x] #422：preload 暴露 `media.prepare` 路由；主进程仍在 `isMediaJobReady: false` 下返回 `NOT_IMPLEMENTED`，`media.prepare` 继续留在 `PENDING_HANDLERS`，Core 能力就绪前 UI 保持关闭。
-- [ ] #422：A 尚未实现 Core media Job、跨 worker 唯一 execution ID 及 checkpoint 持久化；Desktop 不能将日期+Job 形式的旧 run_id 归属到本次执行，因而当前不能恢复同一次中断前已确认的逐 SKU 结果。媒体处理仍不可用。
 - [x] #423：preload 暴露 `edm.exportIndex`；Desktop 先检查显式 readiness 门禁，再转发到 Core 可选方法。main readiness 当前固定为 false，即使 Core 暴露同名方法仍返回 `NOT_IMPLEMENTED`；尚未清理 `PENDING_HANDLERS`，UI 仍关闭导出入口。
 - [ ] #423：A 尚未实现 Core SKU 清单生成；Desktop 不生成文件、不返回虚构成功状态。

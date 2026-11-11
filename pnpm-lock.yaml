@@ -73,6 +73,18 @@ importers:
 
   packages/desktop:
     dependencies:
+      '@jsquash/avif':
+        specifier: 2.1.1
+        version: 2.1.1
+      '@jsquash/jpeg':
+        specifier: 1.6.0
+        version: 1.6.0
+      '@jsquash/resize':
+        specifier: 2.1.1
+        version: 2.1.1
+      '@jsquash/webp':
+        specifier: 1.5.0
+        version: 1.5.0
       '@xmldom/xmldom':
         specifier: 0.9.12
         version: 0.9.12
