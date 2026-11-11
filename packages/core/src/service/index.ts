@@ -1506,6 +1506,13 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     const projectPath = path.resolve(req.projectPath);
     const mediaRunToken = req.job === "media" ? randomUUID() : null;
     let runId = mediaRunToken ? `media-${mediaRunToken}` : `${new Date().toISOString().slice(0, 10)}-${req.job}`;
+    if (req.job === "media") {
+      try { ctx.onJobStarted?.(runId, new Date().toISOString()); }
+      catch {
+        const failure = jobFailure(req, runId, EXIT.SOURCE_FAILED, "无法报告媒体任务启动。", ["媒体任务启动通知失败，未开始处理。"]);
+        return { ...failure, ...mediaNotStartedFields(req) };
+      }
+    }
     let config: SiteConfig;
     let requestedDate = req.date;
     try {
@@ -1523,21 +1530,12 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         ? { ...failure, summary: "媒体项目无法读取或配置无效，未启动处理。", errors: ["媒体项目无法读取或配置无效，未启动处理。"], ...mediaNotStartedFields(req) }
         : failure;
     }
-    runId = req.job === "media"
-      ? `${requestedDate}-media-${mediaRunToken}`
-      : `${requestedDate}-${req.job}`;
+    if (req.job !== "media") runId = `${requestedDate}-${req.job}`;
     if (!(JOB_NAMES as readonly string[]).includes(req.job)) {
       return jobFailure(req, runId, EXIT.BAD_ARGS, "不支持的 Job。", [String(req.job)]);
     }
 
     const startedAt = zonedTimestamp(config.timezone);
-    if (req.job === "media") {
-      try { ctx.onJobStarted?.(runId, startedAt); }
-      catch {
-        const failure = jobFailure(req, runId, EXIT.SOURCE_FAILED, "无法报告媒体任务启动。", ["媒体任务启动通知失败，未开始处理。"]);
-        return { ...failure, ...mediaNotStartedFields(req) };
-      }
-    }
 
     try {
       // 定时设备检查必须先于锁文件和 runs 写入，非执行设备不修改项目。

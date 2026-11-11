@@ -57,6 +57,23 @@
       }
     },
     {
+      "id": "MEDIA-local-missing-image-then-continue",
+      "request_skus": ["SYN-M071", "SYN-M072"],
+      "missing_image_skus": ["SYN-M071"],
+      "fixture_probe_posts": ["SYN-M072"],
+      "expected_fixture_responses": [201],
+      "core_acceptance_oracle": {
+        "media_batch_state": "complete",
+        "media_results": [
+          { "sku": "SYN-M071", "status": "failed" },
+          { "sku": "SYN-M072", "status": "uploaded" }
+        ],
+        "media_unknown_skus": [],
+        "media_not_started_skus": [],
+        "job_status": "partial"
+      }
+    },
+    {
       "id": "MEDIA-429-after-persist",
       "request_skus": ["SYN-M031", "SYN-M032"],
       "fake_wordpress": { "media_post_statuses": [429], "persist_before_post_failure": true },

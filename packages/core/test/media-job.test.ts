@@ -127,6 +127,7 @@ async function makeProject(options: {
   sourceImageUrl: string;
   grouping?: SiteConfig["sku_grouping"];
   skuIds?: string[];
+  missingImageSkus?: string[];
   mediaLedgerFixturePath?: string;
 }): Promise<{ root: string; projectPath: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-media-job-"));
@@ -158,7 +159,8 @@ async function makeProject(options: {
     price: 12.5,
     compare_at_price: null,
     currency: "USD",
-    image_url: sku === "DEMO002" ? "https://cdn.example.test/demo002.png" : options.sourceImageUrl,
+    image_url: options.missingImageSkus?.includes(sku) ? null
+      : sku === "DEMO002" ? "https://cdn.example.test/demo002.png" : options.sourceImageUrl,
     additional_images: [],
     gtin: null,
     mpn: null,
@@ -208,6 +210,7 @@ async function makeWordPress(options: Parameters<typeof createFakeWordPressServi
 interface MediaAcceptanceCase {
   id: string;
   request_skus: string[];
+  missing_image_skus?: string[];
   fake_wordpress?: {
     media_post_statuses?: number[];
     disconnect_after_persist?: number;
@@ -325,6 +328,35 @@ describe("media Core Job", () => {
       )) as { run_id: string };
       expect(checkpoint.run_id).toBe(result.runId);
     }
+  }, 30_000);
+
+  it("emits the same unique media ID for config and date-validation early failures", async () => {
+    const starts: { runId: string; startedAt: string }[] = [];
+    const unreadableProject = await mkdtemp(path.join(os.tmpdir(), "siteindex-media-unreadable-"));
+    TEMP_DIRS.push(unreadableProject);
+    const unreadable = await service(
+      unreadableProject, undefined, undefined, (runId, startedAt) => starts.push({ runId, startedAt }),
+    ).runJob({
+      projectPath: unreadableProject, job: "media", trigger: "manual", skus: ["SYN-UNREADABLE"],
+    }, () => undefined);
+
+    const { projectPath } = await makeProject({
+      wordpressOrigin: "https://wordpress.example.test",
+      sourceImageUrl: "https://cdn.example.test/synthetic.webp",
+      skuIds: ["SYN-BAD-DATE"],
+    });
+    const invalidDate = await service(
+      projectPath, undefined, undefined, (runId, startedAt) => starts.push({ runId, startedAt }),
+    ).runJob({
+      projectPath, job: "media", trigger: "manual", date: "not-a-date", skus: ["SYN-BAD-DATE"],
+    }, () => undefined);
+
+    expect(starts).toHaveLength(2);
+    expect(starts.map(({ runId }) => runId)).toEqual([unreadable.runId, invalidDate.runId]);
+    expect(new Set(starts.map(({ runId }) => runId)).size).toBe(2);
+    expect(starts.every(({ startedAt }) => !Number.isNaN(Date.parse(startedAt)))).toBe(true);
+    expect(unreadable.media_not_started_skus).toEqual(["SYN-UNREADABLE"]);
+    expect(invalidDate.media_not_started_skus).toEqual(["SYN-BAD-DATE"]);
   }, 30_000);
 
   it("keeps case-distinct and long SKUs on distinct stable WordPress media slugs", async () => {
@@ -482,7 +514,7 @@ describe("media Core Job", () => {
     expect(checkpoint).toMatchObject({ run_id: result.runId, checkpoint_state: "finished", media_batch_state: "complete" });
   });
 
-  it("converts transparent WebP and AVIF to white-background JPEG and caps dimensions before upload", async () => {
+  it("converts transparent WebP to white-background JPEG and refuses AVIF before decoding", async () => {
     const credentials = createFakeCredentialCanary();
     const uploads: { slug: string; source_url: string; body: Uint8Array }[] = [];
     const wordpress = await makeWordPress({ credentials, onMediaPersist: (media) => { uploads.push(media); } });
@@ -503,6 +535,16 @@ describe("media Core Job", () => {
       const result = await service(projectPath, credentials).runJob({
         projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: [sku],
       }, () => undefined);
+
+      if (item.format === "avif") {
+        expect(result.status).toBe("failed");
+        expect(result.media_results).toMatchObject([{
+          sku, status: "failed", reason: "AVIF 解码前尺寸无法安全确认，已拒绝解码。",
+        }]);
+        expect(uploads).toHaveLength(1);
+        expect(wordpress.snapshot().routeCounts["POST /wp-json/wp/v2/media"]).toBe(1);
+        continue;
+      }
 
       expect(result.status).toBe("ok");
       expect(result.media_results).toMatchObject([{ sku, status: "uploaded" }]);
@@ -531,7 +573,7 @@ describe("media Core Job", () => {
       projectPath: largeDimensions.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-OVERSIZED-DIMENSIONS"],
     }, () => undefined);
     expect(dimensionResult.media_results).toMatchObject([{
-      status: "failed", reason: "图片尺寸超过解码安全上限，已拒绝解码。",
+      status: "failed", reason: "AVIF 解码前尺寸无法安全确认，已拒绝解码。",
     }]);
     expect(wordpress.snapshot().totalRequests).toBe(0);
 
@@ -545,7 +587,7 @@ describe("media Core Job", () => {
       projectPath: forgedDimensions.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-FORGED-ISPE"],
     }, () => undefined);
     expect(forgedResult.media_results).toMatchObject([{
-      status: "failed", reason: "图片尺寸无法安全校验，已拒绝解码。",
+      status: "failed", reason: "AVIF 解码前尺寸无法安全确认，已拒绝解码。",
     }]);
     expect(wordpress.snapshot().totalRequests).toBe(0);
 
@@ -634,6 +676,7 @@ describe("media Core Job", () => {
       "MEDIA-401-after-confirmed-item",
       "MEDIA-403-after-confirmed-item",
       "MEDIA-422-after-persist",
+      "MEDIA-local-missing-image-then-continue",
       "MEDIA-429-after-persist",
       "MEDIA-save-then-disconnect",
       "MEDIA-500-after-persist",
@@ -653,6 +696,7 @@ describe("media Core Job", () => {
         wordpressOrigin: wordpress.origin,
         sourceImageUrl: imageServer.origin + "/synthetic.webp",
         skuIds: fixtureCase.request_skus,
+        missingImageSkus: fixtureCase.missing_image_skus,
       });
       const result = await service(projectPath, credentials).runJob({
         projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: fixtureCase.request_skus,
