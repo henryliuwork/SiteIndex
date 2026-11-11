@@ -47,6 +47,12 @@ export interface FakeCredentialCanary {
   authorization: string;
 }
 
+export interface FakeWordPressStoredMedia {
+  slug: string;
+  source_url: string;
+  body: Uint8Array;
+}
+
 export function createFakeGraphqlService(options?: {
   responsesBySku?: Record<string, FakeGraphqlResponse>;
   rateLimitAfter?: number;
@@ -59,6 +65,9 @@ export function createFakeWordPressService(options?: {
   mediaGetStatus?: number;
   mediaPostStatus?: number;
   mediaPostStatuses?: number[];
+  persistMediaBeforePostFailure?: boolean;
+  mediaSourcePath?: string;
+  onMediaPersist?: (media: FakeWordPressStoredMedia) => void | Promise<void>;
   mediaMetaStatus?: number;
   uploadFilesCapability?: boolean;
   rateLimitAfter?: number;

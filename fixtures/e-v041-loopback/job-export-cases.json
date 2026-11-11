@@ -45,9 +45,9 @@
     {
       "id": "MEDIA-ordinary-partial-then-continue",
       "request_skus": ["SYN-M021", "SYN-M022", "SYN-M023"],
-      "fake_wordpress": { "media_post_statuses": [201, 503, 201] },
+      "fake_wordpress": { "media_post_statuses": [201, 422, 201] },
       "fixture_probe_posts": ["SYN-M021", "SYN-M022", "SYN-M023"],
-      "expected_fixture_responses": [201, 503, 201],
+      "expected_fixture_responses": [201, 422, 201],
       "core_acceptance_oracle": {
         "media_batch_state": "complete",
         "media_results": [
@@ -61,11 +61,39 @@
       }
     },
     {
+      "id": "MEDIA-500-after-persist",
+      "request_skus": ["SYN-M051", "SYN-M052"],
+      "fake_wordpress": { "media_post_statuses": [500], "persist_before_post_failure": true },
+      "fixture_probe_posts": ["SYN-M051"],
+      "expected_fixture_responses": [500],
+      "core_acceptance_oracle": {
+        "media_batch_state": "outcome_unknown",
+        "media_results": [],
+        "media_unknown_skus": ["SYN-M051"],
+        "media_not_started_skus": ["SYN-M052"],
+        "job_status": "partial"
+      }
+    },
+    {
+      "id": "MEDIA-302-after-persist",
+      "request_skus": ["SYN-M061", "SYN-M062"],
+      "fake_wordpress": { "media_post_statuses": [302], "persist_before_post_failure": true },
+      "fixture_probe_posts": ["SYN-M061"],
+      "expected_fixture_responses": [302],
+      "core_acceptance_oracle": {
+        "media_batch_state": "outcome_unknown",
+        "media_results": [],
+        "media_unknown_skus": ["SYN-M061"],
+        "media_not_started_skus": ["SYN-M062"],
+        "job_status": "partial"
+      }
+    },
+    {
       "id": "MEDIA-save-then-disconnect",
       "request_skus": ["SYN-M031", "SYN-M032", "SYN-M033"],
       "fake_wordpress": { "disconnect_after_persist": 1 },
       "fixture_probe_post": "SYN-M031",
-      "fixture_probe_lookup_slug": "syn-m031-main",
+      "fixture_probe_lookup_slug": "siteindex-v1-21114772716f28644d630677-3a624303493cd43b590b9bac15b589e6-main",
       "core_acceptance_oracle": {
         "media_batch_state": "outcome_unknown",
         "media_results": [],

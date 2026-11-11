@@ -291,6 +291,9 @@ export async function createFakeWordPressService({
   mediaPostStatus = 201,
   mediaMetaStatus = 200,
   mediaPostStatuses,
+  persistMediaBeforePostFailure = false,
+  mediaSourcePath = "/wp-content/uploads",
+  onMediaPersist,
   uploadFilesCapability = true,
   rateLimitAfter = Number.POSITIVE_INFINITY,
   disconnectAfterPersist = 0,
@@ -383,30 +386,53 @@ export async function createFakeWordPressService({
       ? (mediaPostStatuses[mediaPostAttempts] ?? mediaPostStatus)
       : mediaPostStatus;
     mediaPostAttempts += 1;
-    if (!uploadFilesCapability || forcedPostStatus !== 201) {
-      const status = !uploadFilesCapability ? 403 : forcedPostStatus;
-      recorder.record(route, status);
-      sendWpError(response, status);
+    if (!uploadFilesCapability) {
+      recorder.record(route, 403);
+      sendWpError(response, 403);
       return;
     }
 
-    const mediaFilename = extractMediaFilename(request, url, body);
-    const slug = normalizeSlug(mediaFilename);
-    if (!slug) {
+    const persistMedia = async () => {
+      const mediaFilename = extractMediaFilename(request, url, body);
+      const slug = normalizeSlug(mediaFilename);
+      if (!slug) return null;
+      const storedSlug = uniqueMediaSlug(slug, mediaBySlug);
+      const extension = mediaExtension(mediaFilename, request.headers["content-type"]);
+      const safePath = String(mediaSourcePath).replace(/\\/gu, "/").replace(/\/+$/u, "");
+      const media = {
+        id: nextMediaId,
+        slug: storedSlug,
+        source_url: wordPressServer.origin + safePath + "/" + storedSlug + "." + extension,
+      };
+      nextMediaId += 1;
+      mediaBySlug.set(storedSlug, media);
+      await onMediaPersist?.({ ...media, body: Buffer.from(body) });
+      return media;
+    };
+
+    if (forcedPostStatus !== 201) {
+      const persisted = persistMediaBeforePostFailure ? await persistMedia() : null;
+      if (persistMediaBeforePostFailure && !persisted) {
+        recorder.record(route, 400, "missing_synthetic_slug");
+        sendJson(response, 400, { code: "rest_upload_no_data", message: "Synthetic media slug is required." });
+        return;
+      }
+      recorder.record(route, forcedPostStatus, persisted ? "persisted_then_error" : "response");
+      if (forcedPostStatus >= 300 && forcedPostStatus < 400) {
+        response.writeHead(forcedPostStatus, { location: "/wp-json/wp/v2/media/redirect-target" });
+        response.end();
+      } else {
+        sendWpError(response, forcedPostStatus);
+      }
+      return;
+    }
+
+    const media = await persistMedia();
+    if (!media) {
       recorder.record(route, 400, "missing_synthetic_slug");
       sendJson(response, 400, { code: "rest_upload_no_data", message: "Synthetic media slug is required." });
       return;
     }
-
-    const storedSlug = uniqueMediaSlug(slug, mediaBySlug);
-    const extension = mediaExtension(mediaFilename, request.headers["content-type"]);
-    const media = {
-      id: nextMediaId,
-      slug: storedSlug,
-      source_url: wordPressServer.origin + "/wp-content/uploads/" + storedSlug + "." + extension,
-    };
-    nextMediaId += 1;
-    mediaBySlug.set(storedSlug, media);
 
     if (disconnectsRemaining > 0) {
       disconnectsRemaining -= 1;

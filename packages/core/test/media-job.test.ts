@@ -1,8 +1,9 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 import { CSV_HEADERS, isValidMediaSkuRecoveryPartition, PATHS, type InventoryLatest, type SiteConfig, type SkuRecord } from "@siteindex/shared";
-import { copyFile, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -20,13 +21,17 @@ const WEBP_BYTES = Buffer.from("UklGRi4AAABXRUJQVlA4TCEAAAAvAUAAEB8w/wKCIv9HCwFB
 const TEMP_DIRS: string[] = [];
 const SOURCE_SERVERS: Server[] = [];
 const WORDPRESS_SERVERS: FakeWordPressService[] = [];
+const testRequire = createRequire(import.meta.url);
 
-async function startImageServer(): Promise<{ origin: string; close: () => Promise<void> }> {
+async function startImageServer(initialBytes: Uint8Array = WEBP_BYTES, initialContentType = "image/webp"):
+Promise<{ origin: string; setImage(bytes: Uint8Array, contentType?: string): void; close: () => Promise<void> }> {
   let requests = 0;
+  let bytes: Uint8Array = initialBytes;
+  let contentType = initialContentType;
   const server = createServer((_request, response) => {
     requests += 1;
-    response.writeHead(200, { "content-type": "image/webp", "content-length": WEBP_BYTES.length });
-    response.end(WEBP_BYTES);
+    response.writeHead(200, { "content-type": contentType, "content-length": bytes.length });
+    response.end(bytes);
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -38,8 +43,68 @@ async function startImageServer(): Promise<{ origin: string; close: () => Promis
   const origin = "http://127.0.0.1:" + (address as AddressInfo).port;
   return {
     origin,
+    setImage(nextBytes, nextContentType = contentType) {
+      bytes = nextBytes;
+      contentType = nextContentType;
+    },
     close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
   };
+}
+
+function testImageData(width: number, height: number, rgba: readonly [number, number, number, number]): ImageData {
+  if (typeof globalThis.ImageData === "undefined") {
+    class NodeImageData {
+      readonly colorSpace = "srgb" as PredefinedColorSpace;
+      constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) {}
+    }
+    Object.defineProperty(globalThis, "ImageData", { configurable: true, value: NodeImageData });
+  }
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < data.length; offset += 4) {
+    data[offset] = rgba[0];
+    data[offset + 1] = rgba[1];
+    data[offset + 2] = rgba[2];
+    data[offset + 3] = rgba[3];
+  }
+  if (width > 1 && height > 1) {
+    data[0] = 240;
+    data[1] = 20;
+    data[2] = 20;
+    data[3] = 255;
+  }
+  return new ImageData(data, width, height);
+}
+
+async function encodeImageFixture(format: "webp" | "avif", raster: ImageData): Promise<Buffer> {
+  if (format === "webp") {
+    const { init, default: encode } = await import("@jsquash/webp/encode.js");
+    const wasmPath = path.join(path.dirname(testRequire.resolve("@jsquash/webp/encode.js")), "codec/enc/webp_enc_simd.wasm");
+    await init({ wasmBinary: await readFile(wasmPath) });
+    return Buffer.from(await encode(raster, { quality: 100, lossless: 1 }));
+  }
+  const { init, default: encode } = await import("@jsquash/avif/encode.js");
+  const wasmPath = path.join(path.dirname(testRequire.resolve("@jsquash/avif/encode.js")), "codec/enc/avif_enc.wasm");
+  await init({ wasmBinary: await readFile(wasmPath) });
+  return Buffer.from(await encode(raster, { quality: 100, qualityAlpha: 100, lossless: true }));
+}
+
+async function decodeJpegFixture(bytes: Uint8Array): Promise<ImageData> {
+  const { init, default: decode } = await import("@jsquash/jpeg/decode.js");
+  const wasmPath = path.join(path.dirname(testRequire.resolve("@jsquash/jpeg/decode.js")), "codec/dec/mozjpeg_dec.wasm");
+  await init({ wasmBinary: await readFile(wasmPath) });
+  const arrayBuffer = Uint8Array.from(bytes).buffer;
+  return decode(arrayBuffer);
+}
+
+function oversizedAvifHeader(width: number, height: number): Buffer {
+  const bytes = Buffer.alloc(32);
+  bytes.writeUInt32BE(20, 12);
+  bytes.write("ispe", 16, "ascii");
+  bytes.writeUInt32BE(width, 24);
+  bytes.writeUInt32BE(height, 28);
+  bytes.write("ftyp", 4, "ascii");
+  bytes.write("avif", 8, "ascii");
+  return bytes;
 }
 
 async function makeProject(options: {
@@ -102,12 +167,17 @@ async function makeProject(options: {
   return { root, projectPath };
 }
 
-function service(projectPath: string, credential?: { username: string; applicationPassword: string }) {
+function service(
+  projectPath: string,
+  credential?: { username: string; applicationPassword: string },
+  testOnlyMediaFetch?: typeof fetch,
+) {
   return createCoreService({
     resolveProject: () => projectPath,
     deviceId: "media-test-device",
     cacheDir: path.join(path.dirname(projectPath), "cache"),
     ...(credential ? { wordpressCredential: credential } : {}),
+    ...(testOnlyMediaFetch ? { testOnlyMediaFetch } : {}),
     testOnlyAllowLoopbackHttp: true,
   });
 }
@@ -121,7 +191,11 @@ async function makeWordPress(options: Parameters<typeof createFakeWordPressServi
 interface MediaAcceptanceCase {
   id: string;
   request_skus: string[];
-  fake_wordpress?: { media_post_statuses?: number[]; disconnect_after_persist?: number };
+  fake_wordpress?: {
+    media_post_statuses?: number[];
+    disconnect_after_persist?: number;
+    persist_before_post_failure?: boolean;
+  };
   core_acceptance_oracle: {
     media_batch_state: "complete" | "interrupted" | "outcome_unknown";
     media_error_code?: "WP_AUTH_FAILED" | "WP_FORBIDDEN";
@@ -166,7 +240,11 @@ describe("media Core Job", () => {
     expect(first.status).toBe("ok");
     expect(first.media_requested_skus).toEqual(["DEMO001"]);
     expect(first.media_batch_state).toBe("complete");
-    expect(first.media_results).toMatchObject([{ sku: "DEMO001", status: "uploaded", image_url: wordpress.origin + "/wp-content/uploads/demo001a-main.jpg" }]);
+    expect(first.media_results).toMatchObject([{
+      sku: "DEMO001",
+      status: "uploaded",
+      image_url: wordpress.origin + "/wp-content/uploads/siteindex-v1-ce91b07a9fb96e23ae092968-3a624303493cd43b590b9bac15b589e6-main.jpg",
+    }]);
     expect(first.media_unknown_skus).toEqual([]);
     expect(first.media_not_started_skus).toEqual([]);
 
@@ -197,6 +275,94 @@ describe("media Core Job", () => {
     }, credentials);
     expect(canary.passed).toBe(true);
     expect(first.runId).not.toBe(reused.runId);
+  }, 30_000);
+
+  it("keeps case-distinct and long SKUs on distinct stable WordPress media slugs", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials });
+    const imageServer = await startImageServer();
+    const longPrefix = "LONG-" + "X".repeat(150);
+    const skuIds = ["CaseSku", "casesku", longPrefix + "A", longPrefix + "B"];
+    const { projectPath } = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: imageServer.origin + "/synthetic.webp",
+      skuIds,
+    });
+    const result = await service(projectPath, credentials).runJob({
+      projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: skuIds,
+    }, () => undefined);
+
+    expect(result.media_results?.map((item) => item.status)).toEqual(skuIds.map(() => "uploaded"));
+    expect(wordpress.snapshot().mediaCount).toBe(skuIds.length);
+    expect(wordpress.snapshot().routeCounts["POST /wp-json/wp/v2/media"]).toBe(skuIds.length);
+  }, 30_000);
+
+  it("does not reuse a saved upload when the same SKU source image changes", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials, disconnectAfterPersist: 1 });
+    const imageServer = await startImageServer();
+    const { projectPath } = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: imageServer.origin + "/synthetic.webp",
+      skuIds: ["DEMO001A"],
+    });
+    const api = service(projectPath, credentials);
+    const lostResponse = await api.runJob({
+      projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["DEMO001A"],
+    }, () => undefined);
+    expect(lostResponse.media_unknown_skus).toEqual(["DEMO001A"]);
+
+    const changedImage = await encodeImageFixture("webp", testImageData(2, 2, [10, 30, 220, 255]));
+    imageServer.setImage(changedImage);
+    const retry = await api.runJob({
+      projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["DEMO001A"],
+    }, () => undefined);
+
+    expect(retry.media_results).toMatchObject([{ sku: "DEMO001A", status: "uploaded" }]);
+    expect(wordpress.snapshot().mediaCount).toBe(2);
+    expect(wordpress.snapshot().routeCounts["POST /wp-json/wp/v2/media"]).toBe(2);
+  }, 30_000);
+
+  it("keeps confirmed upload truth and returns partial when the ledger write fails, then recovers by exact slug", async () => {
+    const credentials = createFakeCredentialCanary();
+    let mediaLedgerPath: string | null = null;
+    const wordpress = await makeWordPress({
+      credentials,
+      onMediaPersist: async () => {
+        if (!mediaLedgerPath) return;
+        await rm(mediaLedgerPath, { force: true });
+        await mkdir(mediaLedgerPath);
+      },
+    });
+    const imageServer = await startImageServer();
+    const { projectPath } = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: imageServer.origin + "/synthetic.webp",
+      skuIds: ["DEMO001A"],
+    });
+    mediaLedgerPath = path.join(projectPath, PATHS.skuMedia);
+    const api = service(projectPath, credentials);
+    const first = await api.runJob({
+      projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["DEMO001A"],
+    }, () => undefined);
+
+    expect(first.status).toBe("partial");
+    expect(first.media_results).toMatchObject([{
+      sku: "DEMO001A", status: "uploaded", reason: "图片已上传，但本地台账写入失败。",
+    }]);
+    expect(first.media_batch_state).toBe("complete");
+    expect((await readJsonl(path.join(projectPath, PATHS.runs))).at(-1)).toMatchObject({ status: "partial" });
+    expect(JSON.parse(await readFile(path.join(projectPath, PATHS.jobLogsDir, `${first.runId}.media.json`), "utf8")))
+      .toMatchObject({ media_results: [{ sku: "DEMO001A", status: "uploaded" }] });
+    expect(wordpress.snapshot().mediaCount).toBe(1);
+
+    await rm(mediaLedgerPath, { recursive: true, force: true });
+    await writeCsv(mediaLedgerPath, [], CSV_HEADERS.skuMedia, ["sku", "image_role"]);
+    const retry = await api.runJob({
+      projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["DEMO001A"],
+    }, () => undefined);
+    expect(retry.media_results).toMatchObject([{ sku: "DEMO001A", status: "reused" }]);
+    expect(wordpress.snapshot().mediaCount).toBe(1);
   }, 30_000);
 
   it("stops after a definite authentication failure and leaves remaining SKUs not started", async () => {
@@ -266,6 +432,79 @@ describe("media Core Job", () => {
     expect(checkpoint).toMatchObject({ run_id: result.runId, checkpoint_state: "finished", media_batch_state: "complete" });
   });
 
+  it("converts transparent WebP and AVIF to white-background JPEG and caps dimensions before upload", async () => {
+    const credentials = createFakeCredentialCanary();
+    const uploads: { slug: string; source_url: string; body: Uint8Array }[] = [];
+    const wordpress = await makeWordPress({ credentials, onMediaPersist: (media) => { uploads.push(media); } });
+    const sourceRaster = testImageData(1600, 800, [0, 0, 0, 0]);
+    const cases = [
+      { format: "webp" as const, bytes: await encodeImageFixture("webp", sourceRaster) },
+      { format: "avif" as const, bytes: await encodeImageFixture("avif", sourceRaster) },
+    ];
+
+    for (const item of cases) {
+      const imageServer = await startImageServer(item.bytes, `image/${item.format}`);
+      const sku = `SYN-${item.format.toUpperCase()}`;
+      const { projectPath } = await makeProject({
+        wordpressOrigin: wordpress.origin,
+        sourceImageUrl: imageServer.origin + `/synthetic.${item.format}`,
+        skuIds: [sku],
+      });
+      const result = await service(projectPath, credentials).runJob({
+        projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: [sku],
+      }, () => undefined);
+
+      expect(result.status).toBe("ok");
+      expect(result.media_results).toMatchObject([{ sku, status: "uploaded" }]);
+      const uploaded = await decodeJpegFixture(uploads.at(-1)!.body);
+      expect([uploaded.width, uploaded.height]).toEqual([1200, 600]);
+      const whitePixel = (uploaded.height - 1) * uploaded.width * 4 + (uploaded.width - 1) * 4;
+      expect(uploaded.data[whitePixel]).toBeGreaterThan(240);
+      expect(uploaded.data[whitePixel + 1]).toBeGreaterThan(240);
+      expect(uploaded.data[whitePixel + 2]).toBeGreaterThan(240);
+      expect(await readCsv(path.join(projectPath, PATHS.skuMedia))).toContainEqual(
+        expect.objectContaining({ sku, width: "1200", height: "600" }),
+      );
+    }
+  }, 90_000);
+
+  it("rejects compressed size and decoded pixel limits before invoking a decoder or WordPress", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({ credentials });
+    const largeDimensionServer = await startImageServer(oversizedAvifHeader(6000, 5000), "image/avif");
+    const largeDimensions = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: largeDimensionServer.origin + "/oversized.avif",
+      skuIds: ["SYN-OVERSIZED-DIMENSIONS"],
+    });
+    const dimensionResult = await service(largeDimensions.projectPath, credentials).runJob({
+      projectPath: largeDimensions.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-OVERSIZED-DIMENSIONS"],
+    }, () => undefined);
+    expect(dimensionResult.media_results).toMatchObject([{
+      status: "failed", reason: "图片尺寸超过解码安全上限，已拒绝解码。",
+    }]);
+    expect(wordpress.snapshot().totalRequests).toBe(0);
+
+    let fetchCalls = 0;
+    const oversizedResponseFetch: typeof fetch = async () => {
+      fetchCalls += 1;
+      return new Response(null, { status: 200, headers: {
+        "content-type": "image/avif", "content-length": String(20 * 1024 * 1024 + 1),
+      } });
+    };
+    const compressedProject = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: "https://cdn.example.test/oversized.avif",
+      skuIds: ["SYN-OVERSIZED-COMPRESSED"],
+    });
+    const compressedResult = await service(compressedProject.projectPath, credentials, oversizedResponseFetch).runJob({
+      projectPath: compressedProject.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-OVERSIZED-COMPRESSED"],
+    }, () => undefined);
+    expect(compressedResult.media_results).toMatchObject([{ status: "failed", reason: "响应超过允许的文件大小。" }]);
+    expect(fetchCalls).toBe(1);
+    expect(wordpress.snapshot().totalRequests).toBe(0);
+  }, 30_000);
+
   it("rejects private-network image URLs before making a request", async () => {
     const credentials = createFakeCredentialCanary();
     const wordpress = await makeWordPress({ credentials });
@@ -284,6 +523,47 @@ describe("media Core Job", () => {
     expect(wordpress.snapshot().totalRequests).toBe(0);
   });
 
+  it("does not persist canary credentials or sensitive URL path segments in any media record", async () => {
+    const credentials = createFakeCredentialCanary();
+    const wordpress = await makeWordPress({
+      credentials,
+      mediaSourcePath: `/wp-content/uploads/users/${encodeURIComponent(credentials.username)}`,
+    });
+    const directProject = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: `https://cdn.example.test/user/${encodeURIComponent(credentials.username)}/image.png`,
+      skuIds: ["SYN-DIRECT-SENSITIVE-URL"],
+    });
+    const direct = await service(directProject.projectPath, credentials).runJob({
+      projectPath: directProject.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-DIRECT-SENSITIVE-URL"],
+    }, () => undefined);
+    expect(direct.media_results).toMatchObject([{ status: "failed", reason: "商品图片地址含有不适合保存的信息，已拒绝写入台账。" }]);
+    expect(scanCredentialCanary({
+      result: direct,
+      runs: await readJsonl(path.join(directProject.projectPath, PATHS.runs)),
+      ledger: await readFile(path.join(directProject.projectPath, PATHS.skuMedia), "utf8"),
+      checkpoint: await readFile(path.join(directProject.projectPath, PATHS.jobLogsDir, `${direct.runId}.media.json`), "utf8"),
+    }, credentials).passed).toBe(true);
+
+    const imageServer = await startImageServer();
+    const uploadedProject = await makeProject({
+      wordpressOrigin: wordpress.origin,
+      sourceImageUrl: imageServer.origin + "/synthetic.webp",
+      skuIds: ["SYN-WP-SENSITIVE-URL"],
+    });
+    const uploaded = await service(uploadedProject.projectPath, credentials).runJob({
+      projectPath: uploadedProject.projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["SYN-WP-SENSITIVE-URL"],
+    }, () => undefined);
+    expect(uploaded.media_batch_state).toBe("outcome_unknown");
+    expect(uploaded.media_unknown_skus).toEqual(["SYN-WP-SENSITIVE-URL"]);
+    expect(scanCredentialCanary({
+      result: uploaded,
+      runs: await readJsonl(path.join(uploadedProject.projectPath, PATHS.runs)),
+      ledger: await readFile(path.join(uploadedProject.projectPath, PATHS.skuMedia), "utf8"),
+      checkpoint: await readFile(path.join(uploadedProject.projectPath, PATHS.jobLogsDir, `${uploaded.runId}.media.json`), "utf8"),
+    }, credentials).passed).toBe(true);
+  }, 30_000);
+
   it("matches the #438 recovery and batch-stop fixtures through Core", async () => {
     const cases = await mediaAcceptanceCases();
     const batchCases = cases.filter((item) => [
@@ -291,6 +571,8 @@ describe("media Core Job", () => {
       "MEDIA-403-after-confirmed-item",
       "MEDIA-ordinary-partial-then-continue",
       "MEDIA-save-then-disconnect",
+      "MEDIA-500-after-persist",
+      "MEDIA-302-after-persist",
     ].includes(item.id));
 
     for (const fixtureCase of batchCases) {
@@ -299,6 +581,7 @@ describe("media Core Job", () => {
         credentials,
         mediaPostStatuses: fixtureCase.fake_wordpress?.media_post_statuses,
         disconnectAfterPersist: fixtureCase.fake_wordpress?.disconnect_after_persist,
+        persistMediaBeforePostFailure: fixtureCase.fake_wordpress?.persist_before_post_failure,
       });
       const imageServer = await startImageServer();
       const { projectPath } = await makeProject({
@@ -319,7 +602,7 @@ describe("media Core Job", () => {
       expect(result.media_not_started_skus).toEqual(expected.media_not_started_skus);
       if (expected.job_status) expect(result.status).toBe(expected.job_status);
 
-      if (fixtureCase.id === "MEDIA-save-then-disconnect") {
+      if (["MEDIA-save-then-disconnect", "MEDIA-500-after-persist", "MEDIA-302-after-persist"].includes(fixtureCase.id)) {
         const retry = await service(projectPath, credentials).runJob({
           projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: [fixtureCase.request_skus[0]!],
         }, () => undefined);

@@ -132,6 +132,8 @@ export interface CoreServiceContext {
   wordpressCredential?: WordPressCredential;
   /** 测试专用：允许 127.0.0.1 假服务使用 HTTP；生产保持 HTTPS-only。 */
   testOnlyAllowLoopbackHttp?: boolean;
+  /** 测试专用：替换媒体图片网络读取，覆盖响应大小和资源限制。 */
+  testOnlyMediaFetch?: typeof fetch;
 }
 
 /**
@@ -1763,6 +1765,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             credential: ctx.wordpressCredential,
             date: requestedDate,
             rateLimitMs: config.crawl.rate_limit_ms,
+            ...(ctx.testOnlyMediaFetch ? { fetchImpl: ctx.testOnlyMediaFetch } : {}),
             allowLoopbackHttpForTests: ctx.testOnlyAllowLoopbackHttp,
             onProgress: (done, total) => progress(total ? 10 + Math.round(done * 80 / total) : 90, "media", "已处理 " + done + " / " + total + " 个商品图片请求。"),
           });

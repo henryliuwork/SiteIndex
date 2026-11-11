@@ -81,7 +81,7 @@ class MediaOperationError extends Error {
 
 interface WordPressMedia {
   id: number;
-  slug?: string;
+  slug: string;
   source_url: string;
 }
 
@@ -218,6 +218,70 @@ function resizer(): Promise<(raster: Raster, width: number, height: number) => P
   return resizePromise;
 }
 
+interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
+function webpDimensions(bytes: Buffer): ImageDimensions | null {
+  if (bytes.length < 20 || bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WEBP") return null;
+  const declaredEnd = Math.min(bytes.length, bytes.readUInt32LE(4) + 8);
+  for (let offset = 12; offset + 8 <= declaredEnd;) {
+    const chunkType = bytes.toString("ascii", offset, offset + 4);
+    const chunkLength = bytes.readUInt32LE(offset + 4);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + chunkLength;
+    if (dataEnd > declaredEnd) return null;
+    if (chunkType === "VP8X" && chunkLength >= 10) {
+      const width = 1 + bytes[dataStart + 4]! + (bytes[dataStart + 5]! << 8) + (bytes[dataStart + 6]! << 16);
+      const height = 1 + bytes[dataStart + 7]! + (bytes[dataStart + 8]! << 8) + (bytes[dataStart + 9]! << 16);
+      return { width, height };
+    }
+    if (chunkType === "VP8L" && chunkLength >= 5 && bytes[dataStart] === 0x2f) {
+      const bits = bytes.readUInt32LE(dataStart + 1);
+      return { width: 1 + (bits & 0x3fff), height: 1 + ((bits >>> 14) & 0x3fff) };
+    }
+    if (chunkType === "VP8 " && chunkLength >= 10
+      && bytes[dataStart + 3] === 0x9d && bytes[dataStart + 4] === 0x01 && bytes[dataStart + 5] === 0x2a) {
+      return {
+        width: bytes.readUInt16LE(dataStart + 6) & 0x3fff,
+        height: bytes.readUInt16LE(dataStart + 8) & 0x3fff,
+      };
+    }
+    offset = dataEnd + (chunkLength & 1);
+  }
+  return null;
+}
+
+function avifDimensions(bytes: Buffer): ImageDimensions[] {
+  const result: ImageDimensions[] = [];
+  for (let typeOffset = 4; typeOffset + 16 <= bytes.length; typeOffset += 1) {
+    if (bytes.toString("ascii", typeOffset, typeOffset + 4) !== "ispe") continue;
+    const boxStart = typeOffset - 4;
+    const boxLength = bytes.readUInt32BE(boxStart);
+    if (boxLength < 20 || boxStart + boxLength > bytes.length) continue;
+    result.push({ width: bytes.readUInt32BE(typeOffset + 8), height: bytes.readUInt32BE(typeOffset + 12) });
+  }
+  return result;
+}
+
+function dimensionsWithinDecodeLimit(dimensions: ImageDimensions): boolean {
+  return Number.isSafeInteger(dimensions.width) && Number.isSafeInteger(dimensions.height)
+    && dimensions.width > 0 && dimensions.height > 0
+    && BigInt(dimensions.width) * BigInt(dimensions.height) <= BigInt(MAX_IMAGE_PIXELS);
+}
+
+function preflightImageDimensions(bytes: Buffer, format: "webp" | "avif"): ImageDimensions[] {
+  const dimensions = format === "webp"
+    ? [webpDimensions(bytes)].filter((value): value is ImageDimensions => value !== null)
+    : avifDimensions(bytes);
+  if (!dimensions.length) throw mediaError("failed", "图片尺寸无法安全校验，已拒绝解码。");
+  if (dimensions.some((value) => !dimensionsWithinDecodeLimit(value))) {
+    throw mediaError("failed", "图片尺寸超过解码安全上限，已拒绝解码。");
+  }
+  return dimensions;
+}
+
 function flattenOnWhite(source: Raster): Raster {
   const pixels = new Uint8ClampedArray(source.data.length);
   for (let index = 0; index < source.data.length; index += 4) {
@@ -232,11 +296,12 @@ function flattenOnWhite(source: Raster): Raster {
 }
 
 async function convertToJpeg(bytes: Buffer, format: SourceFormat): Promise<{ bytes: Buffer; width: number; height: number }> {
+  if (format !== "webp" && format !== "avif") throw mediaError("failed", "图片格式不支持转换。");
+  const headerDimensions = preflightImageDimensions(bytes, format);
   try {
-    const decoded = format === "webp" ? await (await webpDecoder())(bytes)
-      : format === "avif" ? await (await avifDecoder())(bytes)
-        : null;
-    if (!decoded || decoded.width < 1 || decoded.height < 1 || decoded.width * decoded.height > MAX_IMAGE_PIXELS) {
+    const decoded = format === "webp" ? await (await webpDecoder())(bytes) : await (await avifDecoder())(bytes);
+    if (!dimensionsWithinDecodeLimit({ width: decoded.width, height: decoded.height })
+      || !headerDimensions.some((size) => size.width === decoded.width && size.height === decoded.height)) {
       throw new Error("invalid dimensions");
     }
     let raster = flattenOnWhite(decoded);
@@ -255,6 +320,29 @@ async function convertToJpeg(bytes: Buffer, format: SourceFormat): Promise<{ byt
 
 function hasCredentialQuery(url: URL): boolean {
   return [...url.searchParams.keys()].some((key) => /(?:auth|token|secret|password|passwd|signature|(^|_)sig($|_)|api[_-]?key|credential|session|jwt)/iu.test(key));
+}
+
+function pathHasSensitiveSegment(url: URL): boolean {
+  let segments: string[];
+  try { segments = url.pathname.split("/").map((segment) => decodeURIComponent(segment)); }
+  catch { return true; }
+  return segments.some((segment) => /^(?:user(?:name)?|users|accounts?|profiles?|auth|tokens?|secrets?|credentials?|passwords?|private)$/iu.test(segment));
+}
+
+function containsCredentialValue(value: string, credential?: WordPressCredential): boolean {
+  if (!credential) return false;
+  const candidates = [credential.username, credential.applicationPassword].filter((item) => item.trim().length >= 3);
+  const decoded = (() => { try { return decodeURIComponent(value); } catch { return value; } })();
+  const normalized = decoded.toLocaleLowerCase();
+  return candidates.some((secret) => normalized.includes(secret.toLocaleLowerCase()));
+}
+
+function safePersistedImageUrl(raw: string, allowLoopbackHttpForTests: boolean, credential?: WordPressCredential): string {
+  const url = parseHttpUrl(raw, allowLoopbackHttpForTests);
+  if (url.search || pathHasSensitiveSegment(url) || containsCredentialValue(url.href, credential)) {
+    throw mediaError("failed", "商品图片地址含有不适合保存的信息，已拒绝写入台账。");
+  }
+  return url.href;
 }
 
 function isLoopbackFixtureHost(hostname: string): boolean {
@@ -395,9 +483,12 @@ async function fetchSourceImage(
   throw mediaError("failed", "商品图片重定向过多。");
 }
 
-function safeOutputUrl(raw: string, wordpressOrigin: string, allowLoopbackHttpForTests: boolean): string {
+function safeOutputUrl(raw: string, wordpressOrigin: string, allowLoopbackHttpForTests: boolean, credential: WordPressCredential): string {
   const url = parseHttpUrl(raw, allowLoopbackHttpForTests);
   if (url.origin !== wordpressOrigin) throw mediaError("unknown", "WordPress 返回的图片地址不符合预期，结果需检查媒体库。");
+  if (url.search || pathHasSensitiveSegment(url) || containsCredentialValue(url.href, credential)) {
+    throw mediaError("unknown", "WordPress 返回的图片地址含有不适合保存的信息，结果需检查媒体库。");
+  }
   return url.href;
 }
 
@@ -420,7 +511,15 @@ async function fetchWordPress(
     });
     if (response.status === 401) throw mediaError("auth", "WordPress 应用密码认证失败。", "WP_AUTH_FAILED");
     if (response.status === 403) throw mediaError("auth", "WordPress 账号没有上传媒体的权限。", "WP_FORBIDDEN");
-    if (response.status >= 300 && response.status < 400) throw mediaError("failed", "WordPress 图片服务拒绝重定向。");
+    const method = (init.method ?? "GET").toUpperCase();
+    if (method === "POST" && ((response.status >= 300 && response.status < 400) || response.status >= 500)) {
+      await response.body?.cancel().catch(() => undefined);
+      throw mediaError("unknown", "WordPress 上传结果暂无法确认，后续商品已停止处理。");
+    }
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => undefined);
+      throw mediaError("failed", "WordPress 图片服务拒绝重定向。");
+    }
     return response;
   } catch (error) {
     if (error instanceof MediaOperationError) throw error;
@@ -434,8 +533,9 @@ function parseWordPressMedia(value: unknown): WordPressMedia | null {
   const id = item.id;
   const sourceUrl = item.source_url;
   const slug = item.slug;
-  if (typeof id !== "number" || !Number.isSafeInteger(id) || typeof sourceUrl !== "string") return null;
-  return { id, source_url: sourceUrl, ...(typeof slug === "string" ? { slug } : {}) };
+  if (typeof id !== "number" || !Number.isSafeInteger(id) || typeof sourceUrl !== "string"
+    || typeof slug !== "string" || !slug) return null;
+  return { id, source_url: sourceUrl, slug };
 }
 
 async function readWordPressJson(response: Response): Promise<unknown> {
@@ -445,12 +545,9 @@ async function readWordPressJson(response: Response): Promise<unknown> {
   catch { throw mediaError("failed", "WordPress 图片服务返回了无效响应。"); }
 }
 
-function makeSlug(sku: string): string {
-  const normalized = sku.toLowerCase();
-  const safe = normalized.replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "");
-  const disambiguator = safe === normalized ? "" : "-" + createHash("sha256").update(sku).digest("hex").slice(0, 8);
-  const base = (safe || "sku") + disambiguator;
-  return base.slice(0, 96) + "-main";
+function makeSlug(sku: string, sourceHash: string): string {
+  const ownerFingerprint = createHash("sha256").update("siteindex-media-owner-v1\0").update(sku).digest("hex").slice(0, 24);
+  return `siteindex-v1-${ownerFingerprint}-${sourceHash.slice(0, 32)}-main`;
 }
 
 function ledgerHasUrl(rows: readonly CsvRow[], sku: string): boolean {
@@ -512,7 +609,6 @@ async function processSku(
   currentLedger: CsvRow[],
   isFirstNetworkRequest: { value: boolean },
 ): Promise<{ result: MediaPrepareSkuResult; stop?: "WP_AUTH_FAILED" | "WP_FORBIDDEN" }> {
-  const slug = makeSlug(representativeSku);
   const parsedSource = parseHttpUrl(sourceUrl, options.allowLoopbackHttpForTests);
   const extensionFormat = sourceFormat(parsedSource);
   let imageBytes: Buffer | null = null;
@@ -529,7 +625,7 @@ async function processSku(
   };
 
   if (extensionFormat === "jpeg" || extensionFormat === "png") {
-    outputUrl = parsedSource.href;
+    outputUrl = safePersistedImageUrl(parsedSource.href, Boolean(options.allowLoopbackHttpForTests), credential);
     status = "recorded";
     await upsertMediaLedger(options.mediaLedgerPath, currentLedger, {
       sku: representativeSku,
@@ -549,7 +645,7 @@ async function processSku(
   const fetched = await fetchSourceImage(sourceUrl, fetchImpl, beforeRequest, Boolean(options.allowLoopbackHttpForTests));
   const format = sourceFormat(fetched.url, fetched.type, fetched.bytes);
   if (format === "jpeg" || format === "png") {
-    outputUrl = fetched.url.href;
+    outputUrl = safePersistedImageUrl(fetched.url.href, Boolean(options.allowLoopbackHttpForTests), credential);
     status = "recorded";
     await upsertMediaLedger(options.mediaLedgerPath, currentLedger, {
       sku: representativeSku,
@@ -567,11 +663,12 @@ async function processSku(
   }
   if (format !== "webp" && format !== "avif") throw mediaError("failed", "仅支持 JPG、PNG、WebP 与 AVIF 商品图片。");
   if (!wordpressBase || !credential) throw mediaError("failed", "WordPress 图片服务未配置，无法上传转换后的商品图片。");
+  sourceHash = createHash("sha256").update(fetched.bytes).digest("hex");
+  const slug = makeSlug(representativeSku, sourceHash);
   const converted = await convertToJpeg(fetched.bytes, format);
   imageBytes = converted.bytes;
   width = converted.width;
   height = converted.height;
-  sourceHash = createHash("sha256").update(fetched.bytes).digest("hex");
 
   await beforeRequest();
   const lookup = new URL(wordpressBase);
@@ -584,13 +681,17 @@ async function processSku(
     throw error;
   }
   const lookupValue = await readWordPressJson(lookupResponse);
-  const found = Array.isArray(lookupValue) ? lookupValue.map(parseWordPressMedia).find((item): item is WordPressMedia => Boolean(item)) : null;
+  if (!Array.isArray(lookupValue)) throw mediaError("unknown", "WordPress 媒体查重结果无法确认，已停止上传。");
+  const lookupItems = lookupValue.map(parseWordPressMedia);
+  if (lookupItems.some((item) => !item)) throw mediaError("unknown", "WordPress 媒体查重结果无法确认，已停止上传。");
+  const found = lookupItems.find((item): item is WordPressMedia => item?.slug === slug) ?? null;
   if (found) {
     mediaId = found.id;
-    try { outputUrl = safeOutputUrl(found.source_url, wordpressBase.origin, Boolean(options.allowLoopbackHttpForTests)); }
+    try { outputUrl = safeOutputUrl(found.source_url, wordpressBase.origin, Boolean(options.allowLoopbackHttpForTests), credential); }
     catch (error) { throw error; }
     status = "reused";
   } else {
+    if (lookupItems.length > 0) throw mediaError("unknown", "WordPress 返回了不匹配的媒体条目，已停止上传。");
     await beforeRequest();
     let uploadResponse: Response;
     try {
@@ -609,7 +710,7 @@ async function processSku(
       return { result: { sku: requestedSku, status: "failed", reason: "上传请求失败，结果不确定。" }, stop: undefined };
     }
     if (!uploadResponse.ok) {
-      await uploadResponse.body?.cancel();
+      if (uploadResponse.body) await uploadResponse.body.cancel().catch(() => undefined);
       return { result: { sku: requestedSku, status: "failed", reason: "WordPress 上传请求未成功，请检查图片服务后重试。" } };
     }
     let uploadedValue: unknown;
@@ -617,11 +718,13 @@ async function processSku(
     catch { throw mediaError("unknown", "WordPress 上传结果无法确认，请检查媒体库后重试。"); }
     const uploaded = parseWordPressMedia(uploadedValue);
     if (!uploaded) throw mediaError("unknown", "WordPress 上传结果无法确认，请检查媒体库后重试。");
+    if (uploaded.slug !== slug) throw mediaError("unknown", "WordPress 返回的媒体标识不匹配，结果需检查媒体库。");
     mediaId = uploaded.id;
-    outputUrl = safeOutputUrl(uploaded.source_url, wordpressBase.origin, Boolean(options.allowLoopbackHttpForTests));
+    outputUrl = safeOutputUrl(uploaded.source_url, wordpressBase.origin, Boolean(options.allowLoopbackHttpForTests), credential);
     status = "uploaded";
   }
 
+  let stop: "WP_AUTH_FAILED" | "WP_FORBIDDEN" | undefined;
   if (mediaId !== null) {
     const metadataUrl = new URL(String(mediaId), wordpressBase.href.endsWith("/") ? wordpressBase.href : wordpressBase.href + "/");
     try {
@@ -636,13 +739,10 @@ async function processSku(
     } catch (error) {
       if (error instanceof MediaOperationError && error.kind === "auth") {
         reason = "图片已保存，但标题或替代文本未更新。";
-        await upsertMediaLedger(options.mediaLedgerPath, currentLedger, {
-          sku: representativeSku, image_role: "main", image_url: outputUrl, alt_text: record.title,
-          source: "wordpress", width, height, updated_at: options.date, media_id: mediaId, source_hash: sourceHash,
-        });
-        return { result: { sku: requestedSku, status, reason, image_url: outputUrl }, stop: error.authCode };
+        stop = error.authCode;
+      } else {
+        reason = "图片已保存，但标题或替代文本未更新。";
       }
-      reason = "图片已保存，但标题或替代文本未更新。";
     }
   }
 
@@ -660,9 +760,12 @@ async function processSku(
       source_hash: sourceHash,
     });
   } catch {
-    return { result: { sku: requestedSku, status, reason: "图片已上传，但本地台账写入失败。", image_url: outputUrl } };
+    const result: MediaPrepareSkuResult = {
+      sku: requestedSku, status, reason: "图片已上传，但本地台账写入失败。", image_url: outputUrl,
+    };
+    return { result, ...(stop ? { stop } : {}) };
   }
-  return { result: { sku: requestedSku, status, ...(reason ? { reason } : {}), image_url: outputUrl } };
+  return { result: { sku: requestedSku, status, ...(reason ? { reason } : {}), image_url: outputUrl }, ...(stop ? { stop } : {}) };
 }
 
 /** Run sequential WordPress media preparation. Credentials are accepted only as an in-memory Core context. */
@@ -740,7 +843,8 @@ export async function runMediaJob(options: MediaJobOptions): Promise<MediaJobOut
       unknown.pop();
       counts[outcome.result.status] += 1;
       if (outcome.stop) stoppedByAuth = outcome.stop;
-      if (outcome.result.status === "failed") errors.push(outcome.result.reason ?? "部分商品图片处理失败。");
+      if (outcome.result.reason) errors.push(outcome.result.reason);
+      else if (outcome.result.status === "failed") errors.push("部分商品图片处理失败。");
     } catch (error) {
       if (error instanceof MediaOperationError && error.kind === "unknown") {
         counts.unknown += 1;
@@ -760,7 +864,7 @@ export async function runMediaJob(options: MediaJobOptions): Promise<MediaJobOut
   }
   counts.not_started = notStarted.length;
   if (stoppedByAuth) errors.push(stoppedByAuth === "WP_AUTH_FAILED" ? "WordPress 应用密码认证失败，后续商品未开始处理。" : "WordPress 账号没有上传权限，后续商品未开始处理。");
-  const hasFailure = counts.failed > 0 || unknown.length > 0 || notStarted.length > 0;
+  const hasFailure = counts.failed > 0 || errors.length > 0 || unknown.length > 0 || notStarted.length > 0;
   const hasConfirmedSuccess = counts.uploaded + counts.reused + counts.recorded + counts.skipped_has_url > 0;
   const status = !hasFailure ? "ok" : hasConfirmedSuccess || unknown.length > 0 ? "partial" : "failed";
   await writeMediaCheckpoint(options, "finished", results, unknown, notStarted, stoppedByAuth);
