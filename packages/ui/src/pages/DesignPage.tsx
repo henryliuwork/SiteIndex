@@ -127,6 +127,8 @@ function ButtonsCard({ tokens }: { tokens: DesignTokens | null }) {
           if (!button) return <article className="si-design-button-variant" key={key}>
             <h3>{label}</h3><EmptyState title="未识别此按钮变体">Core 没有返回可用的样式数据。</EmptyState>
           </article>;
+          const hasVisualStyle = [button.background, button.text_color, button.border]
+            .some((value) => typeof value === "string" && value.trim().length > 0);
           const previewStyle: CSSProperties = {
             backgroundColor: button.background ?? undefined,
             color: button.text_color ?? undefined,
@@ -142,7 +144,11 @@ function ButtonsCard({ tokens }: { tokens: DesignTokens | null }) {
             ["字重", button.font_weight], ["悬停背景", button.hover_background],
           ];
           return <article className="si-design-button-variant" key={key}>
-            <div className="si-design-button-heading"><h3>{label}</h3><span className="si-design-button-sample" style={previewStyle}>{sample}</span></div>
+            <div className="si-design-button-heading">
+              <h3>{label}</h3>
+              {hasVisualStyle && <span className="si-design-button-sample" style={previewStyle}>{sample}</span>}
+            </div>
+            {!hasVisualStyle && <EmptyState title="未识别此按钮变体">Core 未返回背景、文字颜色或边框，无法绘制可靠预览。</EmptyState>}
             <dl className="si-design-button-properties">
               {properties.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{displayValue(value)}</dd></div>)}
             </dl>

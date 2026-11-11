@@ -139,6 +139,48 @@ describe("DesignPage Token v2", () => {
     expect(screen.getAllByText("未识别", { selector: ".si-design-role-value" }).length).toBeGreaterThan(0);
   });
 
+  it("按钮对象存在但没有可见样式时不绘制默认预览", async () => {
+    const tokens = structuredClone(tokensFixture);
+    const buttons = tokens.buttons;
+    const primary = buttons?.primary;
+    if (!buttons || !primary) throw new Error("测试 fixture 缺少主按钮 Token");
+    tokens.buttons = {
+      ...buttons,
+      primary: { ...primary, background: null, text_color: null, border: null },
+    };
+    const { api } = createDesignApi(tokens);
+    await renderDesignPage(api);
+
+    expect(await screen.findByRole("heading", { name: "按钮规范" })).toBeTruthy();
+    const card = screen.getByRole("heading", { name: "主要按钮" }).closest(".si-design-button-variant");
+    expect(card?.querySelector(".si-design-button-sample")).toBeNull();
+    expect(card?.textContent).toContain("Core 未返回背景、文字颜色或边框，无法绘制可靠预览。");
+    expect(card?.textContent).toContain("4px");
+  });
+
+  it("按钮视觉字段部分可用时只应用已识别样式并标出缺失字段", async () => {
+    const tokens = structuredClone(tokensFixture);
+    const buttons = tokens.buttons;
+    const secondary = buttons?.secondary;
+    if (!buttons || !secondary) throw new Error("测试 fixture 缺少次要按钮 Token");
+    tokens.buttons = {
+      ...buttons,
+      secondary: { ...secondary, background: "#2F5D3A", text_color: null, border: null },
+    };
+    const { api } = createDesignApi(tokens);
+    await renderDesignPage(api);
+
+    expect(await screen.findByRole("heading", { name: "按钮规范" })).toBeTruthy();
+    const card = screen.getByRole("heading", { name: "次要按钮" }).closest(".si-design-button-variant");
+    const preview = card?.querySelector<HTMLElement>(".si-design-button-sample");
+    expect(preview).not.toBeNull();
+    expect(preview?.style.backgroundColor).not.toBe("");
+    expect(preview?.style.color).toBe("");
+    expect(preview?.style.border).toBe("");
+    expect(card?.textContent).toContain("未识别");
+    expect(screen.queryByRole("heading", { name: "未识别此按钮变体" })).toBeNull();
+  });
+
   it("整份 Token 未识别时保留颜色、字号和按钮空状态", async () => {
     const { api } = createDesignApi(null);
     await renderDesignPage(api);
