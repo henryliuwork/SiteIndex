@@ -359,9 +359,10 @@ describe("EdmPage media preparation prototype", () => {
     expect(page.rows.some((row) => row.feed_image_url?.endsWith(".webp"))).toBe(true);
   });
 
-  it("桌面 IPC 尚未接入时只说明不可用，不渲染可执行上传按钮", async () => {
+  it("图片准备被版本门禁关闭时说明暂未开放，不渲染可执行按钮", async () => {
     await renderEdmPage(true, false);
-    expect(await screen.findByText(/media\.prepare 尚未完成 Core 与 Desktop 接入/)).toBeTruthy();
+    expect(await screen.findByText(/当前版本暂未开放图片准备功能/)).toBeTruthy();
+    expect(screen.getByText("图片准备暂未开放", { selector: "strong" })).toBeTruthy();
     expect(screen.queryByText("展开 EDM 导出与重启恢复原型（仅本地 mock）")).toBeNull();
     expect(screen.queryByRole("button", { name: /模拟获取图片 URL|获取图片 URL/ })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: "选择当前页全部行" })).toBeNull();

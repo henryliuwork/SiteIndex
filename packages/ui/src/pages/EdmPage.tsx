@@ -501,7 +501,7 @@ export function EdmPage() {
           return <li key={sku}><code>{sku}</code><Chip tone={mediaStatusTones[state.status]}>{mediaStatusLabels[state.status]}</Chip>{state.reason && <small>{state.reason}</small>}</li>;
         })}
       </ul>}
-    </div> : <Notice tone="warn" title="图片 URL 准备尚未就绪">{mediaCapability.message} 既有 URL 编辑与保存功能仍可使用。</Notice>}
+    </div> : <Notice tone="warn" title="图片准备暂未开放">{mediaCapability.message} 既有 URL 编辑与保存功能仍可使用。</Notice>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
