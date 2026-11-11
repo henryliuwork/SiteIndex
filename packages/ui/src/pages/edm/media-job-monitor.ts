@@ -4,6 +4,7 @@ import type { ToastApi } from "../../components/overlays";
 
 export interface EdmMediaRunSnapshot {
   projectId: string;
+  projectName: string;
   skus: string[];
   state: "starting" | "running" | "finished" | "failed";
   runId?: string;
@@ -14,6 +15,7 @@ export interface EdmMediaRunSnapshot {
 
 interface MediaRunContext {
   projectId: string;
+  projectName: string;
   skus: string[];
 }
 
@@ -21,7 +23,7 @@ type JobsApi = Pick<SiteIndexApi["jobs"], "onProgress" | "onFinished">;
 
 export interface EdmMediaJobMonitor {
   connect: (jobs: JobsApi, queryClient: QueryClient, toast: ToastApi) => () => void;
-  begin: (projectId: string, skus: string[]) => symbol;
+  begin: (projectId: string, projectName: string, skus: string[]) => symbol;
   associate: (token: symbol, runId: string) => void;
   fail: (token: symbol, message: string) => void;
   subscribe: (listener: () => void) => () => void;
@@ -87,12 +89,13 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
     ]).catch(() => undefined);
   }
 
-  function notifyFinished(result: JobResult): void {
-    if (result.media_error_code === "WP_AUTH_FAILED") activeToast?.error("WordPress 认证失败（401），媒体批次已停止。");
-    else if (result.media_error_code === "WP_FORBIDDEN") activeToast?.error("WordPress 权限不足（403），媒体批次已停止。");
-    else if (result.status === "ok") activeToast?.success("图片 URL 处理完成。");
-    else if (result.status === "partial") activeToast?.info("图片 URL 已部分处理，请检查逐 SKU 结果。");
-    else activeToast?.error(result.summary || "图片 URL 处理失败。");
+  function notifyFinished(result: JobResult, projectName: string): void {
+    const source = `项目「${projectName}」`;
+    if (result.media_error_code === "WP_AUTH_FAILED") activeToast?.error(`${source} WordPress 认证失败（401），媒体批次已停止。`);
+    else if (result.media_error_code === "WP_FORBIDDEN") activeToast?.error(`${source} WordPress 权限不足（403），媒体批次已停止。`);
+    else if (result.status === "ok") activeToast?.success(`${source} 图片 URL 处理完成。`);
+    else if (result.status === "partial") activeToast?.info(`${source} 图片 URL 已部分处理，请检查逐 SKU 结果。`);
+    else activeToast?.error(`${source} ${result.summary || "图片 URL 处理失败。"}`);
   }
 
   function handleProgress(progress: JobProgress): void {
@@ -110,7 +113,7 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
 
     const now = Date.now();
     if (now - (progressToastAt.get(progress.runId) ?? 0) >= 2_800) {
-      activeToast?.info(`图片处理进度：${progress.message}`);
+      activeToast?.info(`图片处理进度（${context.projectName}）：${progress.message}`);
       progressToastAt.set(progress.runId, now);
     }
   }
@@ -122,7 +125,7 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
       publish();
     }
 
-    notifyFinished(result);
+    notifyFinished(result, context.projectName);
     invalidateMediaQueries(context.projectId);
     contextsByRunId.delete(result.runId);
     progressToastAt.delete(result.runId);
@@ -184,9 +187,9 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
         releaseIfIdle();
       };
     },
-    begin(projectId, skus) {
+    begin(projectId, projectName, skus) {
       const token = Symbol(projectId);
-      const snapshot: EdmMediaRunSnapshot = { projectId, skus: [...skus], state: "starting", progress: "正在启动图片处理任务…" };
+      const snapshot: EdmMediaRunSnapshot = { projectId, projectName, skus: [...skus], state: "starting", progress: "正在启动图片处理任务…" };
       pendingStarts.set(token, snapshot);
       snapshots.set(projectId, snapshot);
       publish();
@@ -196,7 +199,7 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
       const starting = pendingStarts.get(token);
       if (!starting) return;
       pendingStarts.delete(token);
-      const context = { projectId: starting.projectId, skus: starting.skus };
+      const context = { projectId: starting.projectId, projectName: starting.projectName, skus: starting.skus };
       contextsByRunId.set(runId, context);
       const progress = earlyProgress.get(runId);
       snapshots.set(starting.projectId, {
@@ -220,7 +223,7 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
         snapshots.set(starting.projectId, { ...starting, state: "failed", progress: "", error: message });
         publish();
       }
-      activeToast?.error(message);
+      activeToast?.error(`项目「${starting.projectName}」${message}`);
       releaseIfIdle();
     },
     subscribe(listener) {

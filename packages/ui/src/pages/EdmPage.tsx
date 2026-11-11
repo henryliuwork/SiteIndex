@@ -291,7 +291,7 @@ export function EdmPage() {
     if (!mediaCapability.available || !prepare || mediaRunBusy || selectedRows.length === 0) return;
     const projectId = id;
     const skus = selectedRows.map((row) => row.sku);
-    const activation = edmMediaJobMonitor.begin(projectId, skus);
+    const activation = edmMediaJobMonitor.begin(projectId, project?.name ?? projectId, skus);
     try {
       const run = await prepare({ project: projectId, skus });
       edmMediaJobMonitor.associate(activation, run.runId);

@@ -337,7 +337,7 @@ describe("EdmPage media preparation prototype", () => {
     fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
     expect(await screen.findByText("运行页面")).toBeTruthy();
     emitMediaProgress({ runId: "demo-media-run", projectPath: "C:/fake/demo", job: "media", pct: 70, level: "info", message: "正在处理虚构 SKU", at: "2026-11-11T00:00:00.000Z" });
-    expect(await screen.findByText("图片处理进度：正在处理虚构 SKU")).toBeTruthy();
+    expect(await screen.findByText(/图片处理进度（.*）：正在处理虚构 SKU/)).toBeTruthy();
     emitMediaFinished({
       runId: "demo-media-run", job: "media", status: "partial", exitCode: 1, summary: "有 1 个 SKU 处理失败",
       media_results: [
@@ -346,7 +346,7 @@ describe("EdmPage media preparation prototype", () => {
       ],
     });
 
-    expect(await screen.findByText("图片 URL 已部分处理，请检查逐 SKU 结果。")).toBeTruthy();
+    expect(await screen.findByText(/图片 URL 已部分处理，请检查逐 SKU 结果。/)).toBeTruthy();
     await waitFor(() => {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "images", "demo"] });
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "summary", "demo"] });
