@@ -1,0 +1,1560 @@
+{
+  "format": "siteindex.e.v041.stock-verification-acceptance-cases",
+  "format_version": 1,
+  "status": "prepared_fixture_data_not_executed_as_a_manifest_harness",
+  "scope": {
+    "pr": 417,
+    "observed_head": "23c35c76c59f7dbcc469bfbd672ae8f1fd808428",
+    "head_state": "open_not_final_pending_recovery_manifest_safety_review",
+    "layouts": [
+      "legacy",
+      "workspace"
+    ],
+    "service_factories": [
+      "fixtures/e-v041-loopback/fake-site-service.mjs:createFakeSiteService",
+      "fixtures/e-v041-loopback/fake-services.mjs:createFakeGraphqlService"
+    ],
+    "network_policy": "loopback_only",
+    "log_policy": "assert_counts_only_no_paths_headers_bodies_or_credentials",
+    "previous_head": "f537750b11837fb6a48df69b38f66e1991115859"
+  },
+  "defaults": {
+    "frozen_date": "2026-10-21",
+    "rate_limit_ms": 0,
+    "stock_rules": {
+      "in_stock": [
+        "Synthetic: available"
+      ],
+      "out_of_stock": [
+        "Synthetic: unavailable"
+      ],
+      "preorder": [
+        "Synthetic: preorder"
+      ]
+    },
+    "max_removed_ratio": 1,
+    "missing_as": "out_of_stock",
+    "clock_policy": {
+      "run_plan_now": "ISO-8601 UTC instant string",
+      "daily_options_now": "new Date(run_plan.now)",
+      "checked_at_output": "isoInZone in UTC formats offsets as +00:00"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "restart-after-cursor-before-result-commit",
+      "purpose": "A pending SKU is retried after the worker process stops after cursor persistence but before its inventory result is committed.",
+      "classification": "required_regression_gate",
+      "old_head": {
+        "expected": "fail_by_code_path_inference_not_process_kill_observation",
+        "observed_head": "9ccb1a9b5f2e39d18956e466e804462eb767bda5",
+        "reason": "The old head writes last_sku in beforeCandidate before request/result commit; after an interruption at the first candidate with max_per_run=1, the restarted rotation starts after that candidate.",
+        "expected_first_candidate_after_restart": "SYN-RST-02"
+      },
+      "project": {
+        "max_per_run": 1,
+        "initial_cursor": null,
+        "active_missing_skus": [
+          {
+            "sku": "SYN-RST-01",
+            "stock_status": "out_of_stock",
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-RST-02",
+            "stock_status": "out_of_stock",
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          }
+        ],
+        "feedRows": [
+          {
+            "sku": "SYN-RST-FEED"
+          }
+        ],
+        "initial_catalog_rows": [
+          {
+            "sku": "SYN-RST-01",
+            "product_id": "SYN-PRODUCT-SYN-RST-01",
+            "handle": "syn-rst-01",
+            "title": "Synthetic item SYN-RST-01",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-RST-02",
+            "product_id": "SYN-PRODUCT-SYN-RST-02",
+            "handle": "syn-rst-02",
+            "title": "Synthetic item SYN-RST-02",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          }
+        ],
+        "initial_inventory_latest_rows": [
+          {
+            "sku": "SYN-RST-01",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-RST-02",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          }
+        ],
+        "site_config": {
+          "domain": "synthetic-shop.test",
+          "base_url": "<runtime:site_service.origin>",
+          "timezone": "UTC",
+          "crawl": {
+            "feed_url": "<runtime:site_service.feedUrl>",
+            "missing_as": "out_of_stock",
+            "max_removed_ratio": 1,
+            "rate_limit_ms": 0,
+            "stock_verify": {
+              "enabled": true,
+              "graphql_url": "<runtime:graphql_service.endpoint>",
+              "max_per_run": 1
+            },
+            "stock_rules": {
+              "in_stock": [
+                "Synthetic: available"
+              ],
+              "out_of_stock": [
+                "Synthetic: unavailable"
+              ],
+              "preorder": [
+                "Synthetic: preorder"
+              ]
+            }
+          }
+        },
+        "runtime_bindings": {
+          "base_url": "site_service.origin",
+          "crawl.feed_url": "site_service.feedUrl",
+          "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
+          "catalog.url": "site_service.productUrl(sku)"
+        },
+        "run_plan": [
+          {
+            "phase": "interrupt",
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          },
+          {
+            "phase": "recover",
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:05:00Z"
+          }
+        ]
+      },
+      "site_service": {
+        "productResponsesBySku": {
+          "SYN-RST-01": {
+            "status": 200,
+            "delayMs": 5000,
+            "body": "<main>Synthetic: available</main>"
+          },
+          "SYN-RST-02": {
+            "status": 200,
+            "body": "<main>Synthetic: available</main>"
+          }
+        }
+      },
+      "graphql_service": {
+        "responsesBySku": {
+          "SYN-RST-01": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-RST-01",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-RST-02": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-RST-02",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          }
+        }
+      },
+      "steps": [
+        "Create a temporary synthetic project and start its daily job in a child process.",
+        "Keep the loopback product response delayed; poll only the fixture route count until the first product GET is observed, then terminate the child before the delayed response completes.",
+        "Verify the interrupted run did not commit a stock result for SYN-RST-01 and retain the project plus cursor file.",
+        "Restart daily against the same synthetic project and loopback services; inspect resulting inventory rows and events."
+      ],
+      "expected_after_recovery": {
+        "first_resumed_candidate": "SYN-RST-01",
+        "sku_status": "active",
+        "stock_status": "in_stock",
+        "event_for_interrupted_sku": "feed_anomaly",
+        "no_duplicate_removed_event": true,
+        "checked_at": "2026-10-21T12:05:00+00:00"
+      },
+      "safe_observation": {
+        "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
+        "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run.",
+        "expected_run_results": [
+          {
+            "run": 1,
+            "expected_result": "interrupted candidate result not committed; pending journal contains SYN-RST-01"
+          },
+          {
+            "run": 2,
+            "expected_result": "SYN-RST-01 becomes in_stock and has one feed_anomaly event"
+          }
+        ]
+      },
+      "independent_process_kill_status": "not_executed",
+      "core_failure_injection_status": "A new-head unit test covers failure after pending state is written and before outcome files persist; this is not a hard process-kill test.",
+      "expected_first_candidate_after_restart": "SYN-RST-01",
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
+    },
+    {
+      "id": "candidate-add-remove-around-cursor",
+      "purpose": "A removed candidate and a newly added candidate around a persisted cursor do not starve the remaining set.",
+      "classification": "must_pass",
+      "project": {
+        "max_per_run": 2,
+        "initial_cursor": "SYN-CHURN-20",
+        "active_skus": [
+          "SYN-CHURN-10",
+          "SYN-CHURN-15",
+          "SYN-CHURN-20",
+          "SYN-CHURN-30",
+          "SYN-CHURN-40"
+        ],
+        "active_missing_skus": [
+          "SYN-CHURN-10",
+          "SYN-CHURN-15",
+          "SYN-CHURN-30",
+          "SYN-CHURN-40"
+        ],
+        "new_candidate_before_cursor": "SYN-CHURN-15",
+        "removed_candidate_now_in_feed": "SYN-CHURN-20",
+        "feedRows": [
+          {
+            "sku": "SYN-CHURN-FEED"
+          },
+          {
+            "sku": "SYN-CHURN-20"
+          }
+        ],
+        "initial_catalog_rows": [
+          {
+            "sku": "SYN-CHURN-10",
+            "product_id": "SYN-PRODUCT-SYN-CHURN-10",
+            "handle": "syn-churn-10",
+            "title": "Synthetic item SYN-CHURN-10",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-CHURN-15",
+            "product_id": "SYN-PRODUCT-SYN-CHURN-15",
+            "handle": "syn-churn-15",
+            "title": "Synthetic item SYN-CHURN-15",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-CHURN-20",
+            "product_id": "SYN-PRODUCT-SYN-CHURN-20",
+            "handle": "syn-churn-20",
+            "title": "Synthetic item SYN-CHURN-20",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-CHURN-30",
+            "product_id": "SYN-PRODUCT-SYN-CHURN-30",
+            "handle": "syn-churn-30",
+            "title": "Synthetic item SYN-CHURN-30",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-CHURN-40",
+            "product_id": "SYN-PRODUCT-SYN-CHURN-40",
+            "handle": "syn-churn-40",
+            "title": "Synthetic item SYN-CHURN-40",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          }
+        ],
+        "initial_inventory_latest_rows": [
+          {
+            "sku": "SYN-CHURN-10",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-CHURN-15",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-CHURN-20",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-CHURN-30",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-CHURN-40",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          }
+        ],
+        "site_config": {
+          "domain": "synthetic-shop.test",
+          "base_url": "<runtime:site_service.origin>",
+          "timezone": "UTC",
+          "crawl": {
+            "feed_url": "<runtime:site_service.feedUrl>",
+            "missing_as": "out_of_stock",
+            "max_removed_ratio": 1,
+            "rate_limit_ms": 0,
+            "stock_verify": {
+              "enabled": true,
+              "graphql_url": "<runtime:graphql_service.endpoint>",
+              "max_per_run": 2
+            },
+            "stock_rules": {
+              "in_stock": [
+                "Synthetic: available"
+              ],
+              "out_of_stock": [
+                "Synthetic: unavailable"
+              ],
+              "preorder": [
+                "Synthetic: preorder"
+              ]
+            }
+          }
+        },
+        "runtime_bindings": {
+          "base_url": "site_service.origin",
+          "crawl.feed_url": "site_service.feedUrl",
+          "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
+          "catalog.url": "site_service.productUrl(sku)"
+        },
+        "crawl_config": {
+          "missing_as": "out_of_stock",
+          "max_removed_ratio": 1,
+          "rate_limit_ms": 0,
+          "stock_verify": {
+            "enabled": true,
+            "max_per_run": 2
+          }
+        },
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          },
+          {
+            "run": 2,
+            "date": "2026-10-22",
+            "now": "2026-10-22T12:00:00Z"
+          }
+        ]
+      },
+      "site_service": {
+        "defaultProductResponse": {
+          "status": 200,
+          "body": "<main>Synthetic product page</main>"
+        }
+      },
+      "graphql_service": {
+        "responsesBySku": {
+          "SYN-CHURN-10": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-CHURN-10",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-CHURN-15": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-CHURN-15",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-CHURN-20": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-CHURN-20",
+                  "stock_status": "OUT_OF_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-CHURN-30": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-CHURN-30",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-CHURN-40": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-CHURN-40",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          }
+        }
+      },
+      "steps": [
+        "Seed the persisted cursor at SYN-CHURN-20; SYN-CHURN-20 is in the current feed while SYN-CHURN-15 is newly absent.",
+        "Run daily twice using each run_plan entry date and exact UTC now; retain the same synthetic project and update only its job outputs.",
+        "After each run, derive the unordered visited SKU set from inventory_latest checked_at/stock changes and read last_sku from the persisted stock-verification cursor; do not use request-body logs."
+      ],
+      "expected": {
+        "runs_to_visit_current_candidates": 2,
+        "product_page_requests_total": 4,
+        "removed_candidate_requested": false,
+        "max_candidate_skus_per_run": 2,
+        "expected_per_run_business_results": [
+          {
+            "run": 1,
+            "stock_verified": 2,
+            "stock_verify_unavailable": 0,
+            "changed_to_in_stock": [
+              "SYN-CHURN-30",
+              "SYN-CHURN-40"
+            ],
+            "unchanged_candidates": [
+              "SYN-CHURN-10",
+              "SYN-CHURN-15"
+            ],
+            "feed_present_sku_in_stock": "SYN-CHURN-20"
+          },
+          {
+            "run": 2,
+            "stock_verified": 2,
+            "stock_verify_unavailable": 0,
+            "changed_to_in_stock": [
+              "SYN-CHURN-10",
+              "SYN-CHURN-15"
+            ],
+            "feed_present_sku_in_stock": "SYN-CHURN-20"
+          }
+        ],
+        "graphql_requests_total": 4,
+        "candidate_visit_set_by_run": [
+          [
+            "SYN-CHURN-30",
+            "SYN-CHURN-40"
+          ],
+          [
+            "SYN-CHURN-10",
+            "SYN-CHURN-15"
+          ]
+        ],
+        "cursor_last_sku_by_run": [
+          "SYN-CHURN-40",
+          "SYN-CHURN-15"
+        ],
+        "checked_at_offset_by_run": [
+          "2026-10-21T12:00:00+00:00",
+          "2026-10-22T12:00:00+00:00"
+        ],
+        "candidate_set_cursor_consistency": "Compare each run unordered candidate result set with the persisted last_sku expected after that run. This checks rotation state and fairness; it is not direct observation of HTTP request order."
+      },
+      "safe_observation": {
+        "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
+        "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run."
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
+    },
+    {
+      "id": "unavailable-results-preserve-prior-stock",
+      "purpose": "Page 5xx and GraphQL 429 do not overwrite prior inventory state or timestamps.",
+      "classification": "must_pass",
+      "project": {
+        "max_per_run": 2,
+        "active_missing_skus": [
+          {
+            "sku": "SYN-KEEP-503",
+            "stock_status": "in_stock",
+            "since": "2026-10-19",
+            "checked_at": "2026-10-19T12:00:00Z"
+          },
+          {
+            "sku": "SYN-KEEP-429",
+            "stock_status": "out_of_stock",
+            "since": "2026-10-18",
+            "checked_at": "2026-10-18T12:00:00Z"
+          }
+        ],
+        "feedRows": [
+          {
+            "sku": "SYN-KEEP-FEED"
+          }
+        ],
+        "initial_catalog_rows": [
+          {
+            "sku": "SYN-KEEP-503",
+            "product_id": "SYN-PRODUCT-SYN-KEEP-503",
+            "handle": "syn-keep-503",
+            "title": "Synthetic item SYN-KEEP-503",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-KEEP-429",
+            "product_id": "SYN-PRODUCT-SYN-KEEP-429",
+            "handle": "syn-keep-429",
+            "title": "Synthetic item SYN-KEEP-429",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          }
+        ],
+        "initial_inventory_latest_rows": [
+          {
+            "sku": "SYN-KEEP-503",
+            "stock_status": "in_stock",
+            "qty": null,
+            "since": "2026-10-19",
+            "checked_at": "2026-10-19T12:00:00Z"
+          },
+          {
+            "sku": "SYN-KEEP-429",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-18",
+            "checked_at": "2026-10-18T12:00:00Z"
+          }
+        ],
+        "site_config": {
+          "domain": "synthetic-shop.test",
+          "base_url": "<runtime:site_service.origin>",
+          "timezone": "UTC",
+          "crawl": {
+            "feed_url": "<runtime:site_service.feedUrl>",
+            "missing_as": "out_of_stock",
+            "max_removed_ratio": 1,
+            "rate_limit_ms": 0,
+            "stock_verify": {
+              "enabled": true,
+              "graphql_url": "<runtime:graphql_service.endpoint>",
+              "max_per_run": 2
+            },
+            "stock_rules": {
+              "in_stock": [
+                "Synthetic: available"
+              ],
+              "out_of_stock": [
+                "Synthetic: unavailable"
+              ],
+              "preorder": [
+                "Synthetic: preorder"
+              ]
+            }
+          }
+        },
+        "runtime_bindings": {
+          "base_url": "site_service.origin",
+          "crawl.feed_url": "site_service.feedUrl",
+          "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
+          "catalog.url": "site_service.productUrl(sku)"
+        },
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          }
+        ]
+      },
+      "site_service": {
+        "productResponsesBySku": {
+          "SYN-KEEP-503": {
+            "status": 503,
+            "body": "Synthetic temporary failure"
+          },
+          "SYN-KEEP-429": {
+            "status": 200,
+            "body": "<main>Synthetic page with no stock phrase</main>"
+          }
+        }
+      },
+      "graphql_service": {
+        "responsesBySku": {
+          "SYN-KEEP-429": {
+            "httpStatus": 429,
+            "body": {
+              "errors": [
+                {
+                  "message": "Synthetic rate limit"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "steps": [
+        "Run daily once and compare the prior inventory rows and events."
+      ],
+      "expected": {
+        "prior_stock_status_preserved": true,
+        "prior_since_preserved": true,
+        "prior_checked_at_preserved": true,
+        "feed_anomaly_event_added": false,
+        "seo_issue_added": false,
+        "run_status": "partial",
+        "stock_verify_unavailable": 2,
+        "expected_business_results": [
+          {
+            "sku": "SYN-KEEP-503",
+            "stock_status": "in_stock",
+            "checked_at": "2026-10-19T12:00:00Z"
+          },
+          {
+            "sku": "SYN-KEEP-429",
+            "stock_status": "out_of_stock",
+            "checked_at": "2026-10-18T12:00:00Z"
+          }
+        ]
+      },
+      "safe_observation": {
+        "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
+        "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run."
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
+    },
+    {
+      "id": "feed-absent-404-and-410",
+      "purpose": "Both gone responses remove only the corresponding active SKU and annotate the reason.",
+      "classification": "must_pass",
+      "project": {
+        "max_per_run": 2,
+        "active_missing_skus": [
+          "SYN-GONE-404",
+          "SYN-GONE-410"
+        ],
+        "feedRows": [
+          {
+            "sku": "SYN-GONE-FEED"
+          }
+        ],
+        "initial_catalog_rows": [
+          {
+            "sku": "SYN-GONE-404",
+            "product_id": "SYN-PRODUCT-SYN-GONE-404",
+            "handle": "syn-gone-404",
+            "title": "Synthetic item SYN-GONE-404",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-GONE-410",
+            "product_id": "SYN-PRODUCT-SYN-GONE-410",
+            "handle": "syn-gone-410",
+            "title": "Synthetic item SYN-GONE-410",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          }
+        ],
+        "initial_inventory_latest_rows": [
+          {
+            "sku": "SYN-GONE-404",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-GONE-410",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          }
+        ],
+        "site_config": {
+          "domain": "synthetic-shop.test",
+          "base_url": "<runtime:site_service.origin>",
+          "timezone": "UTC",
+          "crawl": {
+            "feed_url": "<runtime:site_service.feedUrl>",
+            "missing_as": "out_of_stock",
+            "max_removed_ratio": 1,
+            "rate_limit_ms": 0,
+            "stock_verify": {
+              "enabled": true,
+              "graphql_url": "<runtime:graphql_service.endpoint>",
+              "max_per_run": 2
+            },
+            "stock_rules": {
+              "in_stock": [
+                "Synthetic: available"
+              ],
+              "out_of_stock": [
+                "Synthetic: unavailable"
+              ],
+              "preorder": [
+                "Synthetic: preorder"
+              ]
+            }
+          }
+        },
+        "runtime_bindings": {
+          "base_url": "site_service.origin",
+          "crawl.feed_url": "site_service.feedUrl",
+          "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
+          "catalog.url": "site_service.productUrl(sku)"
+        },
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          }
+        ]
+      },
+      "site_service": {
+        "productResponsesBySku": {
+          "SYN-GONE-404": {
+            "status": 404,
+            "body": "Synthetic not found"
+          },
+          "SYN-GONE-410": {
+            "status": 410,
+            "body": "Synthetic gone"
+          }
+        }
+      },
+      "graphql_service": {
+        "responsesBySku": {
+          "SYN-GONE-404": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-GONE-404",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-GONE-410": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-GONE-410",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          }
+        }
+      },
+      "steps": [
+        "Run daily once and inspect catalog, latest inventory, and monthly events."
+      ],
+      "expected": {
+        "removed_skus": [
+          "SYN-GONE-404",
+          "SYN-GONE-410"
+        ],
+        "removed_reason": "feed_absent_404",
+        "latest_inventory_rows_removed": true,
+        "removed_event_per_sku": 1,
+        "graphql_requests_for_gone_skus": 0
+      },
+      "safe_observation": {
+        "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
+        "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run."
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
+    },
+    {
+      "id": "fair-rotation-across-capped-reruns",
+      "purpose": "A capped verifier rotates through a stable candidate set and eventually reaches each candidate.",
+      "classification": "must_pass",
+      "project": {
+        "max_per_run": 2,
+        "initial_cursor": null,
+        "active_missing_skus": [
+          "SYN-ROT-01",
+          "SYN-ROT-02",
+          "SYN-ROT-03",
+          "SYN-ROT-04",
+          "SYN-ROT-05"
+        ],
+        "feedRows": [
+          {
+            "sku": "SYN-ROT-FEED"
+          }
+        ],
+        "initial_catalog_rows": [
+          {
+            "sku": "SYN-ROT-01",
+            "product_id": "SYN-PRODUCT-SYN-ROT-01",
+            "handle": "syn-rot-01",
+            "title": "Synthetic item SYN-ROT-01",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-ROT-02",
+            "product_id": "SYN-PRODUCT-SYN-ROT-02",
+            "handle": "syn-rot-02",
+            "title": "Synthetic item SYN-ROT-02",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-ROT-03",
+            "product_id": "SYN-PRODUCT-SYN-ROT-03",
+            "handle": "syn-rot-03",
+            "title": "Synthetic item SYN-ROT-03",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-ROT-04",
+            "product_id": "SYN-PRODUCT-SYN-ROT-04",
+            "handle": "syn-rot-04",
+            "title": "Synthetic item SYN-ROT-04",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          },
+          {
+            "sku": "SYN-ROT-05",
+            "product_id": "SYN-PRODUCT-SYN-ROT-05",
+            "handle": "syn-rot-05",
+            "title": "Synthetic item SYN-ROT-05",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "category_source": "feed",
+            "price": 1,
+            "compare_at_price": null,
+            "currency": "USD",
+            "image_url": null,
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          }
+        ],
+        "initial_inventory_latest_rows": [
+          {
+            "sku": "SYN-ROT-01",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-ROT-02",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-ROT-03",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-ROT-04",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          },
+          {
+            "sku": "SYN-ROT-05",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          }
+        ],
+        "site_config": {
+          "domain": "synthetic-shop.test",
+          "base_url": "<runtime:site_service.origin>",
+          "timezone": "UTC",
+          "crawl": {
+            "feed_url": "<runtime:site_service.feedUrl>",
+            "missing_as": "out_of_stock",
+            "max_removed_ratio": 1,
+            "rate_limit_ms": 0,
+            "stock_verify": {
+              "enabled": true,
+              "graphql_url": "<runtime:graphql_service.endpoint>",
+              "max_per_run": 2
+            },
+            "stock_rules": {
+              "in_stock": [
+                "Synthetic: available"
+              ],
+              "out_of_stock": [
+                "Synthetic: unavailable"
+              ],
+              "preorder": [
+                "Synthetic: preorder"
+              ]
+            }
+          }
+        },
+        "runtime_bindings": {
+          "base_url": "site_service.origin",
+          "crawl.feed_url": "site_service.feedUrl",
+          "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
+          "catalog.url": "site_service.productUrl(sku)"
+        },
+        "run_dates": [
+          "2026-10-21",
+          "2026-10-22",
+          "2026-10-23"
+        ],
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z"
+          },
+          {
+            "run": 2,
+            "date": "2026-10-22",
+            "now": "2026-10-22T12:00:00Z"
+          },
+          {
+            "run": 3,
+            "date": "2026-10-23",
+            "now": "2026-10-23T12:00:00Z"
+          }
+        ]
+      },
+      "site_service": {
+        "defaultProductResponse": {
+          "status": 200,
+          "body": "<main>Synthetic product page</main>"
+        }
+      },
+      "graphql_service": {
+        "responsesBySku": {
+          "SYN-ROT-01": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-ROT-01",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-ROT-02": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-ROT-02",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-ROT-03": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-ROT-03",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-ROT-04": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-ROT-04",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          },
+          "SYN-ROT-05": {
+            "httpStatus": 200,
+            "body": {
+              "data": {
+                "product": {
+                  "sku": "SYN-ROT-05",
+                  "stock_status": "IN_STOCK"
+                }
+              }
+            }
+          }
+        }
+      },
+      "steps": [
+        "Run daily three times on the same synthetic project, applying each run_plan date and exact UTC now while preserving the cursor.",
+        "After each run, derive the unordered visited set from inventory_latest checked_at changes and read the persisted stock-verification cursor last_sku; do not use per-SKU request-body logs."
+      ],
+      "expected": {
+        "all_candidates_visited_within_runs": 3,
+        "candidate_cap_per_run": 2,
+        "all_candidate_skus_remain_active": true,
+        "expected_per_run_business_results": [
+          {
+            "run": 1,
+            "stock_verified": 2,
+            "stock_verify_unavailable": 0,
+            "changed_to_in_stock": [
+              "SYN-ROT-01",
+              "SYN-ROT-02"
+            ],
+            "remaining_out_of_stock": [
+              "SYN-ROT-03",
+              "SYN-ROT-04",
+              "SYN-ROT-05"
+            ]
+          },
+          {
+            "run": 2,
+            "stock_verified": 2,
+            "stock_verify_unavailable": 0,
+            "changed_to_in_stock": [
+              "SYN-ROT-03",
+              "SYN-ROT-04"
+            ],
+            "remaining_out_of_stock": [
+              "SYN-ROT-05"
+            ]
+          },
+          {
+            "run": 3,
+            "stock_verified": 2,
+            "stock_verify_unavailable": 0,
+            "changed_to_in_stock": [
+              "SYN-ROT-05"
+            ],
+            "rechecked_date_for_wraparound": {
+              "sku": "SYN-ROT-01",
+              "checked_at_prefix": "2026-10-23"
+            }
+          }
+        ],
+        "all_candidates_verified_as_business_results": true,
+        "graphql_responses_match_requested_sku": true,
+        "candidate_visit_set_by_run": [
+          [
+            "SYN-ROT-01",
+            "SYN-ROT-02"
+          ],
+          [
+            "SYN-ROT-03",
+            "SYN-ROT-04"
+          ],
+          [
+            "SYN-ROT-01",
+            "SYN-ROT-05"
+          ]
+        ],
+        "cursor_last_sku_by_run": [
+          "SYN-ROT-02",
+          "SYN-ROT-04",
+          "SYN-ROT-01"
+        ],
+        "checked_at_offset_by_run": [
+          "2026-10-21T12:00:00+00:00",
+          "2026-10-22T12:00:00+00:00",
+          "2026-10-23T12:00:00+00:00"
+        ],
+        "candidate_set_cursor_consistency": "Compare each run unordered candidate result set with the persisted last_sku expected after that run. This checks rotation state and fairness; it is not direct observation of HTTP request order."
+      },
+      "safe_observation": {
+        "request_logging": "Use fixture route/status totals only; do not add per-SKU paths, request bodies, or headers to logs.",
+        "result_order_proof": "Use each synthetic SKU's matching GraphQL response plus before/after inventory_latest rows, stock_verified/unavailable counts, and feed_anomaly events for each run."
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
+    },
+    {
+      "id": "event-written-inventory-write-fails-service-unavailable-retry",
+      "purpose": "Detect a partial output persistence window between inventory events and inventory_latest, then verify later 429 and successful recovery.",
+      "classification": "independent_product_acceptance_gate",
+      "evidence_status": "related_core_unit_tests_passed_exact_scenario_not_independently_executed",
+      "code_path_risk": "daily.ts writes events, then inventory_latest, then skus; a process stop or write failure between these writes can leave an event persisted while the inventory snapshot is stale. A retry with an unavailable fake service may expose whether the state remains visible and recoverable.",
+      "project": {
+        "max_per_run": 1,
+        "initial_cursor": null,
+        "active_skus": [
+          "SYN-WRITE-01"
+        ],
+        "active_missing_skus": [
+          "SYN-WRITE-01"
+        ],
+        "feedRows": [
+          {
+            "sku": "SYN-WRITE-FEED"
+          }
+        ],
+        "site_config": {
+          "domain": "synthetic-shop.test",
+          "base_url": "<runtime:site_service.origin>",
+          "timezone": "UTC",
+          "crawl": {
+            "feed_url": "<runtime:site_service.feedUrl>",
+            "missing_as": "out_of_stock",
+            "max_removed_ratio": 1,
+            "rate_limit_ms": 0,
+            "stock_verify": {
+              "enabled": true,
+              "graphql_url": "<runtime:graphql_service.endpoint>",
+              "max_per_run": 1
+            },
+            "stock_rules": {
+              "in_stock": [
+                "Synthetic: available"
+              ],
+              "out_of_stock": [
+                "Synthetic: unavailable"
+              ],
+              "preorder": [
+                "Synthetic: preorder"
+              ]
+            }
+          }
+        },
+        "runtime_bindings": {
+          "base_url": "site_service.origin",
+          "crawl.feed_url": "site_service.feedUrl",
+          "crawl.stock_verify.graphql_url": "graphql_service.endpoint",
+          "catalog.url": "site_service.productUrl(sku)"
+        },
+        "initial_catalog_rows": [
+          {
+            "sku": "SYN-WRITE-01",
+            "product_id": "SYN-PRODUCT-SYN-WRITE-01",
+            "handle": "syn-write-01",
+            "title": "Synthetic item SYN-WRITE-01",
+            "variant_title": null,
+            "url": "<runtime:site.productUrl(sku)>",
+            "category": "synthetic",
+            "categories": [
+              "synthetic"
+            ],
+            "status": "active",
+            "first_seen": "2026-10-01",
+            "last_seen": "2026-10-20",
+            "updated_at": "2026-10-20"
+          }
+        ],
+        "initial_inventory_latest_rows": [
+          {
+            "sku": "SYN-WRITE-01",
+            "stock_status": "out_of_stock",
+            "qty": null,
+            "since": "2026-10-20",
+            "checked_at": "2026-10-20T12:00:00Z"
+          }
+        ],
+        "initial_catalog_rows_complete_for_active_skus": true,
+        "initial_inventory_complete_for_active_skus": true,
+        "run_plan": [
+          {
+            "run": 1,
+            "date": "2026-10-21",
+            "now": "2026-10-21T12:00:00Z",
+            "graphql_epoch": 1
+          },
+          {
+            "run": 2,
+            "date": "2026-10-22",
+            "now": "2026-10-22T12:00:00Z",
+            "graphql_epoch": 2
+          },
+          {
+            "run": 3,
+            "date": "2026-10-23",
+            "now": "2026-10-23T12:00:00Z",
+            "graphql_epoch": 3
+          }
+        ]
+      },
+      "site_service": {
+        "productResponsesBySku": {
+          "SYN-WRITE-01": {
+            "status": 200,
+            "body": "<main>Synthetic page with no stock phrase</main>"
+          }
+        }
+      },
+      "graphql_service_epochs": [
+        {
+          "responsesBySku": {
+            "SYN-WRITE-01": {
+              "httpStatus": 200,
+              "body": {
+                "data": {
+                  "product": {
+                    "sku": "SYN-WRITE-01",
+                    "stock_status": "IN_STOCK"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "responsesBySku": {
+            "SYN-WRITE-01": {
+              "httpStatus": 429,
+              "body": {
+                "errors": [
+                  {
+                    "message": "Synthetic rate limit"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "responsesBySku": {
+            "SYN-WRITE-01": {
+              "httpStatus": 200,
+              "body": {
+                "data": {
+                  "product": {
+                    "sku": "SYN-WRITE-01",
+                    "stock_status": "IN_STOCK"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "project_fault_injection": {
+        "cut_point": "after events JSONL has been atomically written and before inventory_latest JSONL is committed",
+        "method": "test-only one-shot atomicWrite failure injected by the Core test harness at the inventory_latest target after the events target succeeds; not an HTTP response toggle and not a product API"
+      },
+      "steps": [
+        "Start fake GraphQL epoch 1 with IN_STOCK and point synthetic site.json crawl.stock_verify.graphql_url at its endpoint; run daily at the exact date/now in run_plan.",
+        "In a test-only Core harness, inject one atomicWrite failure for inventory_latest after the events file write; preserve the project, transaction manifest, backups, and cursor.",
+        "Close epoch 1; create a new fake GraphQL service with epoch 2 response 429, update only the synthetic site.json endpoint to the new loopback endpoint, then run daily with run_plan date/now. Verify rollback/recovery and prior stock preservation.",
+        "Close epoch 2; create a new fake GraphQL service with epoch 3 IN_STOCK, update the synthetic site.json endpoint again, then run daily. Verify the candidate remains active, the latest inventory is in_stock, and the event key is not duplicated."
+      ],
+      "expected": {
+        "retry_with_429_status": "partial",
+        "retry_with_429_preserves_prior_inventory": true,
+        "successful_recovery_stock_status": "in_stock",
+        "successful_recovery_sku_status": "active",
+        "silent_success_on_partial_write": false,
+        "event_latest_mismatch_must_be_reported_or_repaired": true,
+        "duplicate_event_same_date_sku_type": false
+      },
+      "expected_current_head": "related_core_tests_passed_but_review_gates_open_not_final",
+      "current_head_related_test": {
+        "commit": "23c35c76c59f7dbcc469bfbd672ae8f1fd808428",
+        "test": "packages/core/test/stock-verification.test.ts",
+        "result": "11 passed",
+        "method": "deterministic atomicWrite failure injection at each output target, then same-process retry using 404 followed by 200 page plus GraphQL 503",
+        "limit": "does not prove OS process termination or execute this manifest three-epoch 429/recovery sequence"
+      },
+      "fake_graphql_epoch_switch": {
+        "service_api": "createFakeGraphqlService({ responsesBySku }) has immutable response configuration; it has no response setter.",
+        "procedure": [
+          "close() the previous fake GraphQL service",
+          "createFakeGraphqlService using the next graphql_service_epochs entry",
+          "write the new service endpoint into the synthetic project site.json crawl.stock_verify.graphql_url",
+          "run daily against the same synthetic project and preserved transaction/cursor files"
+        ],
+        "network_policy": "loopback_only; service snapshots contain aggregate counts only"
+      },
+      "clock_binding": "Construct DailyOptions.now as new Date(run_plan.now); do not pass the manifest ISO string directly. Compare checked_at as +00:00 or by Date.parse instant."
+    }
+  ],
+  "stage_evidence": {
+    "core_stock_suite": {
+      "commit": "23c35c76c59f7dbcc469bfbd672ae8f1fd808428",
+      "result": "11_passed",
+      "coverage": "GraphQL/page fallback, candidate rotation, and injected failures for events, inventory_latest, skus, and daily summary; second invocation retries with 5xx",
+      "limit": "same-process function invocation, not a spawned-process restart"
+    },
+    "cli_suite": {
+      "commit": "23c35c76c59f7dbcc469bfbd672ae8f1fd808428",
+      "result": "8_passed",
+      "limit": "general CLI suite; not stock-specific"
+    },
+    "synthetic_cli_daily": {
+      "commit": "23c35c76c59f7dbcc469bfbd672ae8f1fd808428",
+      "result": "1_passed",
+      "coverage": "temporary CLI main(run path) call with loopback feed, product page, and GraphQL; exact aggregate fake route counts and resulting feed_anomaly checked",
+      "limit": "not packaged CLI or process-restart fault injection"
+    },
+    "pending_review_gates": [
+      "corrupt or empty recovery manifest fails closed and preserves recovery material",
+      "manifest target cannot name arbitrary project files or escape via symlinks",
+      "missing backup is detected before any target is restored",
+      "external user edits after interruption are detected and never overwritten silently",
+      "The manifest corruption, target-path, missing-backup, and external-edit cases below are not covered by the 23c test run; wait for the next A head."
+    ],
+    "k5_contract_tests": {
+      "commit": "dab4db0efd4fb384cadb502d5d6b372a0ced7c99",
+      "result": "8_passed",
+      "scope": "shared contract only; no Core ledger migration or media behavior"
+    }
+  }
+}
