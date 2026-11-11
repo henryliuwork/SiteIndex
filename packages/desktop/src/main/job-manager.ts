@@ -1,12 +1,12 @@
 import { pathsForProject, readJsonl, writeJsonl } from "@siteindex/core";
 import {
   EXIT,
+  isValidMediaSkuRecoveryPartition,
   type AppSettings,
   type JobProgress,
   type JobRequest,
   type JobResult,
   type JobTrigger,
-  type MediaSkuRecoveryPartition,
   type ProjectId,
   type ProjectPaths,
   type RunLog,
@@ -82,7 +82,6 @@ interface JobEntry {
   done: Promise<JobResult>;
   resolveDone(result: JobResult): void;
   runId: string | null;
-  coreRunId: string | null;
   startedAt: string | null;
   result: JobResult | null;
   oosRate: number | null;
@@ -123,6 +122,78 @@ function isRunLog(value: unknown): value is RunLog {
   );
 }
 
+function isSafeMediaImageUrl(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || !url.hostname || url.username || url.password) {
+      return false;
+    }
+    return ![...url.searchParams.keys()].some((key) =>
+      /token|secret|pass(?:word)?|auth|credential|signature|api.?key/iu.test(key),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeMediaJobResult(
+  result: JobResult,
+  sensitiveValues: readonly string[] = [],
+  sensitiveUsernames: readonly string[] = [],
+): JobResult {
+  const sanitized = sanitizeJobResult(result, sensitiveValues, sensitiveUsernames);
+  if (sanitized.job !== "media" || !isValidMediaSkuRecoveryPartition(sanitized)) return sanitized;
+  return {
+    ...sanitized,
+    media_results: sanitized.media_results.map(({ image_url, ...item }) => ({
+      ...item,
+      ...(isSafeMediaImageUrl(image_url) ? { image_url } : {}),
+    })),
+  };
+}
+
+function sanitizeMediaRunLog(row: RunLog): RunLog {
+  if (row.job !== "media") return row;
+  const copy = { ...row } as RunLog & Partial<JobResult>;
+  if (!isValidMediaSkuRecoveryPartition(row)) {
+    delete copy.media_requested_skus;
+    delete copy.media_batch_state;
+    delete copy.media_results;
+    delete copy.media_unknown_skus;
+    delete copy.media_not_started_skus;
+    delete copy.media_error_code;
+    return copy;
+  }
+  const safe = sanitizeMediaJobResult(
+    {
+      runId: row.run_id,
+      job: "media",
+      status: row.status,
+      exitCode: EXIT.OK,
+      summary: "",
+      media_requested_skus: [...row.media_requested_skus],
+      media_batch_state: row.media_batch_state,
+      media_results: row.media_results.map((item) => ({ ...item })),
+      media_unknown_skus: [...row.media_unknown_skus],
+      media_not_started_skus: [...row.media_not_started_skus],
+      ...(row.media_error_code === "WP_AUTH_FAILED" || row.media_error_code === "WP_FORBIDDEN"
+        ? { media_error_code: row.media_error_code }
+        : {}),
+    },
+    [],
+    [],
+  );
+  copy.media_requested_skus = safe.media_requested_skus;
+  copy.media_batch_state = safe.media_batch_state;
+  copy.media_results = safe.media_results?.map(({ reason: _reason, ...item }) => item);
+  copy.media_unknown_skus = safe.media_unknown_skus;
+  copy.media_not_started_skus = safe.media_not_started_skus;
+  if (safe.media_error_code) copy.media_error_code = safe.media_error_code;
+  else delete copy.media_error_code;
+  return copy;
+}
+
 function cancelledResult(entry: JobEntry): JobResult {
   return {
     runId: entry.runId ?? `${new Date().toISOString().slice(0, 10)}-${entry.request.job}`,
@@ -157,28 +228,6 @@ function unknownMediaRecovery(entry: JobEntry): Partial<JobResult> {
     media_unknown_skus: skus,
     media_not_started_skus: [],
   };
-}
-
-function copyMediaRecovery(value: MediaSkuRecoveryPartition & { media_error_code?: unknown }): Partial<JobResult> {
-  return {
-    media_requested_skus: [...value.media_requested_skus],
-    media_batch_state: value.media_batch_state,
-    media_results: value.media_results.map((item) => ({ ...item })),
-    media_unknown_skus: [...value.media_unknown_skus],
-    media_not_started_skus: [...value.media_not_started_skus],
-    ...(value.media_error_code === "WP_AUTH_FAILED" || value.media_error_code === "WP_FORBIDDEN"
-      ? { media_error_code: value.media_error_code }
-      : {}),
-  };
-}
-
-function persistedMediaRecovery(entry: JobEntry, rows: Record<string, unknown>[]): Partial<JobResult> {
-  if (entry.request.job !== "media") return {};
-  const prior = rows.find((row) => row.run_id === entry.coreRunId && row.job === "media");
-  if (prior && matchesMediaRecoveryRequest(prior, entry.request.skus ?? [])) {
-    return copyMediaRecovery(prior);
-  }
-  return unknownMediaRecovery(entry);
 }
 
 function normalizeLimit(limit: number | undefined): number {
@@ -239,14 +288,12 @@ export function createJobManager(options: JobManagerOptions) {
   }
 
   async function appendSyntheticRunLog(entry: JobEntry, result: JobResult): Promise<JobResult> {
-    if (!entry.coreRunId) return result;
+    if (!entry.runId) return result;
     try {
       const filePath = path.join(entry.projectPath, entry.projectPaths.runs);
       const rows = await readJsonl(filePath);
-      const recovery = persistedMediaRecovery(entry, rows);
-      const safeResult = { ...result, ...recovery };
       const record: RunLog = {
-        run_id: entry.coreRunId,
+        run_id: entry.runId,
         job: entry.request.job,
         trigger: entry.trigger,
         device_name: entry.settings.device_name,
@@ -254,12 +301,21 @@ export function createJobManager(options: JobManagerOptions) {
         finished_at: new Date().toISOString(),
         status: result.status,
         ...(result.errors?.length ? { errors: result.errors } : {}),
-        ...recovery,
+        ...(isValidMediaSkuRecoveryPartition(result)
+          ? {
+              media_requested_skus: [...result.media_requested_skus],
+              media_batch_state: result.media_batch_state,
+              media_results: result.media_results.map((item) => ({ ...item })),
+              media_unknown_skus: [...result.media_unknown_skus],
+              media_not_started_skus: [...result.media_not_started_skus],
+              ...(result.media_error_code ? { media_error_code: result.media_error_code } : {}),
+            }
+          : {}),
       };
-      const next = rows.filter((row) => row.run_id !== entry.coreRunId);
+      const next = rows.filter((row) => row.run_id !== entry.runId);
       next.push(record as unknown as Record<string, unknown>);
       await writeJsonl(filePath, next, "run_log");
-      return safeResult;
+      return result;
     } catch {
       // 项目文件不可写时仍把失败结果发回界面。
       return result;
@@ -373,8 +429,7 @@ export function createJobManager(options: JobManagerOptions) {
       if (typeof message.runId !== "string" || typeof message.startedAt !== "string" || entry.runId) return;
       entry.runId = message.runId;
       entry.startedAt = message.startedAt;
-      entry.coreRunId = message.runId;
-      entry.runId = `${message.runId}-${randomUUID()}`;
+      if (entry.request.job === "media") entry.runId = `${message.runId}-${randomUUID()}`;
       entry.workerPid = entry.child.pid ?? null;
       clearTimeout(entry.startupTimer);
       entriesByRunId.set(entry.runId, entry);
@@ -398,7 +453,7 @@ export function createJobManager(options: JobManagerOptions) {
         (entry.request.job === "media" && !matchesMediaRecoveryRequest(message.result, entry.request.skus ?? []))
       )
         return;
-      entry.result = sanitizeJobResult(message.result, entry.sensitiveValues, entry.sensitiveUsernames);
+      entry.result = sanitizeMediaJobResult(message.result, entry.sensitiveValues, entry.sensitiveUsernames);
       entry.oosRate = typeof message.oosRate === "number" ? message.oosRate : null;
       entry.child.kill();
       return;
@@ -502,7 +557,6 @@ export function createJobManager(options: JobManagerOptions) {
         done,
         resolveDone,
         runId: null,
-        coreRunId: null,
         startedAt: null,
         result: null,
         oosRate: null,
@@ -574,7 +628,7 @@ export function createJobManager(options: JobManagerOptions) {
       const rows = await readJsonl(path.join(projectPath, projectPaths.runs));
       const history: RunLog[] = [];
       for (const row of rows) {
-        if (isRunLog(row)) history.push(row as unknown as RunLog);
+        if (isRunLog(row)) history.push(sanitizeMediaRunLog(row as unknown as RunLog));
       }
       return history
 

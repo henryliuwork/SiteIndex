@@ -136,7 +136,7 @@ describe("desktop job manager", () => {
     const { runId } = await start;
     expect(child.messages[0]).toMatchObject({ context: { browserPath: "C:/Browser/msedge.exe" } });
     await expect(manager.run({ projectPath, job: "weekly" })).rejects.toMatchObject({ code: "LOCKED" });
-    expect(runId).not.toBe("2026-10-23-daily");
+    expect(runId).toBe("2026-10-23-daily");
     expect(manager.running(path.basename(projectPath) as ProjectId)).toEqual({ runId, job: "daily" });
     const lockPath = await writeOwnedLock(projectPath, child, "daily");
 
@@ -715,7 +715,7 @@ describe("desktop job manager", () => {
     const [historyA, historyB] = await Promise.all([manager.history(projectAId), manager.history(projectBId)]);
     expect(historyA).toMatchObject([
       {
-        run_id: "2026-10-23-media",
+        run_id: runA.runId,
         job: "media",
         status: "failed",
         media_requested_skus: ["fixture-sku-a", "fixture-sku-b"],
@@ -724,7 +724,7 @@ describe("desktop job manager", () => {
     ]);
     expect(historyB).toMatchObject([
       {
-        run_id: "2026-10-23-media",
+        run_id: runB.runId,
         job: "media",
         status: "failed",
         media_requested_skus: ["fixture-sku-b"],
@@ -910,7 +910,7 @@ describe("desktop job manager", () => {
     expect(isValidMediaSkuRecoveryPartition((await manager.history(projectId))[0])).toBe(true);
   });
 
-  it("preserves verified media recovery rows and marks only the remaining SKUs unknown after a crash", async () => {
+  it("keeps an older same-day checkpoint separate and does not attribute it to the crashed execution", async () => {
     const projectPath = await projectDirectory("workspace");
     const projectId = path.basename(projectPath) as ProjectId;
     const projectPaths = pathsFor("workspace");
@@ -948,12 +948,19 @@ describe("desktop job manager", () => {
         job: "media",
         trigger: "manual",
         device_name: settings().device_name,
-        started_at: "2026-10-23T01:00:00.000Z",
-        finished_at: "2026-10-23T01:05:00.000Z",
+        started_at: "2026-10-23T00:30:00.000Z",
+        finished_at: "2026-10-23T00:35:00.000Z",
         status: "partial",
         media_requested_skus: ["fixture-confirmed", "fixture-unknown", "fixture-not-started"],
         media_batch_state: "outcome_unknown",
-        media_results: [{ sku: "fixture-confirmed", status: "uploaded", image_url: "https://cdn.fixture.test/a.jpg" }],
+        media_results: [
+          {
+            sku: "fixture-confirmed",
+            status: "uploaded",
+            reason: "Application password fixture-password",
+            image_url: "https://fixture-user:fixture-password@cdn.fixture.test/a.jpg",
+          },
+        ],
         media_unknown_skus: ["fixture-unknown"],
         media_not_started_skus: ["fixture-not-started"],
       })}\n`,
@@ -968,20 +975,92 @@ describe("desktop job manager", () => {
       status: "failed",
       media_batch_state: "outcome_unknown",
       media_requested_skus: ["fixture-confirmed", "fixture-unknown", "fixture-not-started"],
-      media_results: [{ sku: "fixture-confirmed", status: "uploaded", image_url: "https://cdn.fixture.test/a.jpg" }],
-      media_unknown_skus: ["fixture-unknown"],
-      media_not_started_skus: ["fixture-not-started"],
+      media_results: [],
+      media_unknown_skus: ["fixture-confirmed", "fixture-unknown", "fixture-not-started"],
+      media_not_started_skus: [],
     });
     const history = await manager.history(projectId);
     expect(history[0]).toMatchObject({
+      run_id: result.runId,
       status: "failed",
-      media_results: [{ sku: "fixture-confirmed", status: "uploaded", image_url: "https://cdn.fixture.test/a.jpg" }],
+      media_results: [],
+      media_unknown_skus: ["fixture-confirmed", "fixture-unknown", "fixture-not-started"],
+      media_not_started_skus: [],
+    });
+    expect(history[1]).toMatchObject({
+      run_id: "2026-10-23-media",
+      media_results: [{ sku: "fixture-confirmed", status: "uploaded" }],
       media_unknown_skus: ["fixture-unknown"],
       media_not_started_skus: ["fixture-not-started"],
     });
+    expect(JSON.stringify(history)).not.toContain("fixture-password");
+    expect(JSON.stringify(history)).not.toContain("fixture-user");
+    expect(JSON.stringify(history)).not.toContain("image_url");
     expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
     expect(isValidMediaSkuRecoveryPartition(history[0])).toBe(true);
+    expect(isValidMediaSkuRecoveryPartition(history[1])).toBe(true);
     await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("redacts current media worker reasons and drops unsafe image URLs before forwarding", async () => {
+    const projectPath = await projectDirectory("workspace");
+    const child = new FakeUtilityProcess();
+    let resolveFinished!: (result: JobResult) => void;
+    const finished = new Promise<JobResult>((resolve) => {
+      resolveFinished = resolve;
+    });
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings: async () => settings(),
+      isMediaJobReady: () => true,
+      getWordPressCredential: async () => ({ username: "fixture-user", applicationPassword: "fixture-password" }),
+      resolveProject: async () => projectPath,
+      fork: () => {
+        queueMicrotask(() => child.ready());
+        return child;
+      },
+      emitProgress: vi.fn(),
+      emitFinished: resolveFinished,
+      notify: vi.fn(),
+    });
+
+    await manager.runMedia({ projectPath, job: "media", skus: ["fixture-safe", "fixture-unsafe"] });
+    child.emit("message", {
+      type: "finished",
+      oosRate: null,
+      result: {
+        runId: "2026-10-23-media",
+        job: "media",
+        status: "partial",
+        exitCode: 1,
+        summary: "完成",
+        media_requested_skus: ["fixture-safe", "fixture-unsafe"],
+        media_batch_state: "complete",
+        media_results: [
+          { sku: "fixture-safe", status: "uploaded", reason: "saved", image_url: "https://cdn.fixture.test/safe.jpg" },
+          {
+            sku: "fixture-unsafe",
+            status: "failed",
+            reason: "Application password fixture-password",
+            image_url: "javascript:alert(1)",
+          },
+        ],
+        media_unknown_skus: [],
+        media_not_started_skus: [],
+      },
+    });
+
+    const result = await finished;
+    await vi.waitFor(() => expect(manager.activeCount).toBe(0));
+    expect(result).toMatchObject({
+      media_results: [
+        { sku: "fixture-safe", status: "uploaded", image_url: "https://cdn.fixture.test/safe.jpg" },
+        { sku: "fixture-unsafe", status: "failed" },
+      ],
+    });
+    expect(result.media_results?.[1]).not.toHaveProperty("image_url");
+    expect(JSON.stringify(result)).not.toContain("fixture-password");
+    expect(isValidMediaSkuRecoveryPartition(result)).toBe(true);
   });
 
   it("does not put worker fatal text into Desktop run history", async () => {
@@ -1041,7 +1120,7 @@ describe("desktop job manager", () => {
 
     await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(manager.history(path.basename(projectPath) as ProjectId)).resolves.toMatchObject([
-      { run_id: "2026-10-23-daily", status: "failed", errors: ["用户已取消任务。"] },
+      { run_id: runId, status: "failed", errors: ["用户已取消任务。"] },
     ]);
     expect(finished).toHaveLength(1);
     expect(finished[0]).toMatchObject({ runId, status: "failed", exitCode: 3 });
