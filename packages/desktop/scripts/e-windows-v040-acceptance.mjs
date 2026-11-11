@@ -2886,7 +2886,7 @@ async function runPackagedCredentialPhase(page, { alias, origin, phase, expected
       },
     });
   } catch (error) {
-    report.credentialIsolation.lastUiDiagnostics = await page.evaluate(() => {
+    const domDiagnostics = await page.evaluate(() => {
       const cards = [...document.querySelectorAll(".si-wp-credentials-card")];
       const regions = [...document.querySelectorAll(".si-wp-credential-origin")];
       return {
@@ -2898,6 +2898,23 @@ async function runPackagedCredentialPhase(page, { alias, origin, phase, expected
         appSettingsErrorVisible: document.querySelectorAll(".si-app-settings-page [role='alert']").length > 0,
       };
     }).catch(() => ({ diagnosticsAvailable: false }));
+    const selectorDiagnostics = await Promise.all(
+      [{ alias, origin }, ...otherSites].map(async (site) => {
+        const name = `凭据：${site.origin}`;
+        const count = async (locator) => locator.count().catch(() => -1);
+        return {
+          alias: site.alias,
+          roleMatchCount: await count(page.getByRole("region", { name })),
+          exactRoleMatchCount: await count(page.getByRole("region", { name, exact: true })),
+          exactAriaLabelMatchCount: await count(page.locator(`[aria-label="${name}"]`)),
+        };
+      }),
+    );
+    report.credentialIsolation.lastUiDiagnostics = {
+      stage: phase,
+      ...domDiagnostics,
+      selectorDiagnostics,
+    };
     throw error;
   }
   const state = phase === "assert-status" ? expectedState : phase === "delete" ? "not_configured" : "configured";
