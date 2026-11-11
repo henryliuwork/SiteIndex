@@ -16,8 +16,14 @@ const siteindex = createApiBridge({
 contextBridge.exposeInMainWorld("siteindex", siteindex);
 contextBridge.exposeInMainWorld(
   "siteindexWindow",
-  createWindowApi({
-    send: (channel, payload) => ipcRenderer.send(channel, payload),
-    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
-  }),
+  createWindowApi(
+    {
+      send: (channel, payload) => ipcRenderer.send(channel, payload),
+      invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+    },
+    process.env.SITEINDEX_CREDENTIAL_IPC_TRACE === "1"
+      ? (method) => console.info(`__SITEINDEX_CREDENTIAL_IPC__ ${method}`)
+      : undefined,
+    process.env.SITEINDEX_PROFILE_PATH_TRACE === "1",
+  ),
 );

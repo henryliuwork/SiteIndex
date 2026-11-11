@@ -30,8 +30,22 @@ import { backgroundPolicy, type BackgroundPolicy } from "./background-policy.js"
 import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type AppTray } from "./app-background.js";
 import { registerWordPressCredentialHandlers } from "./wordpress-credential-ipc.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
+import {
+  inspectProfilePaths,
+  profilePathsAreContained,
+  type ProfilePathDiagnosticSet,
+} from "./profile-path-diagnostic.js";
 
 const isRunJob = process.argv.includes("--run-job");
+const acceptanceProfileRoot = process.env.SITEINDEX_ACCEPTANCE_PROFILE_ROOT;
+let acceptanceProfileDiagnostics: ProfilePathDiagnosticSet | null = null;
+if (process.platform === "win32" && acceptanceProfileRoot && !app.isReady()) {
+  const appDataPath = join(acceptanceProfileRoot, "profile", "roaming");
+  app.setPath("appData", appDataPath);
+  app.setPath("userData", join(appDataPath, "SiteIndex"));
+  if (process.env.HOME) app.setPath("home", process.env.HOME);
+  if (process.env.TEMP) app.setPath("temp", process.env.TEMP);
+}
 const hasSingleInstanceLock = isRunJob || app.requestSingleInstanceLock();
 const mainDirectory = dirname(fileURLToPath(import.meta.url));
 const fallbackPath = resolve(mainDirectory, "../renderer/fallback.html");
@@ -80,6 +94,35 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    if (acceptanceProfileRoot) {
+      const profilePaths = await inspectProfilePaths(acceptanceProfileRoot, {
+        appData: app.getPath("appData"),
+        userData: app.getPath("userData"),
+        home: app.getPath("home"),
+        temp: app.getPath("temp"),
+        APPDATA: process.env.APPDATA,
+        LOCALAPPDATA: process.env.LOCALAPPDATA,
+        USERPROFILE: process.env.USERPROFILE,
+        HOME: process.env.HOME,
+        TEMP: process.env.TEMP,
+        TMP: process.env.TMP,
+      });
+      acceptanceProfileDiagnostics = profilePaths;
+      console.info(`SITEINDEX_PROFILE_PATHS ${JSON.stringify(profilePaths)}`);
+      if (!profilePathsAreContained(profilePaths)) {
+        console.error("SiteIndex isolated profile containment check failed; startup stopped before opening user data.");
+        app.exit(EXIT.BAD_ARGS);
+        return;
+      }
+      if (process.env.SITEINDEX_PROFILE_PATH_TRACE === "1") {
+        ipcMain.handle("si:desktop.profilePathDiagnostics", (event) => {
+          if (event.sender !== windowManager.getMainWindow()?.webContents || !acceptanceProfileDiagnostics) {
+            throw new Error("Profile path diagnostics are unavailable for this window.");
+          }
+          return acceptanceProfileDiagnostics;
+        });
+      }
+    }
     const settingsStore = createSettingsStore(join(app.getPath("appData"), "SiteIndex"));
     const wordpressCredentialVault = createWordPressCredentialVault({
       platform: process.platform,

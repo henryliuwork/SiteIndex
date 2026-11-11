@@ -6,12 +6,25 @@ on:
     paths:
       - ".github/workflows/e-windows-v040-acceptance.yml"
       - "packages/desktop/scripts/e-windows-v040-acceptance.mjs"
+      - "packages/desktop/scripts/credential-region-wait.mjs"
+      - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
       - "packages/desktop/scripts/e-windows-v041-reconnect.mjs"
       - "packages/desktop/scripts/e-windows-v040-synthetic-fixture.mjs"
+      - "packages/desktop/scripts/windows-appdata-redirect.mjs"
       - "packages/desktop/scripts/check-candidate-run.ps1"
       - "packages/desktop/test/e-windows-v040-synthetic-fixture.test.ts"
+      - "packages/desktop/test/credential-region-wait.test.ts"
+      - "packages/desktop/test/e-windows-profile-isolation.test.ts"
       - "packages/desktop/test/e-windows-v041-hosted-update.test.ts"
+      - "packages/desktop/test/windows-appdata-redirect.test.ts"
       - "packages/desktop/test/candidate-run-source.test.ps1"
+      - "packages/desktop/src/preload/index.ts"
+      - "packages/desktop/src/preload/window-api.ts"
+      - "packages/desktop/src/preload/window-api.test.ts"
+      - "packages/desktop/src/main/index.ts"
+      - "packages/desktop/src/main/profile-path-diagnostic.ts"
+      - "packages/desktop/src/main/profile-path-diagnostic.test.ts"
+      - "packages/ui/visual/wordpress-credentials-smoke.mjs"
   workflow_dispatch:
     inputs:
       expected_source_commit:
@@ -233,9 +246,7 @@ jobs:
           "SITEINDEX_CANDIDATE_ARTIFACT_ID=$candidateArtifactId" >> $env:GITHUB_ENV
           "SITEINDEX_EXPECTED_CANDIDATE_ARTIFACT_SHA256=$candidateArtifactSha256" >> $env:GITHUB_ENV
           "SITEINDEX_EXPECTED_CANDIDATE_SOURCE_COMMIT=$candidateSourceCommit" >> $env:GITHUB_ENV
-          "SITEINDEX_CANDIDATE_INSTALLER_URL=$candidateUrl" >> $env:GITHUB_ENV
-          New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "siteindex-e-windows-results") -Force | Out-Null
-          "SITEINDEX_ACCEPTANCE_OUTPUT=$(Join-Path $env:RUNNER_TEMP 'siteindex-e-windows-results')" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Path (Join-Path $PWD "siteindex-e-windows-results") -Force | Out-Null
           Write-Output "Windows build recorded: $($os.Version) build $($os.BuildNumber)"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -277,7 +288,6 @@ jobs:
           Invoke-WebRequest -Uri $env:CANDIDATE_URL -OutFile $installer
           $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $env:EXPECTED_SHA256.ToLowerInvariant()) { throw "Candidate installer SHA256 does not match the supplied digest." }
-          "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
           Write-Output "Supplied official candidate installer SHA256 verified."
       - name: Verify candidate workflow run and artifact provenance
@@ -337,21 +347,20 @@ jobs:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ inputs.candidate_workflow_run_id }}
-          path: ${{ runner.temp }}/siteindex-candidate-artifact
+          path: siteindex-candidate-artifact
           digest-mismatch: error
       - name: Verify candidate EXE from original artifact
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_workflow_run_id != '' }}
         shell: pwsh
         run: |
           $candidateVersion = $env:SITEINDEX_CANDIDATE_VERSION
-          $artifactDirectory = Join-Path $env:RUNNER_TEMP "siteindex-candidate-artifact"
+          $artifactDirectory = Join-Path $PWD "siteindex-candidate-artifact"
           $installerName = "SiteIndex-Setup-$candidateVersion.exe"
           $installer = Join-Path $artifactDirectory $installerName
           if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Candidate artifact is missing the expected installer filename." }
           $installers = @(Get-ChildItem -LiteralPath $artifactDirectory -Filter "SiteIndex-Setup-*.exe" -File -Recurse)
           if ($installers.Count -ne 1 -or $installers[0].FullName -ne $installer) { throw "Candidate artifact must contain exactly one installer for the requested version." }
           $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
           Write-Output "Verified original artifact EXE $installerName SHA256 $actual."
       - name: Verify and download pinned baseline Release installer
@@ -383,7 +392,6 @@ jobs:
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $installer
           $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -cne $expectedDigest) { throw "Downloaded baseline installer SHA256 does not match the pinned GitHub digest." }
-          "SITEINDEX_BASE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
           "SITEINDEX_BASE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
           Write-Output "Baseline v$version release tag, asset ID, GitHub digest, and downloaded EXE SHA256 verified."
       - name: Verify and download published hosted-update candidate
@@ -444,7 +452,6 @@ jobs:
           if ($actual -cne $expectedDigest) { throw "Downloaded candidate EXE SHA256 does not match the pinned GitHub digest." }
           $actualSha512 = [Convert]::ToBase64String([System.Security.Cryptography.SHA512]::HashData([System.IO.File]::ReadAllBytes($installer)))
           if ($actualSha512 -cne $feedSha512Match.Groups[1].Value) { throw "latest.yml SHA512 does not match the downloaded candidate installer." }
-          "SITEINDEX_CANDIDATE_INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_SOURCE_COMMIT=$($tagObject.sha)" >> $env:GITHUB_ENV
           "SITEINDEX_CANDIDATE_RELEASE_RUN_ID=$($releaseRun[0].id)" >> $env:GITHUB_ENV
@@ -478,25 +485,29 @@ jobs:
         env:
           SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
-          $oldInstaller = $env:SITEINDEX_BASE_INSTALLER_PATH
-          $candidateInstaller = if ($env:SITEINDEX_CANDIDATE_INSTALLER_PATH) {
-            $env:SITEINDEX_CANDIDATE_INSTALLER_PATH
+          $baselineVersion = $env:SITEINDEX_BASELINE_VERSION
+          $candidateVersion = $env:SITEINDEX_CANDIDATE_VERSION
+          $oldInstaller = Join-Path $env:RUNNER_TEMP "SiteIndex-Setup-$baselineVersion.exe"
+          if ($env:SITEINDEX_HOSTED_UPDATE -eq "true" -or $env:SITEINDEX_CANDIDATE_ARTIFACT_SOURCE -eq "candidate-installer-url") {
+            $candidateInstaller = Join-Path $env:RUNNER_TEMP "SiteIndex-Setup-$candidateVersion.exe"
+          } elseif ($env:SITEINDEX_CANDIDATE_ARTIFACT_SOURCE -eq "workflow-run-artifact") {
+            $candidateInstaller = Join-Path (Join-Path $PWD "siteindex-candidate-artifact") "SiteIndex-Setup-$candidateVersion.exe"
           } else {
-            $candidateVersion = $env:SITEINDEX_CANDIDATE_VERSION
-            Join-Path $PWD "release/SiteIndex-Setup-$candidateVersion.exe"
+            $candidateInstaller = Join-Path $PWD "release/SiteIndex-Setup-$candidateVersion.exe"
           }
+          $env:SITEINDEX_ACCEPTANCE_OUTPUT = Join-Path $PWD "siteindex-e-windows-results"
           node packages/desktop/scripts/e-windows-v040-acceptance.mjs $oldInstaller $candidateInstaller
       - name: Add acceptance summary to workflow
         if: always()
         shell: pwsh
         run: |
-          $summary = Join-Path $env:SITEINDEX_ACCEPTANCE_OUTPUT "summary.md"
+          $summary = Join-Path $PWD "siteindex-e-windows-results/summary.md"
           if (Test-Path -LiteralPath $summary) { Get-Content -LiteralPath $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
       - name: Upload synthetic-only results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: siteindex-e-windows-acceptance
-          path: ${{ runner.temp }}/siteindex-e-windows-results/
+          path: siteindex-e-windows-results/
           if-no-files-found: warn
           retention-days: 14

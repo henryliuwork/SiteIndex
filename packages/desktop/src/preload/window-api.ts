@@ -1,6 +1,7 @@
 import { TITLE_BAR_OVERLAY_COLOR_CHANNEL } from "../shared/titlebar-overlay-channel.js";
 import { WORDPRESS_CREDENTIAL_CHANNELS } from "../shared/wordpress-credential-channels.js";
 import type { WordPressCredentialInput, WordPressCredentialStatus } from "../shared/wordpress-credential-types.js";
+import type { ProfilePathDiagnosticSet } from "../main/profile-path-diagnostic.js";
 
 export interface WindowApiTransport {
   send(channel: string, payload: unknown): void;
@@ -16,16 +17,38 @@ export interface SiteIndexWindowApi {
     save(input: WordPressCredentialInput): Promise<void>;
     clear(siteUrl: string): Promise<void>;
   };
+  /** Test-only, boolean-only profile diagnostics enabled by the hosted Windows acceptance runner. */
+  getProfilePathDiagnostics?: () => Promise<ProfilePathDiagnosticSet>;
 }
 
-export function createWindowApi(transport: WindowApiTransport): SiteIndexWindowApi {
+export type WordPressCredentialIpcMethod = "status" | "save" | "clear";
+
+export function createWindowApi(
+  transport: WindowApiTransport,
+  traceCredentialIpc?: (method: WordPressCredentialIpcMethod) => void,
+  profilePathDiagnosticsEnabled = false,
+): SiteIndexWindowApi {
   return {
     setTitleBarOverlayColor: (color) => transport.send(TITLE_BAR_OVERLAY_COLOR_CHANNEL, color),
     wordpressCredentials: {
-      status: (siteUrl) =>
-        transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.status, siteUrl) as Promise<WordPressCredentialStatus>,
-      save: (input) => transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.save, input) as Promise<void>,
-      clear: (siteUrl) => transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.clear, siteUrl) as Promise<void>,
+      status: (siteUrl) => {
+        traceCredentialIpc?.("status");
+        return transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.status, siteUrl) as Promise<WordPressCredentialStatus>;
+      },
+      save: (input) => {
+        traceCredentialIpc?.("save");
+        return transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.save, input) as Promise<void>;
+      },
+      clear: (siteUrl) => {
+        traceCredentialIpc?.("clear");
+        return transport.invoke(WORDPRESS_CREDENTIAL_CHANNELS.clear, siteUrl) as Promise<void>;
+      },
     },
+    ...(profilePathDiagnosticsEnabled
+      ? {
+          getProfilePathDiagnostics: () =>
+            transport.invoke("si:desktop.profilePathDiagnostics") as Promise<ProfilePathDiagnosticSet>,
+        }
+      : {}),
   };
 }
