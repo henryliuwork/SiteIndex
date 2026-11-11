@@ -14,6 +14,7 @@ afterEach(() => {
 
 async function renderSettings(settingsOverride?: AppSettings) {
   const mockApi = createMockApi();
+  vi.spyOn(mockApi.app, "platform").mockResolvedValue("win32");
   const defaultSettings = await mockApi.settings.get();
   let savedSettings = settingsOverride ?? defaultSettings;
   vi.spyOn(mockApi.settings, "get").mockImplementation(async () => savedSettings);
@@ -65,5 +66,18 @@ describe("AppSettingsPage background options", () => {
     await screen.findByRole("heading", { name: "常规" });
     expect(screen.queryByRole("checkbox", { name: /关闭窗口时最小化到托盘/ })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: /开机时启动 SiteIndex/ })).toBeNull();
+  });
+  it("shows that WordPress credential status is unavailable without storing or exposing credentials", async () => {
+    const { mockApi, save } = await renderSettings();
+    await screen.findByRole("heading", { name: "WordPress 图片托管" });
+
+    expect(screen.getByText("暂不可读")).toBeTruthy();
+    expect(screen.getByText(/本机安全存储接口尚未接入/)).toBeTruthy();
+    expect(await screen.findByText(/不能作为本机凭据存储位置/)).toBeTruthy();
+    expect(screen.getByText(/不会自动迁移/)).toBeTruthy();
+    expect(screen.queryByLabelText(/WordPress.*(用户名|密码)/)).toBeNull();
+    expect(document.querySelectorAll('input[type="password"]')).toHaveLength(0);
+    expect(save).not.toHaveBeenCalled();
+    expect(mockApi.settings.get).toHaveBeenCalled();
   });
 });

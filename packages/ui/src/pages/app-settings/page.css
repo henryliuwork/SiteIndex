@@ -37,3 +37,10 @@
 .si-update-notes pre { max-height: 180px; margin: 8px 0 0; overflow: auto; color: var(--color-muted); font: var(--fw-body) var(--fs-body)/1.6 var(--font-sans); white-space: pre-wrap; }
 @media (max-width: 900px) { .si-app-setting-row { grid-template-columns: 160px minmax(0,1fr) auto; gap: 10px; } .si-notify-row { grid-template-columns: 160px minmax(0,1fr); } .si-notify-row > span { display: none; } }
 @media (max-width: 640px) { .si-app-settings-card { padding-right: 16px; padding-left: 16px; } .si-app-setting-row { grid-template-columns: 1fr; align-items: start; gap: 8px; } .si-app-setting-row > .si-button, .si-app-setting-row > .si-chip, .si-app-setting-row > .si-platform-actions, .si-update-settings-actions { justify-self: start; } .si-browser-detected > span:nth-child(2) { display: grid; } .si-setting-path { margin-left: 0; } }
+
+.si-wp-credentials-card { gap: var(--space-3); }
+.si-wp-credential-status-row { grid-template-columns: 200px auto minmax(0,1fr); }
+.si-wp-credentials-card .si-notice { min-width: 0; }
+.si-wp-credentials-card code { overflow-wrap: anywhere; color: var(--color-ink); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); }
+@media (max-width: 900px) { .si-wp-credential-status-row { grid-template-columns: 160px auto minmax(0,1fr); } }
+@media (max-width: 640px) { .si-wp-credential-status-row { grid-template-columns: 1fr; } }
