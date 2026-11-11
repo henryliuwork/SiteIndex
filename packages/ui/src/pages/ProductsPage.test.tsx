@@ -205,7 +205,7 @@ describe("ProductsPage 父 SKU 与变体库存交互", () => {
     fireEvent.click((await screen.findByText("演示独立配件", { selector: "strong" })).closest("tr")!);
     const drawer = await screen.findByRole("dialog");
     expect((await within(drawer).findAllByText("已下架")).length).toBe(2);
-    expect(within(drawer).getByText("商品页返回 404")).toBeTruthy();
+    expect(within(drawer).getByText("商品页不存在（404/410）")).toBeTruthy();
     expect(within(drawer).getByText("连续多次未见于 Feed")).toBeTruthy();
   });
 });

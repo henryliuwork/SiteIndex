@@ -25,7 +25,7 @@ function priceLabel(product: ProductView): string {
 
 function removedSkuReason(sku: SkuRecord): string | null {
   if (sku.status !== "removed") return null;
-  if (sku.removed_reason === "feed_absent_404") return "商品页返回 404";
+  if (sku.removed_reason === "feed_absent_404") return "商品页不存在（404/410）";
   if (sku.removed_reason === "feed_absent_aged") return "连续多次未见于 Feed";
   return "已从商品 Feed 移除";
 }

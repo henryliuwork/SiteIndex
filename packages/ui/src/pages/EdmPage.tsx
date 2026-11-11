@@ -13,7 +13,7 @@ type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
 const viewOptions: { value: ImageView; label: string }[] = [
   { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "no_feed", label: "未抓取到首图" },
-  { value: "has_manual", label: "已填手动图" }, { value: "none", label: "无 URL" },
+  { value: "has_manual", label: "已填手动图" }, { value: "none", label: "缺图" },
 ];
 
 type MediaDemoStatus = "queued" | MediaPrepareSkuResult["status"] | "unresolved";
@@ -30,6 +30,14 @@ const mediaDemoStatusTones: Record<MediaDemoStatus, "neutral" | "info" | "ok" | 
   queued: "warn", uploaded: "ok", reused: "info", recorded: "info",
   skipped_has_url: "neutral", failed: "danger", unresolved: "warn",
 };
+
+function isRecordableFeedImage(url: string): boolean {
+  try {
+    return /\.(?:jpe?g|png)$/i.test(new URL(url, "https://siteindex.invalid").pathname);
+  } catch {
+    return false;
+  }
+}
 
 function EdmGroupingPreview({ projectId, rule, enabled }: { projectId: string; rule: SkuGroupingRule; enabled: boolean }) {
   const previewQuery = useQuery({
@@ -172,22 +180,28 @@ export function EdmPage() {
     window.setTimeout(() => {
       const next: Record<string, MediaDemoRowState> = {};
       const counts = { uploaded: 0, reused: 0, recorded: 0, skipped_has_url: 0, failed: 0, unresolved: 0 };
-      const normalStatuses: MediaPrepareSkuResult["status"][] = ["uploaded", "reused", "recorded", "failed"];
+      const uploadStatuses: Extract<MediaPrepareSkuResult["status"], "uploaded" | "reused" | "failed">[] = ["uploaded", "reused", "failed"];
       let eligibleCount = 0;
       let stopped = false;
       for (const row of batch) {
-        if (row.feed_image_url || row.manual_image_url) {
-          next[row.sku] = { status: "skipped_has_url", reason: "已有 Feed 或手动图片 URL" };
+        if (stopped) {
+          next[row.sku] = { status: "unresolved", reason: "批次提前停止，未开始处理" };
+          counts.unresolved += 1;
+        } else if (row.manual_image_url) {
+          next[row.sku] = { status: "skipped_has_url", reason: "图片台账中已有 URL" };
           counts.skipped_has_url += 1;
-        } else if (mediaDemoOutcome !== "complete" && !stopped) {
+        } else if (row.feed_image_url && isRecordableFeedImage(row.feed_image_url)) {
+          next[row.sku] = { status: "recorded", reason: "Feed JPG/PNG 原图 URL 可直接记录" };
+          counts.recorded += 1;
+        } else if (!row.feed_image_url) {
+          next[row.sku] = { status: "failed", reason: "没有可处理的 Feed 图片 URL" };
+          counts.failed += 1;
+        } else if (mediaDemoOutcome !== "complete") {
           next[row.sku] = { status: "failed", reason: mediaDemoOutcome + "（模拟停批）" };
           counts.failed += 1;
           stopped = true;
-        } else if (mediaDemoOutcome !== "complete") {
-          next[row.sku] = { status: "unresolved", reason: "批次提前停止，未开始处理" };
-          counts.unresolved += 1;
         } else {
-          const status = normalStatuses[eligibleCount % normalStatuses.length]!;
+          const status = uploadStatuses[eligibleCount % uploadStatuses.length]!;
           next[row.sku] = { status, ...(status === "failed" ? { reason: "模拟单 SKU 失败" } : {}) };
           counts[status] += 1;
           eligibleCount += 1;

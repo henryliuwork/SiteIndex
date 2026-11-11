@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import type { SkuImageRow } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 beforeEach(() => {
@@ -25,7 +26,7 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
-async function renderEdmPage(groupingEnabled: boolean, mockMode = true) {
+async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[]) {
   const mockApi = createMockApi();
   const project = await mockApi.projects.get("demo");
   mockApi.projects.get = vi.fn(async () => ({
@@ -39,7 +40,10 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true) {
     },
   }));
   const listImages = vi.fn(mockApi.edm.listImages);
+  if (imageRows) listImages.mockImplementation(async () => ({ rows: imageRows, total: imageRows.length }));
   mockApi.edm.listImages = listImages;
+  const setManualImage = vi.fn(mockApi.edm.setManualImage);
+  mockApi.edm.setManualImage = setManualImage;
   const previewGrouping = vi.fn(async () => ({
     parents: 1,
     children: 2,
@@ -71,11 +75,19 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true) {
     </QueryClientProvider>
     </ToastProvider>,
   );
-  return { mockApi, listImages, previewGrouping };
+  return { mockApi, listImages, previewGrouping, setManualImage };
 }
 
 async function openMediaDemo() {
   fireEvent.click(await screen.findByRole("button", { name: "交互模拟（仅本地演示，不会上传或写入台账）" }));
+}
+
+function mediaImageRow(sku: string, feedImageUrl: string | null, manualImageUrl: string | null = null): SkuImageRow {
+  return {
+    sku, title: "虚构演示商品 " + sku, variant_title: null, stock_status: "in_stock",
+    feed_image_url: feedImageUrl, manual_image_url: manualImageUrl,
+    used: manualImageUrl ? "manual" : feedImageUrl ? "feed" : "none",
+  };
 }
 
 describe("EdmPage D-5", () => {
@@ -87,6 +99,7 @@ describe("EdmPage D-5", () => {
     expect(screen.getByRole("option", { name: "100" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "200" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "全部" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "缺图" })).toBeTruthy();
 
     fireEvent.click(parentOnly);
     await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({
@@ -109,8 +122,14 @@ describe("EdmPage D-5", () => {
 });
 
 describe("EdmPage media preparation prototype", () => {
-  it("在 mock 中提供明确不会上传的多选演示，并展示逐 SKU 结果状态", async () => {
-    const { mockApi } = await renderEdmPage(true);
+  it("仅跳过已有台账 URL，Feed JPG/PNG 直接记录，WebP 进入上传候选", async () => {
+    const rows = [
+      mediaImageRow("DEMO-LEDGER-001", "https://demo-store.example.test/demo/main.jpg", "https://images.example.test/demo/DEMO-LEDGER-001.jpg"),
+      mediaImageRow("DEMO-FEED-JPG-001", "https://demo-store.example.test/demo/main.jpg"),
+      mediaImageRow("DEMO-FEED-PNG-001", "https://demo-store.example.test/demo/main.png?variant=1"),
+      mediaImageRow("DEMO-FEED-WEBP-001", "https://demo-store.example.test/demo/main.webp"),
+    ];
+    const { mockApi, setManualImage } = await renderEdmPage(true, true, rows);
     const toggle = await screen.findByRole("button", { name: "交互模拟（仅本地演示，不会上传或写入台账）" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(toggle.getAttribute("aria-controls")).toBe("si-edm-media-demo-panel");
@@ -125,15 +144,25 @@ describe("EdmPage media preparation prototype", () => {
     expect(button.hasAttribute("disabled")).toBe(false);
     fireEvent.click(button);
 
-    expect(await screen.findByText(/上传 \d+|复用 \d+|记录 \d+/)).toBeTruthy();
-    expect(screen.getAllByText(/（模拟）/).length).toBeGreaterThan(0);
+    expect(await screen.findByText("上传 1，记录 2，已有 URL 跳过 1")).toBeTruthy();
+    const results = screen.getByRole("list", { name: "模拟逐 SKU 结果" });
+    expect(within(results).getByText("已上传（模拟）")).toBeTruthy();
+    expect(within(results).getAllByText("原图 URL 已记录（模拟）")).toHaveLength(2);
+    expect(within(results).getByText("已有 URL，已跳过（模拟）")).toBeTruthy();
+    expect(setManualImage).not.toHaveBeenCalled();
   }, 15_000);
 
   it.each([
     ["WP_AUTH_FAILED", "401 认证失败并停批"],
     ["WP_FORBIDDEN", "403 权限不足并停批"],
   ] as const)("展示 %s 停批代码与未决行", async (errorCode, optionLabel) => {
-    await renderEdmPage(true);
+    const rows = [
+      mediaImageRow("DEMO-A-WEBP-001", "https://demo-store.example.test/demo/main.webp"),
+      mediaImageRow("DEMO-B-LEDGER-001", "https://demo-store.example.test/demo/main.jpg", "https://images.example.test/demo/DEMO-B-LEDGER-001.jpg"),
+      mediaImageRow("DEMO-C-FEED-PNG-001", "https://demo-store.example.test/demo/main.png"),
+      mediaImageRow("DEMO-D-WEBP-001", "https://demo-store.example.test/demo/second.webp"),
+    ];
+    await renderEdmPage(true, true, rows);
     await openMediaDemo();
     fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
     fireEvent.click(await screen.findByRole("combobox", { name: "模拟媒体准备结果" }));
@@ -141,8 +170,17 @@ describe("EdmPage media preparation prototype", () => {
     fireEvent.click(await screen.findByRole("button", { name: /模拟获取图片 URL/ }));
 
     expect(await screen.findByText(new RegExp(errorCode + ".*模拟批次提前停止.*尚未开始"))).toBeTruthy();
-    expect(screen.getAllByText("尚未开始（模拟）").length).toBeGreaterThan(0);
+    const results = screen.getByRole("list", { name: "模拟逐 SKU 结果" });
+    expect(within(results).getAllByText("尚未开始（模拟）")).toHaveLength(3);
+    expect(within(results).queryByText("已有 URL，已跳过（模拟）")).toBeNull();
+    expect(within(results).queryByText("原图 URL 已记录（模拟）")).toBeNull();
   }, 15_000);
+
+  it("默认 mock 提供虚构 WebP Feed 图片作为上传候选", async () => {
+    const mockApi = createMockApi();
+    const page = await mockApi.edm.listImages("demo", { page: 1, pageSize: 50, filters: {} });
+    expect(page.rows.some((row) => row.feed_image_url?.endsWith(".webp"))).toBe(true);
+  });
 
   it("桌面 IPC 尚未接入时只说明不可用，不渲染可执行上传按钮", async () => {
     await renderEdmPage(true, false);
