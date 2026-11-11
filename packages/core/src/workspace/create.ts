@@ -549,7 +549,7 @@ export async function createWorkspaceFiles(
         createdFiles,
       );
     }
-    await writeExclusive(path.join(target, ".env"), "wp_base_url=\nwp_username=\nwp_app_password=\n", createdFiles);
+    await writeExclusive(path.join(target, ".env"), "", createdFiles);
     await ensureDirectory(path.join(target, "_tmp"), target, createdDirectories);
     await writeExclusive(path.join(target, "_tmp", "README.md"), "此目录用于临时处理中间文件。\n", createdFiles);
     await initializeData(target, paths, config, createdFiles, createdDirectories);
