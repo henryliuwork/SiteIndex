@@ -147,6 +147,13 @@ describe("EdmPage D-5", () => {
     })));
   }, 15_000);
 
+  it("SKU 清单导出契约和后端未就绪时不显示导出入口", async () => {
+    await renderEdmPage(true);
+
+    expect(await screen.findByRole("button", { name: "复制 edm-builder 指令" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /导出.*清单/ })).toBeNull();
+  }, 15_000);
+
   it("未启用分组时点击父 SKU 筛选展示 Core 预览并引导到项目设置", async () => {
     const { mockApi, previewGrouping } = await renderEdmPage(false);
     fireEvent.click(await screen.findByRole("checkbox", { name: "仅展示父 SKU" }));
