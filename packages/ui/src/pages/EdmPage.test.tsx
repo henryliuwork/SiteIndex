@@ -166,6 +166,85 @@ describe("EdmPage D-5", () => {
     fireEvent.click(screen.getByRole("button", { name: "前往项目设置" }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/p/demo/settings/config?section=sku-grouping"));
   }, 15_000);
+
+  it("清单原型默认完整范围，所选范围隔离输出并演示幂等重生成", async () => {
+    const rows = [
+      mediaImageRow("DEMO-EXPORT-001", "https://demo-store.example.test/demo/one.jpg"),
+      mediaImageRow("DEMO-EXPORT-002", "https://demo-store.example.test/demo/two.jpg"),
+    ];
+    await renderEdmPage(true, true, rows);
+    await openMediaDemo();
+    fireEvent.click(screen.getByText("展开 EDM 导出与重启恢复原型（仅本地 mock）"));
+
+    const fullScope = screen.getByRole("radio", { name: /全项目 SKU/ });
+    const selectedScope = screen.getByRole("radio", { name: /当前选中 SKU/ });
+    expect(fullScope.hasAttribute("checked") || (fullScope as HTMLInputElement).checked).toBe(true);
+    expect(selectedScope.parentElement?.textContent).toContain("未来设想");
+    expect(selectedScope.parentElement?.textContent).toContain("未确认");
+    expect((selectedScope as HTMLInputElement).disabled).toBe(true);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    expect((selectedScope as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(selectedScope);
+    fireEvent.click(screen.getByRole("button", { name: "预览未来所选 SKU 副本（未确认，2）" }));
+    expect(screen.getByText(/未来设想（尚未确认）：仅包含当前选择的 2 个 SKU/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认模拟" }));
+    expect(await screen.findByText(/未来设想预览了 2 个 SKU 的独立副本；不影响全项目清单，也没有写入文件/)).toBeTruthy();
+
+    fireEvent.click(fullScope);
+    fireEvent.click(screen.getByRole("button", { name: "生成完整清单（模拟）" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认模拟" }));
+    expect(await screen.findByText(/全项目清单首次生成完成。演示没有写入文件/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "更新完整清单（模拟）" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认模拟" }));
+    expect(await screen.findByText(/重复生成且内容未变化/)).toBeTruthy();
+  }, 15_000);
+
+  it.each([
+    ["interrupted", "应用关闭时中断", "中断时状态未知", "尚未开始"],
+    ["permission-stopped", "403 权限错误后停止", "WordPress 权限不足（403），批次已停止", "尚未开始"],
+  ] as const)("重启恢复原型展示 %s 的逐 SKU 状态与项目归属", async (scenario, option, result, unstarted) => {
+    await renderEdmPage(true);
+    await openMediaDemo();
+    fireEvent.click(screen.getByText("展开 EDM 导出与重启恢复原型（仅本地 mock）"));
+    if (scenario !== "interrupted") {
+      fireEvent.click(screen.getByRole("combobox", { name: "模拟恢复场景" }));
+      fireEvent.click(await screen.findByRole("option", { name: option }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "模拟重启并恢复结果" }));
+
+    const recovery = await screen.findByRole("region", { name: "重启恢复原型结果" });
+    expect(within(recovery).getByText(/恢复归属项目：/)).toBeTruthy();
+    expect(within(recovery).getByText(result)).toBeTruthy();
+    expect(within(recovery).getAllByText(unstarted)).toHaveLength(2);
+    expect(within(recovery).getByRole("list", { name: "恢复逐 SKU 结果示例" })).toBeTruthy();
+  }, 15_000);
+
+  it("切换项目后重置清单与恢复原型状态及所选 SKU", async () => {
+    const rows = [mediaImageRow("DEMO-PROJECT-SWITCH-001", "https://demo-store.example.test/demo/one.jpg")];
+    await renderEdmPage(true, true, rows);
+    await openMediaDemo();
+    fireEvent.click(screen.getByText("展开 EDM 导出与重启恢复原型（仅本地 mock）"));
+    fireEvent.click(screen.getByRole("button", { name: "生成完整清单（模拟）" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认模拟" }));
+    expect(await screen.findByText(/全项目清单首次生成完成/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "模拟重启并恢复结果" }));
+    expect(await screen.findByRole("region", { name: "重启恢复原型结果" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(screen.getByRole("radio", { name: /当前选中 SKU/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "切换项目" }));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/p/other/edm"));
+    fireEvent.click(await screen.findByText("展开 EDM 导出与重启恢复原型（仅本地 mock）"));
+
+    const fullScope = screen.getByRole("radio", { name: /全项目 SKU/ });
+    const selectedScope = screen.getByRole("radio", { name: /当前选中 SKU/ });
+    expect((fullScope as HTMLInputElement).checked).toBe(true);
+    expect((selectedScope as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "生成完整清单（模拟）" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "重启恢复原型结果" })).toBeNull();
+  }, 15_000);
 });
 
 describe("EdmPage media preparation prototype", () => {
@@ -256,6 +335,7 @@ describe("EdmPage media preparation prototype", () => {
   it("桌面 IPC 尚未接入时只说明不可用，不渲染可执行上传按钮", async () => {
     await renderEdmPage(true, false);
     expect(await screen.findByText(/media\.prepare 尚未完成 Core 与 Desktop 接入/)).toBeTruthy();
+    expect(screen.queryByText("展开 EDM 导出与重启恢复原型（仅本地 mock）")).toBeNull();
     expect(screen.queryByRole("button", { name: /模拟获取图片 URL|获取图片 URL/ })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: "选择当前页全部行" })).toBeNull();
   });
