@@ -2,7 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { SkuStockView } from "@siteindex/shared";
-import { InventoryHistoryCell, InventoryRateCell } from "./table-cells";
+import { formatInventoryDuration, InventoryHistoryCell, InventoryRateCell } from "./table-cells";
 
 const baseRow: SkuStockView = {
   sku: "DEMO-PARENT", title: "虚构演示商品", variant_title: null,
@@ -13,6 +13,12 @@ const baseRow: SkuStockView = {
 };
 
 describe("Inventory table aggregate cells", () => {
+  it("does not display placeholder duration for a parent SKU, while keeping real child duration", () => {
+    expect(formatInventoryDuration(baseRow)).toBe("—");
+    expect(formatInventoryDuration({ is_parent: false, days_in_status: 18 })).toBe("18 天");
+    expect(formatInventoryDuration({ is_parent: false, days_in_status: 1 })).toBe("今天");
+  });
+
   it("shows a dash without a rate track for missing aggregate rates", () => {
     const { container } = render(<InventoryRateCell value={null} />);
     expect(screen.getByText("—")).toBeTruthy();

@@ -11,7 +11,7 @@ import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, Drawer, FilterBar, formatDateTime, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, StatusCells, stockTone, useToast } from "../components";
 import { selectInventoryCategoryRates } from "./inventory/categories";
-import { InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
+import { formatInventoryDuration, InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { DEFAULT_TREND_CATEGORY_LIMIT, MAX_TREND_CATEGORY_LIMIT, defaultTrendCategories, toggleTrendCategory, trendPoints } from "./inventory/trend";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 
@@ -219,7 +219,7 @@ function StockDetail({ row }: { row: InventoryTableRow }) {
         {row.is_parent && <div><dt>子 SKU</dt><dd>{row.children_count ?? 0} 个 · 有货 {row.in_stock_children_count ?? 0} 个</dd></div>}
         <div><dt>变体</dt><dd>{row.variant_title ?? "—"}</dd></div>
         <div><dt>价格</dt><dd className="si-mono">{row.price.toFixed(2)}</dd></div>
-        <div><dt>当前状态持续</dt><dd>{row.days_in_status} 天</dd></div>
+        <div><dt>当前状态持续</dt><dd>{formatInventoryDuration(row)}</dd></div>
         {!row.is_parent && <div><dt>7 天在线率</dt><dd>{formatRate(row.online_rate_7d)}</dd></div>}
         {!row.is_parent && <div><dt>30 天在线率</dt><dd>{formatRate(row.online_rate_30d)}</dd></div>}
         <div><dt>30 天状态变化</dt><dd>{row.changes_30d} 次</dd></div>
@@ -244,7 +244,7 @@ function inventoryColumns(): ColumnDef<InventoryTableRow, unknown>[] {
     { id: "category", accessorKey: "category", header: "分类", meta: { width: 150, grow: 1, minWidth: 120, text: "single" }, cell: ({ row }) => <span className="si-mono">{row.original.category}</span>, enableSorting: true },
     { id: "price", accessorKey: "price", header: "价格", meta: { width: 96, grow: 0, minWidth: 88, align: "end", text: "single" }, cell: ({ row }) => <span className="si-mono">{row.original.price.toFixed(2)}</span>, enableSorting: true },
     { id: "stock_status", accessorKey: "stock_status", header: "当前状态", meta: { width: 104, grow: 0, minWidth: 94, text: "single" }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockNames[row.original.stock_status]}</Chip>, enableSorting: true },
-    { id: "days_in_status", accessorKey: "days_in_status", header: "持续", meta: { width: 84, grow: 0, minWidth: 76, align: "end", text: "single" }, cell: ({ row }) => row.original.days_in_status >= 60 ? "60 天+" : row.original.days_in_status <= 1 ? "今天" : row.original.days_in_status + " 天", enableSorting: true },
+    { id: "days_in_status", accessorKey: "days_in_status", header: "持续", meta: { width: 84, grow: 0, minWidth: 76, align: "end", text: "single" }, cell: ({ row }) => formatInventoryDuration(row.original), enableSorting: true },
     { id: "online_rate_30d", accessorKey: "online_rate_30d", header: "30 天在线率", meta: { width: 140, grow: 0, minWidth: 128, align: "end", text: "single" }, cell: ({ row }) => <InventoryRateCell value={row.original.online_rate_30d} />, enableSorting: true },
     { id: "history_30d", accessorKey: "history_30d", header: "近 30 天（左旧右新）", meta: { width: 184, grow: 0, minWidth: 168, text: "single" }, cell: ({ row }) => <InventoryHistoryCell row={row.original} />, enableSorting: false },
     { id: "last_change", accessorKey: "last_change", header: "最近变化", meta: { width: 180, grow: 1, minWidth: 150, text: "clamp2" }, cell: ({ row }) => row.original.last_change ? <span className="si-last-change"><strong>{row.original.last_change_at ?? "近期"}</strong><small>{row.original.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
