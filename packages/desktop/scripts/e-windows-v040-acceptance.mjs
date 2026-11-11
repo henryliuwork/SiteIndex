@@ -92,6 +92,7 @@ let testProfileCreated = false;
 let failed = null;
 let workspaceProbeData = null;
 let syntheticSiteServer = null;
+let w2RuntimeDiagnostics = [];
 
 function record(name, passed, evidence = {}) {
   report.checks.push({ name, status: passed ? "passed" : "failed", evidence });
@@ -652,28 +653,77 @@ async function packagedW2Baseline(page) {
 }
 
 async function attemptW2(name, evidenceType, action) {
+  const diagnosticsStart = w2RuntimeDiagnostics.length;
+  const checkNumber = report.w2Acceptance.checks.length + 1;
   try {
     const result = await action();
-    recordW2(name, result.passed, evidenceType, result.evidence ?? result);
+    const evidence = result.evidence ?? result;
+    if (!result.passed) {
+      evidence.runtimeDiagnostics = w2RuntimeDiagnostics.slice(diagnosticsStart).slice(0, 20);
+      try {
+        evidence.failureScreenshot = await captureW2FailureScreenshot(pageForW2Diagnostics, checkNumber);
+      } catch (error) {
+        evidence.failureScreenshotError = safeMessage(error);
+      }
+    }
+    recordW2(name, result.passed, evidenceType, evidence);
     return result;
   } catch (error) {
-    recordW2(name, false, evidenceType, { error: safeMessage(error) });
+    const evidence = {
+      error: safeMessage(error),
+      runtimeDiagnostics: w2RuntimeDiagnostics.slice(diagnosticsStart).slice(0, 20),
+    };
+    try {
+      evidence.failureScreenshot = await captureW2FailureScreenshot(pageForW2Diagnostics, checkNumber);
+    } catch (screenshotError) {
+      evidence.failureScreenshotError = safeMessage(screenshotError);
+    }
+    recordW2(name, false, evidenceType, evidence);
     return null;
   }
 }
 
+let pageForW2Diagnostics = null;
+
+async function captureW2FailureScreenshot(page, checkNumber) {
+  if (!page || page.isClosed()) return null;
+  const outputDirectory = OUTPUT_DIR ? path.join(OUTPUT_DIR, "w2-failures") : path.join(TEST_ROOT, "w2-failures");
+  await mkdir(outputDirectory, { recursive: true });
+  const fileName = `w2-check-${String(checkNumber).padStart(2, "0")}-failure.png`;
+  await page.screenshot({ path: path.join(outputDirectory, fileName), fullPage: true });
+  return path.join("w2-failures", fileName);
+}
+
 async function acceptNextW2Dialog(page, trigger) {
-  const dialogPromise = page.waitForEvent("dialog", { timeout: 10_000 });
-  try {
-    await trigger();
-    const dialog = await dialogPromise;
+  let resolveDialogHandled;
+  const dialogHandled = new Promise((resolve) => { resolveDialogHandled = resolve; });
+  const handler = (dialog) => {
     const message = dialog.message();
-    await dialog.accept();
-    return message;
-  } catch (error) {
-    const dialog = await dialogPromise.catch(() => null);
-    await dialog?.dismiss().catch(() => undefined);
-    throw error;
+    void dialog.accept().then(
+      () => resolveDialogHandled({ observed: true, accepted: true, message }),
+      (error) => resolveDialogHandled({ observed: true, accepted: false, message, error: safeMessage(error) }),
+    );
+  };
+  page.once("dialog", handler);
+  let actionError = null;
+  try {
+    try {
+      await trigger();
+    } catch (error) {
+      actionError = safeMessage(error);
+    }
+    const result = await Promise.race([dialogHandled, delay(1_000).then(() => null)]);
+    return {
+      confirmationType: "native-window.confirm",
+      actionCompleted: actionError === null,
+      actionError,
+      dialogObserved: Boolean(result?.observed),
+      dialogAccepted: Boolean(result?.accepted),
+      message: result?.message ?? null,
+      dialogError: result?.error ?? null,
+    };
+  } finally {
+    page.off("dialog", handler);
   }
 }
 
@@ -690,6 +740,83 @@ async function readW2SeoStatusCounts(page, rule) {
   }, { projectId: W2_PROJECT_ID, targetRule: rule });
 }
 
+async function readW2SeoUiContext(page) {
+  return page.evaluate(() => {
+    const [, query = ""] = window.location.hash.split("?");
+    const params = new URLSearchParams(query);
+    const statusControl = document.querySelector('.si-seo-dropdown-trigger[aria-label^="状态"]');
+    return {
+      onSeoRoute: /\/seo(?:\?|$)/u.test(window.location.hash),
+      rule: params.get("rule"),
+      status: params.get("status"),
+      issueRowCount: document.querySelectorAll(".si-data-table tbody tr").length,
+      statusLabelPresent: Boolean(statusControl),
+    };
+  });
+}
+
+async function clickW2IssueActionWithConfirmation(page, menuItemName) {
+  const row = page.locator(".si-data-table tbody tr").first();
+  const actionButton = row.getByRole("button", { name: /问题操作：/u });
+  const rowCount = await page.locator(".si-data-table tbody tr").count();
+  const actionButtonCount = await actionButton.count();
+  if (rowCount === 0 || actionButtonCount !== 1) {
+    return {
+      confirmationType: "native-window.confirm",
+      actionCompleted: false,
+      actionError: "指定问题行或其操作按钮数量不符合预期",
+      dialogObserved: false,
+      dialogAccepted: false,
+      message: null,
+      dialogError: null,
+      rowCount,
+      actionButtonCount,
+      menuItemCount: 0,
+      menuItemVisible: false,
+    };
+  }
+
+  let menuItemCount = 0;
+  let menuItemVisible = false;
+  try {
+    await actionButton.click({ timeout: 5_000 });
+    const menuItem = page.getByRole("menuitem", { name: menuItemName, exact: true });
+    menuItemCount = await menuItem.count();
+    menuItemVisible = menuItemCount === 1 && await menuItem.isVisible();
+    if (!menuItemVisible) {
+      return {
+        confirmationType: "native-window.confirm",
+        actionCompleted: false,
+        actionError: "指定操作菜单项未唯一显示",
+        dialogObserved: false,
+        dialogAccepted: false,
+        message: null,
+        dialogError: null,
+        rowCount,
+        actionButtonCount,
+        menuItemCount,
+        menuItemVisible,
+      };
+    }
+    const confirmation = await acceptNextW2Dialog(page, () => menuItem.click({ timeout: 5_000 }));
+    return { ...confirmation, rowCount, actionButtonCount, menuItemCount, menuItemVisible };
+  } catch (error) {
+    return {
+      confirmationType: "native-window.confirm",
+      actionCompleted: false,
+      actionError: safeMessage(error),
+      dialogObserved: false,
+      dialogAccepted: false,
+      message: null,
+      dialogError: null,
+      rowCount,
+      actionButtonCount,
+      menuItemCount,
+      menuItemVisible,
+    };
+  }
+}
+
 async function waitForW2SeoCount(page, rule, status, count) {
   await page.waitForFunction(async ({ projectId, targetRule, targetStatus, expectedCount }) => {
     const result = await window.siteindex.seo.listIssues(projectId, {
@@ -700,6 +827,16 @@ async function waitForW2SeoCount(page, rule, status, count) {
 }
 
 async function testW2Pages(page, syntheticSite) {
+  pageForW2Diagnostics = page;
+  w2RuntimeDiagnostics = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") {
+      w2RuntimeDiagnostics.push({ type: `console-${message.type()}`, message: safeMessage(message.text()) });
+    }
+  });
+  page.on("pageerror", (error) => {
+    w2RuntimeDiagnostics.push({ type: "pageerror", message: safeMessage(error) });
+  });
   let baseline = null;
   await attemptW2("W2 baseline data is served by the packaged IPC", "packaged-ipc", async () => {
     baseline = await packagedW2Baseline(page);
@@ -772,37 +909,120 @@ async function testW2Pages(page, syntheticSite) {
   });
 
   await attemptW2("SEO issue action marks a row processed and restores it through the UI", "ui", async () => {
+    await waitForW2Table(page);
+    const initialUi = await readW2SeoUiContext(page);
     const before = await readW2SeoStatusCounts(page, "title_missing");
-    const processedConfirmation = await acceptNextW2Dialog(page, async () => {
-      await page.getByRole("button", { name: /问题操作：/u }).first().click();
-      await page.getByRole("menuitem", { name: "标记已处理", exact: true }).click();
-    });
-    const processedConfirmationMatches = processedConfirmation.includes("标记为已处理？")
-      && processedConfirmation.includes("单条 SEO 问题");
-    await waitForW2SeoCount(page, "title_missing", "fixed", 1);
-    await page.waitForFunction((expected) => {
-      const count = document.querySelector(".si-data-table .si-pagination-count")?.textContent ?? "";
-      return count.includes(`/ ${expected}`);
-    }, String(before.open - 1), { timeout: 10_000 });
+    const routeAndFilterReady = initialUi.onSeoRoute && initialUi.rule === "title_missing"
+      && initialUi.status === "open" && initialUi.issueRowCount > 0;
+    const processedConfirmation = routeAndFilterReady
+      ? await clickW2IssueActionWithConfirmation(page, "标记已处理")
+      : {
+        confirmationType: "native-window.confirm",
+        actionCompleted: false,
+        actionError: "操作前的 SEO 页面或 open 筛选不符合预期",
+        dialogObserved: false,
+        dialogAccepted: false,
+        message: null,
+        dialogError: null,
+        rowCount: initialUi.issueRowCount,
+        actionButtonCount: 0,
+        menuItemCount: 0,
+        menuItemVisible: false,
+      };
+    const processedConfirmationMatches = processedConfirmation.dialogObserved
+      && processedConfirmation.dialogAccepted
+      && processedConfirmation.message?.includes("标记为已处理？")
+      && processedConfirmation.message?.includes("单条 SEO 问题");
+    let processedWaitError = null;
+    try {
+      await waitForW2SeoCount(page, "title_missing", "fixed", before.fixed + 1);
+    } catch (error) {
+      processedWaitError = safeMessage(error);
+    }
+    const expectedOpenAfterProcess = before.open - 1;
+    let openPaginationWaitError = null;
+    try {
+      await page.waitForFunction((expected) => {
+        const count = document.querySelector(".si-data-table .si-pagination-count")?.textContent ?? "";
+        return count.includes(`/ ${expected}`);
+      }, String(expectedOpenAfterProcess), { timeout: 10_000 });
+    } catch (error) {
+      openPaginationWaitError = safeMessage(error);
+    }
     const afterFixed = await readW2SeoStatusCounts(page, "title_missing");
     const statusFilter = page.locator('.si-seo-dropdown-trigger[aria-label^="状态"]');
-    await statusFilter.click();
-    await page.getByRole("group", { name: "状态" }).getByRole("button", { name: "已处理", exact: true }).click();
-    await waitForW2Table(page);
-    const restoreConfirmation = await acceptNextW2Dialog(page, async () => {
-      await page.getByRole("button", { name: /问题操作：/u }).first().click();
-      await page.getByRole("menuitem", { name: "恢复为待处理", exact: true }).click();
-    });
-    const restoreConfirmationMatches = restoreConfirmation.includes("恢复")
-      && restoreConfirmation.includes("单条 SEO 问题");
-    await waitForW2SeoCount(page, "title_missing", "open", W2_EXPECTED.issues - 6);
+    let restoreFilterError = null;
+    let restoredUi = null;
+    try {
+      await statusFilter.click();
+      await page.getByRole("group", { name: "状态" }).getByRole("button", { name: "已处理", exact: true }).click();
+      await waitForW2Table(page);
+      restoredUi = await readW2SeoUiContext(page);
+    } catch (error) {
+      restoreFilterError = safeMessage(error);
+    }
+    const restoreActionButtonCount = await page.getByRole("button", { name: /问题操作：/u }).count();
+    let restoreConfirmation = {
+      confirmationType: "native-window.confirm",
+      actionCompleted: false,
+      actionError: restoreFilterError ?? "没有可见的已处理行可恢复",
+      dialogObserved: false,
+      dialogAccepted: false,
+      message: null,
+      dialogError: null,
+      rowCount: 0,
+      actionButtonCount: 0,
+      menuItemCount: 0,
+      menuItemVisible: false,
+    };
+    if (restoreFilterError === null && restoreActionButtonCount > 0) {
+      restoreConfirmation = restoredUi?.onSeoRoute && restoredUi.rule === "title_missing" && restoredUi.status === "fixed"
+        ? await clickW2IssueActionWithConfirmation(page, "恢复为待处理")
+        : { ...restoreConfirmation, actionError: "恢复操作前的 SEO 页面或已处理筛选不符合预期" };
+    }
+    const restoreConfirmationMatches = restoreConfirmation.dialogObserved
+      && restoreConfirmation.dialogAccepted
+      && restoreConfirmation.message?.includes("恢复")
+      && restoreConfirmation.message?.includes("单条 SEO 问题");
+    let restoreWaitError = null;
+    if (restoreConfirmation.dialogAccepted) {
+      try {
+        await waitForW2SeoCount(page, "title_missing", "open", before.open);
+      } catch (error) {
+        restoreWaitError = safeMessage(error);
+      }
+    }
     const statusCounts = await readW2SeoStatusCounts(page, "title_missing");
-    const passed = before.open === W2_EXPECTED.issues - 6
+    const passed = processedConfirmation.actionCompleted
+      && processedConfirmation.actionButtonCount === 1 && processedConfirmation.menuItemCount === 1
+      && processedConfirmation.menuItemVisible
+      && restoreConfirmation.actionCompleted
+      && restoreConfirmation.actionButtonCount === 1 && restoreConfirmation.menuItemCount === 1
+      && restoreConfirmation.menuItemVisible
+      && routeAndFilterReady
+      && before.open === W2_EXPECTED.issues - 6
       && processedConfirmationMatches && restoreConfirmationMatches
       && afterFixed.fixed === before.fixed + 1
-      && statusCounts.open === W2_EXPECTED.issues - 6
-      && statusCounts.fixed === 0;
-    return { passed, evidence: { before, afterFixed, afterRestore: statusCounts, processedConfirmationMatches, restoreConfirmationMatches, restoredToOpen: statusCounts.open === before.open } };
+      && afterFixed.open === expectedOpenAfterProcess
+      && statusCounts.open === before.open
+      && statusCounts.fixed === before.fixed
+      && openPaginationWaitError === null;
+    return {
+      passed,
+      evidence: {
+        confirmationType: "native-window.confirm",
+        initialUi,
+        before,
+        processedAction: { ...processedConfirmation, message: undefined, messageMatchesExpectedScope: Boolean(processedConfirmationMatches), stateWaitError: processedWaitError },
+        afterFixed,
+        openPaginationWaitError,
+        restoreFilterError,
+        restoredUi,
+        restoreAction: { ...restoreConfirmation, message: undefined, messageMatchesExpectedScope: Boolean(restoreConfirmationMatches), stateWaitError: restoreWaitError },
+        afterRestore: statusCounts,
+        restoredToOpen: statusCounts.open === before.open && statusCounts.fixed === before.fixed,
+      },
+    };
   });
 
   await attemptW2("SEO rules Drawer ignores and restores a rule class", "ui", async () => {
@@ -812,22 +1032,69 @@ async function testW2Pages(page, syntheticSite) {
     const ruleSection = page.locator(".si-seo-rule-setting").filter({ hasText: "Title 缺失" }).first();
     await ruleSection.waitFor({ state: "visible", timeout: 15_000 });
     const before = await readW2SeoStatusCounts(page, "title_missing");
-    const ignoreConfirmation = await acceptNextW2Dialog(page, () => ruleSection.getByRole("button", { name: "忽略此规则", exact: true }).click());
-    const ignoreConfirmationMatches = ignoreConfirmation.includes("忽略") && ignoreConfirmation.includes("全站同一规则");
-    await ruleSection.getByRole("button", { name: "恢复此规则", exact: true }).waitFor({ state: "visible", timeout: 10_000 });
-    await waitForW2SeoCount(page, "title_missing", "ignored", W2_EXPECTED.issues - 6);
+    const ignoreButton = ruleSection.getByRole("button", { name: "忽略此规则", exact: true });
+    const ignoreButtonCount = await ignoreButton.count();
+    const ignoreConfirmation = await acceptNextW2Dialog(page, () => ignoreButton.click());
+    const ignoreConfirmationMatches = ignoreConfirmation.dialogObserved
+      && ignoreConfirmation.dialogAccepted
+      && ignoreConfirmation.message?.includes("忽略")
+      && ignoreConfirmation.message?.includes("全站同一规则");
+    let ignoreWaitError = null;
+    try {
+      await waitForW2SeoCount(page, "title_missing", "ignored", before.open);
+    } catch (error) {
+      ignoreWaitError = safeMessage(error);
+    }
     const ignored = await readW2SeoStatusCounts(page, "title_missing");
-    const restoreRuleConfirmation = await acceptNextW2Dialog(page, () => ruleSection.getByRole("button", { name: "恢复此规则", exact: true }).click());
-    const restoreRuleConfirmationMatches = restoreRuleConfirmation.includes("恢复") && restoreRuleConfirmation.includes("全站同一规则");
-    await waitForW2SeoCount(page, "title_missing", "open", W2_EXPECTED.issues - 6);
+    const restoreButton = ruleSection.getByRole("button", { name: "恢复此规则", exact: true });
+    const restoreButtonCount = await restoreButton.count();
+    let restoreRuleConfirmation = {
+      confirmationType: "native-window.confirm",
+      actionCompleted: false,
+      actionError: "忽略后未出现可恢复规则按钮",
+      dialogObserved: false,
+      dialogAccepted: false,
+      message: null,
+      dialogError: null,
+    };
+    if (restoreButtonCount === 1) {
+      restoreRuleConfirmation = await acceptNextW2Dialog(page, () => restoreButton.click());
+    }
+    const restoreRuleConfirmationMatches = restoreRuleConfirmation.dialogObserved
+      && restoreRuleConfirmation.dialogAccepted
+      && restoreRuleConfirmation.message?.includes("恢复")
+      && restoreRuleConfirmation.message?.includes("全站同一规则");
+    let restoreWaitError = null;
+    if (restoreRuleConfirmation.dialogAccepted) {
+      try {
+        await waitForW2SeoCount(page, "title_missing", "open", before.open);
+      } catch (error) {
+        restoreWaitError = safeMessage(error);
+      }
+    }
     const restored = await readW2SeoStatusCounts(page, "title_missing");
-    const passed = before.open === W2_EXPECTED.issues - 6
+    const passed = ignoreConfirmation.actionCompleted
+      && ignoreButtonCount === 1 && restoreRuleConfirmation.actionCompleted
+      && restoreButtonCount === 1
+      && before.open === W2_EXPECTED.issues - 6
       && ignoreConfirmationMatches && restoreRuleConfirmationMatches
       && ignored.ignored === before.open
       && restored.open === before.open
       && restored.ignored === 0;
-    await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
-    return { passed, evidence: { before, ignored, restored, ignoreConfirmationMatches, restoreRuleConfirmationMatches, drawerOpened: true } };
+    const closeDrawerButton = page.getByRole("button", { name: "关闭抽屉", exact: true });
+    if (await closeDrawerButton.count()) await closeDrawerButton.click();
+    return {
+      passed,
+      evidence: {
+        confirmationType: "native-window.confirm",
+        before,
+        ignoreAction: { ...ignoreConfirmation, message: undefined, buttonCount: ignoreButtonCount, messageMatchesExpectedScope: Boolean(ignoreConfirmationMatches), stateWaitError: ignoreWaitError },
+        ignored,
+        restoreAction: { ...restoreRuleConfirmation, message: undefined, buttonCount: restoreButtonCount, messageMatchesExpectedScope: Boolean(restoreRuleConfirmationMatches), stateWaitError: restoreWaitError },
+        restored,
+        drawerOpened: true,
+      },
+    };
   });
 
   await attemptW2("Inventory table renders rows and paginates", "ui", async () => {
