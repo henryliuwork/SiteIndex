@@ -99,7 +99,18 @@ function priceChangedWithin(row: SkuStockView, range: HistoryRange): boolean {
 
 export function createInventoryMock(): MockInventoryApi {
   return {
-    summary: (id, range = 30) => reply(() => inventorySummary(id, range)),
+    summary: (id, range = 30) => reply(() => {
+      const summary = inventorySummary(id, range);
+      if (projectKey(id) !== "demo") return summary;
+      return {
+        ...summary,
+        today: [
+          { type: "feed_anomaly", sku: "DEMO-ANOMALY-01", title: "演示有货商品", detail: "模拟：页面显示有货，但 Feed 未包含此 SKU" },
+          { type: "removed", sku: "DEMO-REMOVED-01", title: "演示下架商品", detail: "模拟：连续多次同步未见于 Feed" },
+          ...summary.today,
+        ],
+      };
+    }),
     listSkus: (id, query: ListQuery<SkuStockFilters>) => reply(() => {
       const key = projectKey(id);
       const filters = query.filters ?? {};

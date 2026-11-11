@@ -454,7 +454,11 @@ export function edmImageRows(id: ProjectId): SkuImageRow[] {
   const stockBySku = new Map(rowsByProject[key].map((row) => [row.sku, row.stock_status]));
   return records.map((record, index) => {
     const manual = manualImages.get(id + ":" + record.sku) ?? null;
-    const feed = index === 4 || index === 18 ? null : mockFeedImageUrl(record);
+    const feed = index === 4 || index === 18
+      ? null
+      : index === 7
+        ? `https://demo-store.example.test/images/${encodeURIComponent(record.sku)}-main.webp`
+        : mockFeedImageUrl(record);
     return {
       sku: record.sku, title: record.title, variant_title: record.variant_title,
       stock_status: stockBySku.get(record.sku) ?? "unknown", feed_image_url: feed,

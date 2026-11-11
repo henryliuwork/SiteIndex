@@ -130,4 +130,18 @@ describe("InventoryPage D-2", () => {
     expect(await screen.findByText("目前仅有 1 个业务日期，后续每日同步自动形成趋势。")).toBeTruthy();
     expect(screen.getByRole("button", { name: "设置关注分类" })).toBeTruthy();
   });
+
+  it("将 Feed 异常与移除区分，并把筛选限制在今日变化摘要", async () => {
+    await renderInventoryPage(true);
+    fireEvent.click(await screen.findByRole("button", { name: "趋势与分类在线率" }));
+
+    expect(await screen.findByText("DEMO-ANOMALY-01")).toBeTruthy();
+    expect(screen.getByText("DEMO-REMOVED-01")).toBeTruthy();
+    expect(screen.getByText("Feed 异常")).toBeTruthy();
+    expect(screen.getByText("已下架")).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "仅显示此摘要中的 Feed 异常" }));
+
+    expect(screen.getByText("DEMO-ANOMALY-01")).toBeTruthy();
+    expect(screen.queryByText("DEMO-REMOVED-01")).toBeNull();
+  });
 });

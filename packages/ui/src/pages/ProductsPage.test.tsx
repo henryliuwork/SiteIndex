@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView } from "@siteindex/shared";
+import type { ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuRecord } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 beforeEach(() => {
@@ -192,5 +192,20 @@ describe("ProductsPage 父 SKU 与变体库存交互", () => {
     expect(within(inventoryTable).getByText("80%")).toBeTruthy();
     expect(within(inventoryTable).getByText("—")).toBeTruthy();
     expect(within(inventoryTable).getByRole("img", { name: /DEMO-KIT-01近 30 天库存/ })).toBeTruthy();
+  });
+
+  it("在 SKU 详情中显示 Core 返回的下架状态和移除原因", async () => {
+    const removedSkus: SkuRecord[] = [
+      { sku: "DEMO-ACCESSORY-OLD", product_id: single.product_id, handle: single.handle, title: single.title, variant_title: "旧款 A", url: single.url, category: single.category, category_source: "feed", price: 24, compare_at_price: null, currency: "USD", image_url: null, status: "removed", removed_reason: "feed_absent_404", first_seen: "2026-10-01", last_seen: "2026-11-01", updated_at: "2026-11-02" },
+      { sku: "DEMO-ACCESSORY-AGED", product_id: single.product_id, handle: single.handle, title: single.title, variant_title: "旧款 B", url: single.url, category: single.category, category_source: "feed", price: 24, compare_at_price: null, currency: "USD", image_url: null, status: "removed", removed_reason: "feed_absent_aged", first_seen: "2026-10-01", last_seen: "2026-11-01", updated_at: "2026-11-02" },
+    ];
+    const detail: ProductFull = { product: single, skus: removedSkus, details: null, seo: null };
+    await renderProductsPage({ products: [single], detail });
+
+    fireEvent.click((await screen.findByText("演示独立配件", { selector: "strong" })).closest("tr")!);
+    const drawer = await screen.findByRole("dialog");
+    expect((await within(drawer).findAllByText("已下架")).length).toBe(2);
+    expect(within(drawer).getByText("商品页不存在（404/410）")).toBeTruthy();
+    expect(within(drawer).getByText("连续多次未见于 Feed")).toBeTruthy();
   });
 });
