@@ -27,6 +27,8 @@ export interface EdmIndexSaveAsOptions {
   createHardLink?: typeof link;
   /** Deterministic race injection for tests; production callers leave this unset. */
   beforeTemporaryOpenForTest?: () => Promise<void>;
+  /** Deterministic cleanup failure injection for tests; production callers leave this unset. */
+  truncateTemporaryForTest?: (handle: Awaited<ReturnType<typeof open>>) => Promise<void>;
 }
 
 export function resolveEdmIndexDefaultPath(options: {
@@ -310,7 +312,8 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
         try {
           // The open handle still identifies our file if its directory was moved or replaced.
           // Empty it before any path-based cleanup so a moved directory cannot retain the export.
-          await temporaryHandle.truncate(0);
+          if (options.truncateTemporaryForTest) await options.truncateTemporaryForTest(temporaryHandle);
+          else await temporaryHandle.truncate(0);
           await temporaryHandle.sync();
         } catch {
           cleanupFailed = true;

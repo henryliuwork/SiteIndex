@@ -205,6 +205,7 @@ describe("Desktop EDM SKU index Save As", () => {
       beforeTemporaryOpenForTest: async () => {
         await rename(downloadsDirectory, displacedDirectory);
         await mkdir(downloadsDirectory);
+        await writeFile(path.join(downloadsDirectory, "keep-sentinel.txt"), "replacement directory sentinel\n", "utf8");
       },
     });
 
@@ -214,10 +215,44 @@ describe("Desktop EDM SKU index Save As", () => {
     });
     await expect(lstat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readdir(displacedDirectory)).toEqual([]);
+    await expect(readFile(path.join(downloadsDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe(
+      "replacement directory sentinel\n",
+    );
     const replacementEntries = await readdir(downloadsDirectory);
-    expect(replacementEntries).toHaveLength(1);
-    expect(replacementEntries[0]).toMatch(/^\.siteindex-edm-[a-f0-9-]+\.tmp$/u);
-    await expect(readFile(path.join(downloadsDirectory, replacementEntries[0]!), "utf8")).resolves.toBe("");
+    const temporaryNames = replacementEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
+    expect(temporaryNames).toHaveLength(1);
+    await expect(readFile(path.join(downloadsDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
+  });
+
+  it("reports unconfirmed cleanup when truncating a moved temporary file fails", async () => {
+    const targetPath = path.join(downloadsDirectory, "sku-index.md");
+    const displacedDirectory = path.join(root, "downloads-before-failed-cleanup");
+    const save = createEdmIndexSaveAs({
+      defaultPath: path.join(downloadsDirectory, path.basename(PATHS.edmSkuIndex)),
+      showSaveDialog: async () => ({ canceled: false, filePath: targetPath }),
+      beforeTemporaryOpenForTest: async () => {
+        await rename(downloadsDirectory, displacedDirectory);
+        await mkdir(downloadsDirectory);
+        await writeFile(path.join(downloadsDirectory, "keep-sentinel.txt"), "replacement directory sentinel\n", "utf8");
+      },
+      truncateTemporaryForTest: async () => {
+        throw new Error("simulated-truncate-failure");
+      },
+    });
+
+    await expect(save(projectRoot, rendered)).rejects.toMatchObject({
+      code: "WRITE_FAILED",
+      detail: "EDM_INDEX_TEMPORARY_CLEANUP_FAILED",
+    });
+    await expect(lstat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(downloadsDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe(
+      "replacement directory sentinel\n",
+    );
+    const temporaryNames = (await readdir(downloadsDirectory)).filter(
+      (name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"),
+    );
+    expect(temporaryNames).toHaveLength(1);
+    await expect(readFile(path.join(downloadsDirectory, temporaryNames[0]!), "utf8")).resolves.toBe(rendered.content);
   });
 
   it.skipIf(process.platform === "win32")("empties a moved temporary file without following the replacement directory", async () => {
@@ -241,11 +276,36 @@ describe("Desktop EDM SKU index Save As", () => {
     await expect(readFile(path.join(displacedDirectory, displacedEntries[0]!), "utf8")).resolves.toBe("");
   });
 
+  it.skipIf(process.platform === "win32")("reports an unknown result and preserves the published hard link if its directory moves", async () => {
+    const targetPath = path.join(downloadsDirectory, "sku-index.md");
+    const displacedDirectory = path.join(root, "downloads-after-publication");
+    const linkThenMoveDirectory: typeof createHardLink = async (source, destination) => {
+      await createHardLink(source, destination);
+      await rename(downloadsDirectory, displacedDirectory);
+      await mkdir(downloadsDirectory);
+      await writeFile(path.join(downloadsDirectory, "keep-sentinel.txt"), "replacement directory sentinel\n", "utf8");
+    };
+
+    await expect(saveTo(targetPath, false, linkThenMoveDirectory).save(projectRoot, rendered)).rejects.toMatchObject({
+      code: "EDM_EXPORT_OUTCOME_UNKNOWN",
+      detail: "EDM_INDEX_CREATED_TARGET_CONFIRMATION_FAILED",
+    });
+    await expect(readFile(path.join(displacedDirectory, path.basename(targetPath)), "utf8")).resolves.toBe(rendered.content);
+    await expect(readFile(path.join(downloadsDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe(
+      "replacement directory sentinel\n",
+    );
+    const displacedEntries = await readdir(displacedDirectory);
+    const temporaryNames = displacedEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
+    expect(temporaryNames).toHaveLength(1);
+    await expect(readFile(path.join(displacedDirectory, temporaryNames[0]!), "utf8")).resolves.toBe(rendered.content);
+  });
+
   it.skipIf(process.platform === "win32")("does not write through a replaced destination symlink", async () => {
     const targetPath = path.join(downloadsDirectory, "sku-index.md");
     const displacedDirectory = path.join(root, "downloads-before-symlink");
     const outsideDirectory = path.join(root, "outside");
     await mkdir(outsideDirectory);
+    await writeFile(path.join(outsideDirectory, "keep-sentinel.txt"), "outside sentinel\n", "utf8");
     const replaceDirectoryThenLink: typeof createHardLink = async (source, destination) => {
       await rename(downloadsDirectory, displacedDirectory);
       await symlink(outsideDirectory, downloadsDirectory, "dir");
@@ -257,8 +317,44 @@ describe("Desktop EDM SKU index Save As", () => {
       detail: "EDM_INDEX_CREATE_FAILED",
     });
     await expect(lstat(path.join(outsideDirectory, path.basename(targetPath)))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(await readdir(outsideDirectory)).toEqual([]);
+    await expect(readFile(path.join(outsideDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe("outside sentinel\n");
+    const outsideEntries = await readdir(outsideDirectory);
+    const temporaryNames = outsideEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
+    expect(temporaryNames).toHaveLength(1);
+    await expect(readFile(path.join(outsideDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
     expect(await readdir(displacedDirectory)).toHaveLength(1);
+  });
+
+  it.skipIf(process.platform !== "win32")("does not follow a replaced destination junction during cleanup", async ({ skip }) => {
+    const targetPath = path.join(downloadsDirectory, "sku-index.md");
+    const displacedDirectory = path.join(root, "downloads-before-junction");
+    const outsideDirectory = path.join(root, "outside-junction");
+    await mkdir(outsideDirectory);
+    await writeFile(path.join(outsideDirectory, "keep-sentinel.txt"), "junction sentinel\n", "utf8");
+    const save = createEdmIndexSaveAs({
+      defaultPath: path.join(downloadsDirectory, path.basename(PATHS.edmSkuIndex)),
+      showSaveDialog: async () => ({ canceled: false, filePath: targetPath }),
+      beforeTemporaryOpenForTest: async () => {
+        await rename(downloadsDirectory, displacedDirectory);
+        try {
+          await symlink(outsideDirectory, downloadsDirectory, "junction");
+        } catch (error) {
+          if (typeof error === "object" && error !== null && "code" in error && ["EPERM", "ENOTSUP", "EINVAL"].includes(String(error.code))) {
+            skip();
+          }
+          throw error;
+        }
+      },
+    });
+
+    await expect(save(projectRoot, rendered)).rejects.toMatchObject({ code: "WRITE_FAILED" });
+    await expect(readFile(path.join(outsideDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe("junction sentinel\n");
+    const outsideEntries = await readdir(outsideDirectory);
+    const temporaryNames = outsideEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
+    expect(temporaryNames).toHaveLength(1);
+    await expect(readFile(path.join(outsideDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
+    await expect(lstat(path.join(outsideDirectory, path.basename(targetPath)))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(displacedDirectory)).toEqual([]);
   });
 
   it("rejects a path whose parent directory does not exist", async () => {
