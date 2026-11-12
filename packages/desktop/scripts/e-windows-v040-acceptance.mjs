@@ -19,6 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
+import { createFakeGraphqlService, createFakeWordPressService } from "../../../fixtures/e-v041-loopback/fake-services.mjs";
 import { runWordPressCredentialsUiSmoke } from "../../ui/visual/wordpress-credentials-smoke.mjs";
 import { createCredentialRegionWaitPage } from "./credential-region-wait.mjs";
 import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
@@ -61,6 +62,13 @@ const CREDENTIAL_BASIC_HEADERS = CREDENTIAL_BASIC_PAIRS.map(
   (value) => `Basic ${Buffer.from(value, "utf8").toString("base64")}`,
 );
 const CREDENTIAL_CANARY_VALUES = [...CREDENTIAL_OUTPUT_MARKERS, ...CREDENTIAL_BASIC_PAIRS, ...CREDENTIAL_BASIC_HEADERS];
+const LOOPBACK_DAILY_PROJECT_ID = "synthetic-daily-job";
+const LOOPBACK_DAILY_ABSENT_SKU = "SYN-DAILY-ABSENT";
+const LOOPBACK_DAILY_FEED_SKU = "SYN-DAILY-FEED";
+const LOOPBACK_MEDIA_PROJECT_ID = "synthetic-media-job";
+const LOOPBACK_MEDIA_SKU = "SYN-MEDIA-001";
+const LOOPBACK_MEDIA_WEBP = Buffer.from("UklGRi4AAABXRUJQVlA4TCEAAAAvAUAAEB8w/wKCIv9HCwFB0XXLBXwU1LRtwOI36YjofxwA", "base64");
+const HOSTED_WINDOWS_ACCEPTANCE_ARGUMENT = "--siteindex-hosted-acceptance";
 const W2_EXPECTED = W2_SYNTHETIC_EXPECTED;
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
@@ -185,6 +193,10 @@ const report = {
     },
   },
   addExistingTrace: null,
+  installedLoopbackJobs: {
+    daily: { status: "not-run", feedRequests: 0, graphqlRequests: 0, progressEvents: 0 },
+    media: { status: "not-run", sourceImageRequests: 0, wordpressMediaLookups: 0, wordpressUploads: 0, progressEvents: 0 },
+  },
   traceEnvironmentPassedToSpawn: false,
   visualEvidence: null,
   w2Acceptance: {
@@ -754,6 +766,8 @@ async function makeW2SyntheticProject(directory, origin) {
 async function startSyntheticSite() {
   let requestCount = 0;
   let failedRequestCount = 0;
+  let feedRequestCount = 0;
+  let sourceImageRequestCount = 0;
   let origin = "";
   const send = (response, status, contentType, body) => {
     response.writeHead(status, { "content-type": `${contentType}; charset=utf-8`, "cache-control": "no-store" });
@@ -765,6 +779,22 @@ async function startSyntheticSite() {
     if (request.method !== "GET") {
       failedRequestCount += 1;
       return send(response, 405, "text/plain", "GET only");
+    }
+    if (pathname === "/feed.csv") {
+      feedRequestCount += 1;
+      const rows = [LOOPBACK_DAILY_FEED_SKU, "SYN-DAILY-KEEP-01", "SYN-DAILY-KEEP-02"].map((sku) =>
+        [sku, `Synthetic product ${sku}`, `${origin}/products/${sku}.html`, "9.99 USD", "in stock", "Synthetic > Test"].join(","),
+      );
+      return send(response, 200, "text/csv", ["id,title,link,price,availability,product_type", ...rows].join("\n") + "\n");
+    }
+    if (pathname === "/source.webp") {
+      sourceImageRequestCount += 1;
+      response.writeHead(200, { "content-type": "image/webp", "content-length": LOOPBACK_MEDIA_WEBP.length, "cache-control": "no-store" });
+      response.end(LOOPBACK_MEDIA_WEBP);
+      return;
+    }
+    if (/^\/products\/[A-Z0-9-]+\.html$/u.test(pathname)) {
+      return send(response, 200, "text/html", "<!doctype html><html><body><main><h1>Synthetic product</h1></main></body></html>");
     }
     if (pathname === "/sitemap.xml") {
       return send(response, 200, "application/xml", `<?xml version="1.0"?><urlset><url><loc>${origin}/products/group-000</loc></url></urlset>`);
@@ -791,7 +821,7 @@ async function startSyntheticSite() {
   origin = `http://127.0.0.1:${address.port}`;
   return {
     origin,
-    metrics: () => ({ requestCount, failedRequestCount }),
+    metrics: () => ({ requestCount, failedRequestCount, feedRequestCount, sourceImageRequestCount }),
   };
 }
 
@@ -825,6 +855,12 @@ async function launchInstalledApp({ executablePath, trace = false, verifyProfile
     if (error instanceof Error && error.message === "CDP acceptance port is already in use.") throw error;
   }
   const environment = isolatedProcessEnvironment();
+  if (process.env.GITHUB_ACTIONS !== "true" || process.env.SITEINDEX_RUNNER_ENVIRONMENT !== "github-hosted") {
+    throw new Error("Hosted acceptance flags may be passed only to a GitHub-hosted Windows candidate.");
+  }
+  environment.GITHUB_ACTIONS = "true";
+  environment.SITEINDEX_RUNNER_ENVIRONMENT = "github-hosted";
+  environment.SITEINDEX_HOSTED_ACCEPTANCE = "1";
   if (HOSTED_UPDATE && process.env.GITHUB_ACTIONS !== "true") {
     throw new Error("Hosted update acceptance must run on a fresh GitHub Actions Windows runner.");
   }
@@ -835,7 +871,11 @@ async function launchInstalledApp({ executablePath, trace = false, verifyProfile
   if (!executableCheck.withinRoot || !executableCheck.noReparse) {
     throw new Error("The executable to launch is outside the isolated installation root.");
   }
-  applicationProcess = spawn(executablePath, [`--remote-debugging-port=${CDP_PORT}`, "--disable-gpu"], {
+  applicationProcess = spawn(executablePath, [
+    `--remote-debugging-port=${CDP_PORT}`,
+    "--disable-gpu",
+    HOSTED_WINDOWS_ACCEPTANCE_ARGUMENT,
+  ], {
     env: environment,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: false,
@@ -3030,6 +3070,216 @@ async function testWordPressCredentialIsolation(page) {
   return page;
 }
 
+async function makeLoopbackDailyProject(projectPath, siteOrigin, graphqlEndpoint) {
+  await makeLegacyProject(projectPath, "Synthetic daily loopback project");
+  const sitePath = path.join(projectPath, "index", "site.json");
+  const site = JSON.parse(await readFile(sitePath, "utf8"));
+  site.domain = "daily.synthetic.invalid";
+  site.base_url = siteOrigin;
+  site.crawl = {
+    adapter: "gmc_feed",
+    feed_url: [`${siteOrigin}/feed.csv`],
+    sku_field: "id",
+    missing_as: "out_of_stock",
+    max_removed_ratio: 1,
+    max_pages: 10,
+    rate_limit_ms: 0,
+    stock_verify: { enabled: true, graphql_url: graphqlEndpoint, max_per_run: 1 },
+    stock_rules: { in_stock: ["in stock"], out_of_stock: ["sold out", "out of stock"], preorder: ["preorder"] },
+  };
+  await writeFile(sitePath, `${JSON.stringify(site, null, 2)}\n`, "utf8");
+  const oldSku = {
+    sku: LOOPBACK_DAILY_ABSENT_SKU,
+    product_id: "synthetic-daily-product-absent",
+    handle: "synthetic-daily-absent",
+    title: "Synthetic absent feed item",
+    variant_title: null,
+    url: `${siteOrigin}/products/${LOOPBACK_DAILY_ABSENT_SKU}.html`,
+    category: "Synthetic",
+    categories: ["Synthetic"],
+    category_source: "feed",
+    price: 9.99,
+    compare_at_price: null,
+    currency: "USD",
+    image_url: null,
+    status: "active",
+    first_seen: "2026-11-01",
+    last_seen: "2026-11-11",
+    updated_at: "2026-11-11",
+  };
+  await writeJsonlFile(path.join(projectPath, "index", "catalog", "skus.jsonl"), [oldSku]);
+  await writeJsonlFile(path.join(projectPath, "index", "inventory", "latest.jsonl"), [{
+    sku: LOOPBACK_DAILY_ABSENT_SKU,
+    stock_status: "in_stock",
+    qty: 3,
+    since: "2026-11-01",
+    checked_at: "2026-11-11T12:00:00.000Z",
+  }]);
+}
+
+async function makeLoopbackMediaProject(projectPath, wordPressOrigin, imageUrl) {
+  await makeLegacyProject(projectPath, "Synthetic media loopback project");
+  const sitePath = path.join(projectPath, "index", "site.json");
+  const site = JSON.parse(await readFile(sitePath, "utf8"));
+  site.domain = "media.synthetic.invalid";
+  site.base_url = wordPressOrigin;
+  site.edm = { image_host: { type: "wordpress" } };
+  site.crawl.rate_limit_ms = 0;
+  await writeFile(sitePath, `${JSON.stringify(site, null, 2)}\n`, "utf8");
+  await writeJsonlFile(path.join(projectPath, "index", "catalog", "skus.jsonl"), [{
+    sku: LOOPBACK_MEDIA_SKU,
+    product_id: "synthetic-media-product",
+    handle: "synthetic-media-product",
+    title: "Synthetic media product",
+    variant_title: null,
+    url: "https://media.synthetic.invalid/products/synthetic-media-product",
+    category: "Synthetic",
+    categories: ["Synthetic"],
+    category_source: "feed",
+    price: 12.5,
+    compare_at_price: null,
+    currency: "USD",
+    image_url: imageUrl,
+    additional_images: [],
+    gtin: null,
+    mpn: null,
+    brand: "Synthetic",
+    status: "active",
+    first_seen: "2026-11-12",
+    last_seen: "2026-11-12",
+    updated_at: "2026-11-12",
+  }]);
+  await writeJsonlFile(path.join(projectPath, "index", "inventory", "latest.jsonl"), [{
+    sku: LOOPBACK_MEDIA_SKU,
+    stock_status: "in_stock",
+    qty: 1,
+    since: "2026-11-12",
+    checked_at: "2026-11-12T12:00:00.000Z",
+  }]);
+  await mkdir(path.join(projectPath, "index", "ledgers"), { recursive: true });
+  await writeFile(path.join(projectPath, "index", "ledgers", "sku_media.csv"),
+    "sku,image_role,image_url,alt_text,source,width,height,updated_at\n", "utf8");
+}
+
+async function runInstalledJob(page, request) {
+  return page.evaluate(async (input) => {
+    const api = window.siteindex;
+    const completed = [];
+    const progress = [];
+    let expectedRunId = "";
+    let resolveExpected;
+    const onFinished = api.jobs.onFinished((result) => {
+      completed.push(result);
+      if (expectedRunId && result.runId === expectedRunId) resolveExpected?.(result);
+    });
+    const onProgress = api.jobs.onProgress((event) => progress.push(event.runId));
+    let timeout;
+    try {
+      const started = input.job === "media"
+        ? await api.media.prepare({ project: input.projectId, skus: [input.sku] })
+        : await api.jobs.run({ projectPath: input.projectPath, job: input.job, date: "2026-11-12" });
+      expectedRunId = started.runId;
+      const alreadyFinished = completed.find((result) => result.runId === expectedRunId);
+      const result = alreadyFinished ?? await new Promise((resolve, reject) => {
+        resolveExpected = resolve;
+        timeout = setTimeout(() => reject(new Error("Hosted acceptance Job did not finish before timeout.")), 180_000);
+      });
+      return {
+        job: result.job,
+        status: result.status,
+        exitCode: result.exitCode,
+        counts: result.counts ?? {},
+        mediaStatuses: Array.isArray(result.media_results) ? result.media_results.map((item) => item.status) : [],
+        progressEvents: progress.filter((runId) => runId === expectedRunId).length,
+      };
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      onProgress();
+      onFinished();
+    }
+  }, request);
+}
+
+async function testInstalledLoopbackJobs(page, syntheticSite) {
+  currentStage = "installed daily and media Jobs against loopback services";
+  const dailyGraphql = await createFakeGraphqlService({ responsesBySku: {
+    [LOOPBACK_DAILY_ABSENT_SKU]: {
+      body: { data: { product: { sku: LOOPBACK_DAILY_ABSENT_SKU, stock_status: "IN_STOCK" } } },
+    },
+  } });
+  const mediaCredential = {
+    username: CREDENTIAL_OUTPUT_MARKERS[0],
+    applicationPassword: CREDENTIAL_OUTPUT_MARKERS[1],
+  };
+  const fakeWordPress = await createFakeWordPressService({ credentials: mediaCredential });
+  let mediaCredentialSaved = false;
+  try {
+    const dailyProjectPath = path.join(PROJECTS_ROOT, LOOPBACK_DAILY_PROJECT_ID);
+    const mediaProjectPath = path.join(PROJECTS_ROOT, LOOPBACK_MEDIA_PROJECT_ID);
+    await makeLoopbackDailyProject(dailyProjectPath, syntheticSite.origin, dailyGraphql.endpoint);
+    await makeLoopbackMediaProject(mediaProjectPath, fakeWordPress.origin, `${syntheticSite.origin}/source.webp`);
+    const dailyProject = await page.evaluate((target) => window.siteindex.projects.addExisting(target), dailyProjectPath);
+    const mediaProject = await page.evaluate((target) => window.siteindex.projects.addExisting(target), mediaProjectPath);
+    assert(dailyProject?.id === LOOPBACK_DAILY_PROJECT_ID && mediaProject?.id === LOOPBACK_MEDIA_PROJECT_ID,
+      "installed candidate registers both synthetic loopback Job projects through packaged IPC");
+
+    const dailyResult = await runInstalledJob(page, { job: "daily", projectPath: dailyProjectPath });
+    const dailyTraffic = syntheticSite.metrics();
+    const graphqlRequests = dailyGraphql.snapshot().routeCounts["POST /graphql"] ?? 0;
+    report.installedLoopbackJobs.daily = {
+      status: dailyResult.status,
+      feedRequests: dailyTraffic.feedRequestCount,
+      graphqlRequests,
+      progressEvents: dailyResult.progressEvents,
+    };
+    const dailyPassed = dailyResult.job === "daily" && dailyResult.status === "ok"
+      && dailyTraffic.feedRequestCount > 0 && graphqlRequests > 0 && dailyResult.progressEvents > 0;
+    assert(dailyPassed,
+      "installed daily Job reads the loopback feed, verifies a missing SKU through loopback GraphQL, and finishes with progress",
+      { ...report.installedLoopbackJobs.daily, exitCode: dailyResult.exitCode });
+
+    await page.evaluate(async ({ origin, username, applicationPassword }) => {
+      await window.siteindexWindow.wordpressCredentials.save({ siteUrl: origin, username, applicationPassword });
+    }, {
+      origin: fakeWordPress.origin,
+      username: mediaCredential.username,
+      applicationPassword: mediaCredential.applicationPassword,
+    });
+    mediaCredentialSaved = true;
+    const mediaResult = await runInstalledJob(page, {
+      job: "media",
+      projectId: LOOPBACK_MEDIA_PROJECT_ID,
+      projectPath: mediaProjectPath,
+      sku: LOOPBACK_MEDIA_SKU,
+    });
+    const wordPressTraffic = fakeWordPress.snapshot();
+    const mediaTraffic = {
+      sourceImageRequests: syntheticSite.metrics().sourceImageRequestCount,
+      wordpressMediaLookups: wordPressTraffic.routeCounts["GET /wp-json/wp/v2/media"] ?? 0,
+      wordpressUploads: wordPressTraffic.routeCounts["POST /wp-json/wp/v2/media"] ?? 0,
+    };
+    report.installedLoopbackJobs.media = {
+      status: mediaResult.status,
+      ...mediaTraffic,
+      progressEvents: mediaResult.progressEvents,
+    };
+    const mediaPassed = mediaResult.job === "media" && mediaResult.status === "ok"
+      && mediaResult.counts.uploaded === 1 && mediaResult.mediaStatuses.includes("uploaded")
+      && wordPressTraffic.mediaCount === 1 && mediaTraffic.sourceImageRequests > 0
+      && mediaTraffic.wordpressMediaLookups > 0 && mediaTraffic.wordpressUploads > 0
+      && mediaResult.progressEvents > 0;
+    assert(mediaPassed,
+      "installed media Job fetches a synthetic image, uploads it to loopback WordPress, and finishes with progress",
+      { status: mediaResult.status, counts: mediaResult.counts, mediaTraffic, progressEvents: mediaResult.progressEvents });
+    await page.evaluate(() => { window.location.hash = "/"; });
+  } finally {
+    if (mediaCredentialSaved) {
+      await page.evaluate((origin) => window.siteindexWindow.wordpressCredentials.clear(origin), fakeWordPress.origin).catch(() => undefined);
+    }
+    await Promise.allSettled([dailyGraphql.close(), fakeWordPress.close()]);
+  }
+}
+
 async function main() {
   if (process.platform !== "win32") throw new Error("This acceptance workflow requires Windows.");
   if (process.env.GITHUB_ACTIONS !== "true" || process.env.SITEINDEX_RUNNER_ENVIRONMENT !== "github-hosted") {
@@ -3246,6 +3496,7 @@ async function main() {
     w2SyntheticProjectPresent: finalState.projectIds.includes(W2_PROJECT_ID),
   });
   page = await testWordPressCredentialIsolation(page);
+  await testInstalledLoopbackJobs(page, syntheticSite);
   await safeCandidateScreenshot(page);
 }
 
@@ -3312,6 +3563,7 @@ async function writeReport() {
     `- Windows build: \`${report.windows.build ?? report.windows.version}\``,
     `- Checks passed: ${report.checks.filter((check) => check.status === "passed").length}/${report.checks.length}`,
     `- Add-existing handler total: ${report.addExistingTrace?.handlerTotalMs ?? "not measured"} ms (target < 5000 ms)`,
+    `- Installed loopback Jobs: daily ${report.installedLoopbackJobs.daily.status} (${report.installedLoopbackJobs.daily.feedRequests} feed, ${report.installedLoopbackJobs.daily.graphqlRequests} GraphQL); media ${report.installedLoopbackJobs.media.status} (${report.installedLoopbackJobs.media.wordpressUploads} upload)`,
     `- Screenshot: ${report.visualEvidence?.screenshotCreated ? "created" : report.visualEvidence?.reason ?? "not available"}`,
     "- Data: synthetic runner-only project; no real project or customer data used.",
     "",
