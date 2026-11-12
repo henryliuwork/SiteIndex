@@ -26,7 +26,9 @@ export function summarizePackagedPhaseFailure({
   return {
     phase: safePhase,
     exitCode: Number.isInteger(exitCode) ? exitCode : null,
-    resultReportStatus: ["passed", "failed", "running", "missing", "invalid-json"].includes(resultReportStatus)
+    resultReportStatus: ["passed", "failed", "running", "missing", "invalid-json", "invalid-shape"].includes(
+      resultReportStatus,
+    )
       ? resultReportStatus
       : "invalid-status",
     failureCode: safeReportFailureCode ?? harnessFailureCode ?? null,
