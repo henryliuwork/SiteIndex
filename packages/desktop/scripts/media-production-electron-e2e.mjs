@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { access, mkdtemp, mkdir, readFile, readdir, lstat, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { scanMediaCanaryTree } from "./media-production-canary-scan.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "../../..");
@@ -80,7 +81,7 @@ async function startImageServer() {
   return { origin: `http://127.0.0.1:${address.port}`, server, metrics };
 }
 
-async function startWordPressServer() {
+async function startWordPressServer(testRoot) {
   const metrics = {
     lookups: 0,
     createPosts: 0,
@@ -92,6 +93,7 @@ async function startWordPressServer() {
   const uploaded = new Map();
   let nextId = 100;
   let dropNextUploadResponse = false;
+  let uiReturnedBeforeResponseLoss = false;
   let origin = "";
   const validAuthorization = `Basic ${Buffer.from(`${credentials.valid.username}:${credentials.valid.password}`).toString("base64")}`;
   const forbiddenAuthorization = `Basic ${Buffer.from(`${credentials.forbidden.username}:${credentials.forbidden.password}`).toString("base64")}`;
@@ -142,6 +144,17 @@ async function startWordPressServer() {
         if (dropNextUploadResponse) {
           dropNextUploadResponse = false;
           metrics.persistedBeforeDisconnect += 1;
+          const signalPath = path.join(testRoot, "post-lost-ui-returned");
+          const signalDeadline = Date.now() + 30_000;
+          while (Date.now() < signalDeadline) {
+            try {
+              await readFile(signalPath, "utf8");
+              uiReturnedBeforeResponseLoss = true;
+              break;
+            } catch {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+          }
           response.destroy();
           return;
         }
@@ -184,43 +197,13 @@ async function startWordPressServer() {
     get uploadedCount() {
       return uploaded.size;
     },
+    get uiReturnedBeforeResponseLoss() {
+      return uiReturnedBeforeResponseLoss;
+    },
     dropNextUploadResponse() {
       dropNextUploadResponse = true;
     },
   };
-}
-
-async function scanTreeForCanary(root) {
-  let files = 0;
-  let matches = 0;
-  const visit = async (directory) => {
-    let entries;
-    try {
-      entries = await readdir(directory, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const target = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) {
-        await visit(target);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      try {
-        const stat = await lstat(target);
-        if (stat.size > 20 * 1024 * 1024) continue;
-        const bytes = await readFile(target);
-        files += 1;
-        for (const canary of canaries) if (bytes.includes(Buffer.from(canary))) matches += 1;
-      } catch {
-        // A Chromium cache file can be transiently locked; process output and renderer state are scanned separately.
-      }
-    }
-  };
-  await visit(root);
-  return { files, matches };
 }
 
 function inheritedEnvironment() {
@@ -308,9 +291,10 @@ async function main() {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-media-production-e2e-"));
   assertSafeTempRoot(root);
   const image = await startImageServer();
-  const wordpress = await startWordPressServer();
+  const wordpress = await startWordPressServer(root);
   const phaseResults = {};
   const traffic = [];
+  let summaryWritten = false;
   try {
     if (!process.platform.startsWith("win")) throw new Error("packaged-acceptance-requires-windows");
     await access(packagedApp).catch(() => {
@@ -364,9 +348,14 @@ async function main() {
       retryReusesWithoutSecondMediaCreate:
         phaseResults.retry.checks?.retryOrOutcomeUnknownMatches === true &&
         traffic.find((entry) => entry.phase === "retry")?.mediaCreatePosts === 0,
+      rendererReceivedUtilityProcessProgress: phaseResults.success.checks?.progressEvidenceComplete === true,
+      navigatedAwayWhileJobRunningAndItCompletedInBackground:
+        phaseResults["post-lost"].checks?.crossPageDuringActiveJob === true &&
+        phaseResults["post-lost"].checks?.jobCompletedAwayFromEdm === true &&
+        wordpress.uiReturnedBeforeResponseLoss,
       rendererCrossPageRecovery: phaseResults["post-lost"].checks?.crossPageRecoveryAfterJob === true,
     };
-    const canaryScan = await scanTreeForCanary(root);
+    const canaryScan = await scanMediaCanaryTree(root, canaries);
     const summary = {
       schemaVersion: 1,
       sourceCommit: process.env.SITEINDEX_MEDIA_E2E_SOURCE_COMMIT ?? "local",
@@ -378,21 +367,60 @@ async function main() {
       cases,
       phases: Object.fromEntries(Object.entries(phaseResults).map(([phase, result]) => [phase, result.checks ?? {}])),
       traffic,
-      localFileCountScanned: canaryScan.files,
+      localFileCountScanned: canaryScan.filesScanned,
+      criticalFileCounts: canaryScan.criticalFilesRead,
+      missingCriticalFileKindCount: canaryScan.missingCriticalKinds.length,
+      criticalReadErrors: canaryScan.criticalReadErrors,
+      otherReadErrors: canaryScan.otherReadErrors,
+      chromiumCachePathsSkipped: canaryScan.chromiumCachePathsSkipped,
+      chromiumCacheReadErrors: canaryScan.chromiumCacheReadErrors,
+      canaryScanComplete: canaryScan.complete,
       credentialCanaryMatches: canaryScan.matches,
       credentialCanaryAbsentFromPackagedProcessOutput: true,
     };
-    if (canaryScan.matches !== 0 || Object.values(cases).some((value) => value !== true)) {
-      throw new Error("Media production packaged E2E assertions failed.");
-    }
     const serialized = `${JSON.stringify(summary, null, 2)}\n`;
     if (canaries.some((value) => serialized.includes(value)))
       throw new Error("Credential canary appeared in the E2E summary.");
     await writeFile(summaryPath, serialized, "utf8");
+    summaryWritten = true;
+    if (!canaryScan.complete || canaryScan.matches !== 0 || Object.values(cases).some((value) => value !== true)) {
+      throw new Error("Media production packaged E2E assertions failed.");
+    }
     process.stdout.write(
       `${JSON.stringify({ status: "passed", summary: path.basename(summaryPath), phases: phases.length, canaryMatches: canaryScan.matches })}\n`,
     );
   } finally {
+    if (!summaryWritten) {
+      try {
+        const canaryScan = await scanMediaCanaryTree(root, canaries);
+        await mkdir(path.dirname(summaryPath), { recursive: true });
+        await writeFile(
+          summaryPath,
+          `${JSON.stringify(
+            {
+              schemaVersion: 1,
+              sourceCommit: process.env.SITEINDEX_MEDIA_E2E_SOURCE_COMMIT ?? "local",
+              status: "failed",
+              completedPhaseCount: Object.keys(phaseResults).length,
+              localFileCountScanned: canaryScan.filesScanned,
+              criticalFileCounts: canaryScan.criticalFilesRead,
+              missingCriticalFileKindCount: canaryScan.missingCriticalKinds.length,
+              criticalReadErrors: canaryScan.criticalReadErrors,
+              otherReadErrors: canaryScan.otherReadErrors,
+              chromiumCachePathsSkipped: canaryScan.chromiumCachePathsSkipped,
+              chromiumCacheReadErrors: canaryScan.chromiumCacheReadErrors,
+              canaryScanComplete: canaryScan.complete,
+              credentialCanaryMatches: canaryScan.matches,
+            },
+            null,
+            2,
+          )}\n`,
+          "utf8",
+        );
+      } catch {
+        // Failure report remains intentionally content-free if the isolated tree cannot be scanned.
+      }
+    }
     image.server.closeAllConnections?.();
     wordpress.server.closeAllConnections?.();
     await Promise.all([

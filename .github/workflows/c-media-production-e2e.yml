@@ -15,6 +15,7 @@ on:
       - "packages/desktop/src/main/wordpress-media-credential-provider.ts"
       - "packages/desktop/scripts/*media-production*"
       - "packages/desktop/scripts/create-media-production-builder-config.mjs"
+      - "packages/desktop/test/media-production-*.test.ts"
       - "packages/desktop/electron.vite.media-production.config.ts"
       - ".github/workflows/c-media-production-e2e.yml"
   workflow_dispatch:
@@ -61,6 +62,7 @@ jobs:
       - name: Run real EDM UI to Core media Job packaged acceptance
         run: node packages/desktop/scripts/media-production-electron-e2e.mjs artifacts/media-production-summary.json
       - uses: actions/upload-artifact@v4
+        if: ${{ always() && hashFiles('artifacts/media-production-summary.json') != '' }}
         with:
           name: c-media-production-summary-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/media-production-summary.json

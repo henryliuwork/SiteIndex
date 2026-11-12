@@ -16,6 +16,7 @@ import { createJobsHandlers } from "./ipc/jobs.js";
 import { createMediaHandlers } from "./ipc/media.js";
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import { createJobManager } from "./job-manager.js";
+import { hasMediaProgressEvidence } from "./media-production-assertions.js";
 import { createWindowManager } from "./window-manager.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
 import type { WordPressCredentialInput } from "../shared/wordpress-credential-types.js";
@@ -261,6 +262,21 @@ function countStatuses(result: JobResult): Record<ExpectedSkuStatus, number> {
   return counts;
 }
 
+function expectedVisibleResultLabels(expected: Record<ExpectedSkuStatus, number>): string[] {
+  const labels: Record<ExpectedSkuStatus, string> = {
+    uploaded: "已上传",
+    recorded: "原图 URL 已记录",
+    skipped_has_url: "已有 URL，已跳过",
+    failed: "失败",
+    unknown: "结果未知",
+    not_started: "已确认未开始",
+    reused: "已复用",
+  };
+  return Object.entries(expected)
+    .filter(([, count]) => count > 0)
+    .map(([status]) => labels[status as ExpectedSkuStatus]);
+}
+
 async function startProductionPackagedWindow(
   projectId: string,
   windowManager: ReturnType<typeof createWindowManager>,
@@ -352,6 +368,8 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   let windowManager: ReturnType<typeof createWindowManager> | null = null;
   let finishedResolver: ((result: JobResult) => void) | null = null;
   let progressCount = 0;
+  let crossPageDuringJob = false;
+  let jobCompletedAwayFromEdm = false;
   const finished = new Promise<JobResult>((resolve) => {
     finishedResolver = resolve;
   });
@@ -454,6 +472,10 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   });
   const window = await startProductionPackagedWindow(fixture.projectId, windowManager);
   const expectedSelectionCount = fixture.rows.length;
+  const progressListenerInstalled = await window.webContents.executeJavaScript(
+    "(() => { if (!window.siteindex?.jobs?.onProgress) return false; window.__siteIndexMediaProgressCount = 0; window.siteindex.jobs.onProgress(() => { window.__siteIndexMediaProgressCount += 1; }); return true; })()",
+  );
+  if (!progressListenerInstalled) throw new Error("renderer-progress-listener-unavailable");
   await window.webContents.executeJavaScript(
     `(() => { const select = [...document.querySelectorAll('input[type="checkbox"]')].find((item) => item.getAttribute('aria-label') === '选择当前页全部行'); if (!select) throw new Error('selection-control-missing'); if (!select.checked) select.click(); })()`,
   );
@@ -467,10 +489,36 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     `(() => { const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === ${JSON.stringify(`获取图片 URL（${expectedSelectionCount}）`)}); if (!button || button.disabled) return false; button.click(); return true; })()`,
   );
   if (!actionButtonFound) throw new Error("media-action-button-unavailable");
-  const result = await Promise.race([
+  const resultPromise = Promise.race([
     finished,
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error("job-timeout")), 90_000)),
   ]);
+  if (phase === "post-lost") {
+    await waitFor(
+      () => window.webContents.executeJavaScript("window.__siteIndexMediaProgressCount ?? 0"),
+      (count) => typeof count === "number" && count > 0,
+      30_000,
+      "renderer-progress-event",
+    );
+    if (!manager.running(fixture.projectId as ProjectId)) throw new Error("media-job-not-running-before-navigation");
+    const runsHash = `#/p/${encodeURIComponent(fixture.projectId)}/runs`;
+    await window.webContents.executeJavaScript(`location.hash = ${JSON.stringify(runsHash)}`);
+    const activeRunsText = await waitFor(
+      () => window.webContents.executeJavaScript("document.body.innerText"),
+      (text) => typeof text === "string" && text.includes("图片 URL 处理") && text.includes("运行中"),
+      30_000,
+      "runs-page-active-job",
+    );
+    const wasRunningOnRunsPage = manager.running(fixture.projectId as ProjectId) !== null;
+    crossPageDuringJob =
+      wasRunningOnRunsPage && typeof activeRunsText === "string" && activeRunsText.includes("运行中");
+    await writeFile(path.join(root, "post-lost-ui-returned"), "ready\n", "utf8");
+  }
+  const result = await resultPromise;
+  const rendererProgressCount = (await window.webContents.executeJavaScript(
+    "window.__siteIndexMediaProgressCount ?? 0",
+  )) as number;
+  const progressEvidenceComplete = hasMediaProgressEvidence(progressCount, rendererProgressCount);
   const statuses = countStatuses(result);
   const statusesMatch = JSON.stringify(statuses) === JSON.stringify(fixture.expected);
   const expectedErrorCode =
@@ -486,29 +534,47 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   const mediaLedgerRows = await readCsvRowCount(path.join(projectPath, projectPaths.skuMedia));
   const expectedMediaLedgerRows = phase === "success" ? 4 : phase === "retry" ? 1 : 0;
   const mediaLedgerMatches = mediaLedgerRows === expectedMediaLedgerRows;
-  let crossPageRecovery = phase !== "post-lost";
+  let crossPageRecovery = false;
+  let resultRecoveredOnRunsPage = false;
+  let settledRendererText = "";
   if (phase === "post-lost") {
     const runsHash = `#/p/${encodeURIComponent(fixture.projectId)}/runs`;
-    await window.webContents.executeJavaScript(`location.hash = ${JSON.stringify(runsHash)}`);
     const runsText = await waitFor(
       () => window.webContents.executeJavaScript("document.body.innerText"),
-      (text) => typeof text === "string" && text.includes("运行") && text.includes("结果未知"),
+      (text) => typeof text === "string" && text.includes("结果未知"),
       30_000,
       "runs-outcome-unknown",
     );
+    const hashAfterBackgroundCompletion = (await window.webContents.executeJavaScript("location.hash")) as string;
+    jobCompletedAwayFromEdm =
+      hashAfterBackgroundCompletion === runsHash &&
+      manager.running(fixture.projectId as ProjectId) === null &&
+      runsText.includes("结果未知");
+    resultRecoveredOnRunsPage = jobCompletedAwayFromEdm;
     const edmHash = `#/p/${encodeURIComponent(fixture.projectId)}/edm`;
     await window.webContents.executeJavaScript(`location.hash = ${JSON.stringify(edmHash)}`);
-    const edmText = await waitFor(
+    settledRendererText = await waitFor(
       () => window.webContents.executeJavaScript("document.body.innerText"),
-      (text) => typeof text === "string" && text.includes("SKU 宣传图") && text.includes("结果未知"),
+      (text) =>
+        typeof text === "string" &&
+        text.includes("SKU 宣传图") &&
+        expectedVisibleResultLabels(fixture.expected).some((label) => text.includes(label)),
       30_000,
       "edm-outcome-unknown",
     );
     crossPageRecovery =
-      typeof runsText === "string" &&
-      runsText.includes("结果未知") &&
-      typeof edmText === "string" &&
-      edmText.includes("结果未知");
+      jobCompletedAwayFromEdm &&
+      typeof settledRendererText === "string" &&
+      settledRendererText.includes("SKU 宣传图") &&
+      settledRendererText.includes("结果未知");
+  } else {
+    settledRendererText = await waitFor(
+      () => window.webContents.executeJavaScript("document.body.innerText"),
+      (text) =>
+        typeof text === "string" && expectedVisibleResultLabels(fixture.expected).some((label) => text.includes(label)),
+      30_000,
+      "media-result-rendered",
+    );
   }
   const rendererText = (await window.webContents.executeJavaScript("document.body.innerText")) as string;
   const canaries = credentialCanaries(seed);
@@ -516,16 +582,9 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   const resultCanaryMatches = canaries.filter((value) => JSON.stringify(result).includes(value)).length;
   const actualHandlerPath = mediaInvokeCount === 1 && manager.running(fixture.projectId as ProjectId) === null;
   const requestPayloadSafe = !requestPayloadContainsCredential;
-  const settledRendererText = await waitFor(
-    () => window.webContents.executeJavaScript("document.body.innerText"),
-    (text) =>
-      typeof text === "string" &&
-      (text.includes("图片准备任务结果") || (phase === "post-lost" && text.includes("最近一次图片处理记录"))),
-    30_000,
-    "media-result-rendered",
-  );
   const uiRenderedActualMediaAction =
-    typeof settledRendererText === "string" && settledRendererText.includes("获取图片 URL");
+    typeof settledRendererText === "string" &&
+    expectedVisibleResultLabels(fixture.expected).some((label) => settledRendererText.includes(label));
   const unknownStateMatches =
     phase === "post-lost"
       ? isValidMediaSkuRecoveryPartition(result) &&
@@ -540,6 +599,8 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
       packagedUiLoaded: rendererText.includes("SKU 宣传图"),
       actualEdmUiInvokedMediaPrepare: actualHandlerPath,
       utilityProcessProgressForwarded: progressCount > 0,
+      rendererReceivedUtilityProcessProgress: rendererProgressCount > 0,
+      progressEvidenceComplete,
       coreJobResultPartitionMatches: statusesMatch,
       coreErrorCodeMatches: errorCodeMatches,
       runHistoryWritten: runHistoryMatches,
@@ -550,7 +611,14 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
       rendererCredentialCanaryMatches: rendererCanaryMatches,
       resultCredentialCanaryMatches: resultCanaryMatches,
       retryOrOutcomeUnknownMatches: unknownStateMatches,
-      crossPageRecoveryAfterJob: crossPageRecovery,
+      ...(phase === "post-lost"
+        ? {
+            crossPageDuringActiveJob: crossPageDuringJob,
+            jobCompletedAwayFromEdm,
+            resultRecoveredOnRunsPage,
+            crossPageRecoveryAfterJob: crossPageRecovery,
+          }
+        : {}),
       resultCounts: JSON.stringify(statuses),
       ...(expectedErrorCode ? { expectedAuthorizationCode: expectedErrorCode } : {}),
     },
@@ -561,12 +629,13 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     !runHistoryMatches ||
     !mediaLedgerMatches ||
     !actualHandlerPath ||
+    !progressEvidenceComplete ||
     !requestPayloadSafe ||
     rendererCanaryMatches !== 0 ||
     resultCanaryMatches !== 0 ||
     !uiRenderedActualMediaAction ||
     !unknownStateMatches ||
-    !crossPageRecovery
+    (phase === "post-lost" && (!crossPageDuringJob || !jobCompletedAwayFromEdm || !crossPageRecovery))
   )
     report.status = "failed";
   if (report.status === "failed") report.failureCode = "phase-assertion";
