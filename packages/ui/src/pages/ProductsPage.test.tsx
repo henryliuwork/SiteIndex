@@ -24,6 +24,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.doUnmock("../api");
+  vi.doUnmock("../components");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.resetModules();
@@ -80,6 +81,7 @@ async function renderProductsPage(options: {
   products?: ProductView[];
   groupingEnabled?: boolean;
   detail?: ProductFull;
+  simulateDelayedPageSizeRestore?: boolean;
 } = {}) {
   const mockApi = createMockApi();
   if (options.groupingEnabled) {
@@ -105,7 +107,28 @@ async function renderProductsPage(options: {
     api: mockApi,
     apiErrorMessage: (_error: unknown, fallback: string) => fallback,
   }));
-  const [{ ProductsPage }, { ToastProvider }] = await Promise.all([import("./ProductsPage"), import("../components")]);
+  if (options.simulateDelayedPageSizeRestore) {
+    let queuedQuery: ListQuery<ProductFilters> | undefined;
+    let queuedOnQueryChange: ((query: ListQuery<ProductFilters>) => void) | undefined;
+    vi.doMock("../components", async () => {
+      const actual = await vi.importActual<typeof import("../components")>("../components");
+      const TableWithDelayedPageSizeRestore = (props: {
+        query: ListQuery<ProductFilters>;
+        onQueryChange: (query: ListQuery<ProductFilters>) => void;
+      }) => {
+        if (!queuedOnQueryChange) {
+          queuedQuery = props.query;
+          queuedOnQueryChange = props.onQueryChange;
+        }
+        return <button type="button" onClick={() => {
+          if (queuedQuery && queuedOnQueryChange) queuedOnQueryChange({ ...queuedQuery, page: 1, pageSize: 200 });
+        }}>模拟延迟页长恢复</button>;
+      };
+      return { ...actual, DataTable: TableWithDelayedPageSizeRestore as typeof actual.DataTable };
+    });
+  }
+  const { ToastProvider } = await import("../components");
+  const { ProductsPage } = await import("./ProductsPage");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <ToastProvider>
@@ -157,6 +180,23 @@ describe("ProductsPage 父 SKU 与变体库存交互", () => {
       filters: expect.objectContaining({ parent_only: true }),
     })));
     await waitFor(() => expect(screen.queryByText("演示组合商品蓝色款")).toBeNull());
+  });
+
+  it("页大小恢复回调晚于筛选变更到达时保留当前筛选", async () => {
+    const mockApi = await renderProductsPage({ products: [parent, child, single], simulateDelayedPageSizeRestore: true });
+    await waitFor(() => expect(mockApi.products.list).toHaveBeenCalled());
+
+    fireEvent.click(await screen.findByRole("button", { name: "有货" }));
+    await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({
+      filters: expect.objectContaining({ stock: "in" }),
+    })));
+
+    fireEvent.click(screen.getByRole("button", { name: "模拟延迟页长恢复" }));
+    await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({
+      page: 1,
+      pageSize: 200,
+      filters: expect.objectContaining({ stock: "in" }),
+    })));
   });
 
   it("父行显示有货变体数，子行与独立产品的空聚合值显示破折号", async () => {
