@@ -55,6 +55,15 @@ test("pending package features remain gated", () => {
   const byId = new Map(matrix.cases.map((testCase) => [testCase.id, testCase]));
   assert.equal(byId.get("PKG-STORAGE-READONLY").readiness, "core-ready-ui-pending");
   assert.ok(byId.get("PKG-STORAGE-READONLY").dependencies.some((dependency) => dependency.includes("#484")));
+  const storage = byId.get("PKG-STORAGE-READONLY");
+  assert.deepEqual(storage.device_independence, {
+    runner_count: 2,
+    profile_environment_isolated: true,
+    mutations_visible_only_on_origin_runner: true,
+    cloud_sync_supported: false,
+    real_cloud_sync_test_claimed: false,
+  });
+  assert.ok(storage.manual_required.some((step) => /unknown-path wording/u.test(step)));
   assert.equal(byId.get("PKG-MEDIA-RECOVERY").readiness, "hosted-win-unpacked-only-nsis-pending");
   const saveAs = byId.get("PKG-EDM-SAVEAS-CANCEL");
   const conflicts = byId.get("PKG-EDM-CONFLICT");

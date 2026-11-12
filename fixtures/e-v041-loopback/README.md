@@ -41,3 +41,5 @@ This oracle self-test does not launch an installer or Electron. The C hosted acc
 `project-storage-policy-cases.json` is a synthetic #480 path-classification vector. It verifies an explicitly configured provider root, a sibling with a similar prefix, and an unconfigured third-party location. Unknown means “not classified”; it does not certify local storage, and the fixture does not claim complete cloud-provider detection.
 
 The current isolated candidate package matrix is in `v041-candidate-package-acceptance.md`, with machine-readable cases in `v041-candidate-package-cases.json`. Validate its coverage using `node --test fixtures/e-v041-loopback/v041-candidate-package-matrix.test.mjs`.
+
+The candidate matrix's local-storage desktop scope and two-runner device-independence procedure are detailed in `local-storage-desktop-acceptance.md`. It treats cloud sync as unsupported and does not use an actual cloud client or user project.
