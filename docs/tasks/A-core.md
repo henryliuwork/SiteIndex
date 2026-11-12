@@ -183,4 +183,4 @@
 - [x] Windows 项目创建锁遇到 EPERM / EBUSY 时仅在锁路径仍存在的情况下作为占用失败，禁止从歧义权限错误进入陈旧锁回收；覆盖锁路径缺失、活动锁、目录及 symlink/junction 的 fail-closed 回归（junction 权限不足时跳过）
 
 ### v0.4.1 · EDM SKU 清单导出
-- [ ] #423 Core 尚未完成：实现确定性读取/渲染、legacy/workspace 路径；已知追踪 query 剥离，仅保留精确匹配导出 SKU 的 variant 参数，其余 query/fragment 显示确认提示而不输出损坏 URL；因现有 Node 路径 API 无法把 no-follow 目录身份与最终创建绑定，当前 fail closed，不创建或覆盖固定清单；更新门禁保留，折扣档选择/舍入规则仍待产品确认
+- [x] #423 Core 内部 `edm.renderIndex` 只读确定性渲染并返回内容与统计，覆盖 legacy/workspace；保留追踪 query 剥离、仅保留精确匹配导出 SKU 的 variant 参数，其余 query/fragment 显示确认提示；Core service 不创建或覆盖固定清单，Desktop 的另存流程仍独立；折扣档选择/舍入规则仍待产品确认
