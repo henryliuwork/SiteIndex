@@ -41,11 +41,18 @@
       "id": "PKG-STORAGE-READONLY",
       "area": "Legacy/workspace read-only and known-sync path guard",
       "readiness": "core-ready-ui-pending",
-      "dependencies": ["project-storage-policy-cases.json", "Merged #485", "B #484 warning/affordance"],
-      "automated": ["Read both project layouts", "Hash every synthetic file before/after", "Check settings/task summaries and write-denial code"],
-      "manual_required": ["After #484 is in the candidate, inspect the warning and read-only controls in the hosted UI."],
-      "pass": ["No auto migration, repair, lock, run-history, settings, task, or data mutation.", "Known-sync project is readable but writes are blocked.", "All tree hashes match."],
-      "evidence": ["Layout/warning enums", "Stable error code", "File counts and aggregate hashes", "No raw path or project contents"]
+      "dependencies": ["project-storage-policy-cases.json", "Merged #485", "B #484 warning/affordance", "Two independent GitHub-hosted Windows jobs for profile/device isolation"],
+      "automated": ["Read both project layouts", "Hash every synthetic file before/after", "Check settings/task summaries and write-denial code", "Compare sanitized project/settings summaries from two independent hosted Windows runners"],
+      "manual_required": ["After #484 is in the candidate, inspect the local-only copy in the project center and new-project wizard, known-sync read-only state, unknown-path wording, and unregister-only removal."],
+      "device_independence": {
+        "runner_count": 2,
+        "profile_environment_isolated": true,
+        "mutations_visible_only_on_origin_runner": true,
+        "cloud_sync_supported": false,
+        "real_cloud_sync_test_claimed": false
+      },
+      "pass": ["No auto migration, repair, lock, run-history, settings, task, or data mutation.", "Known-sync project is readable but writes are blocked.", "Unknown storage is not described as verified local.", "A project/settings change on runner A is absent on runner B and vice versa.", "Removing registration leaves all project bytes in place.", "All tree hashes match."],
+      "evidence": ["Layout/warning enums", "Stable error code", "File counts and aggregate hashes", "Per-runner project/settings counts and state enums", "No raw path or project contents"]
     },
     {
       "id": "PKG-STOCK-ABSENT-STATES",

@@ -30,7 +30,7 @@ C 已有入口是 .github/workflows/e-windows-v040-acceptance.yml，脚本是 pa
 | ID | 覆盖 | 当前依赖 / 就绪度 | 已可自动化 | 必须人工验证 |
 |---|---|---|---|---|
 | PKG-NSIS-UPGRADE | NSIS 安装、v0.4.0 升级、版本和项目/设置保留 | C hosted workflow 已有隔离安装/升级流程；等待候选 pin | 哈希/provenance、安装/升级/重启、运行路径、版本、项目与数据摘要 | 仅在 Playwright 无法确认完整 UI 时查看 hosted VM；不看用户窗口 |
-| PKG-STORAGE-READONLY | 旧布局读取、已知同步目录只读 | A #485 已合并；UI 警告依赖 B #484 | 写门禁、错误码、全目录前后哈希、设置/任务摘要 | #484 进候选后检查警告与只读控件文案 |
+| PKG-STORAGE-READONLY | 旧布局读取、已知同步目录只读、本机设备数据彼此独立 | A #485 已合并；UI 依赖 B #484；双 runner profile 检查需候选包 | 写门禁、文件哈希、设置摘要、两个独立 runner 的项目/设置状态对照 | #484 进候选后检查“仅支持本机存储”说明、只读标记及“移除只取消登记” |
 | PKG-STOCK-ABSENT-STATES | feed 缺席后 removed、out_of_stock、in_stock+feed_anomaly；另测 unknown | Core/CLI #417、#464 已合并；候选 IPC/page 待验 | 虚构 daily、JSONL、固定路由计数、Playwright 页面与 CLI 对照 | 仅当 DOM/无障碍树无法确认状态时人工复核 |
 | PKG-MEDIA-RECOVERY | 权限失败、部分成功、保存后断连、重启恢复、查重去重 | #439/#471/#459/#466 已合并；当前 C hosted workflow 是 win-unpacked，不是 NSIS | fixture、Core、win-unpacked hosted harness | NSIS 通过需 C 将 production-gated harness 接到已安装 EXE；接好前未验证 |
 | PKG-EDM-SAVEAS-CANCEL | SKU 清单另存与取消不写 | A #473 `renderIndex` 已合并；C #481 Desktop Save As 尚开放；合并后还需独立 contract PR 清除 `PENDING_HANDLERS` | golden 可检查；依赖合并后由 Windows UI Automation 操作原生对话框 | Playwright DOM 不控制原生 Save As；用 hosted UI Automation 或 hosted VM |
@@ -52,6 +52,11 @@ C 已有入口是 .github/workflows/e-windows-v040-acceptance.yml，脚本是 pa
 2. 在根内构造 synthetic known-sync root；不连接云盘客户端，不使用操作系统现有同步目录。
 3. 记录相对路径清单和逐文件 SHA256，再读取项目列表、summary 和只读视图；写入测试只验证拦截码。
 4. 重新核对完整文件树、设置登记与任务摘要。通过标准：字节不变、不自动迁移/修复、不写锁/运行记录/任务；#484 入包后显示明确只读警告。
+5. 用两个全新且分别隔离的 Windows hosted runner 模拟设备 A/B；每个 runner 的六个 profile 环境路径和本机项目根都在各自 `RUNNER_TEMP` 下。A 登记虚构项目并改一项无敏感值的设置，B 保持全新状态；重启并交叉核对：A 的项目/设置不出现在 B，B 的状态也不进入 A。不得将此结果解释为真实云盘或跨设备同步测试。
+6. 在 #484 随候选包提供后核对项目中心与新建向导均说明“当前版本仅支持本机存储”；已识别云同步路径显示只读标记、隐藏写入入口；未知路径显示为未确认，不得说成“已验证本机”。查看/打开目录可保留；显式移除仅取消登记，不删除目录或文件。
+7. 通过标准：每个 runner 的 project/settings 摘要只反映本机 fixture；无跨 runner 共享或自动复制；云同步路径数据哈希不变，写入受阻且无迁移、修复、任务、锁或 run history 写入；未知路径不被误报为本机。失败包括自动复制/登记、对外宣称云同步可用、云路径写入/迁移，或取消登记时删除项目文件。
+
+双 runner 流程与 UI 检查步骤见 [本机存储桌面验收清单](local-storage-desktop-acceptance.md)。
 
 ### PKG-STOCK-ABSENT-STATES
 
