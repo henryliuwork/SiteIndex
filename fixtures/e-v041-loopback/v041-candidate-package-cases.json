@@ -24,7 +24,7 @@
     "storage": "Core guard merged in #485; packaged warning depends on B #484.",
     "inventory": "Core/CLI path merged in #417 and #464; candidate IPC/page evidence remains separate.",
     "media": "media.prepare enabled by #471; current C hosted media workflow targets win-unpacked, not NSIS.",
-    "edm_export": "edm.exportIndex remains in PENDING_HANDLERS; C PR #481 is open."
+    "edm_export": "A #473 edm.renderIndex is merged and render-only. C #481 owns Desktop native Save As/no-clobber and is open. After #481 merges, an independent contract/* PR must clear edm.exportIndex from PENDING_HANDLERS before candidate package acceptance."
   },
   "cases": [
     {
@@ -70,22 +70,50 @@
     {
       "id": "PKG-EDM-SAVEAS-CANCEL",
       "area": "SKU export Save As and cancel",
-      "readiness": "blocked-until-edm-export-handler",
-      "dependencies": ["sku-index.expected.md", "A edm.exportIndex writer", "C PR #481 and pending-handler removal"],
+      "readiness": "blocked-until-c-desktop-save-as-and-contract",
+      "dependencies": ["sku-index.expected.md", "Merged A #473 edm.renderIndex (render only)", "C PR #481 Desktop native Save As", "Follow-up contract/* PR clears edm.exportIndex from PENDING_HANDLERS"],
       "automated": ["Golden output check", "After handler exists, Windows UI Automation can select/cancel native Save As."],
       "manual_required": ["Playwright DOM cannot control the native Save As dialog; verify in hosted Windows UI Automation or hosted VM."],
-      "pass": ["Saved file matches golden and remains under root.", "Cancel creates or changes no file."],
+      "pass": ["Saved file matches golden and remains under root.", "Cancel creates or changes no file.", "Desktop returns only basename and counts, not absolute paths or file contents."],
       "evidence": ["Result enum and relative filename class", "Row count/hash", "Cancel/no-write boolean"]
     },
     {
       "id": "PKG-EDM-CONFLICT",
       "area": "SKU export conflict protection",
-      "readiness": "blocked-until-edm-export-handler",
-      "dependencies": ["Three media-export conflict fixtures", "A conditional/no-clobber writer", "C PR #481"],
-      "automated": ["Fixture integrity", "After writer exists, stable error code and exact before/after target hashes."],
-      "manual_required": ["Inspect the conflict prompt in the hosted UI; never accept overwrite during these cases."],
-      "pass": ["Unmarked, edited, and concurrently created targets fail closed.", "Existing bytes are preserved.", "Unknown result is reread instead of blindly retried."],
-      "evidence": ["Error enum", "Prompt action enum", "Before/after hashes", "No absolute path or SKU"]
+      "readiness": "blocked-until-c-desktop-save-as-and-contract",
+      "dependencies": ["Merged A #473 edm.renderIndex (render only)", "C PR #481 Desktop Save As/no-clobber", "Follow-up contract/* PR clears edm.exportIndex from PENDING_HANDLERS"],
+      "automated": ["Fixture integrity", "After dependencies merge, compare target outcome enums and exact before/after hashes for project-internal, project-external-same-content, project-external-different-content, and concurrent-create targets."],
+      "manual_required": ["Operate Save As in hosted Windows UI Automation or hosted VM; inspect the prompt and never accept overwrite."],
+      "target_conflict_policy": {
+        "existing_target_inside_project": {
+          "outcome": "fail-closed",
+          "error_code": "EDM_INDEX_CONFLICT",
+          "preserve_exact_bytes": true,
+          "message_expectation": "State that the original file was not overwritten and allow choosing a new filename."
+        },
+        "existing_target_outside_project_same_content": {
+          "outcome": "unchanged",
+          "preserve_exact_bytes": true
+        },
+        "existing_target_outside_project_different_content": {
+          "outcome": "fail-closed",
+          "error_category": "WRITE_FAILED",
+          "error_code": "EDM_INDEX_SAFE_REPLACE_UNAVAILABLE",
+          "preserve_exact_bytes": true,
+          "message_expectation": "State that the original file was not overwritten and require another filename."
+        },
+        "target_created_after_dialog_observed_absent": {
+          "outcome": "fail-closed",
+          "no_clobber": true,
+          "preserve_exact_bytes": true
+        },
+        "save_as_cancel": {
+          "outcome": "cancelled",
+          "no_file_created_or_changed": true
+        }
+      },
+      "pass": ["An existing project-internal target returns EDM_INDEX_CONFLICT and remains byte-identical.", "An outside target with identical content returns unchanged and remains byte-identical.", "An outside target with different content returns WRITE_FAILED / EDM_INDEX_SAFE_REPLACE_UNAVAILABLE and remains byte-identical.", "A concurrent target creation is never overwritten.", "Cancel creates or changes no file.", "Unknown result is read back before any retry."],
+      "evidence": ["Target location class and result enum", "Before/after hashes", "No-write booleans", "No absolute path, filename, or SKU"]
     },
     {
       "id": "PKG-CREDENTIAL-ISOLATION",

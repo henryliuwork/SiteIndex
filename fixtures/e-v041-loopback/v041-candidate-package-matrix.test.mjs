@@ -56,9 +56,30 @@ test("pending package features remain gated", () => {
   assert.equal(byId.get("PKG-STORAGE-READONLY").readiness, "core-ready-ui-pending");
   assert.ok(byId.get("PKG-STORAGE-READONLY").dependencies.some((dependency) => dependency.includes("#484")));
   assert.equal(byId.get("PKG-MEDIA-RECOVERY").readiness, "hosted-win-unpacked-only-nsis-pending");
-  assert.equal(byId.get("PKG-EDM-SAVEAS-CANCEL").readiness, "blocked-until-edm-export-handler");
-  assert.ok(byId.get("PKG-EDM-SAVEAS-CANCEL").dependencies.some((dependency) => dependency.includes("#481")));
-  assert.equal(byId.get("PKG-EDM-CONFLICT").readiness, "blocked-until-edm-export-handler");
+  const saveAs = byId.get("PKG-EDM-SAVEAS-CANCEL");
+  const conflicts = byId.get("PKG-EDM-CONFLICT");
+  assert.equal(saveAs.readiness, "blocked-until-c-desktop-save-as-and-contract");
+  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("#473 edm.renderIndex")));
+  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("#481")));
+  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("contract/*")));
+  assert.equal(conflicts.readiness, "blocked-until-c-desktop-save-as-and-contract");
+  assert.deepEqual(Object.keys(conflicts.target_conflict_policy), [
+    "existing_target_inside_project",
+    "existing_target_outside_project_same_content",
+    "existing_target_outside_project_different_content",
+    "target_created_after_dialog_observed_absent",
+    "save_as_cancel",
+  ]);
+  const policy = conflicts.target_conflict_policy;
+  assert.equal(policy.existing_target_inside_project.error_code, "EDM_INDEX_CONFLICT");
+  assert.equal(policy.existing_target_inside_project.preserve_exact_bytes, true);
+  assert.equal(policy.existing_target_outside_project_same_content.outcome, "unchanged");
+  assert.equal(policy.existing_target_outside_project_same_content.preserve_exact_bytes, true);
+  assert.equal(policy.existing_target_outside_project_different_content.error_category, "WRITE_FAILED");
+  assert.equal(policy.existing_target_outside_project_different_content.error_code, "EDM_INDEX_SAFE_REPLACE_UNAVAILABLE");
+  assert.equal(policy.existing_target_outside_project_different_content.preserve_exact_bytes, true);
+  assert.equal(policy.target_created_after_dialog_observed_absent.no_clobber, true);
+  assert.equal(policy.save_as_cancel.no_file_created_or_changed, true);
 });
 
 test("manifest contains no local paths, external URLs, or embedded credential values", async () => {

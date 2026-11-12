@@ -33,8 +33,8 @@ C 已有入口是 .github/workflows/e-windows-v040-acceptance.yml，脚本是 pa
 | PKG-STORAGE-READONLY | 旧布局读取、已知同步目录只读 | A #485 已合并；UI 警告依赖 B #484 | 写门禁、错误码、全目录前后哈希、设置/任务摘要 | #484 进候选后检查警告与只读控件文案 |
 | PKG-STOCK-ABSENT-STATES | feed 缺席后 removed、out_of_stock、in_stock+feed_anomaly；另测 unknown | Core/CLI #417、#464 已合并；候选 IPC/page 待验 | 虚构 daily、JSONL、固定路由计数、Playwright 页面与 CLI 对照 | 仅当 DOM/无障碍树无法确认状态时人工复核 |
 | PKG-MEDIA-RECOVERY | 权限失败、部分成功、保存后断连、重启恢复、查重去重 | #439/#471/#459/#466 已合并；当前 C hosted workflow 是 win-unpacked，不是 NSIS | fixture、Core、win-unpacked hosted harness | NSIS 通过需 C 将 production-gated harness 接到已安装 EXE；接好前未验证 |
-| PKG-EDM-SAVEAS-CANCEL | SKU 清单另存与取消不写 | edm.exportIndex 仍 pending；C #481 开放 | golden 可检查；handler 接通后可用 Windows UI Automation | Playwright DOM 不控制原生 Save As；用 hosted UI Automation 或 hosted VM |
-| PKG-EDM-CONFLICT | 无标记/被编辑/并发新建目标冲突 | 等 A writer 与 #481；D #487 提示已合并 | fixture 完整性；接通后检查错误码与目标哈希 | hosted UI 检查冲突提示；不确认覆盖 |
+| PKG-EDM-SAVEAS-CANCEL | SKU 清单另存与取消不写 | A #473 `renderIndex` 已合并；C #481 Desktop Save As 尚开放；合并后还需独立 contract PR 清除 `PENDING_HANDLERS` | golden 可检查；依赖合并后由 Windows UI Automation 操作原生对话框 | Playwright DOM 不控制原生 Save As；用 hosted UI Automation 或 hosted VM |
+| PKG-EDM-CONFLICT | 项目内目标与项目外同/异内容目标的 no-clobber 行为 | A #473 `renderIndex` 已合并；C #481 Desktop no-clobber 尚开放；之后由独立 contract PR 清 pending；D #487 冲突提示已合并 | fixture 完整性；依赖合并后比对目标前后哈希、结果枚举与错误码 | hosted UI 核对提示与不覆盖；不得确认覆盖 |
 | PKG-CREDENTIAL-ISOLATION | 假凭据隔离、跨重启、origin 隔离、脱敏 | C hosted oracle #463 已合并；等待候选 provenance | 现有 hosted Playwright、canary 扫描、报告 oracle | 只复核脱敏结果和界面掩码，不公开 canary |
 
 ## 逐项步骤与标准
@@ -70,10 +70,11 @@ C 已有入口是 .github/workflows/e-windows-v040-acceptance.yml，脚本是 pa
 
 ### PKG-EDM-SAVEAS-CANCEL 与 PKG-EDM-CONFLICT
 
-1. edm.exportIndex 不再 pending 且 C #481 合并后再安排产品验收。
-2. 使用 media-export 中的 golden 和三个冲突目标，只在隔离根操作。
-3. 原生 Save As 使用 Windows UI Automation 或 hosted VM 人工验证；Playwright 只检查网页状态，不声称操作了原生对话框。
-4. 通过标准：保存内容匹配 golden；取消不创建/修改文件；冲突返回稳定错误码并保留目标字节；未知结果先读回。
+1. Core 侧由已合并的 A #473 `edm.renderIndex` 提供确定性内容；它只渲染，不创建固定输出文件，也不写入目标文件。Desktop C #481 负责原生 Save As 和 no-clobber 写入，目前仍是开放 PR。
+2. 在 C #481 合并并完成后续独立 `contract/*` PR、`edm.exportIndex` 从 `PENDING_HANDLERS` 清除之前，只能检查 golden 与夹具，不能把 SKU 导出标成候选包可测或通过。
+3. 依赖就绪后，仅在隔离根操作；准备三个目标类：项目目录内已有目标、项目目录外已有且内容相同的目标、项目目录外已有但内容不同的目标。另准备对话框取消和“对话框观察目标缺失后、写入前被并发创建”的竞态。
+4. 预期行为：项目目录内已有目标返回 `EDM_INDEX_CONFLICT`，提示原文件未覆盖且可另选文件名，逐字节保留；项目目录外同内容目标返回 `unchanged` 且不改字节；项目目录外异内容目标返回 `WRITE_FAILED` / `EDM_INDEX_SAFE_REPLACE_UNAVAILABLE`，提示原文件未覆盖且另选文件名，逐字节保留；取消不创建/修改任何文件；竞态创建目标不得被覆盖。对于结果不确定，先读回目标核实，不盲目重试。
+5. 原生 Save As 选择/取消由 Windows UI Automation 或 hosted VM 完成；Playwright 只检查网页状态，不能声称操作了原生对话框。证据记录目标位置类别、结果枚举、前后哈希和是否写入，不记录绝对路径、文件名或 SKU。
 
 ### PKG-CREDENTIAL-ISOLATION
 
@@ -100,6 +101,6 @@ NSIS 验收在 GitHub Actions 选择 E · Windows packaged acceptance，运行 w
 - 旧项目 Core 门禁已合并；打包可见的只读提示等待 B #484。
 - 库存 Core/CLI 已有证据；NSIS 的 CLI/UI 联动未运行。
 - 媒体 Job/API 已接通；hosted win-unpacked 结果不能代替已安装 NSIS 测试，等待 C 接入。
-- SKU 另存/取消/冲突依赖 edm.exportIndex handler 和 #481。
+- SKU 另存/取消/冲突依赖 C #481 Desktop Save As/no-clobber 与其合并后的独立 contract PR 清除 `edm.exportIndex` pending；A #473 `renderIndex` 已合并，不负责写文件。
 
 上述均为未验证或受依赖阻塞，不标记通过/失败。候选包运行后按 case ID 报 passed、failed 或 not-run，并注明 fixture、Core/CLI、win-unpacked、NSIS/Playwright 或 native-dialog 证据层。
