@@ -36,4 +36,4 @@ For formal Windows candidate package credential isolation, see `credential-isola
 node --test fixtures/e-v041-loopback/credential-isolation-report-oracle.test.mjs
 ```
 
-This oracle test does not launch an installer or Electron. It is preparation evidence only; an official candidate run through C's hosted Windows workflow remains required.
+This oracle test does not launch an installer or Electron, and the hosted workflow does not yet invoke it. It is preparation evidence only; C must confirm/integrate the runner call before the oracle is treated as part of candidate acceptance. An official candidate run through C's hosted Windows workflow remains required.

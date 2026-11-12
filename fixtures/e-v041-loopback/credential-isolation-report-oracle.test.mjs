@@ -114,4 +114,32 @@ describe("v0.4.1 credential-isolation acceptance report oracle", () => {
     assert.deepEqual(result.failureCodes, ["CANARY_VALUE_IN_REPORT", "CREDENTIAL_LEAK_SCAN_FAILED_OR_INCOMPLETE"]);
     assert.equal(JSON.stringify(result).includes(SYNTHETIC_CANARIES[1]), false);
   });
+
+  it("fails closed when a scan category object is empty, missing a required key, or has a nonnumeric count", () => {
+    const invalidCounts = [
+      {},
+      {
+        plaintextUtf8: 0,
+        plaintextUtf16le: 0,
+        base64Utf8: 0,
+        base64Utf16le: 0,
+      },
+      {
+        plaintextUtf8: 0,
+        plaintextUtf16le: 0,
+        base64Utf8: "0",
+        base64Utf16le: 0,
+        basicHeader: 0,
+      },
+    ];
+
+    for (const matchCounts of invalidCounts) {
+      const report = passingReport();
+      report.credentialIsolation.canary.diskScan.matchCounts = matchCounts;
+      const result = evaluateCredentialIsolationReport(report, SYNTHETIC_CANARIES);
+      assert.equal(result.passed, false);
+      assert.deepEqual(result.failureCodes, ["CREDENTIAL_LEAK_SCAN_FAILED_OR_INCOMPLETE"]);
+      assert.equal(JSON.stringify(result).includes("fixture-password-canary"), false);
+    }
+  });
 });

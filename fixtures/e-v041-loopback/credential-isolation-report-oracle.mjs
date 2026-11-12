@@ -14,6 +14,14 @@ const REQUIRED_RESTART_STAGES = Object.freeze([
   "site-b-deleted",
 ]);
 
+const REQUIRED_SCAN_CATEGORIES = Object.freeze([
+  "plaintextUtf8",
+  "plaintextUtf16le",
+  "base64Utf8",
+  "base64Utf16le",
+  "basicHeader",
+]);
+
 const REQUIRED_SITE_STATES = Object.freeze([
   ["A", "assert-status", "not_configured"],
   ["B", "assert-status", "not_configured"],
@@ -96,14 +104,16 @@ export function evaluateCredentialIsolationReport(report, canaryValues = []) {
 
   const canary = result.canary;
   const diskScan = canary?.diskScan;
+  const matchCounts = diskScan?.matchCounts;
+  const allScanCategoriesClear = matchCounts && typeof matchCounts === "object"
+    && REQUIRED_SCAN_CATEGORIES.every((category) => typeof matchCounts[category] === "number" && matchCounts[category] === 0);
   if (canary?.echoedCount !== 0 || canary?.browserStorageMatchCount !== 0
     || canary?.diskMatchedFileCount !== 0
     || diskScan?.profileScanCompleted !== true
     || diskScan?.outputArtifactScanCompleted !== true
     || !(diskScan?.filesScanned > 0)
     || diskScan?.matchingFileCount !== 0
-    || !diskScan?.matchCounts
-    || Object.values(diskScan.matchCounts).some((count) => count !== 0)) {
+    || !allScanCategoriesClear) {
     failures.add("CREDENTIAL_LEAK_SCAN_FAILED_OR_INCOMPLETE");
   }
 

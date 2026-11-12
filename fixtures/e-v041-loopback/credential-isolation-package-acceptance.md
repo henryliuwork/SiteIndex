@@ -39,4 +39,4 @@ C 当前维护的候选包入口为 `.github/workflows/e-windows-v040-acceptance
 
 ## 夹具 oracle
 
-`credential-isolation-report-oracle.mjs` 对脱敏后的运行摘要做结构与通过条件核验；`credential-isolation-report-oracle.test.mjs` 使用完全虚构的摘要验证成功、缺路径/reparse、重启状态缺失和 canary 泄漏会被拒绝。它不调用 Electron、SiteIndex API、安装程序或真实文件系统，也不把夹具结果称为安装包验收。
+`credential-isolation-report-oracle.mjs` 对脱敏后的运行摘要做结构与通过条件核验；`credential-isolation-report-oracle.test.mjs` 使用完全虚构的摘要验证成功、缺路径/reparse、重启状态缺失、扫描类别空对象/缺键/非数字计数和 canary 泄漏会被拒绝。它不调用 Electron、SiteIndex API、安装程序或真实文件系统，也不把夹具结果称为安装包验收。其字段已按当前 C hosted script 的摘要结构核对，但尚未接入该 runner；接入前不得把它的测试通过记作候选包可用。
