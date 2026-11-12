@@ -15,6 +15,7 @@ export type ExitCode = (typeof EXIT)[keyof typeof EXIT];
 export type SiteIndexErrorCode =
   | "PROJECT_NOT_FOUND"
   | "PROJECT_UNREADABLE"
+  | "PROJECT_CLOUD_SYNC_UNSUPPORTED"
   | "CONFIG_INVALID"
   | "FEED_FETCH_FAILED"
   | "FEED_EMPTY"

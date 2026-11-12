@@ -147,6 +147,8 @@ export interface ProjectSummary {
   today: { restock: number; oos: number; price: number; new: number; removed: number };
   attention: number; // 待处理提醒数
   warnings: string[]; // 卡片上的异常说明，如 "尚未填写 GMC feed"
+  /** Only set when the path matches a known sync root; absence does not certify local storage. */
+  storage_location?: "known_cloud_sync";
   runner_device: string | null;
   is_runner: boolean;
 }
