@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AppSettings, CreateProjectInput, ListQuery, PageSize, SiteIndexApi } from "../src/api";
-import type { SiteConfig } from "../src/models";
+import type { SiteConfig, SkuTags } from "../src/models";
 import type { SiteIndexErrorCode } from "../src/errors";
 import { API_INVOKE_METHODS, PENDING_HANDLERS } from "../src/ipc-methods";
-import { pathsFor } from "../src/paths";
+import { CSV_HEADERS, pathsFor } from "../src/paths";
 
 describe("shared IPC method contract", () => {
   it("keeps the SKU preview method in the invoke contract after its Desktop handler is implemented", () => {
@@ -78,5 +78,32 @@ describe("shared IPC method contract", () => {
     });
     expect(API_INVOKE_METHODS.filter((method) => method === "design.get")).toHaveLength(1);
     expect(PENDING_HANDLERS).not.toContain("design.get");
+  });
+
+  it("adds optional EDM discount-tier selection while preserving old tags rows and bridges", () => {
+    const oldTagRow: Omit<SkuTags, "discount_tier"> = {
+      sku: "DEMO-001",
+      tags: null,
+      priority: null,
+      exclude_edm: 0,
+      note: null,
+      updated_at: "2026-11-12",
+    };
+    const legacyEdm: Pick<SiteIndexApi["edm"], "setDiscountTier"> = {};
+    const unselectedTag: SkuTags = { ...oldTagRow };
+    const invalidTierError: SiteIndexErrorCode = "EDM_DISCOUNT_TIER_INVALID";
+
+    expect(legacyEdm.setDiscountTier).toBeUndefined();
+    expect(unselectedTag.discount_tier).toBeUndefined();
+    expect(invalidTierError).toBe("EDM_DISCOUNT_TIER_INVALID");
+    expect(API_INVOKE_METHODS).toContain("edm.setDiscountTier");
+    expect(PENDING_HANDLERS).toContain("edm.setDiscountTier");
+    expect(CSV_HEADERS.skuTagsV2.slice(-1)).toEqual(["discount_tier"]);
+    expect(CSV_HEADERS.skuTags).toEqual([
+      "sku", "tags", "priority", "exclude_edm", "email_blurb", "season", "note", "updated_at",
+    ]);
+    expect(CSV_HEADERS.skuTagsV2.slice(0, -1)).toEqual([
+      "sku", "tags", "priority", "exclude_edm", "email_blurb", "season", "note", "updated_at",
+    ]);
   });
 });

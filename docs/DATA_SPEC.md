@@ -62,10 +62,14 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 ### 3.1 EDM SKU 清单（生成的 Markdown）
 
 - `edm.exportIndex(projectId)` 只接收项目 ID，不接受 SKU 子集、文件名或输出路径。Core 按对应布局读取 `views/products`、`ledgers/sku_media` 与 `ledgers/sku_tags`，确定性渲染完整清单并把内容与统计交给 Desktop；Core 不写导出文件。
+- CLI 使用独立命令 `siteindex edm export-index <project> --output <path>`；必须由调用方显式提供输出路径，缺失路径时返回参数错误且不写入。CLI 调用 Core 的只读 renderer 后只创建新文件，不覆盖任何已有文件；目标已存在且字节相同时返回 unchanged、不重写，内容不同时返回 `EDM_INDEX_CONFLICT` 并保留原文件。临时文件和 no-clobber 发布必须在目标同一目录；平台不能确认独占发布时拒绝写入。该 CLI 路径策略不改变 Desktop 的原生另存契约。
 - Desktop 主进程打开原生另存对话框并负责保存。renderer 不提供路径、不接收 Markdown 内容或绝对路径；新 bridge 成功结果只向 renderer 返回不含路径分隔符的文件 basename、SKU 计数和待补图计数。`created` 表示目标此前不存在并以 no-clobber 方式创建；`updated` 表示项目目录外的已有目标已获原生覆盖确认并安全更新；`unchanged` 表示目标内容已与渲染内容相同且无需重写。取消保存对话框或系统覆盖确认时返回 `status: "cancelled"`，不得显示成功提示。
 - 用户项目目录内的已有文件一律不得被覆盖；若选择了项目目录内的已有目标，返回 `EDM_INDEX_CONFLICT` 并保留原文件。用户可在项目目录内选择一个不存在的新目标，但必须先确认规范化真实目标仍位于项目根目录内、路径祖先均安全，并用 no-clobber 原语创建；任一项无法确认就拒绝写入。项目目录外的已有目标只有在原生覆盖确认完成后才可更新。保存前后若目录身份、目标类型或目标状态发生变化，或实现无法安全确认写入结果，必须 fail closed 并保留现有文件；不能依靠字符串路径前缀判断项目目录，也不能用普通“检查后无条件 rename”声称消除了 symlink/junction、目录替换或并发竞态。平台/同步盘无法提供经过验证的 no-clobber 或条件替换语义时，应拒绝写入。
 - 文件首行是 `<!-- siteindex:generated:edm-sku-index:v1 -->`，其后为 `# EDM SKU Index` 标题、空行、Markdown 表格；表头顺序固定为 `SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存`，随后一行使用相同列数的 `---` 分隔符。单元格先将 `\` 写为 `\\`，再将 `|` 写为 `\|`，CR/LF 换行写为 `<br>`；null/缺值为空单元格。金额使用不带千位分隔符和货币符号的十进制数，URL 使用规范化 HTTP(S) 地址。
-- 按父 SKU 聚合时使用 roadmap §4.4 规定的代表子 SKU；图片优先使用 `image_role=main` 的台账图片，其次使用 feed 首图。EDM 清单排除 WebP；无可用图时写“待补图”。短描述来自 `sku_tags.email_blurb`。`edm.discount_tiers` 的类型目前只有 `number[]`，roadmap 未定义某个 SKU 选择哪一档、折后金额舍入规则；A 在实现导出命令前必须补齐此业务规则及黄金 fixture，本契约不替产品作此假设。
+- 按父 SKU 聚合时使用 roadmap §4.4 规定的代表子 SKU；图片优先使用 `image_role=main` 的台账图片，其次使用 feed 首图。EDM 清单排除 WebP；无可用图时写“待补图”。短描述来自 `sku_tags.email_blurb`。
+- `edm.discount_tiers` 是用户可选的百分比档位数组，元素必须是互不重复的整数 `1..99`；省略或空数组表示未启用折扣。每个 canonical 导出行必须单独选择其中一个档位；不推断、不按行顺序分配，也不自动采用最高/最低档。选择值保存在 `sku_tags.discount_tier`，其 CSV 列追加在 `updated_at` 后。缺少该列、缺少记录、空值或 null 都表示未选择，输出“折扣价”空单元格；旧台账无需迁移即可读取。未配置的值或不是整数 `1..99` 的值在已有台账中按未选择处理；通过 `edm.setDiscountTier` 写入不存在于配置列表中的值时返回 `EDM_DISCOUNT_TIER_INVALID`，不修改文件。配置数组含重复项、非整数或越界项时按 `CONFIG_INVALID` 处理。
+- 普通导出行的选择键为真实 SKU；父子分组导出行的选择键为确定性生成的父 SKU。父行不继承子 SKU 的档位，避免代表子 SKU 随库存变化而令导出价格改变。清除选择使用 null。UI 选择入口属于 D 的 `EdmPage`，使用项目配置列出档位并通过可选的 `edm.setDiscountTier` 保存；旧 bridge 不提供该方法时必须禁用选择并保持只读。
+- 折扣价以当前 feed 有效售价 `price` 为基数（包括 feed 当前有效的 `sale_price`），按 `price * (100 - discount_tier) / 100` 计算；已有效的 feed sale 仍作为当前售价继续计算此档，不回退到 `compare_at_price`。父行使用既定代表子 SKU 的当前有效售价。金额按 `site.json.currency` 的 ISO 4217 最小单位进行十进制 half-up 舍入；不使用二进制浮点格式化来决定舍入结果。
 - 同一份输入必须产生字节一致的清单：SKU 字典序按 `compareKeys`，不含生成时间、不依赖本机 locale、用户保存位置或遍历顺序；UTF-8 无 BOM、LF、末尾一个换行。用户选定目标后，若已有文件字节已与渲染结果一致则返回 `unchanged` 且不重写；新建目标返回 `created`，实际替换已有目标返回 `updated`。
 - 写入可能已经完成但 Desktop IPC 确认丢失时返回 `EDM_EXPORT_OUTCOME_UNKNOWN`（中文 message：“清单写入结果暂无法确认，可重新生成以核对。”）；调用方不得把它当作“未写入”或自动盲目重试。目标占用或无权限等确认未写入错误使用 `WRITE_FAILED`；所有错误 message/detail 不得泄露绝对路径、凭据或原始服务响应。旧 bridge 返回的 `path` 仅为迁移兼容，新 bridge 不返回该字段。
 
@@ -211,7 +215,7 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 - `media_id` 为 WordPress 媒体 ID；`source_hash` 为原始图片内容指纹，用于同 SKU、同源图的重试去重。凭据不得写入此台账。
 
 ### 5.13 `ledgers/sku_tags.csv`（★sku · 台账）
-`sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at`；tags 小写 `;` 分隔；以产品为单位操作时写入该产品全部 active 变体
+`sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at,discount_tier`；`discount_tier` 为可选整数百分比；旧文件可缺少末列，读取时按未选择处理。tags 小写 `;` 分隔；以产品为单位操作时写入该产品全部 active 变体
 
 ### 5.14 `ledgers/edm_campaigns.jsonl`（★campaign_id · 台账）
 `campaign_id`★(`YYYY-MM-DD-slug`) `date`✓ `theme`✓ `status`✓(`draft`/`scheduled`/`sent`) `subject` `preheader` `audience` `handles`✓ `promo_code` `utm_campaign` `mailchimp_campaign_id` `send_date` + 预留：`recipients` `open_rate` `click_rate` `orders` `revenue`

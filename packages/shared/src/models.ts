@@ -410,6 +410,8 @@ export interface SkuTags {
   season?: string | null;
   note: string | null;
   updated_at: ISODate;
+  /** 用户为该 EDM 清单行选择的折扣百分比；旧台账缺列时视为未选择。 */
+  discount_tier?: number | null;
 }
 
 export interface EdmCampaign {
