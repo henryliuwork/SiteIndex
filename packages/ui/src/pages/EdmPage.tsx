@@ -138,24 +138,32 @@ function MediaHistoryRecovery({ run, stale = false }: { run: RunLog; stale?: boo
 }
 
 function exportResultMessage(result: EdmSkuIndexExportResult): string {
-  const status = result.status === "created" ? "清单已创建"
-    : result.status === "updated" ? "清单已更新" : "清单已是最新";
-  return `${status}：${result.sku_count} 个 SKU，待补图 ${result.missing_image_count} 个。`;
+  if (result.status === "cancelled") return "";
+  const status = result.status === "created" ? "清单已保存"
+    : result.status === "updated" ? "清单已更新"
+      : "清单已是最新";
+  const fileName = getExportFileName(result);
+  return `${status}${fileName ? `（${fileName}）` : ""}：${result.sku_count} 个 SKU，待补图 ${result.missing_image_count} 个。`;
+}
+
+function getExportFileName(result: EdmSkuIndexExportResult): string | undefined {
+  const fileName = result.file_name?.trim();
+  return fileName && !/[\\/]/.test(fileName) ? fileName : undefined;
 }
 
 function getExportErrorMessage(error: unknown): { tone: "warn" | "error"; message: string } {
   if (isEdmExportOutcomeUnknown(error)) {
-    return { tone: "warn", message: "写入结果尚未确认；清单可能已经生成。此页面不会盲目重试，请先核对目标标记、当前内容与预期输出。" };
+    return { tone: "warn", message: "保存结果尚未确认；清单可能已写入您选择的位置。此页面不会盲目重试，请先检查该位置。" };
   }
   if (error && typeof error === "object" && "code" in error && error.code === "EDM_INDEX_CONFLICT") {
-    return { tone: "error", message: "清单目标存在冲突，未覆盖已有文件。请先检查目标文件后重试。" };
+    return { tone: "error", message: "项目目录中的目标文件已存在，未覆盖原文件。请选择项目外的位置保存副本。" };
   }
   if (error && typeof error === "object" && "code" in error && error.code === "WRITE_FAILED") {
-    return { tone: "error", message: "清单写入失败，后端确认目标未写入。请检查目标文件和权限后再试。" };
+    return { tone: "error", message: "SKU 清单未能保存。请检查所选位置和文件权限后重试。" };
   }
   return {
     tone: "warn",
-    message: "导出请求失败且无法确认目标文件是否已更新。此页面不会盲目重试，请先核对目标标记、当前内容与预期输出。",
+    message: "保存请求失败，无法确认所选位置的文件状态。此页面不会盲目重试，请先检查该位置。",
   };
 }
 
@@ -270,6 +278,7 @@ export function EdmPage() {
   const [exportFeedback, setExportFeedback] = useState<
     | { projectId: string; result: EdmSkuIndexExportResult; safetyWarning?: string }
     | { projectId: string; error: { tone: "warn" | "error"; message: string } }
+    | { projectId: string; localWarning: string }
     | null
   >(null);
   const [exportSafetyUnavailableProjectId, setExportSafetyUnavailableProjectId] = useState<string | null>(null);
@@ -318,7 +327,14 @@ export function EdmPage() {
     onMutate: () => setExportFeedback(null),
     onSuccess: (result, { projectId, attemptId }) => {
       const markerResolved = resolveEdmExportAttempt(projectId, attemptId, exportCapability.reconciliationVerified);
-      const safetyWarning = markerResolved ? undefined : "结果已确认，但本机无法解除导出状态门闩；请检查本地存储后再继续。";
+      if (result.status === "cancelled") {
+        setExportFeedback(markerResolved ? null : {
+          projectId,
+          localWarning: "保存对话框已取消，但本机未能清除这次另存状态；该项目的另存操作可能暂时禁用。请恢复本机存储后重新进入页面。",
+        });
+        return;
+      }
+      const safetyWarning = markerResolved ? undefined : "结果已确认，但本机无法解除另存状态门闩；请检查本地存储后再继续。";
       setExportFeedback({ projectId, result, ...(safetyWarning ? { safetyWarning } : {}) });
       const message = exportResultMessage(result);
       if (safetyWarning) toast.error(safetyWarning);
@@ -341,8 +357,8 @@ export function EdmPage() {
       const safetyState = getEdmExportSafetyState(id, exportCapability.reconciliationVerified);
       if (safetyState === "unavailable") setExportSafetyUnavailableProjectId(id);
       const message = safetyState === "blocked"
-        ? "本机已有未确认的导出门闩；请求尚未发送。请先核查目标文件。"
-        : "无法保存本次导出的确认状态，请检查本地存储。请求尚未发送，导出操作已暂停。";
+        ? "本机已有未确认的另存操作；请求尚未发送。请先检查上次选择的保存位置。"
+        : "无法记录本次另存状态，请检查本地存储。请求尚未发送，操作已暂停。";
       setExportFeedback({ projectId: id, error: { tone: "warn", message } });
       toast.error(message);
       return;
@@ -556,22 +572,26 @@ export function EdmPage() {
     {!isMockApi && <div className="si-edm-live-workflows">
       {exportCapability.available ? <div className="si-edm-export-control">
         <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>
-          {exportMutation.isPending ? "正在生成全项目清单…" : "导出全项目 SKU 清单"}
+          {exportMutation.isPending ? "正在准备 SKU 清单…" : "另存全项目 SKU 清单"}
         </Button>
-        {exportSafetyBlocked && !exportMutation.isPending && exportSafetyState === "blocked" && <Notice tone="warn" title="导出操作已暂停">
-          上次操作可能中断或写入结果未知，清单可能已经生成。请先核对生成标记、当前内容与预期输出；在后端提供并验证每次调用前的完整核验前，此页不会重新发送导出请求。
+        {exportSafetyBlocked && !exportMutation.isPending && exportSafetyState === "blocked"
+          && !(currentExportFeedback && "localWarning" in currentExportFeedback) && <Notice tone="warn" title="另存操作已暂停">
+          本机仍保留未清除的另存状态，可能来自上次操作中断或状态无法同步。为避免重复写入，此项目的另存已暂停；请先检查所选保存位置和本机状态。
         </Notice>}
-        {(exportSafetyState === "unavailable" || exportSafetyUnavailableProjectId === id) && <Notice tone="warn" title="无法记录导出确认状态">
-          本机存储不可用，导出请求不会发送。请恢复应用本地存储后重新进入此页；本地状态恢复后可重新尝试。
+        {(exportSafetyState === "unavailable" || exportSafetyUnavailableProjectId === id) && <Notice tone="warn" title="无法记录另存状态">
+          本机存储不可用，另存请求不会发送。请恢复应用本地存储后重新进入此页，再重新尝试。
         </Notice>}
-        {currentExportFeedback && "result" in currentExportFeedback && <Notice tone={currentExportFeedback.safetyWarning ? "warn" : "info"} title="EDM SKU 清单导出结果">
-          {exportResultMessage(currentExportFeedback.result)} 路径：<code>{currentExportFeedback.result.path}</code>{currentExportFeedback.safetyWarning && <> {currentExportFeedback.safetyWarning}</>}
+        {currentExportFeedback && "result" in currentExportFeedback && <Notice tone={currentExportFeedback.safetyWarning ? "warn" : "info"} title="EDM SKU 清单保存结果">
+          {exportResultMessage(currentExportFeedback.result)}{currentExportFeedback.safetyWarning && <> {currentExportFeedback.safetyWarning}</>}
         </Notice>}
-        {currentExportFeedback && "error" in currentExportFeedback && <Notice tone={currentExportFeedback.error.tone} title={exportSafetyUnavailableProjectId === id ? "导出请求未发送" : currentExportFeedback.error.tone === "warn" ? "导出结果尚未确认" : "清单导出失败"}>
+        {currentExportFeedback && "localWarning" in currentExportFeedback && <Notice tone="warn" title="本机另存状态未清除">
+          {currentExportFeedback.localWarning}
+        </Notice>}
+        {currentExportFeedback && "error" in currentExportFeedback && <Notice tone={currentExportFeedback.error.tone} title={exportSafetyUnavailableProjectId === id ? "另存请求未发送" : currentExportFeedback.error.tone === "warn" ? "保存结果尚未确认" : "清单保存失败"}>
           {currentExportFeedback.error.message}
         </Notice>}
-      </div> : <Notice tone="info" title="全项目 SKU 清单导出尚未就绪">
-        Core 与 Desktop IPC 未同时提供并开放 `edm.exportIndex` 前，不显示可执行的导出操作。
+      </div> : <Notice tone="info" title="全项目 SKU 清单另存尚未就绪">
+        Desktop 原生保存能力尚未开放前，不显示可执行的另存操作。
       </Notice>}
       {mediaDisplaySelection.kind === "loading" && <div className="si-query-loading" role="status">正在核对最近 {EDM_MEDIA_HISTORY_LIMIT} 条任务记录（包含所有任务类型）…</div>}
       {mediaHistoryQuery.isError && !mediaSnapshotActive && <ApiErrorNotice label="最近 100 条任务记录加载失败，无法核对最新媒体任务。" error={mediaHistoryQuery.error} onRetry={() => void mediaHistoryQuery.refetch()} />}

@@ -423,70 +423,145 @@ describe("EdmPage media preparation prototype", () => {
     expect(mediaPrepare).not.toHaveBeenCalled();
   });
 
-  it("真实模式在 Core/Desktop 导出门禁仍关闭时不渲染可执行清单导出按钮", async () => {
+  it("真实模式在 Desktop 另存门禁仍关闭时不渲染可执行清单按钮", async () => {
     await renderEdmPage(true, false);
 
-    expect(await screen.findByText(/全项目 SKU 清单导出尚未就绪/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "导出全项目 SKU 清单" })).toBeNull();
+    expect(await screen.findByText(/全项目 SKU 清单另存尚未就绪/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "另存全项目 SKU 清单" })).toBeNull();
   });
 
-  it("导出契约与 IPC 就绪后调用全项目方法并按返回状态显示相对路径", async () => {
+  it("另存就绪后显示安全文件名与统计，不展示旧 bridge 的项目相对路径", async () => {
     const result: EdmSkuIndexExportResult = {
-      status: "updated", path: "_site-index/edm/sku-index.md", sku_count: 12, missing_image_count: 3,
+      status: "updated", file_name: "sku-index.md", path: "_site-index/edm/sku-index.md", sku_count: 12, missing_image_count: 3,
     };
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
-    const button = await screen.findByRole("button", { name: "导出全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
     fireEvent.click(button);
 
     await waitFor(() => expect(exportIndex).toHaveBeenCalledWith("demo"));
     const control = exportControlFor(button);
-    expect(await within(control).findByText(/清单已更新：12 个 SKU，待补图 3 个/)).toBeTruthy();
-    expect(within(control).getByText("_site-index/edm/sku-index.md")).toBeTruthy();
+    expect(await within(control).findByText(/清单已更新（sku-index\.md）：12 个 SKU，待补图 3 个/)).toBeTruthy();
+    expect(control.textContent).not.toContain("_site-index/edm/sku-index.md");
+    expect(within(screen.getByLabelText("通知")).getByRole("status").textContent).toContain("sku-index.md");
   });
 
-  it("导出确认结果未知时明确提示可能已写入并保持重试禁用", async () => {
-    const unknownError = Object.assign(new Error("写入确认超时"), { code: "EDM_EXPORT_OUTCOME_UNKNOWN" });
-    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportError: unknownError });
-    const button = await screen.findByRole("button", { name: "导出全项目 SKU 清单" });
+  it("旧 bridge 仅返回 path 时仍显示统计但不展示固定相对路径", async () => {
+    const result: EdmSkuIndexExportResult = {
+      status: "created", path: "index/edm/sku-index.md", sku_count: 4, missing_image_count: 1,
+    };
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
     fireEvent.click(button);
 
     const control = exportControlFor(button);
-    expect(await within(control).findByText(/写入结果尚未确认；清单可能已经生成/)).toBeTruthy();
+    expect(await within(control).findByText(/清单已保存：4 个 SKU，待补图 1 个/)).toBeTruthy();
+    expect(control.textContent).not.toContain("index/edm/sku-index.md");
+  });
+
+  it("用户取消另存时清除进行状态和门闩，不显示成功或错误 toast", async () => {
+    const result: EdmSkuIndexExportResult = { status: "cancelled", sku_count: 12, missing_image_count: 3 };
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const toastRegion = screen.getByLabelText("通知");
+    fireEvent.click(button);
+
+    await waitFor(() => expect(exportIndex).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(window.localStorage.getItem("siteindex:edm-export-attempt:demo")).toBeNull());
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.textContent).toBe("另存全项目 SKU 清单");
+    expect(within(toastRegion).queryByRole("status")).toBeNull();
+    expect(within(toastRegion).queryByRole("alert")).toBeNull();
+    expect(exportControlFor(button).textContent).not.toContain("清单已");
+
+    fireEvent.click(button);
+    await waitFor(() => expect(exportIndex).toHaveBeenCalledTimes(2));
+  });
+
+  it("取消已确认但本机未能清除门闩时只提示本地状态，并在重进页面后继续说明暂停原因", async () => {
+    const markerKey = "siteindex:edm-export-attempt:demo";
+    const originalRemoveItem = window.localStorage.removeItem.bind(window.localStorage);
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation((key) => {
+      if (key === markerKey) throw new Error("local storage remove unavailable");
+      originalRemoveItem(key);
+    });
+    const result: EdmSkuIndexExportResult = { status: "cancelled", sku_count: 12, missing_image_count: 3 };
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const toastRegion = screen.getByLabelText("通知");
+    fireEvent.click(button);
+
+    const control = exportControlFor(button);
+    expect(await within(control).findByText(/保存对话框已取消，但本机未能清除这次另存状态/)).toBeTruthy();
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(true));
+    expect(JSON.parse(window.localStorage.getItem(markerKey) ?? "{}").state).toBe("pending");
+    expect(within(toastRegion).queryByRole("status")).toBeNull();
+    expect(within(toastRegion).queryByRole("alert")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
+    fireEvent.click(await screen.findByRole("button", { name: "返回 EDM" }));
+    const reopenedButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    expect(reopenedButton.hasAttribute("disabled")).toBe(true);
+    expect(await within(exportControlFor(reopenedButton)).findByText(/本机仍保留未清除的另存状态/)).toBeTruthy();
+    expect(exportControlFor(reopenedButton).textContent).not.toContain("可能已写入");
+    expect(within(toastRegion).queryByRole("status")).toBeNull();
+    expect(within(toastRegion).queryByRole("alert")).toBeNull();
+    expect(exportIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("unchanged 显示已是最新并给出文件名与统计", async () => {
+    const result: EdmSkuIndexExportResult = {
+      status: "unchanged", file_name: "sku-index.md", sku_count: 12, missing_image_count: 3,
+    };
+    await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
+    fireEvent.click(await screen.findByRole("button", { name: "另存全项目 SKU 清单" }));
+
+    const toastRegion = screen.getByLabelText("通知");
+    await waitFor(() => expect(toastRegion.querySelector(".si-toast-info")?.textContent).toContain("清单已是最新（sku-index.md）：12 个 SKU，待补图 3 个"));
+  });
+
+  it("另存结果未知时提示所选位置可能已写入并保持重试禁用", async () => {
+    const unknownError = Object.assign(new Error("写入确认超时"), { code: "EDM_EXPORT_OUTCOME_UNKNOWN" });
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportError: unknownError });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    fireEvent.click(button);
+
+    const control = exportControlFor(button);
+    expect(await within(control).findByText(/保存结果尚未确认；清单可能已写入您选择的位置/)).toBeTruthy();
     expect(within(control).getByText(/此页面不会盲目重试/)).toBeTruthy();
     await waitFor(() => expect(button.hasAttribute("disabled")).toBe(true));
     fireEvent.click(button);
     expect(exportIndex).toHaveBeenCalledTimes(1);
   });
 
-  it("本机已有结果未知标记时跨页面进入仍禁用导出", async () => {
+  it("本机已有结果未知标记时跨页面进入仍禁用另存", async () => {
     window.localStorage.setItem("siteindex:edm-export-attempt:demo", "unknown");
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true });
-    const button = await screen.findByRole("button", { name: "导出全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
 
     expect(button.hasAttribute("disabled")).toBe(true);
-    expect(await screen.findByText(/在后端提供并验证每次调用前的完整核验前/)).toBeTruthy();
+    expect(await screen.findByText(/本机仍保留未清除的另存状态/)).toBeTruthy();
     fireEvent.click(button);
     expect(exportIndex).not.toHaveBeenCalled();
   });
 
-  it("无法持久化导出门闩时不调用 IPC，并提供本机恢复路径", async () => {
+  it("无法持久化另存门闩时不调用 IPC，并提供本机恢复路径", async () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable"); });
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true });
-    fireEvent.click(await screen.findByRole("button", { name: "导出全项目 SKU 清单" }));
+    fireEvent.click(await screen.findByRole("button", { name: "另存全项目 SKU 清单" }));
 
-    expect(await screen.findAllByText(/请求尚未发送，导出操作已暂停/)).not.toHaveLength(0);
-    expect(screen.getByRole("button", { name: "导出全项目 SKU 清单" }).hasAttribute("disabled")).toBe(true);
+    expect(await screen.findAllByText(/请求尚未发送，操作已暂停/)).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: "另存全项目 SKU 清单" }).hasAttribute("disabled")).toBe(true);
     expect(exportIndex).not.toHaveBeenCalled();
   });
 
   it("清单目标冲突时明确说明没有覆盖已有文件", async () => {
     const conflictError = Object.assign(new Error("目标内容冲突"), { code: "EDM_INDEX_CONFLICT" });
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportError: conflictError });
-    const button = await screen.findByRole("button", { name: "导出全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
     fireEvent.click(button);
 
     const control = exportControlFor(button);
-    expect(await within(control).findByText(/目标存在冲突，未覆盖已有文件/)).toBeTruthy();
+    expect(await within(control).findByText(/项目目录中的目标文件已存在，未覆盖原文件/)).toBeTruthy();
     expect(exportIndex).toHaveBeenCalledWith("demo");
   });
 
