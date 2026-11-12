@@ -172,9 +172,9 @@
 - [x] #422：非 media Job 的 Desktop 活动 runId 由 Core ID 加随机 Desktop UUID 组成；media Job 必须直接使用 Core 为该次执行生成的全局唯一 ID，保持 started、progress、finished/result 与取消映射一致，并拒绝重复活动 ID。不同项目同名 Job 可分别取消。finished 结果按 utilityProcess 归属并校验 Job 名；非 media 结果统一为 Desktop 活动 ID。media 结果转发前白名单化与脱敏；历史读取对 media RunLog 使用安全字段白名单、固定错误文案、不透传 steps/reason/未知字段，并仅保留无 userinfo/query/fragment 的 HTTP(S) image URL；legacy/workspace 测试覆盖隔离、锁清理与旧同日记录不被覆盖。
 - [x] #439 Core 已合并 `onJobStarted` 与媒体 checkpoint。Desktop worker 现在仅用该回调 ID 发送媒体 `started`，progress/result 校验并沿用同一 ID；不会为媒体任务运行日期型 fallback。真实 Core 配置读取早退、缺失回调、结果 ID 不匹配与异常路径有 worker 执行层测试；Core started 后的异常会将请求 SKU 保守标为 `outcome_unknown`，并通过 worker→JobManager 消息路径测试，避免不完整 finished 被拒后遗留运行状态。JobManager 已覆盖媒体崩溃、双项目并发/取消、SKU 分区和先到 finished 事件。
 - [x] #439 Desktop worker 接线的 Windows Electron 实测：utilityProcess 从构建输出与 `app.asar/out/main/job-worker.js` 各运行一次合成坏配置请求；真实 Core 在配置读取失败前发送 `media-<UUID>`，worker `finished` 沿用同一 ID，并将请求 SKU 标为未开始。`app.asar.unpacked` 中解包的 AVIF/WebP decoder、JPEG encoder、resize 四个 WASM 均从 Electron 中成功解析并 `WebAssembly.compile`；安装器检查也会验证这些文件。
-- [x] 媒体流水线 packaged E2E：Windows 隔离测试包加载实际构建的 EDM UI 与 preload，经 Desktop IPC 在 utilityProcess 中运行真实 Core media Job；外部交互仅指向本机 `127.0.0.1` 合成图片源与 WordPress REST 假服务。覆盖上传/记录/跳过/逐 SKU 失败、401/403 停止后续 SKU、服务端已提交但响应丢失后的结果未知、重试查重复用、台账/运行历史、utilityProcess 进度到达 renderer、Job 运行中离开 EDM 后在后台完成、重新进入 EDM 后恢复跨页结果。CI artifact 记录关键凭据 vault、图片台账、runs 与 checkpoint 的扫描数量；Chromium 缓存跳过和读错数量分开统计，关键文件任意不可读或漏扫即失败。
+- [ ] 媒体 packaged E2E：现有测试入口曾复制 EDM UI 并改写 pending gate，且测试 main 强制 readiness；这只能作为历史组件集成测试，不能作为生产能力验收。本 PR 改为使用原始 production UI、真实 `isMediaPrepareReady`，并在 pending 仍存在时明确跳过且记录“未运行”，不绕过 UI 或 Desktop gate。
 - [ ] 生产 readiness：Desktop 在 Core 已初始化且 shared `PENDING_HANDLERS` 不再包含 `media.prepare` 后才开放真实 Job；当前 pending 标记仍在，因此生产入口继续返回 `NOT_IMPLEMENTED`，需在独立 contract PR 清理后才会开放。
-- [ ] 尚未在测试 WordPress 实例上实测真实 HTTP、真实凭据、正式安装器安装后的 media Job 或实际进程崩溃后的 checkpoint 恢复；这些仍需后续验收。#459 的隔离 packaged E2E 只验证真实 Core/IPC/preload 与 loopback 假服务，不能替代正式 EDM 页面与实际安装器验收。
+- [ ] 尚未在测试 WordPress 实例上实测真实 HTTP、真实凭据、正式安装器安装后的 media Job 或实际进程崩溃后的 checkpoint 恢复；这些仍需后续验收。Hosted loopback 验收不替代真实 WordPress 与正式安装器验收。
 - [x] #422 合成 packaged E2E 已验证 media Job 在 EDM 页外完成，并在 Runs 与 EDM 页恢复结果；这不替代测试 WordPress 与正式安装包验收。真实服务/真实凭据验收前仍不清理 `media.prepare` 的 pending 契约项。
 - [x] #422：preload 暴露 `media.prepare` 路由；生产 readiness 由 Core 初始化状态与 shared pending 标记共同控制。契约仍 pending 时 Desktop 返回 `NOT_IMPLEMENTED`，独立 contract PR 清理后才会开放真实媒体 Job。
 - [x] #423：preload 暴露 `edm.exportIndex`；Desktop 先检查显式 readiness 门禁，再转发到 Core 可选方法。main readiness 当前固定为 false，即使 Core 暴露同名方法仍返回 `NOT_IMPLEMENTED`；尚未清理 `PENDING_HANDLERS`，UI 仍关闭导出入口。
@@ -196,12 +196,11 @@
 - [x] head `4962f466f2d179d6ff044e28f5e281afe18aa008` 的 run `43075389702`（基于 #435 合并前的 `08804a5`）Windows packaged acceptance 通过 71/71：17 次凭据状态检查、3 次保存、2 次删除、4 次重启；209 个隔离文件零 canary 命中；添加已有项目 41 ms。该 run 是历史证据，不代替当前基线验收。
 - [ ] #435 合并后已将本 PR 变基到 main `de157b92c46fdfd2a465e7f50b4ccd3a0aef634a`；最新 head 的三系统 CI 与 packaged acceptance 尚待完成。
 
-
 ## #461 · Hosted 候选摘要与凭据隔离判定
 
 - [x] 将 E #461 的 fail-closed oracle 接入 Windows hosted 验收最终摘要；只写 `passed` 与固定 failure code，不写 canary 原文。
 - [x] 摘要记录候选版本、冻结的验收代码 commit、Release tag commit、EXE asset ID/SHA256、Release workflow run、Windows artifact ID/digest 与 latest.yml 校验状态；hosted dispatch 缺少任一 pin 时失败。
 - [x] 保持 workflow token 最小只读权限（`actions: read`、`contents: read`）；dispatch 参数只使用公开 commit、asset ID 和摘要，不传真实凭据。
-- [ ] media.prepare 门禁顺序待协调：`PENDING_HANDLERS` 仍包含方法时，正式 UI → IPC → Core 链路会在启动 Job 前返回 `NOT_IMPLEMENTED`。不得用测试 UI 绕过或临时改 shared 来声称生产链路已通过。#459/#460 的 loopback harness 仅作补充，不能代替正式 EDM 入口。
-- [ ] 可审计的虚构服务候选测试需通过正常 contract PR 清除 pending 后，在隔离 packaged candidate 中运行正式 UI、preload、IPC、utilityProcess、Core 与 loopback 假服务；覆盖成功、401/403、提交后断连、离页恢复及重启恢复，并扫描本地 vault、台账、runs 与输出摘要。真实 WordPress 域名/凭据和正式公开 Release 仍单独验收。
-- [ ] 当前 C 清单要求真实服务/凭据验收前不得清理 pending；这与先跑上述正式 packaged UI 测试形成循环依赖。若不调整顺序，就保持 pending 并仅报告组件级证据；若审核者批准将“假服务 packaged E2E”前置为清理条件、真实 WordPress 验收后置为公开 Release 条件，再按上一条执行。此次 PR 不打开 gate、不改 shared。
+- [ ] media.prepare contract 顺序：本 C PR 合并后，独立 `contract/*` PR 只清理 `PENDING_HANDLERS` 中已声明且已实现的 `media.prepare`。该 contract PR 的 hosted Windows packaged-dir check 必须先在该 PR head（pending 已清除）通过原始 production EDM UI → preload → IPC → utilityProcess → Core → loopback fake service；涵盖成功/部分失败、首个 SKU 成功后的 401/403 停批、服务端提交后响应丢失、提交后 429/503 的 `outcome_unknown`、跨页完成，以及应用进程退出后重启、从 history 恢复未知状态、用户确认后无重复 POST。脱敏需覆盖 DOM、IPC 请求/结果、worker stdout/stderr、本地凭据 vault、浏览器存储、台账、runs、checkpoint 与最终摘要，并对五类凭据编码 fail-closed；只输出扫描计数与固定错误码。缺少任一证据不得合并契约 PR。该 hosted 包是 `win-unpacked` 隔离目录，不是 NSIS 安装验收；loopback 只验证虚构服务链路，不证明生产 HTTPS 策略或真实 WordPress。
+- [ ] “应用重启”验收定义为上一媒体 Job 已写入终态 `outcome_unknown` 并且进程退出后，再启动新 packaged process，从持久化 history 恢复未知结果，用户确认后由 Core 查询复用已有媒体对象；不声称支持重启时仍运行中的 Job 重新挂接实时进度。
+- [ ] 清理 pending 的前提是上面的虚构服务 hosted package acceptance 已通过；真实 WordPress/真实凭据验收必须在任何公开 Release 前完成。hosted fake service 只绑定 `127.0.0.1`、使用虚构媒体和凭据，不能代替真实服务验收。

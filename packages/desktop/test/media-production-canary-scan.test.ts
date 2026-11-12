@@ -44,6 +44,19 @@ describe("packaged media credential canary scan", () => {
     expect(summary.otherReadErrors).toBe(0);
   });
 
+  it("detects credentials encoded as UTF-16LE without reporting their contents", async () => {
+    const root = await createFixtureRoot();
+    const target = path.join(root, "user-data", "Local Storage", "leveldb", "synthetic.log");
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, Buffer.from("synthetic-secret-canary", "utf16le"));
+
+    const summary = await scanMediaCanaryTree(root, [Buffer.from("synthetic-secret-canary", "utf16le")]);
+
+    expect(summary.complete).toBe(true);
+    expect(summary.matches).toBe(1);
+    expect(JSON.stringify(summary)).not.toContain("synthetic-secret-canary");
+  });
+
   it.each([
     [
       "credential vault",
