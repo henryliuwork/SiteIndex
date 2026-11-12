@@ -189,6 +189,11 @@ function isProjectRouteActive(projectId: string, currentProjectId: string): bool
   }
 }
 
+type EdmExportFeedback =
+  | { projectId: string; result: EdmSkuIndexExportResult; safetyWarning?: string }
+  | { projectId: string; error: { tone: "warn" | "error"; message: string } }
+  | { projectId: string; localWarning: string };
+
 function EdmGroupingPreview({ projectId, rule, enabled }: { projectId: string; rule: SkuGroupingRule; enabled: boolean }) {
   const previewQuery = useQuery({
     queryKey: skuGroupingPreviewQueryKey(projectId, rule),
@@ -291,12 +296,16 @@ export function EdmPage() {
     reviewSkus: string[];
     historyMayBeTruncated: boolean;
   } | null>(null);
-  const [exportFeedback, setExportFeedback] = useState<
-    | { projectId: string; result: EdmSkuIndexExportResult; safetyWarning?: string }
-    | { projectId: string; error: { tone: "warn" | "error"; message: string } }
-    | { projectId: string; localWarning: string }
-    | null
-  >(null);
+  const [exportFeedbackByProject, setExportFeedbackByProject] = useState<Record<string, EdmExportFeedback>>({});
+  const setProjectExportFeedback = (projectId: string, feedback: EdmExportFeedback | null) => {
+    setExportFeedbackByProject((current) => {
+      if (feedback) return { ...current, [projectId]: feedback };
+      if (!(projectId in current)) return current;
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+  };
   const [exportSafetyUnavailableProjectId, setExportSafetyUnavailableProjectId] = useState<string | null>(null);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
   const summaryQueryKey = ["edm", "summary", id] as const;
@@ -334,25 +343,25 @@ export function EdmPage() {
     : "";
   const refreshedMediaCacheStateRef = useRef({ runKey: "", handledQueryKeys: new Set<string>() });
   const exportSafetyBlocked = exportSafetyState !== "ready" || exportSafetyUnavailableProjectId === id;
-  const currentExportFeedback = exportFeedback?.projectId === id ? exportFeedback : null;
+  const currentExportFeedback = exportFeedbackByProject[id] ?? null;
   const exportMutation = useMutation({
     mutationFn: async ({ projectId }: { projectId: string; attemptId: string }) => {
       if (!exportCapability.available || !exportIndex) throw new Error("EDM 清单导出尚未就绪。");
       return exportIndex(projectId);
     },
-    onMutate: () => setExportFeedback(null),
+    onMutate: ({ projectId }) => setProjectExportFeedback(projectId, null),
     onSuccess: (result, { projectId, attemptId }) => {
       const isCurrentProject = isProjectRouteActive(projectId, currentProjectIdRef.current);
       const markerResolved = resolveEdmExportAttempt(projectId, attemptId, exportCapability.reconciliationVerified);
       if (result.status === "cancelled") {
-        setExportFeedback(markerResolved ? null : {
+        setProjectExportFeedback(projectId, markerResolved ? null : {
           projectId,
           localWarning: "保存对话框已取消，但本机未能清除这次另存状态；该项目的另存操作可能暂时禁用。请恢复本机存储后重新进入页面。",
         });
         return;
       }
       const safetyWarning = markerResolved ? undefined : "结果已确认，但本机无法解除另存状态门闩；请检查本地存储后再继续。";
-      setExportFeedback({ projectId, result, ...(safetyWarning ? { safetyWarning } : {}) });
+      setProjectExportFeedback(projectId, { projectId, result, ...(safetyWarning ? { safetyWarning } : {}) });
       const message = exportResultMessage(result);
       if (isCurrentProject) {
         if (safetyWarning) toast.error(safetyWarning);
@@ -365,7 +374,7 @@ export function EdmPage() {
       const feedback = getExportErrorMessage(error);
       if (isEdmExportDefinitiveNoWrite(error)) resolveEdmExportAttempt(projectId, attemptId, exportCapability.reconciliationVerified);
       else if (!exportCapability.reconciliationVerified) keepEdmExportAttemptBlocked(projectId, attemptId);
-      setExportFeedback({ projectId, error: feedback });
+      setProjectExportFeedback(projectId, { projectId, error: feedback });
       if (isCurrentProject) {
         if (feedback.tone === "warn") toast.info(feedback.message);
         else toast.error(feedback.message);
@@ -381,7 +390,7 @@ export function EdmPage() {
       const message = safetyState === "blocked"
         ? "本机已有未确认的另存操作；请求尚未发送。请先检查上次选择的保存位置。"
         : "无法记录本次另存状态，请检查本地存储。请求尚未发送，操作已暂停。";
-      setExportFeedback({ projectId: id, error: { tone: "warn", message } });
+      setProjectExportFeedback(id, { projectId: id, error: { tone: "warn", message } });
       toast.error(message);
       return;
     }

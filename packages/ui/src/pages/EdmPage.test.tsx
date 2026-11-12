@@ -80,12 +80,13 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   mockApi.edm.setManualImage = setManualImage;
   mockApi.jobs.history = vi.fn(async (projectId) => options.historyByProject?.[projectId] ?? options.history ?? []);
   const defaultExportResult = options.exportResult ?? { status: "created", file_name: "sku-index.md", sku_count: 1, missing_image_count: 0 } satisfies EdmSkuIndexExportResult;
-  let resolvePendingExport: ((result: EdmSkuIndexExportResult) => void) | undefined;
-  let rejectPendingExport: ((error: unknown) => void) | undefined;
-  const exportIndex = vi.fn((): Promise<EdmSkuIndexExportResult> => {
+  const pendingExports: Array<{
+    resolve: (result: EdmSkuIndexExportResult) => void;
+    reject: (error: unknown) => void;
+  }> = [];
+  const exportIndex = vi.fn((_projectId: string): Promise<EdmSkuIndexExportResult> => {
     if (options.deferredExport) return new Promise((resolve, reject) => {
-      resolvePendingExport = resolve;
-      rejectPendingExport = reject;
+      pendingExports.push({ resolve, reject });
     });
     if (options.exportError) return Promise.reject(options.exportError);
     return Promise.resolve(defaultExportResult);
@@ -157,8 +158,8 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
   return {
     mockApi, queryClient, summary, listImages, previewGrouping, setManualImage, mediaPrepare, exportIndex, invalidateQueries,
-    resolveExport: (result = defaultExportResult) => resolvePendingExport?.(result),
-    rejectExport: (error: unknown) => rejectPendingExport?.(error),
+    resolveExport: (result = defaultExportResult, requestIndex = 0) => pendingExports[requestIndex]?.resolve(result),
+    rejectExport: (error: unknown, requestIndex = 0) => pendingExports[requestIndex]?.reject(error),
     emitMediaProgress: (progress: JobProgress) => onMediaProgress?.(progress),
     emitMediaFinished: (result: JobResult) => onMediaFinished?.(result),
     resolveMediaPrepare: (runId = "demo-media-run") => resolvePendingMediaPrepare?.({ runId }),
@@ -479,6 +480,9 @@ describe("EdmPage media preparation prototype", () => {
     const result: EdmSkuIndexExportResult = {
       status: "created", file_name: "sku-index-A.md", sku_count: 5, missing_image_count: 1,
     };
+    const projectBResult: EdmSkuIndexExportResult = {
+      status: "updated", file_name: "sku-index-B.md", sku_count: 8, missing_image_count: 2,
+    };
     const { exportIndex, resolveExport } = await renderEdmPage(true, false, undefined, false, false, {
       exportReady: true, deferredExport: true,
     });
@@ -500,15 +504,31 @@ describe("EdmPage media preparation prototype", () => {
     expect(exportControlFor(projectBButton).textContent).not.toContain("sku-index-A.md");
     expect(window.localStorage.getItem("siteindex:edm-export-attempt:demo")).toBeNull();
 
+    fireEvent.click(projectBButton);
+    await waitFor(() => expect(exportIndex).toHaveBeenNthCalledWith(2, "other"));
     fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
-    const projectAButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const projectAButton = await screen.findByRole("button", { name: /另存全项目 SKU 清单|正在准备 SKU 清单/ });
     await waitFor(() => {
       const projectAControl = exportControlFor(projectAButton);
       expect(projectAControl.textContent).toContain("sku-index-A.md");
       expect(projectAControl.textContent).toContain("5 个 SKU");
       expect(projectAControl.textContent).toContain("待补图 1 个");
     });
+
+    await act(async () => {
+      resolveExport(projectBResult, 1);
+      await Promise.resolve();
+    });
     expect(within(toastRegion).queryByRole("status")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "切换项目" }));
+    const completedProjectBButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    await waitFor(() => expect(exportControlFor(completedProjectBButton).textContent).toContain("sku-index-B.md"));
+    expect(exportControlFor(completedProjectBButton).textContent).toContain("8 个 SKU");
+
+    fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
+    const returnedProjectAButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    await waitFor(() => expect(exportControlFor(returnedProjectAButton).textContent).toContain("sku-index-A.md"));
   });
 
   it("A 项目请求在页面切到 B 库存后完成，不在 B 页面显示全局 toast", async () => {
