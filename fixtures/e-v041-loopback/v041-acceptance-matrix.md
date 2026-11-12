@@ -114,3 +114,15 @@ PR #440（head `708a40f3a1c78cce78fec8738bfcfd3b6e531b51`）尚未合并。其�
 - 历史快照：PR #417 的早期提交 `23c35c76c59f7dbcc469bfbd672ae8f1fd808428` 当时尚未覆盖 INV-06 中的恢复完整性 / 外部编辑保护边界；这只描述该固定历史提交，不代表合并后的当前 main。当前覆盖范围见上表 INV-06，仍未逐项证明空/截断清单与任意越界目标路径。
 - host identity 测试明示为有起跑屏障的并发 smoke test，不保证两个进程命中内部 read-missing/exclusive-create 临界区，也不构成跨设备分布式锁证明。
 - #440 已在 hosted Windows runner 安装并尝试启动 pinned v0.4.0 baseline；因 CDP 无完整 UI target 而停止。候选版内部安装器只通过结构检查，未安装/启动；没有正式候选包 IPC 验收。L3 真实 WordPress 环境未执行。所有未实现或未接线的 API/UI 维持“未验证”，不得用 mock 自测替代。
+
+## 2026-11-12 · 正式候选包凭据隔离补充
+
+当前复核基线为 `origin/main` / checkout `e5aac6163ce025c546406d91ef90f8a516ba01b8`。PR #459 的 Windows 合成打包 E2E 已合并，但测试副本绕过 pending media capability gate；这不等同于正式 Release 安装包、生产媒体入口或真实 WordPress 验收。
+
+C 当前候选包 workflow/script 入口为 `.github/workflows/e-windows-v040-acceptance.yml` 与 `packages/desktop/scripts/e-windows-v040-acceptance.mjs`。静态复核发现 `e-windows-profile-isolation.mjs` 使用实际 `realpath` 与逐级 `lstat`，拒绝路径逃逸和 reparse point；候选包脚本把六个进程环境变量、项目根、vault、安装目录、安装 EXE 与活动进程置于 `RUNNER_TEMP` 隔离根，并查询 Electron 主进程/preload 的 profile 诊断。源码结构复核不是候选安装包运行证据；workflow 运行前仍须由 C 确认本轮输入的正式候选 tag、commit、EXE SHA256 与入口参数。
+
+新增 `credential-isolation-package-acceptance.md` 作为正式候选包执行清单，并新增 `credential-isolation-report-oracle.mjs` 验证脱敏报告：要求六个环境路径项齐全、运行时十个路径观测项均成功、项目/vault/安装边界、重启读回、A/B origin 隔离、reparse 探针、canary 扫描和清理证据齐备；oracle 只输出失败码，不输出路径、凭据或原始报告值。其五项 Node 测试只用虚构摘要，不调用 Electron、SiteIndex API、安装程序或真实文件系统。
+
+| ID | 候选包操作 | 通过标准 | 脱敏证据 | 当前状态 |
+|---|---|---|---|---|
+| PKG-CRED-01 | 在 C 确认的 GitHub-hosted Windows workflow 中，以正式候选安装包、固定 tag/commit/SHA256 和 `RUNNER_TEMP` 唯一根执行 `credential-isolation-package-acceptance.md`；配置 A/B 两个 `.invalid` 虚构项目，分别保存凭据，完全重启读回，替换并删除 B 后再次重启读回 | 六个实际 env path + 四个 Electron runtime path 共 10 项 canonical containment 均通过且无 reparse；项目与 vault 在隔离根内；A/B 状态跨重启正确，改/删 B 不影响 A；安装与活动进程位于隔离根；UI、storage、IPC、日志、项目/vault 文件和 artifact 均无 canary；runner 注册表恢复且清理无残留 | tag/commit/installer SHA256、Windows build、runner、路径诊断布尔值与数量、状态别名/阶段、重启布尔值、IPC 次数、canary 匹配类别/计数、cleanup 布尔值；不保留真实路径、canary 或原始日志 | **待正式候选包；本轮仅源码复核和合成报告 oracle 自测，未运行安装包。** 入口参数待 C 确认 |
