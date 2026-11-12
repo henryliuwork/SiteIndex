@@ -2,7 +2,7 @@
   "schema_version": 1,
   "candidate_version": "0.4.1",
   "baseline": {
-    "main_commit": "e976bdbafcd801a4de9fa8b57352bb9124dd411d",
+    "main_commit": "7241d7c883d39c57cce25fffefb14e82d10798b3",
     "roadmap": "docs/plan/2026-11-05-v040-roadmap.md §4.5, §4.6, §5 E",
     "existing_matrix": "fixtures/e-v041-loopback/v041-acceptance-matrix.md"
   },
@@ -21,10 +21,10 @@
     ]
   },
   "dependencies_at_baseline": {
-    "storage": "Core guard merged in #485; packaged warning depends on B #484.",
+    "storage": "A #485 Core/CLI guard is merged. C #480 Desktop write-entry guards and B #484 UI warning/affordance are still pending; all three layers must be in the candidate before this package case runs.",
     "inventory": "Core/CLI path merged in #417 and #464; candidate IPC/page evidence remains separate.",
-    "media": "media.prepare enabled by #471; current C hosted media workflow targets win-unpacked, not NSIS.",
-    "edm_export": "A #473 edm.renderIndex is merged and render-only. C #481 owns Desktop native Save As/no-clobber and is open. After #481 merges, an independent contract/* PR must clear edm.exportIndex from PENDING_HANDLERS before candidate package acceptance."
+    "media": "Current main does not list media.prepare in PENDING_HANDLERS; the Core/Desktop readiness gate is open when Core is available. The C hosted media workflow targets win-unpacked, not NSIS.",
+    "edm_export": "A #473 edm.renderIndex is merged and render-only. C #481 Desktop native Save As/no-clobber merged in 7241d7c. Current main still lists edm.exportIndex in PENDING_HANDLERS; a follow-up contract/handler wiring PR must clear the marker before candidate package acceptance."
   },
   "cases": [
     {
@@ -40,12 +40,19 @@
     {
       "id": "PKG-STORAGE-READONLY",
       "area": "Legacy/workspace read-only and known-sync path guard",
-      "readiness": "core-ready-ui-pending",
-      "dependencies": ["project-storage-policy-cases.json", "Merged #485", "B #484 warning/affordance"],
-      "automated": ["Read both project layouts", "Hash every synthetic file before/after", "Check settings/task summaries and write-denial code"],
-      "manual_required": ["After #484 is in the candidate, inspect the warning and read-only controls in the hosted UI."],
-      "pass": ["No auto migration, repair, lock, run-history, settings, task, or data mutation.", "Known-sync project is readable but writes are blocked.", "All tree hashes match."],
-      "evidence": ["Layout/warning enums", "Stable error code", "File counts and aggregate hashes", "No raw path or project contents"]
+      "readiness": "desktop-and-ui-pending",
+      "dependencies": ["project-storage-policy-cases.json", "A #485 Core/CLI guard (merged)", "C #480 Desktop runtime guards for scan/create/createWorkspaceOnly/addExisting/job/task writes (pending; candidate prerequisite)", "B #484 warning/affordance (pending; candidate prerequisite)", "Two independent GitHub-hosted Windows jobs for profile/device isolation"],
+      "automated": ["Read both project layouts", "Exercise Desktop project scan/create/createWorkspaceOnly/addExisting and manual/scheduled Job write gates before side effects", "Hash every synthetic file before/after", "Check settings/task summaries and write-denial result", "Compare sanitized project/settings summaries from two independent hosted Windows runners"],
+      "manual_required": ["Only after #480 and #484 are in the candidate, inspect the local-only copy in the project center and new-project wizard, known-sync read-only state, unknown-path wording, and unregister-only removal."],
+      "device_independence": {
+        "runner_count": 2,
+        "profile_environment_isolated": true,
+        "mutations_visible_only_on_origin_runner": true,
+        "cloud_sync_supported": false,
+        "real_cloud_sync_test_claimed": false
+      },
+      "pass": ["Desktop project scan and every required write/task entry point block known-sync writes before data, registration, initialization, run history, or task correction side effects.", "No auto migration, repair, lock, run-history, settings, task, or data mutation.", "Known-sync project is readable but writes are blocked.", "Unknown storage is not described as verified local.", "A project/settings change on runner A is absent on runner B and vice versa.", "Removing registration leaves all project bytes in place.", "All tree hashes match."],
+      "evidence": ["Layout/warning enums", "Stable error code", "File counts and aggregate hashes", "Per-runner project/settings counts and state enums", "No raw path or project contents"]
     },
     {
       "id": "PKG-STOCK-ABSENT-STATES",
@@ -61,8 +68,8 @@
       "id": "PKG-MEDIA-RECOVERY",
       "area": "Media partial failure and persisted-upload recovery",
       "readiness": "hosted-win-unpacked-only-nsis-pending",
-      "dependencies": ["fake-services.mjs", "retry-after-persist acceptance cases", "Merged #439/#459/#466/#471/#478", "C NSIS harness integration"],
-      "automated": ["Fixture/Core/win-unpacked hosted cases", "NSIS only after C invokes the production-gated harness against the installed candidate"],
+      "dependencies": ["fake-services.mjs", "retry-after-persist acceptance cases", "media.prepare is absent from current main PENDING_HANDLERS", "C NSIS harness integration"],
+      "automated": ["Fixture-only and available Core/win-unpacked hosted evidence", "NSIS only after C invokes the production-gated harness against the installed candidate"],
       "manual_required": ["If the installed-app harness is missing, mark not verified; do not substitute win-unpacked evidence."],
       "pass": ["401/403 stops the batch.", "Sent POST with uncertain response stops later work.", "Restart recovery GETs by slug before retry and leaves one media object/ledger row.", "App-side requests stay on loopback."],
       "evidence": ["Fixed route/status counts", "Outcome and row counts", "Canary match counts", "NSIS executable-containment boolean"]
@@ -70,8 +77,8 @@
     {
       "id": "PKG-EDM-SAVEAS-CANCEL",
       "area": "SKU export Save As and cancel",
-      "readiness": "blocked-until-c-desktop-save-as-and-contract",
-      "dependencies": ["sku-index.expected.md", "Merged A #473 edm.renderIndex (render only)", "C PR #481 Desktop native Save As", "Follow-up contract/* PR clears edm.exportIndex from PENDING_HANDLERS"],
+      "readiness": "blocked-until-edm-exportIndex-contract",
+      "dependencies": ["sku-index.expected.md", "Merged A #473 edm.renderIndex (render only)", "Merged C #481 Desktop native Save As/no-clobber (7241d7c)", "Current main still lists edm.exportIndex in PENDING_HANDLERS; follow-up contract/handler wiring PR required"],
       "automated": ["Golden output check", "After handler exists, Windows UI Automation can select/cancel native Save As."],
       "manual_required": ["Playwright DOM cannot control the native Save As dialog; verify in hosted Windows UI Automation or hosted VM."],
       "pass": ["Saved file matches golden and remains under root.", "Cancel creates or changes no file.", "Desktop returns only basename and counts, not absolute paths or file contents."],
@@ -80,8 +87,8 @@
     {
       "id": "PKG-EDM-CONFLICT",
       "area": "SKU export conflict protection",
-      "readiness": "blocked-until-c-desktop-save-as-and-contract",
-      "dependencies": ["Merged A #473 edm.renderIndex (render only)", "C PR #481 Desktop Save As/no-clobber", "Follow-up contract/* PR clears edm.exportIndex from PENDING_HANDLERS"],
+      "readiness": "blocked-until-edm-exportIndex-contract",
+      "dependencies": ["Merged A #473 edm.renderIndex (render only)", "Merged C #481 Desktop Save As/no-clobber (7241d7c)", "Current main still lists edm.exportIndex in PENDING_HANDLERS; follow-up contract/handler wiring PR required"],
       "automated": ["Fixture integrity", "After dependencies merge, compare target outcome enums and exact before/after hashes for project-internal, project-external-same-content, project-external-different-content, and concurrent-create targets."],
       "manual_required": ["Operate Save As in hosted Windows UI Automation or hosted VM; inspect the prompt and never accept overwrite."],
       "target_conflict_policy": {
