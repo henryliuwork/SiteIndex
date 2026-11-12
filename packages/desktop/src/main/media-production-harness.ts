@@ -652,7 +652,12 @@ async function main(): Promise<void> {
   try {
     if (!app.isPackaged) throw new Error("not-packaged");
     const productionMain = await readFile(path.join(app.getAppPath(), "out", "main", "index.js"), "utf8");
-    if (!/isMediaJobReady:\s*\(\)\s*=>\s*false/u.test(productionMain)) throw new Error("production-gate-not-closed");
+    if (
+      !/isMediaJobReady:\s*\(\)\s*=>\s*isMediaPrepareReady\(mediaCore\)/u.test(productionMain) ||
+      !/function\s+isMediaPrepareReady\(core,\s*pendingHandlers\s*=\s*PENDING_HANDLERS\)\s*\{\s*return\s+core\s*!==\s*null\s*&&\s*!pendingHandlers\.includes\("media\.prepare"\);/u.test(productionMain)
+    ) {
+      throw new Error("production-readiness-guard-missing");
+    }
     if (!requiredEnvironment("LOCALAPPDATA")) throw new Error("isolated-local-appdata-missing");
     phase = parsePhase(process.env.SITEINDEX_MEDIA_E2E_PHASE);
     const root = path.resolve(requiredEnvironment("SITEINDEX_MEDIA_E2E_ROOT"));
