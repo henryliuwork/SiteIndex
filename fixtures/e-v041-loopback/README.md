@@ -28,7 +28,7 @@ node --test fixtures/e-v041-loopback/job-export-acceptance.test.mjs
 
 These tests validate the fixtures. The merged #417 Core stock-verification tests fetch the synthetic CSV with `readFeeds`, normalize it with `toSnapshot`, then run daily processing against the fake product and GraphQL responses. They cover both project layouts, removal-threshold protection, GraphQL/page-text fallback, feed-anomaly events, and interrupted output recovery. CLI and packaged IPC acceptance are separate checks; these fixtures never contact a real site or account.
 
-Current-main and branch evidence are separated in `v041-acceptance-matrix.md`; #417's stock-verifier tests are main-line Core evidence. Product-dependent package acceptance remains separate from these fixture tests. The K5 media contract remains pending Core and Desktop implementation.
+Current-main and branch evidence are separated in `v041-acceptance-matrix.md`; #417's stock-verifier tests are main-line Core evidence. Product-dependent package acceptance remains separate from these fixture tests. The media.prepare contract and handler are enabled on main, but that does not prove candidate NSIS or real WordPress behavior.
 
 For formal Windows candidate package credential isolation, see `credential-isolation-package-acceptance.md`. The fixture-only `credential-isolation-report-oracle.mjs` validates that a redacted package-run summary includes all six process environment paths, ten main/preload path observations, project/vault containment, cross-origin configure/replace/delete readbacks across restarts, leak-scan completion, and reparse/cleanup evidence. It returns failure codes only and is tested with fictional summaries via:
 
@@ -36,6 +36,8 @@ For formal Windows candidate package credential isolation, see `credential-isola
 node --test fixtures/e-v041-loopback/credential-isolation-report-oracle.test.mjs
 ```
 
-This oracle test does not launch an installer or Electron, and the hosted workflow does not yet invoke it. It is preparation evidence only; C must confirm/integrate the runner call before the oracle is treated as part of candidate acceptance. An official candidate run through C's hosted Windows workflow remains required.
+This oracle self-test does not launch an installer or Electron. The C hosted acceptance script integrates the oracle into its final report; a pinned candidate run is still required.
 
 `project-storage-policy-cases.json` is a synthetic #480 path-classification vector. It verifies an explicitly configured provider root, a sibling with a similar prefix, and an unconfigured third-party location. Unknown means “not classified”; it does not certify local storage, and the fixture does not claim complete cloud-provider detection.
+
+The current isolated candidate package matrix is in `v041-candidate-package-acceptance.md`, with machine-readable cases in `v041-candidate-package-cases.json`. Validate its coverage using `node --test fixtures/e-v041-loopback/v041-candidate-package-matrix.test.mjs`.
