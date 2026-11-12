@@ -36,6 +36,7 @@ import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type 
 import { registerWordPressCredentialHandlers } from "./wordpress-credential-ipc.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
 import { createWordPressMediaCredentialProvider } from "./wordpress-media-credential-provider.js";
+import { isHostedWindowsAcceptanceMode } from "./hosted-acceptance-mode.js";
 import { createEdmIndexSaveAs, resolveEdmIndexDefaultPath } from "./edm-index-save-as.js";
 import { isMediaPrepareReady } from "./media-readiness.js";
 import {
@@ -45,6 +46,12 @@ import {
 } from "./profile-path-diagnostic.js";
 
 const isRunJob = process.argv.includes("--run-job");
+const hostedWindowsAcceptance = isHostedWindowsAcceptanceMode({
+  isPackaged: app.isPackaged,
+  platform: process.platform,
+  argv: process.argv,
+  environment: process.env,
+});
 const acceptanceProfileRoot = process.env.SITEINDEX_ACCEPTANCE_PROFILE_ROOT;
 let acceptanceProfileDiagnostics: ProfilePathDiagnosticSet | null = null;
 if (process.platform === "win32" && acceptanceProfileRoot && !app.isReady()) {
@@ -136,6 +143,7 @@ if (!hasSingleInstanceLock) {
       platform: process.platform,
       localAppData: process.env.LOCALAPPDATA,
       homeDirectory: app.getPath("home"),
+      testOnlyAllowLoopbackHttp: hostedWindowsAcceptance,
       safeStorage: {
         isAsyncEncryptionAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
         encryptStringAsync: (plainText) => safeStorage.encryptStringAsync(plainText),
@@ -186,6 +194,7 @@ if (!hasSingleInstanceLock) {
       getBrowserExecutablePath: async (settings) => (await desktopIntegrations.detectBrowser(settings.browser)).path,
       // 主进程仅在 Core 已就绪、shared 契约清除 pending 后允许生产媒体 Job。
       isMediaJobReady: () => isMediaPrepareReady(mediaCore),
+      testOnlyAllowLoopbackHttp: hostedWindowsAcceptance,
       getWordPressCredential: getWordPressMediaCredential,
       resolveProject: (id: ProjectId) => {
         if (!projectCatalog) throw { code: "PROJECT_NOT_FOUND", message: "项目目录尚未就绪。", detail: id };
