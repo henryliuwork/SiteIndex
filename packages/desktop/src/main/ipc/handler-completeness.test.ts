@@ -94,7 +94,6 @@ describe("IPC handler completeness", () => {
     expect(PENDING_HANDLERS).toHaveLength(pendingMethods.size);
     expect(registeredMethods.filter((method) => !apiMethods.has(method))).toEqual([]);
     expect(missingMethods.filter((method) => !pendingMethods.has(method))).toEqual([]);
-    expect(pendingMethods).toContain("edm.exportIndex");
     expect(registeredSet.has("media.prepare")).toBe(true);
     expect(registeredSet.has("edm.exportIndex")).toBe(true);
     expect(API_INVOKE_METHODS).toContain("uiState.get");
@@ -192,11 +191,10 @@ describe("IPC handler completeness", () => {
     expect(fork).not.toHaveBeenCalled();
   });
 
-  it("allows the Desktop implementation while edm.exportIndex remains pending contract cleanup", async () => {
+  it("routes EDM export through the Core renderer and Desktop native save service", async () => {
     const context = testContext();
     const bridge = apiBridgeFor(context);
 
-    expect(PENDING_HANDLERS).toContain("edm.exportIndex");
     await expect(bridge.edm.exportIndex?.("demo")).resolves.toEqual({
       status: "created",
       file_name: "sku-index.md",
