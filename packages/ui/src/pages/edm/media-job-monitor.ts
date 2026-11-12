@@ -48,6 +48,11 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
 
   const publish = () => { for (const listener of listeners) listener(); };
 
+  function formatProgress(progress: JobProgress): string {
+    const percentage = typeof progress.pct === "number" && Number.isFinite(progress.pct) ? "已完成 " + Math.round(progress.pct) + "%" : "";
+    return [percentage, progress.message].filter(Boolean).join(" · ") || "图片处理任务正在运行…";
+  }
+
   function rememberRecent<T>(cache: Map<string, T>, key: string, value: T): void {
     cache.delete(key);
     cache.set(key, value);
@@ -109,7 +114,7 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
 
     const current = snapshots.get(context.projectId);
     if (current?.runId !== progress.runId || current.state === "finished" || current.state === "failed") return;
-    snapshots.set(context.projectId, { ...current, state: "running", progress: progress.message });
+    snapshots.set(context.projectId, { ...current, state: "running", progress: formatProgress(progress) });
     publish();
 
     const now = Date.now();
@@ -210,7 +215,7 @@ export function createEdmMediaJobMonitor(): EdmMediaJobMonitor {
         ...starting,
         state: "running",
         runId,
-        progress: progress?.message ?? "图片处理任务正在运行…",
+        progress: progress ? formatProgress(progress) : "图片处理任务正在运行…",
       });
       publish();
 

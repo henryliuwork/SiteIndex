@@ -1,4 +1,4 @@
-import { isValidMediaSkuRecoveryPartition, type MediaPrepareSkuResult } from "@siteindex/shared";
+import { isValidMediaSkuRecoveryPartition, type MediaPrepareSkuResult, type RunLog } from "@siteindex/shared";
 
 export type MediaRecoveryRowStatus = MediaPrepareSkuResult["status"] | "unknown" | "not_started" | "unavailable";
 
@@ -93,4 +93,39 @@ export function mediaRecoveryErrorMessage(code: MediaRecoveryErrorCode): string 
   return code === "WP_AUTH_FAILED"
     ? "WordPress 认证失败（401），媒体批次已停止。"
     : "WordPress 权限不足（403），媒体批次已停止。";
+}
+
+/**
+ * Finds selected SKUs whose latest evidenced outcome still needs human review.
+ * A later confirmed result resolves an earlier unknown result; a later
+ * not-started result does not, because it says nothing about earlier side effects.
+ */
+export function getMediaRetryReviewSkus(
+  history: readonly RunLog[],
+  selectedSkus: readonly string[],
+  currentRun?: { skus: readonly string[]; result: unknown },
+): string[] {
+  const latestBySku = new Map<string, MediaRecoveryRowStatus>();
+
+  const record = (value: unknown, expectedSkus?: readonly string[]) => {
+    const recovery = getMediaRecoveryDisplay(value, expectedSkus);
+    for (const row of recovery.rows) {
+      if (row.status === "not_started" || latestBySku.has(row.sku)) continue;
+      latestBySku.set(row.sku, row.status);
+    }
+  };
+
+  if (currentRun) record(currentRun.result, currentRun.skus);
+
+  const mediaHistory = history
+    .filter((run) => run.job === "media")
+    .map((run, index) => ({ run, index, startedAt: Date.parse(run.started_at) }))
+    .sort((left, right) => right.startedAt - left.startedAt || left.index - right.index);
+
+  for (const { run } of mediaHistory) record(run);
+
+  return [...new Set(selectedSkus)].filter((sku) => {
+    const status = latestBySku.get(sku);
+    return status === "unknown" || status === "unavailable";
+  });
 }
