@@ -1,4 +1,5 @@
 import type { JobSchedule, ScheduleConfig, ScheduleState, SystemTaskRow, Weekday } from "@siteindex/shared";
+import { inspectProjectStorageLocation } from "@siteindex/core";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
@@ -347,12 +348,18 @@ export function projectPathFromWindowsTaskXml(xml: string): string | null {
 }
 
 function projectIdFromTaskName(taskName: string): string | null {
-  const prefix = taskName.startsWith("\\SiteIndex\\") ? "\\SiteIndex\\" : "SiteIndex - ";
-  if (!taskName.startsWith(prefix)) return null;
-  const suffix = taskName.slice(prefix.length);
+  const normalized = taskName.replace(/^\\+/, "");
+  const lower = normalized.toLowerCase();
+  const prefix = lower.startsWith("siteindex\\")
+    ? normalized.slice(0, "siteindex\\".length)
+    : lower.startsWith("siteindex - ")
+      ? normalized.slice(0, "siteindex - ".length)
+      : null;
+  if (!prefix) return null;
+  const suffix = normalized.slice(prefix.length);
   for (const job of WINDOWS_SCHEDULED_JOBS) {
     const ending = `-${job}`;
-    if (suffix.endsWith(ending)) return suffix.slice(0, -ending.length);
+    if (suffix.toLowerCase().endsWith(ending)) return suffix.slice(0, -ending.length);
   }
   return null;
 }
@@ -440,6 +447,8 @@ export function createSystemScheduler(options: {
   runCommand?: (file: string, args: string[]) => Promise<string>;
   windowsTaskRegistrar?: WindowsTaskRegistrar;
   beforeElevation?: () => Promise<void>;
+  /** Test seam; production uses Core's best-effort known-cloud classifier. */
+  inspectStorageLocation?: typeof inspectProjectStorageLocation;
 }): SystemScheduler {
   const platform = options.platform ?? process.platform;
   const runCommand = options.runCommand ?? execute;
@@ -449,6 +458,7 @@ export function createSystemScheduler(options: {
   const windowsTaskRegistrar =
     options.windowsTaskRegistrar ??
     createWindowsTaskRegistrar({ runCommand, beforeElevation: options.beforeElevation });
+  const inspectStorageLocation = options.inspectStorageLocation ?? inspectProjectStorageLocation;
   const runtimeState: PersistedWindowsScheduleState = {
     mode: "system",
     authorization_required: false,
@@ -880,15 +890,20 @@ export function createSystemScheduler(options: {
     if (platform === "win32") {
       const state = await loadRuntimeState();
       const projectPaths = { ...state.project_paths };
+      const removedIds = new Set(removedProjectIds.map((id) => id.toLowerCase()));
+      const protectedIds = new Set<string>();
+      const currentProjectIds = new Set(projects.map(({ projectId }) => projectId.toLowerCase()));
       const unknownProjectIds = [
         ...new Set(
           state.registered_task_names
             .map(projectIdFromTaskName)
             .filter((projectId): projectId is string => Boolean(projectId)),
         ),
-      ].filter((projectId) => !projectPaths[projectId]);
+      ].filter((projectId) => !Object.keys(projectPaths).some((id) => id.toLowerCase() === projectId.toLowerCase()));
       await mapWithConcurrency(unknownProjectIds, 4, async (projectId) => {
-        const taskName = state.registered_task_names.find((name) => projectIdFromTaskName(name) === projectId);
+        const taskName = state.registered_task_names.find(
+          (name) => projectIdFromTaskName(name)?.toLowerCase() === projectId.toLowerCase(),
+        );
         if (!taskName) return;
         try {
           const xml = await runCommand("schtasks.exe", ["/Query", "/TN", taskName, "/XML"]);
@@ -898,6 +913,31 @@ export function createSystemScheduler(options: {
           // 已不存在或当前用户不可读时，后续注册器仍负责校正任务状态。
         }
       });
+      const storageAssessments = await mapWithConcurrency(
+        [
+          ...projects.map((project) => ({ projectId: project.projectId, projectPath: project.projectPath })),
+          ...Object.entries(projectPaths)
+            .filter(([projectId]) => !currentProjectIds.has(projectId.toLowerCase()))
+            .map(([projectId, projectPath]) => ({ projectId, projectPath })),
+        ],
+        4,
+        async ({ projectId, projectPath }) => ({
+          projectId,
+          assessment: await inspectStorageLocation(projectPath),
+        }),
+      );
+      for (const { projectId, assessment } of storageAssessments) {
+        if (assessment.status === "known-cloud" && !removedIds.has(projectId.toLowerCase())) {
+          protectedIds.add(projectId.toLowerCase());
+          console.warn("跳过位于已知云同步目录的系统计划任务。");
+        }
+      }
+      for (const removedId of removedIds) protectedIds.delete(removedId);
+      const protectedTaskNames = state.registered_task_names.filter((name) => {
+        const projectId = projectIdFromTaskName(name);
+        return projectId !== null && protectedIds.has(projectId.toLowerCase()) && !removedIds.has(projectId.toLowerCase());
+      });
+      const previousTaskNames = state.registered_task_names.filter((name) => !protectedTaskNames.includes(name));
       const desired: WindowsTaskDefinition[] = [];
       const obsoleteNames: string[] = [];
       for (const id of removedProjectIds) {
@@ -918,6 +958,7 @@ export function createSystemScheduler(options: {
         }
       }
       for (const project of projects) {
+        if (protectedIds.has(project.projectId.toLowerCase())) continue;
         if (!existingProjectIds.has(project.projectId)) continue;
         assertSafeProjectId(project.projectId);
         for (const job of WINDOWS_SCHEDULED_JOBS) {
@@ -942,12 +983,16 @@ export function createSystemScheduler(options: {
         obsoleteNames.filter(
           (name) => !desired.some((definition) => windowsTaskName(definition.projectId, definition.job) === name),
         ),
-        state.registered_task_names,
+        // Registered tasks for known cloud paths are deliberately excluded from
+        // the registrar. They remain untouched until a user moves and re-adds
+        // the project locally, or explicitly removes the registration.
+        previousTaskNames,
         allowElevation,
         state.mode,
         onTiming,
       );
       for (const [id, projectPath] of Object.entries(projectPaths)) {
+        if (protectedIds.has(id.toLowerCase())) continue;
         if (existingProjectIds.has(id)) continue;
         try {
           await access(projectPath);
@@ -958,11 +1003,14 @@ export function createSystemScheduler(options: {
         }
       }
       for (const project of projects) {
-        if (existingProjectIds.has(project.projectId)) projectPaths[project.projectId] = project.projectPath;
+        if (existingProjectIds.has(project.projectId) || protectedIds.has(project.projectId.toLowerCase())) {
+          projectPaths[project.projectId] = project.projectPath;
+        }
       }
-      const registeredNames = new Set(result.registered_task_names);
+      const registeredNames = new Set([...result.registered_task_names, ...protectedTaskNames]);
       const orphanedTasks = state.orphaned_tasks.filter((task) => registeredNames.has(task.taskName));
       for (const [id, projectPath] of Object.entries(projectPaths)) {
+        if (protectedIds.has(id.toLowerCase())) continue;
         if (existingProjectIds.has(id)) continue;
         let missing = false;
         try {
@@ -985,9 +1033,12 @@ export function createSystemScheduler(options: {
         }
       }
       const nextState: PersistedWindowsScheduleState = {
-        mode: result.mode,
+        mode:
+          protectedIds.size > 0 && desired.length === 0 && obsoleteNames.length === 0 && previousTaskNames.length === 0
+            ? state.mode
+            : result.mode,
         authorization_required: result.authorization_required,
-        registered_task_names: result.registered_task_names,
+        registered_task_names: [...registeredNames].sort((left, right) => left.localeCompare(right)),
         project_paths: projectPaths,
         orphaned_tasks: orphanedTasks,
       };
@@ -996,15 +1047,27 @@ export function createSystemScheduler(options: {
     }
 
     if (platform === "darwin") {
+      const protectedIds = new Set<string>();
+      const removedIds = new Set(removedProjectIds);
+      for (const { projectId, projectPath } of projects) {
+        if (removedIds.has(projectId)) continue;
+        const assessment = await inspectStorageLocation(projectPath);
+        if (assessment.status === "known-cloud") protectedIds.add(projectId);
+      }
       const availableProjects: ScheduleProjectDefinition[] = [];
       for (const project of projects) {
+        if (removedIds.has(project.projectId)) continue;
+        if (protectedIds.has(project.projectId)) {
+          console.warn("跳过位于已知云同步目录的系统计划任务。");
+          continue;
+        }
         if (await isDirectory(project.projectPath)) {
           availableProjects.push(project);
         } else {
           console.warn("跳过不存在的项目计划任务。", { projectId: project.projectId });
         }
       }
-      const currentIds = new Set(availableProjects.map(({ projectId }) => projectId));
+      const currentIds = new Set([...availableProjects.map(({ projectId }) => projectId), ...protectedIds]);
       for (const staleId of new Set([...macProjectIds, ...removedProjectIds])) {
         if (currentIds.has(staleId)) continue;
         for (const job of SCHEDULED_JOBS) await removeMac(staleId, job);

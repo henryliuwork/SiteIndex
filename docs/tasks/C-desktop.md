@@ -204,3 +204,11 @@
 - [x] `media.prepare` contract 顺序：contract PR #471 在 pending 已清除的 PR head 上通过 Windows hosted packaged-dir check。原始 production EDM UI → preload → IPC → utilityProcess → Core → loopback fake service 覆盖成功/部分失败、401/403 停批、提交后响应丢失、429/503、跨页与进程重启恢复；报告九阶段与 16 个 case 全通过，五类凭据编码扫描 fail-closed。
 - [x] “应用重启”验收按终态 `outcome_unknown`、进程退出、新 packaged process 从持久化 history 恢复、用户确认后避免重复 POST；不声称支持重启时仍运行中的 Job 实时重挂。以上已由 #471 hosted acceptance 覆盖。
 - [ ] hosted fake service 仅绑定 `127.0.0.1` 并使用虚构数据；它不证明生产 HTTPS 策略或真实 WordPress。真实 WordPress/真实凭据仍须在任何公开 Release 前完成验收。
+
+## v0.4.1 · #480 已知云同步目录防护
+
+- [x] 项目创建、空工作区创建、添加已有项目与应用导入检查在 Core 写入或登记前调用本机存储位置检查；已知云同步目录返回 `PROJECT_CLOUD_SYNC_UNSUPPORTED`，不会初始化文件、登记设置或启动 Job。导入只读检查仍允许；用户主动取消登记仍可执行。
+- [x] JobManager 在锁、运行记录、设置/路径解析及 utilityProcess 启动前拦截已知云同步项目；`--run-job` 与托盘/驻留 Job 共用该入口。
+- [x] 系统调度校正跳过已知云同步项目，不创建、删除或改写其 Windows 任务/macOS LaunchAgent。Windows 同时检查已保存任务路径，因此目录临时不可用时仍保留任务名和调度路径；显式移除项目仍注销任务。软件驻留调度与托盘下次运行摘要仅纳入本机项目。
+- [x] 虚构路径注入测试覆盖创建/导入/addExisting/Job 早期拒绝、Windows 云项目任务保留和显式移除、macOS LaunchAgent 保留；未知位置继续按现有行为处理，不宣称识别所有云服务。
+- [x] 本机 `pnpm typecheck` 与定向 Desktop 测试通过：6 个测试文件、82 项；未在真实云盘目录写入或移动项目数据。

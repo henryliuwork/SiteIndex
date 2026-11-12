@@ -7,6 +7,7 @@ import {
   buildLaunchAgentPlist,
   calculateNextRuns,
   createSystemScheduler,
+  launchAgentLabel,
   projectPathFromWindowsTaskXml,
   scheduledOccurrenceKey,
   type LaunchAgentDefinition,
@@ -140,6 +141,128 @@ describe("system schedule definitions", () => {
     expect(obsolete).toContain("\\SiteIndex\\sample-store-daily");
     expect(obsolete).toContain("SiteIndex - sample-store-daily");
     expect(obsolete).toHaveLength(10);
+  });
+
+  it("preserves known-cloud Windows tasks, including a temporarily unavailable cloud path", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "siteindex-cloud-schedule-test-"));
+    const statePath = path.join(directory, "state.json");
+    const existingCloudPath = path.join(directory, "cloud-project");
+    const offlineCloudPath = path.join(directory, "offline-cloud-project");
+    const legacyCloudPath = path.join(directory, "legacy-cloud-project");
+    const localPath = path.join(directory, "local-project");
+    await Promise.all([mkdir(existingCloudPath), mkdir(localPath)]);
+    const existingCloudTask = "\\SiteIndex\\cloud-project-daily";
+    const offlineCloudTask = "SiteIndex - offline-cloud-project-daily";
+    const legacyCloudTask = "\\SiteIndex\\legacy-cloud-project-daily";
+    const localTask = "\\SiteIndex\\local-project-daily";
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        mode: "system",
+        authorization_required: false,
+        registered_task_names: [existingCloudTask, offlineCloudTask, legacyCloudTask],
+        project_paths: {
+          "cloud-project": existingCloudPath,
+          "offline-cloud-project": offlineCloudPath,
+        },
+        orphaned_tasks: [],
+      }),
+      "utf8",
+    );
+    const registrar = {
+      reconcile: vi.fn(async (..._args: Parameters<WindowsTaskRegistrar["reconcile"]>) => ({
+        mode: "system" as const,
+        authorization_required: false,
+        registered_task_names: [localTask],
+      })),
+    };
+    const scheduler = createSystemScheduler({
+      platform: "win32",
+      executablePath: "C:\\Synthetic\\SiteIndex.exe",
+      runtimeStatePath: statePath,
+      windowsTaskRegistrar: registrar,
+      runCommand: async (_file, args) => {
+        expect(args).toEqual(["/Query", "/TN", legacyCloudTask, "/XML"]);
+        return `<Task><Actions><Exec><Arguments>--run-job &quot;${legacyCloudPath}&quot; daily</Arguments></Exec></Actions></Task>`;
+      },
+      inspectStorageLocation: async (projectPath) =>
+        projectPath === existingCloudPath || projectPath === offlineCloudPath || projectPath === legacyCloudPath
+          ? { status: "known-cloud", provider: "Fixture Drive" }
+          : { status: "unknown" },
+    });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    try {
+      await scheduler.reconcile(
+        [
+          { projectId: "cloud-project", projectPath: existingCloudPath, config, isThisDevice: true },
+          { projectId: "local-project", projectPath: localPath, config, isThisDevice: true },
+        ],
+        false,
+      );
+      const [desired, obsolete, previous] = registrar.reconcile.mock.calls[0]!;
+      expect(new Set(desired.map(({ projectId }) => projectId))).toEqual(new Set(["local-project"]));
+      expect(obsolete).not.toContain(existingCloudTask);
+      expect(obsolete).not.toContain("\\SiteIndex\\offline-cloud-project-daily");
+      expect(previous).not.toContain(existingCloudTask);
+      expect(previous).not.toContain(offlineCloudTask);
+      expect(previous).not.toContain(legacyCloudTask);
+
+      const state = JSON.parse(await readFile(statePath, "utf8")) as {
+        registered_task_names: string[];
+        project_paths: Record<string, string>;
+        orphaned_tasks: { taskName: string }[];
+      };
+      expect(state.registered_task_names).toEqual([existingCloudTask, legacyCloudTask, localTask, offlineCloudTask].sort((a, b) => a.localeCompare(b)));
+      expect(state.project_paths["offline-cloud-project"]).toBe(offlineCloudPath);
+      expect(state.project_paths["legacy-cloud-project"]).toBe(legacyCloudPath);
+      expect(state.orphaned_tasks).toEqual([]);
+      expect(warning).toHaveBeenCalledWith("跳过位于已知云同步目录的系统计划任务。");
+    } finally {
+      warning.mockRestore();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("allows explicit removal to unregister a previously protected cloud task", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "siteindex-cloud-remove-schedule-test-"));
+    const projectPath = path.join(directory, "cloud-project");
+    await mkdir(projectPath);
+    const statePath = path.join(directory, "state.json");
+    const taskName = "\\SiteIndex\\cloud-project-daily";
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        mode: "system",
+        authorization_required: false,
+        registered_task_names: [taskName],
+        project_paths: { "cloud-project": projectPath },
+        orphaned_tasks: [],
+      }),
+      "utf8",
+    );
+    const registrar = {
+      reconcile: vi.fn(async (..._args: Parameters<WindowsTaskRegistrar["reconcile"]>) => ({
+        mode: "system" as const,
+        authorization_required: false,
+        registered_task_names: [],
+      })),
+    };
+    const scheduler = createSystemScheduler({
+      platform: "win32",
+      executablePath: "C:\\Synthetic\\SiteIndex.exe",
+      runtimeStatePath: statePath,
+      windowsTaskRegistrar: registrar,
+      inspectStorageLocation: async () => ({ status: "known-cloud", provider: "Fixture Drive" }),
+    });
+
+    try {
+      await scheduler.reconcile([], true, ["cloud-project"]);
+      expect(registrar.reconcile.mock.calls[0]?.[1]).toContain(taskName);
+      expect(JSON.parse(await readFile(statePath, "utf8")).registered_task_names).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("skips a missing project, keeps other tasks, and records denied cleanup as an orphan", async () => {
@@ -347,6 +470,58 @@ describe("system schedule definitions", () => {
       await expect(access(path.join(homeDirectory, "Library", "LaunchAgents"))).resolves.toBeUndefined();
       await scheduler.reconcile([], false);
       expect(commands.some(({ file, args }) => file === "launchctl" && args[0] === "bootout")).toBe(true);
+    } finally {
+      await rm(homeDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves an existing macOS LaunchAgent untouched when its project becomes known-cloud", async () => {
+    const homeDirectory = await mkdtemp(path.join(tmpdir(), "siteindex-launchd-cloud-test-"));
+    const projectPath = path.join(homeDirectory, "cloud-project");
+    await mkdir(projectPath);
+    const commands: { file: string; args: string[] }[] = [];
+    const inspectStorageLocation = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "unknown" })
+      .mockResolvedValueOnce({ status: "known-cloud", provider: "Fixture Drive" });
+    const scheduler = createSystemScheduler({
+      platform: "darwin",
+      executablePath: macDefinition.executablePath,
+      homeDirectory,
+      uid: 501,
+      inspectStorageLocation,
+      runCommand: async (file, args) => {
+        commands.push({ file, args });
+        return "loaded";
+      },
+    });
+    const project: ScheduleProjectDefinition = {
+      projectId: "cloud-project",
+      projectPath,
+      config: {
+        ...config,
+        validate: { ...config.validate, enabled: false },
+        weekly: { ...config.weekly, enabled: false },
+        readme: { ...config.readme, enabled: false },
+        monthly: { ...config.monthly, enabled: false },
+      },
+      isThisDevice: true,
+    };
+
+    try {
+      await scheduler.reconcile([project], false);
+      const plistPath = path.join(
+        homeDirectory,
+        "Library",
+        "LaunchAgents",
+        `${launchAgentLabel("cloud-project", "daily")}.plist`,
+      );
+      const before = await readFile(plistPath, "utf8");
+      commands.length = 0;
+      await scheduler.reconcile([project], false);
+      expect(await readFile(plistPath, "utf8")).toBe(before);
+      expect(commands.some(({ args }) => args[0] === "bootout")).toBe(false);
+      expect(commands.some(({ args }) => args[0] === "bootstrap")).toBe(false);
     } finally {
       await rm(homeDirectory, { recursive: true, force: true });
     }

@@ -1,4 +1,4 @@
-import type { CoreService } from "@siteindex/core";
+import { assertProjectStorageLocal as assertCoreProjectStorageLocal, type CoreService } from "@siteindex/core";
 import type { AppSettings, EdmSkuIndexExportResult, ProjectId, SiteIndexError } from "@siteindex/shared";
 import type { JobManager } from "../job-manager.js";
 import type { ProjectCatalog } from "../project-catalog.js";
@@ -16,6 +16,8 @@ export interface IpcDependencies {
   updates: UpdateService;
   core: CoreService;
   projects: ProjectCatalog;
+  /** Optional test seam; production defaults to Core's authoritative classifier. */
+  assertProjectStorageLocal?: (projectPath: string) => Promise<void>;
   settingsChanged: (value: AppSettings, reconcile?: boolean, onTiming?: AddExistingTimingCallback) => Promise<void>;
   jobs: JobManager;
   saveEdmSkuIndex?: (
@@ -39,12 +41,14 @@ export interface IpcDependencies {
 }
 
 export interface IpcContext extends IpcDependencies {
+  assertProjectStorageLocal(projectPath: string): Promise<void>;
   withProject<T>(value: unknown, callback: (id: ProjectId) => Promise<T>): Promise<T>;
 }
 
 export function createIpcContext(dependencies: IpcDependencies): IpcContext {
   return {
     ...dependencies,
+    assertProjectStorageLocal: dependencies.assertProjectStorageLocal ?? assertCoreProjectStorageLocal,
     async withProject<T>(value: unknown, callback: (id: ProjectId) => Promise<T>): Promise<T> {
       if (typeof value !== "string" || !value.trim()) {
         throw {

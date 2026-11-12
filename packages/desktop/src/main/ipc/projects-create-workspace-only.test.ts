@@ -95,6 +95,30 @@ function fixtureDomain(root: string): string {
 }
 
 describe("projects.createWorkspaceOnly Desktop flow", () => {
+  it("rejects a known-cloud target before settings reads or Core creation", async () => {
+    const root = "C:\\FictionalDrive\\SiteIndex";
+    const storageError = Object.assign(new Error("此目录仅支持只读查看。"), {
+      code: "PROJECT_CLOUD_SYNC_UNSUPPORTED",
+    });
+    const get = vi.fn();
+    const coreCreate = vi.fn();
+    const inputValue = input(root, "fixture-shop");
+    const context = {
+      assertProjectStorageLocal: vi.fn(async () => {
+        throw storageError;
+      }),
+      core: { projects: { createWorkspaceOnly: coreCreate } },
+      settings: { get },
+      projects: { refresh: vi.fn() },
+    } as unknown as IpcContext;
+
+    await expect(createProjectsHandlers(context)["projects.createWorkspaceOnly"]?.(inputValue)).rejects.toBe(storageError);
+
+    expect(context.assertProjectStorageLocal).toHaveBeenCalledWith(path.join(root, "fixture-shop"));
+    expect(get).not.toHaveBeenCalled();
+    expect(coreCreate).not.toHaveBeenCalled();
+  });
+
   it("registers a created workspace under extra_projects and notifies the UI without running a Job", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "siteindex-workspace-only-ipc-"));
     temporaryRoots.push(root);
