@@ -432,10 +432,13 @@ export interface EdmCampaign {
   revenue?: number | null; // 预留
 }
 
-/** EDM 全项目 SKU 清单导出的确认结果；path 始终是固定的项目根目录相对路径。 */
+/** EDM SKU 清单另存结果。新 bridge 只返回安全文件名；path 仅供旧 bridge 兼容。 */
 export interface EdmSkuIndexExportResult {
-  status: "created" | "updated" | "unchanged";
-  path: EdmSkuIndexPath;
+  status: "created" | "updated" | "unchanged" | "cancelled";
+  /** 新 bridge 保存成功时的文件 basename，不含目录；旧 bridge 或取消时可省略。 */
+  file_name?: string;
+  /** @deprecated 旧 bridge 返回的固定项目相对路径；新 bridge 不返回此字段。 */
+  path?: EdmSkuIndexPath;
   sku_count: number;
   missing_image_count: number;
 }

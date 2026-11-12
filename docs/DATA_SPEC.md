@@ -25,7 +25,7 @@
 │   ├── ledgers/     sku_media.csv · sku_tags.csv · edm_campaigns.jsonl · outreach.jsonl
 │   ├── design/      tokens.json · brand.md · screenshots/
 │   ├── views/       products.jsonl · sku_stock.jsonl
-│   ├── edm/         sku-index.md（仅此固定生成文件由 SiteIndex 管理）
+│   ├── edm/         ← 用户或 EDM 技能管理的导出文件
 │   ├── reports/     daily/YYYY-MM-DD.md · weekly/YYYY-Www.md
 │   ├── archive/     YYYY-MM/*.gz
 │   └── logs/        runs.jsonl · validation.json · jobs/{runId}.log
@@ -33,14 +33,14 @@
 ```
 本机缓存（不进云盘）：`{cache_dir}/{projectId}/index.db`、`{cache_dir}/{projectId}/ui-state.json`
 
-workspace 布局使用 `_site-index/` 替代上图的 `index/`；EDM SKU 清单固定映射为 `_site-index/edm/sku-index.md`。除该精确文件外，workspace 的 `_site-index/edm/` 仍由 EDM 技能/用户维护。
+workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/edm/` 由 EDM 技能/用户维护。SKU 清单导出通过 Desktop 原生另存对话框交给用户选择保存位置，不再写入项目内的固定 canonical 路径。
 
 ## 2. 写入权限
 
 | 路径 | 写入方 |
 |---|---|
 | `index/`（下列台账除外） | 仅 SiteIndex（执行设备的定时任务，或用户手动触发） |
-| `index/edm/sku-index.md`（legacy）与 `_site-index/edm/sku-index.md`（workspace） | 仅 SiteIndex 可创建或更新带有规范生成标记的固定清单；未标记同名文件冲突并原样保留。`_site-index/edm/` 内其他文件仍归 EDM 技能或用户所有 |
+| `index/edm/*`、`_site-index/edm/*` | 用户或 EDM 技能；SiteIndex 的清单导出不会写入项目内固定路径 |
 | `index/site.json` | SiteIndex 设置界面 / 用户手改 |
 | `index/content/keywords.jsonl`、`index/ledgers/*` | agent 与用户，经 `siteindex ledger` 或软件界面；手写须严格遵守格式与排序 |
 | `README.md` 用户区块 | 用户、agent、软件（README 页） |
@@ -57,21 +57,17 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；EDM SKU 清单�
 - 金额为 number；货币单独字段
 - URL 为绝对地址，去掉 utm_*、gclid、gbraid、wbraid、srsltid、fbclid、mc_*、_ga 与空值参数
 - 空值为 `null`
-- 所有写入为原子写（临时文件 → fsync → rename，Windows 占用重试）
+- Core 数据写入为原子写（临时文件 → fsync → rename，Windows 占用重试）。EDM Save As 遵循 §3.1 的 no-clobber / 条件更新规则，不通过 Core 的通用原子写接口接收或写入用户选择的路径。
 
 ### 3.1 EDM SKU 清单（生成的 Markdown）
 
-- 固定路径由 `pathsFor(layout).edmSkuIndex` 提供：legacy 为 `index/edm/sku-index.md`，workspace 为 `_site-index/edm/sku-index.md`。导出 API 不接受任意文件名、SKU 子集或输出路径。
-- 这是 `_site-index/edm/` 下唯一由 SiteIndex 管理的文件。输出首行必须是 `<!-- siteindex:generated:edm-sku-index:v1 -->`。目标不存在时走首次创建流程；目标首行带有该标记时走更新流程；目标存在但未带有该标记、标记版本不识别或无法安全读取时，返回 `EDM_INDEX_CONFLICT`（中文 message：“目标清单由用户或 EDM 技能维护，未做修改。”），保留原文件字节不变。
-- 首次创建与更新都必须以规范化后的真实项目根目录为边界，并在读取、暂存和提交前检查目标路径的每级祖先。任何祖先是指向项目外的 symlink/junction、路径解析结果越出项目根目录、或无法确认实际目标时，都必须 fail closed；不得跟随路径写到项目外。
-- SiteIndex 的并发导出必须按项目串行化，并在取得写锁后重新读取目标。首次创建只可在仍确认目标不存在时提交；更新只可在仍确认目标身份、生成标记和内容指纹与读取时一致时提交。临时文件应在同目录创建并完成 flush，再执行提交前的路径与目标复核。复核发现目标已被其他进程新建、替换、改写或移走时，返回 `EDM_INDEX_CONFLICT`，保留当前文件。
-- 上述复核可检测在复核前发生的冲突，但普通“最后检查后调用 rename”不构成跨平台 compare-and-swap/no-clobber。Node 的通用 `rename` 不能保证最后一次复核与目录项替换对用户文件原子绑定；因此不得声称它能绝对防止其他进程在这段窗口内新建或替换目标。实现必须使用并验证当前平台/文件系统的 no-clobber 创建和条件替换原语；若无法提供所需原语，应拒绝提交并保留目标，而不是退回无条件 rename。平台/同步盘仍可能有其自身并发语义，产品不得超出已验证范围承诺保证。
-- 首期只生成全项目 canonical 清单，不受 UI 表格筛选、分页或勾选影响。选择 SKU 导出独立副本不属于本契约。
-- 数据源为布局对应的 `views/products`、`ledgers/sku_media` 与 `ledgers/sku_tags`。兼容 K5 前的旧 `sku_media.csv` 表头以及追加了 `media_id`、`source_hash` 的新表头；导出过程只读台账，不触发台账迁移或改写。
-- 文件骨架固定为生成标记行、`# EDM SKU Index` 标题、空行、Markdown 表格；表头顺序固定为 `SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存`，随后一行使用相同列数的 `---` 分隔符。单元格先将 `\` 写为 `\\`，再将 `|` 写为 `\|`，CR/LF 换行写为 `<br>`；null/缺值为空单元格。金额使用不带千位分隔符和货币符号的十进制数，URL 使用规范化 HTTP(S) 地址。
+- `edm.exportIndex(projectId)` 只接收项目 ID，不接受 SKU 子集、文件名或输出路径。Core 按对应布局读取 `views/products`、`ledgers/sku_media` 与 `ledgers/sku_tags`，确定性渲染完整清单并把内容与统计交给 Desktop；Core 不写导出文件。
+- Desktop 主进程打开原生另存对话框并负责保存。renderer 不提供路径、不接收 Markdown 内容或绝对路径；新 bridge 成功结果只向 renderer 返回不含路径分隔符的文件 basename、SKU 计数和待补图计数。`created` 表示目标此前不存在并以 no-clobber 方式创建；`updated` 表示项目目录外的已有目标已获原生覆盖确认并安全更新；`unchanged` 表示目标内容已与渲染内容相同且无需重写。取消保存对话框或系统覆盖确认时返回 `status: "cancelled"`，不得显示成功提示。
+- 用户项目目录内的已有文件一律不得被覆盖；若选择了项目目录内的已有目标，返回 `EDM_INDEX_CONFLICT` 并保留原文件。用户可在项目目录内选择一个不存在的新目标，但必须先确认规范化真实目标仍位于项目根目录内、路径祖先均安全，并用 no-clobber 原语创建；任一项无法确认就拒绝写入。项目目录外的已有目标只有在原生覆盖确认完成后才可更新。保存前后若目录身份、目标类型或目标状态发生变化，或实现无法安全确认写入结果，必须 fail closed 并保留现有文件；不能依靠字符串路径前缀判断项目目录，也不能用普通“检查后无条件 rename”声称消除了 symlink/junction、目录替换或并发竞态。平台/同步盘无法提供经过验证的 no-clobber 或条件替换语义时，应拒绝写入。
+- 文件首行是 `<!-- siteindex:generated:edm-sku-index:v1 -->`，其后为 `# EDM SKU Index` 标题、空行、Markdown 表格；表头顺序固定为 `SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存`，随后一行使用相同列数的 `---` 分隔符。单元格先将 `\` 写为 `\\`，再将 `|` 写为 `\|`，CR/LF 换行写为 `<br>`；null/缺值为空单元格。金额使用不带千位分隔符和货币符号的十进制数，URL 使用规范化 HTTP(S) 地址。
 - 按父 SKU 聚合时使用 roadmap §4.4 规定的代表子 SKU；图片优先使用 `image_role=main` 的台账图片，其次使用 feed 首图。EDM 清单排除 WebP；无可用图时写“待补图”。短描述来自 `sku_tags.email_blurb`。`edm.discount_tiers` 的类型目前只有 `number[]`，roadmap 未定义某个 SKU 选择哪一档、折后金额舍入规则；A 在实现导出命令前必须补齐此业务规则及黄金 fixture，本契约不替产品作此假设。
-- 除上述待 A 定义的折扣业务规则外，同一份输入必须产生字节一致的清单：SKU 字典序按 `compareKeys`，不含生成时间、不依赖本机 locale、机器路径或遍历顺序；UTF-8 无 BOM、LF、末尾一个换行。内容相同则不重写。
-- `edm.exportIndex(projectId)` resolve 后返回 `created`、`updated` 或 `unchanged`、SKU 计数、待补图计数和固定安全相对路径：`created` 表示此前目标不存在，`updated` 表示受管文件内容有变化，`unchanged` 表示受管文件内容相同且未重写。响应不含绝对项目路径、文件内容或任意来源路径。写入可能已经完成但 IPC 确认丢失时返回 `EDM_EXPORT_OUTCOME_UNKNOWN`（中文 message：“清单写入结果暂无法确认，可重新生成以核对。”）；调用方不得把它当作“未写入”或自动盲目重试，而应重新读取并验证目标标记、当前内容及预期输出。当前状态无法安全确认时返回冲突/未知结果并保留现有文件。目标占用或无权限等可确认写入错误使用 `WRITE_FAILED`；所有错误 message/detail 不得泄露绝对路径、凭据或原始服务响应。
+- 同一份输入必须产生字节一致的清单：SKU 字典序按 `compareKeys`，不含生成时间、不依赖本机 locale、用户保存位置或遍历顺序；UTF-8 无 BOM、LF、末尾一个换行。用户选定目标后，若已有文件字节已与渲染结果一致则返回 `unchanged` 且不重写；新建目标返回 `created`，实际替换已有目标返回 `updated`。
+- 写入可能已经完成但 Desktop IPC 确认丢失时返回 `EDM_EXPORT_OUTCOME_UNKNOWN`（中文 message：“清单写入结果暂无法确认，可重新生成以核对。”）；调用方不得把它当作“未写入”或自动盲目重试。目标占用或无权限等确认未写入错误使用 `WRITE_FAILED`；所有错误 message/detail 不得泄露绝对路径、凭据或原始服务响应。旧 bridge 返回的 `path` 仅为迁移兼容，新 bridge 不返回该字段。
 
 ### 3.2 EDM media Job 的历史恢复字段
 

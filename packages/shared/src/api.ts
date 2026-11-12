@@ -581,10 +581,10 @@ export interface SiteIndexApi {
     setManualImage(id: ProjectId, sku: string, url: string | null): Promise<SkuImageRow>;
     buildCommand(id: ProjectId, input: EdmCommandInput): Promise<string>;
     /**
-     * 仅生成全项目固定清单；不接收 SKU 子集或输出路径。旧 bridge 可不提供。
-     * Promise resolve 表示结果已确认；`EDM_EXPORT_OUTCOME_UNKNOWN` 表示写入可能已落盘但确认丢失。
-     * 调用方不得将其视为未写入或自动盲目重试；重试前，后端必须重新读取并核验目标标记、当前内容和预期输出。
-     * 若后端无法确认当前状态安全，应保持未知/冲突并保留现有文件。
+     * 将全项目清单交由 Desktop 原生另存对话框保存；不接收 SKU 子集或 renderer 提供的路径。旧 bridge 可不提供。
+     * 新 bridge 只向 renderer 返回 file_name 与统计，不返回绝对路径、文件内容或项目路径；旧 bridge 的 path 字段仅为迁移兼容。
+     * 取消选择或覆盖确认时 resolve 为 status="cancelled"，调用方不得显示成功提示。已确认保存才可返回 created/updated/unchanged；
+     * 写入状态不确定时返回 EDM_EXPORT_OUTCOME_UNKNOWN，调用方不得将其视为未写入或盲目重试。
      */
     exportIndex?(id: ProjectId): Promise<EdmSkuIndexExportResult>;
   };
