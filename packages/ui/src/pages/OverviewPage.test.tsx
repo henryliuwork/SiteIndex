@@ -72,6 +72,23 @@ describe("OverviewPage 布局和操作", () => {
     expect(screen.queryByText(/今天/)).toBeNull();
   });
 
+  it("关注、README 与变更记录没有内容时都显示紧凑空状态", async () => {
+    const mockApi = createMockApi();
+    const overview = await mockApi.overview.get("demo");
+    mockApi.overview.get = vi.fn(async () => ({
+      ...overview,
+      attention: [],
+      readme: { ...overview.readme, overview: "", focus: "" },
+      changelog: [],
+    }));
+    await renderOverview(mockApi);
+
+    expect(await screen.findByText("当前没有需要处理的事项。")).toBeTruthy();
+    expect(screen.getByText("暂无 README 项目概况。").classList.contains("si-overview-readme-empty")).toBe(true);
+    expect(screen.getByText("暂无变更记录。")).toBeTruthy();
+    expect(screen.queryByText("当前重点")).toBeNull();
+  });
+
   it("把快捷操作结果显示为 Toast", async () => {
     const mockApi = createMockApi();
     const overview = await mockApi.overview.get("demo");

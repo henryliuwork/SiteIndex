@@ -9,7 +9,7 @@ import {
 import type { HistoryRange, InventorySummary, Kpi, ListQuery, ProjectSummary, SkuGroupingRule, SkuStockFilters, SkuStockView, StockStatus, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, FilterBar, formatDateTime, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, StatusCells, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, FilterBar, formatDateTime, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { selectInventoryCategoryRates } from "./inventory/categories";
 import { formatInventoryDetailDuration, formatInventoryTableDuration, InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { DEFAULT_TREND_CATEGORY_LIMIT, MAX_TREND_CATEGORY_LIMIT, defaultTrendCategories, toggleTrendCategory, trendPoints } from "./inventory/trend";
@@ -204,7 +204,7 @@ function GroupingPreview({ projectId, rule, enabled }: { projectId: string; rule
   </div>;
 }
 
-function StockDetail({ row }: { row: InventoryTableRow }) {
+export function StockDetail({ row }: { row: InventoryTableRow }) {
   const [range, setRange] = useState<HistoryRange>(30);
   const pricePoints = row.price_history ?? [];
   const latestPriceDate = pricePoints.at(-1)?.date;
@@ -220,19 +220,19 @@ function StockDetail({ row }: { row: InventoryTableRow }) {
         <div><dt>变体</dt><dd>{row.variant_title ?? "—"}</dd></div>
         <div><dt>价格</dt><dd className="si-mono">{row.price.toFixed(2)}</dd></div>
         <div><dt>当前状态持续</dt><dd>{formatInventoryDetailDuration(row)}</dd></div>
-        {!row.is_parent && <div><dt>7 天在线率</dt><dd>{formatRate(row.online_rate_7d)}</dd></div>}
-        {!row.is_parent && <div><dt>30 天在线率</dt><dd>{formatRate(row.online_rate_30d)}</dd></div>}
+        <div><dt>7 天在线率</dt><dd>{formatRate(row.online_rate_7d)}</dd></div>
+        <div><dt>30 天在线率</dt><dd>{formatRate(row.online_rate_30d)}</dd></div>
         <div><dt>30 天状态变化</dt><dd>{row.changes_30d} 次</dd></div>
         <div><dt>最近变化</dt><dd>{row.last_change ?? "无变化"}</dd></div>
         <div><dt>最近变化日期</dt><dd>{row.last_change_at ?? "—"}</dd></div>
       </dl>
-      {!row.is_parent && <>
+      {!row.is_parent &&
         <section className="si-stock-price-chart">
           <div className="si-stock-chart-heading"><h3>价格趋势</h3><Select ariaLabel="价格趋势范围" value={String(range)} onValueChange={(value) => setRange(value === "all" ? "all" : Number(value) as 30 | 60 | 90)} options={historyRanges.map((item) => ({ value: String(item.value), label: item.label }))} /></div>
           {visiblePrices.length > 0 ? <div className="si-stock-price-plot"><ResponsiveContainer width="100%" height="100%"><LineChart data={visiblePrices} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}><CartesianGrid stroke="var(--color-line-soft)" vertical={false} /><XAxis dataKey="date" tick={{ fill: "var(--color-muted)", fontSize: "var(--fs-caption)" }} tickLine={false} axisLine={false} /><YAxis width={48} tick={{ fill: "var(--color-muted)", fontSize: "var(--fs-caption)" }} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [typeof value === "number" ? value.toFixed(2) : "—", "价格"]} /><Line type="monotone" dataKey="price" name="价格" stroke="var(--color-chart-feeders)" strokeWidth={2} dot={visiblePrices.length === 1 ? { r: 3 } : false} activeDot={{ r: 3 }} isAnimationActive={false} /></LineChart></ResponsiveContainer></div> : <p className="si-muted">暂无价格历史。</p>}
         </section>
-        <section className="si-stock-detail-history"><h3>近 30 天库存状态</h3><StatusCells history={row.history_30d} /></section>
-      </>}
+      }
+      <section className="si-stock-detail-history"><h3>近 30 天库存状态</h3><InventoryHistoryCell row={row} /></section>
     </div>
   );
 }

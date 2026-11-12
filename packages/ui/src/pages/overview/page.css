@@ -4,7 +4,7 @@
 
 .si-overview-content {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.3fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   min-width: 0;
   align-items: start;
   gap: var(--space-4);
@@ -43,6 +43,18 @@
   padding: var(--space-4);
 }
 
+.si-overview-attention {
+  grid-column: 1 / -1;
+}
+
+.si-overview-readme {
+  grid-column: 1;
+}
+
+.si-overview-changelog {
+  grid-column: 2;
+}
+
 .si-overview-attention .si-panel-heading,
 .si-overview-readme .si-panel-heading {
   margin-bottom: var(--space-2);
@@ -64,7 +76,8 @@
 }
 
 .si-overview-attention > .si-empty-state,
-.si-overview-changelog > .si-empty-state {
+.si-overview-changelog > .si-empty-state,
+.si-overview-readme-empty {
   display: flex;
   min-height: 0;
   align-items: center;
@@ -224,16 +237,8 @@
 }
 
 @media (max-width: 1400px) {
-  .si-overview-content {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  }
-
   .si-overview-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .si-overview-changelog {
-    grid-column: 1 / -1;
   }
 }
 
@@ -248,6 +253,10 @@
   }
 
   .si-overview-changelog {
+    grid-column: auto;
+  }
+
+  .si-overview-attention {
     grid-column: auto;
   }
 }

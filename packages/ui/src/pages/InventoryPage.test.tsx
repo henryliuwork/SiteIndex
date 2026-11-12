@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { createMockApi } from "../mock";
+import type { SkuStockView } from "@siteindex/shared";
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class {
@@ -25,8 +26,8 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
-async function renderInventoryPage(groupingEnabled: boolean, skuListPending = false) {
-  const mockApi = createMockApi();
+async function renderInventoryPage(groupingEnabled: boolean, skuListPending = false, mockApiOverride?: ReturnType<typeof createMockApi>) {
+  const mockApi = mockApiOverride ?? createMockApi();
   const project = await mockApi.projects.get("demo");
   mockApi.projects.get = vi.fn(async () => ({
     ...project,
@@ -78,7 +79,51 @@ async function renderInventoryPage(groupingEnabled: boolean, skuListPending = fa
   return { mockApi, listSkus };
 }
 
+async function sampleParentSkuRow(overrides: Partial<SkuStockView> = {}): Promise<SkuStockView> {
+  const mockApi = createMockApi();
+  const source = await mockApi.inventory.listSkus("demo", { page: 1, pageSize: 1, filters: {} });
+  const sample = source.rows[0]!;
+  return {
+    ...sample,
+    sku: "DEMO001A",
+    variant_title: null,
+    is_parent: true,
+    parent_sku: null,
+    children_count: 2,
+    in_stock_children_count: 2,
+    online_rate_7d: 1,
+    online_rate_30d: 0.75,
+    history_30d: "i".repeat(30),
+    price_history: [],
+    ...overrides,
+  };
+}
+
+async function renderStockDetail(row: SkuStockView) {
+  const mockApi = createMockApi();
+  vi.doMock("../api", () => ({
+    api: mockApi,
+    isMockApi: true,
+    apiErrorMessage: (_error: unknown, fallback: string) => fallback,
+  }));
+  const { StockDetail } = await import("./InventoryPage");
+  return render(<StockDetail row={row} />);
+}
+
 describe("InventoryPage D-2", () => {
+  it("项目同步成功状态显示具体月日和时间", async () => {
+    const mockApi = createMockApi();
+    const project = await mockApi.projects.get("demo");
+    mockApi.projects.get = vi.fn(async () => ({
+      ...project,
+      summary: { ...project.summary, sync: { ...project.summary.sync, state: "ok" as const, at: new Date(2026, 10, 8, 17, 0).toISOString() } },
+    }));
+    await renderInventoryPage(true, false, mockApi);
+
+    expect(await screen.findByText(/11-08 17:00 · 同步成功/)).toBeTruthy();
+    expect(screen.queryByText(/今天/)).toBeNull();
+  }, 15_000);
+
   it("首次加载 SKU 时显示加载状态，不显示空结果表格", async () => {
     const { listSkus } = await renderInventoryPage(true, true);
 
@@ -110,6 +155,27 @@ describe("InventoryPage D-2", () => {
       filters: expect.objectContaining({ parent_only: true }),
     })));
     expect(screen.queryByRole("dialog", { name: "配置父子 SKU 规则" })).toBeNull();
+  });
+
+  it("父 SKU 详情展示聚合在线率和实际库存趋势", async () => {
+    const parent = await sampleParentSkuRow();
+    const { container } = await renderStockDetail(parent);
+    const detail = container.querySelector<HTMLElement>(".si-stock-detail")!;
+
+    expect(within(detail).getByText("7 天在线率").parentElement?.textContent).toContain("100%");
+    expect(within(detail).getByText("30 天在线率").parentElement?.textContent).toContain("75%");
+    expect(detail.querySelector(".si-stock-detail-history .si-status-cells")).toBeTruthy();
+  });
+
+  it("父 SKU 的聚合数据缺失时显示破折号且不画灰色历史条", async () => {
+    const parent = await sampleParentSkuRow({ online_rate_7d: null, online_rate_30d: null, history_30d: "-".repeat(30) });
+    const { container } = await renderStockDetail(parent);
+    const detail = container.querySelector<HTMLElement>(".si-stock-detail")!;
+
+    expect(within(detail).getByText("7 天在线率").parentElement?.textContent).toContain("—");
+    expect(within(detail).getByText("30 天在线率").parentElement?.textContent).toContain("—");
+    expect(detail.querySelector(".si-stock-detail-history")?.textContent).toContain("—");
+    expect(detail.querySelector(".si-stock-detail-history .si-status-cells")).toBeNull();
   });
 
   it("将状态筛选作为单选下拉条件传给 Core 库存列表", async () => {

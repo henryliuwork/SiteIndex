@@ -217,6 +217,11 @@ export function ProductsPage() {
     }
     setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: checked || undefined } }));
   };
+  const onTableQueryChange = (next: ListQuery<ProductFilters>) => setQuery((current) => ({
+    ...next,
+    search: current.search,
+    filters: current.filters,
+  }));
   const openGroupingSettings = () => {
     setGroupingDrawerOpen(false);
     navigate("/p/" + id + "/settings/config?section=sku-grouping");
@@ -289,7 +294,7 @@ export function ProductsPage() {
       {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载产品列表…</div> : listQuery.isError ? <ApiErrorNotice label="产品列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
         tableId="products.list" scopeId={id}
         rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
-        query={query} onQueryChange={setQuery} onRowClick={(row) => setSelectedHandle(row.handle)}
+        query={query} onQueryChange={onTableQueryChange} onRowClick={(row) => setSelectedHandle(row.handle)}
         getRowId={(row) => row.handle} height="fill" rowHeight={52}
         emptyTitle="没有匹配的产品" emptyDescription="请修改搜索文字或库存、标签筛选条件。"
       />}
