@@ -318,11 +318,11 @@ describe("Desktop EDM SKU index Save As", () => {
     });
     await expect(lstat(path.join(outsideDirectory, path.basename(targetPath)))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(path.join(outsideDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe("outside sentinel\n");
-    const outsideEntries = await readdir(outsideDirectory);
-    const temporaryNames = outsideEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
+    expect(await readdir(outsideDirectory)).toEqual(["keep-sentinel.txt"]);
+    const displacedEntries = await readdir(displacedDirectory);
+    const temporaryNames = displacedEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
     expect(temporaryNames).toHaveLength(1);
-    await expect(readFile(path.join(outsideDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
-    expect(await readdir(displacedDirectory)).toHaveLength(1);
+    await expect(readFile(path.join(displacedDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
   });
 
   it.skipIf(process.platform !== "win32")("does not follow a replaced destination junction during cleanup", async ({ skip }) => {
