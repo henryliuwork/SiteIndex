@@ -195,3 +195,13 @@
 - [x] Junction 负向用例、临时根清理前 containment 复核与删除后目标不存在检查。
 - [x] head `4962f466f2d179d6ff044e28f5e281afe18aa008` 的 run `43075389702`（基于 #435 合并前的 `08804a5`）Windows packaged acceptance 通过 71/71：17 次凭据状态检查、3 次保存、2 次删除、4 次重启；209 个隔离文件零 canary 命中；添加已有项目 41 ms。该 run 是历史证据，不代替当前基线验收。
 - [ ] #435 合并后已将本 PR 变基到 main `de157b92c46fdfd2a465e7f50b4ccd3a0aef634a`；最新 head 的三系统 CI 与 packaged acceptance 尚待完成。
+
+
+## #461 · Hosted 候选摘要与凭据隔离判定
+
+- [x] 将 E #461 的 fail-closed oracle 接入 Windows hosted 验收最终摘要；只写 `passed` 与固定 failure code，不写 canary 原文。
+- [x] 摘要记录候选版本、冻结的验收代码 commit、Release tag commit、EXE asset ID/SHA256、Release workflow run、Windows artifact ID/digest 与 latest.yml 校验状态；hosted dispatch 缺少任一 pin 时失败。
+- [x] 保持 workflow token 最小只读权限（`actions: read`、`contents: read`）；dispatch 参数只使用公开 commit、asset ID 和摘要，不传真实凭据。
+- [ ] media.prepare 门禁顺序待协调：`PENDING_HANDLERS` 仍包含方法时，正式 UI → IPC → Core 链路会在启动 Job 前返回 `NOT_IMPLEMENTED`。不得用测试 UI 绕过或临时改 shared 来声称生产链路已通过。#459/#460 的 loopback harness 仅作补充，不能代替正式 EDM 入口。
+- [ ] 可审计的虚构服务候选测试需通过正常 contract PR 清除 pending 后，在隔离 packaged candidate 中运行正式 UI、preload、IPC、utilityProcess、Core 与 loopback 假服务；覆盖成功、401/403、提交后断连、离页恢复及重启恢复，并扫描本地 vault、台账、runs 与输出摘要。真实 WordPress 域名/凭据和正式公开 Release 仍单独验收。
+- [ ] 当前 C 清单要求真实服务/凭据验收前不得清理 pending；这与先跑上述正式 packaged UI 测试形成循环依赖。若不调整顺序，就保持 pending 并仅报告组件级证据；若审核者批准将“假服务 packaged E2E”前置为清理条件、真实 WordPress 验收后置为公开 Release 条件，再按上一条执行。此次 PR 不打开 gate、不改 shared。

@@ -9,6 +9,7 @@ on:
       - "packages/desktop/scripts/credential-region-wait.mjs"
       - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
       - "packages/desktop/scripts/e-windows-v041-reconnect.mjs"
+      - "packages/desktop/scripts/e-windows-v041-credential-oracle.mjs"
       - "packages/desktop/scripts/e-windows-v040-synthetic-fixture.mjs"
       - "packages/desktop/scripts/windows-appdata-redirect.mjs"
       - "packages/desktop/scripts/check-candidate-run.ps1"
@@ -16,6 +17,7 @@ on:
       - "packages/desktop/test/credential-region-wait.test.ts"
       - "packages/desktop/test/e-windows-profile-isolation.test.ts"
       - "packages/desktop/test/e-windows-v041-hosted-update.test.ts"
+      - "packages/desktop/test/e-windows-v041-hosted-oracle.test.ts"
       - "packages/desktop/test/windows-appdata-redirect.test.ts"
       - "packages/desktop/test/candidate-run-source.test.ps1"
       - "packages/desktop/src/preload/index.ts"
@@ -25,6 +27,7 @@ on:
       - "packages/desktop/src/main/profile-path-diagnostic.ts"
       - "packages/desktop/src/main/profile-path-diagnostic.test.ts"
       - "packages/ui/visual/wordpress-credentials-smoke.mjs"
+      - "fixtures/e-v041-loopback/credential-isolation-report-oracle.mjs"
   workflow_dispatch:
     inputs:
       expected_source_commit:
