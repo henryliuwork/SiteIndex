@@ -152,6 +152,10 @@ function getExportFileName(result: EdmSkuIndexExportResult): string | undefined 
 }
 
 function getExportErrorMessage(error: unknown): { tone: "warn" | "error"; message: string } {
+  if (error && typeof error === "object" && "code" in error && error.code === "NOT_IMPLEMENTED"
+    && "message" in error && typeof error.message === "string") {
+    return { tone: "error", message: error.message };
+  }
   if (isEdmExportOutcomeUnknown(error)) {
     return { tone: "warn", message: "保存结果尚未确认；清单可能已写入您选择的位置。此页面不会盲目重试，请先检查该位置。" };
   }
