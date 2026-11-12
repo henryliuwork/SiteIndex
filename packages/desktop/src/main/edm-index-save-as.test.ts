@@ -196,7 +196,31 @@ describe("Desktop EDM SKU index Save As", () => {
     expect([rendered.content, alternate.content]).toContain(saved);
   });
 
-  it("does not write through a replaced destination directory", async () => {
+  it("empties an owned temporary file when the destination directory changes before opening", async () => {
+    const targetPath = path.join(downloadsDirectory, "sku-index.md");
+    const displacedDirectory = path.join(root, "downloads-before-open");
+    const save = createEdmIndexSaveAs({
+      defaultPath: path.join(downloadsDirectory, path.basename(PATHS.edmSkuIndex)),
+      showSaveDialog: async () => ({ canceled: false, filePath: targetPath }),
+      beforeTemporaryOpenForTest: async () => {
+        await rename(downloadsDirectory, displacedDirectory);
+        await mkdir(downloadsDirectory);
+      },
+    });
+
+    await expect(save(projectRoot, rendered)).rejects.toMatchObject({
+      code: "WRITE_FAILED",
+      detail: "EDM_INDEX_CREATE_FAILED",
+    });
+    await expect(lstat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(displacedDirectory)).toEqual([]);
+    const replacementEntries = await readdir(downloadsDirectory);
+    expect(replacementEntries).toHaveLength(1);
+    expect(replacementEntries[0]).toMatch(/^\.siteindex-edm-[a-f0-9-]+\.tmp$/u);
+    await expect(readFile(path.join(downloadsDirectory, replacementEntries[0]!), "utf8")).resolves.toBe("");
+  });
+
+  it.skipIf(process.platform === "win32")("empties a moved temporary file without following the replacement directory", async () => {
     const targetPath = path.join(downloadsDirectory, "sku-index.md");
     const displacedDirectory = path.join(root, "downloads-before-replacement");
     const replaceDirectoryThenLink: typeof createHardLink = async (source, destination) => {
@@ -211,7 +235,10 @@ describe("Desktop EDM SKU index Save As", () => {
     });
     await expect(lstat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readdir(downloadsDirectory)).toEqual([]);
-    expect(await readdir(displacedDirectory)).toHaveLength(1);
+    const displacedEntries = await readdir(displacedDirectory);
+    expect(displacedEntries).toHaveLength(1);
+    expect(displacedEntries[0]).toMatch(/^\.siteindex-edm-[a-f0-9-]+\.tmp$/u);
+    await expect(readFile(path.join(displacedDirectory, displacedEntries[0]!), "utf8")).resolves.toBe("");
   });
 
   it.skipIf(process.platform === "win32")("does not write through a replaced destination symlink", async () => {

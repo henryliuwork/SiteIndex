@@ -25,6 +25,8 @@ export interface EdmIndexSaveAsOptions {
   defaultPath: string;
   showSaveDialog(options: EdmIndexSaveDialogOptions): Promise<EdmIndexSaveDialogResult>;
   createHardLink?: typeof link;
+  /** Deterministic race injection for tests; production callers leave this unset. */
+  beforeTemporaryOpenForTest?: () => Promise<void>;
 }
 
 export function resolveEdmIndexDefaultPath(options: {
@@ -238,17 +240,15 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
     const temporaryPath = path.join(parentSnapshot.path, `.siteindex-edm-${randomUUID()}.tmp`);
     let createdTarget = false;
     let temporaryIdentity: { dev: number; ino: number } | null = null;
+    let temporaryHandle: Awaited<ReturnType<typeof open>> | null = null;
     try {
-      const handle = await open(temporaryPath, "wx", 0o600);
-      try {
-        const openedStats = await handle.stat();
-        if (!openedStats.isFile() || openedStats.ino === 0) throw new Error("temporary-file-identity-unavailable");
-        temporaryIdentity = { dev: openedStats.dev, ino: openedStats.ino };
-        await handle.writeFile(rendered.content, "utf8");
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
+      await options.beforeTemporaryOpenForTest?.();
+      temporaryHandle = await open(temporaryPath, "wx", 0o600);
+      const openedStats = await temporaryHandle.stat();
+      if (!openedStats.isFile() || openedStats.ino === 0) throw new Error("temporary-file-identity-unavailable");
+      temporaryIdentity = { dev: openedStats.dev, ino: openedStats.ino };
+      await temporaryHandle.writeFile(rendered.content, "utf8");
+      await temporaryHandle.sync();
       const temporaryStats = await lstat(temporaryPath);
       if (
         hasReparsePoint(temporaryStats) ||
@@ -290,6 +290,8 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
         await unlink(temporaryPath);
         temporaryIdentity = null;
       }
+      await temporaryHandle.close().catch(() => undefined);
+      temporaryHandle = null;
       return { status: "created", file_name: targetName, ...counts };
     } catch (error) {
       if (createdTarget) {
@@ -303,16 +305,43 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
       if (error && typeof error === "object" && "code" in error && error.code === "WRITE_FAILED") throw error;
       throw saveError("WRITE_FAILED", "无法安全保存清单，未覆盖已有文件。", "EDM_INDEX_CREATE_FAILED");
     } finally {
-      if (temporaryIdentity) {
-        const temporaryNow = await lstat(temporaryPath).catch(() => null);
-        if (
-          temporaryNow &&
-          temporaryNow.isFile() &&
-          !hasReparsePoint(temporaryNow) &&
-          sameIdentity(temporaryIdentity, temporaryNow)
-        ) {
-          await unlink(temporaryPath).catch(() => undefined);
+      let cleanupFailed = false;
+      if (temporaryIdentity && temporaryHandle && !createdTarget) {
+        try {
+          // The open handle still identifies our file if its directory was moved or replaced.
+          // Empty it before any path-based cleanup so a moved directory cannot retain the export.
+          await temporaryHandle.truncate(0);
+          await temporaryHandle.sync();
+        } catch {
+          cleanupFailed = true;
         }
+      }
+      if (temporaryIdentity) {
+        // Unlink by path only while the original parent identity is still present.
+        // If it moved, that same path may now name an unrelated replacement directory.
+        const parentIsOriginal = await verifyDirectorySnapshot(parentSnapshot).then(
+          () => true,
+          () => false,
+        );
+        if (parentIsOriginal) {
+          const temporaryNow = await lstat(temporaryPath).catch(() => null);
+          if (
+            temporaryNow &&
+            temporaryNow.isFile() &&
+            !hasReparsePoint(temporaryNow) &&
+            sameIdentity(temporaryIdentity, temporaryNow)
+          ) {
+            await unlink(temporaryPath).catch(() => undefined);
+          }
+        }
+      }
+      if (temporaryHandle) await temporaryHandle.close().catch(() => undefined);
+      if (cleanupFailed) {
+        throw saveError(
+          "WRITE_FAILED",
+          "无法安全清空临时清单，保存目录状态异常。",
+          "EDM_INDEX_TEMPORARY_CLEANUP_FAILED",
+        );
       }
     }
   };
