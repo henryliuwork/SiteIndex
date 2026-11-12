@@ -81,7 +81,6 @@ describe("IPC handler completeness", () => {
     expect(PENDING_HANDLERS).toHaveLength(pendingMethods.size);
     expect(registeredMethods.filter((method) => !apiMethods.has(method))).toEqual([]);
     expect(missingMethods.filter((method) => !pendingMethods.has(method))).toEqual([]);
-    expect(pendingMethods).toContain("media.prepare");
     expect(pendingMethods).toContain("edm.exportIndex");
     expect(registeredSet.has("media.prepare")).toBe(true);
     expect(registeredSet.has("edm.exportIndex")).toBe(true);

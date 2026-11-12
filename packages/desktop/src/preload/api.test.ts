@@ -3,7 +3,7 @@ import { PENDING_HANDLERS } from "@siteindex/shared";
 import { createApiBridge } from "./api.js";
 
 describe("createApiBridge IPC errors", () => {
-  it("keeps media preparation unavailable through the bridge while the capability is pending", async () => {
+  it("preserves a production media readiness error through the transparent bridge", async () => {
     const invoke = vi.fn(async () => {
       throw new Error(
         'Error invoking remote method \'si:media.prepare\': Error: __SITEINDEX_IPC_ERROR__:{"code":"NOT_IMPLEMENTED","message":"当前桌面版本尚未接入媒体准备 Core Job。","detail":"Core media Job 尚未就绪。"}',
@@ -11,7 +11,6 @@ describe("createApiBridge IPC errors", () => {
     });
     const bridge = createApiBridge({ invoke, listen: () => () => undefined });
 
-    expect(PENDING_HANDLERS).toContain("media.prepare");
     await expect(bridge.media?.prepare({ project: "fixture-project", skus: ["fixture-sku"] })).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
       message: "当前桌面版本尚未接入媒体准备 Core Job。",
