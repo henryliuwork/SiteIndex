@@ -60,6 +60,26 @@ describe("EDM 导出结果核验门闩", () => {
     expect(beginEdmExportAttempt("demo-export-verified-recovery", true)).toBeTruthy();
   });
 
+  it("取消已确认但无法删除本地门闩时，应用模块重载后仍按持久标记暂停", async () => {
+    const projectId = "demo-export-cancelled-marker";
+    const markerKey = "siteindex:edm-export-attempt:demo-export-cancelled-marker";
+    const originalRemoveItem = window.localStorage.removeItem.bind(window.localStorage);
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation((key) => {
+      if (key === markerKey) throw new Error("local storage remove unavailable");
+      originalRemoveItem(key);
+    });
+
+    const attemptId = beginEdmExportAttempt(projectId);
+    expect(attemptId).toBeTruthy();
+    expect(resolveEdmExportAttempt(projectId, attemptId!)).toBe(false);
+    expect(JSON.parse(window.localStorage.getItem(markerKey) ?? "{}").state).toBe("pending");
+    expect(getEdmExportSafetyState(projectId)).toBe("blocked");
+
+    vi.resetModules();
+    const reloaded = await import("./export-retry-state");
+    expect(reloaded.getEdmExportSafetyState(projectId)).toBe("blocked");
+  });
+
   it("旧 attempt 的完成回调不能清除另一个窗口写入的新 attempt 标记", () => {
     const oldAttempt = beginEdmExportAttempt("demo-export-race");
     expect(oldAttempt).toBeTruthy();

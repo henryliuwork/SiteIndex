@@ -477,6 +477,37 @@ describe("EdmPage media preparation prototype", () => {
     await waitFor(() => expect(exportIndex).toHaveBeenCalledTimes(2));
   });
 
+  it("取消已确认但本机未能清除门闩时只提示本地状态，并在重进页面后继续说明暂停原因", async () => {
+    const markerKey = "siteindex:edm-export-attempt:demo";
+    const originalRemoveItem = window.localStorage.removeItem.bind(window.localStorage);
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation((key) => {
+      if (key === markerKey) throw new Error("local storage remove unavailable");
+      originalRemoveItem(key);
+    });
+    const result: EdmSkuIndexExportResult = { status: "cancelled", sku_count: 12, missing_image_count: 3 };
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const toastRegion = screen.getByLabelText("通知");
+    fireEvent.click(button);
+
+    const control = exportControlFor(button);
+    expect(await within(control).findByText(/保存对话框已取消，但本机未能清除这次另存状态/)).toBeTruthy();
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(true));
+    expect(JSON.parse(window.localStorage.getItem(markerKey) ?? "{}").state).toBe("pending");
+    expect(within(toastRegion).queryByRole("status")).toBeNull();
+    expect(within(toastRegion).queryByRole("alert")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
+    fireEvent.click(await screen.findByRole("button", { name: "返回 EDM" }));
+    const reopenedButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    expect(reopenedButton.hasAttribute("disabled")).toBe(true);
+    expect(await within(exportControlFor(reopenedButton)).findByText(/本机仍保留未清除的另存状态/)).toBeTruthy();
+    expect(exportControlFor(reopenedButton).textContent).not.toContain("可能已写入");
+    expect(within(toastRegion).queryByRole("status")).toBeNull();
+    expect(within(toastRegion).queryByRole("alert")).toBeNull();
+    expect(exportIndex).toHaveBeenCalledTimes(1);
+  });
+
   it("unchanged 显示已是最新并给出文件名与统计", async () => {
     const result: EdmSkuIndexExportResult = {
       status: "unchanged", file_name: "sku-index.md", sku_count: 12, missing_image_count: 3,
@@ -508,7 +539,7 @@ describe("EdmPage media preparation prototype", () => {
     const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
 
     expect(button.hasAttribute("disabled")).toBe(true);
-    expect(await screen.findByText(/上次另存结果可能未知/)).toBeTruthy();
+    expect(await screen.findByText(/本机仍保留未清除的另存状态/)).toBeTruthy();
     fireEvent.click(button);
     expect(exportIndex).not.toHaveBeenCalled();
   });

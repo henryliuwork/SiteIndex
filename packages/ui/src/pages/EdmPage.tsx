@@ -278,6 +278,7 @@ export function EdmPage() {
   const [exportFeedback, setExportFeedback] = useState<
     | { projectId: string; result: EdmSkuIndexExportResult; safetyWarning?: string }
     | { projectId: string; error: { tone: "warn" | "error"; message: string } }
+    | { projectId: string; localWarning: string }
     | null
   >(null);
   const [exportSafetyUnavailableProjectId, setExportSafetyUnavailableProjectId] = useState<string | null>(null);
@@ -327,7 +328,10 @@ export function EdmPage() {
     onSuccess: (result, { projectId, attemptId }) => {
       const markerResolved = resolveEdmExportAttempt(projectId, attemptId, exportCapability.reconciliationVerified);
       if (result.status === "cancelled") {
-        setExportFeedback(null);
+        setExportFeedback(markerResolved ? null : {
+          projectId,
+          localWarning: "保存对话框已取消，但本机未能清除这次另存状态；该项目的另存操作可能暂时禁用。请恢复本机存储后重新进入页面。",
+        });
         return;
       }
       const safetyWarning = markerResolved ? undefined : "结果已确认，但本机无法解除另存状态门闩；请检查本地存储后再继续。";
@@ -570,14 +574,18 @@ export function EdmPage() {
         <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>
           {exportMutation.isPending ? "正在准备 SKU 清单…" : "另存全项目 SKU 清单"}
         </Button>
-        {exportSafetyBlocked && !exportMutation.isPending && exportSafetyState === "blocked" && <Notice tone="warn" title="另存操作已暂停">
-          上次另存结果可能未知；请先检查上次选择的保存位置。为避免重复写入，此页面不会自动重试未确认的请求。
+        {exportSafetyBlocked && !exportMutation.isPending && exportSafetyState === "blocked"
+          && !(currentExportFeedback && "localWarning" in currentExportFeedback) && <Notice tone="warn" title="另存操作已暂停">
+          本机仍保留未清除的另存状态，可能来自上次操作中断或状态无法同步。为避免重复写入，此项目的另存已暂停；请先检查所选保存位置和本机状态。
         </Notice>}
         {(exportSafetyState === "unavailable" || exportSafetyUnavailableProjectId === id) && <Notice tone="warn" title="无法记录另存状态">
           本机存储不可用，另存请求不会发送。请恢复应用本地存储后重新进入此页，再重新尝试。
         </Notice>}
         {currentExportFeedback && "result" in currentExportFeedback && <Notice tone={currentExportFeedback.safetyWarning ? "warn" : "info"} title="EDM SKU 清单保存结果">
           {exportResultMessage(currentExportFeedback.result)}{currentExportFeedback.safetyWarning && <> {currentExportFeedback.safetyWarning}</>}
+        </Notice>}
+        {currentExportFeedback && "localWarning" in currentExportFeedback && <Notice tone="warn" title="本机另存状态未清除">
+          {currentExportFeedback.localWarning}
         </Notice>}
         {currentExportFeedback && "error" in currentExportFeedback && <Notice tone={currentExportFeedback.error.tone} title={exportSafetyUnavailableProjectId === id ? "另存请求未发送" : currentExportFeedback.error.tone === "warn" ? "保存结果尚未确认" : "清单保存失败"}>
           {currentExportFeedback.error.message}
