@@ -1,7 +1,7 @@
 import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { EDM_SKU_INDEX_PATHS, pathsFor, type ProductView, type ProjectLayout, type SiteConfig, type SkuRecord, type SkuStockView } from "@siteindex/shared";
+import { pathsFor, type ProductView, type ProjectLayout, type SiteConfig, type SkuRecord, type SkuStockView } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseCsv } from "../src/io/csv";
 import { createEdmSkuIndexFile, renderEdmSkuIndex, type EdmSkuIndexInput } from "../src/edm/sku-index";
@@ -71,11 +71,10 @@ function core(projectPath: string) {
   });
 }
 
-async function exportIndex(projectPath: string) {
+async function renderIndex(projectPath: string) {
   const api = core(projectPath);
-  const run = api.edm.exportIndex;
-  if (!run) throw new Error("Core EDM index export is not registered.");
-  return run("synthetic");
+  expect(api.edm.exportIndex).toBeUndefined();
+  return api.edm.renderIndex("synthetic");
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -157,16 +156,20 @@ describe("EDM SKU index rendering", () => {
   });
 });
 
-describe("EDM SKU index safe file boundary", () => {
+describe("EDM SKU index service and safe file boundary", () => {
   it.each([
     ["legacy", "sku-media-legacy.csv"],
     ["workspace", "sku-media-extended.csv"],
-  ] as const)("refuses to create in %s when no bound-directory no-follow writer exists", async (layout, mediaFile) => {
+  ] as const)("Core renders %s without creating a fixed export file or directory", async (layout, mediaFile) => {
     const projectPath = await projectFor(layout, mediaFile);
     const paths = pathsFor(layout);
     const output = path.join(projectPath, paths.edmSkuIndex);
 
-    await expect(exportIndex(projectPath)).rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
+    await expect(renderIndex(projectPath)).resolves.toEqual({
+      content: await readFile(path.join(FIXTURE, "sku-index.expected.md"), "utf8"),
+      sku_count: 3,
+      missing_image_count: 1,
+    });
     expect(await fileExists(output)).toBe(false);
     expect(await fileExists(path.dirname(output))).toBe(false);
   });
@@ -231,7 +234,11 @@ describe("EDM SKU index safe file boundary", () => {
         : "<!-- siteindex:generated:edm-sku-index:v1 -->\nexternal edit\n");
       await writeFile(output, bytes);
 
-      await expect(exportIndex(projectPath)).rejects.toMatchObject({ code: "EDM_INDEX_CONFLICT" });
+      await expect(renderIndex(projectPath)).resolves.toEqual({
+        content: await readFile(path.join(FIXTURE, "sku-index.expected.md"), "utf8"),
+        sku_count: 3,
+        missing_image_count: 1,
+      });
       expect(await readFile(output)).toEqual(bytes);
     }
   });
