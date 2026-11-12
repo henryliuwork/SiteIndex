@@ -345,7 +345,7 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
       if (error && typeof error === "object" && "code" in error && error.code === "WRITE_FAILED") throw error;
       throw saveError("WRITE_FAILED", "无法安全保存清单，未覆盖已有文件。", "EDM_INDEX_CREATE_FAILED");
     } finally {
-      let cleanupFailed = false;
+      let temporaryContentCleared = false;
       if (temporaryIdentity && temporaryHandle && !createdTarget) {
         try {
           // The open handle still identifies our file if its directory was moved or replaced.
@@ -353,8 +353,9 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
           if (options.truncateTemporaryForTest) await options.truncateTemporaryForTest(temporaryHandle);
           else await temporaryHandle.truncate(0);
           await temporaryHandle.sync();
+          temporaryContentCleared = true;
         } catch {
-          cleanupFailed = true;
+          // An identity-checked unlink below may still remove the only path to the payload.
         }
       }
       if (temporaryIdentity) {
@@ -366,18 +367,24 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
         );
         if (parentIsOriginal) {
           const temporaryNow = await lstat(temporaryPath).catch(() => null);
-          if (
-            temporaryNow &&
+          if (!temporaryNow) {
+            temporaryContentCleared = true;
+          } else if (
             temporaryNow.isFile() &&
             !hasReparsePoint(temporaryNow) &&
             sameIdentity(temporaryIdentity, temporaryNow)
           ) {
-            await unlink(temporaryPath).catch(() => undefined);
+            try {
+              await unlink(temporaryPath);
+              temporaryContentCleared = true;
+            } catch {
+              // Keep the failure below only if neither truncation nor exact unlink cleared the payload.
+            }
           }
         }
       }
       if (temporaryHandle) await temporaryHandle.close().catch(() => undefined);
-      if (cleanupFailed) {
+      if (temporaryIdentity && !createdTarget && !temporaryContentCleared) {
         throw saveError(
           "WRITE_FAILED",
           "无法安全清空临时清单，保存目录状态异常。",

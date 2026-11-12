@@ -1,4 +1,4 @@
-import { link as createHardLink, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { link as createHardLink, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PATHS } from "@siteindex/shared";
@@ -312,6 +312,35 @@ describe("Desktop EDM SKU index Save As", () => {
     await expect(readFile(path.join(displacedDirectory, temporaryNames[0]!), "utf8")).resolves.toBe(rendered.content);
   });
 
+  it.skipIf(process.platform !== "win32")("reports Windows cleanup failure only when neither truncate nor unlink clears the payload", async () => {
+    const targetPath = path.join(downloadsDirectory, "sku-index.md");
+    const save = createEdmIndexSaveAs({
+      defaultPath: path.join(downloadsDirectory, path.basename(PATHS.edmSkuIndex)),
+      showSaveDialog: async () => ({ canceled: false, filePath: targetPath }),
+      createHardLink: async () => {
+        throw new Error("simulated-publication-failure");
+      },
+      truncateTemporaryForTest: async () => {
+        throw new Error("simulated-truncate-failure");
+      },
+    });
+
+    const failure = await save(projectRoot, rendered).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await expect(lstat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+    const temporaryNames = (await readdir(downloadsDirectory)).filter(
+      (name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"),
+    );
+    if (temporaryNames.length > 0) {
+      expect(failure).toMatchObject({ code: "WRITE_FAILED", detail: "EDM_INDEX_TEMPORARY_CLEANUP_FAILED" });
+      await expect(readFile(path.join(downloadsDirectory, temporaryNames[0]!), "utf8")).resolves.toBe(rendered.content);
+    } else {
+      expect(failure).toMatchObject({ code: "WRITE_FAILED", detail: "EDM_INDEX_CREATE_FAILED" });
+    }
+  }, 20_000);
+
   it.skipIf(process.platform === "win32")("empties a moved temporary file without following the replacement directory", async () => {
     const targetPath = path.join(downloadsDirectory, "sku-index.md");
     const displacedDirectory = path.join(root, "downloads-before-replacement");
@@ -417,6 +446,22 @@ describe("Desktop EDM SKU index Save As", () => {
     await expect(readFile(path.join(outsideDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
     await expect(lstat(path.join(outsideDirectory, path.basename(targetPath)))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readdir(displacedDirectory)).toEqual([]);
+  }, 20_000);
+
+  it.skipIf(process.platform !== "win32")("Windows refuses to move a destination directory while its temporary file is open", async () => {
+    const temporaryPath = path.join(downloadsDirectory, ".siteindex-edm-open-handle.tmp");
+    const displacedDirectory = path.join(root, "downloads-open-handle");
+    const handle = await open(temporaryPath, "wx", 0o600);
+    try {
+      await expect(rename(downloadsDirectory, displacedDirectory)).rejects.toMatchObject({
+        code: expect.stringMatching(/^(?:EPERM|EACCES)$/u),
+      });
+      expect(await readdir(downloadsDirectory)).toContain(path.basename(temporaryPath));
+      await expect(lstat(displacedDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await handle.close();
+      await rm(temporaryPath, { force: true });
+    }
   }, 20_000);
 
   it("rejects a path whose parent directory does not exist", async () => {
