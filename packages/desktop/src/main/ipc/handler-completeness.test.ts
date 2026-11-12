@@ -43,8 +43,21 @@ function testContext(): IpcContext {
           unmatched: 1,
         })),
       },
+      edm: {
+        renderIndex: vi.fn(async () => ({
+          content: "# Synthetic EDM\n",
+          sku_count: 2,
+          missing_image_count: 1,
+        })),
+      },
     },
     projects: { resolveProject: vi.fn(() => "C:/projects/demo") },
+    saveEdmSkuIndex: vi.fn(async () => ({
+      status: "created" as const,
+      file_name: "sku-index.md",
+      sku_count: 2,
+      missing_image_count: 1,
+    })),
     jobs: {
       run: vi.fn(async () => ({ runId: "2026-10-28-index-check" })),
       runMedia: vi.fn(async () => ({ runId: "2026-10-28-media" })),
@@ -179,19 +192,23 @@ describe("IPC handler completeness", () => {
     expect(fork).not.toHaveBeenCalled();
   });
 
-  it("keeps EDM export gated through the handler registry and preload while readiness is pending", async () => {
+  it("allows the Desktop implementation while edm.exportIndex remains pending contract cleanup", async () => {
     const context = testContext();
-    const exportIndex = vi.fn(async () => ({ status: "created" }));
-    Object.assign(context.core, { edm: { exportIndex } });
     const bridge = apiBridgeFor(context);
 
     expect(PENDING_HANDLERS).toContain("edm.exportIndex");
-    await expect(bridge.edm.exportIndex?.("demo")).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-      message: "当前版本尚未接入 EDM SKU 清单生成。",
-      detail: "Core edm.exportIndex 尚未就绪。",
+    await expect(bridge.edm.exportIndex?.("demo")).resolves.toEqual({
+      status: "created",
+      file_name: "sku-index.md",
+      sku_count: 2,
+      missing_image_count: 1,
     });
-    expect(exportIndex).not.toHaveBeenCalled();
+    expect(context.core.edm.renderIndex).toHaveBeenCalledWith("demo");
+    expect(context.saveEdmSkuIndex).toHaveBeenCalledWith("C:/projects/demo", {
+      content: "# Synthetic EDM\n",
+      sku_count: 2,
+      missing_image_count: 1,
+    });
   });
 
   it("forwards workspace validation and creation to Core without changing their inputs", async () => {

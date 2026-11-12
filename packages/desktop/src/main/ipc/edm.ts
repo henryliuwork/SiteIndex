@@ -17,23 +17,18 @@ export function createEdmHandlers(context: IpcContext): IpcHandlerImplementation
         context.core.edm.buildCommand(id, args[1] as Parameters<typeof context.core.edm.buildCommand>[1]),
       ),
     "edm.exportIndex": async (id) => {
-      if (!context.isEdmExportIndexReady?.()) {
+      const renderIndex = context.core.edm.renderIndex;
+      const saveEdmSkuIndex = context.saveEdmSkuIndex;
+      if (!renderIndex || !saveEdmSkuIndex) {
         throw {
           code: "NOT_IMPLEMENTED",
           message: "当前版本尚未接入 EDM SKU 清单生成。",
-          detail: "Core edm.exportIndex 尚未就绪。",
+          detail: "Core 清单渲染或 Desktop 原生另存尚未就绪。",
         };
       }
-      return context.withProject(id, (projectId) => {
-        const exportIndex = context.core.edm.exportIndex;
-        if (!exportIndex) {
-          throw {
-            code: "NOT_IMPLEMENTED",
-            message: "当前版本尚未接入 EDM SKU 清单生成。",
-            detail: "Core edm.exportIndex 尚未就绪。",
-          };
-        }
-        return exportIndex.call(context.core.edm, projectId);
+      return context.withProject(id, async (projectId) => {
+        const rendered = await renderIndex.call(context.core.edm, projectId);
+        return saveEdmSkuIndex(context.projects.resolveProject(projectId), rendered);
       });
     },
   };
