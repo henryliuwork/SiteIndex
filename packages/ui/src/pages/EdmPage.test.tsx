@@ -50,7 +50,6 @@ type EdmPageTestOptions = {
   deferredExport?: boolean;
   pendingHandlers?: readonly string[];
   discountTiers?: number[];
-  discountTierReady?: boolean;
   mediaPrepareError?: unknown;
   queryStaleTime?: number;
   summaryImplementation?: SiteIndexApi["edm"]["summary"];
@@ -81,8 +80,6 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   mockApi.edm.listImages = listImages;
   const setManualImage = vi.fn(mockApi.edm.setManualImage);
   mockApi.edm.setManualImage = setManualImage;
-  const setDiscountTier = vi.fn(async (_projectId: string, sku: string, discount_tier: number | null) => ({ sku, discount_tier }));
-  if (options.discountTierReady) mockApi.edm.setDiscountTier = setDiscountTier;
   mockApi.jobs.history = vi.fn(async (projectId) => options.historyByProject?.[projectId] ?? options.history ?? []);
   const defaultExportResult = options.exportResult ?? { status: "created", file_name: "sku-index.md", sku_count: 1, missing_image_count: 0 } satisfies EdmSkuIndexExportResult;
   const pendingExports: Array<{
@@ -108,7 +105,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   let onMediaFinished: ((result: JobResult) => void) | undefined;
   let activeProgressSubscriptions = 0;
   let activeFinishedSubscriptions = 0;
-  if (mediaReady || options.exportReady || options.pendingHandlers !== undefined || options.discountTierReady !== undefined) {
+  if (mediaReady || options.exportReady || options.pendingHandlers !== undefined) {
     vi.doMock("@siteindex/shared", async () => {
       const actual = await vi.importActual<typeof import("@siteindex/shared")>("@siteindex/shared");
       return { ...actual, PENDING_HANDLERS: options.pendingHandlers ?? [] };
@@ -162,7 +159,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   );
   const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
   return {
-    mockApi, queryClient, summary, listImages, previewGrouping, setManualImage, setDiscountTier, mediaPrepare, exportIndex, invalidateQueries,
+    mockApi, queryClient, summary, listImages, previewGrouping, setManualImage, mediaPrepare, exportIndex, invalidateQueries,
     resolveExport: (result = defaultExportResult, requestIndex = 0) => pendingExports[requestIndex]?.resolve(result),
     rejectExport: (error: unknown, requestIndex = 0) => pendingExports[requestIndex]?.reject(error),
     emitMediaProgress: (progress: JobProgress) => onMediaProgress?.(progress),
@@ -215,47 +212,15 @@ describe("EdmPage D-5", () => {
     expect(screen.queryByRole("button", { name: /导出.*清单/ })).toBeNull();
   }, 15_000);
 
-  it("每个 SKU 的折扣档位独立选择，未选择保持空白并可清除", async () => {
-    const first = { ...mediaImageRow("DEMO-DISCOUNT-001", null), discount_tier: null };
-    const second = { ...mediaImageRow("DEMO-DISCOUNT-002", null), discount_tier: 10 };
-    const { setDiscountTier, invalidateQueries } = await renderEdmPage(true, false, [first, second], false, false, {
-      discountTiers: [10, 20], discountTierReady: true, pendingHandlers: [],
-    });
-    const firstSelect = await screen.findByRole("combobox", { name: "DEMO-DISCOUNT-001 折扣档位" });
-    const secondSelect = await screen.findByRole("combobox", { name: "DEMO-DISCOUNT-002 折扣档位" });
-    expect(firstSelect.textContent).toBe("未选择");
-    expect(secondSelect.textContent).toBe("10%");
-
-    fireEvent.click(firstSelect);
-    fireEvent.click(await screen.findByRole("option", { name: "20%" }));
-    await waitFor(() => expect(setDiscountTier).toHaveBeenCalledWith("demo", "DEMO-DISCOUNT-001", 20));
-    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "images", "demo"] }));
-    expect(await screen.findByText("已保存 DEMO-DISCOUNT-001 的折扣档位。")).toBeTruthy();
-
-    fireEvent.click(secondSelect);
-    fireEvent.click(await screen.findByRole("option", { name: "清除选择" }));
-    await waitFor(() => expect(setDiscountTier).toHaveBeenCalledWith("demo", "DEMO-DISCOUNT-002", null));
-  }, 15_000);
-
-  it("保存 IPC 尚未就绪时保留已选值并禁用修改", async () => {
-    const row = { ...mediaImageRow("DEMO-DISCOUNT-PENDING", null), discount_tier: 15 };
-    const { setDiscountTier } = await renderEdmPage(true, false, [row], false, false, { discountTiers: [10, 15, 20] });
-    const select = await screen.findByRole("combobox", { name: "DEMO-DISCOUNT-PENDING 折扣档位" });
-
-    expect(select.textContent).toBe("15%");
-    expect(select.hasAttribute("disabled")).toBe(true);
-    expect(await screen.findByText(/折扣档位暂时只读/)).toBeTruthy();
-    expect(setDiscountTier).not.toHaveBeenCalled();
-  }, 15_000);
-
-  it("项目没有配置折扣档位时显示空值且不提供伪造选项", async () => {
-    const row = { ...mediaImageRow("DEMO-DISCOUNT-EMPTY", null), discount_tier: null };
-    await renderEdmPage(true, false, [row], false, false, { discountTiers: [] });
-    const select = await screen.findByRole("combobox", { name: "DEMO-DISCOUNT-EMPTY 折扣档位" });
-
-    expect(select.textContent).toBe("未选择");
-    expect(select.hasAttribute("disabled")).toBe(true);
+  it("折扣档位列显示，未配置档位时明确说明不会自动选择", async () => {
+    await renderEdmPage(true, false, undefined, false, false, { discountTiers: [] });
+    expect(await screen.findByRole("columnheader", { name: "折扣档位" })).toBeTruthy();
     expect(await screen.findByText(/当前项目未配置折扣档位/)).toBeTruthy();
+  }, 15_000);
+
+  it("折扣档位配置已有值但保存 IPC 未就绪时显示只读提示", async () => {
+    await renderEdmPage(true, false, undefined, false, false, { discountTiers: [10, 20] });
+    expect(await screen.findByText(/折扣档位暂时只读/)).toBeTruthy();
   }, 15_000);
 
   it("未启用分组时点击父 SKU 筛选展示 Core 预览并引导到项目设置", async () => {
