@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { summarizePackagedPhaseFailure } from "../scripts/media-production-diagnostics.mjs";
 import { hasMediaProgressEvidence } from "../src/main/media-production-assertions.js";
 import { mediaTrafficChecks } from "../scripts/media-production-traffic.mjs";
 
@@ -75,5 +76,39 @@ describe("packaged media E2E request evidence", () => {
         retryAfterOneSecondHeadersSent: 1,
       }).matchesExpectedTraffic,
     ).toBe(false);
+  });
+});
+
+describe("packaged media E2E failure diagnostics", () => {
+  it("extracts only a safe harness code and line count from child output", () => {
+    const diagnostic = summarizePackagedPhaseFailure({
+      phase: "success",
+      exitCode: 1,
+      resultReportStatus: "missing",
+      capturedOutput:
+        "media-production:success:failed:production-readiness-guard-missing\nC:\\runner\\private-path\\stack.js",
+    });
+
+    expect(diagnostic).toEqual({
+      phase: "success",
+      exitCode: 1,
+      resultReportStatus: "missing",
+      failureCode: "production-readiness-guard-missing",
+      failureClass: "unclassified-process-output",
+      outputLineCount: 2,
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("private-path");
+  });
+
+  it("classifies a native module startup failure without including its path", () => {
+    const diagnostic = summarizePackagedPhaseFailure({
+      phase: "success",
+      exitCode: 1,
+      resultReportStatus: "missing",
+      capturedOutput: "The specified module could not be found: C:\\runner\\SiteIndex\\native.node",
+    });
+
+    expect(diagnostic.failureClass).toBe("native-module-load");
+    expect(JSON.stringify(diagnostic)).not.toContain("SiteIndex");
   });
 });

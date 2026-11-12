@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scanMediaCanaryTree } from "./media-production-canary-scan.mjs";
+import { summarizePackagedPhaseFailure } from "./media-production-diagnostics.mjs";
 import { mediaTrafficChecks } from "./media-production-traffic.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -39,6 +40,7 @@ const canaryBytes = [
   ...canaryStrings.map((value) => Buffer.from(value, "utf8")),
   ...canaryStrings.map((value) => Buffer.from(value, "utf16le")),
 ];
+let phaseFailureDiagnostic = null;
 
 function assertSafeTempRoot(root) {
   const tempRoot = path.resolve(os.tmpdir());
@@ -307,6 +309,13 @@ async function runPackagedPhase(root, phase, imageOrigin, wordpressOrigin) {
     const timeout = setTimeout(() => child.kill(), 180_000);
     child.once("error", () => {
       clearTimeout(timeout);
+      phaseFailureDiagnostic = summarizePackagedPhaseFailure({
+        phase,
+        exitCode: null,
+        resultReportStatus: "missing",
+        reportFailureCode: "child-spawn-failed",
+        capturedOutput: "",
+      });
       reject(new Error(`Packaged phase ${phase} could not start.`));
     });
     child.once("close", async (code) => {
@@ -314,23 +323,66 @@ async function runPackagedPhase(root, phase, imageOrigin, wordpressOrigin) {
       const captured = Buffer.concat(output);
       const capturedCanaryMatches = canaryBytes.filter((value) => captured.includes(value)).length;
       if (capturedCanaryMatches > 0) {
+        phaseFailureDiagnostic = summarizePackagedPhaseFailure({
+          phase,
+          exitCode: code,
+          resultReportStatus: "invalid-status",
+          reportFailureCode: "credential-canary-output",
+          capturedOutput: "",
+        });
         reject(new Error(`Packaged phase ${phase} leaked a credential canary in process output.`));
         return;
       }
+      let reportText;
       try {
-        const report = JSON.parse(await readFile(reportPath, "utf8"));
-        if (code !== 0 || report.status !== "passed" || report.phase !== phase) {
-          reject(
-            new Error(
-              `Packaged phase ${phase} failed (exit ${code ?? "unknown"}; code ${report.failureCode ?? "invalid-report"}; output lines ${captured.toString("utf8").split(/\r?\n/u).filter(Boolean).length}).`,
-            ),
-          );
-          return;
-        }
-        resolve(report);
+        reportText = await readFile(reportPath, "utf8");
       } catch {
-        reject(new Error(`Packaged phase ${phase} produced no valid result report.`));
+        phaseFailureDiagnostic = summarizePackagedPhaseFailure({
+          phase,
+          exitCode: code,
+          resultReportStatus: "missing",
+          capturedOutput: captured.toString("utf8"),
+        });
+        reject(
+          new Error(
+            `Packaged phase ${phase} result report missing (exit ${code ?? "unknown"}; class ${phaseFailureDiagnostic.failureClass}; code ${phaseFailureDiagnostic.failureCode ?? "none"}; output lines ${phaseFailureDiagnostic.outputLineCount}).`,
+          ),
+        );
+        return;
       }
+      let report;
+      try {
+        report = JSON.parse(reportText);
+      } catch {
+        phaseFailureDiagnostic = summarizePackagedPhaseFailure({
+          phase,
+          exitCode: code,
+          resultReportStatus: "invalid-json",
+          capturedOutput: captured.toString("utf8"),
+        });
+        reject(
+          new Error(
+            `Packaged phase ${phase} result report invalid (exit ${code ?? "unknown"}; class ${phaseFailureDiagnostic.failureClass}; output lines ${phaseFailureDiagnostic.outputLineCount}).`,
+          ),
+        );
+        return;
+      }
+      if (code !== 0 || report.status !== "passed" || report.phase !== phase) {
+        phaseFailureDiagnostic = summarizePackagedPhaseFailure({
+          phase,
+          exitCode: code,
+          resultReportStatus: report.status,
+          reportFailureCode: report.failureCode,
+          capturedOutput: captured.toString("utf8"),
+        });
+        reject(
+          new Error(
+            `Packaged phase ${phase} failed (exit ${code ?? "unknown"}; class ${phaseFailureDiagnostic.failureClass}; code ${phaseFailureDiagnostic.failureCode ?? "none"}; output lines ${phaseFailureDiagnostic.outputLineCount}).`,
+          ),
+        );
+        return;
+      }
+      resolve(report);
     });
   });
 }
@@ -566,6 +618,7 @@ async function main() {
               sourceCommit: process.env.SITEINDEX_MEDIA_E2E_SOURCE_COMMIT ?? "local",
               status: "failed",
               completedPhaseCount: Object.keys(phaseResults).length,
+              failureDiagnostic: phaseFailureDiagnostic,
               localFileCountScanned: canaryScan.filesScanned,
               criticalFileCounts: canaryScan.criticalFilesRead,
               missingCriticalFileKindCount: canaryScan.missingCriticalKinds.length,
