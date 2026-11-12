@@ -175,6 +175,20 @@ function isRecordableFeedImage(url: string): boolean {
   }
 }
 
+function isProjectRouteActive(projectId: string, currentProjectId: string): boolean {
+  const hash = typeof window === "undefined" ? "" : window.location.hash;
+  if (!hash.startsWith("#/")) return currentProjectId === projectId;
+
+  const path = hash.slice(1).split("?", 1)[0] ?? "";
+  const routeProjectId = /^\/p\/([^/]+)/.exec(path)?.[1];
+  if (!routeProjectId) return false;
+  try {
+    return decodeURIComponent(routeProjectId) === projectId;
+  } catch {
+    return routeProjectId === projectId;
+  }
+}
+
 function EdmGroupingPreview({ projectId, rule, enabled }: { projectId: string; rule: SkuGroupingRule; enabled: boolean }) {
   const previewQuery = useQuery({
     queryKey: skuGroupingPreviewQueryKey(projectId, rule),
@@ -245,6 +259,8 @@ function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
 
 export function EdmPage() {
   const { id = "demo" } = useParams();
+  const currentProjectIdRef = useRef(id);
+  currentProjectIdRef.current = id;
   const lastResetProjectIdRef = useRef(id);
   const mediaPageVisitRef = useRef({ projectId: id, startedAt: Date.now() });
   if (mediaPageVisitRef.current.projectId !== id) mediaPageVisitRef.current = { projectId: id, startedAt: Date.now() };
@@ -326,6 +342,7 @@ export function EdmPage() {
     },
     onMutate: () => setExportFeedback(null),
     onSuccess: (result, { projectId, attemptId }) => {
+      const isCurrentProject = isProjectRouteActive(projectId, currentProjectIdRef.current);
       const markerResolved = resolveEdmExportAttempt(projectId, attemptId, exportCapability.reconciliationVerified);
       if (result.status === "cancelled") {
         setExportFeedback(markerResolved ? null : {
@@ -337,17 +354,22 @@ export function EdmPage() {
       const safetyWarning = markerResolved ? undefined : "结果已确认，但本机无法解除另存状态门闩；请检查本地存储后再继续。";
       setExportFeedback({ projectId, result, ...(safetyWarning ? { safetyWarning } : {}) });
       const message = exportResultMessage(result);
-      if (safetyWarning) toast.error(safetyWarning);
-      else if (result.status === "unchanged") toast.info(message);
-      else toast.success(message);
+      if (isCurrentProject) {
+        if (safetyWarning) toast.error(safetyWarning);
+        else if (result.status === "unchanged") toast.info(message);
+        else toast.success(message);
+      }
     },
     onError: (error, { projectId, attemptId }) => {
+      const isCurrentProject = isProjectRouteActive(projectId, currentProjectIdRef.current);
       const feedback = getExportErrorMessage(error);
       if (isEdmExportDefinitiveNoWrite(error)) resolveEdmExportAttempt(projectId, attemptId, exportCapability.reconciliationVerified);
       else if (!exportCapability.reconciliationVerified) keepEdmExportAttemptBlocked(projectId, attemptId);
       setExportFeedback({ projectId, error: feedback });
-      if (feedback.tone === "warn") toast.info(feedback.message);
-      else toast.error(feedback.message);
+      if (isCurrentProject) {
+        if (feedback.tone === "warn") toast.info(feedback.message);
+        else toast.error(feedback.message);
+      }
     },
   });
   const startExport = () => {
