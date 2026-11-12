@@ -64,9 +64,9 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 - `edm.exportIndex(projectId)` 只接收项目 ID，不接受 SKU 子集、文件名或输出路径。Core 按对应布局读取 `views/products`、`ledgers/sku_media` 与 `ledgers/sku_tags`，确定性渲染完整清单并把内容与统计交给 Desktop；Core 不写导出文件。
 - Desktop 主进程打开原生另存对话框并负责保存。renderer 不提供路径、不接收 Markdown 内容或绝对路径；新 bridge 成功结果只向 renderer 返回不含路径分隔符的文件 basename、SKU 计数和待补图计数。`created` 表示目标此前不存在并以 no-clobber 方式创建；`updated` 表示项目目录外的已有目标已获原生覆盖确认并安全更新；`unchanged` 表示目标内容已与渲染内容相同且无需重写。取消保存对话框或系统覆盖确认时返回 `status: "cancelled"`，不得显示成功提示。
 - 用户项目目录内的已有文件一律不得被覆盖；若选择了项目目录内的已有目标，返回 `EDM_INDEX_CONFLICT` 并保留原文件。项目目录外的已有目标只有在原生覆盖确认完成后才可更新。保存前后若目录身份、目标类型或目标状态发生变化，或实现无法安全确认写入结果，必须 fail closed 并保留现有文件；不能依靠字符串路径前缀判断项目目录，也不能用普通“检查后无条件 rename”声称消除了 symlink/junction、目录替换或并发竞态。平台/同步盘无法提供经过验证的 no-clobber 或条件替换语义时，应拒绝写入。
-- 文件首行是 `<!-- siteindex:generated:edm-sku-index:v1 -->`，其后为 `# EDM SKU Index` 标题、空行、Markdown 表格；表头顺序固定为 `SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存`，随后一行使用相同列数的 `---` 分隔符。单元格先将 `\\` 写为 `\\\\`，再将 `|` 写为 `\\|`，CR/LF 换行写为 `<br>`；null/缺值为空单元格。金额使用不带千位分隔符和货币符号的十进制数，URL 使用规范化 HTTP(S) 地址。
+- 文件首行是 `<!-- siteindex:generated:edm-sku-index:v1 -->`，其后为 `# EDM SKU Index` 标题、空行、Markdown 表格；表头顺序固定为 `SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存`，随后一行使用相同列数的 `---` 分隔符。单元格先将 `\` 写为 `\\`，再将 `|` 写为 `\|`，CR/LF 换行写为 `<br>`；null/缺值为空单元格。金额使用不带千位分隔符和货币符号的十进制数，URL 使用规范化 HTTP(S) 地址。
 - 按父 SKU 聚合时使用 roadmap §4.4 规定的代表子 SKU；图片优先使用 `image_role=main` 的台账图片，其次使用 feed 首图。EDM 清单排除 WebP；无可用图时写“待补图”。短描述来自 `sku_tags.email_blurb`。`edm.discount_tiers` 的类型目前只有 `number[]`，roadmap 未定义某个 SKU 选择哪一档、折后金额舍入规则；A 在实现导出命令前必须补齐此业务规则及黄金 fixture，本契约不替产品作此假设。
-- 同一份输入必须产生字节一致的清单：SKU 字典序按 `compareKeys`，不含生成时间、不依赖本机 locale、用户保存位置或遍历顺序；UTF-8 无 BOM、LF、末尾一个换行。内容相同也通过另存流程保存，文件是否更新由用户选择的目标及系统确认结果决定。
+- 同一份输入必须产生字节一致的清单：SKU 字典序按 `compareKeys`，不含生成时间、不依赖本机 locale、用户保存位置或遍历顺序；UTF-8 无 BOM、LF、末尾一个换行。用户选定目标后，若已有文件字节已与渲染结果一致则返回 `unchanged` 且不重写；新建目标返回 `created`，实际替换已有目标返回 `updated`。
 - 写入可能已经完成但 Desktop IPC 确认丢失时返回 `EDM_EXPORT_OUTCOME_UNKNOWN`（中文 message：“清单写入结果暂无法确认，可重新生成以核对。”）；调用方不得把它当作“未写入”或自动盲目重试。目标占用或无权限等确认未写入错误使用 `WRITE_FAILED`；所有错误 message/detail 不得泄露绝对路径、凭据或原始服务响应。旧 bridge 返回的 `path` 仅为迁移兼容，新 bridge 不返回该字段。
 
 ### 3.2 EDM media Job 的历史恢复字段
