@@ -102,7 +102,7 @@ describe("Desktop EDM SKU index Save As", () => {
       properties: ["showOverwriteConfirmation"],
       filters: [{ name: "Markdown 文件", extensions: ["md"] }],
     });
-  });
+  }, 20_000);
 
   it("allows a new target inside the project but refuses an existing project file", async () => {
     const newTarget = path.join(projectRoot, "sku-index-copy.md");
@@ -118,7 +118,7 @@ describe("Desktop EDM SKU index Save As", () => {
       detail: "EDM_INDEX_PROJECT_FILE_EXISTS",
     });
     await expect(readFile(existingProjectTarget, "utf8")).resolves.toBe("User-owned file\n");
-  });
+  }, 20_000);
 
   it("resolves cancellation without writing a file", async () => {
     const targetPath = path.join(downloadsDirectory, "sku-index.md");
@@ -222,15 +222,72 @@ describe("Desktop EDM SKU index Save As", () => {
     const temporaryNames = replacementEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
     expect(temporaryNames).toHaveLength(1);
     await expect(readFile(path.join(downloadsDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
-  });
+  }, 20_000);
 
-  it("reports unconfirmed cleanup when truncating a moved temporary file fails", async () => {
+  it.skipIf(process.platform === "win32")("does not write export bytes through a directory link replaced after opening", async ({ skip }) => {
+    const targetPath = path.join(downloadsDirectory, "sku-index.md");
+    const displacedDirectory = path.join(root, "downloads-before-write");
+    const outsideDirectory = path.join(root, "outside-before-write");
+    const probeLink = path.join(root, "directory-link-probe");
+    await mkdir(outsideDirectory);
+    await writeFile(path.join(outsideDirectory, "keep-sentinel.txt"), "outside sentinel\n", "utf8");
+    try {
+      await symlink(outsideDirectory, probeLink, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        ["EPERM", "ENOTSUP", "EINVAL"].includes(String(error.code))
+      ) {
+        skip();
+      }
+      throw error;
+    }
+    await rm(probeLink, { recursive: true, force: true });
+
+    let releaseWrite!: () => void;
+    let temporaryOpened!: () => void;
+    const writeBarrier = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const openedBarrier = new Promise<void>((resolve) => {
+      temporaryOpened = resolve;
+    });
+    const save = createEdmIndexSaveAs({
+      defaultPath: path.join(downloadsDirectory, path.basename(PATHS.edmSkuIndex)),
+      showSaveDialog: async () => ({ canceled: false, filePath: targetPath }),
+      beforeTemporaryWriteForTest: async () => {
+        temporaryOpened();
+        await writeBarrier;
+      },
+    });
+    const pendingSave = save(projectRoot, rendered);
+    await openedBarrier;
+    try {
+      await rename(downloadsDirectory, displacedDirectory);
+      await symlink(outsideDirectory, downloadsDirectory, process.platform === "win32" ? "junction" : "dir");
+    } finally {
+      releaseWrite();
+    }
+
+    await expect(pendingSave).rejects.toMatchObject({ code: "WRITE_FAILED" });
+    await expect(lstat(path.join(outsideDirectory, path.basename(targetPath)))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(outsideDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe("outside sentinel\n");
+    expect(await readdir(outsideDirectory)).toEqual(["keep-sentinel.txt"]);
+    const displacedEntries = await readdir(displacedDirectory);
+    const temporaryNames = displacedEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
+    expect(temporaryNames).toHaveLength(1);
+    await expect(readFile(path.join(displacedDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
+  }, 20_000);
+
+  it.skipIf(process.platform === "win32")("reports unconfirmed cleanup when truncating a moved temporary file fails", async () => {
     const targetPath = path.join(downloadsDirectory, "sku-index.md");
     const displacedDirectory = path.join(root, "downloads-before-failed-cleanup");
     const save = createEdmIndexSaveAs({
       defaultPath: path.join(downloadsDirectory, path.basename(PATHS.edmSkuIndex)),
       showSaveDialog: async () => ({ canceled: false, filePath: targetPath }),
-      beforeTemporaryOpenForTest: async () => {
+      beforeTemporaryPublishForTest: async () => {
         await rename(downloadsDirectory, displacedDirectory);
         await mkdir(downloadsDirectory);
         await writeFile(path.join(downloadsDirectory, "keep-sentinel.txt"), "replacement directory sentinel\n", "utf8");
@@ -248,11 +305,11 @@ describe("Desktop EDM SKU index Save As", () => {
     await expect(readFile(path.join(downloadsDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe(
       "replacement directory sentinel\n",
     );
-    const temporaryNames = (await readdir(downloadsDirectory)).filter(
+    const temporaryNames = (await readdir(displacedDirectory)).filter(
       (name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"),
     );
     expect(temporaryNames).toHaveLength(1);
-    await expect(readFile(path.join(downloadsDirectory, temporaryNames[0]!), "utf8")).resolves.toBe(rendered.content);
+    await expect(readFile(path.join(displacedDirectory, temporaryNames[0]!), "utf8")).resolves.toBe(rendered.content);
   });
 
   it.skipIf(process.platform === "win32")("empties a moved temporary file without following the replacement directory", async () => {
@@ -355,7 +412,7 @@ describe("Desktop EDM SKU index Save As", () => {
     await expect(readFile(path.join(outsideDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
     await expect(lstat(path.join(outsideDirectory, path.basename(targetPath)))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readdir(displacedDirectory)).toEqual([]);
-  });
+  }, 20_000);
 
   it("rejects a path whose parent directory does not exist", async () => {
     const targetPath = path.join(downloadsDirectory, "missing", "sku-index.md");

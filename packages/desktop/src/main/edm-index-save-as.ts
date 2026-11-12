@@ -27,6 +27,10 @@ export interface EdmIndexSaveAsOptions {
   createHardLink?: typeof link;
   /** Deterministic race injection for tests; production callers leave this unset. */
   beforeTemporaryOpenForTest?: () => Promise<void>;
+  /** Deterministic race injection after opening the file but before its first payload write. */
+  beforeTemporaryWriteForTest?: () => Promise<void>;
+  /** Deterministic race injection after payload sync but before publishing the target. */
+  beforeTemporaryPublishForTest?: () => Promise<void>;
   /** Deterministic cleanup failure injection for tests; production callers leave this unset. */
   truncateTemporaryForTest?: (handle: Awaited<ReturnType<typeof open>>) => Promise<void>;
 }
@@ -118,6 +122,34 @@ async function verifyDirectorySnapshot(snapshot: DirectorySnapshot): Promise<voi
     !sameIdentity(snapshot, stats)
   ) {
     throw new Error("directory-identity-changed");
+  }
+}
+
+async function verifyTemporaryLocation(
+  parentSnapshot: DirectorySnapshot,
+  temporaryPath: string,
+  temporaryIdentity: { dev: number; ino: number },
+  handle: Awaited<ReturnType<typeof open>>,
+): Promise<void> {
+  const [openedStats, pathStats, canonicalTemporaryPath] = await Promise.all([
+    handle.stat(),
+    lstat(temporaryPath),
+    realpath(temporaryPath),
+  ]);
+  const expectedTemporaryPath = path.join(parentSnapshot.path, path.basename(temporaryPath));
+  const currentParentStats = await lstat(parentSnapshot.path);
+  if (
+    !openedStats.isFile() ||
+    !pathStats.isFile() ||
+    hasReparsePoint(pathStats) ||
+    hasReparsePoint(currentParentStats) ||
+    !currentParentStats.isDirectory() ||
+    !sameIdentity(parentSnapshot, currentParentStats) ||
+    !sameIdentity(temporaryIdentity, openedStats) ||
+    !sameIdentity(temporaryIdentity, pathStats) ||
+    !samePath(canonicalTemporaryPath, expectedTemporaryPath)
+  ) {
+    throw new Error("temporary-file-location-changed");
   }
 }
 
@@ -249,8 +281,14 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
       const openedStats = await temporaryHandle.stat();
       if (!openedStats.isFile() || openedStats.ino === 0) throw new Error("temporary-file-identity-unavailable");
       temporaryIdentity = { dev: openedStats.dev, ino: openedStats.ino };
+      await verifyTemporaryLocation(parentSnapshot, temporaryPath, temporaryIdentity, temporaryHandle);
+      await options.beforeTemporaryWriteForTest?.();
+      // Open may have followed a replaced junction/symlink parent. Verify both the
+      // opened file identity and its canonical path before writing any export bytes.
+      await verifyTemporaryLocation(parentSnapshot, temporaryPath, temporaryIdentity, temporaryHandle);
       await temporaryHandle.writeFile(rendered.content, "utf8");
       await temporaryHandle.sync();
+      await options.beforeTemporaryPublishForTest?.();
       const temporaryStats = await lstat(temporaryPath);
       if (
         hasReparsePoint(temporaryStats) ||
