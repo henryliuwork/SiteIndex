@@ -99,7 +99,7 @@ describe("shared IPC method contract", () => {
     expect(invalidTierError).toBe("EDM_DISCOUNT_TIER_INVALID");
     expect(invalidCurrencyError).toBe("EDM_CURRENCY_INVALID");
     expect(API_INVOKE_METHODS).toContain("edm.setDiscountTier");
-    expect(PENDING_HANDLERS).toContain("edm.setDiscountTier");
+    expect(PENDING_HANDLERS).not.toContain("edm.setDiscountTier");
     expect(CSV_HEADERS.skuTagsV2.slice(-1)).toEqual(["discount_tier"]);
     expect(CSV_HEADERS.skuTags).toEqual([
       "sku", "tags", "priority", "exclude_edm", "email_blurb", "season", "note", "updated_at",
