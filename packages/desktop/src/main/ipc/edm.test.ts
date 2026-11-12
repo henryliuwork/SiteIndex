@@ -6,11 +6,13 @@ import type { IpcContext } from "./context.js";
 function context(
   edm: Record<string, unknown>,
   saveEdmSkuIndex?: IpcContext["saveEdmSkuIndex"],
+  withProject: IpcContext["withProject"] = async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>) =>
+    callback(value as ProjectId),
 ): IpcContext {
   return {
     saveEdmSkuIndex,
     projects: { resolveProject: vi.fn(() => "C:/fixture/project") },
-    withProject: async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>) => callback(value as ProjectId),
+    withProject,
     core: { edm },
   } as unknown as IpcContext;
 }
@@ -64,4 +66,55 @@ describe("EDM export IPC", () => {
     await expect(handlers["edm.exportIndex"]?.("fixture-project")).rejects.toBe(error);
     expect(saveEdmSkuIndex).not.toHaveBeenCalled();
   });
+});
+
+describe("EDM discount tier IPC", () => {
+  it("forwards the canonical row key and selected tier, or null to clear it", async () => {
+    const setDiscountTier = vi.fn(async (_id: ProjectId, sku: string, discountTier: number | null) => ({
+      sku,
+      discount_tier: discountTier,
+    }));
+    const handlers = createEdmHandlers(context({ setDiscountTier }));
+    const handler = handlers["edm.setDiscountTier"];
+
+    await expect(handler?.("fixture-project", "parent-row", 25)).resolves.toEqual({
+      sku: "parent-row",
+      discount_tier: 25,
+    });
+    await expect(handler?.("fixture-project", "parent-row", null)).resolves.toEqual({
+      sku: "parent-row",
+      discount_tier: null,
+    });
+    expect(setDiscountTier).toHaveBeenNthCalledWith(1, "fixture-project", "parent-row", 25);
+    expect(setDiscountTier).toHaveBeenNthCalledWith(2, "fixture-project", "parent-row", null);
+  });
+
+  it("preserves Core validation errors for an unsupported discount tier", async () => {
+    const error = {
+      code: "EDM_DISCOUNT_TIER_INVALID",
+      message: "折扣档位不在项目配置中。",
+      detail: "fixture-project",
+    };
+    const setDiscountTier = vi.fn(async () => Promise.reject(error));
+    const handlers = createEdmHandlers(context({ setDiscountTier }));
+
+    await expect(handlers["edm.setDiscountTier"]?.("fixture-project", "fictional-sku", 7)).rejects.toBe(error);
+  });
+
+  it("returns the project lookup error without calling Core", async () => {
+    const setDiscountTier = vi.fn(async (_id: ProjectId, sku: string, discountTier: number | null) => ({
+      sku,
+      discount_tier: discountTier,
+    }));
+    const withProject: IpcContext["withProject"] = async () => {
+      throw { code: "PROJECT_NOT_FOUND", message: "找不到指定项目。" };
+    };
+    const handlers = createEdmHandlers(context({ setDiscountTier }, undefined, withProject));
+
+    await expect(handlers["edm.setDiscountTier"]?.("missing-project", "fictional-sku", 25)).rejects.toMatchObject({
+      code: "PROJECT_NOT_FOUND",
+    });
+    expect(setDiscountTier).not.toHaveBeenCalled();
+  });
+
 });

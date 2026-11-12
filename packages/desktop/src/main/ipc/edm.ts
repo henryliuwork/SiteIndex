@@ -12,6 +12,10 @@ export function createEdmHandlers(context: IpcContext): IpcHandlerImplementation
       context.withProject(args[0], (id) =>
         context.core.edm.setManualImage(id, args[1] as string, args[2] as string | null),
       ),
+    "edm.setDiscountTier": (...args) =>
+      context.withProject(args[0], (id) =>
+        context.core.edm.setDiscountTier(id, args[1] as string, args[2] as number | null),
+      ),
     "edm.buildCommand": (...args) =>
       context.withProject(args[0], (id) =>
         context.core.edm.buildCommand(id, args[1] as Parameters<typeof context.core.edm.buildCommand>[1]),
