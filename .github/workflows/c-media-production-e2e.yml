@@ -1,0 +1,68 @@
+name: C Packaged EDM Media Production E2E
+
+on:
+  pull_request:
+    paths:
+      - "packages/desktop/src/main/media-production-*.ts"
+      - "packages/desktop/src/main/media-production-*.test.ts"
+      - "packages/desktop/src/main/job-manager.ts"
+      - "packages/desktop/src/main/job-worker.ts"
+      - "packages/desktop/src/main/job-worker-execution.ts"
+      - "packages/desktop/src/main/ipc/edm.ts"
+      - "packages/desktop/src/main/ipc/jobs.ts"
+      - "packages/desktop/src/main/ipc/media.ts"
+      - "packages/desktop/src/main/wordpress-credential-vault.ts"
+      - "packages/desktop/src/main/wordpress-media-credential-provider.ts"
+      - "packages/desktop/scripts/*media-production*"
+      - "packages/desktop/scripts/create-media-production-builder-config.mjs"
+      - "packages/desktop/electron.vite.media-production.config.ts"
+      - ".github/workflows/c-media-production-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packaged-edm-media-production:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify checked-out source matches the PR head
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SOURCE_COMMIT) { throw "E2E source commit does not match the PR head." }
+          "SITEINDEX_MEDIA_E2E_SOURCE_COMMIT=$actual" >> $env:GITHUB_ENV
+      - name: Build production UI, CLI, and Desktop resources
+        run: pnpm --filter @siteindex/desktop prepare:dist
+      - name: Copy production UI to isolated test resources and bypass its pending gate
+        working-directory: packages/ui
+        run: pnpm exec tsx ../desktop/scripts/prepare-media-production-ui.ts
+      - name: Build packaged E2E main and worker entries
+        working-directory: packages/desktop
+        run: pnpm exec electron-vite build --config electron.vite.media-production.config.ts
+      - name: Generate isolated electron-builder configuration
+        working-directory: packages/desktop
+        run: node scripts/create-media-production-builder-config.mjs
+      - name: Package isolated Windows app
+        working-directory: packages/desktop
+        run: pnpm exec electron-builder --win dir --publish never --config electron-builder.media-production.generated.json
+      - name: Run real EDM UI to Core media Job packaged acceptance
+        run: node packages/desktop/scripts/media-production-electron-e2e.mjs artifacts/media-production-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c-media-production-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/media-production-summary.json
+          if-no-files-found: error
+          retention-days: 14
