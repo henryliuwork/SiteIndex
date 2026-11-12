@@ -44,7 +44,7 @@ SiteIndex/
 │ 窗口 · IPC 路由 · 设置 · 通知 · 计划任务注册 · 打开文件夹 │
 │      │ utilityProcess（每个 Job 一个）                  │
 │      ▼                                                  │
-│  JobHost → @siteindex/core.jobs.*  ──► 项目文件夹（云盘）│
+│  JobHost → @siteindex/core.jobs.*  ──► 本机项目文件夹   │
 │      │ 进度事件                       ──► 本机缓存        │
 └──────┼──────────────────────────────────────────────────┘
        ▼ IPC（contextBridge 暴露 window.siteindex，类型 = shared/api.ts）
@@ -104,7 +104,9 @@ macOS：`~/.local/bin/siteindex` → `/Applications/SiteIndex.app/Contents/MacOS
 ## 8. 执行设备与运行锁
 - `.runner.json`：定时模式下非执行设备直接退出码 5，不写任何文件
 - `.lock`：`wx` 独占创建，30 秒心跳，10 分钟无心跳视为僵尸锁
-- 云盘同步有延迟，执行设备是主要防线，锁是第二道
+- 项目目录必须位于本机非同步位置；当前版本不支持云盘同步同一份项目。已识别的同步目录项目只读，需用户手动复制到本机非同步目录后再添加；项目数据不会由 SiteIndex 自动迁移或删除。
+- 同步目录识别是尽力而为：未识别到云同步位置不代表已验证为本机存储，用户必须确认所选目录不受同步服务管理。
+- 运行锁用于约束访问同一个本机项目副本的并行任务；它不能提供跨设备互斥，也不能让文件同步服务安全地协调并发写入。
 
 ## 9. 定时任务
 
@@ -122,7 +124,7 @@ macOS：`~/.local/bin/siteindex` → `/Applications/SiteIndex.app/Contents/MacOS
 `~/Library/LaunchAgents/com.siteindex.{projectId}.{job}.plist`，`StartCalendarInterval` 数组（每个周几一项，Weekday 0=周日）；`launchctl bootstrap gui/$(id -u)`。睡眠错过的任务唤醒后执行一次。
 
 ### 9.3 执行前检查
-项目可读（云盘已挂载、非占位文件）→ 执行设备 → 运行锁 → 执行 → runs.jsonl → 释放锁 → 通知。`validate_after_sync=true` 时 daily/weekly 结束后对写入的文件做校验并更新 validation.json。
+项目存储策略允许写入且项目可读 → 执行设备 → 运行锁 → 执行 → runs.jsonl → 释放锁 → 通知。已识别的同步目录在触及项目文件前拒绝写入；`validate_after_sync=true` 时 daily/weekly 结束后对写入的文件做校验并更新 validation.json。
 
 ## 10. 各 Job 要点
 
@@ -148,7 +150,7 @@ macOS：`~/.local/bin/siteindex` → `/Applications/SiteIndex.app/Contents/MacOS
 内置 `skills/{name}/SKILL.md`（frontmatter 含 version；内容聚焦“如何读取与使用 index/ 数据、如何写台账”，不规定成果目录）→ 项目 `_agent/skills/` + `manifest.json`；安装到平台目录（Claude Code `%USERPROFILE%\.claude\skills`，其他由用户配置）。skill 中命令统一写 `siteindex …`，并写明命令不可用时按 DATA_SPEC 直接读写文件。
 
 ## 13. 设置与本机状态
-`%APPDATA%\SiteIndex\settings.json`（macOS `~/Library/Application Support/SiteIndex/`）：device_id、device_name、projects_root、extra_projects、cache_dir、browser、notify、skill_platforms、conflict_patterns。界面状态（列设置、每页条数、窗口）存 `{cache_dir}/{projectId}/ui-state.json`，不进云盘。
+`%APPDATA%\SiteIndex\settings.json`（macOS `~/Library/Application Support/SiteIndex/`）：device_id、device_name、projects_root、extra_projects、cache_dir、browser、notify、skill_platforms、conflict_patterns。界面状态（列设置、每页条数、窗口）存 `{cache_dir}/{projectId}/ui-state.json`，与项目目录分开存放。
 
 ## 14. IPC
 完整接口定义：`packages/shared/src/api.ts`（`SiteIndexApi`）。规则：
