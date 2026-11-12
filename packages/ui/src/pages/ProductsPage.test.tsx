@@ -127,7 +127,8 @@ async function renderProductsPage(options: {
       return { ...actual, DataTable: TableWithDelayedPageSizeRestore as typeof actual.DataTable };
     });
   }
-  const [{ ProductsPage }, { ToastProvider }] = await Promise.all([import("./ProductsPage"), import("../components")]);
+  const { ToastProvider } = await import("../components");
+  const { ProductsPage } = await import("./ProductsPage");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <ToastProvider>
