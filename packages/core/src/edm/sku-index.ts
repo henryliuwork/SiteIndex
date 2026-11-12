@@ -151,13 +151,13 @@ function moneyMinorUnits(value: number | null, digits: number, percentage: numbe
   return `${whole}.${fraction}`;
 }
 
-function selectedTier(value: string | null | undefined, tiers: ReadonlySet<number>): number | null {
+export function selectedTier(value: string | null | undefined, tiers: ReadonlySet<number>): number | null {
   if (typeof value !== "string" || !/^\d+$/u.test(value)) return null;
   const tier = Number(value);
   return Number.isInteger(tier) && tiers.has(tier) ? tier : null;
 }
 
-function latestLedgerRows(rows: readonly CsvRow[], key: string): Map<string, CsvRow> {
+export function latestLedgerRows(rows: readonly CsvRow[], key: string): Map<string, CsvRow> {
   const selected = new Map<string, CsvRow>();
   for (const row of [...rows].sort((left, right) =>
     compareKeys(String(left[key] ?? ""), String(right[key] ?? ""))

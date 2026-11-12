@@ -276,6 +276,8 @@ describe("EDM SKU index service and safe file boundary", () => {
       .resolves.toEqual({ sku: "DEMO-SINGLE", discount_tier: 15 });
     expect((await readFile(ledgerPath, "utf8")).split("\n", 1)[0]).toBe("sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at,discount_tier");
     expect(parseCsv(await readFile(ledgerPath, "utf8"), ledgerPath).find((row) => row.sku === "DEMO-SINGLE")?.discount_tier).toBe("15");
+    const reloaded = await core(projectPath).edm.listImages("synthetic", { page: 1, pageSize: 100 });
+    expect(reloaded.rows.find((row) => row.sku === "DEMO-SINGLE")?.discount_tier).toBe(15);
     const beforeInvalid = await readFile(ledgerPath);
     await expect(api.edm.setDiscountTier("synthetic", "DEMO-SINGLE", 30))
       .rejects.toMatchObject({ code: "EDM_DISCOUNT_TIER_INVALID" });
@@ -284,6 +286,8 @@ describe("EDM SKU index service and safe file boundary", () => {
     await expect(api.edm.setDiscountTier("synthetic", "DEMO-SINGLE", null))
       .resolves.toEqual({ sku: "DEMO-SINGLE", discount_tier: null });
     expect(parseCsv(await readFile(ledgerPath, "utf8"), ledgerPath).find((row) => row.sku === "DEMO-SINGLE")?.discount_tier).toBeNull();
+    const cleared = await core(projectPath).edm.listImages("synthetic", { page: 1, pageSize: 100 });
+    expect(cleared.rows.find((row) => row.sku === "DEMO-SINGLE")?.discount_tier).toBeNull();
   }, 15_000);
 
   it("does not write outside the project when an ancestor becomes a junction after validation", async () => {

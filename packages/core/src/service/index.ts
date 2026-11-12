@@ -110,7 +110,7 @@ import { launchChromium, type BrowserLauncher } from "../browser/automation";
 import { runDesign } from "../jobs/design";
 import { runIndexCheck } from "../jobs/index-check";
 import { runMediaJob, type WordPressCredential } from "../jobs/media";
-import { configuredDiscountTiers, renderEdmSkuIndex } from "../edm/sku-index";
+import { configuredDiscountTiers, latestLedgerRows, renderEdmSkuIndex, selectedTier } from "../edm/sku-index";
 import {
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,
@@ -2581,7 +2581,11 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       } else {
         sourceRows = activeSkus.map((sku) => imageRowForSku(sku, latestBySku, manualBySku, priority));
       }
-      const rows = sourceRows.filter((row) => {
+      const tagsBySku = latestLedgerRows(snapshot.skuTags, "sku");
+      const tiers = configuredDiscountTiers(snapshot.config.edm?.discount_tiers);
+      const rows = sourceRows.map((row) => ({
+        ...row, discount_tier: selectedTier(tagsBySku.get(row.sku)?.discount_tier, tiers),
+      })).filter((row) => {
         if (query.filters?.view === "in_stock") return row.stock_status === "in_stock";
         if (query.filters?.view === "no_feed") return row.feed_image_url === null;
         if (query.filters?.view === "has_manual") return row.manual_image_url !== null;
