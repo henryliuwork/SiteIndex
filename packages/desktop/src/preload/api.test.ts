@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { PENDING_HANDLERS } from "@siteindex/shared";
 import { createApiBridge } from "./api.js";
 
 describe("createApiBridge IPC errors", () => {
@@ -18,7 +17,7 @@ describe("createApiBridge IPC errors", () => {
     expect(invoke).toHaveBeenCalledWith("si:media.prepare", { project: "fixture-project", skus: ["fixture-sku"] });
   });
 
-  it("forwards EDM index export through the gated API bridge", async () => {
+  it("forwards EDM index export through the API bridge", async () => {
     const exported = {
       status: "created" as const,
       path: "_site-index/edm/sku-index.md" as const,
@@ -28,7 +27,6 @@ describe("createApiBridge IPC errors", () => {
     const invoke = vi.fn(async () => exported);
     const bridge = createApiBridge({ invoke, listen: () => () => undefined });
 
-    expect(PENDING_HANDLERS).toContain("edm.exportIndex");
     await expect(bridge.edm.exportIndex?.("fixture-project")).resolves.toEqual(exported);
     expect(invoke).toHaveBeenCalledWith("si:edm.exportIndex", "fixture-project");
   });
