@@ -50,7 +50,7 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     expect(workflow).toContain("digest-mismatch: error");
     expect(workflow).toContain('Where-Object { $_.name -ceq "latest.yml" }');
     expect(workflow).toContain('$feedText -notmatch "(?m)^version:');
-    expect(workflow).toContain('$feedText -notmatch "(?m)^\\s*url:');
+    expect(workflow).toContain('$feedText -notmatch "(?m)^\\s*-\\s*url:');
     expect(workflow).toContain("$actualSha512 -cne $feedSha512Match.Groups[1].Value");
     expect(acceptanceScript).toContain("candidateReleaseCommit === report.candidateSourceCommit");
     expect(acceptanceScript).toContain("report.candidateReleaseAssetSha256 === report.candidateInstallerSha256");
