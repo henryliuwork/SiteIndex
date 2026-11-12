@@ -9,7 +9,7 @@ import {
   type JobResult,
   type ProjectId,
 } from "@siteindex/shared";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createAppHandlers } from "./ipc/app.js";
 import { createEdmHandlers } from "./ipc/edm.js";
@@ -36,6 +36,21 @@ type ProductionPhase =
   | "post-503"
   | "retry-503";
 type ExpectedSkuStatus = "uploaded" | "recorded" | "skipped_has_url" | "failed" | "unknown" | "not_started" | "reused";
+type PhaseStage =
+  | "bootstrap"
+  | "contract-ready"
+  | "electron-ready"
+  | "renderer-ready"
+  | "media-rows-ready"
+  | "media-selection-ready"
+  | "media-action-ready"
+  | "job-started"
+  | "job-finished"
+  | "report-ready"
+  | "report-written"
+  | "retry-history-verified"
+  | "caught-error"
+  | "report-write-failed";
 
 interface PhaseReport {
   status: "passed" | "failed";
@@ -131,6 +146,10 @@ function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`missing-${name.toLowerCase()}`);
   return value;
+}
+
+function reportPhaseStage(phase: ProductionPhase, stage: PhaseStage): void {
+  process.stdout.write(`media-production:${phase}:stage:${stage}\n`);
 }
 
 function parsePhase(value: string | undefined): ProductionPhase {
@@ -266,6 +285,18 @@ async function writeFixtureProject(root: string, projectId: string, rows: readon
 
 function phaseResultPath(): string {
   return path.resolve(requiredEnvironment("SITEINDEX_MEDIA_E2E_PHASE_RESULT"));
+}
+
+async function writePhaseReport(report: unknown): Promise<void> {
+  const targetPath = phaseResultPath();
+  const temporaryPath = `${targetPath}.tmp-${process.pid}`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(report)}\n`, { encoding: "utf8", flag: "wx" });
+    await rename(temporaryPath, targetPath);
+  } catch (error) {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function waitFor<T>(
@@ -411,6 +442,7 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   const workerOutputChunks: Buffer[] = [];
   const workerExitPromises: Promise<void>[] = [];
   const isRecoveryRetry = RECOVERY_RETRY_PHASES.has(phase);
+  let harnessIsShuttingDown = false;
   let restartUnknownOutcomeRecoveredOnColdMount = !isRecoveryRetry;
   let retryReviewDialogConfirmed = !isRecoveryRetry;
   const finished = new Promise<JobResult>((resolve) => {
@@ -443,6 +475,14 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     },
     notify: () => undefined,
   });
+  if (isRecoveryRetry) {
+    const history = await manager.history(fixture.projectId as ProjectId, 20);
+    const hasUnknownOutcome = history.some(
+      (run) => run.job === "media" && run.media_unknown_skus?.includes(fixture.rows[0]!.sku),
+    );
+    if (!hasUnknownOutcome) throw new Error("retry-history-unknown-missing");
+    reportPhaseStage(phase, "retry-history-verified");
+  }
 
   let mediaInvokeCount = 0;
   let requestPayloadContainsCredential = false;
@@ -493,6 +533,12 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     "schedule.status": async () => ({ mode: "resident", authorization_required: false }),
     "runner.get": async (id: unknown) => core.runner.get(id as ProjectId),
   };
+  const version = app.getVersion();
+  const updateHandlers = {
+    "updates.check": async () => ({ state: "idle" as const, current: version, latest: version }),
+    "updates.download": async () => undefined,
+    "updates.install": async () => undefined,
+  };
   const registry = createHandlerRegistry({
     ...createAppHandlers(),
     ...settingsHandlers,
@@ -500,6 +546,7 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     ...edmHandlers,
     ...jobsHandlers,
     ...scheduleHandlers,
+    ...updateHandlers,
     ...instrumentedMediaHandlers,
   });
   for (const [channel, handler] of registry) {
@@ -518,10 +565,11 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     devUiUrl: "http://127.0.0.1:5174",
     initiallyHidden: true,
     shouldHideOnClose: () => false,
-    isShuttingDown: () => false,
+    isShuttingDown: () => harnessIsShuttingDown,
     requestQuit: () => app.quit(),
   });
   const window = await startProductionPackagedWindow(fixture.projectId, windowManager);
+  reportPhaseStage(phase, "renderer-ready");
   const domSnapshotsInstalled = await window.webContents.executeJavaScript(`(() => {
     const state = { texts: [], overflowed: false };
     const capture = () => {
@@ -549,35 +597,70 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     restartUnknownOutcomeRecoveredOnColdMount = typeof recoveredText === "string" && recoveredText.includes("结果未知");
   }
   const expectedSelectionCount = fixture.rows.length;
+  await waitFor(
+    () =>
+      window.webContents.executeJavaScript(
+        `document.querySelectorAll('input[type="checkbox"][aria-label^="选择第 "]').length`,
+      ),
+    (count) => typeof count === "number" && count >= expectedSelectionCount,
+    30_000,
+    "media-rows-ready",
+  );
+  reportPhaseStage(phase, "media-rows-ready");
   const progressListenerInstalled = await window.webContents.executeJavaScript(
     "(() => { if (!window.siteindex?.jobs?.onProgress) return false; window.__siteIndexMediaProgressCount = 0; window.siteindex.jobs.onProgress(() => { window.__siteIndexMediaProgressCount += 1; }); return true; })()",
   );
   if (!progressListenerInstalled) throw new Error("renderer-progress-listener-unavailable");
-  await window.webContents.executeJavaScript(
-    `(() => { const select = [...document.querySelectorAll('input[type="checkbox"]')].find((item) => item.getAttribute('aria-label') === '选择当前页全部行'); if (!select) throw new Error('selection-control-missing'); if (!select.checked) select.click(); })()`,
-  );
+  const selectionScript = isRecoveryRetry
+    ? `(() => { const sku = ${JSON.stringify(fixture.rows[0]!.sku)}; const row = [...document.querySelectorAll('tr')].find((item) => item.innerText.includes(sku)); const select = row?.querySelector('input[type="checkbox"]'); if (!select) throw new Error('recovery-selection-row-missing'); if (!select.checked) select.click(); })()`
+    : `(() => { const select = [...document.querySelectorAll('input[type="checkbox"]')].find((item) => item.getAttribute('aria-label') === '选择当前页全部行'); if (!select) throw new Error('selection-control-missing'); if (!select.checked) select.click(); })()`;
+  await window.webContents.executeJavaScript(selectionScript);
+  reportPhaseStage(phase, "media-selection-ready");
   await waitFor(
     () => window.webContents.executeJavaScript("document.body.innerText"),
     (text) => typeof text === "string" && text.includes(`获取图片 URL（${expectedSelectionCount}）`),
     30_000,
     "media-action-ready",
   );
+  reportPhaseStage(phase, "media-action-ready");
   const actionButtonFound = await window.webContents.executeJavaScript(
     `(() => { const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === ${JSON.stringify(`获取图片 URL（${expectedSelectionCount}）`)}); if (!button || button.disabled) return false; button.click(); return true; })()`,
   );
   if (!actionButtonFound) throw new Error("media-action-button-unavailable");
+  reportPhaseStage(phase, "job-started");
   if (isRecoveryRetry) {
-    const dialogText = await waitFor(
-      () => window.webContents.executeJavaScript("document.querySelector('[role=dialog]')?.innerText ?? ''"),
-      (text) => typeof text === "string" && text.includes("请先核对图片处理结果") && text.includes("结果未知"),
-      30_000,
-      "restart-retry-review-dialog",
-    );
-    if (typeof dialogText !== "string" || !dialogText.includes("结果未知")) {
-      throw new Error("restart-retry-review-dialog-missing-unknown");
+    let dialogText: unknown;
+    try {
+      dialogText = await waitFor(
+        () =>
+          window.webContents.executeJavaScript(
+            "[...document.querySelectorAll('[role=dialog]')].map((dialog) => dialog.innerText).join('\\n')",
+          ),
+        (text) => typeof text === "string" && text.includes("请先核对图片处理结果") && text.includes("可能再次上传"),
+        30_000,
+        "restart-retry-review-dialog",
+      );
+    } catch {
+      const uiState = (await window.webContents.executeJavaScript(`(() => {
+        const dialogs = [...document.querySelectorAll('[role=dialog]')];
+        const target = dialogs.find((item) => item.innerText.includes("请先核对图片处理结果"));
+        const confirm = [...(target?.querySelectorAll('button') ?? [])].some((item) => item.textContent?.trim() === "已核对，继续处理");
+        return { dialogCount: dialogs.length, targetDialog: Boolean(target), confirmButton: confirm, unknownVisible: document.body.innerText.includes("结果未知") };
+      })()`)) as { dialogCount: number; targetDialog: boolean; confirmButton: boolean; unknownVisible: boolean };
+      const failureCode = !uiState.unknownVisible
+        ? "retry-ui-unknown-not-visible"
+        : uiState.targetDialog
+          ? "retry-dialog-missing-unknown"
+          : uiState.dialogCount > 0
+            ? "retry-other-dialog-open"
+            : "retry-dialog-not-opened";
+      throw new Error(failureCode);
+    }
+    if (typeof dialogText !== "string" || !dialogText.includes("可能再次上传")) {
+      throw new Error("restart-retry-review-confirmation-missing");
     }
     retryReviewDialogConfirmed = await window.webContents.executeJavaScript(
-      `(() => { const dialog = document.querySelector('[role=dialog]'); const button = [...(dialog?.querySelectorAll('button') ?? [])].find((item) => item.textContent?.trim() === "已核对，继续处理"); if (!button || button.disabled) return false; button.click(); return true; })()`,
+      `(() => { const dialog = [...document.querySelectorAll('[role=dialog]')].find((item) => item.innerText.includes("请先核对图片处理结果") && item.innerText.includes("可能再次上传")); const button = [...(dialog?.querySelectorAll('button') ?? [])].find((item) => item.textContent?.trim() === "已核对，继续处理"); if (!button || button.disabled) return false; button.click(); return true; })()`,
     );
     if (!retryReviewDialogConfirmed) throw new Error("restart-retry-review-confirm-unavailable");
   }
@@ -607,6 +690,7 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     await writeFile(path.join(root, "post-lost-ui-returned"), "ready\n", "utf8");
   }
   const result = await resultPromise;
+  reportPhaseStage(phase, "job-finished");
   const rendererProgressCount = (await window.webContents.executeJavaScript(
     "window.__siteIndexMediaProgressCount ?? 0",
   )) as number;
@@ -751,7 +835,6 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     (phase === "post-lost" && (!crossPageDuringJob || !jobCompletedAwayFromEdm || !crossPageRecovery))
   )
     report.status = "failed";
-  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.destroy();
   await manager.shutdown();
   await Promise.all(workerExitPromises);
   const workerOutput = Buffer.concat(workerOutputChunks);
@@ -761,14 +844,19 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   report.checks!.workerCredentialCanaryMatches = workerCredentialCanaryMatches;
   if (workerCredentialCanaryMatches > 0) report.status = "failed";
   if (report.status === "failed") report.failureCode = "phase-assertion";
-  await writeFile(phaseResultPath(), `${JSON.stringify(report)}\n`, "utf8");
+  reportPhaseStage(phase, "report-ready");
+  await writePhaseReport(report);
+  reportPhaseStage(phase, "report-written");
   for (const channel of registry.keys()) ipcMain.removeHandler(channel);
+  harnessIsShuttingDown = true;
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.destroy();
   return report;
 }
 
 async function main(): Promise<void> {
   app.disableHardwareAcceleration();
   let phase: ProductionPhase = "success";
+  reportPhaseStage(phase, "bootstrap");
   try {
     if (!app.isPackaged) throw new Error("not-packaged");
     const productionMain = await readFile(path.join(app.getAppPath(), "out", "main", "index.js"), "utf8");
@@ -783,21 +871,25 @@ async function main(): Promise<void> {
     if (!requiredEnvironment("LOCALAPPDATA")) throw new Error("isolated-local-appdata-missing");
     phase = parsePhase(process.env.SITEINDEX_MEDIA_E2E_PHASE);
     if (PENDING_HANDLERS.includes("media.prepare")) throw new Error("shared-media-prepare-pending");
+    reportPhaseStage(phase, "contract-ready");
     const root = path.resolve(requiredEnvironment("SITEINDEX_MEDIA_E2E_ROOT"));
     await mkdir(path.join(root, "user-data"), { recursive: true });
     app.setPath("userData", path.join(root, "user-data"));
     await app.whenReady();
+    reportPhaseStage(phase, "electron-ready");
     const report = await executeMediaUiPhase(phase);
     if (report.status !== "passed") throw new Error(report.failureCode ?? "phase-failed");
     process.stdout.write(`media-production:${phase}:passed\n`);
     app.quit();
   } catch (error) {
     const code = error instanceof Error && /^[a-z0-9-]{1,60}$/u.test(error.message) ? error.message : "phase-failed";
-    await writeFile(
-      phaseResultPath(),
-      `${JSON.stringify({ status: "failed", phase, failureCode: code })}\n`,
-      "utf8",
-    ).catch(() => undefined);
+    reportPhaseStage(phase, "caught-error");
+    try {
+      await writePhaseReport({ status: "failed", phase, failureCode: code });
+      reportPhaseStage(phase, "report-written");
+    } catch {
+      reportPhaseStage(phase, "report-write-failed");
+    }
     process.stderr.write(`media-production:${phase}:failed:${code}\n`);
     app.exit(1);
   }
