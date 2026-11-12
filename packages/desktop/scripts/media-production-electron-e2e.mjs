@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scanMediaCanaryTree } from "./media-production-canary-scan.mjs";
+import { mediaTrafficChecks } from "./media-production-traffic.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "../../..");
@@ -97,7 +98,9 @@ async function startImageServer() {
 async function startWordPressServer(testRoot) {
   const metrics = {
     lookups: 0,
+    slugLookups: 0,
     createPosts: 0,
+    createResponses201: 0,
     metadataPosts: 0,
     unauthorized: 0,
     forbidden: 0,
@@ -105,6 +108,7 @@ async function startWordPressServer(testRoot) {
     persistedBeforeHttpFailure: 0,
     http429: 0,
     http503: 0,
+    retryAfterOneSecondHeadersSent: 0,
   };
   const uploaded = new Map();
   let nextId = 100;
@@ -130,6 +134,7 @@ async function startWordPressServer(testRoot) {
       if (request.method === "GET" && url.pathname === "/wp-json/wp/v2/media") {
         metrics.lookups += 1;
         const slug = url.searchParams.get("slug");
+        if (slug !== null) metrics.slugLookups += 1;
         const match = slug ? uploaded.get(slug) : undefined;
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify(match ? [match] : []));
@@ -161,7 +166,12 @@ async function startWordPressServer(testRoot) {
           if (injectedFailure.status === 403) metrics.forbidden += 1;
           if (injectedFailure.status === 429) metrics.http429 += 1;
           if (injectedFailure.status === 503) metrics.http503 += 1;
-          response.writeHead(injectedFailure.status, { "content-type": "application/json" });
+          const headers = { "content-type": "application/json" };
+          if (injectedFailure.status === 429) {
+            headers["retry-after"] = "1";
+            metrics.retryAfterOneSecondHeadersSent += 1;
+          }
+          response.writeHead(injectedFailure.status, headers);
           response.end(
             JSON.stringify({
               code:
@@ -195,6 +205,7 @@ async function startWordPressServer(testRoot) {
           response.destroy();
           return;
         }
+        metrics.createResponses201 += 1;
         response.writeHead(201, { "content-type": "application/json" });
         response.end(JSON.stringify(item));
         return;
@@ -392,19 +403,28 @@ async function main() {
       traffic.push({
         phase,
         mediaLookups: after.lookups - before.lookups,
+        mediaSlugLookups: after.slugLookups - before.slugLookups,
         mediaCreatePosts: after.createPosts - before.createPosts,
+        mediaCreateResponses201: after.createResponses201 - before.createResponses201,
         metadataPosts: after.metadataPosts - before.metadataPosts,
         auth401: after.unauthorized - before.unauthorized,
         auth403: after.forbidden - before.forbidden,
         http429: after.http429 - before.http429,
         http503: after.http503 - before.http503,
+        retryAfterOneSecondHeadersSent: after.retryAfterOneSecondHeadersSent - before.retryAfterOneSecondHeadersSent,
         imageRequests: after.imageRequests - before.imageRequests,
         uploadedObjects: after.uploadedCount - before.uploadedCount,
         responseLostAfterCommit: after.persistedBeforeDisconnect - before.persistedBeforeDisconnect,
         persistedBeforeHttpFailure: after.persistedBeforeHttpFailure - before.persistedBeforeHttpFailure,
       });
     }
+    for (const entry of traffic) {
+      entry.checks = mediaTrafficChecks(entry.phase, entry);
+    }
     const cases = {
+      allHttpTrafficMatchesExplicitPhaseBaselines: traffic.every(
+        (entry) => entry.checks.matchesExpectedTraffic === true,
+      ),
       successUsesActualUiAndIpc: phaseResults.success.checks?.actualEdmUiInvokedMediaPrepare === true,
       successIncludesUploadedRecordedSkippedAndPerSkuFailures:
         phaseResults.success.checks?.resultCounts ===
@@ -447,19 +467,22 @@ async function main() {
         traffic.find((entry) => entry.phase === "post-lost")?.responseLostAfterCommit === 1,
       retryReusesWithoutSecondMediaCreate:
         phaseResults.retry.checks?.retryOrOutcomeUnknownMatches === true &&
-        traffic.find((entry) => entry.phase === "retry")?.mediaCreatePosts === 0,
+        traffic.find((entry) => entry.phase === "retry")?.checks?.retryUsesSlugLookupWithoutCreate === true,
       post429PersistedBeforeUnknownAndRetryReused:
         phaseResults["post-429"].checks?.retryOrOutcomeUnknownMatches === true &&
-        traffic.find((entry) => entry.phase === "post-429")?.http429 === 1 &&
+        traffic.find((entry) => entry.phase === "post-429")?.checks?.matchesExpectedTraffic === true &&
         traffic.find((entry) => entry.phase === "post-429")?.persistedBeforeHttpFailure === 1 &&
-        traffic.find((entry) => entry.phase === "retry-429")?.mediaCreatePosts === 0 &&
+        traffic.find((entry) => entry.phase === "retry-429")?.checks?.retryUsesSlugLookupWithoutCreate === true &&
         phaseResults["retry-429"].checks?.restartUnknownOutcomeRecoveredOnColdMount === true &&
         phaseResults["retry-429"].checks?.retryReviewDialogConfirmed === true,
+      retryAfter429IsSingleResponseWithoutAutomaticResend:
+        traffic.find((entry) => entry.phase === "post-429")?.checks?.matchesExpectedTraffic === true &&
+        traffic.find((entry) => entry.phase === "post-429")?.checks?.retryAfterOneSecondHeaderSentOnce === true,
       post503PersistedBeforeUnknownAndRetryReused:
         phaseResults["post-503"].checks?.retryOrOutcomeUnknownMatches === true &&
-        traffic.find((entry) => entry.phase === "post-503")?.http503 === 1 &&
+        traffic.find((entry) => entry.phase === "post-503")?.checks?.matchesExpectedTraffic === true &&
         traffic.find((entry) => entry.phase === "post-503")?.persistedBeforeHttpFailure === 1 &&
-        traffic.find((entry) => entry.phase === "retry-503")?.mediaCreatePosts === 0 &&
+        traffic.find((entry) => entry.phase === "retry-503")?.checks?.retryUsesSlugLookupWithoutCreate === true &&
         phaseResults["retry-503"].checks?.restartUnknownOutcomeRecoveredOnColdMount === true &&
         phaseResults["retry-503"].checks?.retryReviewDialogConfirmed === true,
       rendererReceivedUtilityProcessProgress: phaseResults.success.checks?.progressEvidenceComplete === true,
@@ -481,7 +504,7 @@ async function main() {
         phaseResults[phase].checks?.restartUnknownOutcomeRecoveredOnColdMount === true &&
         phaseResults[phase].checks?.retryReviewDialogConfirmed === true &&
         phaseResults[phase].checks?.retryOrOutcomeUnknownMatches === true &&
-        traffic.find((entry) => entry.phase === phase)?.mediaCreatePosts === 0;
+        traffic.find((entry) => entry.phase === phase)?.checks?.retryUsesSlugLookupWithoutCreate === true;
     }
     const canaryScan = await scanMediaCanaryTree(root, canaryBytes);
     const summary = {
@@ -497,6 +520,13 @@ async function main() {
       packagedAcceptanceBootstrap: "isolated-main-entry-using-production-ipc-job-manager-worker-and-core",
       testOnlyLoopbackHttp: true,
       wordpressProductionHttpsPolicyVerified: false,
+      retryAfterCoverage: {
+        synthetic429Header: "Retry-After: 1 is sent once and counted",
+        automaticUploadRetry: "not performed; Core returns outcome_unknown after the first non-auth POST error",
+        retryAfterBackoff: "not covered because this path does not automatically retry",
+        userConfirmedRecovery:
+          "after restart, at least one slug lookup is required and a second create POST is forbidden",
+      },
       credentialEncodingClassesChecked: 5,
       cases,
       phases: Object.fromEntries(Object.entries(phaseResults).map(([phase, result]) => [phase, result.checks ?? {}])),
