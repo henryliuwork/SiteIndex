@@ -82,6 +82,7 @@ interface PersistedWindowsScheduleState extends ScheduleRuntimeStatus {
   registered_task_names: string[];
   project_paths: Record<string, string>;
   orphaned_tasks: { taskName: string; path: string; reason: string }[];
+  mac_project_paths?: Record<string, string>;
 }
 
 const LAUNCHD_WEEKDAYS: Record<Weekday, number> = {
@@ -465,8 +466,9 @@ export function createSystemScheduler(options: {
     registered_task_names: [],
     project_paths: {},
     orphaned_tasks: [],
+    mac_project_paths: {},
   };
-  let macProjectIds = new Set<string>();
+  let macProjectPaths = new Map<string, string>();
 
   function plistPath(projectId: string, job: ScheduledJob): string {
     return path.join(agentDirectory, `${launchAgentLabel(projectId, job)}.plist`);
@@ -507,12 +509,23 @@ export function createSystemScheduler(options: {
                   typeof task.reason === "string",
               )
             : [];
+          const macProjectPaths =
+            typeof state.mac_project_paths === "object" &&
+            state.mac_project_paths !== null &&
+            !Array.isArray(state.mac_project_paths)
+              ? Object.fromEntries(
+                  Object.entries(state.mac_project_paths).filter(
+                    (entry): entry is [string, string] => typeof entry[1] === "string",
+                  ),
+                )
+              : {};
           Object.assign(runtimeState, {
             mode: state.mode,
             authorization_required: state.authorization_required,
             registered_task_names: state.registered_task_names,
             project_paths: projectPaths,
             orphaned_tasks: orphanedTasks,
+            mac_project_paths: macProjectPaths,
           });
         }
       }
@@ -1047,16 +1060,33 @@ export function createSystemScheduler(options: {
     }
 
     if (platform === "darwin") {
-      const protectedIds = new Set<string>();
+      const state = await loadRuntimeState();
+      macProjectPaths = new Map(Object.entries(state.mac_project_paths ?? {}));
       const removedIds = new Set(removedProjectIds);
-      for (const { projectId, projectPath } of projects) {
-        if (removedIds.has(projectId)) continue;
+      const currentProjects = projects.filter(({ projectId }) => !removedIds.has(projectId));
+      const currentProjectIds = new Set(currentProjects.map(({ projectId }) => projectId));
+      const protectedIds = new Set<string>();
+      const protectedPaths = new Map<string, string>();
+      for (const { projectId, projectPath } of currentProjects) {
         const assessment = await inspectStorageLocation(projectPath);
-        if (assessment.status === "known-cloud") protectedIds.add(projectId);
+        if (assessment.status === "known-cloud") {
+          protectedIds.add(projectId);
+          protectedPaths.set(projectId, projectPath);
+        }
+      }
+      // A cloud project can temporarily disappear from the catalog while its
+      // sync volume is unavailable. Reclassify the last known path before
+      // treating its LaunchAgents as stale.
+      for (const [projectId, projectPath] of macProjectPaths) {
+        if (currentProjectIds.has(projectId) || removedIds.has(projectId)) continue;
+        const assessment = await inspectStorageLocation(projectPath);
+        if (assessment.status === "known-cloud") {
+          protectedIds.add(projectId);
+          protectedPaths.set(projectId, projectPath);
+        }
       }
       const availableProjects: ScheduleProjectDefinition[] = [];
-      for (const project of projects) {
-        if (removedIds.has(project.projectId)) continue;
+      for (const project of currentProjects) {
         if (protectedIds.has(project.projectId)) {
           console.warn("跳过位于已知云同步目录的系统计划任务。");
           continue;
@@ -1067,13 +1097,15 @@ export function createSystemScheduler(options: {
           console.warn("跳过不存在的项目计划任务。", { projectId: project.projectId });
         }
       }
-      const currentIds = new Set([...availableProjects.map(({ projectId }) => projectId), ...protectedIds]);
-      for (const staleId of new Set([...macProjectIds, ...removedProjectIds])) {
-        if (currentIds.has(staleId)) continue;
+      const nextProjectPaths = new Map<string, string>(protectedPaths);
+      for (const { projectId, projectPath } of availableProjects) nextProjectPaths.set(projectId, projectPath);
+      for (const staleId of new Set([...macProjectPaths.keys(), ...removedProjectIds])) {
+        if (nextProjectPaths.has(staleId)) continue;
         for (const job of SCHEDULED_JOBS) await removeMac(staleId, job);
       }
       for (const project of availableProjects) await registerMac(project);
-      macProjectIds = currentIds;
+      macProjectPaths = nextProjectPaths;
+      await saveRuntimeState({ ...state, mac_project_paths: Object.fromEntries(macProjectPaths) });
     }
     return { mode: "system", authorization_required: false };
   }

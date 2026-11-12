@@ -526,4 +526,74 @@ describe("system schedule definitions", () => {
       await rm(homeDirectory, { recursive: true, force: true });
     }
   });
+
+  it("keeps a previously protected macOS LaunchAgent when the cloud project temporarily disappears, then removes it explicitly", async () => {
+    const homeDirectory = await mkdtemp(path.join(tmpdir(), "siteindex-launchd-offline-cloud-test-"));
+    const runtimeStatePath = path.join(homeDirectory, "schedule-runtime-state.json");
+    const projectPath = path.join(homeDirectory, "cloud-project");
+    await mkdir(projectPath);
+    const commands: { file: string; args: string[] }[] = [];
+    let storageStatus: "unknown" | "known-cloud" = "unknown";
+    const createScheduler = () =>
+      createSystemScheduler({
+        platform: "darwin",
+        executablePath: macDefinition.executablePath,
+        homeDirectory,
+        uid: 501,
+        runtimeStatePath,
+        inspectStorageLocation: async () => ({
+          status: storageStatus,
+          ...(storageStatus === "known-cloud" ? { provider: "Fixture Drive" } : {}),
+        }),
+        runCommand: async (file, args) => {
+          commands.push({ file, args });
+          return "loaded";
+        },
+      });
+    let scheduler = createScheduler();
+    const project: ScheduleProjectDefinition = {
+      projectId: "cloud-project",
+      projectPath,
+      config: {
+        ...config,
+        validate: { ...config.validate, enabled: false },
+        weekly: { ...config.weekly, enabled: false },
+        readme: { ...config.readme, enabled: false },
+        monthly: { ...config.monthly, enabled: false },
+      },
+      isThisDevice: true,
+    };
+    const plistPath = path.join(
+      homeDirectory,
+      "Library",
+      "LaunchAgents",
+      `${launchAgentLabel("cloud-project", "daily")}.plist`,
+    );
+
+    try {
+      await scheduler.reconcile([project], false);
+      await expect(access(plistPath)).resolves.toBeUndefined();
+
+      storageStatus = "known-cloud";
+      commands.length = 0;
+      await scheduler.reconcile([project], false);
+      expect(commands.some(({ args }) => args[0] === "bootout" || args[0] === "remove")).toBe(false);
+
+      await rm(projectPath, { recursive: true, force: true });
+      scheduler = createScheduler();
+      commands.length = 0;
+      await scheduler.reconcile([], false);
+      await expect(access(plistPath)).resolves.toBeUndefined();
+      expect(commands.some(({ args }) => args[0] === "bootout" || args[0] === "remove")).toBe(false);
+      expect(JSON.parse(await readFile(runtimeStatePath, "utf8")).mac_project_paths["cloud-project"]).toBe(projectPath);
+
+      commands.length = 0;
+      await scheduler.reconcile([], false, ["cloud-project"]);
+      await expect(access(plistPath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(commands.some(({ args }) => args[0] === "bootout")).toBe(true);
+      expect(JSON.parse(await readFile(runtimeStatePath, "utf8")).mac_project_paths).toEqual({});
+    } finally {
+      await rm(homeDirectory, { recursive: true, force: true });
+    }
+  });
 });

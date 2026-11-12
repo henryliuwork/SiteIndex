@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectId, SkillPlatform } from "@siteindex/shared";
 import { createSkillService, type SkillProject } from "./skill-service.js";
 
@@ -91,6 +91,52 @@ describe("desktop skill service", () => {
       readFile(path.join(projectPath, "_agent", "skills", "manifest.json"), "utf8").then((value) => JSON.parse(value)),
     ).resolves.toEqual({ version: 1, skills: { "blog-writer": "1.1.0" } });
     await expect(service.get("blog-writer")).resolves.toMatchObject({ info: { has_update: false } });
+  });
+
+  it("blocks project skill writes to known cloud paths before install or batch sync changes files", async () => {
+    const root = await temporaryDirectory("siteindex-skill-cloud-guard-");
+    const sourceDirectory = path.join(root, "bundled");
+    const localPath = path.join(root, "local-project");
+    const cloudPath = path.join(root, "cloud-project");
+    const cloudSkills = path.join(cloudPath, "_agent", "skills");
+    const cloudSkillFile = path.join(cloudSkills, "blog-writer", "SKILL.md");
+    const cloudManifest = path.join(cloudSkills, "manifest.json");
+    await writeSkill(sourceDirectory, "blog-writer", "1.1.0");
+    await writeSkill(cloudSkills, "blog-writer", "1.0.0", "\n# Existing cloud copy\n");
+    await mkdir(path.dirname(cloudManifest), { recursive: true });
+    const manifestContent = '{"version":1,"skills":{"local-note":"2.0.0"}}\n';
+    await writeFile(cloudManifest, manifestContent, "utf8");
+    const originalSkill = await readFile(cloudSkillFile, "utf8");
+    const assertProjectStorageLocal = vi.fn(async (projectPath: string) => {
+      if (projectPath === cloudPath) {
+        throw Object.assign(new Error("Known cloud location."), { code: "PROJECT_CLOUD_SYNC_UNSUPPORTED" });
+      }
+    });
+    const service = createSkillService({
+      sourceDirectory,
+      homeDirectory: path.join(root, "home"),
+      listProjects: async () => [
+        { id: "a-local" as ProjectId, path: localPath },
+        { id: "z-cloud" as ProjectId, path: cloudPath },
+      ],
+      getPlatforms: async () => [],
+      assertProjectStorageLocal,
+    });
+
+    await expect(service.install("blog-writer", "project:z-cloud")).rejects.toMatchObject({
+      code: "PROJECT_CLOUD_SYNC_UNSUPPORTED",
+    });
+    await expect(service.syncAllProjects()).rejects.toMatchObject({ code: "PROJECT_CLOUD_SYNC_UNSUPPORTED" });
+
+    await expect(readFile(cloudSkillFile, "utf8")).resolves.toBe(originalSkill);
+    await expect(readFile(cloudManifest, "utf8")).resolves.toBe(manifestContent);
+    await expect(readFile(path.join(localPath, "_agent", "skills", "blog-writer", "SKILL.md"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(readFile(path.join(localPath, "_agent", "skills", "manifest.json"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(assertProjectStorageLocal).toHaveBeenCalledWith(cloudPath);
   });
 
   it("installs to Codex and syncs every bundled skill into every project", async () => {
