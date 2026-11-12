@@ -640,12 +640,13 @@ describe("core io", () => {
       '}, { heartbeatMs: 60000 });',
     ].join("\n");
     const reclaimerSource = [
-      'import { readFile, writeFile } from "node:fs/promises";',
+      'import { readFile, rename, writeFile } from "node:fs/promises";',
       'import { withLockForTest } from "./src/io/runner-lock.ts";',
       'const root = process.env.SITEINDEX_TEST_LOCK_ROOT;',
       'const markers = process.env.SITEINDEX_TEST_MARKER_DIR;',
       'const role = process.env.SITEINDEX_TEST_ROLE;',
       'if (!root || !markers || !role) throw new Error("Missing test parameters");',
+      'const publishResult = async (value) => { const result = `${markers}/${role}.result`; const temporary = `${result}.tmp-${process.pid}`; await writeFile(temporary, value, { flag: "wx" }); await rename(temporary, result); };',
       'const wait = async (name) => { while (true) { try { await readFile(`${markers}/${name}`, "utf8"); return; } catch (error) { if (error?.code !== "ENOENT") throw error; await new Promise((resolve) => setTimeout(resolve, 5)); } } };',
       'try {',
       '  await withLockForTest(root, async () => {',
@@ -657,10 +658,10 @@ describe("core io", () => {
       '      await wait(`${role}.continue`);',
       '    },',
       '  });',
-      '  await writeFile(`${markers}/${role}.result`, "acquired");',
+      '  await publishResult("acquired");',
       '} catch (error) {',
       '  const value = error && typeof error === "object" ? error : {};',
-      '  await writeFile(`${markers}/${role}.result`, `${value.code ?? "ERROR"}:${value.message ?? String(error)}`);',
+      '  await publishResult(`${value.code ?? "ERROR"}:${value.message ?? String(error)}`);',
       '}',
     ].join("\n");
     const startChild = (source: string, role?: string) => {
