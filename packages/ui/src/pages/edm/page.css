@@ -316,6 +316,12 @@
   gap: var(--space-2);
 }
 
+.si-edm-discount-select {
+  width: 100%;
+  min-width: 0;
+  padding-inline: var(--space-2);
+}
+
 .si-edm-manual-cell input {
   width: 100%;
   height: 32px;

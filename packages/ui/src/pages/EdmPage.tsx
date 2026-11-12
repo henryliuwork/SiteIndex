@@ -10,6 +10,7 @@ import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
+import { getEdmDiscountTierCapability, type EdmDiscountTierCapability } from "./edm/discount-tier-capability";
 import { edmMediaJobMonitor, type EdmMediaRunSnapshot } from "./edm/media-job-monitor";
 import { getEdmExportCapability, isEdmExportDefinitiveNoWrite, isEdmExportOutcomeUnknown } from "./edm/export-capability";
 import { beginEdmExportAttempt, getEdmExportSafetyState, keepEdmExportAttemptBlocked, resolveEdmExportAttempt, subscribeEdmExportSafety } from "./edm/export-retry-state";
@@ -19,6 +20,8 @@ import { EdmWorkflowPrototype } from "./edm/workflow-prototype";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
+const EMPTY_DISCOUNT_TIERS: number[] = [];
+const CLEAR_DISCOUNT_TIER = "__clear_discount_tier__";
 const viewOptions: { value: ImageView; label: string }[] = [
   { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "no_feed", label: "未抓取到首图" },
   { value: "has_manual", label: "已填手动图" }, { value: "none", label: "缺图" },
@@ -254,16 +257,55 @@ function ManualImageCell({ projectId, row }: { projectId: string; row: SkuImageR
   </div>;
 }
 
+function DiscountTierCell({ projectId, row, tiers, capability }: {
+  projectId: string;
+  row: SkuImageRow;
+  tiers: readonly number[];
+  capability: EdmDiscountTierCapability;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const mutation = useMutation({
+    mutationFn: async (tier: number | null) => {
+      const save = api.edm.setDiscountTier;
+      if (!capability.available || !save) throw new Error(capability.message || "折扣档位保存接口尚未就绪。");
+      return save(projectId, row.sku, tier);
+    },
+    onSuccess: async (result) => {
+      toast.success(result.discount_tier == null ? `已清除 ${result.sku} 的折扣档位。` : `已保存 ${result.sku} 的折扣档位。`);
+      await queryClient.invalidateQueries({ queryKey: ["edm", "images", projectId] });
+    },
+    onError: (cause) => toast.error(apiErrorMessage(cause, "折扣档位保存失败。")),
+  });
+
+  return <Select
+    ariaLabel={row.sku + " 折扣档位"}
+    className="si-edm-discount-select"
+    value={row.discount_tier == null ? "" : String(row.discount_tier)}
+    placeholder={row.discount_tier == null ? "未选择" : String(row.discount_tier) + "%"}
+    options={[
+      { value: CLEAR_DISCOUNT_TIER, label: "清除选择" },
+      ...tiers.map((tier) => ({ value: String(tier), label: tier + "%" })),
+    ]}
+    disabled={!capability.available || tiers.length === 0 || mutation.isPending}
+    onValueChange={(value) => {
+      if (!capability.available || tiers.length === 0) return;
+      mutation.mutate(value === CLEAR_DISCOUNT_TIER ? null : Number(value));
+    }}
+  />;
+}
+
 function feedImageLabel(url: string | null): string {
   if (!url) return "未抓取到首图";
   try { return new URL(url).pathname; } catch { return url; }
 }
 
-function imageColumns(projectId: string): ColumnDef<SkuImageRow, unknown>[] {
+function imageColumns(projectId: string, discountTiers: readonly number[], discountTierCapability: EdmDiscountTierCapability): ColumnDef<SkuImageRow, unknown>[] {
   return [
     { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 130, text: "single" }, cell: ({ row }) => <code className="si-edm-sku">{row.original.sku}</code>, enableSorting: true },
     { id: "product", accessorKey: "title", header: "产品 / 变体", meta: { width: 280, grow: 2, minWidth: 200, text: "single" }, cell: ({ row }) => <span className="si-edm-product"><strong>{row.original.title}</strong><small>{row.original.variant_title || "默认款"}</small></span>, enableSorting: true },
     { id: "stock_status", accessorKey: "stock_status", header: "库存", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockLabels[row.original.stock_status]}</Chip>, enableSorting: true },
+    { id: "discount_tier", accessorKey: "discount_tier", header: "折扣档位", meta: { width: 148, grow: 0, minWidth: 136, text: "single" }, cell: ({ row }) => <DiscountTierCell projectId={projectId} row={row.original} tiers={discountTiers} capability={discountTierCapability} /> },
     { id: "feed_image_url", accessorKey: "feed_image_url", header: "抓取到的首图 URL", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-edm-feed-cell"><ImageThumbnail src={row.original.feed_image_url} label={row.original.sku + " Feed 首图"} /><code title={row.original.feed_image_url ?? undefined}>{feedImageLabel(row.original.feed_image_url)}</code></span> },
     { id: "manual_image_url", accessorKey: "manual_image_url", header: "手动输入的首图 URL", meta: { width: 340, grow: 2, minWidth: 280, text: "single" }, cell: ({ row }) => <ManualImageCell projectId={projectId} row={row.original} /> },
     { id: "used", accessorKey: "used", header: "agent 使用", meta: { width: 100, grow: 0, minWidth: 96, text: "single" }, cell: ({ row }) => <Chip tone={row.original.used === "manual" ? "info" : row.original.used === "feed" ? "ok" : "danger"}>{row.original.used === "manual" ? "手动首图" : row.original.used === "feed" ? "抓取首图" : "缺图"}</Chip>, enableSorting: true },
@@ -335,6 +377,8 @@ export function EdmPage() {
   });
   const project = projectQuery.data?.summary;
   const skuGrouping = projectQuery.data?.config.sku_grouping;
+  const discountTiers = projectQuery.data?.config.edm?.discount_tiers ?? EMPTY_DISCOUNT_TIERS;
+  const discountTierCapability = getEdmDiscountTierCapability(api);
   const mediaCapability = getEdmMediaCapability(api);
   const exportCapability = getEdmExportCapability(api);
   const exportIndex = api.edm.exportIndex;
@@ -424,7 +468,7 @@ export function EdmPage() {
   const groupingEnabled = skuGrouping?.enabled === true;
   const groupingRule: SkuGroupingRule = skuGrouping?.rule ?? { type: "separator", value: "-" };
   const summary = summaryQuery.data;
-  const columns = useMemo(() => imageColumns(id), [id]);
+  const columns = useMemo(() => imageColumns(id, discountTiers, discountTierCapability), [id, discountTiers, discountTierCapability.available, discountTierCapability.message]);
   const currentView: ImageView = query.filters?.view ?? "all";
   const imageQueriesFetching = useIsFetching({ queryKey: ["edm", "images", id] });
 
@@ -676,6 +720,9 @@ export function EdmPage() {
         })}
       </ul>}
     </div> : <Notice tone="warn" title="图片准备暂未开放">{mediaCapability.message} 既有 URL 编辑与保存功能仍可使用。</Notice>}
+    {discountTiers.length === 0
+      ? <Notice tone="info" title="当前项目未配置折扣档位">SKU 折扣档位保持未选择；配置可选百分比后即可逐行选择。</Notice>
+      : !discountTierCapability.available && <Notice tone="info" title="折扣档位暂时只读">{discountTierCapability.message} 现有选择仍会按读取结果显示。</Notice>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
