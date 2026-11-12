@@ -214,6 +214,48 @@ describe("createCoreService initial namespaces", () => {
     expect(await readFile(path.join(projectPath, PATHS.skuTags), "utf8")).not.toContain("demo-remove");
   }, 30_000);
 
+  it("rejects EDM index rendering while the project lock is held without recovering daily output", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0, 2] });
+    let signalHeld!: () => void;
+    let releaseHeld!: () => void;
+    const held = new Promise<void>((resolve) => { signalHeld = resolve; });
+    const release = new Promise<void>((resolve) => { releaseHeld = resolve; });
+    const owner = withLock(projectPath, async () => {
+      signalHeld();
+      await release;
+    }, { deviceId: "render-index-lock-holder", job: "synthetic-long-job", heartbeatMs: 60_000 });
+    await held;
+
+    try {
+      await expect(api.edm.renderIndex("fixture")).rejects.toMatchObject({ code: "LOCKED" });
+      await expect(readFile(transaction.manifestPath)).resolves.toBeTruthy();
+      expect(await readFile(path.join(projectPath, transaction.targets[0]!), "utf8")).toBe("synthetic after 0\n");
+      expect(await readFile(path.join(projectPath, transaction.targets[2]!), "utf8")).toBe("synthetic after 2\n");
+    } finally {
+      releaseHeld();
+      await owner;
+    }
+  }, 30_000);
+
+  it("recovers an interrupted daily transaction before returning a consistent EDM snapshot", async () => {
+    const { projectPath } = await makeProject();
+    const api = service(projectPath);
+    const expected = await api.edm.renderIndex("fixture");
+    const transaction = await installInterruptedDailyTransaction(projectPath, { afterIndexes: [0, 2] });
+    const originalBytes = await Promise.all(transaction.targets.map((_, index) =>
+      readFile(path.join(transaction.backupDirectory, `${index}.before`))));
+
+    const rendered = await api.edm.renderIndex("fixture");
+
+    expect(rendered).toEqual(expected);
+    await expect(readFile(transaction.manifestPath)).rejects.toMatchObject({ code: "ENOENT" });
+    for (const [index, target] of transaction.targets.entries()) {
+      expect(await readFile(path.join(projectPath, target))).toEqual(originalBytes[index]);
+    }
+  }, 30_000);
+
   it("serves query APIs while a runner holds the project job lock", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);
