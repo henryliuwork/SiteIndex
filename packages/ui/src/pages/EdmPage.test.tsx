@@ -711,6 +711,24 @@ describe("EdmPage media preparation prototype", () => {
     expect(exportIndex).toHaveBeenCalledTimes(1);
   });
 
+  it("Desktop 尚未实现另存时显示明确原因并允许重试", async () => {
+    const notImplemented = Object.assign(new Error("当前版本尚未接入 EDM SKU 清单生成。"), {
+      code: "NOT_IMPLEMENTED",
+      detail: "Core edm.exportIndex 尚未就绪。",
+    });
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, {
+      exportReady: true,
+      exportError: notImplemented,
+    });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    fireEvent.click(button);
+
+    expect(await within(exportControlFor(button)).findByText(notImplemented.message)).toBeTruthy();
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(exportIndex).toHaveBeenCalledTimes(2));
+  });
+
   it("本机已有结果未知标记时跨页面进入仍禁用另存", async () => {
     window.localStorage.setItem("siteindex:edm-export-attempt:demo", "unknown");
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true });

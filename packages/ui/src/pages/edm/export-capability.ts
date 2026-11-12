@@ -20,5 +20,5 @@ export function isEdmExportOutcomeUnknown(error: unknown): boolean {
 
 export function isEdmExportDefinitiveNoWrite(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error
-    && (error.code === "EDM_INDEX_CONFLICT" || error.code === "WRITE_FAILED");
+    && (error.code === "NOT_IMPLEMENTED" || error.code === "EDM_INDEX_CONFLICT" || error.code === "WRITE_FAILED");
 }

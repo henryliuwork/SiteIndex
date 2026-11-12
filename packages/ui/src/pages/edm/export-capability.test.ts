@@ -31,7 +31,8 @@ describe("isEdmExportOutcomeUnknown", () => {
 });
 
 describe("isEdmExportDefinitiveNoWrite", () => {
-  it("只把冲突和明确写入失败作为确认未写入", () => {
+  it("把未启动、冲突和明确写入失败归为确认未写入", () => {
+    expect(isEdmExportDefinitiveNoWrite({ code: "NOT_IMPLEMENTED" })).toBe(true);
     expect(isEdmExportDefinitiveNoWrite({ code: "EDM_INDEX_CONFLICT" })).toBe(true);
     expect(isEdmExportDefinitiveNoWrite({ code: "WRITE_FAILED" })).toBe(true);
     expect(isEdmExportDefinitiveNoWrite({ code: "EDM_EXPORT_OUTCOME_UNKNOWN" })).toBe(false);
