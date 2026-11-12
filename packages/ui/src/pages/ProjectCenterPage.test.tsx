@@ -565,9 +565,14 @@ describe("ProjectCenterPage local-storage policy", () => {
     const mockApi = createMockApi();
     mockApi.jobs.history = vi.fn(async () => []);
     const sourceProjects = await mockApi.projects.list();
+    const getProject = mockApi.projects.get;
+    mockApi.projects.get = vi.fn(async (id) => {
+      const detail = await getProject(id);
+      return id === "demo" ? { ...detail, config: { ...detail.config, crawl: { ...detail.config.crawl, feed_url: "https://feed.example.test/catalog.xml" } } } : detail;
+    });
     mockApi.projects.list = vi.fn(async () => sourceProjects.map((project) => project.id === "demo"
-      ? { ...project, storage_location: "known_cloud_sync" as const }
-      : project));
+      ? { ...project, storage_location: "known_cloud_sync" as const, attention: 0, warnings: [], sync: { ...project.sync, state: "ok" as const, at: "2026-11-12T09:00:00.000Z", job: "daily" } }
+      : project.id === "demo2" ? { ...project, storage_location: "known_cloud_sync" as const, attention: 1 } : project));
     vi.doMock("../api", () => ({
       api: mockApi,
       isMockApi: true,
@@ -587,6 +592,7 @@ describe("ProjectCenterPage local-storage policy", () => {
     expect(within(card as HTMLElement).getByText("已识别第三方同步目录 · 只读")).toBeTruthy();
     expect(within(card as HTMLElement).queryByRole("link", { name: "填写 feed" })).toBeNull();
     expect(within(card as HTMLElement).queryByRole("link", { name: "立即同步" })).toBeNull();
+    await waitFor(() => expect(within(card as HTMLElement).queryByText("尚未配置有效的商品 Feed。")).toBeNull());
 
     fireEvent.click(screen.getByRole("button", { name: "添加已有项目" }));
     const addDialog = await screen.findByRole("dialog", { name: "添加已有项目" });
@@ -602,7 +608,7 @@ describe("ProjectCenterPage local-storage policy", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /待处理提醒/ }));
     const attention = screen.getByRole("region", { name: "待处理提醒列表" });
-    const cloudProject = await within(attention).findByText("Demo Store");
+    const cloudProject = await within(attention).findByText("Demo Catalog");
     const projectRow = cloudProject.closest("article");
     expect(projectRow).toBeTruthy();
     expect(within(projectRow as HTMLElement).getByText("已识别为第三方同步目录；提醒仅可查看。")).toBeTruthy();

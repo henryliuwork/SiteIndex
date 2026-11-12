@@ -133,7 +133,7 @@ function ProjectCard({
   const warning = projectWarning(project);
   const feedStatus = feedConfigurationStatus(detailQuery.data?.config.crawl.feed_url);
   const warningAction = projectWarningAction(project, feedStatus);
-  const showWarning = warning !== null || warningAction === "feed" || knownCloudSync;
+  const showWarning = warning !== null || warningAction === "feed";
   const warningLines = warning?.lines ?? ["尚未配置有效的商品 Feed。"];
   const canImportCheckForProject = canImportCheck && !knownCloudSync;
   const chips = [
