@@ -39,6 +39,7 @@ export const FIXED_TODAY = "2026-10-22";
 export const clone = <T,>(value: T): T => value === undefined ? value : JSON.parse(JSON.stringify(value)) as T;
 export const mockMode = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("mock") : null;
 export const errorMode = mockMode === "error";
+export const knownCloudSyncMode = mockMode === "cloud-sync";
 export const performanceMode = mockMode === "perf";
 export const loadingMode = mockMode === "loading";
 export const slowMode = mockMode === "slow";
@@ -269,6 +270,7 @@ export const makeProjectSummary = (id: MockProjectId): ProjectSummary => {
     blog_count: isDemo ? fixtures.blogs.length : Math.max(7, fixtures.blogs.length),
     today: isDemo ? { restock: 1, oos: 2, price: 1, new: 1, removed: 0 } : { restock: 0, oos: 0, price: 0, new: 0, removed: 0 },
     attention: isDemo ? 0 : 1, warnings: isDemo ? [] : ["尚未填写 GMC Feed 地址，每日库存同步未启用。"],
+    ...(!isDemo && knownCloudSyncMode ? { storage_location: "known_cloud_sync" as const } : {}),
     runner_device: isDemo ? "演示设备" : null, is_runner: isDemo,
   };
 };
@@ -277,7 +279,7 @@ export const projectsChanged = new Set<(id: ProjectId) => void>();
 export const notifyProjectChanged = (id: ProjectId): void => projectsChanged.forEach((callback) => callback(id));
 
 export const settingsState: AppSettings = {
-  device_id: "mock-device", device_name: "演示设备", projects_root: mockMode === "empty-root" ? "" : "D:/云盘/projects",
+  device_id: "mock-device", device_name: "演示设备", projects_root: mockMode === "empty-root" ? "" : "D:/SiteIndex/projects",
   close_to_tray: true, launch_at_login: false,
   extra_projects: [], cache_dir: "C:/SiteIndex/Cache", browser: { channel: "msedge", executable_path: null },
   notify: { on_failure: true, on_success: false, oos_threshold: 0.12, dingtalk_webhook: null },
@@ -309,7 +311,7 @@ export const mockSkillBodies: Record<string, string> = {
 export const mockSkillTargets: Record<string, SkillTargetStatus[]> = Object.fromEntries(mockSkills.map((skill) => [skill.name, skill.retired ? [
   { target_id: "agents-dir", name: "Agents 通用目录", dir: `~/.agents/skills/${skill.name}`, status: "latest" },
 ] : [
-  { target_id: "project:demo", name: "项目 Demo Store", dir: `D:/云盘/projects/demo/_agent/skills/${skill.name}`, status: skill.has_update ? "outdated" : "latest" },
+  { target_id: "project:demo", name: "项目 Demo Store", dir: `D:/SiteIndex/projects/demo/_agent/skills/${skill.name}`, status: skill.has_update ? "outdated" : "latest" },
   { target_id: "claude-code", name: "Claude Code", dir: `~/.claude/skills/${skill.name}`, status: "latest" },
   { target_id: "codex", name: "Codex", dir: skill.name === "stock-report" ? "~/.codex/skills/stock-report" : null, status: skill.name === "stock-report" ? "latest" : "not_installed", ...(skill.name === "stock-report" ? { local_newer: true } : {}) },
   { target_id: "agents-dir", name: "Agents 通用目录", dir: `~/.agents/skills/${skill.name}`, status: "not_installed" },

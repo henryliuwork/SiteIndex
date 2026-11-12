@@ -554,3 +554,59 @@ describe("ProjectCenterPage project removal", () => {
     expect(screen.queryByRole("button", { name: "移除项目" })).toBeNull();
   }, 25_000);
 });
+
+describe("ProjectCenterPage local-storage policy", () => {
+  it("marks known sync projects read-only while keeping safe unregister available", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    const sourceProjects = await mockApi.projects.list();
+    mockApi.projects.list = vi.fn(async () => sourceProjects.map((project) => project.id === "demo"
+      ? { ...project, storage_location: "known_cloud_sync" as const }
+      : project));
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      isMockApi: true,
+      apiErrorMessage: (error: unknown, fallback: string) =>
+        typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+          ? error.message
+          : fallback,
+    }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    expect(await screen.findByText("SiteIndex 仅支持本机存储")).toBeTruthy();
+    const projectLink = await screen.findByRole("link", { name: "Demo Store" });
+    const card = projectLink.closest(".si-project-card");
+    expect(card).toBeTruthy();
+    expect(within(card as HTMLElement).getByText("已识别第三方同步目录 · 只读")).toBeTruthy();
+    expect(within(card as HTMLElement).queryByRole("link", { name: "填写 feed" })).toBeNull();
+    expect(within(card as HTMLElement).queryByRole("link", { name: "立即同步" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "添加已有项目" }));
+    const addDialog = await screen.findByRole("dialog", { name: "添加已有项目" });
+    expect(within(addDialog).getByText(/选择本机存储中的 SiteIndex 项目文件夹/)).toBeTruthy();
+    fireEvent.click(within(addDialog).getByRole("button", { name: "取消" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Demo Store更多操作" }));
+    expect(screen.queryByRole("button", { name: "识别并检查工作区" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "移除项目" }));
+    const removeDialog = await screen.findByRole("dialog");
+    expect(within(removeDialog).getByText("仅取消登记，不会删除项目文件夹里的任何文件；同时会注销这个项目的系统计划任务。")).toBeTruthy();
+    fireEvent.click(within(removeDialog).getByRole("button", { name: "取消" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /待处理提醒/ }));
+    const attention = screen.getByRole("region", { name: "待处理提醒列表" });
+    const cloudProject = await within(attention).findByText("Demo Store");
+    const projectRow = cloudProject.closest("article");
+    expect(projectRow).toBeTruthy();
+    expect(within(projectRow as HTMLElement).getByText("已识别为第三方同步目录；提醒仅可查看。")).toBeTruthy();
+    expect(within(projectRow as HTMLElement).queryByRole("button", { name: "已处理" })).toBeNull();
+    expect(within(projectRow as HTMLElement).queryByRole("button", { name: "忽略" })).toBeNull();
+  }, 25_000);
+});

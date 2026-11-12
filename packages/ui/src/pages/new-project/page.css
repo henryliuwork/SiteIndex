@@ -126,6 +126,8 @@ display:grid; min-width:0; gap:7px; color:var(--color-ink); font-size: var(--fs-
 color:var(--color-muted); font-size: var(--fs-body); font-weight:400;
 }
 
+.si-wizard-field .si-wizard-storage-policy { color: var(--color-warn); line-height: var(--lh-body); }
+
 .si-wizard-feed-input,.si-wizard-directory {
 display:flex; gap:8px;
 }

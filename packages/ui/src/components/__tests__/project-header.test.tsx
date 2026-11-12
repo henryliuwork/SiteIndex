@@ -6,7 +6,7 @@ import type { ProjectSummary } from "@siteindex/shared";
 import { ProjectHeader } from "../project-header";
 import { Button } from "../primitives";
 
-const project: Pick<ProjectSummary, "id" | "name" | "domain" | "platform"> = {
+const project: Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location"> = {
   id: "demo-store",
   name: "示例商店",
   domain: "store.example.test",
@@ -43,6 +43,16 @@ describe("ProjectHeader compact layout", () => {
     const { container } = render(<MemoryRouter><ProjectHeader project={project} activeTab="products" /></MemoryRouter>);
     expect(container.querySelector(".si-project-header-action-slot")).not.toBeNull();
     expect(container.querySelector(".si-project-header-action-slot .si-project-header-actions")).toBeNull();
+  });
+
+  it("warns when a project is known to be under third-party sync", () => {
+    render(<MemoryRouter><ProjectHeader project={{ ...project, storage_location: "known_cloud_sync" }} activeTab="products" /></MemoryRouter>);
+    expect(screen.getByRole("note", { name: /当前版本仅支持查看/ }).textContent).toContain("已识别同步目录 · 只读");
+  });
+
+  it("does not claim an unclassified project is local", () => {
+    const { container } = render(<MemoryRouter><ProjectHeader project={project} activeTab="products" /></MemoryRouter>);
+    expect(container.querySelector(".si-project-header-storage-warning")).toBeNull();
   });
 
   it("routes overflow actions through the shared keyboard-accessible menu", () => {

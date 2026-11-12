@@ -59,6 +59,10 @@ display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
 margin-left: 0;
 }
 
+.si-center-storage-policy { margin-bottom: var(--space-4); }
+.si-project-storage-notice { margin-top: var(--space-3); }
+.si-center-attention-readonly { grid-column: 1 / -1; margin: 0; color: var(--color-warn); font-size: var(--fs-caption); }
+
 .si-project-root-feedback {
 margin-top: 4px !important; color: var(--color-brand) !important; font-size: var(--fs-body) !important;
 }
