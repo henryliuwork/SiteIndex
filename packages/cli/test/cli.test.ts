@@ -84,7 +84,10 @@ function mockService() {
     inventory: { listSkus: vi.fn(async () => queryResult) },
     seo: { listPages: vi.fn(async () => queryResult), listIssues: vi.fn(async () => queryResult) },
     content: { listBlog: vi.fn(async () => queryResult), listKeywords: vi.fn(async () => queryResult) },
-    edm: { listImages: vi.fn(async () => queryResult) },
+    edm: {
+      listImages: vi.fn(async () => queryResult),
+      renderIndex: vi.fn(async () => ({ content: "# Synthetic EDM\n", sku_count: 2, missing_image_count: 1 })),
+    },
     categories: {
       get: vi.fn(async () => ({ mode: "feed" })),
       preview: vi.fn(async () => ({ categories: [], uncategorized: 0, multi_matched: 0, candidates: [] })),
@@ -137,6 +140,30 @@ describe("siteindex CLI", () => {
     expect(await main(["init", "project", "--json"], invalid.io)).toBe(EXIT.BAD_ARGS);
     expect(parseEnvelope(invalid.stdout[0]!).error?.code).toBe("BAD_ARGS");
   });
+
+  it("exports the EDM SKU index only to an explicit no-clobber path", async () => {
+    const { service, methods } = mockService();
+    const outputPath = path.join(tempRoot, "sku-index.md");
+    const t = collect(service);
+
+    expect(await main(["edm", "export-index", "kingsyard", "--output", outputPath, "--json"], t.io)).toBe(EXIT.OK);
+    expect(methods.edm.renderIndex).toHaveBeenCalledWith("kingsyard");
+    expect(await readFile(outputPath, "utf8")).toBe("# Synthetic EDM\n");
+
+    expect(await main(["edm", "export-index", "kingsyard", "--output", outputPath, "--json"], t.io)).toBe(EXIT.OK);
+    expect(parseEnvelope<{ status: string }>(t.stdout.at(-1)!).data).toMatchObject({ status: "unchanged" });
+
+    const protectedPath = path.join(tempRoot, "keep.md");
+    await writeFile(protectedPath, "user content\n", "utf8");
+    const conflict = collect(service);
+    expect(await main(["edm", "export-index", "kingsyard", "--output", protectedPath, "--json"], conflict.io))
+      .toBe(EXIT.VALIDATION_FAILED);
+    expect(parseEnvelope(conflict.stdout[0]!).error?.code).toBe("EDM_INDEX_CONFLICT");
+    expect(await readFile(protectedPath, "utf8")).toBe("user content\n");
+
+    const missingOutput = collect(service);
+    expect(await main(["edm", "export-index", "kingsyard", "--json"], missingOutput.io)).toBe(EXIT.BAD_ARGS);
+  }, 15_000);
 
   it("routes detect, init, feed inspect and run options to core", async () => {
     const { service, methods } = mockService();

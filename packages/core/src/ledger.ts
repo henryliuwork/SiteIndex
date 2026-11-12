@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CSV_HEADERS, LEDGER_PATHS, pathsFor, type PathKey, type SiteIndexError } from "@siteindex/shared";
-import { readCsv, writeCsv } from "./io/csv";
+import { parseCsv, writeCsv } from "./io/csv";
 import { readJsonl, type JsonRecord, writeJsonl } from "./io/jsonl";
 import { resolveProjectLayout } from "./io/project-layout";
 import { assertProjectStorageLocal } from "./io/project-storage";
@@ -30,12 +30,23 @@ interface LedgerSpec {
   schema: string;
   format: "csv" | "jsonl";
   headers?: readonly string[];
+  acceptedHeaders?: readonly (readonly string[])[];
 }
 
 const LEDGER_SPECS: Record<LedgerName, LedgerSpec> = {
   keywords: { schema: "keyword", format: "jsonl" },
   sku_media: { schema: "sku_media", format: "csv", headers: CSV_HEADERS.skuMedia },
-  sku_tags: { schema: "sku_tags", format: "csv", headers: CSV_HEADERS.skuTags },
+  // 早期模板只有六列；这些字段均保留在后续表头中，可安全升级到 V2。
+  sku_tags: {
+    schema: "sku_tags",
+    format: "csv",
+    headers: CSV_HEADERS.skuTagsV2,
+    acceptedHeaders: [
+      ["sku", "tags", "priority", "exclude_edm", "note", "updated_at"],
+      CSV_HEADERS.skuTags,
+      CSV_HEADERS.skuTagsV2,
+    ],
+  },
   edm_campaigns: { schema: "edm_campaign", format: "jsonl" },
   outreach: { schema: "outreach_contact", format: "jsonl" },
 };
@@ -138,7 +149,23 @@ async function mutateLedger(
 
   const paths = pathsFor(await resolveProjectLayout(projectPath));
   const filePath = path.join(projectPath, paths[LEDGER_PATH_KEYS[ledger]]);
-  const current = spec.format === "csv" ? await readCsv(filePath) : await readJsonl(filePath);
+  let current: JsonRecord[];
+  if (spec.format === "csv") {
+    let source: string | null;
+    try { source = await readFile(filePath, "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") source = null;
+      else throw error;
+    }
+    if (source === null) current = [];
+    else {
+      const header = source.replace(/^\uFEFF/u, "").split(/\r?\n/u, 1)[0] ?? "";
+      if (spec.acceptedHeaders && !spec.acceptedHeaders.some((candidate) => candidate.join(",") === header)) {
+        throw configError(`台账 ${ledger} 的 CSV 表头无法识别，未修改原文件。`);
+      }
+      current = parseCsv(source, filePath) as JsonRecord[];
+    }
+  } else current = await readJsonl(filePath);
   const indexed = new Map<string, JsonRecord>();
   for (const row of current) indexed.set(rowKey(row, primaryKey), row);
 

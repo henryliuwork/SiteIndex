@@ -13,6 +13,7 @@ import type { CsvRow } from "../io/csv";
 import { compareKeys } from "../io/compare";
 import { groupProductRows } from "../products/parent-view";
 import type { SiteIndexError } from "@siteindex/shared";
+import { currencyMinorDigits } from "./currency";
 
 const GENERATED_MARKER = "<!-- siteindex:generated:edm-sku-index:v1 -->";
 const TABLE_HEADER = "| SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存 |";
@@ -25,6 +26,8 @@ export interface EdmSkuIndexInput {
   stock: readonly SkuStockView[];
   skuMedia: readonly CsvRow[];
   skuTags: readonly CsvRow[];
+  siteCurrency: string;
+  discountTiers?: readonly number[];
   grouping?: { enabled: boolean; rule: Parameters<typeof groupProductRows>[3] };
 }
 
@@ -39,6 +42,7 @@ interface ExportRow {
   product: ProductView;
   representativeSku: string;
   originalPrice: number | null;
+  currency: string;
   stockStatus: StockStatus;
 }
 
@@ -101,9 +105,56 @@ function markdownCell(value: string | number | null | undefined): string {
     .replace(/\r\n|\r|\n/g, "<br>");
 }
 
-function money(value: number | null | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "";
-  return String(Object.is(value, -0) ? 0 : value);
+export function configuredDiscountTiers(values: unknown): Set<number> {
+  if (values === undefined) return new Set();
+  if (!Array.isArray(values)) throw safeError("CONFIG_INVALID", "EDM 折扣档配置必须是整数数组。");
+  const tiers: number[] = [];
+  for (const value of values as unknown[]) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 99) {
+      throw safeError("CONFIG_INVALID", "EDM 折扣档配置必须是互不重复的 1 到 99 整数。");
+    }
+    tiers.push(value);
+  }
+  if (new Set(tiers).size !== tiers.length) {
+    throw safeError("CONFIG_INVALID", "EDM 折扣档配置必须是互不重复的 1 到 99 整数。");
+  }
+  return new Set(tiers);
+}
+
+function decimalParts(value: number): { coefficient: bigint; scale: number } | null {
+  if (!Number.isFinite(value) || value < 0) return null;
+  const [mantissa = "0", exponentText] = value.toString().toLowerCase().split("e");
+  const exponent = exponentText ? Number(exponentText) : 0;
+  const decimalPoint = mantissa.indexOf(".");
+  const digits = mantissa.replace(".", "");
+  let scale = (decimalPoint < 0 ? 0 : mantissa.length - decimalPoint - 1) - exponent;
+  let coefficient = BigInt(digits || "0");
+  if (scale < 0) {
+    coefficient *= 10n ** BigInt(-scale);
+    scale = 0;
+  }
+  return { coefficient, scale };
+}
+
+function moneyMinorUnits(value: number | null, digits: number, percentage: number): string {
+  if (value === null) return "";
+  const decimal = decimalParts(value);
+  if (!decimal) return "";
+  const scale = 10n ** BigInt(decimal.scale);
+  const unit = 10n ** BigInt(digits);
+  const denominator = 100n * scale;
+  const numerator = decimal.coefficient * BigInt(percentage) * unit;
+  const minorUnits = (numerator + denominator / 2n) / denominator;
+  if (digits === 0) return String(minorUnits);
+  const whole = minorUnits / unit;
+  const fraction = String(minorUnits % unit).padStart(digits, "0");
+  return `${whole}.${fraction}`;
+}
+
+function selectedTier(value: string | null | undefined, tiers: ReadonlySet<number>): number | null {
+  if (typeof value !== "string" || !/^\d+$/u.test(value)) return null;
+  const tier = Number(value);
+  return Number.isInteger(tier) && tiers.has(tier) ? tier : null;
 }
 
 function latestLedgerRows(rows: readonly CsvRow[], key: string): Map<string, CsvRow> {
@@ -142,6 +193,7 @@ function exportRows(input: EdmSkuIndexInput): ExportRow[] {
         product,
         representativeSku: representative,
         originalPrice: representativeRecord.price,
+        currency: representativeRecord.currency,
         stockStatus: product.stock_status,
       });
       continue;
@@ -156,6 +208,7 @@ function exportRows(input: EdmSkuIndexInput): ExportRow[] {
         product,
         representativeSku: sku,
         originalPrice: record.price,
+        currency: record.currency,
         stockStatus: stockBySku.get(sku)?.stock_status ?? "unknown",
       });
     }
@@ -163,19 +216,30 @@ function exportRows(input: EdmSkuIndexInput): ExportRow[] {
   return rows.sort((left, right) => compareKeys(left.sku, right.sku));
 }
 
-/** Renders only deterministic project data; discount tiers remain blank until their business rule is defined. */
+/** Renders deterministic prices using each canonical SKU row's explicitly selected discount tier. */
 export function renderEdmSkuIndex(input: EdmSkuIndexInput): RenderedEdmSkuIndex {
   const mediaBySku = latestLedgerRows(input.skuMedia.filter((row) => row.image_role === "main"), "sku");
   const tagsBySku = latestLedgerRows(input.skuTags, "sku");
   const activeBySku = new Map(input.skus.filter((sku) => sku.status === "active").map((sku) => [sku.sku, sku]));
   const rows = exportRows(input);
+  const tiers = configuredDiscountTiers(input.discountTiers);
+  const siteCurrency = typeof input.siteCurrency === "string" ? input.siteCurrency.toUpperCase() : "";
+  const siteDigits = currencyMinorDigits(input.siteCurrency);
+  if (rows.length && siteDigits === null) {
+    throw safeError("EDM_CURRENCY_INVALID", "项目币种无效或暂不支持，无法渲染 EDM 清单。");
+  }
   let missingImageCount = 0;
-  const table = rows.map(({ sku, product, representativeSku, originalPrice, stockStatus }) => {
+  const table = rows.map(({ sku, product, representativeSku, originalPrice, currency, stockStatus }) => {
     const representative = activeBySku.get(representativeSku);
+    const skuDigits = currencyMinorDigits(currency);
+    if (skuDigits === null || currency.toUpperCase() !== siteCurrency || skuDigits !== siteDigits) {
+      throw safeError("EDM_CURRENCY_INVALID", "商品币种与项目币种不一致或暂不支持，无法渲染 EDM 清单。");
+    }
     const manualImage = supportedImageUrl(mediaBySku.get(representativeSku)?.image_url);
     const feedImage = supportedImageUrl(representative?.image_url);
     const image = manualImage.url ? manualImage : feedImage;
     const tag = tagsBySku.get(sku) ?? tagsBySku.get(representativeSku);
+    const tier = selectedTier(tagsBySku.get(sku)?.discount_tier, tiers);
     if (!image.url) missingImageCount += 1;
     const url = normalizePublicUrl(product.url, product.skus);
     const cells = [
@@ -184,8 +248,8 @@ export function renderEdmSkuIndex(input: EdmSkuIndexInput): RenderedEdmSkuIndex 
       typeof tag?.email_blurb === "string" ? tag.email_blurb : "",
       url.url ?? (url.needsReview ? "链接待确认（原链接含未识别参数）" : ""),
       image.url ?? (manualImage.needsReview || feedImage.needsReview ? "待补图（原图片链接含未识别参数）" : "待补图"),
-      money(originalPrice),
-      "", // Discount tier selection and rounding are intentionally pending product decisions.
+      moneyMinorUnits(originalPrice, skuDigits, 100),
+      tier === null ? "" : moneyMinorUnits(originalPrice, skuDigits, 100 - tier),
       stockStatus,
     ];
     return `| ${cells.map(markdownCell).join(" | ")} |`;

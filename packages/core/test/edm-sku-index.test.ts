@@ -55,6 +55,8 @@ async function fixtureInput(layout: ProjectLayout, mediaFile: string): Promise<E
     stock: parseJsonl<SkuStockView>(stockText),
     skuMedia: parseCsv(mediaText, mediaFile),
     skuTags: parseCsv(tagsText, "sku-tags.csv"),
+    siteCurrency: site.currency,
+    discountTiers: site.edm?.discount_tiers,
     grouping: site.sku_grouping,
   };
 }
@@ -93,6 +95,72 @@ describe("EDM SKU index rendering", () => {
       skuCount: 3,
       missingImageCount: 1,
     });
+  });
+
+  it("uses each canonical row's configured tier and never inherits a child tier for its parent", async () => {
+    const input = await fixtureInput("legacy", "sku-media-legacy.csv");
+    const skus = input.skus.map((sku) => sku.sku.startsWith("DEMO-GROUP") ? { ...sku, price: 19.94 } : sku);
+    const selectedTiers = new Map([
+      ["DEMO-GROUP01", "15"],
+      ["DEMO-GROUP02", "15"],
+      ["DEMO-SINGLE", "15"],
+    ]);
+    const skuTags = input.skuTags.map((row) => {
+      const tier = selectedTiers.get(String(row.sku));
+      return tier ? { ...row, discount_tier: tier, updated_at: "2099-01-01" } : row;
+    });
+    if (!skuTags.some((row) => row.sku === "DEMO-GROUP")) {
+      skuTags.push({ sku: "DEMO-GROUP", discount_tier: "", updated_at: "2099-01-01" });
+    }
+    skuTags.push({ sku: "DEMO-NOIMAGE", discount_tier: "99" });
+
+    const unselectedParent = renderEdmSkuIndex({ ...input, skus, skuTags });
+    const unselectedParentLine = unselectedParent.content.split("\n").find((line) => line.startsWith("| DEMO-GROUP |"));
+    expect(unselectedParentLine).toContain("| 19.94 |  | ");
+
+    const parentSelectedTags = skuTags.map((row) => row.sku === "DEMO-GROUP"
+      ? { ...row, discount_tier: "25", updated_at: "2099-01-02" }
+      : row);
+    const grouped = renderEdmSkuIndex({ ...input, skus, skuTags: parentSelectedTags });
+    const parentLine = grouped.content.split("\n").find((line) => line.startsWith("| DEMO-GROUP |"));
+    expect(parentLine).toContain("| 19.94 | 14.96 |");
+
+    const singleRows = renderEdmSkuIndex({ ...input, grouping: { ...input.grouping!, enabled: false }, skuTags });
+    const selectedLine = singleRows.content.split("\n").find((line) => line.startsWith("| DEMO-SINGLE |"));
+    const unselectedLine = singleRows.content.split("\n").find((line) => line.startsWith("| DEMO-NOIMAGE |"));
+    expect(selectedLine).toContain("| 12.50 | 10.63 |");
+    expect(unselectedLine).toContain("| 8.50 |  | ");
+  });
+
+  it("formats zero-, two-, and three-digit currencies with decimal half-up rounding", async () => {
+    const input = await fixtureInput("legacy", "sku-media-legacy.csv");
+    const single = input.products.find((product) => product.product_id === "PRODUCT-SINGLE")!;
+    const singleSku = input.skus.find((sku) => sku.sku === "DEMO-SINGLE")!;
+    const singleStock = input.stock.find((row) => row.sku === "DEMO-SINGLE")!;
+    const base = {
+      ...input,
+      products: [single],
+      stock: [singleStock],
+      skuMedia: [],
+      grouping: { ...input.grouping!, enabled: false },
+      skuTags: [{ sku: "DEMO-SINGLE", discount_tier: "50" }],
+      discountTiers: [50],
+    };
+
+    const jpy = renderEdmSkuIndex({ ...base, siteCurrency: "JPY", skus: [{ ...singleSku, price: 13, currency: "JPY" }] });
+    expect(jpy.content).toContain("| 13 | 7 |");
+    const kwd = renderEdmSkuIndex({ ...base, siteCurrency: "KWD", skus: [{ ...singleSku, price: 19.94, currency: "KWD" }], discountTiers: [25], skuTags: [{ sku: "DEMO-SINGLE", discount_tier: "25" }] });
+    expect(kwd.content).toContain("| 19.940 | 14.955 |");
+    const kwdTie = renderEdmSkuIndex({ ...base, siteCurrency: "KWD", skus: [{ ...singleSku, price: 1.001, currency: "KWD" }], discountTiers: [50], skuTags: [{ sku: "DEMO-SINGLE", discount_tier: "50" }] });
+    expect(kwdTie.content).toContain("| 1.001 | 0.501 |");
+  });
+
+  it("fails closed when the project or SKU currency is unknown or mismatched", async () => {
+    const input = await fixtureInput("legacy", "sku-media-legacy.csv");
+    expect(() => renderEdmSkuIndex({ ...input, siteCurrency: "ZZZ" }))
+      .toThrow(expect.objectContaining({ code: "EDM_CURRENCY_INVALID" }));
+    expect(() => renderEdmSkuIndex({ ...input, skus: input.skus.map((sku) => ({ ...sku, currency: "EUR" })) }))
+      .toThrow(expect.objectContaining({ code: "EDM_CURRENCY_INVALID" }));
   });
 
   it("marks unrecognized product and image query values for review instead of emitting stripped URLs", async () => {
@@ -198,6 +266,25 @@ describe("EDM SKU index service and safe file boundary", () => {
     expect(await fileExists(path.dirname(output))).toBe(false);
     expect(await readFile(mediaLedgerPath)).toEqual(mediaLedgerBefore);
   });
+
+  it("validates tier selections, writes the V2 ledger, and supports clearing", async () => {
+    const projectPath = await projectFor("legacy", "sku-media-legacy.csv");
+    const api = core(projectPath);
+    const ledgerPath = path.join(projectPath, pathsFor("legacy").skuTags);
+
+    await expect(api.edm.setDiscountTier("synthetic", "DEMO-SINGLE", 15))
+      .resolves.toEqual({ sku: "DEMO-SINGLE", discount_tier: 15 });
+    expect((await readFile(ledgerPath, "utf8")).split("\n", 1)[0]).toBe("sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at,discount_tier");
+    expect(parseCsv(await readFile(ledgerPath, "utf8"), ledgerPath).find((row) => row.sku === "DEMO-SINGLE")?.discount_tier).toBe("15");
+    const beforeInvalid = await readFile(ledgerPath);
+    await expect(api.edm.setDiscountTier("synthetic", "DEMO-SINGLE", 30))
+      .rejects.toMatchObject({ code: "EDM_DISCOUNT_TIER_INVALID" });
+    expect(await readFile(ledgerPath)).toEqual(beforeInvalid);
+
+    await expect(api.edm.setDiscountTier("synthetic", "DEMO-SINGLE", null))
+      .resolves.toEqual({ sku: "DEMO-SINGLE", discount_tier: null });
+    expect(parseCsv(await readFile(ledgerPath, "utf8"), ledgerPath).find((row) => row.sku === "DEMO-SINGLE")?.discount_tier).toBeNull();
+  }, 15_000);
 
   it("does not write outside the project when an ancestor becomes a junction after validation", async () => {
     const projectPath = await projectFor("legacy", "sku-media-legacy.csv");

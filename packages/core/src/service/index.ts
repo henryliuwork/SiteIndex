@@ -78,6 +78,7 @@ import { atomicWrite } from "../io/atomic-write";
 import { parseCsv, readCsv, writeCsv, type CsvRow } from "../io/csv";
 import { compareKeys } from "../io/compare";
 import { parseJsonl, readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
+import { upsertLedger } from "../ledger";
 import { pathsForProject, resolveProjectLayout } from "../io/project-layout";
 import { assertProjectStorageLocal, inspectProjectStorageLocation } from "../io/project-storage";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
@@ -109,7 +110,7 @@ import { launchChromium, type BrowserLauncher } from "../browser/automation";
 import { runDesign } from "../jobs/design";
 import { runIndexCheck } from "../jobs/index-check";
 import { runMediaJob, type WordPressCredential } from "../jobs/media";
-import { renderEdmSkuIndex } from "../edm/sku-index";
+import { configuredDiscountTiers, renderEdmSkuIndex } from "../edm/sku-index";
 import {
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,
@@ -163,7 +164,8 @@ export interface CoreService {
     getRuleSettings: NonNullable<SiteIndexApi["seo"]["getRuleSettings"]>;
   };
   content: SiteIndexApi["content"];
-  edm: SiteIndexApi["edm"] & {
+  edm: Omit<SiteIndexApi["edm"], "setDiscountTier"> & {
+    setDiscountTier: NonNullable<SiteIndexApi["edm"]["setDiscountTier"]>;
     renderIndex(id: ProjectId): Promise<{ content: string; sku_count: number; missing_image_count: number }>;
   };
   design: SiteIndexApi["design"];
@@ -2502,6 +2504,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             stock: snapshot.skuStock,
             skuMedia: snapshot.skuMedia,
             skuTags: snapshot.skuTags,
+            siteCurrency: snapshot.config.currency,
+            discountTiers: snapshot.config.edm?.discount_tiers,
             grouping: snapshot.config.sku_grouping,
           });
           return {
@@ -2521,6 +2525,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
                 throw siteError("PROJECT_NOT_FOUND", "找不到项目配置文件，无法渲染 EDM 清单。");
               case "CONFIG_INVALID":
                 throw siteError("CONFIG_INVALID", "项目配置无效，无法渲染 EDM 清单。");
+              case "EDM_CURRENCY_INVALID":
+                throw siteError(error.code, error.message);
               default:
                 throw siteError("WRITE_FAILED", "读取项目数据或渲染 EDM 清单失败。");
             }
@@ -2528,6 +2534,20 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           throw siteError("WRITE_FAILED", "读取项目数据或渲染 EDM SKU 清单失败。");
         }
       }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "edm-render-index" });
+    },
+    setDiscountTier: async (id, sku, discountTier) => {
+      const projectPath = resolve(id);
+      return withLock(projectPath, async () => {
+        await recoverDailyOutputTransaction(projectPath, pathsFor(await resolveProjectLayout(projectPath)));
+        const snapshot = await load(projectPath);
+        const tiers = configuredDiscountTiers(snapshot.config.edm?.discount_tiers);
+        if (discountTier !== null && (!Number.isInteger(discountTier) || !tiers.has(discountTier))) {
+          throw siteError("EDM_DISCOUNT_TIER_INVALID", "折扣档位必须是项目已配置的百分比。");
+        }
+        await upsertLedger(projectPath, "sku_tags", [{ sku, discount_tier: discountTier }]);
+        invalidate(projectPath);
+        return { sku, discount_tier: discountTier };
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "edm-set-discount-tier" });
     },
     summary: async (id) => {
       const snapshot = await load(resolve(id));
