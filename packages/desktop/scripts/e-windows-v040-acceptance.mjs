@@ -22,6 +22,7 @@ import { chromium } from "playwright-core";
 import { runWordPressCredentialsUiSmoke } from "../../ui/visual/wordpress-credentials-smoke.mjs";
 import { createCredentialRegionWaitPage } from "./credential-region-wait.mjs";
 import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
+import { attachCredentialIsolationOracle } from "./e-windows-v041-credential-oracle.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
 import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
 import {
@@ -112,6 +113,21 @@ const report = {
   candidateReleaseArtifactSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_SHA256 || null,
   candidateReleaseArtifactExeSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_EXE_SHA256 || null,
   candidateUpdateMetadataVerified: process.env.SITEINDEX_CANDIDATE_UPDATE_METADATA_VERIFIED === "true",
+  candidatePin: {
+    mode: HOSTED_UPDATE ? "published-github-release" : "candidate-installer",
+    version: CANDIDATE_VERSION,
+    acceptanceSourceCommit: process.env.SITEINDEX_EXPECTED_SOURCE_COMMIT || null,
+    releaseCommit: process.env.SITEINDEX_CANDIDATE_RELEASE_COMMIT || null,
+    releaseAssetId: process.env.SITEINDEX_CANDIDATE_RELEASE_ASSET_ID || null,
+    releaseAssetSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ASSET_SHA256 || null,
+    releaseWorkflowRunId: process.env.SITEINDEX_CANDIDATE_RELEASE_RUN_ID || null,
+    windowsArtifactId: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_ID || null,
+    windowsArtifactSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_SHA256 || null,
+    windowsArtifactExeSha256: process.env.SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_EXE_SHA256 || null,
+    latestYmlVerified: process.env.SITEINDEX_CANDIDATE_UPDATE_METADATA_VERIFIED === "true",
+    status: HOSTED_UPDATE ? "pending" : "not-applicable",
+  },
+  credentialIsolationOracle: { passed: false, failureCodes: ["NOT_EVALUATED"] },
   updateMode: HOSTED_UPDATE ? "published-github-release" : "candidate-installer",
   updaterRestart: {
     detected: false,
@@ -3083,6 +3099,7 @@ async function main() {
         artifactSha256: report.candidateReleaseArtifactExeSha256,
         releaseAssetSha256: report.candidateInstallerSha256,
       });
+    report.candidatePin.status = "verified";
   }
   report.sourceCommit = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
   const expectedCandidateHash = process.env.SITEINDEX_EXPECTED_CANDIDATE_SHA256?.trim().toLowerCase();
@@ -3271,6 +3288,8 @@ async function writeReport() {
     `- Candidate Release asset SHA256: \`${report.candidateReleaseAssetSha256 ?? "n/a"}\``,
     `- Candidate Release run / Windows artifact: \`${report.candidateReleaseWorkflowRunId ?? "n/a"}\` / \`${report.candidateReleaseArtifactId ?? "n/a"}\``,
     `- Candidate artifact ZIP SHA256 / installer SHA256: \`${report.candidateReleaseArtifactSha256 ?? "n/a"}\` / \`${report.candidateReleaseArtifactExeSha256 ?? "n/a"}\``,
+    `- Candidate pin: ${JSON.stringify(report.candidatePin)}`,
+    `- #461 credential-isolation oracle: ${report.credentialIsolationOracle.passed ? "PASSED" : "FAILED"} (${report.credentialIsolationOracle.failureCodes.join(", ") || "none"})`,
     `- Update mode: ${report.updateMode}`,
     `- User data isolation: ${report.userDataIsolation}`,
     `- Installer launched app before harness: ${report.installerStartedAppBeforeHarness ?? "not checked"}`,
@@ -3377,11 +3396,18 @@ try {
     if (outputScan.matchingFileCount > 0) {
       failed ??= { stage: "credential_artifact_scan", code: "SYNTHETIC_CREDENTIAL_FOUND", reason: "Synthetic credential values were found in the generated acceptance artifact." };
     }
-    await writeReport();
   } catch (error) {
     failed ??= { stage: "credential_artifact_scan", code: "CREDENTIAL_SCAN_FAILED", reason: safeMessage(error) };
-    await writeReport();
   }
+  const oracleResult = attachCredentialIsolationOracle(report, CREDENTIAL_CANARY_VALUES);
+  if (!oracleResult.passed) {
+    failed ??= {
+      stage: "credential_report_oracle",
+      code: "CREDENTIAL_ISOLATION_ORACLE_FAILED",
+      reason: oracleResult.failureCodes.join(",") || "ORACLE_REJECTED_REPORT",
+    };
+  }
+  await writeReport();
 }
 
 if (failed || report.w2Acceptance.checks.some((check) => check.status === "failed")) process.exitCode = 1;
