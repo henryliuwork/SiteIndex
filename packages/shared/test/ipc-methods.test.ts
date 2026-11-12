@@ -92,10 +92,12 @@ describe("shared IPC method contract", () => {
     const legacyEdm: Pick<SiteIndexApi["edm"], "setDiscountTier"> = {};
     const unselectedTag: SkuTags = { ...oldTagRow };
     const invalidTierError: SiteIndexErrorCode = "EDM_DISCOUNT_TIER_INVALID";
+    const invalidCurrencyError: SiteIndexErrorCode = "EDM_CURRENCY_INVALID";
 
     expect(legacyEdm.setDiscountTier).toBeUndefined();
     expect(unselectedTag.discount_tier).toBeUndefined();
     expect(invalidTierError).toBe("EDM_DISCOUNT_TIER_INVALID");
+    expect(invalidCurrencyError).toBe("EDM_CURRENCY_INVALID");
     expect(API_INVOKE_METHODS).toContain("edm.setDiscountTier");
     expect(PENDING_HANDLERS).toContain("edm.setDiscountTier");
     expect(CSV_HEADERS.skuTagsV2.slice(-1)).toEqual(["discount_tier"]);

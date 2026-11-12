@@ -44,6 +44,12 @@
     "updated_at": {
       "type": "string",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "discount_tier": {
+      "description": "Optional selected EDM discount percentage; the configured site.edm.discount_tiers must also contain it.",
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 99
     }
   },
   "required": [

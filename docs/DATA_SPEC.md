@@ -68,8 +68,8 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 - 文件首行是 `<!-- siteindex:generated:edm-sku-index:v1 -->`，其后为 `# EDM SKU Index` 标题、空行、Markdown 表格；表头顺序固定为 `SKU | 标题 | 短描述 | URL | 图片 URL | 原价 | 折扣价 | 库存`，随后一行使用相同列数的 `---` 分隔符。单元格先将 `\` 写为 `\\`，再将 `|` 写为 `\|`，CR/LF 换行写为 `<br>`；null/缺值为空单元格。金额使用不带千位分隔符和货币符号的十进制数，URL 使用规范化 HTTP(S) 地址。
 - 按父 SKU 聚合时使用 roadmap §4.4 规定的代表子 SKU；图片优先使用 `image_role=main` 的台账图片，其次使用 feed 首图。EDM 清单排除 WebP；无可用图时写“待补图”。短描述来自 `sku_tags.email_blurb`。
 - `edm.discount_tiers` 是用户可选的百分比档位数组，元素必须是互不重复的整数 `1..99`；省略或空数组表示未启用折扣。每个 canonical 导出行必须单独选择其中一个档位；不推断、不按行顺序分配，也不自动采用最高/最低档。选择值保存在 `sku_tags.discount_tier`，其 CSV 列追加在 `updated_at` 后。缺少该列、缺少记录、空值或 null 都表示未选择，输出“折扣价”空单元格；旧台账无需迁移即可读取。未配置的值或不是整数 `1..99` 的值在已有台账中按未选择处理；通过 `edm.setDiscountTier` 写入不存在于配置列表中的值时返回 `EDM_DISCOUNT_TIER_INVALID`，不修改文件。配置数组含重复项、非整数或越界项时按 `CONFIG_INVALID` 处理。
-- 普通导出行的选择键为真实 SKU；父子分组导出行的选择键为确定性生成的父 SKU。父行不继承子 SKU 的档位，避免代表子 SKU 随库存变化而令导出价格改变。清除选择使用 null。UI 选择入口属于 D 的 `EdmPage`，使用项目配置列出档位并通过可选的 `edm.setDiscountTier` 保存；旧 bridge 不提供该方法时必须禁用选择并保持只读。
-- 折扣价以当前 feed 有效售价 `price` 为基数（包括 feed 当前有效的 `sale_price`），按 `price * (100 - discount_tier) / 100` 计算；已有效的 feed sale 仍作为当前售价继续计算此档，不回退到 `compare_at_price`。父行使用既定代表子 SKU 的当前有效售价。金额按 `site.json.currency` 的 ISO 4217 最小单位进行十进制 half-up 舍入；不使用二进制浮点格式化来决定舍入结果。
+- 普通导出行的选择键为真实 SKU；父子分组导出行的选择键为确定性生成的父 SKU。父行读取并写入父键自己的档位，明确取代“沿用代表子 SKU 档位”的旧草案；不得从任何子 SKU 继承，也不得向子 SKU 批量传播。规则变化后暂时不再生成的父键台账行应保留并报告为失联引用，不得由自动整理删除；再次生成同一父键时恢复使用。父键只作为清单行键，不创建虚拟库存。清除选择使用 null。UI 选择入口属于 D 的 `EdmPage`，使用项目配置列出档位并通过可选的 `edm.setDiscountTier` 保存；旧 bridge 不提供该方法时必须禁用选择并保持只读。
+- 折扣价以当前 feed 有效售价 `price` 为基数（包括 feed 当前有效的 `sale_price`），按 `price * (100 - discount_tier) / 100` 计算；已有效的 feed sale 仍作为当前售价继续计算此档，不回退到 `compare_at_price`。父行使用既定代表子 SKU 的当前有效售价。每个导出行的 `site.json.currency` 与所用 SKU 的 `currency` 必须是已知 ISO 4217 字母代码并一致（大小写归一后比较）；任一导出行未知、缺失或不一致时，整个 render/export 以 `EDM_CURRENCY_INVALID` 失败且不生成/替换目标文件。Core 使用固定的 ISO 4217 币种小数位表；支持 0、2、3 位，其他或未知币种 fail closed。原价与折扣价都格式化为对应的固定小数位（例如 JPY `1250`、USD `12.50`、KWD `12.500`），不带符号或千分位。折扣乘法采用十进制精确计算，在目标币种最小单位上按 half-up 舍入（非负中点进位）；不得用二进制浮点格式化决定结果。
 - 同一份输入必须产生字节一致的清单：SKU 字典序按 `compareKeys`，不含生成时间、不依赖本机 locale、用户保存位置或遍历顺序；UTF-8 无 BOM、LF、末尾一个换行。用户选定目标后，若已有文件字节已与渲染结果一致则返回 `unchanged` 且不重写；新建目标返回 `created`，实际替换已有目标返回 `updated`。
 - 写入可能已经完成但 Desktop IPC 确认丢失时返回 `EDM_EXPORT_OUTCOME_UNKNOWN`（中文 message：“清单写入结果暂无法确认，可重新生成以核对。”）；调用方不得把它当作“未写入”或自动盲目重试。目标占用或无权限等确认未写入错误使用 `WRITE_FAILED`；所有错误 message/detail 不得泄露绝对路径、凭据或原始服务响应。旧 bridge 返回的 `path` 仅为迁移兼容，新 bridge 不返回该字段。
 
@@ -215,7 +215,9 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 - `media_id` 为 WordPress 媒体 ID；`source_hash` 为原始图片内容指纹，用于同 SKU、同源图的重试去重。凭据不得写入此台账。
 
 ### 5.13 `ledgers/sku_tags.csv`（★sku · 台账）
-`sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at,discount_tier`；`discount_tier` 为可选整数百分比；旧文件可缺少末列，读取时按未选择处理。tags 小写 `;` 分隔；以产品为单位操作时写入该产品全部 active 变体
+旧表头为 `sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at`；V2 表头只在末尾追加 `discount_tier`。读取与校验必须接受这两个精确表头；旧表头等价于每行 `discount_tier=null`。`discount_tier` 为可选整数 `1..99`，并且在该项目 `edm.discount_tiers` 中配置。任何新建或修改写入（包括 upsert、删除后重写、autofix 整理）均输出 V2，保留已存在的档位值；从旧表升级时末列为空。不能识别的表头应报错并保持原文件，不可通过 autofix 丢弃未知列。旧版软件不会保留 V2 新列，用户若要保留选档，应避免用不支持该列的旧版软件写入台账。
+
+普通行的 `sku` 键为实际 feed SKU；父行折扣选择使用 `sku_grouping` 当前规则确定性生成的父 SKU 键，校验引用时须承认当前有效父键。父键不是库存 SKU，不得据此创建 SKU、库存行或价格历史。过期父键行必须保留并作为失联引用提示，自动整理不得删除其中的折扣档位。tags 小写 `;` 分隔；以产品为单位操作时写入该产品全部 active 变体
 
 ### 5.14 `ledgers/edm_campaigns.jsonl`（★campaign_id · 台账）
 `campaign_id`★(`YYYY-MM-DD-slug`) `date`✓ `theme`✓ `status`✓(`draft`/`scheduled`/`sent`) `subject` `preheader` `audience` `handles`✓ `promo_code` `utm_campaign` `mailchimp_campaign_id` `send_date` + 预留：`recipients` `open_rate` `click_rate` `orders` `revenue`

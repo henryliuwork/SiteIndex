@@ -583,7 +583,7 @@ export interface SiteIndexApi {
     summary(id: ProjectId): Promise<{ total: number; feed: number; manual: number; none: number }>;
     listImages(id: ProjectId, q: ListQuery<SkuImageFilters>): Promise<PageResult<SkuImageRow>>;
     setManualImage(id: ProjectId, sku: string, url: string | null): Promise<SkuImageRow>;
-    /** 设置清单行的折扣档位；仅接受 site.json.edm.discount_tiers 中已配置的百分比，null 清除选择。旧 bridge 可不提供。 */
+    /** 按 canonical 导出行键（真实 SKU 或当前规则生成的父 SKU）设置折扣档位，不向父子行传播；仅接受 site.json.edm.discount_tiers 中的百分比，null 清除。旧 bridge 可不提供。 */
     setDiscountTier?(id: ProjectId, sku: string, discountTier: number | null): Promise<{ sku: string; discount_tier: number | null }>;
     buildCommand(id: ProjectId, input: EdmCommandInput): Promise<string>;
     /**

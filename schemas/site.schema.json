@@ -8,7 +8,7 @@
     "domain": { "type": "string", "pattern": "^(?!https?://)[a-z0-9.-]+$" },
     "base_url": { "type": "string", "format": "uri" },
     "platform": { "enum": ["magento", "wordpress", "woocommerce", "shopify", "other"] },
-    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "currency": { "type": "string", "pattern": "^[A-Za-z]{3}$" },
     "locale": { "type": "string" },
     "timezone": { "type": "string" },
     "markets": { "type": "array", "items": { "type": "string" } },
@@ -116,7 +116,13 @@
         "max_products": { "type": "integer", "minimum": 1 },
         "cooldown_days": { "type": "integer", "minimum": 0 },
         "utm": { "type": "object" },
-        "image_priority": { "type": "array", "items": { "enum": ["feed", "manual"] } }
+        "image_priority": { "type": "array", "items": { "enum": ["feed", "manual"] } },
+        "discount_tiers": {
+          "description": "Optional EDM discount percentages. Values are unique whole percentages from 1 through 99.",
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 99 },
+          "uniqueItems": true
+        }
       }
     },
     "workspace_folders": { "deprecated": true, "type": "array", "items": { "type": "object", "required": ["name", "default"], "properties": { "name": { "type": "string" }, "default": { "type": "boolean" } } } },
