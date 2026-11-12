@@ -100,6 +100,7 @@ function localReclaimClaimStatusKey(file: string, token: string): string {
 
 /** @internal Deterministic synchronization hooks for cross-process lock regression tests. */
 export interface RunnerLockTestHooks {
+  beforeExclusiveOpen?: (lockPath: string) => Promise<void>;
   afterStaleLockValidated?: () => Promise<void>;
   afterReclaimClaimPublished?: () => Promise<void>;
   afterReclaimClaimReadBeforePathCheck?: () => Promise<void>;
@@ -253,17 +254,52 @@ function processPresence(pid: number): ProcessPresence {
 
 async function openOrRecover(lockPath: string, currentHostId: string) {
   try {
+    await runnerLockTestHooks.getStore()?.beforeExclusiveOpen?.(lockPath);
     return await open(lockPath, "wx");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") {
+      // Only an existing regular file may be inspected as a lock record.
+      let existing: Awaited<ReturnType<typeof lstat>>;
+      try {
+        existing = await lstat(lockPath);
+      } catch (statError) {
+        if ((statError as NodeJS.ErrnoException).code === "ENOENT") {
+          throw lockError("项目运行锁刚刚更新，请稍后重试。");
+        }
+        throw lockError("无法确认项目运行锁类型；为避免并发写入，锁未回收。");
+      }
+      if (!existing.isFile() || existing.isSymbolicLink()) {
+        throw lockError("项目运行锁路径不是普通文件；为避免并发写入，锁未回收。");
+      }
+    } else if (code === "EPERM" || code === "EBUSY") {
+      // Windows can report a sharing/permission error while another process is
+      // creating the same lock entry. That is ambiguous with real access denial,
+      // so an existing path is treated as occupied and is never inspected/reclaimed.
+      try {
+        const existing = await lstat(lockPath);
+        if (!existing.isFile() || existing.isSymbolicLink()) {
+          throw lockError("项目运行锁路径不是普通文件；为避免并发写入，锁未回收。");
+        }
+      } catch (statError) {
+        if (statError instanceof CoreIOError) throw statError;
+        if ((statError as NodeJS.ErrnoException).code === "ENOENT") throw error;
+        throw lockError("无法确认项目运行锁类型；为避免并发写入，锁未回收。");
+      }
+      throw lockError("项目运行锁已存在或当前进程无权创建锁；为避免并发写入，锁未回收。");
+    } else {
+      throw error;
+    }
   }
 
   for (let attempt = 0; attempt <= LOCK_READ_RETRIES; attempt += 1) {
     let handle;
+    let recordReadComplete = false;
     try {
       handle = await open(lockPath, "r");
       const identity = await handle.stat();
       const text = await handle.readFile({ encoding: "utf8" });
+      recordReadComplete = true;
       let record: Partial<LockRecord> | null = null;
       let malformed = false;
       try {
@@ -329,6 +365,12 @@ async function openOrRecover(lockPath: string, currentHostId: string) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "EEXIST") {
         throw lockError("项目运行锁刚刚更新，请稍后重试。");
+      }
+      if (code === "EPERM" || code === "EBUSY") {
+        if (attempt < LOCK_READ_RETRIES) continue;
+        if (!recordReadComplete) {
+          throw lockError("无法安全读取项目运行锁；为避免并发写入，锁未回收。");
+        }
       }
       throw error;
     } finally {

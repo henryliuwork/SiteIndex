@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, link, mkdtemp, mkdir, readFile, readdir, realpath, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { lstat, link, mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -265,6 +265,84 @@ describe("core io", () => {
     await expect(withLock(root, () => "must not enter"))
       .rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
     await expect(readFile(path.join(root, PATHS.lock), "utf8")).resolves.toBe(staleLegacyLock);
+  });
+
+  it.each(["EPERM", "EBUSY"] as const)("does not reclaim a stale lock when exclusive creation reports %s", async (code) => {
+    const root = await tempDir();
+    const hostId = await currentHostId(root);
+    const lockPath = path.join(root, PATHS.lock);
+    const staleLock = JSON.stringify({
+      device_id: "stale-owner",
+      device_name: "test",
+      host_id: hostId,
+      pid: 424242,
+      job: "daily",
+      started_at: "2000-01-01T00:00:00.000Z",
+      heartbeat: "2000-01-01T00:00:00.000Z",
+    });
+    await writeFile(lockPath, staleLock);
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("process is gone"), { code: "ESRCH" });
+    });
+    const denied = Object.assign(new Error("injected access denied"), { code });
+    try {
+      await expect(withLockForTest(root, () => "must not enter", {}, {
+        beforeExclusiveOpen: async () => { throw denied; },
+      })).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+      await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it.each(["EPERM", "EBUSY"] as const)("preserves %s when no lock path exists", async (code) => {
+    const root = await tempDir();
+    const denied = Object.assign(new Error("injected access denied"), { code });
+
+    await expect(withLockForTest(root, () => "must not enter", {}, {
+      beforeExclusiveOpen: async () => { throw denied; },
+    })).rejects.toMatchObject({ code });
+    await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails closed on a non-file lock path without removing it", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(lockPath, { recursive: true });
+
+    await expect(withLockForTest(root, () => "must not enter", {}, {
+      beforeExclusiveOpen: async () => { throw Object.assign(new Error("already exists"), { code: "EEXIST" }); },
+    })).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    expect((await lstat(lockPath)).isDirectory()).toBe(true);
+  });
+
+  it("fails closed on a lock symlink or junction without touching its target", async (context) => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    const targetDirectory = path.join(root, "lock-target");
+    const sentinelPath = path.join(targetDirectory, "sentinel");
+    const sentinel = "keep link target unchanged\n";
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    await mkdir(targetDirectory);
+    await writeFile(sentinelPath, sentinel, "utf8");
+
+    try {
+      await symlink(targetDirectory, lockPath, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform === "win32" && (code === "EPERM" || code === "EACCES")) {
+        console.warn("Skipping lock reparse-point regression: this Windows runner cannot create a junction.");
+        context.skip();
+      }
+      throw error;
+    }
+
+    await expect(withLockForTest(root, () => "must not enter", {}, {
+      beforeExclusiveOpen: async () => { throw Object.assign(new Error("already exists"), { code: "EEXIST" }); },
+    })).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    expect((await lstat(lockPath)).isSymbolicLink()).toBe(true);
+    await expect(readFile(sentinelPath, "utf8")).resolves.toBe(sentinel);
+    await expect(readdir(targetDirectory)).resolves.toEqual(["sentinel"]);
   });
 
   it("treats incomplete stale lock records as unknown ownership and preserves them", async () => {
