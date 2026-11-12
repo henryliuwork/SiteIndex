@@ -21,7 +21,7 @@ const profileEnvironment = ["APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOME", "T
 test("candidate package matrix includes all requested synthetic acceptance areas", () => {
   assert.equal(matrix.schema_version, 1);
   assert.equal(matrix.candidate_version, "0.4.1");
-  assert.equal(matrix.baseline.main_commit, "7241d7c883d39c57cce25fffefb14e82d10798b3");
+  assert.equal(matrix.baseline.main_commit, "bfc55287886f46915d90e2cee1c727cb71c43adb");
 
   const actualCaseIds = matrix.cases.map(({ id }) => id);
   assert.deepEqual(actualCaseIds, expectedCaseIds);
@@ -51,13 +51,15 @@ test("isolation plan redirects the full profile and keeps data synthetic", () =>
   assert.ok(matrix.isolation.forbidden.some((item) => /release publishing/i.test(item)));
 });
 
-test("pending package features remain gated", () => {
+test("merged implementations remain gated on candidate package evidence", () => {
   const byId = new Map(matrix.cases.map((testCase) => [testCase.id, testCase]));
-  assert.equal(byId.get("PKG-STORAGE-READONLY").readiness, "desktop-and-ui-pending");
+  assert.equal(byId.get("PKG-STORAGE-READONLY").readiness, "candidate-package-pending");
   const storageDependencies = byId.get("PKG-STORAGE-READONLY").dependencies;
   assert.ok(storageDependencies.some((dependency) => dependency.includes("#485")));
+  assert.ok(storageDependencies.some((dependency) => dependency.includes("#495") && dependency.includes("merged in main")));
   assert.ok(storageDependencies.some((dependency) => dependency.includes("#480")));
-  assert.ok(storageDependencies.some((dependency) => dependency.includes("#484")));
+  assert.ok(storageDependencies.some((dependency) => dependency.includes("#484") && dependency.includes("merged in main")));
+  assert.match(matrix.dependencies_at_baseline.storage, /Aggregate issue #480 remains open/u);
   const storage = byId.get("PKG-STORAGE-READONLY");
   assert.deepEqual(storage.device_independence, {
     runner_count: 2,
@@ -72,12 +74,13 @@ test("pending package features remain gated", () => {
   assert.ok(media.dependencies.some((dependency) => dependency.includes("media.prepare is absent")));
   const saveAs = byId.get("PKG-EDM-SAVEAS-CANCEL");
   const conflicts = byId.get("PKG-EDM-CONFLICT");
-  assert.equal(saveAs.readiness, "blocked-until-edm-exportIndex-contract");
-  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("#473 edm.renderIndex")));
-  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("Merged C #481")));
-  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("PENDING_HANDLERS")));
-  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("edm.exportIndex")));
-  assert.equal(conflicts.readiness, "blocked-until-edm-exportIndex-contract");
+  assert.equal(saveAs.readiness, "candidate-package-pending");
+  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("#473") && dependency.includes("renderer")));
+  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("#481/#492")));
+  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("#496") && dependency.includes("PENDING_HANDLERS")));
+  assert.ok(saveAs.dependencies.some((dependency) => dependency.includes("#494") && dependency.includes("outside this case")));
+  assert.equal(conflicts.readiness, "candidate-package-pending");
+  assert.ok(!conflicts.dependencies.some((dependency) => /still lists.*PENDING_HANDLERS/u.test(dependency)));
   assert.deepEqual(Object.keys(conflicts.target_conflict_policy), [
     "existing_target_inside_project",
     "existing_target_outside_project_same_content",

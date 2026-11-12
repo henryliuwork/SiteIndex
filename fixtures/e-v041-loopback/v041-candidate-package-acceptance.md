@@ -2,10 +2,11 @@
 
 ## 基线与边界
 
-- 固定基线：origin/main 7241d7c883d39c57cce25fffefb14e82d10798b3。
+- 当前源码准备快照：origin/main `bfc55287886f46915d90e2cee1c727cb71c43adb`。这不是候选安装包的验收结果。
 - 路线图：docs/plan/2026-11-05-v040-roadmap.md §4.5、§4.6、§5 E；输入数据与证据层沿用 v041-acceptance-matrix.md。
 - 本文件只补候选安装包执行顺序，不把 Core、CLI、loopback fixture、UI mock 或 CI 结果算作 NSIS 通过。
 - 项目、SKU、价格、媒体和凭据均为虚构。本轮不访问真实站点、WordPress、用户项目或用户 profile；不安装候选包、不触发 Release、不发布版本。
+- main 状态：A #485、C #495 与 B #484 已合并；#480 仍是开放的聚合跟踪 Issue，不能因实现 PR 合并而关闭。#494 仅定义 EDM 折扣档位契约；`edm.setDiscountTier` 仍在 pending 列表，不属于本轮安装/升级及 Core 流程验收。
 
 ## 隔离环境与候选包入口
 
@@ -25,16 +26,18 @@ C 已有入口是 .github/workflows/e-windows-v040-acceptance.yml，脚本是 pa
 
 两种方式都以 pinned v0.4.0 NSIS 安装包为升级基线。C 需在启动前确认候选来源、完整 commit、EXE SHA256 和 workflow 输入。当前没有本轮候选包，所以不触发 workflow。
 
+候选包可用后按现有矩阵顺序先验收：`PKG-NSIS-UPGRADE` → `PKG-STORAGE-READONLY` → `PKG-STOCK-ABSENT-STATES` → `PKG-MEDIA-RECOVERY`。其余 EDM 与凭据项保留在矩阵中，按各自前置条件执行。代码合并、CI、fixture/Core/CLI、win-unpacked 与 NSIS 安装包证据分层记录；前几层不能替代安装版结果。
+
 ## 候选验收矩阵
 
 | ID | 覆盖 | 当前依赖 / 就绪度 | 已可自动化 | 必须人工验证 |
 |---|---|---|---|---|
 | PKG-NSIS-UPGRADE | NSIS 安装、v0.4.0 升级、版本和项目/设置保留 | C hosted workflow 已有隔离安装/升级流程；等待候选 pin | 哈希/provenance、安装/升级/重启、运行路径、版本、项目与数据摘要 | 仅在 Playwright 无法确认完整 UI 时查看 hosted VM；不看用户窗口 |
-| PKG-STORAGE-READONLY | 旧布局读取、已知同步目录只读、本机设备数据彼此独立 | A #485 Core/CLI 已合并；C #480 Desktop 写入入口保护、B #484 UI 说明/标记均待合入候选；三层齐备后才执行候选验收 | 项目扫描、create/createWorkspaceOnly/addExisting、Job/计划任务写入口的门禁、文件哈希、设置摘要、两个独立 runner 的项目/设置状态对照 | #480 和 #484 均进入候选后，核对所有入口在副作用前阻断，并检查“仅支持本机存储”说明、只读标记及“移除只取消登记” |
+| PKG-STORAGE-READONLY | 旧布局读取、已知同步目录只读、本机设备数据彼此独立 | A #485、C #495 Desktop 写保护、B #484 UI 说明/标记均已合入当前 main；#480 聚合 Issue 保持开放；等待候选包 pin 后实测 | 项目扫描、create/createWorkspaceOnly/addExisting、Job/计划任务写入口的门禁、文件哈希、设置摘要、两个独立 runner 的项目/设置状态对照 | 核对候选包含三层实现，所有入口在副作用前阻断，并检查“仅支持本机存储”说明、只读标记及“移除只取消登记” |
 | PKG-STOCK-ABSENT-STATES | feed 缺席后 removed、out_of_stock、in_stock+feed_anomaly；另测 unknown | Core/CLI #417、#464 已合并；候选 IPC/page 待验 | 虚构 daily、JSONL、固定路由计数、Playwright 页面与 CLI 对照 | 仅当 DOM/无障碍树无法确认状态时人工复核 |
 | PKG-MEDIA-RECOVERY | 权限失败、部分成功、保存后断连、重启恢复、查重去重 | `media.prepare` 不在当前 main 的 `PENDING_HANDLERS` 中，Core/Desktop readiness gate 已开放；C hosted workflow 目标为 win-unpacked，不是 NSIS | fixture、Core 与 win-unpacked hosted harness 可提供各自层级证据；NSIS 包测仍需 C 接线 | NSIS harness 未接入时标为未验证，不用 win-unpacked 结果替代 NSIS |
-| PKG-EDM-SAVEAS-CANCEL | SKU 清单另存与取消不写 | A #473 `renderIndex` 已合并；C #481 Desktop Save As/no-clobber 已在 main 合并；但 `edm.exportIndex` 仍在 `PENDING_HANDLERS`，需后续契约/handler 接线 | golden 可检查；门禁清除后由 Windows UI Automation 操作原生对话框 | 契约/handler 接线完成后用 hosted UI Automation 或 hosted VM；Playwright DOM 不控制原生 Save As |
-| PKG-EDM-CONFLICT | 项目内目标与项目外同/异内容目标的 no-clobber 行为 | A #473 `renderIndex` 与 C #481 Desktop Save As/no-clobber 已合并；`edm.exportIndex` 仍在 `PENDING_HANDLERS`，契约/handler 接线后才可做包验收；D #487 冲突提示已合并 | fixture 完整性；门禁清除后比对目标前后哈希、结果枚举与错误码 | 契约/handler 接线完成后用 hosted UI Automation 核对提示和不覆盖；不得确认覆盖 |
+| PKG-EDM-SAVEAS-CANCEL | SKU 清单另存与取消不写 | A #473 renderer、C #481/#492 Desktop Save As/IPC 与 #496 pending 清理已合并；`edm.exportIndex` 不再是 `PENDING_HANDLERS`；等待候选包实测 | golden 可检查；候选 Windows runner 上由 UI Automation 操作原生对话框 | 用 hosted UI Automation 或 hosted VM；Playwright DOM 不控制原生 Save As |
+| PKG-EDM-CONFLICT | 项目内目标与项目外同/异内容目标的 no-clobber 行为 | A #473 renderer、C #481/#492 Save As/IPC、#496 pending 清理及 D #487 冲突提示已合并；等待候选包实测 | fixture 完整性；候选包中比对目标前后哈希、结果枚举与错误码 | 用 hosted UI Automation 核对提示和不覆盖；不得确认覆盖 |
 | PKG-CREDENTIAL-ISOLATION | 假凭据隔离、跨重启、origin 隔离、脱敏 | C hosted oracle #463 已合并；等待候选 provenance | 现有 hosted Playwright、canary 扫描、报告 oracle | 只复核脱敏结果和界面掩码，不公开 canary |
 
 ## 逐项步骤与标准
@@ -48,7 +51,7 @@ C 已有入口是 .github/workflows/e-windows-v040-acceptance.yml，脚本是 pa
 
 ### PKG-STORAGE-READONLY
 
-1. 只有在 A #485、C #480 Desktop 写保护与 B #484 UI 说明/标记都包含在候选中时才启动本项；少任一层都标记为前置条件未满足、未验证。从 project-storage-policy-cases.json 与仓库虚构项目 fixture 复制数据到根内，包含 legacy index/site.json 与 workspace _site-index/site.json。
+1. 只有在 A #485、C #495 Desktop 写保护与 B #484 UI 说明/标记都包含在候选中时才启动本项；少任一层都标记为前置条件未满足、未验证。从 project-storage-policy-cases.json 与仓库虚构项目 fixture 复制数据到根内，包含 legacy index/site.json 与 workspace _site-index/site.json。
 2. 在根内构造 synthetic known-sync root；不连接云盘客户端，不使用操作系统现有同步目录。
 3. 记录相对路径清单和逐文件 SHA256，再读取项目列表、summary 和只读视图；写入测试只验证拦截码。
 4. 重新核对完整文件树、设置登记与任务摘要。通过标准：字节不变、不自动迁移/修复、不写锁/运行记录/任务。C #480 的项目扫描、`projects.create`、`projects.createWorkspaceOnly`、`projects.addExisting`、手动/计划任务 Job 入口必须在任何数据写入、设置登记、init 或计划任务校正前阻断；#484 入包后还应显示明确只读警告。
@@ -75,9 +78,9 @@ C 已有入口是 .github/workflows/e-windows-v040-acceptance.yml，脚本是 pa
 
 ### PKG-EDM-SAVEAS-CANCEL 与 PKG-EDM-CONFLICT
 
-1. Core 侧由已合并的 A #473 `edm.renderIndex` 提供确定性内容；它只渲染，不创建固定输出文件，也不写入目标文件。Desktop C #481 原生 Save As 和 no-clobber 写入已合并到 main（`7241d7c`）。
-2. 当前 main 的 `PENDING_HANDLERS` 仍包含 `edm.exportIndex`。在后续契约/handler 接线 PR 合并并从 `PENDING_HANDLERS` 清除之前，只能检查 golden 与夹具，不能把 SKU 导出标成候选包可测或通过。
-3. 依赖就绪后，仅在隔离根操作；准备三个目标类：项目目录内已有目标、项目目录外已有且内容相同的目标、项目目录外已有但内容不同的目标。另准备对话框取消和“对话框观察目标缺失后、写入前被并发创建”的竞态。
+1. Core 侧由已合并的 A #473 `edm.renderIndex` 提供确定性内容；它只渲染，不创建固定输出文件，也不写入目标文件。Desktop C #481/#492 Save As 与 IPC 链路已合并，#496 已从 `PENDING_HANDLERS` 清除 `edm.exportIndex`。
+2. 当前 main 已具备该导出 bridge/handler；候选 pin 前只能保留 fixture/golden 与已合并状态记录，不能把 SKU 导出标成 NSIS 候选包通过。#494 的折扣档位契约已合并，但 `edm.setDiscountTier` 仍 pending，不属于本组 Save As 验收。
+3. 候选依赖确认后，仅在隔离根操作；准备三个目标类：项目目录内已有目标、项目目录外已有且内容相同的目标、项目目录外已有但内容不同的目标。另准备对话框取消和“对话框观察目标缺失后、写入前被并发创建”的竞态。
 4. 预期行为：项目目录内已有目标返回 `EDM_INDEX_CONFLICT`，提示原文件未覆盖且可另选文件名，逐字节保留；项目目录外同内容目标返回 `unchanged` 且不改字节；项目目录外异内容目标返回 `WRITE_FAILED` / `EDM_INDEX_SAFE_REPLACE_UNAVAILABLE`，提示原文件未覆盖且另选文件名，逐字节保留；取消不创建/修改任何文件；竞态创建目标不得被覆盖。对于结果不确定，先读回目标核实，不盲目重试。
 5. 原生 Save As 选择/取消由 Windows UI Automation 或 hosted VM 完成；Playwright 只检查网页状态，不能声称操作了原生对话框。证据记录目标位置类别、结果枚举、前后哈希和是否写入，不记录绝对路径、文件名或 SKU。
 
@@ -103,9 +106,9 @@ NSIS 验收在 GitHub Actions 选择 E · Windows packaged acceptance，运行 w
 ## 当前未满足项
 
 - 本轮没有候选安装包 pin，NSIS install/upgrade/credential 尚未运行。
-- 旧项目 A #485 Core 门禁已合并；候选包前置还需 C #480 Desktop 运行时写保护与 B #484 打包可见提示/只读标记；缺任一层均不得验收该项。
+- 旧项目 A #485 Core、C #495 Desktop 运行时写保护与 B #484 打包可见提示/只读标记均已合入当前 main；#480 聚合 Issue 仍开放。候选包未 pin，因此尚未进行安装版验收。
 - 库存 Core/CLI 已有证据；NSIS 的 CLI/UI 联动未运行。
 - `media.prepare` 不在当前 main 的 `PENDING_HANDLERS`，Core/Desktop readiness gate 已开放；win-unpacked harness 仍不能代替 NSIS 测试，待 C 的 NSIS harness 接线完成。
-- SKU 另存/取消/冲突中的 C #481 Desktop Save As/no-clobber 已合并；仍依赖后续契约/handler PR 将 `edm.exportIndex` 从 `PENDING_HANDLERS` 清除。A #473 `renderIndex` 只负责渲染，不负责写文件。
+- SKU 另存/取消/冲突所需的 A #473 renderer、C #481/#492 Desktop 链路和 #496 pending 清理已合并；NSIS 候选包尚未 pin，不能将这些代码/CI/fixture 结果记为安装版通过。A #473 `renderIndex` 只负责渲染，不负责写文件。
 
 上述均为未验证或受依赖阻塞，不标记通过/失败。候选包运行后按 case ID 报 passed、failed 或 not-run，并注明 fixture、Core/CLI、win-unpacked、NSIS/Playwright 或 native-dialog 证据层。
