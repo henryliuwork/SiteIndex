@@ -156,7 +156,11 @@ function getExportErrorMessage(error: unknown): { tone: "warn" | "error"; messag
     return { tone: "warn", message: "保存结果尚未确认；清单可能已写入您选择的位置。此页面不会盲目重试，请先检查该位置。" };
   }
   if (error && typeof error === "object" && "code" in error && error.code === "EDM_INDEX_CONFLICT") {
-    return { tone: "error", message: "项目目录中的目标文件已存在，未覆盖原文件。请选择项目外的位置保存副本。" };
+    return { tone: "error", message: "项目目录中的目标文件已存在，原文件未覆盖。可以在项目目录内改用新文件名后重试。" };
+  }
+  if (error && typeof error === "object" && "code" in error && error.code === "WRITE_FAILED"
+    && "detail" in error && error.detail === "EDM_INDEX_SAFE_REPLACE_UNAVAILABLE") {
+    return { tone: "error", message: "目标位置已有不同内容的同名文件，原文件未覆盖。请另选文件名后重试。" };
   }
   if (error && typeof error === "object" && "code" in error && error.code === "WRITE_FAILED") {
     return { tone: "error", message: "SKU 清单未能保存。请检查所选位置和文件权限后重试。" };

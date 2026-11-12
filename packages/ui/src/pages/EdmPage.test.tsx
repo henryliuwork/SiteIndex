@@ -600,6 +600,42 @@ describe("EdmPage media preparation prototype", () => {
     expect(control.textContent).not.toContain("index/edm/sku-index.md");
   });
 
+  it("项目内目标冲突明确说明未覆盖，并可在项目内改用新文件名", async () => {
+    const conflict = Object.assign(new Error("目标文件已存在。"), {
+      code: "EDM_INDEX_CONFLICT",
+      detail: "EDM_INDEX_PROJECT_FILE_EXISTS",
+    });
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, {
+      exportReady: true,
+      exportError: conflict,
+    });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    fireEvent.click(button);
+
+    const message = "项目目录中的目标文件已存在，原文件未覆盖。可以在项目目录内改用新文件名后重试。";
+    expect(await within(exportControlFor(button)).findByText(message)).toBeTruthy();
+    expect((await within(screen.getByLabelText("通知")).findByRole("alert")).textContent).toContain(message);
+    expect(exportIndex).toHaveBeenCalledWith("demo");
+  });
+
+  it("项目外同名不同内容时说明原文件未覆盖并要求另选文件名", async () => {
+    const safeReplaceUnavailable = Object.assign(new Error("目标文件已存在且无法安全覆盖。"), {
+      code: "WRITE_FAILED",
+      detail: "EDM_INDEX_SAFE_REPLACE_UNAVAILABLE",
+    });
+    const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, {
+      exportReady: true,
+      exportError: safeReplaceUnavailable,
+    });
+    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    fireEvent.click(button);
+
+    const message = "目标位置已有不同内容的同名文件，原文件未覆盖。请另选文件名后重试。";
+    expect(await within(exportControlFor(button)).findByText(message)).toBeTruthy();
+    expect((await within(screen.getByLabelText("通知")).findByRole("alert")).textContent).toContain(message);
+    expect(exportIndex).toHaveBeenCalledWith("demo");
+  });
+
   it("用户取消另存时清除进行状态和门闩，不显示成功或错误 toast", async () => {
     const result: EdmSkuIndexExportResult = { status: "cancelled", sku_count: 12, missing_image_count: 3 };
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
@@ -703,7 +739,7 @@ describe("EdmPage media preparation prototype", () => {
     fireEvent.click(button);
 
     const control = exportControlFor(button);
-    expect(await within(control).findByText(/项目目录中的目标文件已存在，未覆盖原文件/)).toBeTruthy();
+    expect(await within(control).findByText(/项目目录中的目标文件已存在，原文件未覆盖。可以在项目目录内改用新文件名后重试/)).toBeTruthy();
     expect(exportIndex).toHaveBeenCalledWith("demo");
   });
 
