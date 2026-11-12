@@ -93,9 +93,16 @@ async function runPhase(root, phaseName) {
 
 async function main() {
   if (!summaryPath) throw new Error("A summary output path is required.");
-  const packageMain = await readFile(path.join(repositoryRoot, "packages", "desktop", "src", "main", "index.ts"), "utf8");
-  if (!/isMediaJobReady:\s*\(\)\s*=>\s*false/u.test(packageMain)) {
-    throw new Error("Production media feature gate is not closed.");
+  const mainSource = await readFile(path.join(repositoryRoot, "packages", "desktop", "src", "main", "index.ts"), "utf8");
+  const readinessSource = await readFile(
+    path.join(repositoryRoot, "packages", "desktop", "src", "main", "media-readiness.ts"),
+    "utf8",
+  );
+  if (
+    !/isMediaJobReady:\s*\(\)\s*=>\s*isMediaPrepareReady\(mediaCore\)/u.test(mainSource) ||
+    !/core\s*!==\s*null\s*&&\s*!pendingHandlers\.includes\("media\.prepare"\)/u.test(readinessSource)
+  ) {
+    throw new Error("Production media readiness is not guarded by the initialized Core and shared contract status.");
   }
 
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-media-recovery-"));
