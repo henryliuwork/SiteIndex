@@ -154,6 +154,28 @@ describe("EDM SKU index rendering", () => {
     ].join("\n"));
     expect(result.content.endsWith("\n\n")).toBe(false);
   });
+
+  it("produces identical output when each row input is supplied in reverse order", async () => {
+    const input = await fixtureInput("legacy", "sku-media-legacy.csv");
+    const expected = renderEdmSkuIndex(input);
+    const permutations: EdmSkuIndexInput[] = [
+      { ...input, products: [...input.products].reverse() },
+      { ...input, skus: [...input.skus].reverse() },
+      { ...input, stock: [...input.stock].reverse() },
+      { ...input, skuMedia: [...input.skuMedia].reverse() },
+      { ...input, skuTags: [...input.skuTags].reverse() },
+      {
+        ...input,
+        products: [...input.products].reverse(),
+        skus: [...input.skus].reverse(),
+        stock: [...input.stock].reverse(),
+        skuMedia: [...input.skuMedia].reverse(),
+        skuTags: [...input.skuTags].reverse(),
+      },
+    ];
+
+    for (const permutation of permutations) expect(renderEdmSkuIndex(permutation)).toEqual(expected);
+  });
 });
 
 describe("EDM SKU index service and safe file boundary", () => {
@@ -164,6 +186,8 @@ describe("EDM SKU index service and safe file boundary", () => {
     const projectPath = await projectFor(layout, mediaFile);
     const paths = pathsFor(layout);
     const output = path.join(projectPath, paths.edmSkuIndex);
+    const mediaLedgerPath = path.join(projectPath, paths.skuMedia);
+    const mediaLedgerBefore = await readFile(mediaLedgerPath);
 
     await expect(renderIndex(projectPath)).resolves.toEqual({
       content: await readFile(path.join(FIXTURE, "sku-index.expected.md"), "utf8"),
@@ -172,6 +196,7 @@ describe("EDM SKU index service and safe file boundary", () => {
     });
     expect(await fileExists(output)).toBe(false);
     expect(await fileExists(path.dirname(output))).toBe(false);
+    expect(await readFile(mediaLedgerPath)).toEqual(mediaLedgerBefore);
   });
 
   it("does not write outside the project when an ancestor becomes a junction after validation", async () => {
