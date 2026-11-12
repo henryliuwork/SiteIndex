@@ -382,12 +382,13 @@ describe("Desktop EDM SKU index Save As", () => {
     await expect(readFile(path.join(displacedDirectory, temporaryNames[0]!), "utf8")).resolves.toBe("");
   });
 
-  it.skipIf(process.platform !== "win32")("does not follow a replaced destination junction during cleanup", async ({ skip }) => {
+  it.skipIf(process.platform !== "win32")("rejects a replaced destination junction before payload write", async ({ skip }) => {
     const targetPath = path.join(downloadsDirectory, "sku-index.md");
     const displacedDirectory = path.join(root, "downloads-before-junction");
     const outsideDirectory = path.join(root, "outside-junction");
     await mkdir(outsideDirectory);
     await writeFile(path.join(outsideDirectory, "keep-sentinel.txt"), "junction sentinel\n", "utf8");
+    let payloadWriteStarted = false;
     const save = createEdmIndexSaveAs({
       defaultPath: path.join(downloadsDirectory, path.basename(PATHS.edmSkuIndex)),
       showSaveDialog: async () => ({ canceled: false, filePath: targetPath }),
@@ -402,9 +403,13 @@ describe("Desktop EDM SKU index Save As", () => {
           throw error;
         }
       },
+      beforeTemporaryWriteForTest: async () => {
+        payloadWriteStarted = true;
+      },
     });
 
     await expect(save(projectRoot, rendered)).rejects.toMatchObject({ code: "WRITE_FAILED" });
+    expect(payloadWriteStarted).toBe(false);
     await expect(readFile(path.join(outsideDirectory, "keep-sentinel.txt"), "utf8")).resolves.toBe("junction sentinel\n");
     const outsideEntries = await readdir(outsideDirectory);
     const temporaryNames = outsideEntries.filter((name) => name.startsWith(".siteindex-edm-") && name.endsWith(".tmp"));
