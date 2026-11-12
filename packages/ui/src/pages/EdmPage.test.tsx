@@ -49,6 +49,7 @@ type EdmPageTestOptions = {
   exportError?: unknown;
   deferredExport?: boolean;
   pendingHandlers?: readonly string[];
+  discountTiers?: number[];
   mediaPrepareError?: unknown;
   queryStaleTime?: number;
   summaryImplementation?: SiteIndexApi["edm"]["summary"];
@@ -63,6 +64,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
     summary: { ...project.summary, id: projectId },
     config: {
       ...project.config,
+      edm: { ...project.config.edm, ...(options.discountTiers ? { discount_tiers: options.discountTiers } : {}) },
       sku_grouping: {
         enabled: groupingEnabled,
         rule: project.config.sku_grouping?.rule ?? { type: "separator", value: "-" },
@@ -208,6 +210,17 @@ describe("EdmPage D-5", () => {
 
     expect(await screen.findByRole("button", { name: "复制 edm-builder 指令" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /导出.*清单/ })).toBeNull();
+  }, 15_000);
+
+  it("折扣档位列显示，未配置档位时明确说明不会自动选择", async () => {
+    await renderEdmPage(true, false, undefined, false, false, { discountTiers: [] });
+    expect(await screen.findByRole("columnheader", { name: "折扣档位" })).toBeTruthy();
+    expect(await screen.findByText(/当前项目未配置折扣档位/)).toBeTruthy();
+  }, 15_000);
+
+  it("折扣档位配置已有值但保存 IPC 未就绪时显示只读提示", async () => {
+    await renderEdmPage(true, false, undefined, false, false, { discountTiers: [10, 20] });
+    expect(await screen.findByText(/折扣档位暂时只读/)).toBeTruthy();
   }, 15_000);
 
   it("未启用分组时点击父 SKU 筛选展示 Core 预览并引导到项目设置", async () => {
