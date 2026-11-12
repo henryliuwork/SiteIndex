@@ -141,6 +141,8 @@ export interface CoreServiceContext {
   testOnlyMediaFetch?: typeof fetch;
   /** 测试专用：给 AVIF WASM 线性内存设更低上限，验证解码器越界失败语义。 */
   testOnlyAvifMemoryLimitBytes?: number;
+  /** 测试专用：在 daily 事务替换指定相对目标前暂停，验证真实进程中断恢复。 */
+  testOnlyBeforeDailyTargetReplace?: (relativeTarget: string) => Promise<void>;
 }
 
 /**
@@ -1669,7 +1671,13 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           const items = await readFeeds(config as FeedSiteConfig);
           const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
           progress(35, "daily", "正在合并商品与库存数据");
-          const daily = await runDaily(executionPath, snapshot, { date: requestedDate, force: req.force });
+          const daily = await runDaily(executionPath, snapshot, {
+            date: requestedDate,
+            force: req.force,
+            ...(ctx.testOnlyBeforeDailyTargetReplace
+              ? { testOnlyBeforeTargetReplace: ctx.testOnlyBeforeDailyTargetReplace }
+              : {}),
+          });
           if (daily.status !== "failed") {
             progress(80, "views", "正在生成产品与库存视图");
             await buildViews(executionPath, { date: requestedDate });
