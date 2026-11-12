@@ -286,8 +286,16 @@ async function main() {
     path.join(repositoryRoot, "packages", "desktop", "src", "main", "index.ts"),
     "utf8",
   );
-  if (!/isMediaJobReady:\s*\(\)\s*=>\s*false/u.test(mainSource))
-    throw new Error("Production media feature gate is not closed.");
+  const readinessSource = await readFile(
+    path.join(repositoryRoot, "packages", "desktop", "src", "main", "media-readiness.ts"),
+    "utf8",
+  );
+  if (
+    !/isMediaJobReady:\s*\(\)\s*=>\s*isMediaPrepareReady\(mediaCore\)/u.test(mainSource) ||
+    !/core\s*!==\s*null\s*&&\s*!pendingHandlers\.includes\("media\.prepare"\)/u.test(readinessSource)
+  ) {
+    throw new Error("Production media readiness is not guarded by the initialized Core and shared contract status.");
+  }
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-media-production-e2e-"));
   assertSafeTempRoot(root);
   const image = await startImageServer();

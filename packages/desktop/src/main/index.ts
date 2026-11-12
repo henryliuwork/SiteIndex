@@ -31,6 +31,7 @@ import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type 
 import { registerWordPressCredentialHandlers } from "./wordpress-credential-ipc.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
 import { createWordPressMediaCredentialProvider } from "./wordpress-media-credential-provider.js";
+import { isMediaPrepareReady } from "./media-readiness.js";
 import {
   inspectProfilePaths,
   profilePathsAreContained,
@@ -177,8 +178,8 @@ if (!hasSingleInstanceLock) {
       workerPath: join(mainDirectory, "job-worker.js"),
       getSettings: () => settingsStore.get(),
       getBrowserExecutablePath: async (settings) => (await desktopIntegrations.detectBrowser(settings.browser)).path,
-      // Core media Job 与 WASM 已接线；完整媒体流水线的安装版验收完成前仍保持关闭。
-      isMediaJobReady: () => false,
+      // 主进程仅在 Core 已就绪、shared 契约清除 pending 后允许生产媒体 Job。
+      isMediaJobReady: () => isMediaPrepareReady(mediaCore),
       getWordPressCredential: getWordPressMediaCredential,
       resolveProject: (id: ProjectId) => {
         if (!projectCatalog) throw { code: "PROJECT_NOT_FOUND", message: "项目目录尚未就绪。", detail: id };

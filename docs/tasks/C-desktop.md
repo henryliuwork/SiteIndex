@@ -173,9 +173,10 @@
 - [x] #439 Core 已合并 `onJobStarted` 与媒体 checkpoint。Desktop worker 现在仅用该回调 ID 发送媒体 `started`，progress/result 校验并沿用同一 ID；不会为媒体任务运行日期型 fallback。真实 Core 配置读取早退、缺失回调、结果 ID 不匹配与异常路径有 worker 执行层测试；Core started 后的异常会将请求 SKU 保守标为 `outcome_unknown`，并通过 worker→JobManager 消息路径测试，避免不完整 finished 被拒后遗留运行状态。JobManager 已覆盖媒体崩溃、双项目并发/取消、SKU 分区和先到 finished 事件。
 - [x] #439 Desktop worker 接线的 Windows Electron 实测：utilityProcess 从构建输出与 `app.asar/out/main/job-worker.js` 各运行一次合成坏配置请求；真实 Core 在配置读取失败前发送 `media-<UUID>`，worker `finished` 沿用同一 ID，并将请求 SKU 标为未开始。`app.asar.unpacked` 中解包的 AVIF/WebP decoder、JPEG encoder、resize 四个 WASM 均从 Electron 中成功解析并 `WebAssembly.compile`；安装器检查也会验证这些文件。
 - [x] 媒体流水线 packaged E2E：Windows 隔离测试包加载实际构建的 EDM UI 与 preload，经 Desktop IPC 在 utilityProcess 中运行真实 Core media Job；外部交互仅指向本机 `127.0.0.1` 合成图片源与 WordPress REST 假服务。覆盖上传/记录/跳过/逐 SKU 失败、401/403 停止后续 SKU、服务端已提交但响应丢失后的结果未知、重试查重复用、台账/运行历史、utilityProcess 进度到达 renderer、Job 运行中离开 EDM 后在后台完成、重新进入 EDM 后恢复跨页结果。CI artifact 记录关键凭据 vault、图片台账、runs 与 checkpoint 的扫描数量；Chromium 缓存跳过和读错数量分开统计，关键文件任意不可读或漏扫即失败。
-- [ ] 尚未在测试 WordPress 实例上实测真实 HTTP、真实凭据、应用安装器安装后的 media Job 或实际进程崩溃后的 checkpoint 恢复；以上仍需后续验收。生产 `isMediaJobReady` 保持 false、正式 UI/shared 契约不变、`media.prepare` 仍由生产 handler 返回 `NOT_IMPLEMENTED`，测试包的 gate 覆盖仅作用于隔离复制的 UI 资源。
+- [ ] 生产 readiness：Desktop 在 Core 已初始化且 shared `PENDING_HANDLERS` 不再包含 `media.prepare` 后才开放真实 Job；当前 pending 标记仍在，因此生产入口继续返回 `NOT_IMPLEMENTED`，需在独立 contract PR 清理后才会开放。
+- [ ] 尚未在测试 WordPress 实例上实测真实 HTTP、真实凭据、正式安装器安装后的 media Job 或实际进程崩溃后的 checkpoint 恢复；这些仍需后续验收。#459 的隔离 packaged E2E 只验证真实 Core/IPC/preload 与 loopback 假服务，不能替代正式 EDM 页面与实际安装器验收。
 - [x] #422 合成 packaged E2E 已验证 media Job 在 EDM 页外完成，并在 Runs 与 EDM 页恢复结果；这不替代测试 WordPress 与正式安装包验收。真实服务/真实凭据验收前仍不清理 `media.prepare` 的 pending 契约项。
-- [x] #422：preload 暴露 `media.prepare` 路由；主进程仍在 `isMediaJobReady: false` 下返回 `NOT_IMPLEMENTED`，`media.prepare` 继续留在 `PENDING_HANDLERS`，Core 能力就绪前 UI 保持关闭。
+- [x] #422：preload 暴露 `media.prepare` 路由；生产 readiness 由 Core 初始化状态与 shared pending 标记共同控制。契约仍 pending 时 Desktop 返回 `NOT_IMPLEMENTED`，独立 contract PR 清理后才会开放真实媒体 Job。
 - [x] #423：preload 暴露 `edm.exportIndex`；Desktop 先检查显式 readiness 门禁，再转发到 Core 可选方法。main readiness 当前固定为 false，即使 Core 暴露同名方法仍返回 `NOT_IMPLEMENTED`；尚未清理 `PENDING_HANDLERS`，UI 仍关闭导出入口。
 - [ ] #423：A 尚未实现 Core SKU 清单生成；Desktop 不生成文件、不返回虚构成功状态。
 
