@@ -63,6 +63,10 @@ PR #440（head `708a40f3a1c78cce78fec8738bfcfd3b6e531b51`）尚未合并。其�
 
 ## #422 / #423 可执行夹具与产品验收边界
 
+### #480 已知云同步目录分类夹具
+
+`project-storage-policy-cases.json` 使用测试进程创建的合成根目录，不包含用户路径。验收要求：配置的 OneDrive 根目录内返回 `known-cloud`；根目录同名前缀的兄弟目录及未配置的第三方路径返回 `unknown`。`unknown` 不是“已确认本机”。测试不访问云服务，也不代表能识别所有同步目录。
+
 `job-export-cases.json` 是 #422 media Job 与 #423 EDM 清单的虚构验收向量；`media-export/` 提供旧 8 列台账、10 列迁移预期、SKU 视图、标签、清单 golden 和冲突目标状态。执行 `node --test fixtures/e-v041-loopback/job-export-acceptance.test.mjs` 只验证 fake WordPress 响应与夹具内部一致性。
 
 | 场景 | 夹具可独立验证 | 仍需 Core / Desktop 产品证据 |

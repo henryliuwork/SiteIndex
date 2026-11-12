@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "inside-configured-onedrive-root",
+      "relation": "inside-root",
+      "expected": "known-cloud",
+      "provider": "OneDrive"
+    },
+    {
+      "id": "prefix-sibling-is-not-inside-root",
+      "relation": "prefix-sibling",
+      "expected": "unknown"
+    },
+    {
+      "id": "unconfigured-third-party-location-remains-unknown",
+      "relation": "unconfigured",
+      "expected": "unknown"
+    }
+  ]
+}

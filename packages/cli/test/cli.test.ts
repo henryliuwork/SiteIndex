@@ -35,6 +35,7 @@ beforeEach(async () => {
 }, 30000);
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   if (tempRoot) await rm(tempRoot, { recursive: true, force: true });
 }, 30000);
 
@@ -103,6 +104,29 @@ function mockService() {
 }
 
 describe("siteindex CLI", () => {
+  it("keeps cloud-storage rejection structured for run and direct project writes", async () => {
+    const cloudRoot = path.join(tempRoot, "synthetic-cloud-sync");
+    const cloudProject = path.join(cloudRoot, "legacy-project");
+    await mkdir(cloudRoot, { recursive: true });
+    await cp(projectFixture, cloudProject, { recursive: true });
+    vi.stubEnv("OneDrive", cloudRoot);
+    const runsPath = path.join(cloudProject, PATHS.runs);
+    const runsBefore = await readFile(runsPath);
+    const lockPath = path.join(cloudProject, PATHS.lock);
+
+    const run = collect();
+    expect(await main(["run", cloudProject, "daily", "--json"], run.io)).toBe(EXIT.VALIDATION_FAILED);
+    expect(parseEnvelope(run.stdout[0]!).error?.code).toBe("PROJECT_CLOUD_SYNC_UNSUPPORTED");
+    expect(await readFile(runsPath)).toEqual(runsBefore);
+    await expect(readFile(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const sync = collect();
+    expect(await main(["skills", "sync", cloudProject, "--json"], sync.io)).toBe(EXIT.VALIDATION_FAILED);
+    expect(parseEnvelope(sync.stdout[0]!).error?.code).toBe("PROJECT_CLOUD_SYNC_UNSUPPORTED");
+    expect(await readFile(runsPath)).toEqual(runsBefore);
+    await expect(readFile(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
   it("prints help and wraps argument errors as --json output", async () => {
     const help = collect();
     expect(await main([], help.io)).toBe(EXIT.OK);

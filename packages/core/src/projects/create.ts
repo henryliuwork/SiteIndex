@@ -11,6 +11,7 @@ import {
 } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { writeCsv } from "../io/csv";
+import { assertProjectStorageLocal } from "../io/project-storage";
 
 function createError(code: "PROJECT_NOT_FOUND" | "FOLDER_EXISTS" | "WRITE_FAILED" | "UNKNOWN", message: string, detail?: string) {
   return { code, message, ...(detail ? { detail } : {}) };
@@ -215,6 +216,7 @@ export async function createProjectFiles(
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
     throw createError("UNKNOWN", "项目目录必须位于 projects_root 内。", projectPath);
   }
+  await assertProjectStorageLocal(projectPath);
   await mkdir(root, { recursive: true });
   try {
     await mkdir(projectPath);

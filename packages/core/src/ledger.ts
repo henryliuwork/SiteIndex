@@ -4,6 +4,7 @@ import { CSV_HEADERS, LEDGER_PATHS, pathsFor, type PathKey, type SiteIndexError 
 import { readCsv, writeCsv } from "./io/csv";
 import { readJsonl, type JsonRecord, writeJsonl } from "./io/jsonl";
 import { resolveProjectLayout } from "./io/project-layout";
+import { assertProjectStorageLocal } from "./io/project-storage";
 
 export type LedgerName = keyof typeof LEDGER_PATHS;
 export type LedgerKey = string | readonly string[];
@@ -127,6 +128,7 @@ async function mutateLedger(
   deleteKeys: readonly LedgerKey[],
   options: LedgerMutationOptions,
 ): Promise<LedgerMutationResult> {
+  await assertProjectStorageLocal(projectPath);
   const spec = LEDGER_SPECS[ledger];
   if (!spec) throw configError(`不支持的台账: ${String(ledger)}`);
   const schema = await readLedgerSchema(spec.schema);

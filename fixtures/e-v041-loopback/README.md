@@ -37,3 +37,5 @@ node --test fixtures/e-v041-loopback/credential-isolation-report-oracle.test.mjs
 ```
 
 This oracle test does not launch an installer or Electron, and the hosted workflow does not yet invoke it. It is preparation evidence only; C must confirm/integrate the runner call before the oracle is treated as part of candidate acceptance. An official candidate run through C's hosted Windows workflow remains required.
+
+`project-storage-policy-cases.json` is a synthetic #480 path-classification vector. It verifies an explicitly configured provider root, a sibling with a similar prefix, and an unconfigured third-party location. Unknown means “not classified”; it does not certify local storage, and the fixture does not claim complete cloud-provider detection.

@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   atomicWrite,
+  assertProjectStorageLocal,
   createCoreService,
   deleteLedger,
   pathsForProject,
@@ -342,6 +343,7 @@ function errorExitCode(error: unknown): ExitCode {
   }
   switch (errorCode(error)) {
     case "CONFIG_INVALID": return EXIT.VALIDATION_FAILED;
+    case "PROJECT_CLOUD_SYNC_UNSUPPORTED": return EXIT.VALIDATION_FAILED;
     case "GUARD_ABORTED": return EXIT.GUARD_ABORTED;
     case "LOCKED": return EXIT.LOCKED;
     case "NOT_RUNNER": return EXIT.NOT_RUNNER;
@@ -447,6 +449,7 @@ async function listSkills(skillsDir: string): Promise<{ path: string; info: Skil
 
 async function syncSkills(runtime: Runtime, project: string): Promise<{ skills: string[]; manifest: string }> {
   const projectPath = resolveProjectPath(project, runtime.cwd, runtime.settings);
+  await assertProjectStorageLocal(projectPath);
   const skills = await listSkills(runtime.skillsDir);
   if (!skills.length) throw new CliError("PROJECT_NOT_FOUND", "找不到软件内置 skills 目录。", EXIT.SOURCE_FAILED);
   const paths = await pathsForProject(projectPath);

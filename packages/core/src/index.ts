@@ -22,6 +22,8 @@ export type { ReadmeAutoBlockId, ReadmeAutoContent, ReadmeAutoContentInput } fro
 export { deleteLedger, upsertLedger } from "./ledger";
 export type { LedgerKey, LedgerMutationOptions, LedgerMutationResult, LedgerName } from "./ledger";
 export { assertRunner, CoreIOError, findConflictCopies, isConflictCopy, readRunner, withLock, writeRunner } from "./io/runner-lock";
+export { assertProjectStorageLocal, inspectProjectStorageLocation } from "./io/project-storage";
+export type { ProjectStorageAssessment } from "./io/project-storage";
 export { applyFeedOverrides, FeedError, parseFeed, readFeeds, toSnapshot, writeSnapshot } from "./crawl/gmc-feed";
 export type { FeedItem, FeedSiteConfig, FeedSnapshot, SnapshotResult, StockStatus } from "./crawl/gmc-feed";
 export { runDaily, runDailyFromFile } from "./jobs/daily";
