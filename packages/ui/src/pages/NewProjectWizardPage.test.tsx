@@ -73,12 +73,13 @@ describe("NewProjectWizardPage workspace step", () => {
     const nextToBrand = screen.getByRole("button", { name: "下一步：品牌配置" });
     await waitFor(() => expect((nextToBrand as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(nextToBrand);
+    expect(await screen.findByText(/仅支持本机存储。第三方同步目录可能无法识别/)).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "下一步：Agent 工作区" }));
 
     expect((await screen.findByRole("checkbox", { name: /创建 Agent 工作区/ }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("checkbox", { name: "Mailchimp" }) as HTMLInputElement).checked).toBe(true);
     await screen.findByText("目标目录为空，可以继续。");
-    await waitFor(() => expect(checkWorkspace).toHaveBeenCalledWith("D:/云盘/projects/kingsyard"));
+    await waitFor(() => expect(checkWorkspace).toHaveBeenCalledWith("D:/SiteIndex/projects/kingsyard"));
     expect(screen.getByRole("heading", { name: "将生成的目录树" })).toBeTruthy();
     const preview = screen.getByText((_content, element) => element?.tagName === "PRE");
     expect(preview.textContent).toContain("_site-index/");

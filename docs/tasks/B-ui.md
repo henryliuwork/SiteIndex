@@ -102,6 +102,9 @@
 - [x] 凭据 UI 区分 Desktop bridge 缺失与本机安全存储不可用；bridge 缺失/不完整时不显示无效重试或凭据管理操作，并覆盖 vault 重试恢复 — 本 PR
 - [x] WordPress 凭据 UI smoke helper：按唯一 HTTPS origin 区块执行配置、实际替换、清除与无回显断言 — [PR #425](https://github.com/henryliuwork/SiteIndex/pull/425)；本 PR 增加 `configure` / `replace` / `delete` / `assert-status` 阶段及 `otherOrigins` 状态断言，供 E 在真实 stop/relaunch 后传入新 Page 检查双站点状态；进程生命周期仍由 E 管理。packaged Electron 调用方必须声明 APPDATA、LOCALAPPDATA、USERPROFILE、HOME、TEMP、TMP、项目根和 vault 均位于同一临时隔离根。helper 只做路径字符串检查，不证明实际环境或 junction 隔离，结果固定标为 UI-only，不代表真实 IPC
 - [ ] 打包 Electron 凭据 UI/IPC 验收：等待 C/E 提供隔离 APPDATA、LOCALAPPDATA、合成项目根与临时 vault 的安全启动入口；mock 与 Desktop 假 transport/handler/vault 测试不能代替该验收
+
+## 本机存储提醒与已识别同步目录只读提示（Issue #480 · B）
+- [x] 项目中心与新建向导说明仅支持本机存储；明确未识别不代表已验证本机，转移需用户手动复制；现有项目共享页头及项目卡片提示已识别的第三方同步目录只读。项目中心隐藏该项目的同步、配置、导入检查及提醒状态写入入口，保留只取消登记且不删文件的显式移除入口 — [PR #484](https://github.com/henryliuwork/SiteIndex/pull/484)
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码

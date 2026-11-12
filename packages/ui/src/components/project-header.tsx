@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { Cloud } from "lucide-react";
 import type { ProjectSummary } from "@siteindex/shared";
 import { PageHeaderActions, type PageHeaderOverflowAction } from "./layout-primitives";
 import { TabPanel, Tabs } from "./primitives";
@@ -19,7 +20,7 @@ export const PROJECT_TABS = [
 ] as const;
 
 export type ProjectTab = (typeof PROJECT_TABS)[number]["value"];
-type HeaderProject = Pick<ProjectSummary, "id" | "name" | "domain" | "platform">;
+type HeaderProject = Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location">;
 
 export function projectTabId(projectId: ProjectSummary["id"], tab: ProjectTab): string {
   return `project-tab-${encodeURIComponent(projectId)}-${tab}`;
@@ -78,6 +79,12 @@ export function ProjectHeader({
         <h1 title={project.name}>{project.name}</h1>
         <code title={projectSubtitle}>{projectSubtitle}</code>
         {status && <div className="si-project-header-status">{status}</div>}
+        {project.storage_location === "known_cloud_sync" && <span
+          className="si-project-header-storage-warning"
+          role="note"
+          aria-label="此项目位于已识别的第三方同步目录，当前版本仅支持查看。请手动复制到本机存储后重新添加；SiteIndex 不会自动迁移或删除项目文件。"
+          title="此项目位于已识别的第三方同步目录，当前版本仅支持查看。请手动复制到本机存储后重新添加。"
+        ><Cloud size={13} aria-hidden="true" />已识别同步目录 · 只读</span>}
       </div>
     </header>
     <div className="si-project-header-tabs-row">

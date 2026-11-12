@@ -417,7 +417,7 @@ export function NewProjectWizardPage() {
         </section>
         <section className="si-wizard-card si-wizard-location-card">
           <h2>项目位置</h2>
-          <label className="si-wizard-field">项目根目录<div className="si-wizard-directory"><input className="si-text-field si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /><Button onClick={() => void chooseProjectsRoot()}>更改</Button></div><small>默认取自软件设置，可选择其他存储位置。</small></label>
+          <label className="si-wizard-field">项目根目录<div className="si-wizard-directory"><input className="si-text-field si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /><Button onClick={() => void chooseProjectsRoot()}>更改</Button></div><small className="si-wizard-storage-policy">仅支持本机存储。第三方同步目录可能无法识别；未显示提示不代表路径已验证为本机。需要转移项目时请手动复制后重新添加，SiteIndex 不会自动迁移或删除文件。</small></label>
           {settings.isError && <ApiErrorNotice label="项目根目录设置读取失败。" error={settings.error} onRetry={() => void settings.refetch()} />}
           <label className="si-wizard-field">项目文件夹名<input className="si-text-field si-mono" value={draft.folderName} onChange={(event) => update({ folderName: event.target.value })} /></label>
           <div className="si-wizard-path"><span>将创建</span><code>{previewPath}</code></div>

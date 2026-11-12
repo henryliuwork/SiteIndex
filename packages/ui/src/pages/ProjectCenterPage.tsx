@@ -129,11 +129,13 @@ function ProjectCard({
   scheduleVerification?: ScheduleVerificationDisplay;
 }) {
   const detailQuery = useQuery({ queryKey: projectQueryKeys.detail(project.id), queryFn: () => api.projects.get(project.id) });
+  const knownCloudSync = project.storage_location === "known_cloud_sync";
   const warning = projectWarning(project);
   const feedStatus = feedConfigurationStatus(detailQuery.data?.config.crawl.feed_url);
   const warningAction = projectWarningAction(project, feedStatus);
   const showWarning = warning !== null || warningAction === "feed";
   const warningLines = warning?.lines ?? ["尚未配置有效的商品 Feed。"];
+  const canImportCheckForProject = canImportCheck && !knownCloudSync;
   const chips = [
     ["到货", project.today.restock], ["缺货", project.today.oos], ["调价", project.today.price],
     ["上新", project.today.new], ["移除", project.today.removed],
@@ -147,21 +149,22 @@ function ProjectCard({
         </div>
         <div className="si-project-card-actions">
           <Chip tone={warning?.tone ?? (project.sync.state === "ok" ? "ok" : "neutral")}>{statusLabel(project)}</Chip>
-          {(typeof api.projects.remove === "function" || canImportCheck) && <ProjectActionsMenu
+          {(typeof api.projects.remove === "function" || canImportCheckForProject) && <ProjectActionsMenu
             project={project}
             onRemove={onRemove}
             onImportCheck={onImportCheck}
             canRemove={typeof api.projects.remove === "function"}
-            canImportCheck={canImportCheck}
+            canImportCheck={canImportCheckForProject}
           />}
         </div>
       </div>
+      {knownCloudSync && <Notice className="si-project-storage-notice" tone="warn" title="已识别第三方同步目录 · 只读">当前版本仅支持查看。需要继续操作时，请手动复制到本机存储后重新添加；SiteIndex 不会自动迁移或删除项目文件。</Notice>}
       {scheduleVerification && <p className={"si-project-schedule-verification" + (scheduleVerification.state === "error" || (scheduleVerification.state === "complete" && scheduleVerification.result.state === "error") ? " is-error" : "")} role="status">{scheduleVerificationLabel(scheduleVerification)}</p>}
       {showWarning && <div className={"si-project-warning si-project-warning-" + (warning?.tone ?? "warn")}>
         <div>{warningLines.map((line) => <span key={line}>{line}</span>)}{detailQuery.isError && <small>{apiErrorMessage(detailQuery.error, "暂时无法读取 Feed 配置。")}</small>}</div>
         <div className="si-project-warning-actions">
-          {warningAction === "feed" && <Link to={"/p/" + project.id + "/settings/config"}>填写 feed</Link>}
-          {warningAction === "runs" && <Link to={"/p/" + project.id + "/runs"}>{project.sync.state === "never" ? "立即同步" : project.sync.state === "failed" || project.sync.state === "partial" ? "查看运行问题" : "查看运行记录"}</Link>}
+          {warningAction === "feed" && !knownCloudSync && <Link to={"/p/" + project.id + "/settings/config"}>填写 feed</Link>}
+          {warningAction === "runs" && !knownCloudSync && <Link to={"/p/" + project.id + "/runs"}>{project.sync.state === "never" ? "立即同步" : project.sync.state === "failed" || project.sync.state === "partial" ? "查看运行问题" : "查看运行记录"}</Link>}
           {warningAction === "project" && <Link to={"/p/" + project.id}>查看项目</Link>}
           <button type="button" onClick={() => onOpenFolder(project.path)}>打开文件夹</button>
         </div>
@@ -221,10 +224,10 @@ function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onO
         <Dialog.Overlay className="si-dialog-overlay" />
         <Dialog.Content className="si-confirm-dialog si-add-project-dialog">
           <Dialog.Title className="si-dialog-title">添加已有项目</Dialog.Title>
-          <Dialog.Description className="si-dialog-description">选择云盘中已经创建的 SiteIndex 项目文件夹。</Dialog.Description>
+          <Dialog.Description className="si-dialog-description">选择本机存储中的 SiteIndex 项目文件夹。未显示同步目录提示不代表路径已验证为本机。</Dialog.Description>
           <form onSubmit={submit} aria-busy={saving}>
             <label className="si-field-label" htmlFor="existing-project-path">项目文件夹路径</label>
-            <input id="existing-project-path" className="si-text-field" autoFocus value={path} disabled={saving} onChange={(event) => setPath(event.target.value)} placeholder="D:\\云盘\\projects\\项目名" />
+            <input id="existing-project-path" className="si-text-field" autoFocus value={path} disabled={saving} onChange={(event) => setPath(event.target.value)} placeholder="D:\\SiteIndex\\projects\\项目名" />
             {error && <p className="si-form-error" role="alert">{error}</p>}
             {saving && <p className="si-muted" role="status" aria-live="polite">正在读取项目…</p>}
             <div className="si-dialog-actions">
@@ -391,7 +394,7 @@ function AttentionIssueRow({ project, issue }: { project: ProjectSummary; issue:
     },
     onError: (cause) => toast.error(apiErrorMessage(cause, "更新提醒状态失败，请重试。")),
   });
-  const canSetStatus = typeof api.seo.setIssueStatus === "function";
+  const canSetStatus = typeof api.seo.setIssueStatus === "function" && project.storage_location !== "known_cloud_sync";
 
   return <li>
     <div className="si-center-attention-copy"><span>{issue.detail}</span><small>{issue.last_seen}</small></div>
@@ -419,11 +422,12 @@ function AttentionDetails({ project }: { project: ProjectSummary }) {
       <strong>{project.name}</strong>
       <Chip tone="warn">{project.attention} 条待处理</Chip>
     </div>
+    {project.storage_location === "known_cloud_sync" && <p className="si-center-attention-readonly" role="note">已识别为第三方同步目录；提醒仅可查看。</p>}
     {issuesQuery.isLoading ? <p className="si-muted" role="status">正在读取最近提醒…</p>
       : issuesQuery.isError ? <ApiErrorNotice className="si-center-attention-error" label="提醒加载失败。" error={issuesQuery.error} onRetry={() => void issuesQuery.refetch()} />
       : issues.length > 0 ? <ul>{issues.map((issue) => <AttentionIssueRow key={project.id + ":" + issue.url + ":" + issue.rule} project={project} issue={issue} />)}</ul>
       : <p className="si-muted" role="status">暂无可展示的待处理提醒。</p>}
-    <Link className="si-button si-button-small" to={"/p/" + project.id + "/seo?status=open"}>去处理</Link>
+    <Link className="si-button si-button-small" to={"/p/" + project.id + "/seo?status=open"}>{project.storage_location === "known_cloud_sync" ? "查看问题" : "去处理"}</Link>
   </article>;
 }
 
@@ -568,6 +572,7 @@ export function ProjectCenterPage() {
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
         </>}
       />
+      <Notice className="si-center-storage-policy" tone="info" title="SiteIndex 仅支持本机存储">第三方同步目录可能无法识别；未显示同步提示不代表路径已验证为本机。需要转移项目时请手动复制文件夹后重新添加，SiteIndex 不会自动迁移或删除项目文件。</Notice>
       {workspaceCapabilities.explainEmptyWorkspaceUnavailable && <Notice tone="info" title="Agent 工作区暂不可用">桌面端尚未接入空工作区创建和目录检查操作；现有项目添加与普通新建流程仍可使用。</Notice>}
       {settingsQuery.isError && <ApiErrorNotice className="si-center-query-error" label="项目根目录读取失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
       {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : <>
@@ -582,7 +587,7 @@ export function ProjectCenterPage() {
         </div>
         {attentionExpanded && <AttentionList projects={projects} />}
         <section className="si-project-grid" aria-label="项目列表">
-          {projects.length === 0 ? <div className="si-project-empty"><EmptyState icon={<FolderOpen size={22} />} title="还没有项目">新建项目，或添加云盘中已有的 SiteIndex 项目文件夹。</EmptyState></div> : <>
+          {projects.length === 0 ? <div className="si-project-empty"><EmptyState icon={<FolderOpen size={22} />} title="还没有项目">新建项目，或添加本机存储中已有的 SiteIndex 项目文件夹。</EmptyState></div> : <>
             {projects.map((project) => <ProjectCard
               key={project.id}
               project={project}
