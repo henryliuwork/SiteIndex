@@ -31,6 +31,28 @@ describe("createApiBridge IPC errors", () => {
     expect(invoke).toHaveBeenCalledWith("si:edm.exportIndex", "fixture-project");
   });
 
+  it("forwards EDM discount tier selection and clearing through the API bridge", async () => {
+    const results = [
+      { sku: "parent-row", discount_tier: 25 },
+      { sku: "parent-row", discount_tier: null },
+    ];
+    const invoke = vi.fn(async () => results.shift());
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+
+    await expect(bridge.edm.setDiscountTier?.("fixture-project", "parent-row", 25)).resolves.toEqual({
+      sku: "parent-row",
+      discount_tier: 25,
+    });
+    await expect(bridge.edm.setDiscountTier?.("fixture-project", "parent-row", null)).resolves.toEqual({
+      sku: "parent-row",
+      discount_tier: null,
+    });
+    expect(invoke.mock.calls).toEqual([
+      ["si:edm.setDiscountTier", "fixture-project", "parent-row", 25],
+      ["si:edm.setDiscountTier", "fixture-project", "parent-row", null],
+    ]);
+  });
+
   it("restores an uncertain EDM export outcome without reporting success", async () => {
     const bridge = createApiBridge({
       invoke: async () => {

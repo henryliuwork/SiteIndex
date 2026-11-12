@@ -146,6 +146,8 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       summary: (...args) => invoke<SiteIndexApi["edm"]["summary"]>("edm.summary", ...args),
       listImages: (...args) => invoke<SiteIndexApi["edm"]["listImages"]>("edm.listImages", ...args),
       setManualImage: (...args) => invoke<SiteIndexApi["edm"]["setManualImage"]>("edm.setManualImage", ...args),
+      setDiscountTier: (...args) =>
+        invoke<NonNullable<SiteIndexApi["edm"]["setDiscountTier"]>>("edm.setDiscountTier", ...args),
       buildCommand: (...args) => invoke<SiteIndexApi["edm"]["buildCommand"]>("edm.buildCommand", ...args),
       exportIndex: (...args) => invoke<NonNullable<SiteIndexApi["edm"]["exportIndex"]>>("edm.exportIndex", ...args),
     },

@@ -96,6 +96,7 @@ describe("IPC handler completeness", () => {
     expect(missingMethods.filter((method) => !pendingMethods.has(method))).toEqual([]);
     expect(registeredSet.has("media.prepare")).toBe(true);
     expect(registeredSet.has("edm.exportIndex")).toBe(true);
+    expect(registeredSet.has("edm.setDiscountTier")).toBe(true);
     expect(API_INVOKE_METHODS).toContain("uiState.get");
     expect(API_INVOKE_METHODS).toContain("updates.check");
     expect(API_EVENT_METHODS).toContain("updates.onStatus");
@@ -131,6 +132,22 @@ describe("IPC handler completeness", () => {
       job: "media",
       skus: ["fictional-sku"],
     });
+  });
+
+  it("routes the optional EDM discount-tier bridge method to Core and returns its result", async () => {
+    const context = testContext();
+    const setDiscountTier = vi.fn(async (_id: ProjectId, sku: string, discountTier: number | null) => ({
+      sku,
+      discount_tier: discountTier,
+    }));
+    Object.assign(context.core.edm, { setDiscountTier });
+    const api = apiBridgeFor(context);
+
+    await expect(api.edm.setDiscountTier?.("demo", "parent-row", 25)).resolves.toEqual({
+      sku: "parent-row",
+      discount_tier: 25,
+    });
+    expect(setDiscountTier).toHaveBeenCalledWith("demo", "parent-row", 25);
   });
 
   it("rejects malformed media requests before starting a worker", async () => {
