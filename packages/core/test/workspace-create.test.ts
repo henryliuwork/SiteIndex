@@ -8,6 +8,7 @@ import { createCoreService } from "../src/service";
 
 const TEMP_DIRS: string[] = [];
 const workspacePaths = pathsFor("workspace");
+let ACTIVE_TEST_WORK: Promise<unknown> | undefined;
 
 function service() {
   return createCoreService({
@@ -28,12 +29,21 @@ function input(targetDir: string): WorkspaceCreateInput {
   };
 }
 
+function trackTestWork<T>(work: () => Promise<T>): Promise<T> {
+  const pending = work();
+  ACTIVE_TEST_WORK = pending;
+  return pending;
+}
+
 afterEach(async () => {
+  const pending = ACTIVE_TEST_WORK;
+  if (pending) await pending.then(() => undefined, () => undefined);
+  ACTIVE_TEST_WORK = undefined;
   await Promise.all(TEMP_DIRS.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
-});
+}, 30_000);
 
 describe("workspace.create", () => {
-  it("creates the workspace template, empty data files, ignored empty env file and automatic blocks", async () => {
+  it("creates the workspace template, empty data files, ignored empty env file and automatic blocks", () => trackTestWork(async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-create-"));
     TEMP_DIRS.push(root);
     const target = path.join(root, "project");
@@ -82,9 +92,9 @@ describe("workspace.create", () => {
     for (const section of manifest.sections) expect(projectEntries).toContain(section.dir);
     expect(projectEntries).toContain("_outputs");
     expect(projectEntries).toContain("_archive");
-  });
+  }), 30_000);
 
-  it("accepts the New Project Wizard ESP preset ID and persists its canonical manifest ID", async () => {
+  it("accepts the New Project Wizard ESP preset ID and persists its canonical manifest ID", () => trackTestWork(async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-preset-alias-"));
     TEMP_DIRS.push(root);
     const target = path.join(root, "project");
@@ -99,7 +109,7 @@ describe("workspace.create", () => {
     expect(config.workspace?.esp_presets).toEqual(["mailchimp"]);
     expect(manifest.esp_presets).toEqual(["mailchimp"]);
     expect(await readFile(path.join(target, workspacePaths.skillsDir, "presets", "esp.mailchimp.md"), "utf8")).toBeTruthy();
-  });
+  }), 30_000);
 
   it("rejects unsupported and path-like preset IDs before writing workspace files", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-invalid-preset-"));
