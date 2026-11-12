@@ -97,6 +97,7 @@ describe("packaged media E2E failure diagnostics", () => {
       resultReportStatus: "missing",
       failureCode: "production-readiness-guard-missing",
       failureClass: "unclassified-process-output",
+      phaseStage: null,
       outputLineCount: 2,
     });
     expect(JSON.stringify(diagnostic)).not.toContain("private-path");
@@ -112,6 +113,19 @@ describe("packaged media E2E failure diagnostics", () => {
 
     expect(diagnostic.failureClass).toBe("native-module-load");
     expect(JSON.stringify(diagnostic)).not.toContain("SiteIndex");
+  });
+
+  it("retains only the last allowlisted phase stage from process output", () => {
+    const diagnostic = summarizePackagedPhaseFailure({
+      phase: "success",
+      exitCode: 0,
+      resultReportStatus: "running",
+      capturedOutput:
+        "media-production:success:stage:renderer-ready\nmedia-production:success:stage:media-rows-ready\nmedia-production:success:stage:media-selection-ready\nmedia-production:success:stage:caught-error\nmedia-production:success:stage:report-written\nC:\\runner\\private-path",
+    });
+
+    expect(diagnostic.phaseStage).toBe("media-selection-ready");
+    expect(JSON.stringify(diagnostic)).not.toContain("private-path");
   });
 });
 
