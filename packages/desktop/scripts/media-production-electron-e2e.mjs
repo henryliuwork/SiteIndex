@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scanMediaCanaryTree } from "./media-production-canary-scan.mjs";
+import { runPackagedPhaseProcess } from "./media-production-phase-process.mjs";
 import { mediaTrafficChecks } from "./media-production-traffic.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -39,6 +40,7 @@ const canaryBytes = [
   ...canaryStrings.map((value) => Buffer.from(value, "utf8")),
   ...canaryStrings.map((value) => Buffer.from(value, "utf16le")),
 ];
+let phaseFailureDiagnostic = null;
 
 function assertSafeTempRoot(root) {
   const tempRoot = path.resolve(os.tmpdir());
@@ -299,39 +301,17 @@ async function runPackagedPhase(root, phase, imageOrigin, wordpressOrigin) {
     SITEINDEX_MEDIA_E2E_IMAGE_ORIGIN: imageOrigin,
     SITEINDEX_MEDIA_E2E_WP_ORIGIN: wordpressOrigin,
   };
-  return new Promise((resolve, reject) => {
-    const child = spawn(packagedApp, [], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-    const output = [];
-    child.stdout.on("data", (chunk) => output.push(Buffer.from(chunk)));
-    child.stderr.on("data", (chunk) => output.push(Buffer.from(chunk)));
-    const timeout = setTimeout(() => child.kill(), 180_000);
-    child.once("error", () => {
-      clearTimeout(timeout);
-      reject(new Error(`Packaged phase ${phase} could not start.`));
-    });
-    child.once("close", async (code) => {
-      clearTimeout(timeout);
-      const captured = Buffer.concat(output);
-      const capturedCanaryMatches = canaryBytes.filter((value) => captured.includes(value)).length;
-      if (capturedCanaryMatches > 0) {
-        reject(new Error(`Packaged phase ${phase} leaked a credential canary in process output.`));
-        return;
-      }
-      try {
-        const report = JSON.parse(await readFile(reportPath, "utf8"));
-        if (code !== 0 || report.status !== "passed" || report.phase !== phase) {
-          reject(
-            new Error(
-              `Packaged phase ${phase} failed (exit ${code ?? "unknown"}; code ${report.failureCode ?? "invalid-report"}; output lines ${captured.toString("utf8").split(/\r?\n/u).filter(Boolean).length}).`,
-            ),
-          );
-          return;
-        }
-        resolve(report);
-      } catch {
-        reject(new Error(`Packaged phase ${phase} produced no valid result report.`));
-      }
-    });
+  return runPackagedPhaseProcess({
+    executable: packagedApp,
+    env,
+    phase,
+    reportPath,
+    spawnProcess: spawn,
+    readReport: (targetPath) => readFile(targetPath, "utf8"),
+    credentialCanaryBytes: canaryBytes,
+    onFailureDiagnostic: (diagnostic) => {
+      phaseFailureDiagnostic = diagnostic;
+    },
   });
 }
 
@@ -566,6 +546,7 @@ async function main() {
               sourceCommit: process.env.SITEINDEX_MEDIA_E2E_SOURCE_COMMIT ?? "local",
               status: "failed",
               completedPhaseCount: Object.keys(phaseResults).length,
+              failureDiagnostic: phaseFailureDiagnostic,
               localFileCountScanned: canaryScan.filesScanned,
               criticalFileCounts: canaryScan.criticalFilesRead,
               missingCriticalFileKindCount: canaryScan.missingCriticalKinds.length,
