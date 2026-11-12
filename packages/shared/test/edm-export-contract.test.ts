@@ -32,6 +32,6 @@ describe("EDM Save As contract", () => {
     expect(cancelled.status).toBe("cancelled");
     expect(legacy.path).toBe("index/edm/sku-index.md");
     expect(API_INVOKE_METHODS).toContain("edm.exportIndex");
-    expect(PENDING_HANDLERS).toContain("edm.exportIndex");
+    expect(PENDING_HANDLERS).not.toContain("edm.exportIndex");
   });
 });
