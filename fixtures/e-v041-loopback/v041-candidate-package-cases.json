@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "candidate_version": "0.4.1",
+  "baseline": {
+    "main_commit": "e976bdbafcd801a4de9fa8b57352bb9124dd411d",
+    "roadmap": "docs/plan/2026-11-05-v040-roadmap.md §4.5, §4.6, §5 E",
+    "existing_matrix": "fixtures/e-v041-loopback/v041-acceptance-matrix.md"
+  },
+  "isolation": {
+    "runner": "Fresh GitHub-hosted Windows runner only",
+    "root": "RUNNER_TEMP/siteindex-e-acceptance-*",
+    "profile_environment": ["APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOME", "TEMP", "TMP"],
+    "network_policy": "After artifact retrieval, app-side stock/media requests use loopback fixtures only.",
+    "synthetic_data_only": true,
+    "restore_and_cleanup_required": true,
+    "forbidden": [
+      "user workstation installation or profile",
+      "real project folder or business data",
+      "real SKU, price, feed, URL, or credential",
+      "release publishing"
+    ]
+  },
+  "dependencies_at_baseline": {
+    "storage": "Core guard merged in #485; packaged warning depends on B #484.",
+    "inventory": "Core/CLI path merged in #417 and #464; candidate IPC/page evidence remains separate.",
+    "media": "media.prepare enabled by #471; current C hosted media workflow targets win-unpacked, not NSIS.",
+    "edm_export": "A #473 edm.renderIndex is merged and render-only. C #481 owns Desktop native Save As/no-clobber and is open. After #481 merges, an independent contract/* PR must clear edm.exportIndex from PENDING_HANDLERS before candidate package acceptance."
+  },
+  "cases": [
+    {
+      "id": "PKG-NSIS-UPGRADE",
+      "area": "NSIS install and upgrade",
+      "readiness": "candidate-required",
+      "dependencies": ["C workflow e-windows-v040-acceptance.yml", "Pinned v0.4.0 baseline", "Verified candidate provenance"],
+      "automated": ["Hash/provenance checks", "Baseline NSIS install and candidate upgrade", "Restart/version/profile/project readback"],
+      "manual_required": ["Inspect the hosted runner only if Playwright cannot confirm the complete UI is visible."],
+      "pass": ["Candidate process and installer remain inside the isolated root.", "Synthetic projects and settings survive upgrade.", "Profile and cleanup checks pass."],
+      "evidence": ["Candidate commit and digest", "Windows build/image", "Sanitized version/restart/project counts", "Before/after tree hash summary"]
+    },
+    {
+      "id": "PKG-STORAGE-READONLY",
+      "area": "Legacy/workspace read-only and known-sync path guard",
+      "readiness": "core-ready-ui-pending",
+      "dependencies": ["project-storage-policy-cases.json", "Merged #485", "B #484 warning/affordance"],
+      "automated": ["Read both project layouts", "Hash every synthetic file before/after", "Check settings/task summaries and write-denial code"],
+      "manual_required": ["After #484 is in the candidate, inspect the warning and read-only controls in the hosted UI."],
+      "pass": ["No auto migration, repair, lock, run-history, settings, task, or data mutation.", "Known-sync project is readable but writes are blocked.", "All tree hashes match."],
+      "evidence": ["Layout/warning enums", "Stable error code", "File counts and aggregate hashes", "No raw path or project contents"]
+    },
+    {
+      "id": "PKG-STOCK-ABSENT-STATES",
+      "area": "Feed-absent inventory states and protective fallback",
+      "readiness": "core-cli-ready-package-pending",
+      "dependencies": ["stock-verification-acceptance-cases.json", "Loopback GraphQL/site fixture", "Merged #417/#464", "Candidate package"],
+      "automated": ["Core/CLI daily with synthetic project", "Candidate CLI/index/page comparison through Playwright/CDP"],
+      "manual_required": ["Review rendered stock labels only if the page state is not observable through DOM/accessibility output."],
+      "pass": ["404/410 becomes removed.", "Reliable out-of-stock becomes out_of_stock.", "Reliable in-stock remains active and emits one feed_anomaly.", "Unknown/unavailable preserves prior state."],
+      "evidence": ["Status/event counts", "Fixed-route request counts", "CLI/index/page agreement", "No body, SKU, URL, or page text"]
+    },
+    {
+      "id": "PKG-MEDIA-RECOVERY",
+      "area": "Media partial failure and persisted-upload recovery",
+      "readiness": "hosted-win-unpacked-only-nsis-pending",
+      "dependencies": ["fake-services.mjs", "retry-after-persist acceptance cases", "Merged #439/#459/#466/#471/#478", "C NSIS harness integration"],
+      "automated": ["Fixture/Core/win-unpacked hosted cases", "NSIS only after C invokes the production-gated harness against the installed candidate"],
+      "manual_required": ["If the installed-app harness is missing, mark not verified; do not substitute win-unpacked evidence."],
+      "pass": ["401/403 stops the batch.", "Sent POST with uncertain response stops later work.", "Restart recovery GETs by slug before retry and leaves one media object/ledger row.", "App-side requests stay on loopback."],
+      "evidence": ["Fixed route/status counts", "Outcome and row counts", "Canary match counts", "NSIS executable-containment boolean"]
+    },
+    {
+      "id": "PKG-EDM-SAVEAS-CANCEL",
+      "area": "SKU export Save As and cancel",
+      "readiness": "blocked-until-c-desktop-save-as-and-contract",
+      "dependencies": ["sku-index.expected.md", "Merged A #473 edm.renderIndex (render only)", "C PR #481 Desktop native Save As", "Follow-up contract/* PR clears edm.exportIndex from PENDING_HANDLERS"],
+      "automated": ["Golden output check", "After handler exists, Windows UI Automation can select/cancel native Save As."],
+      "manual_required": ["Playwright DOM cannot control the native Save As dialog; verify in hosted Windows UI Automation or hosted VM."],
+      "pass": ["Saved file matches golden and remains under root.", "Cancel creates or changes no file.", "Desktop returns only basename and counts, not absolute paths or file contents."],
+      "evidence": ["Result enum and relative filename class", "Row count/hash", "Cancel/no-write boolean"]
+    },
+    {
+      "id": "PKG-EDM-CONFLICT",
+      "area": "SKU export conflict protection",
+      "readiness": "blocked-until-c-desktop-save-as-and-contract",
+      "dependencies": ["Merged A #473 edm.renderIndex (render only)", "C PR #481 Desktop Save As/no-clobber", "Follow-up contract/* PR clears edm.exportIndex from PENDING_HANDLERS"],
+      "automated": ["Fixture integrity", "After dependencies merge, compare target outcome enums and exact before/after hashes for project-internal, project-external-same-content, project-external-different-content, and concurrent-create targets."],
+      "manual_required": ["Operate Save As in hosted Windows UI Automation or hosted VM; inspect the prompt and never accept overwrite."],
+      "target_conflict_policy": {
+        "existing_target_inside_project": {
+          "outcome": "fail-closed",
+          "error_code": "EDM_INDEX_CONFLICT",
+          "preserve_exact_bytes": true,
+          "message_expectation": "State that the original file was not overwritten and allow choosing a new filename."
+        },
+        "existing_target_outside_project_same_content": {
+          "outcome": "unchanged",
+          "preserve_exact_bytes": true
+        },
+        "existing_target_outside_project_different_content": {
+          "outcome": "fail-closed",
+          "error_category": "WRITE_FAILED",
+          "error_code": "EDM_INDEX_SAFE_REPLACE_UNAVAILABLE",
+          "preserve_exact_bytes": true,
+          "message_expectation": "State that the original file was not overwritten and require another filename."
+        },
+        "target_created_after_dialog_observed_absent": {
+          "outcome": "fail-closed",
+          "no_clobber": true,
+          "preserve_exact_bytes": true
+        },
+        "save_as_cancel": {
+          "outcome": "cancelled",
+          "no_file_created_or_changed": true
+        }
+      },
+      "pass": ["An existing project-internal target returns EDM_INDEX_CONFLICT and remains byte-identical.", "An outside target with identical content returns unchanged and remains byte-identical.", "An outside target with different content returns WRITE_FAILED / EDM_INDEX_SAFE_REPLACE_UNAVAILABLE and remains byte-identical.", "A concurrent target creation is never overwritten.", "Cancel creates or changes no file.", "Unknown result is read back before any retry."],
+      "evidence": ["Target location class and result enum", "Before/after hashes", "No-write booleans", "No absolute path, filename, or SKU"]
+    },
+    {
+      "id": "PKG-CREDENTIAL-ISOLATION",
+      "area": "Credential isolation and redaction",
+      "readiness": "hosted-oracle-ready-candidate-pending",
+      "dependencies": ["credential-isolation-package-acceptance.md", "report oracle", "Merged #463", "Pinned baseline and candidate"],
+      "automated": ["Existing C hosted Playwright, profile isolation, cross-origin restart checks, canary scan, and fail-closed report oracle."],
+      "manual_required": ["Review only the sanitized report and visible masking state; never copy or publish a canary."],
+      "pass": ["A/B origin state survives restart and remains isolated.", "No canary in DOM/storage/IPC/logs/project/vault/artifact.", "Report contains only booleans, enums, counts, and fixed error codes."],
+      "evidence": ["Candidate provenance and Windows build", "Origin aliases/states/restart booleans", "Five scan counts", "Cleanup/containment booleans"]
+    }
+  ]
+}
