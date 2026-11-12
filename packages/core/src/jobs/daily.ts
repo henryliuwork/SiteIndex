@@ -46,6 +46,8 @@ export interface DailyOptions {
   force?: boolean;
   /** @internal Deterministic gate for testing external edits between calculation and commit. */
   beforeOutputCommit?: () => Promise<void>;
+  /** @internal Test-only barrier immediately before an atomic daily target replacement. */
+  testOnlyBeforeTargetReplace?: (relativeTarget: string) => Promise<void>;
 }
 export interface DailyResult {
   exitCode: number;
@@ -522,7 +524,15 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
   ];
   // Every output batch is recoverable; verification cursor state commits only after this transaction.
   await options.beforeOutputCommit?.();
-  await persistDailyOutputTransaction(project, paths, outputWrites, undefined, initialOutputBytes);
+  await persistDailyOutputTransaction(
+    project,
+    paths,
+    outputWrites,
+    options.testOnlyBeforeTargetReplace
+      ? { beforeTargetReplace: options.testOnlyBeforeTargetReplace }
+      : undefined,
+    initialOutputBytes,
+  );
 
   if (verification && cursorPath && committedCursor) {
     if (verification.statePersistenceFailed) {

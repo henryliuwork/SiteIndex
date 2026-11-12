@@ -175,7 +175,7 @@
 
 ### v0.4.1 · 库存核验
 - [x] daily 在完整 feed 合并后核验缺席 active SKU；重用 loopback 假 feed / 产品页 / GraphQL 夹具覆盖 legacy 与 workspace；空 feed 与缺席比例保护在请求前短路，支持 GraphQL/page-text、404/410、限速与单次上限；游标在独立 Job 元数据文件持久化并公平轮转；GraphQL 错误/损坏响应与无 URL 失败保留原状态
-- [x] 游标先记录待处理 SKU；events、inventory_latest、sku、daily_summary 采用可恢复的多文件输出事务，写入中断后回滚完整旧快照再重试，避免 404/5xx 之间产生 SKU、库存与事件不一致
+- [x] 游标先记录待处理 SKU；events、inventory_latest、sku、daily_summary 采用可恢复的多文件输出事务，写入中断后回滚完整旧快照再重试，避免 404/5xx 之间产生 SKU、库存与事件不一致；CLI 子进程在事件已替换、库存尚未替换的提交点被强制终止后，新 CLI 进程恢复验证 legacy/workspace 的库存、游标与事件
 
 ### v0.4.1 · Core media Job
 - [x] `runJob(job="media")`：凭据仅由 Core 内存上下文注入；WASM 将 WebP/AVIF 转为白底 JPEG；逐 SKU 记录；每次执行有唯一 runId，并在 `pathsForProject(...).jobLogsDir/<runId>.media.json` 原子写恢复 checkpoint；服从 K5 分区语义及 #438 虚构验收向量
