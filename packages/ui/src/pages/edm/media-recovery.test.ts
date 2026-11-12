@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getMediaRecoveryDisplay, mediaRecoveryErrorMessage } from "./media-recovery";
+import type { RunLog } from "@siteindex/shared";
+import { getMediaRecoveryDisplay, getMediaRetryReviewSkus, mediaRecoveryErrorMessage } from "./media-recovery";
 
 describe("getMediaRecoveryDisplay", () => {
   it("旧历史缺少恢复字段时标为不可恢复，不把 SKU 误报为未开始", () => {
@@ -60,5 +61,61 @@ describe("getMediaRecoveryDisplay", () => {
   it("不会从自由文本错误推断 401 或 403", () => {
     const display = getMediaRecoveryDisplay({ job: "media", errors: ["HTTP 403"] });
     expect(display.errorCode).toBeUndefined();
+  });
+});
+
+describe("getMediaRetryReviewSkus", () => {
+  it("为所选结果未知的 SKU 要求复核，不阻塞已确认未开始的 SKU", () => {
+    const history: RunLog[] = [{
+      run_id: "demo-unknown-run",
+      job: "media",
+      started_at: "2026-11-10T10:00:00.000Z",
+      finished_at: "2026-11-10T10:01:00.000Z",
+      status: "partial",
+      media_requested_skus: ["DEMO-UNKNOWN", "DEMO-NOT-STARTED"],
+      media_batch_state: "outcome_unknown",
+      media_results: [],
+      media_unknown_skus: ["DEMO-UNKNOWN"],
+      media_not_started_skus: ["DEMO-NOT-STARTED"],
+    }];
+
+    expect(getMediaRetryReviewSkus(history, ["DEMO-UNKNOWN", "DEMO-NOT-STARTED"])).toEqual(["DEMO-UNKNOWN"]);
+  });
+
+  it("较新的确认结果解除旧未知项，较新的未开始结果则不会解除", () => {
+    const unknownRun: RunLog = {
+      run_id: "demo-unknown-run",
+      job: "media",
+      started_at: "2026-11-10T10:00:00.000Z",
+      finished_at: "2026-11-10T10:01:00.000Z",
+      status: "partial",
+      media_requested_skus: ["DEMO-A"],
+      media_batch_state: "outcome_unknown",
+      media_results: [],
+      media_unknown_skus: ["DEMO-A"],
+      media_not_started_skus: [],
+    };
+    const confirmedRun: RunLog = {
+      run_id: "demo-confirmed-run",
+      job: "media",
+      started_at: "2026-11-11T10:00:00.000Z",
+      finished_at: "2026-11-11T10:01:00.000Z",
+      status: "ok",
+      media_requested_skus: ["DEMO-A"],
+      media_batch_state: "complete",
+      media_results: [{ sku: "DEMO-A", status: "skipped_has_url" }],
+      media_unknown_skus: [],
+      media_not_started_skus: [],
+    };
+    const notStartedRun: RunLog = {
+      ...confirmedRun,
+      run_id: "demo-not-started-run",
+      media_batch_state: "interrupted",
+      media_results: [],
+      media_not_started_skus: ["DEMO-A"],
+    };
+
+    expect(getMediaRetryReviewSkus([unknownRun, confirmedRun], ["DEMO-A"])).toEqual([]);
+    expect(getMediaRetryReviewSkus([unknownRun, notStartedRun], ["DEMO-A"])).toEqual(["DEMO-A"]);
   });
 });

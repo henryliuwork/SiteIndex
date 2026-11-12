@@ -64,7 +64,7 @@ describe("EDM media job monitor lifecycle", () => {
     expect(secondToast.info.mock.calls).toEqual(expect.arrayContaining([
       ["图片处理进度（虚构项目甲）：正在处理虚构 SKU"], ["图片处理进度（虚构项目乙）：正在复用虚构图片"],
     ]));
-    expect(monitor.getSnapshot("demo")?.progress).toBe("正在处理虚构 SKU");
+    expect(monitor.getSnapshot("demo")?.progress).toBe("已完成 50% · 正在处理虚构 SKU");
     expect(monitor.getSnapshot("other")?.result?.media_results?.map(({ sku }) => sku)).toEqual(["DEMO-002"]);
     expect(firstToast.info).not.toHaveBeenCalled();
     secondJobs.emitFinished({ runId: "media-run-001", job: "media", status: "ok", exitCode: 0, summary: "图片准备完成", media_results: [{ sku: "DEMO-001", status: "uploaded" }] });

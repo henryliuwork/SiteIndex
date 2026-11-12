@@ -375,6 +375,54 @@ describe("EdmPage media preparation prototype", () => {
     expect(screen.queryByRole("checkbox", { name: "选择当前页全部行" })).toBeNull();
   });
 
+  it("本机 WordPress 凭据未配置时说明任务未启动且不显示错误详情", async () => {
+    const sku = "DEMO-NO-CREDENTIAL-001";
+    const error = Object.assign(new Error("凭据不可用"), { code: "WP_NOT_CONFIGURED", detail: "applicationPassword=fixture-secret" });
+    const { mediaPrepare } = await renderEdmPage(true, false, [mediaImageRow(sku, "https://demo-store.example.test/demo/main.webp")], true, false, { mediaPrepareError: error });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（1）" }));
+
+    expect(await screen.findByText("图片准备未启动", { selector: "strong" })).toBeTruthy();
+    expect(await screen.findAllByText(/本机尚未配置 WordPress 凭据，任务未启动/)).toHaveLength(2);
+    expect(screen.queryByText(/fixture-secret|applicationPassword/)).toBeNull();
+    expect(mediaPrepare).toHaveBeenCalledWith({ project: "demo", skus: [sku] });
+  });
+
+  it("所选 SKU 上次结果未知时先要求核对，不直接重跑", async () => {
+    const sku = "DEMO-UNKNOWN-RETRY-001";
+    const history: RunLog[] = [{
+      run_id: "demo-unknown-retry-run", job: "media", started_at: "2026-11-10T10:00:00.000Z", finished_at: "2026-11-10T10:01:00.000Z", status: "partial",
+      media_requested_skus: [sku], media_batch_state: "outcome_unknown", media_results: [], media_unknown_skus: [sku], media_not_started_skus: [],
+    }];
+    const { mediaPrepare } = await renderEdmPage(true, false, [mediaImageRow(sku, "https://demo-store.example.test/demo/main.webp")], true, false, { history });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（1）" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "请先核对图片处理结果" });
+    expect(within(dialog).getByText(new RegExp(sku))).toBeTruthy();
+    expect(within(dialog).getByText(/可能再次上传/)).toBeTruthy();
+    expect(mediaPrepare).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "已核对，继续处理" }));
+    await waitFor(() => expect(mediaPrepare).toHaveBeenCalledWith({ project: "demo", skus: [sku] }));
+  });
+
+  it("最近任务历史到达 100 条上限时也先提示核对范围", async () => {
+    const sku = "DEMO-TRUNCATED-HISTORY-001";
+    const startedAt = Date.parse("2026-11-10T00:00:00.000Z");
+    const history: RunLog[] = Array.from({ length: 100 }, (_, index) => ({
+      run_id: "demo-daily-history-" + index, job: "daily",
+      started_at: new Date(startedAt + index * 60_000).toISOString(),
+      finished_at: new Date(startedAt + index * 60_000 + 1_000).toISOString(), status: "ok",
+    }));
+    const { mediaPrepare } = await renderEdmPage(true, false, [mediaImageRow(sku, "https://demo-store.example.test/demo/main.webp")], true, false, { history });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（1）" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "请先核对图片处理结果" });
+    expect(within(dialog).getByText(/最近任务查询已达到 100 条上限/)).toBeTruthy();
+    expect(mediaPrepare).not.toHaveBeenCalled();
+  });
+
   it("真实模式在 Core/Desktop 导出门禁仍关闭时不渲染可执行清单导出按钮", async () => {
     await renderEdmPage(true, false);
 
@@ -524,7 +572,7 @@ describe("EdmPage media preparation prototype", () => {
     await waitFor(() => expect(mediaPrepare).toHaveBeenCalledWith({ project: "demo", skus: ["DEMO-REAL-JPG-001", "DEMO-REAL-WEBP-001", "DEMO-REAL-WEBP-002"] }));
     await waitFor(() => expect(button.hasAttribute("disabled")).toBe(true));
     emitMediaProgress({ runId: "demo-media-run", projectPath: "C:/fake/demo", job: "media", pct: 40, level: "info", message: "正在处理虚构 SKU", at: "2026-11-11T00:00:00.000Z" });
-    expect(await screen.findByText("正在处理虚构 SKU")).toBeTruthy();
+    expect(await screen.findByText(/已完成 40%.*正在处理虚构 SKU/)).toBeTruthy();
     emitMediaFinished({
       runId: "demo-media-run", job: "media", status: "partial", exitCode: 1, summary: "有 1 个 SKU 处理失败",
       media_error_code: "WP_AUTH_FAILED",
@@ -912,7 +960,7 @@ describe("EdmPage media preparation prototype", () => {
 
     const historyResults = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
     expect(within(historyResults).getByText("DEMO-EXTERNAL-NEWER-001")).toBeTruthy();
-    expect(await screen.findByText("活动任务仍在处理虚构 SKU")).toBeTruthy();
+    expect(await screen.findByText(/已完成 40%.*活动任务仍在处理虚构 SKU/)).toBeTruthy();
     expect(button.hasAttribute("disabled")).toBe(true);
   }, 15_000);
 });

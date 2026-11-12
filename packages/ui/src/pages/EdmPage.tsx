@@ -7,13 +7,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, Kpi, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { edmMediaJobMonitor, type EdmMediaRunSnapshot } from "./edm/media-job-monitor";
 import { getEdmExportCapability, isEdmExportDefinitiveNoWrite, isEdmExportOutcomeUnknown } from "./edm/export-capability";
 import { beginEdmExportAttempt, getEdmExportSafetyState, keepEdmExportAttemptBlocked, resolveEdmExportAttempt, subscribeEdmExportSafety } from "./edm/export-retry-state";
-import { getMediaRecoveryDisplay, mediaRecoveryErrorMessage, type MediaRecoveryDisplay, type MediaRecoveryRowStatus } from "./edm/media-recovery";
+import { getMediaRecoveryDisplay, getMediaRetryReviewSkus, mediaRecoveryErrorMessage, type MediaRecoveryDisplay, type MediaRecoveryRowStatus } from "./edm/media-recovery";
 import { EDM_MEDIA_HISTORY_LIMIT, selectEdmMediaDisplay } from "./edm/media-history";
 import { EdmWorkflowPrototype } from "./edm/workflow-prototype";
 
@@ -100,6 +100,27 @@ function mediaRecoverySummary(recovery: MediaRecoveryDisplay): string {
     : recovery.batchState === "outcome_unknown" ? "至少一个 SKU 的外部处理结果未知。请先核对图片 URL 与台账，再决定是否重试。"
       : "最近批次的逐 SKU 结果已确认。";
   return [authMessage, batchMessage].filter(Boolean).join(" ");
+}
+
+function mediaPrepareStartErrorMessage(error: unknown): string {
+  if (typeof error === "object" && error !== null && "code" in error && error.code === "WP_NOT_CONFIGURED") {
+    return "本机尚未配置 WordPress 凭据，任务未启动。请在软件设置的 WordPress 凭据区配置后重试。";
+  }
+  return apiErrorMessage(error, "图片处理任务启动失败。");
+}
+
+function mediaRetryConfirmationDescription(input: { reviewSkus: string[]; historyMayBeTruncated: boolean }): string {
+  const parts: string[] = [];
+  if (input.reviewSkus.length > 0) {
+    const sample = input.reviewSkus.slice(0, 6).join("、");
+    const remainder = input.reviewSkus.length > 6 ? "，另有 " + (input.reviewSkus.length - 6) + " 个" : "";
+    parts.push("所选 SKU 中有 " + input.reviewSkus.length + " 个上次结果未确认：" + sample + remainder + "。");
+  }
+  if (input.historyMayBeTruncated) {
+    parts.push("最近任务查询已达到 " + EDM_MEDIA_HISTORY_LIMIT + " 条上限，可能有更早的记录未显示。");
+  }
+  parts.push("请先核对 WordPress 媒体库和项目中的图片 URL。继续后会重新调用 Core；若之前上传成功但结果未能写回台账，可能再次上传。");
+  return parts.join(" ");
 }
 
 function MediaHistoryRecovery({ run, stale = false }: { run: RunLog; stale?: boolean }) {
@@ -241,6 +262,11 @@ export function EdmPage() {
   const [mediaDemoRunning, setMediaDemoRunning] = useState(false);
   const [mediaDemoMessage, setMediaDemoMessage] = useState("");
   const [mediaDemoOpen, setMediaDemoOpen] = useState(false);
+  const [pendingMediaPrepare, setPendingMediaPrepare] = useState<{
+    skus: string[];
+    reviewSkus: string[];
+    historyMayBeTruncated: boolean;
+  } | null>(null);
   const [exportFeedback, setExportFeedback] = useState<
     | { projectId: string; result: EdmSkuIndexExportResult; safetyWarning?: string }
     | { projectId: string; error: { tone: "warn" | "error"; message: string } }
@@ -332,6 +358,14 @@ export function EdmPage() {
   const mediaRunTone = displayedMediaSnapshot?.state === "failed" || displayedMediaSnapshot?.result?.status === "failed" || mediaRunRecovery?.errorCode ? "error"
     : displayedMediaSnapshot?.result?.status === "partial" || mediaRunRecovery?.kind === "invalid" || mediaRunRecovery?.kind === "legacy" || (mediaRunRecovery?.kind === "available" && mediaRunRecovery.batchState !== "complete") ? "warn" : "info";
   const mediaRunStatuses = displayedMediaSnapshot ? getMediaRunStatuses(displayedMediaSnapshot.skus, displayedMediaSnapshot.state, displayedMediaSnapshot.result) : {};
+  const mediaHistoryCheckPending = mediaCapability.available && !isMockApi
+    && (mediaHistoryQuery.isLoading || mediaHistoryQuery.isFetching || mediaHistoryQuery.isError);
+  const selectedMediaRetryReviewSkus = getMediaRetryReviewSkus(
+    mediaHistoryQuery.data ?? [],
+    selectedRows.filter((row) => !row.manual_image_url?.trim()).map((row) => row.sku),
+    mediaRunSnapshot?.result ? { skus: mediaRunSnapshot.skus, result: mediaRunSnapshot.result } : undefined,
+  );
+  const mediaHistoryMayBeTruncated = (mediaHistoryQuery.data?.length ?? 0) >= EDM_MEDIA_HISTORY_LIMIT;
   const groupingEnabled = skuGrouping?.enabled === true;
   const groupingRule: SkuGroupingRule = skuGrouping?.rule ?? { type: "separator", value: "-" };
   const summary = summaryQuery.data;
@@ -478,18 +512,39 @@ export function EdmPage() {
       toast.info("仅完成本地演示，未执行上传或写入台账。");
     }, 220);
   };
-  const prepareMedia = async () => {
+  const prepareMedia = async (skus: string[]) => {
     const prepare = api.media?.prepare;
-    if (!mediaCapability.available || !prepare || mediaRunBusy || selectedRows.length === 0) return;
+    if (!mediaCapability.available || !prepare || mediaRunBusy || skus.length === 0) return;
+    if (mediaHistoryCheckPending) {
+      toast.error("无法核对最近媒体任务记录，图片准备未启动。请重试历史查询后再试。");
+      return;
+    }
     const projectId = id;
-    const skus = selectedRows.map((row) => row.sku);
     const activation = edmMediaJobMonitor.begin(projectId, project?.name ?? projectId, skus);
     try {
       const run = await prepare({ project: projectId, skus });
       edmMediaJobMonitor.associate(activation, run.runId);
     } catch (cause) {
-      edmMediaJobMonitor.fail(activation, apiErrorMessage(cause, "图片处理任务启动失败。"));
+      edmMediaJobMonitor.fail(activation, mediaPrepareStartErrorMessage(cause));
     }
+  };
+  const requestMediaPreparation = () => {
+    const skus = selectedRows.map((row) => row.sku);
+    if (!mediaCapability.available || !api.media?.prepare || mediaRunBusy || skus.length === 0 || mediaHistoryCheckPending) return;
+    if (selectedMediaRetryReviewSkus.length > 0 || mediaHistoryMayBeTruncated) {
+      setPendingMediaPrepare({
+        skus,
+        reviewSkus: selectedMediaRetryReviewSkus,
+        historyMayBeTruncated: mediaHistoryMayBeTruncated,
+      });
+      return;
+    }
+    void prepareMedia(skus);
+  };
+  const confirmMediaPreparation = async () => {
+    const pending = pendingMediaPrepare;
+    setPendingMediaPrepare(null);
+    if (pending) await prepareMedia(pending.skus);
   };
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
@@ -552,10 +607,10 @@ export function EdmPage() {
     </div> : mediaCapability.available ? <div className="si-edm-media-demo">
       <Notice tone="info" title="图片 URL 准备将由 Core 逐 SKU 处理。">已选择 {selectedRows.length} 个 SKU；台账已有 URL、Feed JPG/PNG 及其他图片格式会按 Core 返回的逐 SKU 结果显示。</Notice>
       <div className="si-edm-media-demo-actions">
-        <Button variant="primary" disabled={selectedRows.length === 0 || mediaRunBusy} onClick={() => void prepareMedia()}>{mediaRunBusy ? "图片处理中…" : `获取图片 URL（${selectedRows.length}）`}</Button>
+        <Button variant="primary" disabled={selectedRows.length === 0 || mediaRunBusy || mediaHistoryCheckPending} onClick={requestMediaPreparation}>{mediaRunBusy ? "图片处理中…" : `获取图片 URL（${selectedRows.length}）`}</Button>
       </div>
       {mediaRunProgress && <p role="status">{mediaRunProgress}</p>}
-      {mediaRunMessage && <Notice tone={mediaRunTone} title="图片准备任务结果">{mediaRunMessage}</Notice>}
+      {mediaRunMessage && <Notice tone={mediaRunTone} title={displayedMediaSnapshot?.state === "failed" && !displayedMediaSnapshot.runId ? "图片准备未启动" : "图片准备任务结果"}>{mediaRunMessage}</Notice>}
       {Object.keys(mediaRunStatuses).length > 0 && <ul className="si-edm-media-demo-results" aria-label="图片准备逐 SKU 结果">
         {Object.entries(mediaRunStatuses).map(([sku, state]) => {
           return <li key={sku}><code>{sku}</code><Chip tone={mediaStatusTones[state.status]}>{mediaStatusLabels[state.status]}</Chip>{state.reason && <small>{state.reason}</small>}</li>;
@@ -591,6 +646,16 @@ export function EdmPage() {
       <Notice tone="warn" title="当前未启用父子 SKU 分组">“仅展示父 SKU”暂时不会改变 EDM 图片列表。先在项目设置中启用规则，再返回这里筛选。</Notice>
       <EdmGroupingPreview projectId={id} rule={groupingRule} enabled={groupingDrawerOpen} />
     </Drawer>
+    <ConfirmDialog
+      open={Boolean(pendingMediaPrepare)}
+      onOpenChange={(open) => { if (!open) setPendingMediaPrepare(null); }}
+      title="请先核对图片处理结果"
+      description={pendingMediaPrepare ? mediaRetryConfirmationDescription(pendingMediaPrepare) : "请核对 WordPress 媒体库和项目中的图片 URL 后再继续。"}
+      confirmLabel="已核对，继续处理"
+      cancelLabel="返回核对"
+      tone="primary"
+      onConfirm={confirmMediaPreparation}
+    />
     </ProjectTabPanel>
   </div>;
 }
