@@ -8,7 +8,7 @@
 > 2026-10-27 起：软件不再管理工作区文件夹，聚焦网站数据索引，见 `docs/decisions/2026-10-27-data-index-focus.md`。
 
 ```
-{projects_root}/kingsyard/
+{projects_root}/example-project/
 ├── README.md                     项目说明（用户区块 + 自动区块）
 ├── AGENTS.md                     "先阅读 README.md"
 ├── CLAUDE.md                     "@README.md"
@@ -31,7 +31,7 @@
 │   └── logs/        runs.jsonl · validation.json · jobs/{runId}.log
 └── …                              ← 用户自己的工作目录（软件不创建、不读写）
 ```
-本机缓存（不进云盘）：`{cache_dir}/{projectId}/index.db`、`{cache_dir}/{projectId}/ui-state.json`
+项目目录应为每台设备本机非同步位置中的独立副本；当前版本不支持云盘同步同一份项目。SiteIndex 能尽力识别常见云同步根目录，已识别位置中的旧项目可读但不可写，需用户手动复制到本机非同步目录后重新添加。未知位置不表示已验证为本机，用户必须自行确认所选目录不受云同步服务管理。本机缓存与项目副本分开存放：`{cache_dir}/{projectId}/index.db`、`{cache_dir}/{projectId}/ui-state.json`。
 
 workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/edm/` 由 EDM 技能/用户维护。SKU 清单导出通过 Desktop 原生另存对话框交给用户选择保存位置，不再写入项目内的固定 canonical 路径。
 
@@ -266,7 +266,7 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 | `pk_duplicate` | 主键重复 |
 | `sort` | 未按主键排序 |
 | `ref` | 引用不存在的 SKU（latest、ledgers） |
-| `conflict_copy` | 同目录存在云盘冲突副本（文件名含 冲突 / conflict / 副本 / `(1)` 等，可在设置补充模式） |
+| `conflict_copy` | 同目录存在命名冲突副本（文件名含 冲突 / conflict / 副本 / `(1)` 等，可在设置补充模式） |
 | `stale` | daily 超过 36 小时未成功（项目级） |
 | `readme_markers` | README 自动区块标记不成对 |
 
