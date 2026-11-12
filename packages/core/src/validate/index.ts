@@ -20,6 +20,8 @@ interface FileSpec {
   schema?: string;
   arraySchema?: string;
   headers?: readonly string[];
+  alternateHeaders?: readonly (readonly string[])[];
+  writeHeaders?: readonly string[];
   key?: readonly string[];
   repair?: RepairAction | null;
 }
@@ -53,7 +55,9 @@ function specsFor(paths: ProjectPaths): FileSpec[] {
     { path: paths.blogIndex, kind: "sync", format: "jsonl", schema: "blog_post", repair: "regenerate:weekly.blog" },
     { path: paths.keywords, kind: "ledger", format: "jsonl", schema: "keyword", repair: "autofix" },
     { path: paths.skuMedia, kind: "ledger", format: "csv", schema: "sku_media", headers: CSV_HEADERS.skuMedia, key: ["sku", "image_role"], repair: "autofix" },
-    { path: paths.skuTags, kind: "ledger", format: "csv", schema: "sku_tags", headers: CSV_HEADERS.skuTags, key: ["sku"], repair: "autofix" },
+    { path: paths.skuTags, kind: "ledger", format: "csv", schema: "sku_tags", headers: CSV_HEADERS.skuTags,
+      alternateHeaders: [["sku", "tags", "priority", "exclude_edm", "note", "updated_at"], CSV_HEADERS.skuTagsV2],
+      writeHeaders: CSV_HEADERS.skuTagsV2, key: ["sku"], repair: "autofix" },
     { path: paths.edmCampaigns, kind: "ledger", format: "jsonl", schema: "edm_campaign", repair: "autofix" },
     { path: paths.outreach, kind: "ledger", format: "jsonl", schema: "outreach_contact", repair: "autofix" },
     { path: paths.productsView, kind: "view", format: "jsonl", key: ["handle"], repair: "regenerate:views" },
@@ -81,6 +85,19 @@ function errorText(errors: ErrorObject[] | null | undefined): string {
     const place = error.instancePath || "/";
     return place + " " + (error.message ?? "schema validation failed");
   }).join("; ");
+}
+function csvHeaderOptions(spec: FileSpec): readonly (readonly string[])[] {
+  return [...(spec.headers ? [spec.headers] : []), ...(spec.alternateHeaders ?? [])];
+}
+function csvHeaderText(source: string): string {
+  return source.replace(/^\uFEFF/u, "").split(/\r?\n/u, 1)[0] ?? "";
+}
+function csvHeaderMatches(source: string, spec: FileSpec): boolean {
+  const header = csvHeaderText(source);
+  return csvHeaderOptions(spec).some((candidate) => candidate.join(",") === header);
+}
+function expectedCsvHeaders(spec: FileSpec): string {
+  return csvHeaderOptions(spec).map((headers) => headers.join(",")).join(" 或 ");
 }
 function localTimestamp(timezone: string, date = new Date()): string {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
@@ -219,9 +236,8 @@ async function checkData(
   }
   if (spec.format === "csv") {
     const source = await readDataText(absolute, readOverrides);
-    const header = source.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "";
-    const expected = spec.headers?.join(",") ?? "";
-    if (header !== expected) return { rows: [], count: 0, headerError: "CSV 表头应为 " + expected };
+    const expected = expectedCsvHeaders(spec);
+    if (!csvHeaderMatches(source, spec)) return { rows: [], count: 0, headerError: "CSV 表头应为 " + expected };
     const rows = readOverrides?.has(path.resolve(absolute))
       ? parseCsv(source, absolute) as Record<string, unknown>[]
       : await readCsv(absolute) as Record<string, unknown>[];
@@ -398,7 +414,8 @@ function repairSchema(pathName: string, specs: FileSpec[], paths: ProjectPaths):
   if (spec.path === paths.categories) return { key: ["slug"] };
   const schema = spec.schema;
   const schemaKey = spec.key ?? (schema ? undefined : undefined);
-  return { ...(schema ? { schema } : {}), ...(spec.headers ? { headers: spec.headers } : {}), ...(schemaKey ? { key: schemaKey } : {}) };
+  const headers = spec.writeHeaders ?? spec.headers;
+  return { ...(schema ? { schema } : {}), ...(headers ? { headers } : {}), ...(schemaKey ? { key: schemaKey } : {}) };
 }
 function stableKey(row: Record<string, unknown>, keys: readonly string[]): string { return keys.map((key) => String(row[key] ?? "")).join("\u0000"); }
 async function autofix(projectPath: string, relative: string, absolute: string, paths: ProjectPaths): Promise<void> {
@@ -419,8 +436,10 @@ async function autofix(projectPath: string, relative: string, absolute: string, 
     return;
   }
   if (spec.format === "csv") {
-    const rows = await readCsv(absolute);
-    const headers = settings.headers ?? spec.headers;
+    const source = await readFile(absolute, "utf8");
+    if (!csvHeaderMatches(source, spec)) throw new Error("CSV 表头无法识别；原文件未修改。");
+    const rows = parseCsv(source, absolute);
+    const headers = settings.headers ?? spec.writeHeaders ?? spec.headers;
     if (!headers) throw new Error("缺少 CSV 表头规范：" + relative);
     const unique = new Map<string, Record<string, unknown>>();
     for (const row of rows) unique.set(stableKey(row, settings.key ?? spec.key ?? []), row);

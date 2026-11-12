@@ -3,9 +3,9 @@
  * @siteindex/cli — 工作流 A 负责。
  * 命令表见 docs/ARCHITECTURE.md §6；退出码见 @siteindex/shared EXIT。
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { access, cp, mkdir, readFile, readdir } from "node:fs/promises";
+import { access, cp, link, mkdir, open, readFile, readdir, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -105,6 +105,48 @@ class CliError extends Error {
     this.name = "CliError";
     this.code = code;
     this.exitCode = exitCode;
+  }
+}
+
+async function writeEdmIndexNoClobber(outputPath: string, content: string): Promise<"created" | "unchanged"> {
+  const readExisting = async (): Promise<string | null> => {
+    try { return await readFile(outputPath, "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  };
+
+  const existing = await readExisting().catch(() => {
+    throw new CliError("WRITE_FAILED", "无法读取 EDM 清单目标。", EXIT.VALIDATION_FAILED);
+  });
+  if (existing !== null) {
+    if (existing === content) return "unchanged";
+    throw new CliError("EDM_INDEX_CONFLICT", "目标文件已存在且内容不同，未做修改。", EXIT.VALIDATION_FAILED);
+  }
+
+  const temporaryPath = path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.tmp-${process.pid}-${randomUUID()}`);
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(temporaryPath, "wx");
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    try { await link(temporaryPath, outputPath); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const racedContent = await readFile(outputPath, "utf8");
+      if (racedContent === content) return "unchanged";
+      throw new CliError("EDM_INDEX_CONFLICT", "目标文件已存在且内容不同，未做修改。", EXIT.VALIDATION_FAILED);
+    }
+    return "created";
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw new CliError("WRITE_FAILED", "无法安全创建 EDM 清单。", EXIT.VALIDATION_FAILED);
+  } finally {
+    await handle?.close().catch(() => undefined);
+    await unlink(temporaryPath).catch(() => undefined);
   }
 }
 
@@ -583,7 +625,18 @@ async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
   }
 
   if (command === "edm") {
-    if (requiredArg(rest, 0, "edm render <p> <campaignDir> [--allow-oos]") !== "render") throw new CliError("BAD_ARGS", "用法: siteindex edm render <p> <campaignDir> [--allow-oos]");
+    const operation = requiredArg(rest, 0, "edm export-index <p> --output <path> | render <p> <campaignDir> [--allow-oos]");
+    if (operation === "export-index") {
+      const project = projectId(requiredArg(rest, 1, "edm export-index <p> --output <path>"));
+      const output = option(parsed.options, "output");
+      if (!output) throw new CliError("BAD_ARGS", "edm export-index 必须提供 --output <path>。");
+      const rendered = await runtime.service.edm.renderIndex(project);
+      const outputPath = path.resolve(runtime.cwd, output);
+      const status = await writeEdmIndexNoClobber(outputPath, rendered.content);
+      return success({ status, output: outputPath, sku_count: rendered.sku_count, missing_image_count: rendered.missing_image_count },
+        status === "created" ? "EDM SKU 清单已创建。" : "EDM SKU 清单内容未变化。");
+    }
+    if (operation !== "render") throw new CliError("BAD_ARGS", "用法: siteindex edm export-index <p> --output <path> | render <p> <campaignDir> [--allow-oos]");
     const project = requiredArg(rest, 1, "edm render <p> <campaignDir>");
     const campaignDir = requiredArg(rest, 2, "edm render <p> <campaignDir>");
     const result = await renderEdm(resolveProjectPath(project, runtime.cwd, runtime.settings), campaignDir, { allowOos: optionEnabled(parsed.options, "allow-oos") });

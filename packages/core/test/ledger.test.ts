@@ -1,9 +1,10 @@
-import { access, cp, mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PATHS } from "@siteindex/shared";
 import { deleteLedger, readCsv, readJsonl, upsertLedger } from "../src";
+import { repairProjectFile, validateProjectFiles } from "../src/validate";
 
 const FIXTURE_PROJECT = path.resolve(process.cwd(), "fixtures/expected/project");
 const TEMP_DIRS: string[] = [];
@@ -65,16 +66,25 @@ describe("core ledger mutations", () => {
     const projectPath = await makeProject();
     const now = new Date("2026-10-22T01:00:00.000Z");
     const result = await upsertLedger(projectPath, "sku_tags", [
-      { sku: "KYBF002", tags: ["holiday", "fall"], email_blurb: "Seasonal pick" },
+      { sku: "KYBF002", tags: ["holiday", "fall"], email_blurb: "Seasonal pick", discount_tier: 25 },
       { sku: "NEW-SKU", tags: ["new", "spring"], priority: 2 },
     ], { now });
     expect(result).toMatchObject({ added: 1, updated: 1 });
     const filePath = path.join(projectPath, PATHS.skuTags);
     const csv = await readFile(filePath, "utf8");
-    expect(csv.split("\n", 1)[0]).toBe("sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at");
+    expect(csv.split("\n", 1)[0]).toBe("sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at,discount_tier");
+    const validation = await validateProjectFiles(projectPath, { writeReport: false });
+    expect(validation.files.find((check) => check.path === PATHS.skuTags)?.status).toBe("ok");
     expect((await readCsv(filePath)).find((row) => row.sku === "KYBF002")).toMatchObject({
-      tags: "holiday;fall", email_blurb: "Seasonal pick", updated_at: "2026-10-21",
+      tags: "holiday;fall", email_blurb: "Seasonal pick", updated_at: "2026-10-21", discount_tier: "25",
     });
+    expect((await readCsv(filePath)).find((row) => row.sku === "KYBF008")?.note).toBe("clearance stock");
+    await upsertLedger(projectPath, "sku_tags", [{ sku: "KYBF002", email_blurb: "Revised blurb" }], { now });
+    await repairProjectFile(projectPath, PATHS.skuTags, "autofix", { runJob: async () => ({ status: "ok", summary: "ok" }) });
+    expect((await readCsv(filePath)).find((row) => row.sku === "KYBF002"))
+      .toMatchObject({ email_blurb: "Revised blurb", discount_tier: "25" });
+    expect((await readCsv(filePath)).find((row) => row.sku === "KYBF008")?.note).toBe("clearance stock");
+    expect((await readFile(filePath, "utf8")).split("\n", 1)[0]).toContain(",discount_tier");
 
     const media = await upsertLedger(projectPath, "sku_media", [
       { sku: "NEW-SKU", image_role: "main", image_url: "https://cdn.example/new.jpg", source: "cdn", alt_text: "Product" },
@@ -82,6 +92,19 @@ describe("core ledger mutations", () => {
     expect(media.added).toBe(1);
     await expect(deleteLedger(projectPath, "sku_media", [["NEW-SKU", "main"]], { now }))
       .resolves.toMatchObject({ deleted: 1, total: expect.any(Number) });
+  }, 15_000);
+
+  it("refuses to rewrite an unrecognized sku_tags header", async () => {
+    const projectPath = await makeProject();
+    const filePath = path.join(projectPath, PATHS.skuTags);
+    const original = "sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at,private_column\nDEMO-KEEP,tag,,,,,,,keep-me\n";
+    await writeFile(filePath, original, "utf8");
+
+    await expect(upsertLedger(projectPath, "sku_tags", [{ sku: "DEMO-NEW", discount_tier: 15 }]))
+      .rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    await expect(repairProjectFile(projectPath, PATHS.skuTags, "autofix", { runJob: async () => ({ status: "ok", summary: "ok" }) }))
+      .rejects.toThrow("CSV 表头无法识别");
+    expect(await readFile(filePath, "utf8")).toBe(original);
   }, 15_000);
 
   it("requires complete primary keys and rejects malformed composite delete keys", async () => {
