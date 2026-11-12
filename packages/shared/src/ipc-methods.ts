@@ -108,7 +108,7 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = ["media.prepare", "edm.exportIndex"];
+export const PENDING_HANDLERS: readonly string[] = ["edm.exportIndex"];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 
