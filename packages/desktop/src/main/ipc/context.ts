@@ -1,5 +1,5 @@
 import type { CoreService } from "@siteindex/core";
-import type { AppSettings, ProjectId, SiteIndexError } from "@siteindex/shared";
+import type { AppSettings, EdmSkuIndexExportResult, ProjectId, SiteIndexError } from "@siteindex/shared";
 import type { JobManager } from "../job-manager.js";
 import type { ProjectCatalog } from "../project-catalog.js";
 import type { ScheduleRuntimeStatus, SystemScheduler } from "../scheduler/schedule.js";
@@ -18,7 +18,10 @@ export interface IpcDependencies {
   projects: ProjectCatalog;
   settingsChanged: (value: AppSettings, reconcile?: boolean, onTiming?: AddExistingTimingCallback) => Promise<void>;
   jobs: JobManager;
-  isEdmExportIndexReady?: () => boolean;
+  saveEdmSkuIndex?: (
+    projectRoot: string,
+    rendered: Awaited<ReturnType<CoreService["edm"]["renderIndex"]>>,
+  ) => Promise<EdmSkuIndexExportResult>;
   scheduler: SystemScheduler;
   reconcileSchedules: (
     allowElevation: boolean,

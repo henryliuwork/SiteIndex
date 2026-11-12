@@ -17,6 +17,7 @@ import { createJobsHandlers } from "./ipc/jobs.js";
 import { createMediaHandlers } from "./ipc/media.js";
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import { createJobManager } from "./job-manager.js";
+import { createEdmIndexSaveAs, type EdmIndexSaveDialogResult } from "./edm-index-save-as.js";
 import { hasMediaProgressEvidence } from "./media-production-assertions.js";
 import { isMediaPrepareReady } from "./media-readiness.js";
 import { createWindowManager } from "./window-manager.js";
@@ -57,6 +58,28 @@ interface PhaseReport {
   phase: ProductionPhase;
   failureCode?: string;
   checks?: Record<string, boolean | number | string>;
+}
+
+interface EdmExportInvocation {
+  kind: "resolved" | "rejected";
+  status?: string;
+  skuCount?: number;
+  errorCode?: string;
+  errorDetail?: string;
+}
+
+interface EdmExportSaveAsAcceptance {
+  createdOutsideProject: boolean;
+  cancellationDidNotCreateFile: boolean;
+  projectConflictPreservedExistingFile: boolean;
+  outsideSaveReturnedCreated: boolean;
+  outsideSaveReturnedUnchanged: boolean;
+  outsideSaveRejectedUnsafeDirectory: boolean;
+  outsideSaveRejectedTargetUnsafe: boolean;
+  outsideSaveRejectedCreateFailed: boolean;
+  outsideFileExists: boolean;
+  outsideFileHasGeneratedMarker: boolean;
+  outsideFileExcludesProjectPath: boolean;
 }
 
 interface FixtureSku {
@@ -267,6 +290,40 @@ async function writeFixtureProject(root: string, projectId: string, rows: readon
     checked_at: `${date}T12:00:00.000Z`,
   }));
   await writeFile(path.join(projectPath, PATHS.skus), `${skus.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8");
+  const products = skus.map((sku) => ({
+    handle: sku.handle,
+    product_id: sku.product_id,
+    title: sku.title,
+    url: sku.url,
+    category: sku.category,
+    categories: sku.categories,
+    price_min: sku.price,
+    price_max: sku.price,
+    compare_at_max: null,
+    currency: sku.currency,
+    on_sale: false,
+    image_url: sku.image_url,
+    image_source: sku.image_url ? "feed" : "none",
+    feed_image_url: sku.image_url,
+    manual_image_url: null,
+    variant_count: 1,
+    skus: [sku.sku],
+    in_stock_variants: 1,
+    stock_status: "in_stock",
+    stock_since: date,
+    tags: [],
+    priority: null,
+    exclude_edm: 0,
+    last_featured: null,
+    days_since_featured: null,
+    first_seen: date,
+    status: "active",
+  }));
+  await writeFile(
+    path.join(projectPath, PATHS.productsView),
+    `${products.map((row) => JSON.stringify(row)).join("\n")}\n`,
+    "utf8",
+  );
   await writeFile(
     path.join(projectPath, PATHS.inventoryLatest),
     `${latest.map((row) => JSON.stringify(row)).join("\n")}\n`,
@@ -363,6 +420,81 @@ async function startProductionPackagedWindow(
   return window;
 }
 
+async function invokePackagedEdmExport(window: BrowserWindow, projectId: string): Promise<EdmExportInvocation> {
+  return (await window.webContents.executeJavaScript(`(async () => {
+    try {
+      const result = await window.siteindex.edm.exportIndex(${JSON.stringify(projectId)});
+      return { kind: "resolved", status: result.status, skuCount: result.sku_count };
+    } catch (error) {
+      return {
+        kind: "rejected",
+        errorCode: error && typeof error === "object" ? error.code : undefined,
+        errorDetail: error && typeof error === "object" ? error.detail : undefined,
+      };
+    }
+  })()`)) as EdmExportInvocation;
+}
+
+async function runPackagedEdmExportSaveAsAcceptance(
+  window: BrowserWindow,
+  projectId: string,
+  projectPath: string,
+  root: string,
+  chooseDialogResult: (result: EdmIndexSaveDialogResult) => void,
+): Promise<EdmExportSaveAsAcceptance> {
+  const exportDirectory = path.join(root, "edm-export");
+  await mkdir(exportDirectory, { recursive: true });
+
+  const generatedTarget = path.join(exportDirectory, "synthetic-edm-index.md");
+  chooseDialogResult({ canceled: false, filePath: generatedTarget });
+  const saved = await invokePackagedEdmExport(window, projectId);
+  const savedContent = await readFile(generatedTarget, "utf8").catch(() => "");
+  const createdOutsideProject =
+    saved.kind === "resolved" &&
+    saved.status === "created" &&
+    typeof saved.skuCount === "number" &&
+    saved.skuCount > 0 &&
+    savedContent.startsWith("<!-- siteindex:generated:edm-sku-index:v1 -->\n") &&
+    !savedContent.includes(projectPath);
+  const outsideFileExists = savedContent.length > 0;
+
+  const cancelledTarget = path.join(exportDirectory, "cancelled-edm-index.md");
+  chooseDialogResult({ canceled: true, filePath: cancelledTarget });
+  const cancelled = await invokePackagedEdmExport(window, projectId);
+  const cancelledContent = await readFile(cancelledTarget, "utf8").catch(() => null);
+  const cancellationDidNotCreateFile =
+    cancelled.kind === "resolved" && cancelled.status === "cancelled" && cancelledContent === null;
+
+  const conflictTarget = path.join(projectPath, "synthetic-user-owned.md");
+  const existingContent = "Synthetic user-owned content; keep unchanged.\n";
+  await writeFile(conflictTarget, existingContent, "utf8");
+  chooseDialogResult({ canceled: false, filePath: conflictTarget });
+  const conflict = await invokePackagedEdmExport(window, projectId);
+  const preservedContent = await readFile(conflictTarget, "utf8").catch(() => "");
+  const projectConflictPreservedExistingFile =
+    conflict.kind === "rejected" &&
+    conflict.errorCode === "EDM_INDEX_CONFLICT" &&
+    conflict.errorDetail === "EDM_INDEX_PROJECT_FILE_EXISTS" &&
+    preservedContent === existingContent;
+
+  return {
+    createdOutsideProject,
+    cancellationDidNotCreateFile,
+    projectConflictPreservedExistingFile,
+    outsideSaveReturnedCreated: saved.kind === "resolved" && saved.status === "created",
+    outsideSaveReturnedUnchanged: saved.kind === "resolved" && saved.status === "unchanged",
+    outsideSaveRejectedUnsafeDirectory:
+      saved.kind === "rejected" && saved.errorCode === "WRITE_FAILED" && saved.errorDetail === "EDM_INDEX_UNSAFE_DIRECTORY",
+    outsideSaveRejectedTargetUnsafe:
+      saved.kind === "rejected" && saved.errorCode === "WRITE_FAILED" && saved.errorDetail === "EDM_INDEX_TARGET_UNSAFE",
+    outsideSaveRejectedCreateFailed:
+      saved.kind === "rejected" && saved.errorCode === "WRITE_FAILED" && saved.errorDetail === "EDM_INDEX_CREATE_FAILED",
+    outsideFileExists,
+    outsideFileHasGeneratedMarker: savedContent.startsWith("<!-- siteindex:generated:edm-sku-index:v1 -->\n"),
+    outsideFileExcludesProjectPath: !savedContent.includes(projectPath),
+  };
+}
+
 function makeSettingsHandlers(
   settings: AppSettings,
   uiStateByProject: Map<string, { columns: Record<string, string[]>; page_sizes: Record<string, 20 | 50 | 100> }>,
@@ -418,6 +550,16 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     templateDir: path.join(process.resourcesPath, "templates", "project"),
   });
   const projectMap = new Map(entries.map((entry) => [entry.id, entry.path]));
+  let edmDialogResult: EdmIndexSaveDialogResult | null = null;
+  const saveEdmSkuIndex = createEdmIndexSaveAs({
+    defaultPath: path.join(root, "edm-export", path.basename(PATHS.edmSkuIndex)),
+    showSaveDialog: async () => {
+      const result = edmDialogResult;
+      edmDialogResult = null;
+      if (!result) throw new Error("synthetic-edm-dialog-result-missing");
+      return result;
+    },
+  });
   const credentialVault = createWordPressCredentialVault({
     platform: process.platform,
     localAppData: process.env.LOCALAPPDATA,
@@ -517,12 +659,13 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   const settingsHandlers = makeSettingsHandlers(settings, new Map());
   const edmHandlers = createEdmHandlers({
     core,
+    projects: { resolveProject: (id: ProjectId) => projectMap.get(id) ?? projectPath },
+    saveEdmSkuIndex,
     withProject: async <T>(value: unknown, callback: (id: ProjectId) => Promise<T>) => {
       if (value !== fixture.projectId)
         throw Object.assign(new Error("Synthetic project not registered."), { code: "PROJECT_NOT_FOUND" });
       return callback(fixture.projectId as ProjectId);
     },
-    isEdmExportIndexReady: () => false,
   } as any);
   const jobsHandlers = createJobsHandlers({
     jobs: manager,
@@ -570,6 +713,18 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   });
   const window = await startProductionPackagedWindow(fixture.projectId, windowManager);
   reportPhaseStage(phase, "renderer-ready");
+  const edmExportAcceptance =
+    phase === "success"
+      ? await runPackagedEdmExportSaveAsAcceptance(
+          window,
+          fixture.projectId,
+          projectPath,
+          root,
+          (result) => {
+            edmDialogResult = result;
+          },
+        )
+      : null;
   const domSnapshotsInstalled = await window.webContents.executeJavaScript(`(() => {
     const state = { texts: [], overflowed: false };
     const capture = () => {
@@ -814,6 +969,21 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
             crossPageRecoveryAfterJob: crossPageRecovery,
           }
         : {}),
+      ...(edmExportAcceptance
+        ? {
+            edmIndexSaveAsCreatedOutsideProject: edmExportAcceptance.createdOutsideProject,
+            edmIndexSaveAsCancellationDidNotCreateFile: edmExportAcceptance.cancellationDidNotCreateFile,
+            edmIndexSaveAsConflictPreservedProjectFile: edmExportAcceptance.projectConflictPreservedExistingFile,
+            edmIndexSaveAsOutsideReturnedCreated: edmExportAcceptance.outsideSaveReturnedCreated,
+            edmIndexSaveAsOutsideReturnedUnchanged: edmExportAcceptance.outsideSaveReturnedUnchanged,
+            edmIndexSaveAsOutsideRejectedUnsafeDirectory: edmExportAcceptance.outsideSaveRejectedUnsafeDirectory,
+            edmIndexSaveAsOutsideRejectedTargetUnsafe: edmExportAcceptance.outsideSaveRejectedTargetUnsafe,
+            edmIndexSaveAsOutsideRejectedCreateFailed: edmExportAcceptance.outsideSaveRejectedCreateFailed,
+            edmIndexSaveAsOutsideFileExists: edmExportAcceptance.outsideFileExists,
+            edmIndexSaveAsOutsideFileHasGeneratedMarker: edmExportAcceptance.outsideFileHasGeneratedMarker,
+            edmIndexSaveAsOutsideFileExcludesProjectPath: edmExportAcceptance.outsideFileExcludesProjectPath,
+          }
+        : {}),
       resultCounts: JSON.stringify(statuses),
       ...(expectedErrorCode ? { expectedAuthorizationCode: expectedErrorCode } : {}),
     },
@@ -832,7 +1002,11 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     !uiRenderedActualMediaAction ||
     !unknownStateMatches ||
     (isRecoveryRetry && (!restartUnknownOutcomeRecoveredOnColdMount || !retryReviewDialogConfirmed)) ||
-    (phase === "post-lost" && (!crossPageDuringJob || !jobCompletedAwayFromEdm || !crossPageRecovery))
+    (phase === "post-lost" && (!crossPageDuringJob || !jobCompletedAwayFromEdm || !crossPageRecovery)) ||
+    (edmExportAcceptance &&
+      (!edmExportAcceptance.createdOutsideProject ||
+        !edmExportAcceptance.cancellationDidNotCreateFile ||
+        !edmExportAcceptance.projectConflictPreservedExistingFile))
   )
     report.status = "failed";
   await manager.shutdown();
@@ -843,7 +1017,15 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   const workerCredentialCanaryMatches = workerCanaryBytes.filter((value) => workerOutput.includes(value)).length;
   report.checks!.workerCredentialCanaryMatches = workerCredentialCanaryMatches;
   if (workerCredentialCanaryMatches > 0) report.status = "failed";
-  if (report.status === "failed") report.failureCode = "phase-assertion";
+  if (report.status === "failed") {
+    report.failureCode =
+      edmExportAcceptance &&
+      (!edmExportAcceptance.createdOutsideProject ||
+        !edmExportAcceptance.cancellationDidNotCreateFile ||
+        !edmExportAcceptance.projectConflictPreservedExistingFile)
+        ? "edm-export-assertion"
+        : "phase-assertion";
+  }
   reportPhaseStage(phase, "report-ready");
   await writePhaseReport(report);
   reportPhaseStage(phase, "report-written");

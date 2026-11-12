@@ -53,6 +53,22 @@ function assertSafeTempRoot(root) {
   }
 }
 
+function safePhaseReportSummary(report) {
+  const checks = {};
+  if (report?.checks && typeof report.checks === "object" && !Array.isArray(report.checks)) {
+    for (const [name, value] of Object.entries(report.checks)) {
+      if (/^[a-zA-Z][a-zA-Z0-9]*$/u.test(name) && (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)))) {
+        checks[name] = value;
+      }
+    }
+  }
+  return {
+    status: ["passed", "failed"].includes(report?.status) ? report.status : "invalid",
+    failureCode: /^[a-z0-9-]{1,60}$/u.test(String(report?.failureCode ?? "")) ? report.failureCode : null,
+    checks,
+  };
+}
+
 async function readAndDiscard(request) {
   for await (const _chunk of request) {
     // The fake server intentionally discards upload bytes without persisting or logging them.
@@ -358,7 +374,19 @@ async function main() {
         imageRequests: image.metrics.requests,
         uploadedCount: wordpress.uploadedCount,
       };
-      phaseResults[phase] = await runPackagedPhase(root, phase, image.origin, wordpress.origin);
+      try {
+        phaseResults[phase] = await runPackagedPhase(root, phase, image.origin, wordpress.origin);
+      } catch (error) {
+        const reportPath = path.join(root, `phase-${phase}.json`);
+        const reportText = await readFile(reportPath, "utf8").catch(() => "");
+        try {
+          const report = JSON.parse(reportText);
+          if (report?.phase === phase) phaseResults[phase] = safePhaseReportSummary(report);
+        } catch {
+          // Preserve only the safe stage diagnostic when no valid private phase report exists.
+        }
+        throw error;
+      }
       if (phase === "post-lost") postLostPackagedAppExited = true;
       const recoveryPhase =
         phase === "retry"
@@ -477,6 +505,12 @@ async function main() {
         phaseResults.retry.checks?.retryReviewDialogConfirmed === true &&
         phaseResults.retry.checks?.retryOrOutcomeUnknownMatches === true &&
         traffic.find((entry) => entry.phase === "retry")?.mediaCreatePosts === 0,
+      edmIndexSaveAsUsesPackagedUiBridge:
+        phaseResults.success.checks?.edmIndexSaveAsCreatedOutsideProject === true,
+      edmIndexSaveAsCancellationDoesNotWrite:
+        phaseResults.success.checks?.edmIndexSaveAsCancellationDidNotCreateFile === true,
+      edmIndexSaveAsProjectConflictPreservesExistingFile:
+        phaseResults.success.checks?.edmIndexSaveAsConflictPreservedProjectFile === true,
     };
     for (const phase of ["retry-429", "retry-503"]) {
       cases[`${phase}AppRestartedUnknownAndConfirmedRetry`] =
@@ -498,6 +532,7 @@ async function main() {
       testOnlyUiGateBypass: false,
       productionUiBundleCopiedUnmodified: true,
       packagedAcceptanceBootstrap: "isolated-main-entry-using-production-ipc-job-manager-worker-and-core",
+      packagedEdmSaveAsAcceptance: "packaged renderer bridge and Desktop/Core IPC; deterministic synthetic dialog selections; native dialog window not exercised",
       testOnlyLoopbackHttp: true,
       wordpressProductionHttpsPolicyVerified: false,
       retryAfterCoverage: {
@@ -546,6 +581,7 @@ async function main() {
               sourceCommit: process.env.SITEINDEX_MEDIA_E2E_SOURCE_COMMIT ?? "local",
               status: "failed",
               completedPhaseCount: Object.keys(phaseResults).length,
+              phases: phaseResults,
               failureDiagnostic: phaseFailureDiagnostic,
               localFileCountScanned: canaryScan.filesScanned,
               criticalFileCounts: canaryScan.criticalFilesRead,

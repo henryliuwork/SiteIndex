@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { createCoreService, type CoreService, type CoreServiceContext } from "@siteindex/core";
-import { EXIT, SCHEDULABLE_JOBS, type AppSettings, type ProjectId } from "@siteindex/shared";
+import { EXIT, PATHS, SCHEDULABLE_JOBS, type AppSettings, type ProjectId } from "@siteindex/shared";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
 import { createJobManager, type JobManagerOptions } from "./job-manager.js";
 import { completeInitSchedule } from "./init-schedule.js";
@@ -31,6 +31,7 @@ import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type 
 import { registerWordPressCredentialHandlers } from "./wordpress-credential-ipc.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
 import { createWordPressMediaCredentialProvider } from "./wordpress-media-credential-provider.js";
+import { createEdmIndexSaveAs, resolveEdmIndexDefaultPath } from "./edm-index-save-as.js";
 import { isMediaPrepareReady } from "./media-readiness.js";
 import {
   inspectProfilePaths,
@@ -487,6 +488,17 @@ if (!hasSingleInstanceLock) {
       emitStatus: (status) => windowManager.sendToWindows("si:updates.onStatus", status),
     });
     app.on("before-quit", () => updates.stop());
+    const saveEdmSkuIndex = createEdmIndexSaveAs({
+      defaultPath: resolveEdmIndexDefaultPath({
+        getDownloadsPath: () => app.getPath("downloads"),
+        getHomePath: () => app.getPath("home"),
+        fileName: basename(PATHS.edmSkuIndex),
+      }),
+      showSaveDialog: (options) => {
+        const owner = windowManager.getMainWindow();
+        return owner && !owner.isDestroyed() ? dialog.showSaveDialog(owner, options) : dialog.showSaveDialog(options);
+      },
+    });
     registerIpcHandlers({
       updates,
       settings: settingsStore,
@@ -507,8 +519,7 @@ if (!hasSingleInstanceLock) {
         else if (backgroundSettingsChanged || projectsChanged) await applyBackgroundPreferences();
       },
       jobs,
-      // Core EDM SKU 清单导出仍在 pending；即使服务暴露同名方法，也要等能力通过验收后再开放。
-      isEdmExportIndexReady: () => false,
+      saveEdmSkuIndex,
       scheduler,
       reconcileSchedules,
       reconcileProjectScheduleInBackground,
