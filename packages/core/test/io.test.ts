@@ -267,6 +267,55 @@ describe("core io", () => {
     await expect(readFile(path.join(root, PATHS.lock), "utf8")).resolves.toBe(staleLegacyLock);
   });
 
+  it("does not reclaim a stale lock when exclusive creation reports EPERM", async () => {
+    const root = await tempDir();
+    const hostId = await currentHostId(root);
+    const lockPath = path.join(root, PATHS.lock);
+    const staleLock = JSON.stringify({
+      device_id: "stale-owner",
+      device_name: "test",
+      host_id: hostId,
+      pid: 424242,
+      job: "daily",
+      started_at: "2000-01-01T00:00:00.000Z",
+      heartbeat: "2000-01-01T00:00:00.000Z",
+    });
+    await writeFile(lockPath, staleLock);
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("process is gone"), { code: "ESRCH" });
+    });
+    const denied = Object.assign(new Error("injected access denied"), { code: "EPERM" });
+    try {
+      await expect(withLockForTest(root, () => "must not enter", {}, {
+        beforeExclusiveOpen: async () => { throw denied; },
+      })).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+      await expect(readFile(lockPath, "utf8")).resolves.toBe(staleLock);
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it("preserves an EPERM error when no lock path exists", async () => {
+    const root = await tempDir();
+    const denied = Object.assign(new Error("injected access denied"), { code: "EPERM" });
+
+    await expect(withLockForTest(root, () => "must not enter", {}, {
+      beforeExclusiveOpen: async () => { throw denied; },
+    })).rejects.toMatchObject({ code: "EPERM" });
+    await expect(readFile(path.join(root, PATHS.lock), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails closed on a non-file lock path without removing it", async () => {
+    const root = await tempDir();
+    const lockPath = path.join(root, PATHS.lock);
+    await mkdir(lockPath, { recursive: true });
+
+    await expect(withLockForTest(root, () => "must not enter", {}, {
+      beforeExclusiveOpen: async () => { throw Object.assign(new Error("already exists"), { code: "EEXIST" }); },
+    })).rejects.toMatchObject({ code: "LOCKED", exitCode: EXIT.LOCKED });
+    expect((await lstat(lockPath)).isDirectory()).toBe(true);
+  });
+
   it("treats incomplete stale lock records as unknown ownership and preserves them", async () => {
     const root = await tempDir();
     const lockPath = path.join(root, PATHS.lock);
