@@ -114,7 +114,7 @@ describe("projects.createWorkspaceOnly Desktop flow", () => {
 
     await expect(createProjectsHandlers(context)["projects.createWorkspaceOnly"]?.(inputValue)).rejects.toBe(storageError);
 
-    expect(context.assertProjectStorageLocal).toHaveBeenCalledWith(path.join(root, "fixture-shop"));
+    expect(context.assertProjectStorageLocal).toHaveBeenCalledWith(path.resolve(root, "fixture-shop"));
     expect(get).not.toHaveBeenCalled();
     expect(coreCreate).not.toHaveBeenCalled();
   });
