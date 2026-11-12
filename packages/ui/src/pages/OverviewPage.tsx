@@ -169,8 +169,8 @@ export function OverviewPage() {
 
     <section className="si-overview-readme si-panel">
       <div className="si-panel-heading"><h2>README · 项目概况</h2><a href={"#/p/" + id + "/readme"} onClick={(event) => { event.preventDefault(); navigate("/p/" + id + "/readme"); }}>编辑 README</a></div>
-      <OverviewSummary markdown={overview.readme.overview} />
-      <div className="si-overview-focus"><span>当前重点</span><p>{overview.readme.focus}</p></div>
+      {overview.readme.overview.trim() ? <OverviewSummary markdown={overview.readme.overview} /> : <div className="si-empty-state si-overview-readme-empty">暂无 README 项目概况。</div>}
+      {overview.readme.focus.trim() && <div className="si-overview-focus"><span>当前重点</span><p>{overview.readme.focus}</p></div>}
       {overview.agent_instruction && <details className="si-overview-instruction"><summary>Agent 接入指令</summary><pre>{overview.agent_instruction}</pre></details>}
     </section>
 
