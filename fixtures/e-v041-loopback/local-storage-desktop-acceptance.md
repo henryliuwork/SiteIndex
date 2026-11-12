@@ -9,7 +9,7 @@ SiteIndex 当前只支持本机项目数据，不提供云盘同步或跨设备�
 ## 前置条件
 
 - v0.4.1 候选 EXE、来源 commit、SHA256 和 Windows runner image 已固定；升级基线仍为 pinned v0.4.0 NSIS。
-- A #485 Core/CLI 本机存储写保护已合并；C #480 Desktop 运行时写保护与 B #484 UI 说明/标记仍待合入。必须确认三层都进入同一个候选包后，才能开始这组安装包验收。C #480 必须覆盖项目目录扫描、`projects.create`、`projects.createWorkspaceOnly`、`projects.addExisting`，以及手动 Job / 计划任务 / `--run-job` 写入口；已知同步目录拦截必须发生在文件写入、设置登记、init Job 或任务校正之前。
+- A #485 Core/CLI、C #495 Desktop 运行时写保护与 B #484 UI 说明/标记已合入当前 main；#480 仍保持开放，等待安装版证据。必须确认三层都进入同一个候选包后，才能开始这组安装包验收。C #495 覆盖项目目录扫描、`projects.create`、`projects.createWorkspaceOnly`、`projects.addExisting`，以及手动 Job / 计划任务 / `--run-job` 写入口；已知同步目录拦截必须发生在文件写入、设置登记、init Job 或任务校正之前。
 - 在 GitHub-hosted Windows 上使用两个独立 job/VM，每个都是干净 runner；禁止在用户电脑、现有 profile、真实同步目录或真实项目上运行。
 - 两边分别在各自 `RUNNER_TEMP` 建立唯一根，重定向 `APPDATA`、`LOCALAPPDATA`、`USERPROFILE`、`HOME`、`TEMP`、`TMP`；生成的项目、设置、截图、日志和报告都放在各自隔离根内。
 - 只用 `project-storage-policy-cases.json` 生成虚构的已知同步路径、前缀相似兄弟目录和未配置第三方路径。不启动 OneDrive/Dropbox/其他云盘客户端，不访问云服务。
@@ -42,4 +42,4 @@ SiteIndex 当前只支持本机项目数据，不提供云盘同步或跨设备�
 | A | 仅记录完整候选 provenance | 记录 runner image 标签 | pass/fail | 计数 | enum | pass/fail/not-run | pass/fail | 类别计数 | pass/fail |
 | B | 与 A 相同 | 记录 runner image 标签 | pass/fail | 计数 | enum | pass/fail/not-run | pass/fail | 类别计数 | pass/fail |
 
-若 C #480 Desktop 写保护或 B #484 UI 尚未进入候选包、candidate provenance 缺失、任一 profile 越出隔离根或清理失败，则对应桌面验收标记 `未验证` / `失败`，不可用 Core 测试或 UI mock 替代安装包结果。
+若 A #485、C #495 Desktop 写保护或 B #484 UI 任一层未进入候选包、candidate provenance 缺失、任一 profile 越出隔离根或清理失败，则对应桌面验收标记 `未验证` / `失败`，不可用 Core 测试或 UI mock 替代安装包结果。即使 PR 已合并，也不据此关闭聚合 Issue #480；须待候选安装包证据齐全后再更新。
