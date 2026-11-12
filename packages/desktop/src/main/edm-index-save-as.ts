@@ -26,6 +26,24 @@ export interface EdmIndexSaveAsOptions {
   showSaveDialog(options: EdmIndexSaveDialogOptions): Promise<EdmIndexSaveDialogResult>;
 }
 
+export function resolveEdmIndexDefaultPath(options: {
+  getDownloadsPath(): string;
+  getHomePath(): string;
+  fileName: string;
+}): string {
+  let directory: string;
+  try {
+    directory = options.getDownloadsPath();
+  } catch {
+    try {
+      directory = options.getHomePath();
+    } catch {
+      return options.fileName;
+    }
+  }
+  return path.join(directory, options.fileName);
+}
+
 interface DirectorySnapshot {
   path: string;
   dev: number;

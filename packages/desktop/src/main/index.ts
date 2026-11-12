@@ -31,7 +31,7 @@ import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type 
 import { registerWordPressCredentialHandlers } from "./wordpress-credential-ipc.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
 import { createWordPressMediaCredentialProvider } from "./wordpress-media-credential-provider.js";
-import { createEdmIndexSaveAs } from "./edm-index-save-as.js";
+import { createEdmIndexSaveAs, resolveEdmIndexDefaultPath } from "./edm-index-save-as.js";
 import { isMediaPrepareReady } from "./media-readiness.js";
 import {
   inspectProfilePaths,
@@ -489,7 +489,11 @@ if (!hasSingleInstanceLock) {
     });
     app.on("before-quit", () => updates.stop());
     const saveEdmSkuIndex = createEdmIndexSaveAs({
-      defaultPath: join(app.getPath("downloads"), basename(PATHS.edmSkuIndex)),
+      defaultPath: resolveEdmIndexDefaultPath({
+        getDownloadsPath: () => app.getPath("downloads"),
+        getHomePath: () => app.getPath("home"),
+        fileName: basename(PATHS.edmSkuIndex),
+      }),
       showSaveDialog: (options) => {
         const owner = windowManager.getMainWindow();
         return owner && !owner.isDestroyed() ? dialog.showSaveDialog(owner, options) : dialog.showSaveDialog(options);

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { PATHS } from "@siteindex/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createEdmIndexSaveAs } from "./edm-index-save-as.js";
+import { createEdmIndexSaveAs, resolveEdmIndexDefaultPath } from "./edm-index-save-as.js";
 
 const rendered = {
   content: "<!-- siteindex:generated:edm-sku-index:v1 -->\n# Synthetic EDM\n",
@@ -28,6 +28,46 @@ describe("Desktop EDM SKU index Save As", () => {
 
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it("prefers the Downloads special path when available", () => {
+    const downloads = path.join(root, "downloads");
+    const home = path.join(root, "home");
+    expect(
+      resolveEdmIndexDefaultPath({
+        getDownloadsPath: () => downloads,
+        getHomePath: () => home,
+        fileName: path.basename(PATHS.edmSkuIndex),
+      }),
+    ).toBe(path.join(downloads, path.basename(PATHS.edmSkuIndex)));
+  });
+
+  it("falls back to the home directory when the Downloads special path is unavailable", () => {
+    const home = path.join(root, "home");
+    expect(
+      resolveEdmIndexDefaultPath({
+        getDownloadsPath: () => {
+          throw new Error("Downloads path unavailable");
+        },
+        getHomePath: () => home,
+        fileName: path.basename(PATHS.edmSkuIndex),
+      }),
+    ).toBe(path.join(home, path.basename(PATHS.edmSkuIndex)));
+  });
+
+  it("falls back to the file name if neither special path is available", () => {
+    const fileName = path.basename(PATHS.edmSkuIndex);
+    expect(
+      resolveEdmIndexDefaultPath({
+        getDownloadsPath: () => {
+          throw new Error("Downloads path unavailable");
+        },
+        getHomePath: () => {
+          throw new Error("Home path unavailable");
+        },
+        fileName,
+      }),
+    ).toBe(fileName);
   });
 
   function saveTo(targetPath: string, canceled = false) {
