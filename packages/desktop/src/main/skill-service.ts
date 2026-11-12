@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { assertProjectStorageLocal as assertCoreProjectStorageLocal } from "@siteindex/core";
 import {
   PATHS,
   type ProjectId,
@@ -29,6 +30,7 @@ export interface SkillServiceOptions {
   homeDirectory?: string;
   listProjects(): Promise<SkillProject[]>;
   getPlatforms(): Promise<SkillPlatform[]>;
+  assertProjectStorageLocal?(projectPath: string): Promise<void>;
 }
 
 interface SkillDocument {
@@ -185,6 +187,7 @@ function resolveCustomDirectory(value: string, homeDirectory: string): string | 
 
 export function createSkillService(options: SkillServiceOptions): SkillService {
   const homeDirectory = options.homeDirectory ?? homedir();
+  const assertProjectStorageLocal = options.assertProjectStorageLocal ?? assertCoreProjectStorageLocal;
   const manifestLocks = new Map<string, Promise<void>>();
 
   async function readSkill(nameValue: unknown): Promise<SkillDocument> {
@@ -366,6 +369,7 @@ export function createSkillService(options: SkillServiceOptions): SkillService {
   async function installDocument(document: SkillDocument, target: SkillTarget): Promise<SkillTargetStatus> {
     const targetDirectory = target.directory;
     if (!targetDirectory) throw skillError("CONFIG_INVALID", "skill 安装位置无效。", target.targetId);
+    if (target.projectPath) await assertProjectStorageLocal(target.projectPath);
     const currentVersion = await installedVersion(path.dirname(targetDirectory), document.info.name);
     const comparison = currentVersion === null ? null : compareVersions(currentVersion, document.info.version);
     if (comparison !== null && comparison > 0) {
@@ -426,6 +430,9 @@ export function createSkillService(options: SkillServiceOptions): SkillService {
     },
     async syncAllProjects() {
       const [documents, projects] = await Promise.all([readSkills(), projectEntries()]);
+      // Preflight every project before writing any target so a cloud project cannot
+      // leave a partially synchronized batch behind.
+      await Promise.all(projects.map(({ path: projectPath }) => assertProjectStorageLocal(projectPath)));
       for (const project of projects) {
         for (const document of documents) {
           const target: SkillTarget = {

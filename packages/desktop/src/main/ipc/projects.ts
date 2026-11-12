@@ -37,6 +37,8 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
     "projects.create": (...args) =>
       enqueueProjectMutation(async () => {
         const input = args[0] as Parameters<typeof context.core.projects.create>[0];
+        // Reject an unsupported root before Core performs feed detection or project work.
+        await context.assertProjectStorageLocal?.(input.projects_root);
         const created = await context.core.projects.create(input);
         const projectPath = path.resolve(input.projects_root, created.id);
         const current = await context.settings.get();
@@ -61,6 +63,8 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
     "projects.createWorkspaceOnly": (...args) =>
       enqueueProjectMutation(async () => {
         const input = args[0] as Parameters<typeof context.core.projects.createWorkspaceOnly>[0];
+        const requestedPath = path.resolve(input.projects_root, input.folder_name);
+        await context.assertProjectStorageLocal?.(requestedPath);
         const current = await context.settings.get();
         const existingProjects = await context.projects.refresh(current);
         const requestedId = input.folder_name.trim();
@@ -144,6 +148,7 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
             throw { code: "PROJECT_NOT_FOUND", message: "请选择有效的项目目录。" } satisfies SiteIndexError;
           }
           const projectPath = await measure("path_check", () => context.projects.resolveExistingPath(value));
+          await context.assertProjectStorageLocal?.(projectPath);
           const { current, updated, registeredAsExtra } = await measure("settings_registration", async () => {
             const current = await context.settings.get();
             let updated: AppSettings = current;

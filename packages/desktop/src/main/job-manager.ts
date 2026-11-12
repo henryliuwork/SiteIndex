@@ -1,4 +1,12 @@
-import { atomicWrite, compareKeys, pathsForProject, readJsonl, type MediaJobCheckpoint, withLock } from "@siteindex/core";
+import {
+  assertProjectStorageLocal as assertCoreProjectStorageLocal,
+  atomicWrite,
+  compareKeys,
+  pathsForProject,
+  readJsonl,
+  type MediaJobCheckpoint,
+  withLock,
+} from "@siteindex/core";
 import {
   EXIT,
   isValidMediaSkuRecoveryPartition,
@@ -47,6 +55,8 @@ export interface UtilityProcessLike {
 export interface JobManagerOptions {
   workerPath: string;
   getSettings(): Promise<AppSettings>;
+  /** Optional test seam; production checks before any Desktop run bookkeeping or worker startup. */
+  assertProjectStorageLocal?(projectPath: string): Promise<void>;
   getBrowserExecutablePath?(settings: AppSettings): Promise<string | null>;
   isMediaJobReady?(): boolean;
   /** E2E harness only; the production main process must leave this unset. */
@@ -729,6 +739,8 @@ export function createJobManager(options: JobManagerOptions) {
       throw jobError("CONFIG_INVALID", "媒体准备 SKU 列表无效。");
     }
     const projectPath = path.resolve(request.projectPath);
+    await (options.assertProjectStorageLocal ?? assertCoreProjectStorageLocal)(projectPath);
+    if (!acceptingJobs) throw jobError("LOCKED", "软件即将安装更新，暂时无法启动任务。");
     const key = projectKey(projectPath);
     if (entriesByProject.has(key) || startingByProject.has(key)) {
       throw jobError("LOCKED", "此项目已有任务正在运行。", projectPath);

@@ -3,7 +3,12 @@ import electronUpdater from "electron-updater";
 import { basename, dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { createCoreService, type CoreService, type CoreServiceContext } from "@siteindex/core";
+import {
+  createCoreService,
+  inspectProjectStorageLocation,
+  type CoreService,
+  type CoreServiceContext,
+} from "@siteindex/core";
 import { EXIT, PATHS, SCHEDULABLE_JOBS, type AppSettings, type ProjectId } from "@siteindex/shared";
 import { chooseDirectory, registerIpcHandlers } from "./ipc.js";
 import { createJobManager, type JobManagerOptions } from "./job-manager.js";
@@ -291,6 +296,16 @@ if (!hasSingleInstanceLock) {
     const coreService = createCoreService(coreContext);
     mediaCore = coreService;
     core = coreService;
+    const listLocalProjectEntries = async () => {
+      const entries = await catalog.refresh(currentSettings);
+      const inspections = await Promise.all(
+        entries.map(async (entry) => ({
+          entry,
+          storage: await inspectProjectStorageLocation(entry.path),
+        })),
+      );
+      return inspections.filter(({ storage }) => storage.status !== "known-cloud").map(({ entry }) => entry);
+    };
     const skillService = createSkillService({
       sourceDirectory: app.isPackaged
         ? join(process.resourcesPath, "skills")
@@ -302,7 +317,7 @@ if (!hasSingleInstanceLock) {
       process.platform === "win32"
         ? createResidentScheduler({
             statePath: join(app.getPath("userData"), "resident-schedule-state.json"),
-            listProjects: () => catalog.refresh(currentSettings),
+            listProjects: listLocalProjectEntries,
             getSchedule: async (id) => (await coreService.schedule.get(id)).config,
             isThisDevice: async (id) => (await coreService.runner.get(id)).is_this_device,
             isJobRunning: async (id) => Boolean(await jobs.running(id)),
@@ -310,7 +325,7 @@ if (!hasSingleInstanceLock) {
           })
         : null;
     const getNextTrayRunLabel = async (): Promise<string> => {
-      const entries = await catalog.refresh(currentSettings);
+      const entries = await listLocalProjectEntries();
       const candidates = (
         await Promise.all(
           entries.map(async ({ id }) => {

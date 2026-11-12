@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -255,6 +255,42 @@ afterEach(async () => {
 });
 
 describe("desktop job manager", () => {
+  it("rejects known-cloud jobs before Desktop bookkeeping or utility startup", async () => {
+    const projectPath = await projectDirectory();
+    const beforeEntries = await readdir(projectPath);
+    const beforeSite = await readFile(path.join(projectPath, pathsFor("legacy").site), "utf8");
+    const storageError = Object.assign(new Error("此目录仅支持只读查看。"), {
+      code: "PROJECT_CLOUD_SYNC_UNSUPPORTED",
+    });
+    const assertProjectStorageLocal = vi.fn(async () => {
+      throw storageError;
+    });
+    const getSettings = vi.fn(async () => settings());
+    const fork = vi.fn(() => new FakeUtilityProcess());
+    const resolveProjectPaths = vi.fn(async () => pathsFor("legacy"));
+    const manager = createJobManager({
+      workerPath: "job-worker.js",
+      getSettings,
+      assertProjectStorageLocal,
+      resolveProject: async () => projectPath,
+      resolveProjectPaths,
+      fork,
+      emitProgress: vi.fn(),
+      emitFinished: vi.fn(),
+      notify: vi.fn(),
+    });
+
+    await expect(manager.runAndWait({ projectPath, job: "daily" }, "manual")).rejects.toBe(storageError);
+
+    expect(assertProjectStorageLocal).toHaveBeenCalledWith(projectPath);
+    expect(getSettings).not.toHaveBeenCalled();
+    expect(resolveProjectPaths).not.toHaveBeenCalled();
+    expect(fork).not.toHaveBeenCalled();
+    expect(manager.activeCount).toBe(0);
+    expect(await readdir(projectPath)).toEqual(beforeEntries);
+    expect(await readFile(path.join(projectPath, pathsFor("legacy").site), "utf8")).toBe(beforeSite);
+  });
+
   it("runs jobs in a utility process, forwards progress and limits each project to one job", async () => {
     const projectPath = await projectDirectory();
     const child = new FakeUtilityProcess();
@@ -2321,13 +2357,21 @@ describe("desktop job manager", () => {
   });
   it("does not start a Job that was still resolving settings when installation began", async () => {
     let provideSettings!: (value: AppSettings) => void;
+    let notifySettingsRequested!: () => void;
     const pendingSettings = new Promise<AppSettings>((resolve) => {
       provideSettings = resolve;
+    });
+    const settingsRequested = new Promise<void>((resolve) => {
+      notifySettingsRequested = resolve;
     });
     const fork = vi.fn(() => new FakeUtilityProcess());
     const manager = createJobManager({
       workerPath: "job-worker.js",
-      getSettings: () => pendingSettings,
+      getSettings: () => {
+        notifySettingsRequested();
+        return pendingSettings;
+      },
+      assertProjectStorageLocal: async () => undefined,
       resolveProject: async () => "unused",
       fork,
       emitProgress: vi.fn(),
@@ -2336,8 +2380,8 @@ describe("desktop job manager", () => {
     });
 
     const starting = manager.run({ projectPath: "pending-project", job: "daily" });
+    await settingsRequested;
     const pausing = manager.pauseAndWaitForIdle();
-    await Promise.resolve();
     expect(manager.activeCount).toBe(1);
     provideSettings(settings());
     await expect(starting).rejects.toMatchObject({ code: "LOCKED" });

@@ -13,6 +13,44 @@ afterEach(async () => {
 });
 
 describe("projects.create Desktop flow", () => {
+  it("rejects a known-cloud root before Core feed detection or settings registration", async () => {
+    const storageError = Object.assign(new Error("此目录仅支持只读查看。"), {
+      code: "PROJECT_CLOUD_SYNC_UNSUPPORTED",
+    });
+    const create = vi.fn();
+    const settingsGet = vi.fn();
+    const settingsSet = vi.fn();
+    const input = {
+      url: "https://fixture.example.test",
+      feed_urls: [],
+      sku_field: "id",
+      category_depth: 1,
+      missing_as: "out_of_stock",
+      brand: { name: "Fixture" },
+      markets: [],
+      projects_root: "C:\\FictionalDrive\\SiteIndex",
+      folder_name: "fixture-shop",
+      workspace_folders: [],
+    } as CreateProjectInput;
+    const context = {
+      assertProjectStorageLocal: vi.fn(async () => {
+        throw storageError;
+      }),
+      core: { projects: { create }, invalidate: vi.fn() },
+      settings: { get: settingsGet, set: settingsSet },
+      projects: { refresh: vi.fn(), resolveProject: vi.fn() },
+      settingsChanged: vi.fn(),
+      jobs: { run: vi.fn() },
+    } as unknown as IpcContext;
+
+    await expect(createProjectsHandlers(context)["projects.create"]?.(input)).rejects.toBe(storageError);
+
+    expect(context.assertProjectStorageLocal).toHaveBeenCalledWith(input.projects_root);
+    expect(create).not.toHaveBeenCalled();
+    expect(settingsGet).not.toHaveBeenCalled();
+    expect(settingsSet).not.toHaveBeenCalled();
+  });
+
   it("indexes a selected root, claims this device, starts init and returns its IPC runId", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "siteindex-create-ipc-"));
     tempRoots.push(root);
