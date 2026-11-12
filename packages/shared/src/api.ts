@@ -359,6 +359,8 @@ export interface SkuImageRow {
   feed_image_url: string | null;
   manual_image_url: string | null;
   used: "feed" | "manual" | "none";
+  /** 已配置且有效的折扣百分比；未配置、未选择或旧台账缺列时为空。 */
+  discount_tier?: number | null;
 }
 
 export interface SkuImageFilters {
@@ -581,6 +583,8 @@ export interface SiteIndexApi {
     summary(id: ProjectId): Promise<{ total: number; feed: number; manual: number; none: number }>;
     listImages(id: ProjectId, q: ListQuery<SkuImageFilters>): Promise<PageResult<SkuImageRow>>;
     setManualImage(id: ProjectId, sku: string, url: string | null): Promise<SkuImageRow>;
+    /** 按 canonical 导出行键（真实 SKU 或当前规则生成的父 SKU）设置折扣档位，不向父子行传播；仅接受 site.json.edm.discount_tiers 中的百分比，null 清除。旧 bridge 可不提供。 */
+    setDiscountTier?(id: ProjectId, sku: string, discountTier: number | null): Promise<{ sku: string; discount_tier: number | null }>;
     buildCommand(id: ProjectId, input: EdmCommandInput): Promise<string>;
     /**
      * 将全项目清单交由 Desktop 原生另存对话框保存；不接收 SKU 子集或 renderer 提供的路径。旧 bridge 可不提供。

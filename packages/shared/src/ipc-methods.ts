@@ -59,6 +59,7 @@ export const API_INVOKE_METHODS = [
   "edm.summary",
   "edm.listImages",
   "edm.setManualImage",
+  "edm.setDiscountTier",
   "edm.buildCommand",
   "edm.exportIndex",
   "media.prepare",
@@ -108,7 +109,7 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = [];
+export const PENDING_HANDLERS: readonly string[] = ["edm.setDiscountTier"];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 

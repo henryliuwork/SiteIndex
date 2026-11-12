@@ -150,7 +150,10 @@ export const CSV_HEADERS = {
     "media_id",
     "source_hash",
   ],
+  /** 旧读取/校验表头；旧 sku_tags.csv 缺少折扣档位列时按未选择处理。 */
   skuTags: ["sku", "tags", "priority", "exclude_edm", "email_blurb", "season", "note", "updated_at"],
+  /** 新写入表头只在旧表尾追加折扣档位列。 */
+  skuTagsV2: ["sku", "tags", "priority", "exclude_edm", "email_blurb", "season", "note", "updated_at", "discount_tier"],
 } as const;
 
 export const DEFAULT_WORKSPACE_FOLDERS = ["seo", "edm", "产品", "内容", "设计", "报告"] as const;

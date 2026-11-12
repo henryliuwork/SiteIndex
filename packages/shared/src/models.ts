@@ -127,6 +127,7 @@ export interface SiteConfig {
     utm?: { source?: string; medium?: string };
     image_priority?: ("feed" | "manual")[];
     image_host?: { type: "wordpress" };
+    /** Optional, unique integer percent values from 1 through 99. */
     discount_tiers?: number[];
   };
   /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
@@ -410,6 +411,8 @@ export interface SkuTags {
   season?: string | null;
   note: string | null;
   updated_at: ISODate;
+  /** 用户为该 EDM 清单行选择的折扣百分比；旧台账缺列时视为未选择。 */
+  discount_tier?: number | null;
 }
 
 export interface EdmCampaign {
