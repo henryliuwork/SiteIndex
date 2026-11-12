@@ -79,6 +79,7 @@ import { parseCsv, readCsv, writeCsv, type CsvRow } from "../io/csv";
 import { compareKeys } from "../io/compare";
 import { parseJsonl, readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { pathsForProject, resolveProjectLayout } from "../io/project-layout";
+import { assertProjectStorageLocal, inspectProjectStorageLocation } from "../io/project-storage";
 import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
 import { groupSkuIds, previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
 import { selectInventoryDates, type InventorySummaryRange } from "../inventory/history-range";
@@ -659,7 +660,12 @@ function todayCounts(events: readonly InventoryEvent[], date: ISODate): ProjectS
   return result;
 }
 
-function projectSummary(snapshot: ProjectSummarySnapshot, id: ProjectId, deviceId: string): ProjectSummary {
+function projectSummary(
+  snapshot: ProjectSummarySnapshot,
+  id: ProjectId,
+  deviceId: string,
+  storageLocation: Awaited<ReturnType<typeof inspectProjectStorageLocation>>,
+): ProjectSummary {
   const activeSkus = snapshot.skus.filter((row) => row.status === "active");
   const activeProducts = snapshot.products.filter((row) => row.status === "active");
   const productCount = activeProducts.length || new Set(activeSkus.map((row) => row.handle)).size;
@@ -669,6 +675,9 @@ function projectSummary(snapshot: ProjectSummarySnapshot, id: ProjectId, deviceI
     : null;
   const latestRun = [...snapshot.runs].sort((a, b) => codeUnitCompare(b.started_at, a.started_at))[0];
   const warnings = feedUrlsFromConfig(snapshot.config).length ? [] : ["尚未填写 GMC feed"];
+  if (storageLocation.status === "known-cloud") {
+    warnings.push("此项目位于已知云同步目录，当前仅支持只读查看。请手动复制到本机目录后重新添加。");
+  }
   const runner = snapshot.runner;
   return {
     id,
@@ -688,6 +697,7 @@ function projectSummary(snapshot: ProjectSummarySnapshot, id: ProjectId, deviceI
     today: todayCounts(snapshot.events, snapshot.asOf),
     attention: snapshot.seoIssues.filter((issue) => issue.status === "open").length,
     warnings,
+    ...(storageLocation.status === "known-cloud" ? { storage_location: "known_cloud_sync" as const } : {}),
     runner_device: runner?.device_name ?? null,
     is_runner: runner?.device_id === deviceId,
   };
@@ -1124,6 +1134,7 @@ function thrownExitCode(error: unknown): number {
   if (isSiteIndexError(error)) {
     if (error.code === "LOCKED") return EXIT.LOCKED;
     if (error.code === "NOT_RUNNER") return EXIT.NOT_RUNNER;
+    if (error.code === "PROJECT_CLOUD_SYNC_UNSUPPORTED") return EXIT.VALIDATION_FAILED;
     if (error.code === "FEED_FETCH_FAILED" || error.code === "FEED_EMPTY") return EXIT.SOURCE_FAILED;
     if (error.code === "BROWSER_UNAVAILABLE") return EXIT.BROWSER_UNAVAILABLE;
     if (error.code === "CONFIG_INVALID" || error.code === "PATH_OUTSIDE_PROJECT") return EXIT.VALIDATION_FAILED;
@@ -1513,6 +1524,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     const projectPath = path.resolve(req.projectPath);
     const mediaRunToken = req.job === "media" ? randomUUID() : null;
     let runId = mediaRunToken ? `media-${mediaRunToken}` : `${new Date().toISOString().slice(0, 10)}-${req.job}`;
+    // Reject before media-start notifications, locks, runs, or error logs.
+    await assertProjectStorageLocal(projectPath);
     if (req.job === "media") {
       try { ctx.onJobStarted?.(runId, new Date().toISOString()); }
       catch {
@@ -1869,6 +1882,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       else progress(null, finalStep, result.summary, "error");
       return result;
     } catch (error) {
+      if (isSiteIndexError(error) && error.code === "PROJECT_CLOUD_SYNC_UNSUPPORTED") throw error;
       const exitCode = thrownExitCode(error);
       const message = isSiteIndexError(error) ? error.message : error instanceof Error ? error.message : String(error);
       if (exitCode === EXIT.LOCKED || exitCode === EXIT.NOT_RUNNER) {
@@ -1934,11 +1948,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
 
   const projects: CoreService["projects"] = {
     get: async (id) => {
-      const snapshot = await loadProjectSummary(resolve(id));
-      return { summary: projectSummary(snapshot, id, ctx.deviceId), config: snapshot.config, runner: snapshot.runner };
+      const projectPath = resolve(id);
+      const snapshot = await loadProjectSummary(projectPath);
+      const storageLocation = await inspectProjectStorageLocation(projectPath);
+      return { summary: projectSummary(snapshot, id, ctx.deviceId, storageLocation), config: snapshot.config, runner: snapshot.runner };
     },
     updateConfig: async (id, patch) => {
       const projectPath = resolve(id);
+      await assertProjectStorageLocal(projectPath);
       const snapshot = await load(projectPath);
       const patchCrawl = asRecord((patch as UnknownRecord).crawl);
       const crawl: UnknownRecord = { ...snapshot.config.crawl, ...patchCrawl };
@@ -1963,6 +1980,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     detect: detectSite,
     inspectFeed: inspectFeeds,
     create: async (input: CreateProjectInput) => {
+      const targetDir = path.resolve(path.resolve(input.projects_root), cleanFolderName(input.folder_name));
+      await assertProjectStorageLocal(targetDir);
       const detected = await detectSite(input.url);
       const domain = normalizeSiteDomain(detected.final_url);
       if (!domain) throw siteError("CONFIG_INVALID", "无法识别网站域名，暂不能创建项目。", detected.final_url);
@@ -2003,6 +2022,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
         throw siteError("CONFIG_INVALID", "工作区目录必须位于 projects_root 内。", targetDir);
       }
+      await assertProjectStorageLocal(targetDir);
       return withSiteCreateLock(domain, async () => {
         await assertSiteNotRegistered(domain, projectsRoot, ctx.listRegisteredProjects);
         const created = await createWorkspaceFiles({
@@ -2022,7 +2042,11 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   const workspace: CoreService["workspace"] = {
     check: checkWorkspaceTarget,
     create: (input) => createWorkspaceFiles(input, { templateDir: ctx.templateDir }),
-    importCheck: (id, options) => checkWorkspaceImport(resolve(id), { apply: options?.apply, templateDir: ctx.templateDir }),
+    importCheck: async (id, options) => {
+      const projectPath = resolve(id);
+      if (options?.apply) await assertProjectStorageLocal(projectPath);
+      return checkWorkspaceImport(projectPath, { apply: options?.apply, templateDir: ctx.templateDir });
+    },
   };
 
   const sku: CoreService["sku"] = {
@@ -2642,6 +2666,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
     saveUserBlocks: async (id, blocks) => {
       const projectPath = resolve(id);
+      await assertProjectStorageLocal(projectPath);
       const readmePath = await projectFilePath(projectPath, PATHS.readme);
       let markdown = await readFile(readmePath, "utf8").catch(() => "# 项目说明\n");
       markdown = replaceReadmeSection(markdown, "项目概况", blocks.overview);
@@ -2715,6 +2740,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
     save: async (id, config) => {
       const projectPath = resolve(id);
+      await assertProjectStorageLocal(projectPath);
       const snapshot = await load(projectPath);
       const next: SiteConfig = { ...snapshot.config, schedule: config };
       try { await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(next)); }

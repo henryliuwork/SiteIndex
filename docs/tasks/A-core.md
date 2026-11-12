@@ -184,3 +184,6 @@
 
 ### v0.4.1 · EDM SKU 清单导出
 - [x] #423 Core 内部 `edm.renderIndex` 只读确定性渲染并返回内容与统计，覆盖 legacy/workspace；保留追踪 query 剥离、仅保留精确匹配导出 SKU 的 variant 参数，其余 query/fragment 显示确认提示；Core service 不创建或覆盖固定清单，Desktop 的另存流程仍独立；折扣档选择/舍入规则仍待产品确认
+
+### v0.4.1 · #480 本机项目存储策略
+- [x] A：导出已知云同步根分类器；未知路径不标记为本机；在 Core 项目创建、workspace 创建/导入修复、Job、台账、EDM、runner 与 CLI skills 写入口执行写入前阻断；已登记项目保持只读可查看并在摘要上标记；用虚构路径夹具证明同名前缀目录不会误判

@@ -4,6 +4,7 @@ import { pathsFor, type ProductView, type SiteConfig, type SiteIndexError } from
 import { atomicWrite } from "./io/atomic-write";
 import { readJsonl } from "./io/jsonl";
 import { resolveProjectLayout } from "./io/project-layout";
+import { assertProjectStorageLocal } from "./io/project-storage";
 
 export interface EdmRenderOptions {
   allowOos?: boolean;
@@ -228,6 +229,7 @@ export async function renderEdm(
   options: EdmRenderOptions = {},
 ): Promise<EdmRenderResult> {
   const project = path.resolve(projectPath);
+  await assertProjectStorageLocal(project);
   const campaign = path.resolve(project, campaignDir);
   const paths = pathsFor(await resolveProjectLayout(project));
   const sitePath = path.join(project, paths.site);

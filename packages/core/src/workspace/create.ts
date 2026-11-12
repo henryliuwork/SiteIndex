@@ -11,6 +11,7 @@ import {
   type WorkspaceCreateResult,
 } from "@siteindex/shared";
 import { compareKeys } from "../io/compare";
+import { assertProjectStorageLocal } from "../io/project-storage";
 import { normalizeSiteDomain } from "../projects/create-guard";
 import { createConfig } from "../projects/create";
 
@@ -469,6 +470,7 @@ export async function createWorkspaceFiles(
   const target = resolveTarget(input.targetDir);
   const domain = normalizeSiteDomain(input.domain);
   if (!domain) throw workspaceError("CONFIG_INVALID", "网站域名无效。", input.domain);
+  await assertProjectStorageLocal(target);
   await assertTargetEmpty(target);
   const templateDir = await findTemplate(options.templateDir);
   const sourceManifest = await loadManifest(templateDir);

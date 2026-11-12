@@ -6,6 +6,7 @@ import path from "node:path";
 import { DEFAULT_CONFLICT_PATTERNS, EXIT, pathsFor, type SiteIndexError, type SiteIndexErrorCode } from "@siteindex/shared";
 import { atomicWrite } from "./atomic-write";
 import { resolveProjectLayoutOrLegacy } from "./project-layout";
+import { assertProjectStorageLocal } from "./project-storage";
 
 export interface RunnerConfig {
   device_id: string;
@@ -59,6 +60,7 @@ export async function readRunner(project: string): Promise<RunnerConfig | null> 
 }
 
 export async function writeRunner(project: string, runner: RunnerConfig): Promise<void> {
+  await assertProjectStorageLocal(project);
   const paths = pathsFor(await resolveProjectLayoutOrLegacy(project));
   const json = `${JSON.stringify(runner, null, 2)}\n`;
   await atomicWrite(path.join(project, paths.runner), json);
@@ -697,6 +699,7 @@ export async function unlinkOwnedLock(
 }
 
 async function withExclusiveLock<T>(project: string, fn: () => Promise<T> | T, options: LockOptions = {}): Promise<T> {
+  await assertProjectStorageLocal(project);
   const paths = pathsFor(await resolveProjectLayoutOrLegacy(project));
   const lockPath = path.join(project, paths.lock);
   const now = options.now ?? (() => new Date());
