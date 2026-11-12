@@ -241,7 +241,7 @@ describe("K5 media and stock contracts", () => {
     expect(result.media_results?.map((entry) => entry.sku)).toEqual(request.skus);
     expect(API_INVOKE_METHODS.filter((method) => method === "media.prepare")).toHaveLength(1);
     expect(PENDING_HANDLERS).not.toContain("media.prepare");
-    expect(PENDING_HANDLERS).toContain("edm.exportIndex");
+    expect(PENDING_HANDLERS).not.toContain("edm.exportIndex");
   });
 
   it.each(["WP_AUTH_FAILED", "WP_FORBIDDEN"] as const)("stops on %s without marking unstarted SKUs", (code) => {
