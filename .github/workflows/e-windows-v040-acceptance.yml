@@ -442,11 +442,12 @@ jobs:
           if (-not $asset -or $asset.id -ne $expectedAssetId -or $releaseDigest -cne $expectedDigest) { throw "Candidate installer asset ID or SHA256 differs from the supplied release metadata." }
           $feedAsset = @($release.assets | Where-Object { $_.name -ceq "latest.yml" }) | Select-Object -First 1
           if (-not $feedAsset) { throw "Candidate Release is missing latest.yml; hosted updates cannot be checked." }
-          $feedText = [string](Invoke-WebRequest -Uri $feedAsset.browser_download_url).Content
+          $feedContent = (Invoke-WebRequest -Uri $feedAsset.browser_download_url).Content
+          $feedText = if ($feedContent -is [byte[]]) { [Text.Encoding]::UTF8.GetString($feedContent) } else { [string]$feedContent }
           $escapedVersion = [regex]::Escape($version)
           $escapedAssetName = [regex]::Escape($assetName)
           if ($feedText -notmatch "(?m)^version:\s*$escapedVersion\s*$") { throw "latest.yml version does not match the candidate Release." }
-          if ($feedText -notmatch "(?m)^\s*url:\s*$escapedAssetName\s*$") { throw "latest.yml does not reference the verified candidate installer filename." }
+          if ($feedText -notmatch "(?m)^\s*-\s*url:\s*$escapedAssetName\s*$") { throw "latest.yml does not reference the verified candidate installer filename." }
           $feedSha512Match = [regex]::Match($feedText, "(?m)^\s+sha512:\s*(\S+)\s*$")
           if (-not $feedSha512Match.Success) { throw "latest.yml is missing the candidate installer SHA512." }
           $installer = Join-Path $env:RUNNER_TEMP $assetName
