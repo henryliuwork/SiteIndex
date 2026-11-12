@@ -11,19 +11,32 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "../../..");
 const packagedApp = path.join(repositoryRoot, "release-media-production-e2e", "win-unpacked", "SiteIndex.exe");
 const summaryPath = process.argv[2] ? path.resolve(process.argv[2]) : "";
-const phases = ["success", "auth-401", "forbidden-403", "post-lost", "retry"];
+const phases = [
+  "success",
+  "auth-401",
+  "forbidden-403",
+  "post-lost",
+  "retry",
+  "post-429",
+  "retry-429",
+  "post-503",
+  "retry-503",
+];
 const seed = randomBytes(16).toString("hex");
-const credentials = {
-  valid: { username: `fixture-user-${seed}`, password: `fixture-secret-${seed}` },
-  forbidden: { username: `fixture-forbidden-${seed}`, password: `fixture-forbidden-secret-${seed}` },
-};
-const canaries = [
-  credentials.valid.username,
-  credentials.valid.password,
-  credentials.forbidden.username,
-  credentials.forbidden.password,
-  `Basic ${Buffer.from(`${credentials.valid.username}:${credentials.valid.password}`).toString("base64")}`,
-  `Basic ${Buffer.from(`${credentials.forbidden.username}:${credentials.forbidden.password}`).toString("base64")}`,
+const credentials = { username: `fixture-user-${seed}`, password: `fixture-secret-${seed}` };
+const credentialPair = `${credentials.username}:${credentials.password}`;
+const canaryStrings = [
+  credentials.username,
+  credentials.password,
+  credentialPair,
+  Buffer.from(credentials.username).toString("base64"),
+  Buffer.from(credentials.password).toString("base64"),
+  Buffer.from(credentialPair).toString("base64"),
+  `Basic ${Buffer.from(credentialPair).toString("base64")}`,
+];
+const canaryBytes = [
+  ...canaryStrings.map((value) => Buffer.from(value, "utf8")),
+  ...canaryStrings.map((value) => Buffer.from(value, "utf16le")),
 ];
 
 function assertSafeTempRoot(root) {
@@ -89,32 +102,28 @@ async function startWordPressServer(testRoot) {
     unauthorized: 0,
     forbidden: 0,
     persistedBeforeDisconnect: 0,
+    persistedBeforeHttpFailure: 0,
+    http429: 0,
+    http503: 0,
   };
   const uploaded = new Map();
   let nextId = 100;
   let dropNextUploadResponse = false;
+  let uploadFailure = null;
+  let uploadPostOrdinal = 0;
   let uiReturnedBeforeResponseLoss = false;
   let origin = "";
-  const validAuthorization = `Basic ${Buffer.from(`${credentials.valid.username}:${credentials.valid.password}`).toString("base64")}`;
-  const forbiddenAuthorization = `Basic ${Buffer.from(`${credentials.forbidden.username}:${credentials.forbidden.password}`).toString("base64")}`;
+  const validAuthorization = `Basic ${Buffer.from(credentialPair).toString("base64")}`;
 
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", origin);
       const authorization = request.headers.authorization;
-      const isForbidden = authorization === forbiddenAuthorization;
       const isAuthorized = authorization === validAuthorization;
-      if (!isAuthorized && !isForbidden) {
+      if (!isAuthorized) {
         metrics.unauthorized += 1;
         response.writeHead(401, { "content-type": "application/json" });
         response.end(JSON.stringify({ code: "rest_not_logged_in", message: "Synthetic authentication rejected." }));
-        if (request.method !== "GET") await readAndDiscard(request);
-        return;
-      }
-      if (isForbidden) {
-        metrics.forbidden += 1;
-        response.writeHead(403, { "content-type": "application/json" });
-        response.end(JSON.stringify({ code: "rest_cannot_create", message: "Synthetic upload permission denied." }));
         if (request.method !== "GET") await readAndDiscard(request);
         return;
       }
@@ -129,6 +138,7 @@ async function startWordPressServer(testRoot) {
       if (request.method === "POST" && url.pathname === "/wp-json/wp/v2/media") {
         await readAndDiscard(request);
         metrics.createPosts += 1;
+        uploadPostOrdinal += 1;
         const disposition = request.headers["content-disposition"];
         const slug = (Array.isArray(disposition) ? disposition[0] : disposition)?.match(
           /filename="([a-z0-9-]+)\.jpg"/iu,
@@ -136,6 +146,33 @@ async function startWordPressServer(testRoot) {
         if (!slug) {
           response.writeHead(400, { "content-type": "application/json" });
           response.end(JSON.stringify({ error: "synthetic_filename_missing" }));
+          return;
+        }
+        const injectedFailure = uploadFailure?.ordinal === uploadPostOrdinal ? uploadFailure : null;
+        if (injectedFailure) uploadFailure = null;
+        if (injectedFailure?.persist) {
+          const id = nextId++;
+          const item = { id, slug, source_url: `${origin}/wp-content/uploads/${slug}.jpg` };
+          uploaded.set(slug, item);
+          metrics.persistedBeforeHttpFailure += 1;
+        }
+        if (injectedFailure) {
+          if (injectedFailure.status === 401) metrics.unauthorized += 1;
+          if (injectedFailure.status === 403) metrics.forbidden += 1;
+          if (injectedFailure.status === 429) metrics.http429 += 1;
+          if (injectedFailure.status === 503) metrics.http503 += 1;
+          response.writeHead(injectedFailure.status, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              code:
+                injectedFailure.status === 401
+                  ? "rest_not_logged_in"
+                  : injectedFailure.status === 403
+                    ? "rest_cannot_create"
+                    : "synthetic_service_error",
+              message: "Synthetic upload response failure.",
+            }),
+          );
           return;
         }
         const id = nextId++;
@@ -200,6 +237,13 @@ async function startWordPressServer(testRoot) {
     get uiReturnedBeforeResponseLoss() {
       return uiReturnedBeforeResponseLoss;
     },
+    failUploadOnOrdinal(ordinal, status, persist) {
+      if (!Number.isInteger(ordinal) || ordinal < 1 || ![401, 403, 429, 503].includes(status)) {
+        throw new Error("invalid-synthetic-upload-failure");
+      }
+      uploadFailure = { ordinal, status, persist };
+      uploadPostOrdinal = 0;
+    },
     dropNextUploadResponse() {
       dropNextUploadResponse = true;
     },
@@ -257,7 +301,7 @@ async function runPackagedPhase(root, phase, imageOrigin, wordpressOrigin) {
     child.once("close", async (code) => {
       clearTimeout(timeout);
       const captured = Buffer.concat(output);
-      const capturedCanaryMatches = canaries.filter((value) => captured.includes(Buffer.from(value))).length;
+      const capturedCanaryMatches = canaryBytes.filter((value) => captured.includes(value)).length;
       if (capturedCanaryMatches > 0) {
         reject(new Error(`Packaged phase ${phase} leaked a credential canary in process output.`));
         return;
@@ -302,6 +346,7 @@ async function main() {
   const wordpress = await startWordPressServer(root);
   const phaseResults = {};
   const traffic = [];
+  let postLostPackagedAppExited = false;
   let summaryWritten = false;
   try {
     if (!process.platform.startsWith("win")) throw new Error("packaged-acceptance-requires-windows");
@@ -313,12 +358,32 @@ async function main() {
     await mkdir(path.join(root, "roaming-app-data"), { recursive: true });
     for (const phase of phases) {
       if (phase === "post-lost") wordpress.dropNextUploadResponse();
+      if (phase === "auth-401") wordpress.failUploadOnOrdinal(2, 401, false);
+      if (phase === "forbidden-403") wordpress.failUploadOnOrdinal(2, 403, false);
+      if (phase === "post-429") wordpress.failUploadOnOrdinal(1, 429, true);
+      if (phase === "post-503") wordpress.failUploadOnOrdinal(1, 503, true);
       const before = {
         ...wordpress.metrics,
         imageRequests: image.metrics.requests,
         uploadedCount: wordpress.uploadedCount,
       };
       phaseResults[phase] = await runPackagedPhase(root, phase, image.origin, wordpress.origin);
+      if (phase === "post-lost") postLostPackagedAppExited = true;
+      const recoveryPhase =
+        phase === "retry"
+          ? "post-lost"
+          : phase === "retry-429"
+            ? "post-429"
+            : phase === "retry-503"
+              ? "post-503"
+              : null;
+      if (recoveryPhase) {
+        phaseResults[phase].checks = {
+          ...phaseResults[phase].checks,
+          packagedAppExitedAfterUnknownPost:
+            recoveryPhase === "post-lost" ? postLostPackagedAppExited : Object.hasOwn(phaseResults, recoveryPhase),
+        };
+      }
       const after = {
         ...wordpress.metrics,
         imageRequests: image.metrics.requests,
@@ -331,9 +396,12 @@ async function main() {
         metadataPosts: after.metadataPosts - before.metadataPosts,
         auth401: after.unauthorized - before.unauthorized,
         auth403: after.forbidden - before.forbidden,
+        http429: after.http429 - before.http429,
+        http503: after.http503 - before.http503,
         imageRequests: after.imageRequests - before.imageRequests,
         uploadedObjects: after.uploadedCount - before.uploadedCount,
         responseLostAfterCommit: after.persistedBeforeDisconnect - before.persistedBeforeDisconnect,
+        persistedBeforeHttpFailure: after.persistedBeforeHttpFailure - before.persistedBeforeHttpFailure,
       });
     }
     const cases = {
@@ -349,29 +417,87 @@ async function main() {
           not_started: 0,
           reused: 0,
         }),
-      auth401StopsUnstartedSku: phaseResults["auth-401"].checks?.expectedAuthorizationCode === "WP_AUTH_FAILED",
-      forbidden403StopsUnstartedSku: phaseResults["forbidden-403"].checks?.expectedAuthorizationCode === "WP_FORBIDDEN",
+      auth401AfterFirstSuccessStopsThirdSku:
+        phaseResults["auth-401"].checks?.expectedAuthorizationCode === "WP_AUTH_FAILED" &&
+        traffic.find((entry) => entry.phase === "auth-401")?.auth401 === 1 &&
+        phaseResults["auth-401"].checks?.resultCounts ===
+          JSON.stringify({
+            uploaded: 1,
+            recorded: 0,
+            skipped_has_url: 0,
+            failed: 1,
+            unknown: 0,
+            not_started: 1,
+            reused: 0,
+          }),
+      forbidden403AfterFirstSuccessStopsThirdSku:
+        phaseResults["forbidden-403"].checks?.expectedAuthorizationCode === "WP_FORBIDDEN" &&
+        traffic.find((entry) => entry.phase === "forbidden-403")?.auth403 === 1 &&
+        phaseResults["forbidden-403"].checks?.resultCounts ===
+          JSON.stringify({
+            uploaded: 1,
+            recorded: 0,
+            skipped_has_url: 0,
+            failed: 1,
+            unknown: 0,
+            not_started: 1,
+            reused: 0,
+          }),
       postPersistedBeforeResponseLoss:
         traffic.find((entry) => entry.phase === "post-lost")?.responseLostAfterCommit === 1,
       retryReusesWithoutSecondMediaCreate:
         phaseResults.retry.checks?.retryOrOutcomeUnknownMatches === true &&
         traffic.find((entry) => entry.phase === "retry")?.mediaCreatePosts === 0,
+      post429PersistedBeforeUnknownAndRetryReused:
+        phaseResults["post-429"].checks?.retryOrOutcomeUnknownMatches === true &&
+        traffic.find((entry) => entry.phase === "post-429")?.http429 === 1 &&
+        traffic.find((entry) => entry.phase === "post-429")?.persistedBeforeHttpFailure === 1 &&
+        traffic.find((entry) => entry.phase === "retry-429")?.mediaCreatePosts === 0 &&
+        phaseResults["retry-429"].checks?.restartUnknownOutcomeRecoveredOnColdMount === true &&
+        phaseResults["retry-429"].checks?.retryReviewDialogConfirmed === true,
+      post503PersistedBeforeUnknownAndRetryReused:
+        phaseResults["post-503"].checks?.retryOrOutcomeUnknownMatches === true &&
+        traffic.find((entry) => entry.phase === "post-503")?.http503 === 1 &&
+        traffic.find((entry) => entry.phase === "post-503")?.persistedBeforeHttpFailure === 1 &&
+        traffic.find((entry) => entry.phase === "retry-503")?.mediaCreatePosts === 0 &&
+        phaseResults["retry-503"].checks?.restartUnknownOutcomeRecoveredOnColdMount === true &&
+        phaseResults["retry-503"].checks?.retryReviewDialogConfirmed === true,
       rendererReceivedUtilityProcessProgress: phaseResults.success.checks?.progressEvidenceComplete === true,
       navigatedAwayWhileJobRunningAndItCompletedInBackground:
         phaseResults["post-lost"].checks?.crossPageDuringActiveJob === true &&
         phaseResults["post-lost"].checks?.jobCompletedAwayFromEdm === true &&
         wordpress.uiReturnedBeforeResponseLoss,
       rendererCrossPageRecovery: phaseResults["post-lost"].checks?.crossPageRecoveryAfterJob === true,
+      appRestartRecoveredUnknownAndConfirmedRetry:
+        phaseResults.retry.checks?.packagedAppExitedAfterUnknownPost === true &&
+        phaseResults.retry.checks?.restartUnknownOutcomeRecoveredOnColdMount === true &&
+        phaseResults.retry.checks?.retryReviewDialogConfirmed === true &&
+        phaseResults.retry.checks?.retryOrOutcomeUnknownMatches === true &&
+        traffic.find((entry) => entry.phase === "retry")?.mediaCreatePosts === 0,
     };
-    const canaryScan = await scanMediaCanaryTree(root, canaries);
+    for (const phase of ["retry-429", "retry-503"]) {
+      cases[`${phase}AppRestartedUnknownAndConfirmedRetry`] =
+        phaseResults[phase].checks?.packagedAppExitedAfterUnknownPost === true &&
+        phaseResults[phase].checks?.restartUnknownOutcomeRecoveredOnColdMount === true &&
+        phaseResults[phase].checks?.retryReviewDialogConfirmed === true &&
+        phaseResults[phase].checks?.retryOrOutcomeUnknownMatches === true &&
+        traffic.find((entry) => entry.phase === phase)?.mediaCreatePosts === 0;
+    }
+    const canaryScan = await scanMediaCanaryTree(root, canaryBytes);
     const summary = {
       schemaVersion: 1,
       sourceCommit: process.env.SITEINDEX_MEDIA_E2E_SOURCE_COMMIT ?? "local",
       runner: "windows-latest",
       packagedElectron: true,
+      packageKind: "electron-builder-win-unpacked-directory-not-nsis-installer",
       actualBuiltEdmUiAndPreload: true,
-      productionMediaGateRemainsClosed: true,
-      testOnlyUiGateBypass: true,
+      productionMediaGateOpenBySharedContract: true,
+      testOnlyUiGateBypass: false,
+      productionUiBundleCopiedUnmodified: true,
+      packagedAcceptanceBootstrap: "isolated-main-entry-using-production-ipc-job-manager-worker-and-core",
+      testOnlyLoopbackHttp: true,
+      wordpressProductionHttpsPolicyVerified: false,
+      credentialEncodingClassesChecked: 5,
       cases,
       phases: Object.fromEntries(Object.entries(phaseResults).map(([phase, result]) => [phase, result.checks ?? {}])),
       traffic,
@@ -387,7 +513,7 @@ async function main() {
       credentialCanaryAbsentFromPackagedProcessOutput: true,
     };
     const serialized = `${JSON.stringify(summary, null, 2)}\n`;
-    if (canaries.some((value) => serialized.includes(value)))
+    if (canaryStrings.some((value) => serialized.includes(value)))
       throw new Error("Credential canary appeared in the E2E summary.");
     await writeFile(summaryPath, serialized, "utf8");
     summaryWritten = true;
@@ -400,7 +526,7 @@ async function main() {
   } finally {
     if (!summaryWritten) {
       try {
-        const canaryScan = await scanMediaCanaryTree(root, canaries);
+        const canaryScan = await scanMediaCanaryTree(root, canaryBytes);
         await mkdir(path.dirname(summaryPath), { recursive: true });
         await writeFile(
           summaryPath,

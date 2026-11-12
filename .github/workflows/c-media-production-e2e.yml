@@ -17,6 +17,7 @@ on:
       - "packages/desktop/scripts/create-media-production-builder-config.mjs"
       - "packages/desktop/test/media-production-*.test.ts"
       - "packages/desktop/electron.vite.media-production.config.ts"
+      - "packages/shared/src/ipc-methods.ts"
       - ".github/workflows/c-media-production-e2e.yml"
   workflow_dispatch:
 
@@ -45,21 +46,35 @@ jobs:
           $actual = (git rev-parse HEAD).Trim()
           if ($actual -ne $env:EXPECTED_SOURCE_COMMIT) { throw "E2E source commit does not match the PR head." }
           "SITEINDEX_MEDIA_E2E_SOURCE_COMMIT=$actual" >> $env:GITHUB_ENV
+      - name: Check the production media contract gate
+        id: media-gate
+        run: pnpm --filter @siteindex/ui exec tsx ../desktop/scripts/check-media-production-gate.ts
+      - name: Record that packaged media acceptance is waiting for contract opening
+        if: steps.media-gate.outputs.media_prepare_ready != 'true'
+        shell: pwsh
+        run: |
+          @'
+          ## Packaged media acceptance not run
+
+          `media.prepare` is still listed in `PENDING_HANDLERS`. The production UI and Desktop readiness gate remain closed. This run did not bypass either gate and is not media acceptance evidence. The contract PR that removes the pending marker must trigger this workflow and pass the packaged UI-to-Core loopback suite before the contract is merged.
+          '@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
       - name: Build production UI, CLI, and Desktop resources
+        if: steps.media-gate.outputs.media_prepare_ready == 'true'
         run: pnpm --filter @siteindex/desktop prepare:dist
-      - name: Copy production UI to isolated test resources and bypass its pending gate
-        working-directory: packages/ui
-        run: pnpm exec tsx ../desktop/scripts/prepare-media-production-ui.ts
       - name: Build packaged E2E main and worker entries
+        if: steps.media-gate.outputs.media_prepare_ready == 'true'
         working-directory: packages/desktop
         run: pnpm exec electron-vite build --config electron.vite.media-production.config.ts
       - name: Generate isolated electron-builder configuration
+        if: steps.media-gate.outputs.media_prepare_ready == 'true'
         working-directory: packages/desktop
         run: node scripts/create-media-production-builder-config.mjs
       - name: Package isolated Windows app
+        if: steps.media-gate.outputs.media_prepare_ready == 'true'
         working-directory: packages/desktop
         run: pnpm exec electron-builder --win dir --publish never --config electron-builder.media-production.generated.json
       - name: Run real EDM UI to Core media Job packaged acceptance
+        if: steps.media-gate.outputs.media_prepare_ready == 'true'
         run: node packages/desktop/scripts/media-production-electron-e2e.mjs artifacts/media-production-summary.json
       - uses: actions/upload-artifact@v4
         if: ${{ always() && hashFiles('artifacts/media-production-summary.json') != '' }}

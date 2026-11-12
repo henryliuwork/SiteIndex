@@ -3,6 +3,7 @@ import { createCoreService, pathsForProject } from "@siteindex/core";
 import {
   isValidMediaSkuRecoveryPartition,
   PATHS,
+  PENDING_HANDLERS,
   type AppSettings,
   type JobProgress,
   type JobResult,
@@ -17,13 +18,23 @@ import { createMediaHandlers } from "./ipc/media.js";
 import { createHandlerRegistry, serializeIpcError } from "./ipc-registry.js";
 import { createJobManager } from "./job-manager.js";
 import { hasMediaProgressEvidence } from "./media-production-assertions.js";
+import { isMediaPrepareReady } from "./media-readiness.js";
 import { createWindowManager } from "./window-manager.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
 import type { WordPressCredentialInput } from "../shared/wordpress-credential-types.js";
 import { createWordPressMediaCredentialProvider } from "./wordpress-media-credential-provider.js";
 import { ipcChannel } from "../shared/ipc-contract.js";
 
-type ProductionPhase = "success" | "auth-401" | "forbidden-403" | "post-lost" | "retry";
+type ProductionPhase =
+  | "success"
+  | "auth-401"
+  | "forbidden-403"
+  | "post-lost"
+  | "retry"
+  | "post-429"
+  | "retry-429"
+  | "post-503"
+  | "retry-503";
 type ExpectedSkuStatus = "uploaded" | "recorded" | "skipped_has_url" | "failed" | "unknown" | "not_started" | "reused";
 
 interface PhaseReport {
@@ -59,16 +70,18 @@ const FIXTURE_CASES: Record<
     rows: [
       { sku: "synthetic-auth401-a", imagePath: "/success-a.webp" },
       { sku: "synthetic-auth401-b", imagePath: "/success-b.webp" },
+      { sku: "synthetic-auth401-c", imagePath: "/success-c.webp" },
     ],
-    expected: { uploaded: 0, recorded: 0, skipped_has_url: 0, failed: 1, unknown: 0, not_started: 1, reused: 0 },
+    expected: { uploaded: 1, recorded: 0, skipped_has_url: 0, failed: 1, unknown: 0, not_started: 1, reused: 0 },
   },
   "forbidden-403": {
     projectId: "synthetic-media-forbidden403",
     rows: [
       { sku: "synthetic-forbidden-a", imagePath: "/success-a.webp" },
       { sku: "synthetic-forbidden-b", imagePath: "/success-b.webp" },
+      { sku: "synthetic-forbidden-c", imagePath: "/success-c.webp" },
     ],
-    expected: { uploaded: 0, recorded: 0, skipped_has_url: 0, failed: 1, unknown: 0, not_started: 1, reused: 0 },
+    expected: { uploaded: 1, recorded: 0, skipped_has_url: 0, failed: 1, unknown: 0, not_started: 1, reused: 0 },
   },
   "post-lost": {
     projectId: "synthetic-media-postlost",
@@ -80,7 +93,36 @@ const FIXTURE_CASES: Record<
     rows: [{ sku: "synthetic-post-lost", imagePath: "/success-a.webp" }],
     expected: { uploaded: 0, recorded: 0, skipped_has_url: 0, failed: 0, unknown: 0, not_started: 0, reused: 1 },
   },
+  "post-429": {
+    projectId: "synthetic-media-post429",
+    rows: [
+      { sku: "synthetic-post-429", imagePath: "/success-a.webp" },
+      { sku: "synthetic-post-429-next", imagePath: "/success-b.webp" },
+    ],
+    expected: { uploaded: 0, recorded: 0, skipped_has_url: 0, failed: 0, unknown: 1, not_started: 1, reused: 0 },
+  },
+  "retry-429": {
+    projectId: "synthetic-media-post429",
+    rows: [{ sku: "synthetic-post-429", imagePath: "/success-a.webp" }],
+    expected: { uploaded: 0, recorded: 0, skipped_has_url: 0, failed: 0, unknown: 0, not_started: 0, reused: 1 },
+  },
+  "post-503": {
+    projectId: "synthetic-media-post503",
+    rows: [
+      { sku: "synthetic-post-503", imagePath: "/success-a.webp" },
+      { sku: "synthetic-post-503-next", imagePath: "/success-b.webp" },
+    ],
+    expected: { uploaded: 0, recorded: 0, skipped_has_url: 0, failed: 0, unknown: 1, not_started: 1, reused: 0 },
+  },
+  "retry-503": {
+    projectId: "synthetic-media-post503",
+    rows: [{ sku: "synthetic-post-503", imagePath: "/success-a.webp" }],
+    expected: { uploaded: 0, recorded: 0, skipped_has_url: 0, failed: 0, unknown: 0, not_started: 0, reused: 1 },
+  },
 };
+
+const RECOVERY_RETRY_PHASES = new Set<ProductionPhase>(["retry", "retry-429", "retry-503"]);
+const UNKNOWN_POST_PHASES = new Set<ProductionPhase>(["post-lost", "post-429", "post-503"]);
 
 const WEBP_BYTES = Buffer.from("UklGRi4AAABXRUJQVlA4TCEAAAAvAUAAEB8w/wKCIv9HCwFB0XXLBXwU1LRtwOI36YjofxwA", "base64");
 const PNG_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
@@ -97,7 +139,11 @@ function parsePhase(value: string | undefined): ProductionPhase {
     value === "auth-401" ||
     value === "forbidden-403" ||
     value === "post-lost" ||
-    value === "retry"
+    value === "retry" ||
+    value === "post-429" ||
+    value === "retry-429" ||
+    value === "post-503" ||
+    value === "retry-503"
   ) {
     return value;
   }
@@ -105,30 +151,22 @@ function parsePhase(value: string | undefined): ProductionPhase {
 }
 
 function credentialCanaries(seed: string): string[] {
-  const credentials = [
-    { username: `fixture-user-${seed}`, applicationPassword: `fixture-secret-${seed}` },
-    { username: `fixture-forbidden-${seed}`, applicationPassword: `fixture-forbidden-secret-${seed}` },
-  ];
-  return credentials.flatMap(({ username, applicationPassword }) => [
+  const username = `fixture-user-${seed}`;
+  const applicationPassword = `fixture-secret-${seed}`;
+  const pair = `${username}:${applicationPassword}`;
+  return [
     username,
     applicationPassword,
-    `Basic ${Buffer.from(`${username}:${applicationPassword}`).toString("base64")}`,
-  ]);
+    pair,
+    Buffer.from(username).toString("base64"),
+    Buffer.from(applicationPassword).toString("base64"),
+    Buffer.from(pair).toString("base64"),
+    `Basic ${Buffer.from(pair).toString("base64")}`,
+  ];
 }
 
 function phaseCredential(phase: ProductionPhase, seed: string): WordPressCredentialInput {
-  if (phase === "auth-401")
-    return {
-      siteUrl: requiredEnvironment("SITEINDEX_MEDIA_E2E_WP_ORIGIN"),
-      username: `fixture-user-${seed}`,
-      applicationPassword: `wrong-secret-${seed}`,
-    };
-  if (phase === "forbidden-403")
-    return {
-      siteUrl: requiredEnvironment("SITEINDEX_MEDIA_E2E_WP_ORIGIN"),
-      username: `fixture-forbidden-${seed}`,
-      applicationPassword: `fixture-forbidden-secret-${seed}`,
-    };
+  void phase;
   return {
     siteUrl: requiredEnvironment("SITEINDEX_MEDIA_E2E_WP_ORIGIN"),
     username: `fixture-user-${seed}`,
@@ -370,18 +408,31 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   let progressCount = 0;
   let crossPageDuringJob = false;
   let jobCompletedAwayFromEdm = false;
+  const workerOutputChunks: Buffer[] = [];
+  const workerExitPromises: Promise<void>[] = [];
+  const isRecoveryRetry = RECOVERY_RETRY_PHASES.has(phase);
+  let restartUnknownOutcomeRecoveredOnColdMount = !isRecoveryRetry;
+  let retryReviewDialogConfirmed = !isRecoveryRetry;
   const finished = new Promise<JobResult>((resolve) => {
     finishedResolver = resolve;
   });
   const manager = createJobManager({
     workerPath: path.join(app.getAppPath(), "out", "main", "job-worker.js"),
     getSettings: async () => settings,
-    isMediaJobReady: () => true,
+    isMediaJobReady: () => isMediaPrepareReady(core),
     testOnlyAllowLoopbackHttp: true,
     getWordPressCredential,
     resolveProject: async (id) => projectMap.get(id) ?? projectPath,
-    fork: (modulePath) =>
-      utilityProcess.fork(modulePath, [], { serviceName: "SiteIndex synthetic media production E2E" }),
+    fork: (modulePath) => {
+      const child = utilityProcess.fork(modulePath, [], {
+        serviceName: "SiteIndex synthetic media production E2E",
+        stdio: "pipe",
+      });
+      child.stdout?.on("data", (chunk) => workerOutputChunks.push(Buffer.from(chunk)));
+      child.stderr?.on("data", (chunk) => workerOutputChunks.push(Buffer.from(chunk)));
+      workerExitPromises.push(new Promise((resolve) => child.once("exit", () => resolve())));
+      return child;
+    },
     emitProgress: (progress: JobProgress) => {
       progressCount += 1;
       windowManager?.sendToWindows(ipcChannel("jobs.onProgress"), progress);
@@ -471,6 +522,32 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     requestQuit: () => app.quit(),
   });
   const window = await startProductionPackagedWindow(fixture.projectId, windowManager);
+  const domSnapshotsInstalled = await window.webContents.executeJavaScript(`(() => {
+    const state = { texts: [], overflowed: false };
+    const capture = () => {
+      if (state.texts.length >= 4096) { state.overflowed = true; return; }
+      state.texts.push(document.documentElement?.innerText ?? "");
+    };
+    capture();
+    const observer = new MutationObserver(capture);
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    window.__siteIndexMediaDomScan = { state, observer };
+    return true;
+  })()`);
+  if (!domSnapshotsInstalled) throw new Error("renderer-dom-scan-unavailable");
+  if (isRecoveryRetry) {
+    const recoveredText = await waitFor(
+      () => window.webContents.executeJavaScript("document.body.innerText"),
+      (text) =>
+        typeof text === "string" &&
+        text.includes("最近一次图片处理记录") &&
+        text.includes("结果未知") &&
+        text.includes(fixture.rows[0]!.sku),
+      30_000,
+      "restart-history-unknown-recovery",
+    );
+    restartUnknownOutcomeRecoveredOnColdMount = typeof recoveredText === "string" && recoveredText.includes("结果未知");
+  }
   const expectedSelectionCount = fixture.rows.length;
   const progressListenerInstalled = await window.webContents.executeJavaScript(
     "(() => { if (!window.siteindex?.jobs?.onProgress) return false; window.__siteIndexMediaProgressCount = 0; window.siteindex.jobs.onProgress(() => { window.__siteIndexMediaProgressCount += 1; }); return true; })()",
@@ -489,6 +566,21 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     `(() => { const button = [...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === ${JSON.stringify(`获取图片 URL（${expectedSelectionCount}）`)}); if (!button || button.disabled) return false; button.click(); return true; })()`,
   );
   if (!actionButtonFound) throw new Error("media-action-button-unavailable");
+  if (isRecoveryRetry) {
+    const dialogText = await waitFor(
+      () => window.webContents.executeJavaScript("document.querySelector('[role=dialog]')?.innerText ?? ''"),
+      (text) => typeof text === "string" && text.includes("请先核对图片处理结果") && text.includes("结果未知"),
+      30_000,
+      "restart-retry-review-dialog",
+    );
+    if (typeof dialogText !== "string" || !dialogText.includes("结果未知")) {
+      throw new Error("restart-retry-review-dialog-missing-unknown");
+    }
+    retryReviewDialogConfirmed = await window.webContents.executeJavaScript(
+      `(() => { const dialog = document.querySelector('[role=dialog]'); const button = [...(dialog?.querySelectorAll('button') ?? [])].find((item) => item.textContent?.trim() === "已核对，继续处理"); if (!button || button.disabled) return false; button.click(); return true; })()`,
+    );
+    if (!retryReviewDialogConfirmed) throw new Error("restart-retry-review-confirm-unavailable");
+  }
   const resultPromise = Promise.race([
     finished,
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error("job-timeout")), 90_000)),
@@ -532,7 +624,12 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
   const runHistoryMatches = Boolean(matchingRun);
   const projectPaths = await pathsForProject(projectPath);
   const mediaLedgerRows = await readCsvRowCount(path.join(projectPath, projectPaths.skuMedia));
-  const expectedMediaLedgerRows = phase === "success" ? 4 : phase === "retry" ? 1 : 0;
+  const expectedMediaLedgerRows =
+    phase === "success"
+      ? 4
+      : RECOVERY_RETRY_PHASES.has(phase) || phase === "auth-401" || phase === "forbidden-403"
+        ? 1
+        : 0;
   const mediaLedgerMatches = mediaLedgerRows === expectedMediaLedgerRows;
   let crossPageRecovery = false;
   let resultRecoveredOnRunsPage = false;
@@ -577,21 +674,28 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     );
   }
   const rendererText = (await window.webContents.executeJavaScript("document.body.innerText")) as string;
+  const domScan = (await window.webContents.executeJavaScript(`(() => {
+    const scan = window.__siteIndexMediaDomScan;
+    scan?.observer?.disconnect();
+    return scan?.state ?? { texts: [], overflowed: true };
+  })()`)) as { texts: string[]; overflowed: boolean };
+  const domText = domScan.texts.join("\n");
   const canaries = credentialCanaries(seed);
-  const rendererCanaryMatches = canaries.filter((value) => rendererText.includes(value)).length;
+  const rendererCanaryMatches = canaries.filter(
+    (value) => domText.includes(value) || rendererText.includes(value),
+  ).length;
   const resultCanaryMatches = canaries.filter((value) => JSON.stringify(result).includes(value)).length;
   const actualHandlerPath = mediaInvokeCount === 1 && manager.running(fixture.projectId as ProjectId) === null;
   const requestPayloadSafe = !requestPayloadContainsCredential;
   const uiRenderedActualMediaAction =
     typeof settledRendererText === "string" &&
     expectedVisibleResultLabels(fixture.expected).some((label) => settledRendererText.includes(label));
-  const unknownStateMatches =
-    phase === "post-lost"
-      ? isValidMediaSkuRecoveryPartition(result) &&
-        result.media_batch_state === "outcome_unknown" &&
-        statuses.unknown === 1
-      : phase !== "retry" ||
-        (isValidMediaSkuRecoveryPartition(result) && result.media_results.some((item) => item.status === "reused"));
+  const unknownStateMatches = UNKNOWN_POST_PHASES.has(phase)
+    ? isValidMediaSkuRecoveryPartition(result) &&
+      result.media_batch_state === "outcome_unknown" &&
+      statuses.unknown === 1
+    : !RECOVERY_RETRY_PHASES.has(phase) ||
+      (isValidMediaSkuRecoveryPartition(result) && result.media_results.some((item) => item.status === "reused"));
   const report: PhaseReport = {
     status: "passed",
     phase,
@@ -609,8 +713,15 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
       actualUiRenderedResult: uiRenderedActualMediaAction,
       requestPayloadContainsNoCredential: requestPayloadSafe,
       rendererCredentialCanaryMatches: rendererCanaryMatches,
+      rendererDomScanComplete: !domScan.overflowed,
       resultCredentialCanaryMatches: resultCanaryMatches,
       retryOrOutcomeUnknownMatches: unknownStateMatches,
+      ...(isRecoveryRetry
+        ? {
+            restartUnknownOutcomeRecoveredOnColdMount,
+            retryReviewDialogConfirmed,
+          }
+        : {}),
       ...(phase === "post-lost"
         ? {
             crossPageDuringActiveJob: crossPageDuringJob,
@@ -632,16 +743,25 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     !progressEvidenceComplete ||
     !requestPayloadSafe ||
     rendererCanaryMatches !== 0 ||
+    domScan.overflowed ||
     resultCanaryMatches !== 0 ||
     !uiRenderedActualMediaAction ||
     !unknownStateMatches ||
+    (isRecoveryRetry && (!restartUnknownOutcomeRecoveredOnColdMount || !retryReviewDialogConfirmed)) ||
     (phase === "post-lost" && (!crossPageDuringJob || !jobCompletedAwayFromEdm || !crossPageRecovery))
   )
     report.status = "failed";
-  if (report.status === "failed") report.failureCode = "phase-assertion";
-  await writeFile(phaseResultPath(), `${JSON.stringify(report)}\n`, "utf8");
   for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.destroy();
   await manager.shutdown();
+  await Promise.all(workerExitPromises);
+  const workerOutput = Buffer.concat(workerOutputChunks);
+  await writeFile(path.join(root, `worker-output-${phase}.bin`), workerOutput);
+  const workerCanaryBytes = canaries.flatMap((value) => [Buffer.from(value, "utf8"), Buffer.from(value, "utf16le")]);
+  const workerCredentialCanaryMatches = workerCanaryBytes.filter((value) => workerOutput.includes(value)).length;
+  report.checks!.workerCredentialCanaryMatches = workerCredentialCanaryMatches;
+  if (workerCredentialCanaryMatches > 0) report.status = "failed";
+  if (report.status === "failed") report.failureCode = "phase-assertion";
+  await writeFile(phaseResultPath(), `${JSON.stringify(report)}\n`, "utf8");
   for (const channel of registry.keys()) ipcMain.removeHandler(channel);
   return report;
 }
@@ -654,12 +774,15 @@ async function main(): Promise<void> {
     const productionMain = await readFile(path.join(app.getAppPath(), "out", "main", "index.js"), "utf8");
     if (
       !/isMediaJobReady:\s*\(\)\s*=>\s*isMediaPrepareReady\(mediaCore\)/u.test(productionMain) ||
-      !/function\s+isMediaPrepareReady\(core,\s*pendingHandlers\s*=\s*PENDING_HANDLERS\)\s*\{\s*return\s+core\s*!==\s*null\s*&&\s*!pendingHandlers\.includes\("media\.prepare"\);/u.test(productionMain)
+      !/function\s+isMediaPrepareReady\(core,\s*pendingHandlers\s*=\s*PENDING_HANDLERS\)\s*\{\s*return\s+core\s*!==\s*null\s*&&\s*!pendingHandlers\.includes\("media\.prepare"\);/u.test(
+        productionMain,
+      )
     ) {
       throw new Error("production-readiness-guard-missing");
     }
     if (!requiredEnvironment("LOCALAPPDATA")) throw new Error("isolated-local-appdata-missing");
     phase = parsePhase(process.env.SITEINDEX_MEDIA_E2E_PHASE);
+    if (PENDING_HANDLERS.includes("media.prepare")) throw new Error("shared-media-prepare-pending");
     const root = path.resolve(requiredEnvironment("SITEINDEX_MEDIA_E2E_ROOT"));
     await mkdir(path.join(root, "user-data"), { recursive: true });
     app.setPath("userData", path.join(root, "user-data"));
