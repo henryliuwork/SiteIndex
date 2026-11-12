@@ -477,6 +477,12 @@ async function main() {
         phaseResults.retry.checks?.retryReviewDialogConfirmed === true &&
         phaseResults.retry.checks?.retryOrOutcomeUnknownMatches === true &&
         traffic.find((entry) => entry.phase === "retry")?.mediaCreatePosts === 0,
+      edmIndexSaveAsUsesPackagedUiBridge:
+        phaseResults.success.checks?.edmIndexSaveAsCreatedOutsideProject === true,
+      edmIndexSaveAsCancellationDoesNotWrite:
+        phaseResults.success.checks?.edmIndexSaveAsCancellationDidNotCreateFile === true,
+      edmIndexSaveAsProjectConflictPreservesExistingFile:
+        phaseResults.success.checks?.edmIndexSaveAsConflictPreservedProjectFile === true,
     };
     for (const phase of ["retry-429", "retry-503"]) {
       cases[`${phase}AppRestartedUnknownAndConfirmedRetry`] =
@@ -498,6 +504,7 @@ async function main() {
       testOnlyUiGateBypass: false,
       productionUiBundleCopiedUnmodified: true,
       packagedAcceptanceBootstrap: "isolated-main-entry-using-production-ipc-job-manager-worker-and-core",
+      packagedEdmSaveAsAcceptance: "packaged renderer bridge and Desktop/Core IPC; deterministic synthetic dialog selections; native dialog window not exercised",
       testOnlyLoopbackHttp: true,
       wordpressProductionHttpsPolicyVerified: false,
       retryAfterCoverage: {

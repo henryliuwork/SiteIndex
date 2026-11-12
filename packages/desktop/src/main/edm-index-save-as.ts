@@ -24,6 +24,7 @@ export interface EdmIndexSaveDialogResult {
 export interface EdmIndexSaveAsOptions {
   defaultPath: string;
   showSaveDialog(options: EdmIndexSaveDialogOptions): Promise<EdmIndexSaveDialogResult>;
+  createHardLink?: typeof link;
 }
 
 export function resolveEdmIndexDefaultPath(options: {
@@ -260,7 +261,7 @@ export function createEdmIndexSaveAs(options: EdmIndexSaveAsOptions) {
       await verifyDirectorySnapshot(projectSnapshot);
       await verifyDirectorySnapshot(parentSnapshot);
       try {
-        await link(temporaryPath, canonicalTarget);
+        await (options.createHardLink ?? link)(temporaryPath, canonicalTarget);
         createdTarget = true;
       } catch (error) {
         if (!isAlreadyExists(error)) throw error;

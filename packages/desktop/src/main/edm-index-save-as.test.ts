@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { link as createHardLink, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PATHS } from "@siteindex/shared";
@@ -70,11 +70,16 @@ describe("Desktop EDM SKU index Save As", () => {
     ).toBe(fileName);
   });
 
-  function saveTo(targetPath: string, canceled = false) {
+  function saveTo(
+    targetPath: string,
+    canceled = false,
+    createLink?: typeof createHardLink,
+  ) {
     const showSaveDialog = vi.fn(async () => ({ canceled, filePath: canceled ? undefined : targetPath }));
     const save = createEdmIndexSaveAs({
       defaultPath: path.join(downloadsDirectory, path.basename(PATHS.edmSkuIndex)),
       showSaveDialog,
+      ...(createLink ? { createHardLink: createLink } : {}),
     });
     return { save, showSaveDialog };
   }
@@ -157,15 +162,76 @@ describe("Desktop EDM SKU index Save As", () => {
 
   it("never overwrites when two exports race for the same new target", async () => {
     const targetPath = path.join(downloadsDirectory, "sku-index.md");
-    const first = saveTo(targetPath).save;
-    const second = saveTo(targetPath).save;
+    let arrivals = 0;
+    let releaseBarrier!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      releaseBarrier = resolve;
+    });
+    const competingLink: typeof createHardLink = async (source, destination) => {
+      arrivals += 1;
+      if (arrivals === 2) {
+        const targetMissing = await lstat(targetPath).then(
+          () => false,
+          (error: unknown) => typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT",
+        );
+        if (!targetMissing) throw new Error("race-target-was-not-absent-before-link");
+        releaseBarrier();
+      }
+      await barrier;
+      return createHardLink(source, destination);
+    };
+    const first = saveTo(targetPath, false, competingLink).save;
+    const second = saveTo(targetPath, false, competingLink).save;
     const alternate = { ...rendered, content: "Different generated content\n" };
 
     const results = await Promise.allSettled([first(projectRoot, rendered), second(projectRoot, alternate)]);
+    expect(arrivals).toBe(2);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      reason: { code: "WRITE_FAILED", detail: "EDM_INDEX_SAFE_REPLACE_UNAVAILABLE" },
+    });
     const saved = await readFile(targetPath, "utf8");
     expect([rendered.content, alternate.content]).toContain(saved);
+  });
+
+  it("does not write through a replaced destination directory", async () => {
+    const targetPath = path.join(downloadsDirectory, "sku-index.md");
+    const displacedDirectory = path.join(root, "downloads-before-replacement");
+    const replaceDirectoryThenLink: typeof createHardLink = async (source, destination) => {
+      await rename(downloadsDirectory, displacedDirectory);
+      await mkdir(downloadsDirectory);
+      return createHardLink(source, destination);
+    };
+
+    await expect(saveTo(targetPath, false, replaceDirectoryThenLink).save(projectRoot, rendered)).rejects.toMatchObject({
+      code: "WRITE_FAILED",
+      detail: "EDM_INDEX_CREATE_FAILED",
+    });
+    await expect(lstat(targetPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(downloadsDirectory)).toEqual([]);
+    expect(await readdir(displacedDirectory)).toHaveLength(1);
+  });
+
+  it.skipIf(process.platform === "win32")("does not write through a replaced destination symlink", async () => {
+    const targetPath = path.join(downloadsDirectory, "sku-index.md");
+    const displacedDirectory = path.join(root, "downloads-before-symlink");
+    const outsideDirectory = path.join(root, "outside");
+    await mkdir(outsideDirectory);
+    const replaceDirectoryThenLink: typeof createHardLink = async (source, destination) => {
+      await rename(downloadsDirectory, displacedDirectory);
+      await symlink(outsideDirectory, downloadsDirectory, "dir");
+      return createHardLink(source, destination);
+    };
+
+    await expect(saveTo(targetPath, false, replaceDirectoryThenLink).save(projectRoot, rendered)).rejects.toMatchObject({
+      code: "WRITE_FAILED",
+      detail: "EDM_INDEX_CREATE_FAILED",
+    });
+    await expect(lstat(path.join(outsideDirectory, path.basename(targetPath)))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(outsideDirectory)).toEqual([]);
+    expect(await readdir(displacedDirectory)).toHaveLength(1);
   });
 
   it("rejects a path whose parent directory does not exist", async () => {

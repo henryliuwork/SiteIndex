@@ -178,7 +178,7 @@
 - [x] #422 合成 packaged E2E 已验证 media Job 在 EDM 页外完成，并在 Runs 与 EDM 页恢复结果；#471 后续 hosted loopback 验收也通过。这些不替代真实 WordPress 与正式安装包验收。
 - [x] #422/#471：preload 暴露 `media.prepare` 路由；生产 readiness 由 Core 初始化状态与 shared pending 标记共同控制。contract PR #471 已清理 pending 并通过 hosted packaged E2E。
 - [x] #423：preload 暴露 `edm.exportIndex`。Core 后续提供只渲染、不写文件的 `edm.renderIndex`；Desktop 负责原生另存对话框与安全落盘，不把项目路径或 Markdown 内容返回 renderer。
-- [ ] Desktop SKU 清单手动另存：仅接受 Core 渲染的全项目内容；新文件使用同目录临时文件、fsync 与 no-clobber 创建；项目内已有文件永不覆盖；项目外已有文件在当前实现无法提供安全条件替换时拒绝覆盖；返回仅含文件 basename 与统计的结果。`edm.exportIndex` 的 pending 项待 Desktop PR 合并后由独立 contract PR 清理。
+- [ ] Desktop SKU 清单手动另存：仅接受 Core 渲染的全项目内容；新文件使用同目录临时文件、fsync 与 no-clobber 创建；项目内已有文件永不覆盖；项目外已有文件在当前实现无法提供安全条件替换时拒绝覆盖；返回仅含文件 basename 与统计的结果。当前 Desktop PR 增加 packaged renderer → preload → IPC 的虚构项目另存/取消/冲突验收，以及确定性硬链接竞争、目标目录与符号链接替换测试，待远端验证。`Core edm.renderIndex` 会在项目锁内先处理 daily 输出事务；若存在中断事务，打开另存可能恢复并改写事务涉及的库存输出文件，若只剩孤立事务材料也会清理它们。只有项目没有待恢复事务和孤立材料时，这一步不会改写项目文件。`edm.exportIndex` 的 pending 项待 Desktop PR 合并后由独立 contract PR 清理。
 
 ## #440 · Windows hosted 安装验收隔离复核
 
