@@ -3,6 +3,7 @@
  * 所有包读写项目文件必须用这里的常量，禁止在代码里手写路径字符串。
  */
 
+/** @deprecated 固定 EDM 清单路径仅供旧 Core/bridge 兼容；新导出由 Desktop 原生另存选择目标。 */
 export const EDM_SKU_INDEX_PATHS = {
   legacy: "index/edm/sku-index.md",
   workspace: "_site-index/edm/sku-index.md",
