@@ -65,8 +65,8 @@ function sameIdentity(left: { dev: number; ino: number }, right: { dev: number; 
 
 async function snapshotDirectory(directoryPath: string): Promise<DirectorySnapshot> {
   const resolvedPath = path.resolve(directoryPath);
-  await assertNoReparsePointComponents(resolvedPath);
   const canonicalPath = await realpath(resolvedPath);
+  await assertNoReparsePointComponents(canonicalPath);
   const [resolvedStats, stats] = await Promise.all([lstat(resolvedPath), lstat(canonicalPath)]);
   if (!sameIdentity(resolvedStats, stats)) throw new Error("unsafe-directory-alias");
   if (hasReparsePoint(stats) || !stats.isDirectory() || stats.ino === 0) throw new Error("unsafe-directory-identity");
