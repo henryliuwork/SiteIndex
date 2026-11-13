@@ -12,7 +12,16 @@ export type HistoryRange = 30 | 60 | 90 | "all";
 export type SkuGroupingRule =
   | { type: "suffix"; value: string }
   | { type: "separator"; value: string }
-  | { type: "regex"; value: string };
+  | {
+      type: "regex";
+      value: string;
+      /**
+       * Defaults to derived, preserving legacy synthetic-parent and collision behavior.
+       * In feed mode, capture group 1 must identify an active SKU in the feed;
+       * without that real parent, matching children remain ungrouped.
+       */
+      parent_source?: "derived" | "feed";
+    };
 
 export const SCHEMA_VERSION = "1.1" as const;
 
