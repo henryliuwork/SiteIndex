@@ -27,7 +27,7 @@
 .si-config-inline-link { flex: none; padding: var(--si-gap-2) var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 6px; background: #fff; color: var(--color-ink-2); font-size: var(--fs-body); text-decoration: none; }
 .si-config-help { margin: 0; color: var(--color-muted); font-size: var(--fs-caption); line-height: 1.55; }
 .si-config-grouping-switch { align-self: start; }
-.si-config-grouping-rule { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr); align-items: end; gap: var(--si-gap-3) var(--si-gap-4); }
+.si-config-grouping-rule { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr); align-items: start; gap: var(--si-gap-3) var(--si-gap-4); }
 .si-config-grouping-preset { display: grid; gap: var(--si-gap-1); min-width: 0; }
 .si-config-grouping-caveat { color: #8A5200; font-size: var(--fs-caption); line-height: 1.45; }
 .si-config-grouping-preview { display: grid; gap: var(--si-gap-3); padding: var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: var(--fs-body); }
