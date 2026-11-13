@@ -82,6 +82,7 @@ function ColorRolesCard({ tokens, onCopy, copied }: { tokens: DesignTokens | nul
 function TypographyCard({ tokens }: { tokens: DesignTokens | null }) {
   const scale = tokens?.typography.scale ?? {};
   const fonts = tokens?.typography.font_families;
+  const hasExtractedFontStack = Boolean(fonts?.heading || fonts?.body || fonts?.mono);
   const hasScale = typographyItems.some(({ key }) => Boolean(scale[key]));
   return (
     <section className="si-design-card si-design-typography">
@@ -90,7 +91,9 @@ function TypographyCard({ tokens }: { tokens: DesignTokens | null }) {
         <span>标题：<code>{fonts?.heading ?? "未识别"}</code></span>
         <span>正文：<code>{fonts?.body ?? "未识别"}</code></span>
         <span>等宽：<code>{fonts?.mono ?? "未识别"}</code></span>
-        <p className="si-design-font-fallback-note">若未识别网站字体，示例使用软件默认字体；本机没有已识别字体时，浏览器按字体栈回退。</p>
+        <p className="si-design-font-fallback-note">{hasExtractedFontStack
+          ? "样例按 Token v2 提取的 CSS 字体栈渲染。SiteIndex 不下载网站字体，也无法确认首选字体是否已安装；不可用时浏览器会使用字体栈中的后备字体。"
+          : "未识别网站字体，样例使用软件默认字体栈。SiteIndex 不下载网站字体，也无法确认本机已安装哪些字体。"}</p>
       </div>
       {hasScale ? <div className="si-design-type-list">
         {typographyItems.map(({ key, label, sample }) => {
@@ -105,7 +108,7 @@ function TypographyCard({ tokens }: { tokens: DesignTokens | null }) {
                 fontWeight: style.weight,
                 lineHeight: style.line_height,
                 letterSpacing: style.letter_spacing,
-              }}>{sample}</span>
+              }} data-font-stack={fontFamily || "software-default"}>{sample}</span>
               <span className="si-design-type-metrics">
                 {style.size} · 字重 {style.weight} · 行高 {style.line_height} · 字距 {displayValue(style.letter_spacing)}
               </span>

@@ -111,6 +111,8 @@ describe("DesignPage Token v2", () => {
     expect(screen.getByText("一级标题 H1")).toBeTruthy();
     expect(screen.getByText("六级标题 H6")).toBeTruthy();
     expect(screen.getByText("说明 Caption")).toBeTruthy();
+    expect((screen.getByText("示例页面标题") as HTMLElement).style.fontFamily).toBe("Lora, serif");
+    expect((screen.getByText("这是一段用于预览正文排版的虚构文本。") as HTMLElement).style.fontFamily).toBe("Inter, sans-serif");
     expect(document.querySelector(".si-design-type-row .si-design-type-metrics")?.textContent).toContain("字距 -0.02em");
     expect(screen.getByRole("heading", { name: "按钮规范" })).toBeTruthy();
     expect(screen.getByText("描边按钮")).toBeTruthy();
@@ -137,7 +139,8 @@ describe("DesignPage Token v2", () => {
     expect(screen.getAllByText("当前页面未识别此颜色角色。").length).toBeGreaterThan(0);
     expect(screen.getByText("未识别此层级")).toBeTruthy();
     expect(screen.getByText("未识别此按钮变体")).toBeTruthy();
-    expect(screen.getByText("若未识别网站字体，示例使用软件默认字体；本机没有已识别字体时，浏览器按字体栈回退。")).toBeTruthy();
+    expect(screen.getByText("未识别网站字体，样例使用软件默认字体栈。SiteIndex 不下载网站字体，也无法确认本机已安装哪些字体。")).toBeTruthy();
+    expect((screen.getByText("示例页面标题") as HTMLElement).dataset.fontStack).toBe("software-default");
     expect(screen.getAllByText("未识别", { selector: ".si-design-role-value" }).length).toBeGreaterThan(0);
   });
 
