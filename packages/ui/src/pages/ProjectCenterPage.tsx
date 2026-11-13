@@ -188,7 +188,7 @@ function ProjectCard({
   );
 }
 
-function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onOpenChange: (open: boolean) => void; onAdded: (project: ProjectSummary) => void }) {
+function AddExistingDialog({ open, onOpenChange, onAdded, returnFocusRef }: { open: boolean; onOpenChange: (open: boolean) => void; onAdded: (project: ProjectSummary) => void; returnFocusRef: { current: HTMLElement | null } }) {
   const toast = useToast();
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
@@ -222,7 +222,15 @@ function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onO
     }}>
       <Dialog.Portal>
         <Dialog.Overlay className="si-dialog-overlay" />
-        <Dialog.Content className="si-confirm-dialog si-add-project-dialog">
+        <Dialog.Content
+          className="si-confirm-dialog si-add-project-dialog"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const target = returnFocusRef.current;
+            returnFocusRef.current = null;
+            if (target?.isConnected) target.focus();
+          }}
+        >
           <Dialog.Title className="si-dialog-title">添加已有项目</Dialog.Title>
           <Dialog.Description className="si-dialog-description">选择本机存储中的 SiteIndex 项目文件夹。未显示同步目录提示不代表路径已验证为本机。</Dialog.Description>
           <form onSubmit={submit} aria-busy={saving}>
@@ -242,12 +250,13 @@ function AddExistingDialog({ open, onOpenChange, onAdded }: { open: boolean; onO
 }
 
 function CreateWorkspaceDialog({
-  open, onOpenChange, defaultRoot, onCreated,
+  open, onOpenChange, defaultRoot, onCreated, returnFocusRef,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultRoot: string;
   onCreated: (id: string) => void;
+  returnFocusRef: { current: HTMLElement | null };
 }) {
   const toast = useToast();
   const [url, setUrl] = useState("");
@@ -326,7 +335,15 @@ function CreateWorkspaceDialog({
   }}>
     <Dialog.Portal>
       <Dialog.Overlay className="si-dialog-overlay" />
-      <Dialog.Content className="si-confirm-dialog si-add-project-dialog si-workspace-create-dialog">
+      <Dialog.Content
+        className="si-confirm-dialog si-add-project-dialog si-workspace-create-dialog"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          const target = returnFocusRef.current;
+          returnFocusRef.current = null;
+          if (target?.isConnected) target.focus();
+        }}
+      >
         <Dialog.Title className="si-dialog-title">创建空工作区</Dialog.Title>
         <Dialog.Description className="si-dialog-description">生成 Agent 工作区和 SiteIndex 数据目录，不执行抓取任务。</Dialog.Description>
         <form onSubmit={(event) => void submit(event)} aria-busy={saving}>
@@ -452,6 +469,7 @@ export function ProjectCenterPage() {
   const runsQuery = useQuery({ queryKey: ["runs", primary?.id, "recent"], queryFn: () => api.jobs.history(primary!.id, 3), enabled: Boolean(primary) });
   const [addExistingOpen, setAddExistingOpen] = useState(false);
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
+  const dialogReturnFocusRef = useRef<HTMLElement | null>(null);
   const toast = useToast();
   const [settingRoot, setSettingRoot] = useState(false);
   const [selectedRun, setSelectedRun] = useState<RunLog | null>(null);
@@ -567,8 +585,8 @@ export function ProjectCenterPage() {
         title="项目中心"
         meta={<div className="si-project-root-line"><span>项目根目录 <code>{projectRoot}</code></span>{needsRootSetup && <Button size="small" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}</div>}
         actions={<>
-          <Button icon={<FolderOpen size={15} />} onClick={() => setAddExistingOpen(true)}>添加已有项目</Button>
-          {workspaceCapabilities.emptyWorkspaceAvailable && <Button icon={<FolderOpen size={15} />} onClick={() => setCreateWorkspaceOpen(true)}>创建空工作区</Button>}
+          <Button icon={<FolderOpen size={15} />} onClick={(event) => { dialogReturnFocusRef.current = event.currentTarget; setAddExistingOpen(true); }}>添加已有项目</Button>
+          {workspaceCapabilities.emptyWorkspaceAvailable && <Button icon={<FolderOpen size={15} />} onClick={(event) => { dialogReturnFocusRef.current = event.currentTarget; setCreateWorkspaceOpen(true); }}>创建空工作区</Button>}
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
         </>}
       />
@@ -629,8 +647,8 @@ export function ProjectCenterPage() {
           />}
         </section>
       </>}
-      <AddExistingDialog open={addExistingOpen} onOpenChange={setAddExistingOpen} onAdded={(project) => void handleAdded(project)} />
-      {workspaceCapabilities.emptyWorkspaceAvailable && <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} defaultRoot={configuredRoot ?? ""} onCreated={(id) => void handleWorkspaceCreated(id)} />}
+      <AddExistingDialog open={addExistingOpen} onOpenChange={setAddExistingOpen} onAdded={(project) => void handleAdded(project)} returnFocusRef={dialogReturnFocusRef} />
+      {workspaceCapabilities.emptyWorkspaceAvailable && <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} defaultRoot={configuredRoot ?? ""} onCreated={(id) => void handleWorkspaceCreated(id)} returnFocusRef={dialogReturnFocusRef} />}
       {workspaceCapabilities.importCheckAvailable && <WorkspaceImportCheckDialog
         open={Boolean(projectForImportCheck)}
         onOpenChange={(open) => { if (!open) setProjectForImportCheck(null); }}

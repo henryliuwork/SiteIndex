@@ -667,3 +667,35 @@ describe("ProjectCenterPage local-storage policy", () => {
     expect(within(projectRow as HTMLElement).queryByRole("button", { name: "忽略" })).toBeNull();
   }, 25_000);
 });
+
+describe("ProjectCenterPage dialog keyboard focus", () => {
+  it("returns focus to each dialog opener after Escape closes it", async () => {
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => []);
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      isMockApi: true,
+      apiErrorMessage: (_error: unknown, fallback: string) => fallback,
+    }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    await screen.findByRole("region", { name: "项目列表" });
+    const addOpener = await screen.findByRole("button", { name: "添加已有项目" });
+    addOpener.focus();
+    fireEvent.click(addOpener);
+    const addDialog = await screen.findByRole("dialog", { name: "添加已有项目" });
+    fireEvent.keyDown(addDialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "添加已有项目" })).toBeNull());
+    expect(document.activeElement).toBe(addOpener);
+
+    const createOpener = screen.getByRole("button", { name: "创建空工作区" });
+    createOpener.focus();
+    fireEvent.click(createOpener);
+    const createDialog = await screen.findByRole("dialog", { name: "创建空工作区" });
+    fireEvent.keyDown(createDialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "创建空工作区" })).toBeNull());
+    expect(document.activeElement).toBe(createOpener);
+  }, 20_000);
+});
