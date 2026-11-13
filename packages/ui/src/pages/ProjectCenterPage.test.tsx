@@ -438,6 +438,31 @@ describe("ProjectCenterPage workspace import check", () => {
     expect(within(dialog).getByText("自动补齐已跳过，请核对下方错误说明后修改配置。", { exact: true })).toBeTruthy();
     expect(within(dialog).getByText("site.json 的 workspace 字段格式无效，请手动检查。", { exact: true })).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: /自动补齐可修复项/ })).toBeNull();
+
+    importCheckSpy.mockResolvedValueOnce({
+      issues: [
+        {
+          path: "_site-index/workspace.json",
+          code: "workspace_manifest_invalid",
+          message: "workspace.json 无法解析：Unexpected end of JSON input",
+          auto_fixable: false,
+        },
+        {
+          path: "_site-index/site.json",
+          code: "workspace_metadata_missing",
+          message: "site.json 缺少 workspace 元数据。为避免覆盖用户配置，请根据 _site-index/workspace.json 手动补充 workspace.version、workspace.sections（目录名数组）和 workspace.esp_presets；若该文件缺失，请先运行自动修复，再重新检查。",
+          auto_fixable: false,
+        },
+      ],
+      repaired: [],
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "重新检查" }));
+    await waitFor(() => expect(importCheckSpy).toHaveBeenNthCalledWith(5, "demo2", undefined));
+    expect(within(dialog).getByText("workspace.json 需要先修复", { exact: true })).toBeTruthy();
+    expect(within(dialog).getAllByText("workspace.json 无法解析：Unexpected end of JSON input", { exact: true }).length).toBeGreaterThan(0);
+    expect(within(dialog).getByText("该清单当前无法作为抄录来源。请先修复清单，再重新检查 site.json.workspace 元数据。", { exact: true })).toBeTruthy();
+    expect(within(dialog).queryByText(/抄录字段/)).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /自动补齐可修复项/ })).toBeNull();
   }, 25_000);
 
   it("hides the import-check action while the Desktop handler is pending", async () => {

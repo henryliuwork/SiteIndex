@@ -106,6 +106,24 @@ describe("workspace mock", () => {
     });
   });
 
+  it("reports a damaged workspace manifest alongside missing site metadata", async () => {
+    const api = createMockApi();
+    const result = await api.workspace?.importCheck?.("demo4");
+    expect(result?.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: "_site-index/workspace.json",
+        code: "workspace_manifest_invalid",
+        message: "workspace.json 无法解析：模拟 JSON 格式错误。",
+        auto_fixable: false,
+      }),
+      expect.objectContaining({
+        path: "_site-index/site.json",
+        code: "workspace_metadata_missing",
+        auto_fixable: false,
+      }),
+    ]));
+  });
+
   it("recognizes a project without the workspace site config and makes no repair", async () => {
     const api = createMockApi();
     const result = await api.workspace?.importCheck?.("demo");

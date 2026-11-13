@@ -15,6 +15,12 @@ const workspaceMetadataInvalidIssue: WorkspaceImportIssue = {
   message: "site.json 的 workspace 字段格式无效，请手动检查。",
   auto_fixable: false,
 };
+const workspaceManifestInvalidIssue: WorkspaceImportIssue = {
+  path: workspaceManifestPath,
+  code: "workspace_manifest_invalid",
+  message: "workspace.json 无法解析：模拟 JSON 格式错误。",
+  auto_fixable: false,
+};
 
 const generatedWorkspaceFiles = [
   "README.md", "AGENTS.md", "CLAUDE.md", ".env", ".gitignore", "workspace.json",
@@ -71,6 +77,20 @@ export function createWorkspaceMock(): WorkspaceMock {
       const projectId = String(id);
       if (projectId === "demo3") {
         return { issues: [workspaceMetadataInvalidIssue], repaired: [] };
+      }
+      if (projectId === "demo4") {
+        return {
+          issues: [
+            workspaceManifestInvalidIssue,
+            {
+              path: workspacePaths.site,
+              code: "workspace_metadata_missing",
+              message: "site.json 缺少 workspace 元数据。为避免覆盖用户配置，请根据 _site-index/workspace.json 手动补充 workspace.version、workspace.sections（目录名数组）和 workspace.esp_presets；若该文件缺失，请先运行自动修复，再重新检查。",
+              auto_fixable: false,
+            },
+          ],
+          repaired: [],
+        };
       }
       if (projectId !== "demo2") {
         return {
