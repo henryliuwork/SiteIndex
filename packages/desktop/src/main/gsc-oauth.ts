@@ -346,6 +346,7 @@ export function createGscOAuthService(options: GscOAuthOptions) {
   const pendingWrites = new Map<string, Promise<void>>();
   let authorizationInProgress = false;
   let propertiesRequest: Promise<GscProperty[]> | undefined;
+  let accessTokenRequest: Promise<string> | undefined;
   let credentialRevision = 0;
 
   function credentialDirectory(): string {
@@ -539,6 +540,23 @@ export function createGscOAuthService(options: GscOAuthOptions) {
     return properties;
   }
 
+  async function loadValidAccessToken(): Promise<string> {
+    const revisionAtStart = credentialRevision;
+    const current = await readCredential();
+    if (!current) throw new GscOAuthError("NOT_CONFIGURED");
+    if (current.expiresAt > now() + ACCESS_TOKEN_REFRESH_SKEW_MS) return current.accessToken;
+
+    const refreshed = await refreshCredential(current);
+    if (revisionAtStart !== credentialRevision) {
+      const latest = await readCredential();
+      if (!latest) throw new GscOAuthError("NOT_CONFIGURED");
+      if (latest.expiresAt <= now() + ACCESS_TOKEN_REFRESH_SKEW_MS) throw new GscOAuthError("AUTHORIZATION_REQUIRED");
+      return latest.accessToken;
+    }
+    await writeCredential(refreshed);
+    return refreshed.accessToken;
+  }
+
   return {
     async authorize(): Promise<void> {
       const clientId = options.clientId?.trim();
@@ -599,6 +617,17 @@ export function createGscOAuthService(options: GscOAuthOptions) {
     /** Main-process-only accessor for future GSC Core requests. Never expose via IPC/preload. */
     getCredentials(): Promise<GscOAuthCredential | null> {
       return readCredential();
+    },
+
+    /** Main-process-only access token accessor; refreshes near-expiry credentials before returning. */
+    getValidAccessToken(): Promise<string> {
+      if (accessTokenRequest) return accessTokenRequest;
+      let request!: Promise<string>;
+      request = loadValidAccessToken().finally(() => {
+        if (accessTokenRequest === request) accessTokenRequest = undefined;
+      });
+      accessTokenRequest = request;
+      return request;
     },
 
     /** Read-only Search Console sites.list; refreshed credentials commit only after the list succeeds. */

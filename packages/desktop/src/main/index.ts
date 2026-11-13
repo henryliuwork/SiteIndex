@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   createCoreService,
   inspectProjectStorageLocation,
+  syncProjectSearchAnalytics,
   type CoreService,
   type CoreServiceContext,
 } from "@siteindex/core";
@@ -569,6 +570,7 @@ if (!hasSingleInstanceLock) {
       notifyProjectChanged: (id) => windowManager.sendToWindows("si:projects.onChanged", id),
       gscOAuth,
       gscClientIdConfigured: Boolean(gscClientId),
+      syncGscProjectSearchAnalytics: syncProjectSearchAnalytics,
       skills: skillService,
       desktopIntegrations,
     });

@@ -378,6 +378,58 @@ describe("GSC read-only OAuth helper", () => {
     });
   });
 
+  it("refreshes an expired token before returning an access token to Core", async () => {
+    const directory = await tempDirectory();
+    const localServices = await createLocalGoogleServices();
+    let clock = 1_800_000_000_000;
+    const service = createGscOAuthService({
+      clientId: "fictional-desktop-client-id",
+      platform: "darwin",
+      homeDirectory: "/Users/fictional",
+      directoryOverride: path.join(directory, "credentials"),
+      safeStorage: fakeSafeStorage(),
+      now: () => clock,
+      openExternal: completeFictionalBrowserAuthorization,
+      fetchImpl: localServices.fetchImpl,
+    });
+
+    await service.authorize();
+    const original = await service.getCredentials();
+    expect(original?.accessToken).toBe("fictional-expired-access-token");
+    clock = original!.expiresAt + 1;
+
+    await expect(service.getValidAccessToken()).resolves.toBe("fictional-refreshed-access-token");
+    expect(localServices.refreshRequests).toHaveLength(1);
+    expect(localServices.siteAuthorizationHeaders).toEqual([]);
+    await expect(service.getCredentials()).resolves.toMatchObject({ accessToken: "fictional-refreshed-access-token" });
+  });
+
+  it("preserves the encrypted credential when access-token refresh fails", async () => {
+    const directory = await tempDirectory();
+    const localServices = await createLocalGoogleServices();
+    let clock = 1_800_000_000_000;
+    const service = createGscOAuthService({
+      clientId: "fictional-desktop-client-id",
+      platform: "darwin",
+      homeDirectory: "/Users/fictional",
+      directoryOverride: path.join(directory, "credentials"),
+      safeStorage: fakeSafeStorage(),
+      now: () => clock,
+      openExternal: completeFictionalBrowserAuthorization,
+      fetchImpl: localServices.fetchImpl,
+    });
+    await service.authorize();
+    const original = await service.getCredentials();
+    clock = original!.expiresAt + 1;
+    const credentialFile = path.join(directory, "credentials", "gsc-oauth.v1.json");
+    const originalEnvelope = await readFile(credentialFile, "utf8");
+    localServices.setRefreshBehavior("network");
+
+    await expect(service.getValidAccessToken()).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+    await expect(service.getCredentials()).resolves.toEqual(original);
+    await expect(readFile(credentialFile, "utf8")).resolves.toBe(originalEnvelope);
+  });
+
   it("reports revoked authorization and preserves the encrypted credential on invalid_grant", async () => {
     const directory = await tempDirectory();
     const localServices = await createLocalGoogleServices();
