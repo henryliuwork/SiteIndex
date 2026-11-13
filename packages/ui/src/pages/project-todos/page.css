@@ -108,6 +108,64 @@
   margin: 0;
 }
 
+.si-todo-edit-controls {
+  border-top: 1px solid var(--color-line-soft);
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+}
+
+.si-todo-edit-field {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.si-todo-edit-field > span,
+.si-todo-edit-field > label {
+  color: var(--color-ink-2);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-sub-title);
+}
+
+.si-todo-edit-row,
+.si-todo-edit-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.si-todo-edit-row > :first-child {
+  flex: 1 1 12rem;
+}
+
+.si-todo-note-input {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  min-height: 6rem;
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+  width: 100%;
+}
+
+.si-todo-note-input:focus-visible {
+  border-color: var(--color-brand);
+  outline: 2px solid var(--color-brand-soft);
+  outline-offset: 1px;
+}
+
+.si-todo-note-input:disabled {
+  background: var(--color-subtle);
+  color: var(--color-muted);
+  cursor: not-allowed;
+}
+
 .si-todo-detail-sources ul,
 .si-todo-detail-history ol {
   display: grid;

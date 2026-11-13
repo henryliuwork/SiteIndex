@@ -1,15 +1,18 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import type { ListQuery, PathKey, ProjectTodo, TodoManualHistoryEntry, TodoManualStatus } from "@siteindex/shared";
+import type { ListQuery, PathKey, ProjectTodo, TodoManualHistoryEntry, TodoManualStatus, UpdateTodoManualInput } from "@siteindex/shared";
 import { Link, useParams } from "react-router-dom";
 import { AlertCircle, CheckCircle2, ClipboardList, Clock3, FileSearch, MinusCircle } from "lucide-react";
-import { ApiErrorNotice, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageHeader, Select } from "../components";
-import { api, isMockApi } from "../api";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageHeader, Select, useToast } from "../components";
+import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import "./project-todos/page.css";
 
 type TodoQueryFilters = { status?: TodoManualStatus };
+type TodoUpdateSubmission =
+  | { dedupe_key: string; field: "status"; input: Extract<UpdateTodoManualInput, { status: TodoManualStatus }> }
+  | { dedupe_key: string; field: "note"; input: Extract<UpdateTodoManualInput, { note: string | null }> };
 const initialQuery: ListQuery<TodoQueryFilters> = { page: 1, pageSize: 50, filters: {} };
 
 const statusLabels: Record<TodoManualStatus, string> = {
@@ -91,9 +94,14 @@ export function ProjectTodosPage() {
   const { id = "demo" } = useParams<{ id: string }>();
   const [query, setQuery] = useState(initialQuery);
   const [selectedTodo, setSelectedTodo] = useState<ProjectTodo | null>(null);
+  const [draftStatus, setDraftStatus] = useState<TodoManualStatus>("open");
+  const [draftNote, setDraftNote] = useState("");
   const todosApi = api.todos;
   const hasListApi = typeof todosApi?.list === "function";
+  const hasUpdateApi = typeof todosApi?.update === "function";
   const hasHistoryApi = typeof todosApi?.history === "function";
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const todosQuery = useQuery({
     queryKey: ["project-todos", id],
@@ -108,6 +116,22 @@ export function ProjectTodosPage() {
     enabled: Boolean(selectedDedupeKey && hasHistoryApi),
     retry: false,
   });
+  const updateMutation = useMutation({
+    mutationFn: ({ input }: TodoUpdateSubmission) => todosApi!.update(id, input),
+    onSuccess: async (state, submission) => {
+      setSelectedTodo((current) => current?.finding.dedupe_key === submission.dedupe_key ? { ...current, state } : current);
+      if (submission.field === "status") setDraftStatus(state.status);
+      else setDraftNote(state.note ?? "");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project-todos", id], exact: true }),
+        queryClient.invalidateQueries({ queryKey: ["project-todo-history", id, submission.dedupe_key], exact: true }),
+      ]);
+      toast.success(submission.field === "status" ? "待办状态已保存。" : "待办备注已保存。");
+    },
+    onError: (error, submission) => {
+      toast.error(apiErrorMessage(error, submission.field === "status" ? "待办状态保存失败，请重试。" : "待办备注保存失败，请重试。"));
+    },
+  });
 
   const allItems = todosQuery.data?.items ?? [];
   const search = (query.search ?? "").trim().toLocaleLowerCase("zh-CN");
@@ -119,6 +143,27 @@ export function ProjectTodosPage() {
   const pageSize = query.pageSize > 0 ? query.pageSize : filteredItems.length;
   const pageOffset = Math.max(0, query.page - 1) * pageSize;
   const rows = filteredItems.slice(pageOffset, pageOffset + pageSize);
+  const selectTodo = (item: ProjectTodo) => {
+    setSelectedTodo(item);
+    setDraftStatus(item.state.status);
+    setDraftNote(item.state.note ?? "");
+  };
+  const saveStatus = () => {
+    if (!selectedTodo || !hasUpdateApi || selectedTodo.state.status === draftStatus) return;
+    updateMutation.mutate({
+      dedupe_key: selectedTodo.finding.dedupe_key,
+      field: "status",
+      input: { dedupe_key: selectedTodo.finding.dedupe_key, status: draftStatus },
+    });
+  };
+  const saveNote = () => {
+    if (!selectedTodo || !hasUpdateApi || selectedTodo.state.note === (draftNote.trim() || null)) return;
+    updateMutation.mutate({
+      dedupe_key: selectedTodo.finding.dedupe_key,
+      field: "note",
+      input: { dedupe_key: selectedTodo.finding.dedupe_key, note: draftNote.trim() || null },
+    });
+  };
   const columns = useMemo<ColumnDef<ProjectTodo, unknown>[]>(() => [
     {
       id: "finding",
@@ -221,7 +266,7 @@ export function ProjectTodosPage() {
       columns={columns}
       query={query}
       onQueryChange={(next) => setQuery((current) => ({ ...next, search: current.search, filters: current.filters }))}
-      onRowClick={setSelectedTodo}
+      onRowClick={selectTodo}
       getRowId={(item) => item.finding.dedupe_key}
       height="fill"
       rowHeight={58}
@@ -271,6 +316,49 @@ export function ProjectTodosPage() {
             <div><dt>备注</dt><dd>{selectedTodo.state.note?.trim() || <span className="si-muted">尚无备注</span>}</dd></div>
           </dl>
           {selectedTodo.finding.detail && <p>{selectedTodo.finding.detail}</p>}
+          {hasUpdateApi ? <div className="si-todo-edit-controls">
+            <div className="si-todo-edit-field">
+              <span>更新状态</span>
+              <div className="si-todo-edit-row">
+                <Select
+                  ariaLabel="更新待办状态"
+                  value={draftStatus}
+                  options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))}
+                  onValueChange={(value) => setDraftStatus(value as TodoManualStatus)}
+                  disabled={updateMutation.isPending}
+                />
+                <Button
+                  size="small"
+                  variant="primary"
+                  disabled={updateMutation.isPending || draftStatus === selectedTodo.state.status}
+                  onClick={saveStatus}
+                >{updateMutation.isPending ? "正在保存…" : "保存状态"}</Button>
+              </div>
+            </div>
+            <div className="si-todo-edit-field">
+              <label htmlFor="si-todo-note-edit">备注</label>
+              <textarea
+                id="si-todo-note-edit"
+                aria-label="编辑待办备注"
+                className="si-todo-note-input"
+                rows={4}
+                value={draftNote}
+                disabled={updateMutation.isPending}
+                onChange={(event) => setDraftNote(event.target.value)}
+                placeholder="补充处理说明；留空保存会清除备注"
+              />
+              <div className="si-todo-edit-actions">
+                <Button
+                  size="small"
+                  variant="primary"
+                  disabled={updateMutation.isPending || selectedTodo.state.note === (draftNote.trim() || null)}
+                  onClick={saveNote}
+                >{updateMutation.isPending ? "正在保存…" : "保存备注"}</Button>
+              </div>
+            </div>
+          </div> : <Notice tone="warn" title="待办编辑接口尚未接入">
+            当前运行环境可以读取待办，但还没有提供状态与备注保存方法；编辑内容未启用。
+          </Notice>}
         </section>
 
         <section className="si-todo-detail-sources">
