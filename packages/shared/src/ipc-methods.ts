@@ -35,6 +35,9 @@ export const API_INVOKE_METHODS = [
   "inventory.exportCsv",
   "products.list",
   "products.get",
+  "products.skuBrief",
+  "products.changes",
+  "products.groupFamily",
   "products.setTags",
   "products.listTags",
   "products.createTag",
@@ -116,6 +119,9 @@ export const PENDING_HANDLERS: readonly string[] = [
   "seo.pageBrief",
   "seo.issueCandidates",
   "seo.internalLinkContext",
+  "products.skuBrief",
+  "products.changes",
+  "products.groupFamily",
 ];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];

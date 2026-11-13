@@ -13,6 +13,7 @@ import type {
   EdmSkuIndexExportResult,
   FileCheck,
   HistoryRange,
+  InventoryEvent,
   ISODate,
   ISODateTime,
   Keyword,
@@ -300,6 +301,24 @@ export interface ProductFull {
   variants?: ProductVariantStock[];
 }
 
+/** One feed SKU and its latest stored stock view; missing companion records remain null. */
+export interface ProductSkuBrief {
+  sku: SkuRecord;
+  stock: SkuStockView | null;
+}
+
+/** A SKU's direct, stored inventory events. An empty array means no events; unavailable data uses a null result envelope. */
+export type ProductChanges = InventoryEvent[];
+
+/** Stored SKU family relationships; parent identifiers do not imply a parent inventory entity. */
+export interface ProductGroupFamily {
+  sku: string;
+  role: "parent" | "child" | "single" | "collision";
+  parent_sku: string | null;
+  child_skus: string[];
+  collision: SkuGroupingCollision | null;
+}
+
 export interface TagStat {
   tag: string;
   products: number;
@@ -567,6 +586,12 @@ export interface SiteIndexApi {
   products: {
     list(id: ProjectId, q: ListQuery<ProductFilters>): Promise<PageResult<ProductView>>;
     get(id: ProjectId, handle: string): Promise<ProductFull>;
+    /** Read-only SKU brief from stored catalog and stock indexes; unavailable source data is described by metadata. */
+    skuBrief?(id: ProjectId, sku: string): Promise<ScenarioQueryResult<ProductSkuBrief>>;
+    /** Read-only inventory event history for the project, optionally filtered to one SKU; no events is an empty array. */
+    changes?(id: ProjectId, sku?: string): Promise<ScenarioQueryResult<ProductChanges>>;
+    /** Read-only parent/child relation for one real feed SKU; never creates parent stock. */
+    groupFamily?(id: ProjectId, sku: string): Promise<ScenarioQueryResult<ProductGroupFamily>>;
     setTags(id: ProjectId, handle: string, tags: string[]): Promise<string[]>;
     listTags(id: ProjectId): Promise<TagStat[]>;
     createTag(id: ProjectId, tag: string): Promise<TagStat[]>;
