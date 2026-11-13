@@ -69,7 +69,7 @@ function repairLabel(action: RepairAction): string {
   return actionLabels[action] ?? "修复";
 }
 
-export function ProjectSettingsFilesPage() {
+export function ProjectSettingsFilesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -166,15 +166,12 @@ export function ProjectSettingsFilesPage() {
     } },
   ];
 
-  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
-  if (projectQuery.isError || !projectQuery.data) return <ApiErrorNotice page label="项目本地文件页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
+  if (projectQuery.isLoading) return embedded ? <section id="files" className="si-files-embedded" aria-labelledby="files-heading"><h2 id="files-heading">本地文件校验</h2><div className="si-query-loading" role="status">正在加载项目信息…</div></section> : <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !projectQuery.data) return embedded ? <section id="files" className="si-files-embedded" aria-labelledby="files-heading"><h2 id="files-heading">本地文件校验</h2><ApiErrorNotice label="项目信息加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} /></section> : <ApiErrorNotice page label="项目本地文件页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data.summary;
   const summary = report?.summary ?? { total: 0, ok: 0, error: 0, missing: 0, conflict_copy: 0 };
-
-  return <div className="si-page si-files-page">
-    <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle={project.path} actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></>} />
-    <ProjectTabPanel projectId={project.id} tab="settings">
-    <SettingsNav id={id} />
+  const sectionActions = <><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button variant="primary" disabled={validatingAll} onClick={() => void validateAll()}>{validatingAll ? "校验中…" : "一键校验全部"}</Button></>;
+  const filesContent = <>
     {reportQuery.isLoading ? <div className="si-query-loading" role="status">正在读取本地文件校验报告…</div> : reportQuery.isError ? <ApiErrorNotice label="本地文件校验报告加载失败。" error={reportQuery.error} onRetry={() => void reportQuery.refetch()} /> : <>
       <section className="si-files-summary" aria-label="文件校验统计"><div><span>文件</span><strong>{summary.total}</strong></div><div><span>正常</span><strong className="is-ok">{summary.ok}</strong></div><div><span>错误</span><strong className="is-error">{summary.error}</strong></div><div><span>缺失</span><strong className="is-warn">{summary.missing}</strong></div><div><span>冲突副本</span><strong className="is-warn">{summary.conflict_copy}</strong></div><small>{report ? `上次全部校验：${formatCheckedAt(report.checked_at, report.trigger)}` : "尚无校验记录"}</small></section>
       <section className="si-files-table-card"><DataTable<FileTableRow> tableId="settings.files" scopeId={id} rows={rows} total={rows.length} columns={columns} query={tableQuery} onQueryChange={setTableQuery} onRowClick={(row) => { if (row.rowType === "file") setSelected(row.file); }} getRowId={(row) => row.rowId} height={610} rowHeight={48} showPagination={false} emptyTitle="还没有本地文件记录" emptyDescription="点击「一键校验全部」读取项目中的文件与数据状态。" /></section>
@@ -182,6 +179,18 @@ export function ProjectSettingsFilesPage() {
     </>}
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.path ?? "文件详情"}>{selected && <dl className="si-detail-list"><div><dt>类型</dt><dd>{kindLabels[selected.kind]}</dd></div><div><dt>记录数</dt><dd>{selected.records == null ? "—" : selected.records.toLocaleString("zh-CN")}</dd></div><div><dt>大小</dt><dd>{formatSize(selected.size)}</dd></div><div><dt>最近修改</dt><dd>{formatModified(selected.modified_at)}</dd></div><div><dt>状态</dt><dd><Chip tone={statusTones[selected.status]}>{statusLabels[selected.status]}</Chip></dd></div>{selected.rule && <div><dt>校验规则</dt><dd>{selected.rule}</dd></div>}{selected.message && <div><dt>原因</dt><dd>{selected.message}</dd></div>}{selected.line != null && <div><dt>行号</dt><dd>{selected.line.toLocaleString("zh-CN")}</dd></div>}{selected.repair && <div><dt>可用操作</dt><dd>{repairLabel(selected.repair)}</dd></div>}</dl>}</DetailPanel>
     <ConfirmDialog open={Boolean(pendingRepair)} onOpenChange={(open) => { if (!open) setPendingRepair(null); }} title="删除冲突副本？" description={`「${pendingRepair?.path ?? ""}」将移入系统回收站，可以恢复。`} confirmLabel={repairingPath ? "处理中…" : "移入回收站"} onConfirm={() => pendingRepair?.repair ? runRepair(pendingRepair, pendingRepair.repair) : undefined} />
+  </>;
+
+  if (embedded) return <section id="files" className="si-files-embedded" aria-labelledby="files-heading">
+    <div className="si-files-embedded-heading"><div><h2 id="files-heading">本地文件校验</h2><p>{project.path}</p></div><div>{sectionActions}</div></div>
+    {filesContent}
+  </section>;
+
+  return <div className="si-page si-files-page">
+    <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle={project.path} actions={sectionActions} />
+    <ProjectTabPanel projectId={project.id} tab="settings">
+    <SettingsNav id={id} />
+    {filesContent}
     </ProjectTabPanel>
   </div>;
 }

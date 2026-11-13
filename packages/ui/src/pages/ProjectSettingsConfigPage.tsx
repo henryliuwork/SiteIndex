@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import type { FeedInspectResult, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
+import type { CategoriesConfig, FeedInspectResult, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel, useToast } from "../components";
@@ -11,11 +11,9 @@ import { recommendedSkuGroupingPattern, skuGroupingExample, skuGroupingPresetFor
 import { configSectionLinks, isConfigSectionId, scrollToConfigSection, type ConfigSectionId } from "./project-settings-config/section-navigation";
 import { invalidateInventoryForCategoryChange } from "./project-settings-config/inventory-cache";
 import { didBlogRecognitionConfigChange, markBlogRecognitionConfigUpdated } from "./content/blog-recognition";
+import { ProjectSettingsCategoriesPage } from "./ProjectSettingsCategoriesPage";
+import { ProjectSettingsFilesPage } from "./ProjectSettingsFilesPage";
 import "./project-settings-config/page.css";
-
-const settingsTabs = [
-  { value: "config", label: "配置" }, { value: "categories", label: "分类" }, { value: "files", label: "本地文件" },
-] as const;
 function TextField({ label, value, onChange, mono = false, placeholder, type = "text", hint }: {
   label: string; value: string; onChange: (value: string) => void; mono?: boolean; placeholder?: string; type?: string; hint?: ReactNode;
 }) {
@@ -38,10 +36,6 @@ function ConfigCard({ id, title, children }: { id: ConfigSectionId; title: strin
   return <section className="si-config-card" id={id} aria-labelledby={`${id}-heading`}><h2 id={`${id}-heading`}>{title}</h2>{children}</section>;
 }
 
-function SettingsNav({ id, value }: { id: string; value: typeof settingsTabs[number]["value"] }) {
-  return <nav className="si-config-subtabs" aria-label="设置分区">{settingsTabs.map((tab) => <Link key={tab.value} to={`/p/${id}/settings/${tab.value}`} className={value === tab.value ? "active" : ""} aria-current={value === tab.value ? "page" : undefined}>{tab.label}</Link>)}</nav>;
-}
-
 function asLines(values: readonly string[] | undefined): string { return values?.join("\n") ?? ""; }
 function fromLines(value: string): string[] { return value.split("\n").map((item) => item.trim()).filter(Boolean); }
 function asFeeds(value: SiteConfig["crawl"]["feed_url"]): string { return (Array.isArray(value) ? value : [value]).join("\n"); }
@@ -57,8 +51,12 @@ function sameCategory(left: WatchedCategory, right: WatchedCategory): boolean {
 
 export function ProjectSettingsConfigPage() {
   const { id = "demo" } = useParams<{ id: string }>();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const requestedSection = searchParams.get("section");
+  const routeSection = location.pathname.endsWith("/settings/categories") ? "categories"
+    : location.pathname.endsWith("/settings/files") ? "files" : null;
+  const sectionParam = searchParams.get("section");
+  const requestedSection = isConfigSectionId(sectionParam) ? sectionParam : routeSection;
   const queryClient = useQueryClient();
   const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
@@ -93,12 +91,14 @@ export function ProjectSettingsConfigPage() {
   const [watchedUrl, setWatchedUrl] = useState("");
   const [activeSection, setActiveSection] = useState<ConfigSectionId>("basic");
   const handledRequestedSection = useRef<string | null>(null);
+  const initializedProjectId = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!projectQuery.data) return;
+    if (!projectQuery.data || initializedProjectId.current === id) return;
+    initializedProjectId.current = id;
     setDraft(projectQuery.data.config);
     setOverrideText(JSON.stringify(projectQuery.data.config.crawl.overrides ?? {}, null, 2));
-  }, [projectQuery.data]);
+  }, [id, projectQuery.data]);
 
   useEffect(() => {
     if (!draft) return;
@@ -123,6 +123,10 @@ export function ProjectSettingsConfigPage() {
   const patchCrawl = <K extends keyof SiteConfig["crawl"]>(key: K, value: SiteConfig["crawl"][K]) => setDraft((current) => current ? { ...current, crawl: { ...current.crawl, [key]: value } } : current);
   const patchSeo = <K extends keyof NonNullable<SiteConfig["seo"]>>(key: K, value: NonNullable<SiteConfig["seo"]>[K]) => setDraft((current) => current ? { ...current, seo: { ...current.seo, [key]: value } } : current);
   const patchEdm = <K extends keyof NonNullable<SiteConfig["edm"]>>(key: K, value: NonNullable<SiteConfig["edm"]>[K]) => setDraft((current) => current ? { ...current, edm: { ...current.edm, [key]: value } } : current);
+  const updateCategoryDraft = (categories: CategoriesConfig) => setDraft((current) => current ? {
+    ...current,
+    categories: { ...current.categories, ...categories, watched: current.categories.watched },
+  } : current);
 
   const toggleWatchedCategory = (category: Pick<WatchedCategory, "name" | "slug" | "url">) => {
     if (!draft) return;
@@ -225,7 +229,6 @@ export function ProjectSettingsConfigPage() {
   <div className="si-page si-project-config-page">
     <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle="index/site.json" actions={<><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="settings">
-    <SettingsNav id={id} value="config" />
     <div className="si-config-layout">
       <nav className="si-config-outline" aria-label="配置目录">{configSectionLinks.map(([target, label]) => <button key={target} type="button" aria-controls={target} aria-current={activeSection === target ? "location" : undefined} className={activeSection === target ? "active" : undefined} onClick={() => selectSection(target)}>{label}</button>)}</nav>
       <div className="si-config-sections">
@@ -257,7 +260,7 @@ export function ProjectSettingsConfigPage() {
             <TextField label="Feed 生成时间" value={draft.crawl.feed_generated_at ?? ""} placeholder="每天 01:00" onChange={(value) => patchCrawl("feed_generated_at", value)} />
             <TextField label="站点地图（每行一个）" value={asLines(draft.sitemaps)} mono onChange={(value) => patch("sitemaps", fromLines(value))} />
           </div>
-          <div className="si-config-callout"><span><strong>分类识别：{draft.categories.mode === "manual" ? "手动配置" : draft.categories.mode === "feed" ? "Feed 分类字段" : "URL 规则"}</strong><small>分类规则、候选分类页与预览结果在分类设置中管理。</small></span><Link to={`/p/${id}/settings/categories`} className="si-config-inline-link">分类设置</Link></div>
+          <div className="si-config-callout"><span><strong>分类识别：{draft.categories.mode === "manual" ? "手动配置" : draft.categories.mode === "feed" ? "Feed 分类字段" : "URL 规则"}</strong><small>分类规则、候选分类页与预览结果在下方分类识别区管理。</small></span><Link to={`/p/${id}/settings/config?section=categories`} className="si-config-inline-link">分类设置</Link></div>
           <TextAreaField label="数据修正（overrides，JSON 对象）" value={overrideText} onChange={setOverrideText} mono rows={3} />
         </ConfigCard>
 
@@ -333,6 +336,8 @@ export function ProjectSettingsConfigPage() {
           </div>
         </ConfigCard>
 
+        <ProjectSettingsCategoriesPage embedded onConfigSaved={updateCategoryDraft} />
+
         <ConfigCard id="seo" title="SEO"><div className="si-config-grid si-config-grid-2">
           <TextAreaField label="核心关键词（每行一项）" value={asLines(draft.seo?.core_keywords)} onChange={(value) => patchSeo("core_keywords", fromLines(value))} rows={3} />
           <TextAreaField label="竞品域名（每行一个）" value={asLines(draft.seo?.competitors)} onChange={(value) => patchSeo("competitors", fromLines(value))} mono rows={3} />
@@ -355,6 +360,8 @@ export function ProjectSettingsConfigPage() {
         </div><div className="si-config-reserved-grid">{[
           ["销量数据", "Magento API / WordPress REST / MCP → index/sales/"], ["Google Search Console", "收录、展现、点击、排名 → index/seo/"], ["Mailchimp 报告", "收件、打开、点击、收入 → edm_campaigns"],
         ].map(([title, detail]) => <div className="si-config-reserved" key={title}><strong>{title}</strong><span>{detail}</span><Chip tone="neutral">预留 · 未连接</Chip></div>)}</div></ConfigCard>
+
+        <ProjectSettingsFilesPage embedded />
       </div>
     </div>
     </ProjectTabPanel>

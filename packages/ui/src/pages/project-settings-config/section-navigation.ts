@@ -6,9 +6,11 @@ export const configSectionLinks = [
   ["blog-recognition", "博客识别"],
   ["sku-grouping", "父子 SKU"],
   ["watched-categories", "关注分类"],
+  ["categories", "分类识别"],
   ["seo", "SEO"],
   ["edm", "EDM"],
   ["integrations", "集成与预留数据源"],
+  ["files", "本地文件校验"],
 ] as const;
 
 export const configSectionIds = configSectionLinks.map(([sectionId]) => sectionId);

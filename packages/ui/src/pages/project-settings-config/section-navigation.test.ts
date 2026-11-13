@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { configSectionIds, isConfigSectionId, scrollToConfigSection } from "./section-navigation";
 
 describe("项目配置区块导航", () => {
-  it("仅接受配置页的十个稳定区块 ID", () => {
-    expect(configSectionIds).toHaveLength(10);
+  it("接受配置页的十二个稳定区块 ID", () => {
+    expect(configSectionIds).toHaveLength(12);
     expect(isConfigSectionId("watched-categories")).toBe(true);
+    expect(isConfigSectionId("categories")).toBe(true);
+    expect(isConfigSectionId("files")).toBe(true);
     expect(isConfigSectionId("unknown")).toBe(false);
     expect(isConfigSectionId(null)).toBe(false);
   });
@@ -28,6 +30,8 @@ describe("项目配置区块导航", () => {
   it("页面用按钮导航并从路由查询参数处理库存页入口", () => {
     const source = readFileSync(new URL("../ProjectSettingsConfigPage.tsx", import.meta.url), "utf8");
     const inventorySource = readFileSync(new URL("../InventoryPage.tsx", import.meta.url), "utf8");
+    const categoriesRoute = readFileSync(new URL("../project-settings-categories/route.tsx", import.meta.url), "utf8");
+    const filesRoute = readFileSync(new URL("../project-settings-files/route.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("useSearchParams");
     expect(source).toContain('searchParams.get("section")');
@@ -35,6 +39,8 @@ describe("项目配置区块导航", () => {
     expect(source).toContain("scrollToConfigSection(requestedSection)");
     expect(source).not.toContain('href={"#" + target}');
     expect(source).not.toContain("window.location.hash");
+    expect(categoriesRoute).toContain("ProjectSettingsConfigPage");
+    expect(filesRoute).toContain("ProjectSettingsConfigPage");
     expect(inventorySource).toContain("/settings/config?section=watched-categories");
     expect(inventorySource).not.toContain("/settings/config#watched-categories");
   });
