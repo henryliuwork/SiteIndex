@@ -310,6 +310,14 @@ export interface ProductSkuBrief {
 /** A SKU's direct, stored inventory events. An empty array means no events; unavailable data uses a null result envelope. */
 export type ProductChanges = InventoryEvent[];
 
+/** Inventory for one real feed SKU that belongs to a returned family. A derived parent may be absent because no parent SKU exists in the feed. */
+export interface ProductGroupFamilyMember {
+  sku: string;
+  role: "parent" | "child" | "single";
+  /** Null means this member has no usable stored stock row; the query metadata identifies the missing source or field. */
+  stock: SkuStockView | null;
+}
+
 /** Stored SKU family relationships; parent identifiers do not imply a parent inventory entity. */
 export interface ProductGroupFamily {
   sku: string;
@@ -317,6 +325,8 @@ export interface ProductGroupFamily {
   parent_sku: string | null;
   child_skus: string[];
   collision: SkuGroupingCollision | null;
+  /** Optional for older bridges; when present, contains only real feed SKUs with their stored stock row or null. */
+  members?: ProductGroupFamilyMember[];
 }
 
 export interface TagStat {
