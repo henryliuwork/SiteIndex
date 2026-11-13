@@ -72,6 +72,12 @@ export const API_INVOKE_METHODS = [
   "edm.buildCommand",
   "edm.exportIndex",
   "media.prepare",
+  "gsc.status",
+  "gsc.connect",
+  "gsc.disconnect",
+  "gsc.listProperties",
+  "gsc.selectProperty",
+  "gsc.sync",
   "design.get",
   "readme.get",
   "readme.saveUserBlocks",
@@ -128,6 +134,12 @@ export const PENDING_HANDLERS: readonly string[] = [
   "edm.candidates",
   "edm.mediaGaps",
   "edm.campaignSafety",
+  "gsc.status",
+  "gsc.connect",
+  "gsc.disconnect",
+  "gsc.listProperties",
+  "gsc.selectProperty",
+  "gsc.sync",
 ];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
