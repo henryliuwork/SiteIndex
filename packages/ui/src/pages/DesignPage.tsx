@@ -90,6 +90,7 @@ function TypographyCard({ tokens }: { tokens: DesignTokens | null }) {
         <span>标题：<code>{fonts?.heading ?? "未识别"}</code></span>
         <span>正文：<code>{fonts?.body ?? "未识别"}</code></span>
         <span>等宽：<code>{fonts?.mono ?? "未识别"}</code></span>
+        <p className="si-design-font-fallback-note">若未识别网站字体，示例使用软件默认字体；本机没有已识别字体时，浏览器按字体栈回退。</p>
       </div>
       {hasScale ? <div className="si-design-type-list">
         {typographyItems.map(({ key, label, sample }) => {

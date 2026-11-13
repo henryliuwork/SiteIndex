@@ -127,6 +127,7 @@ describe("DesignPage Token v2", () => {
   it("缺失的 Token v2 字段显示未识别状态，不用旧值补造", async () => {
     const tokens = structuredClone(tokensFixture);
     if (tokens.color.roles) tokens.color.roles.link = null;
+    tokens.typography.font_families = {};
     delete tokens.typography.scale.h5;
     if (tokens.buttons) tokens.buttons.outline = null;
     const { api } = createDesignApi(tokens);
@@ -136,6 +137,7 @@ describe("DesignPage Token v2", () => {
     expect(screen.getAllByText("当前页面未识别此颜色角色。").length).toBeGreaterThan(0);
     expect(screen.getByText("未识别此层级")).toBeTruthy();
     expect(screen.getByText("未识别此按钮变体")).toBeTruthy();
+    expect(screen.getByText("若未识别网站字体，示例使用软件默认字体；本机没有已识别字体时，浏览器按字体栈回退。")).toBeTruthy();
     expect(screen.getAllByText("未识别", { selector: ".si-design-role-value" }).length).toBeGreaterThan(0);
   });
 
