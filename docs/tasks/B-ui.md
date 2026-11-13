@@ -121,6 +121,7 @@
 ## v0.5.5 · 应用级 UI 体验复核
 - [x] Playwright 复核项目中心、新建向导（网址与数据源步骤）、软件设置及常见表单控件，视口为 1280×800 与 1440×900；修正项目根目录“选择…”按钮的垂直偏位，并修复项目中心两个弹窗按 Escape 关闭后焦点未返回触发按钮的问题 — 本 PR。截图见 `packages/ui/screenshots/v055-ui-experience/`。
 - [x] 为“添加已有项目”和“创建空工作区”补充 Escape 关闭后的焦点返回回归测试。该项不包含单独的字体字号专项。
+- [x] ProjectHeader 在 1100×800 / 1280×800 下保留分类设置页标题与模式标签的完整宽度；标签栏承担收缩并可滚动，操作槽按钮保持可见。另记录当前 `/inventory` 兼容路由及其视口检查；该路由现展示 ProductsPage（#524）。Playwright 截图见 `packages/ui/screenshots/v055-project-header/` — 本 PR。
 
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
