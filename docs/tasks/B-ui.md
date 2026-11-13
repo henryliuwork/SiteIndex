@@ -59,6 +59,7 @@
 - [x] v0.1.9 全项目定时任务汇总 `/schedules`：按项目筛选、显示每日/每周计划与最近/下次运行；行内加载错误隔离并可跳转配置 — [PR #273](https://github.com/henryliuwork/SiteIndex/pull/273)
 - [x] 定时任务汇总接入可选校验/修复与孤立任务清理；Desktop 未实现时隐藏不可用操作 — 本 PR
 - [x] B15 Skill 中心、软件设置 — [PR #46](https://github.com/henryliuwork/SiteIndex/pull/46)、[PR #48](https://github.com/henryliuwork/SiteIndex/pull/48)、[PR #73](https://github.com/henryliuwork/SiteIndex/pull/73)
+- [x] 软件设置明确项目数据按设备保存在本机非同步目录，不暗示云盘同步同一项目；保留项目根目录选择 — 本 PR
 - [x] v0.1.9 软件设置补充项目根目录用途与“移动或重新添加项目”说明 — [PR #275](https://github.com/henryliuwork/SiteIndex/pull/275)
 - [x] 全部写入操作的"已保存 / 失败原因"反馈；危险操作二次确认；空状态与错误状态 — [PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)、[PR #52](https://github.com/henryliuwork/SiteIndex/pull/52)、[PR #53](https://github.com/henryliuwork/SiteIndex/pull/53)、[PR #55](https://github.com/henryliuwork/SiteIndex/pull/55)、[PR #73](https://github.com/henryliuwork/SiteIndex/pull/73)
 
