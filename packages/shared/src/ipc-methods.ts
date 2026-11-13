@@ -143,9 +143,6 @@ export const PENDING_HANDLERS: readonly string[] = [
   "gsc.listProperties",
   "gsc.selectProperty",
   "gsc.sync",
-  "todos.list",
-  "todos.update",
-  "todos.history",
 ];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
