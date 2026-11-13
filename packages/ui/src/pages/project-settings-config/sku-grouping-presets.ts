@@ -20,14 +20,14 @@ const customRegexDefault = "^(.+?)-[A-Z]$";
 export function skuGroupingPresetForRule(rule: SkuGroupingRule): SkuGroupingPreset {
   if (rule.type === "suffix") return "suffix";
   if (rule.type === "separator") return "separator";
-  if (rule.value === cpParentSkuPattern) return "cp-parent-any-suffix";
+  if (rule.value === cpParentSkuPattern && rule.parent_source === "feed") return "cp-parent-any-suffix";
   if (rule.value === recommendedSkuGroupingPattern) return "recommended-two-digit";
   return rule.value === trailingNumberPattern ? "trailing-number" : "custom-regex";
 }
 
 export function skuGroupingRuleForPreset(preset: SkuGroupingPreset, current: SkuGroupingRule): SkuGroupingRule {
   if (preset === "recommended-two-digit") return { type: "regex", value: recommendedSkuGroupingPattern };
-  if (preset === "cp-parent-any-suffix") return { type: "regex", value: cpParentSkuPattern };
+  if (preset === "cp-parent-any-suffix") return { type: "regex", value: cpParentSkuPattern, parent_source: "feed" };
   if (preset === "trailing-number") return { type: "regex", value: trailingNumberPattern };
   if (preset === "suffix") return current.type === "suffix" ? current : { type: "suffix", value: "-G" };
   if (preset === "separator") return current.type === "separator" ? current : { type: "separator", value: "-" };

@@ -50,8 +50,10 @@ describe("SKU 分组预设", () => {
     expect(skuGroupingPresetForRule({ type: "regex", value: recommendedSkuGroupingPattern })).toBe("recommended-two-digit");
     expect(skuGroupingPresetForRule({ type: "regex", value: trailingNumberPattern })).toBe("trailing-number");
     expect(skuGroupingExample({ type: "regex", value: recommendedSkuGroupingPattern })).toBe("DEMO001CP01 → DEMO001CP");
-    expect(skuGroupingRuleForPreset("cp-parent-any-suffix", { type: "regex", value: "custom" })).toEqual({ type: "regex", value: cpParentSkuPattern });
-    expect(skuGroupingPresetForRule({ type: "regex", value: cpParentSkuPattern })).toBe("cp-parent-any-suffix");
+    const cpParentRule = { type: "regex", value: cpParentSkuPattern, parent_source: "feed" } as const;
+    expect(skuGroupingRuleForPreset("cp-parent-any-suffix", { type: "regex", value: "custom" })).toEqual(cpParentRule);
+    expect(skuGroupingPresetForRule(cpParentRule)).toBe("cp-parent-any-suffix");
+    expect(skuGroupingPresetForRule({ type: "regex", value: cpParentSkuPattern })).toBe("custom-regex");
     expect(skuGroupingExample({ type: "regex", value: cpParentSkuPattern })).toBe("DEMO001CP1 → DEMO001CP；DEMO001CP01BLUE → DEMO001CP");
     expect(skuGroupingPresetOptions.some((option) => option.value === "custom-regex")).toBe(true);
   });
