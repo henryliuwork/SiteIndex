@@ -1,5 +1,13 @@
 import { assertProjectStorageLocal as assertCoreProjectStorageLocal, type CoreService } from "@siteindex/core";
-import type { AppSettings, EdmSkuIndexExportResult, GscSyncInput, GscSyncResult, ProjectId, SiteIndexError } from "@siteindex/shared";
+import type {
+  AppSettings,
+  EdmSkuIndexExportResult,
+  GscSyncInput,
+  GscSyncResult,
+  ProjectId,
+  SiteIndexApi,
+  SiteIndexError,
+} from "@siteindex/shared";
 import type { GscProjectSyncOptions } from "@siteindex/core";
 import type { JobManager } from "../job-manager.js";
 import type { ProjectCatalog } from "../project-catalog.js";
@@ -26,6 +34,8 @@ export interface IpcDependencies {
     projectRoot: string,
     rendered: Awaited<ReturnType<CoreService["edm"]["renderIndex"]>>,
   ) => Promise<EdmSkuIndexExportResult>;
+  /** Core Todo adapter; optional until the Core service exposes its project todo methods. */
+  todos?: NonNullable<SiteIndexApi["todos"]>;
   scheduler: SystemScheduler;
   reconcileSchedules: (
     allowElevation: boolean,
