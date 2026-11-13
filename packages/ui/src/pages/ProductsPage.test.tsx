@@ -82,6 +82,7 @@ async function renderProductsPage(options: {
   groupingEnabled?: boolean;
   detail?: ProductFull;
   simulateDelayedPageSizeRestore?: boolean;
+  legacyInventoryPath?: boolean;
 } = {}) {
   const mockApi = createMockApi();
   if (options.groupingEnabled) {
@@ -130,12 +131,15 @@ async function renderProductsPage(options: {
   }
   const { ToastProvider } = await import("../components");
   const { ProductsPage } = await import("./ProductsPage");
+  const route = options.legacyInventoryPath ? (await import("./inventory/route")).route : null;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <ToastProvider>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={["/p/demo/products"]}>
-          <Routes><Route path="/p/:id/products" element={<ProductsPage />} /></Routes>
+        <MemoryRouter initialEntries={[options.legacyInventoryPath ? "/p/demo/inventory" : "/p/demo/products"]}>
+          <Routes>{route
+            ? <Route path={route.path} element={route.element} />
+            : <Route path="/p/:id/products" element={<ProductsPage />} />}</Routes>
         </MemoryRouter>
       </QueryClientProvider>
     </ToastProvider>,
@@ -152,6 +156,28 @@ describe("ProductsPage 页面操作区", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
     expect(await screen.findByRole("menuitem", { name: "SKU 父子规则设置" })).toBeTruthy();
+  });
+
+  it("列表始终显示 SKU 标识，多 SKU 产品补充数量", async () => {
+    const product = makeProduct({ handle: "demo-sku-visible", title: "虚构 SKU 商品", skus: ["DEMO-SKU-01", "DEMO-SKU-02"] });
+    const productWithoutSku = makeProduct({ handle: "demo-sku-missing", title: "无 SKU 虚构商品" });
+    await renderProductsPage({ products: [product, productWithoutSku] });
+
+    const row = (await screen.findByText("虚构 SKU 商品", { selector: "strong" })).closest("tr")!;
+    const sku = within(row).getByText("SKU DEMO-SKU-01 +1");
+    expect(sku).toBeTruthy();
+    expect(sku.getAttribute("title")).toBe("DEMO-SKU-01、DEMO-SKU-02");
+    expect(within(row).getByText("demo-sku-visible")).toBeTruthy();
+
+    const missingSkuRow = (await screen.findByText("无 SKU 虚构商品", { selector: "strong" })).closest("tr")!;
+    expect(within(missingSkuRow).getByText("SKU —")).toBeTruthy();
+  });
+
+  it("保留旧库存路由，并打开产品与库存管理页面", async () => {
+    await renderProductsPage({ legacyInventoryPath: true });
+
+    expect(await screen.findByRole("button", { name: "导出 CSV" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "趋势与分类在线率" })).toBeTruthy();
   });
 
   it("在产品页打开库存趋势和分类在线率，并可按分类筛选产品", async () => {
