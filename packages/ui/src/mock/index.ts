@@ -22,6 +22,7 @@ import { createSkillsMock } from "./skills";
 import { createShellMock } from "./shell";
 import { createUpdatesMock } from "./updates";
 import { createWorkspaceMock } from "./workspace";
+import { createGscMock } from "./gsc";
 
 export function createMockApi(options: { seoIssueStatus?: boolean; wordpressImageHostDemo?: boolean } = {}): SiteIndexApi {
   const seo = createSeoMock();
@@ -49,5 +50,6 @@ export function createMockApi(options: { seoIssueStatus?: boolean; wordpressImag
     runner: createRunnerMock(),
     skills: createSkillsMock(),
     shell: createShellMock(),
+    gsc: createGscMock(),
   }, { updates: createUpdatesMock(), workspace: workspace.api });
 }
