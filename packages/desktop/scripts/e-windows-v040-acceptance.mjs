@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat as statFile,
   symlink,
@@ -23,6 +24,7 @@ import { createFakeGraphqlService, createFakeWordPressService } from "../../../f
 import { runWordPressCredentialsUiSmoke } from "../../ui/visual/wordpress-credentials-smoke.mjs";
 import { createCredentialRegionWaitPage } from "./credential-region-wait.mjs";
 import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
+import { createHostedUpdateDiagnostics } from "./e-windows-v041-updater-diagnostics.mjs";
 import { attachCredentialIsolationOracle } from "./e-windows-v041-credential-oracle.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
 import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
@@ -145,6 +147,7 @@ const report = {
     harnessProfileVerified: false,
     executableVersion: null,
   },
+  hostedUpdateDiagnostics: null,
   runnerBuildVersionOverride: process.env.SITEINDEX_CANDIDATE_ARTIFACT_SOURCE === "runner-built-internal-candidate",
   previousRelease: { ...OLD_RELEASE },
   candidateInstallerSha256: null,
@@ -497,6 +500,120 @@ function installedExecutableVersion() {
   });
   if (result.error || result.status !== 0) return null;
   return result.stdout.trim() || null;
+}
+
+function installedUpdateProcessSnapshot() {
+  const command = [
+    "$installDir = [System.IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_DIR)",
+    "$installedExe = Join-Path $installDir 'SiteIndex.exe'",
+    "$uninstallerExe = Join-Path $installDir 'Uninstall SiteIndex.exe'",
+    "$candidateInstaller = \"SiteIndex-Setup-$($env:SITEINDEX_DIAGNOSTIC_CANDIDATE_VERSION).exe\"",
+    "$installedVersion = if (Test-Path -LiteralPath $installedExe -PathType Leaf) { (Get-Item -LiteralPath $installedExe).VersionInfo.ProductVersion } else { $null }",
+    "$processes = @(Get-CimInstance Win32_Process | Where-Object {",
+    "  ($_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $installedExe) -or",
+    "  ($_.Name -eq $candidateInstaller) -or",
+    "  ($_.Name -eq 'Uninstall SiteIndex.exe' -and $_.ExecutablePath -ieq $uninstallerExe)",
+    "} | ForEach-Object {",
+    "  $role = if ($_.Name -eq $candidateInstaller) { 'candidate-installer' } elseif ($_.Name -eq 'Uninstall SiteIndex.exe') { 'uninstaller' } else { 'installed-app' }",
+    "  $process = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue",
+    "  $startedAt = $null",
+    "  if ($_.CreationDate) { $startedAt = $_.CreationDate.ToUniversalTime().ToString('o') }",
+    "  $responding = $null; $hasWindow = $false",
+    "  if ($process) { try { $responding = [bool]$process.Responding; $hasWindow = [bool]($process.MainWindowHandle -ne 0) } catch { } }",
+    "  [pscustomobject]@{ role = $role; pid = [int]$_.ProcessId; parentPid = [int]$_.ParentProcessId; startedAt = $startedAt; responding = $responding; hasWindow = $hasWindow }",
+    "})",
+    "[pscustomobject]@{ installedExecutableVersion = $installedVersion; processes = $processes } | ConvertTo-Json -Depth 4 -Compress",
+  ].join("\n");
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 10_000,
+    env: { ...isolatedProcessEnvironment(), SITEINDEX_DIAGNOSTIC_CANDIDATE_VERSION: CANDIDATE_VERSION },
+  });
+  if (result.error || result.status !== 0) return { available: false, installedExecutableVersion: null, processes: [] };
+  try {
+    const parsed = JSON.parse(result.stdout.trim());
+    const processes = Array.isArray(parsed.processes) ? parsed.processes : parsed.processes ? [parsed.processes] : [];
+    return {
+      available: true,
+      installedExecutableVersion: parsed.installedExecutableVersion ?? null,
+      processes,
+    };
+  } catch {
+    return { available: false, installedExecutableVersion: null, processes: [] };
+  }
+}
+
+async function collectHostedUpdateObservation() {
+  const processSnapshot = installedUpdateProcessSnapshot();
+  let cdp = { reachable: false, targetCount: null };
+  try {
+    const targets = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
+    const targetList = targets.ok ? await targets.json() : null;
+    cdp = { reachable: targets.ok, targetCount: Array.isArray(targetList) ? targetList.length : null };
+  } catch {
+    cdp = { reachable: false, targetCount: null };
+  }
+  return {
+    observedAt: new Date(),
+    installedExecutableVersion: processSnapshot.installedExecutableVersion,
+    processSnapshotAvailable: processSnapshot.available,
+    processes: processSnapshot.processes,
+    originalProcess: {
+      pid: applicationProcess?.pid ?? null,
+      alive: applicationProcess ? applicationProcess.exitCode === null : null,
+      exitCode: applicationProcess?.exitCode ?? null,
+    },
+    cdp,
+  };
+}
+
+async function persistHostedUpdateDiagnostics(diagnostics) {
+  if (!OUTPUT_DIR) return;
+  await mkdir(OUTPUT_DIR, { recursive: true });
+  const target = path.join(OUTPUT_DIR, "hosted-update-diagnostics.json");
+  const temporary = `${target}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(diagnostics.toJSON(), null, 2)}\n`, "utf8");
+  await rename(temporary, target);
+}
+
+async function startHostedUpdateDiagnostics() {
+  if (!HOSTED_UPDATE || !OUTPUT_DIR) return null;
+  const diagnostics = createHostedUpdateDiagnostics({
+    baselineVersion: OLD_RELEASE.version,
+    candidateVersion: CANDIDATE_VERSION,
+    baselineExecutableVersion: installedExecutableVersion(),
+  });
+  let sampling = false;
+  let inFlight = Promise.resolve();
+  const sample = () => {
+    if (sampling) return inFlight;
+    sampling = true;
+    inFlight = (async () => {
+      let observation;
+      try {
+        observation = await collectHostedUpdateObservation();
+      } catch {
+        observation = { processSnapshotAvailable: false, processes: [], cdp: { reachable: false, targetCount: null } };
+      }
+      diagnostics.record(observation);
+      await persistHostedUpdateDiagnostics(diagnostics);
+    })().catch(() => undefined).finally(() => { sampling = false; });
+    return inFlight;
+  };
+  await sample();
+  const timer = setInterval(() => { void sample(); }, 5_000);
+  timer.unref?.();
+  return {
+    async finish(outcome, failureCode = null) {
+      clearInterval(timer);
+      await inFlight;
+      await sample();
+      diagnostics.finish(outcome, failureCode);
+      report.hostedUpdateDiagnostics = diagnostics.toJSON();
+      await persistHostedUpdateDiagnostics(diagnostics);
+    },
+  };
 }
 
 function collectProcessOutput(stream, chunk) {
@@ -1234,14 +1351,25 @@ async function requestHostedUpdate(page) {
       expectedVersion: CANDIDATE_VERSION,
     });
 
-  await page.evaluate(() => {
-    const updates = window.siteindex?.updates;
-    if (!updates) throw new Error("The installed baseline does not expose the update API.");
-    void updates.install().catch(() => undefined);
-    return true;
-  }).catch(() => undefined);
-  await delay(1000);
-  return waitForHostedUpdatedApp();
+  const diagnostics = await startHostedUpdateDiagnostics();
+  try {
+    await page.evaluate(() => {
+      const updates = window.siteindex?.updates;
+      if (!updates) throw new Error("The installed baseline does not expose the update API.");
+      void updates.install().catch(() => undefined);
+      return true;
+    }).catch(() => undefined);
+    await delay(1000);
+    const updatedPage = await waitForHostedUpdatedApp();
+    await diagnostics?.finish("completed");
+    return updatedPage;
+  } catch (error) {
+    const timedOut = /did not relaunch .* within the acceptance timeout/u.test(
+      error instanceof Error ? error.message : String(error),
+    );
+    await diagnostics?.finish(timedOut ? "timeout" : "failed", timedOut ? null : "UPDATE_FLOW_FAILED");
+    throw error;
+  }
 }
 
 async function goToW2Route(page, route) {
@@ -3545,6 +3673,7 @@ async function writeReport() {
     `- User data isolation: ${report.userDataIsolation}`,
     `- Installer launched app before harness: ${report.installerStartedAppBeforeHarness ?? "not checked"}`,
     `- Updater restart: ${JSON.stringify(report.updaterRestart)}`,
+    `- Hosted updater diagnostics: ${report.hostedUpdateDiagnostics ? `${report.hostedUpdateDiagnostics.outcome} · ${report.hostedUpdateDiagnostics.observationCount} samples · EXE ${report.hostedUpdateDiagnostics.baselineExecutableVersion ?? "unavailable"} → ${report.hostedUpdateDiagnostics.latestInstalledExecutableVersion ?? "unavailable"}` : "not run"}`,
     `- Candidate workflow run / artifact: \`${report.candidateWorkflowRunId ?? "n/a"}\` / \`${report.candidateArtifactId ?? "n/a"}\``,
     `- Candidate artifact SHA256: \`${report.candidateArtifactSha256 ?? "n/a"}\``,
     `- Candidate installer SHA256: \`${report.candidateInstallerSha256 ?? "unavailable"}\``,

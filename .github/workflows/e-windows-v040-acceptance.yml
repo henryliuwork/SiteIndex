@@ -9,6 +9,7 @@ on:
       - "packages/desktop/scripts/credential-region-wait.mjs"
       - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
       - "packages/desktop/scripts/e-windows-v041-reconnect.mjs"
+      - "packages/desktop/scripts/e-windows-v041-updater-diagnostics.mjs"
       - "packages/desktop/scripts/e-windows-v041-credential-oracle.mjs"
       - "packages/desktop/scripts/e-windows-v040-synthetic-fixture.mjs"
       - "packages/desktop/scripts/windows-appdata-redirect.mjs"
@@ -17,6 +18,7 @@ on:
       - "packages/desktop/test/credential-region-wait.test.ts"
       - "packages/desktop/test/e-windows-profile-isolation.test.ts"
       - "packages/desktop/test/e-windows-v041-hosted-update.test.ts"
+      - "packages/desktop/test/e-windows-v041-updater-diagnostics.test.ts"
       - "packages/desktop/test/e-windows-v041-hosted-oracle.test.ts"
       - "packages/desktop/test/windows-appdata-redirect.test.ts"
       - "packages/desktop/test/candidate-run-source.test.ps1"
@@ -485,6 +487,8 @@ jobs:
           "SITEINDEX_CANDIDATE_RELEASE_ARTIFACT_EXE_SHA256=$artifactExeSha256" >> $env:GITHUB_ENV
           Write-Output "Release EXE SHA256 matches the installer from the successful tag-triggered Windows packaging artifact."
       - name: Install, upgrade, and exercise packaged IPC
+        id: packaged_acceptance
+        timeout-minutes: 55
         shell: pwsh
         env:
           SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}
@@ -504,9 +508,41 @@ jobs:
       - name: Add acceptance summary to workflow
         if: always()
         shell: pwsh
+        env:
+          ACCEPTANCE_STEP_OUTCOME: ${{ steps.packaged_acceptance.outcome }}
         run: |
           $summary = Join-Path $PWD "siteindex-e-windows-results/summary.md"
           if (Test-Path -LiteralPath $summary) { Get-Content -LiteralPath $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
+          $diagnosticPath = Join-Path $PWD "siteindex-e-windows-results/hosted-update-diagnostics.json"
+          if (Test-Path -LiteralPath $diagnosticPath) {
+            try {
+              $diagnostic = Get-Content -LiteralPath $diagnosticPath -Raw | ConvertFrom-Json
+              $last = @($diagnostic.observations | Select-Object -Last 1)
+              $lastObservation = if ($last.Count -gt 0) { $last[0] } else { $null }
+              $installerStates = @($diagnostic.candidateInstallerProcesses | ForEach-Object { "PID $($_.pid): aliveAtLastProcessSnapshot=$($_.aliveAtLastProcessSnapshot), exitCode=$($_.exitCode)" })
+              if ($installerStates.Count -eq 0) { $installerStates = @("candidate installer process was not observed") }
+              $captureOutcome = $diagnostic.outcome
+              if (-not [string]::IsNullOrEmpty($diagnostic.failureCode)) { $captureOutcome = "$captureOutcome ($($diagnostic.failureCode))" }
+              $baselineExeVersion = if ([string]::IsNullOrEmpty($diagnostic.baselineExecutableVersion)) { "unavailable" } else { $diagnostic.baselineExecutableVersion }
+              $latestExeVersion = if ([string]::IsNullOrEmpty($diagnostic.latestInstalledExecutableVersion)) { "unavailable" } else { $diagnostic.latestInstalledExecutableVersion }
+              $cdpReachable = if ($lastObservation) { $lastObservation.cdp.reachable } else { "unavailable" }
+              $cdpTargetCount = if ($lastObservation) { $lastObservation.cdp.targetCount } else { "unavailable" }
+              $originalProcess = $diagnostic.originalProcess
+              @(
+                "## Hosted updater diagnostics",
+                "",
+                "- Acceptance step outcome: $env:ACCEPTANCE_STEP_OUTCOME",
+                "- Capture outcome: $captureOutcome",
+                "- EXE versions: baseline $baselineExeVersion; latest $latestExeVersion",
+                "- Candidate installer: $($installerStates -join '; ')",
+                "- Original app process: PID $($originalProcess.pid), alive=$($originalProcess.alive), exitCode=$($originalProcess.exitCode)",
+                "- CDP: reachable=$cdpReachable, targetCount=$cdpTargetCount",
+                "- Samples retained: $($diagnostic.observationCount)"
+              ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            } catch {
+              "Hosted updater diagnostics were present but could not be summarized. The raw report remains in the acceptance artifact." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            }
+          }
       - name: Upload synthetic-only results
         if: always()
         uses: actions/upload-artifact@v4

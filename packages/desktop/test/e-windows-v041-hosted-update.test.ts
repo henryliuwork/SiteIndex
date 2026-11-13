@@ -85,6 +85,17 @@ describe("Windows v0.4.0 to v0.4.1 hosted upgrade acceptance", () => {
     );
   });
 
+  it("persists hosted updater process and version snapshots before cleanup and uploads them after step timeout", () => {
+    expect(acceptanceScript).toContain("startHostedUpdateDiagnostics");
+    expect(acceptanceScript).toContain('"hosted-update-diagnostics.json"');
+    expect(acceptanceScript).toContain("report.hostedUpdateDiagnostics = diagnostics.toJSON()");
+    expect(workflow).toContain("id: packaged_acceptance");
+    expect(workflow).toContain("timeout-minutes: 55");
+    expect(workflow).toContain("ACCEPTANCE_STEP_OUTCOME: ${{ steps.packaged_acceptance.outcome }}");
+    expect(workflow).toContain("if: always()");
+    expect(workflow).toContain("hosted-update-diagnostics.json");
+  });
+
   it("uses only reserved synthetic fixture domains", () => {
     const serialized = JSON.stringify(makeW2SyntheticFixture("https://synthetic.example.invalid"));
     const urls = serialized.match(/https?:\/\/[^\\"\s]+/gu) ?? [];
