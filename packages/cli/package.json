@@ -12,8 +12,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
     "@siteindex/core": "workspace:*",
-    "@siteindex/shared": "workspace:*"
+    "@siteindex/shared": "workspace:*",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "tsup": "^9.0.0"
