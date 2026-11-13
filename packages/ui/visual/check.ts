@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
-import { classifyDataSurface, classifyPageSurface, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
+import { classifyDataSurface, classifyPageSurface, getVerticalScrollDelta, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
 import { isDataTableRoute } from "./routes";
 
 type BrowserChannel = "msedge" | "chrome";
@@ -232,6 +232,47 @@ async function waitForRoute(page: Page, route: RouteCase): Promise<DataSurfaceSt
   return state;
 }
 
+async function scrollCheckViewportTableIntoContent(page: Page): Promise<void> {
+  const target = await page.evaluate(() => {
+    const scrollArea = Array.from(document.querySelectorAll<HTMLElement>(".si-table-scroll")).find((element) => {
+      const table = element.closest<HTMLElement>(".si-data-table");
+      if (!table?.classList.contains("is-fill") && !element.closest(".si-table-region")) return false;
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const table = scrollArea?.closest<HTMLElement>(".si-data-table");
+    const targetElement = table ?? scrollArea?.closest<HTMLElement>(".si-table-region");
+    const content = targetElement?.closest<HTMLElement>(".si-content");
+    if (!targetElement || !content) return null;
+    const overflowY = getComputedStyle(content).overflowY;
+    if (overflowY !== "auto" && overflowY !== "scroll") return null;
+
+    const targetRect = targetElement.getBoundingClientRect();
+    const viewportRect = content.getBoundingClientRect();
+    const viewportTop = viewportRect.top + content.clientTop;
+    return {
+      target: { top: targetRect.top, bottom: targetRect.bottom },
+      viewport: { top: viewportTop, bottom: viewportTop + content.clientHeight },
+      scrollTop: content.scrollTop,
+    };
+  });
+  if (!target) return;
+
+  const delta = getVerticalScrollDelta(target.target, target.viewport);
+  if (delta === 0) return;
+
+  await page.evaluate((scrollTop) => {
+    const content = document.querySelector<HTMLElement>(".si-content");
+    if (content) content.scrollTop = scrollTop;
+  }, target.scrollTop + delta);
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+}
+
 async function inspectPage(page: Page): Promise<{
   heading: string | null;
   metrics: Record<string, unknown>;
@@ -429,6 +470,7 @@ async function inspectPage(page: Page): Promise<{
         horizontalOverflow,
         documentScrollWidth: documentElement.scrollWidth,
         documentClientWidth: documentElement.clientWidth,
+        contentScrollTop: document.querySelector<HTMLElement>(".si-content")?.scrollTop ?? null,
         bodyFontSize: bodyStyle.fontSize,
         bodyFontFamily: bodyStyle.fontFamily,
         bodyFirstFontIsPoppins: /poppins/i.test(firstFont),
@@ -509,6 +551,7 @@ async function main(): Promise<void> {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
           await page.goto(`${baseUrl}${mockQuery}#${route.path}`, { waitUntil: "commit", timeout: 20_000 });
           const dataSurfaceState = await waitForRoute(page, route);
+          await scrollCheckViewportTableIntoContent(page);
           const inspection = await inspectPage(page);
           heading = inspection.heading;
           metrics = { ...inspection.metrics, dataSurfaceState };

@@ -1,5 +1,17 @@
 export type DataSurfaceState = "table" | "content" | "empty" | "error" | "loading" | "missing";
 
+export interface VerticalBounds {
+  top: number;
+  bottom: number;
+}
+
+/** Scroll offset adjustment that brings a target into its existing vertical scroll viewport. */
+export function getVerticalScrollDelta(target: VerticalBounds, viewport: VerticalBounds): number {
+  if (target.top < viewport.top) return target.top - viewport.top;
+  if (target.bottom > viewport.bottom) return target.bottom - viewport.bottom;
+  return 0;
+}
+
 export interface DataSurfaceSnapshot {
   table: boolean;
   pagination: boolean;
