@@ -199,6 +199,9 @@
 ### v0.5.0 · EDM 本地情景查询
 - [x] Core + CLI：`edm-candidates` 按目录、库存、图片、SKU 标签、折扣配置与 EDM 活动台账输出稳定事实行；`edm-media-gaps` 识别缺图和不兼容图；`edm-campaign-safety` 只检查本地 SKU、库存、币种、图片、折扣与冷却期，缺失来源返回 needs_review，不发送邮件、不做 AI 排序
 
+### v0.5.0 · MCP 只读场景查询
+- [x] CLI：`siteindex mcp --project <路径>` 通过官方 MCP TypeScript SDK 提供标准 stdio；注册 SEO 页面摘要/问题候选/内链上下文、SKU 摘要/变化/家族、EDM 候选/图片缺口/活动安全检查九项只读工具，不开放台账、Job、媒体上传或其他写入工具
+
 ### v0.5.1 · 工作区迁移元数据补齐
 - [x] `workspace.importCheck` 仅在元数据缺失且有有效清单来源时，把 `workspace.version`、目录列表与 EDM 预设补入 `site.json`；保留其他配置；损坏或冲突时保持原文件并报告
 

@@ -15,6 +15,7 @@ import {
   createCoreService,
   deleteLedger,
   pathsForProject,
+  resolveProjectLayout,
   renderEdm,
   upsertLedger,
   writeRunner,
@@ -22,6 +23,7 @@ import {
   type LedgerKey,
   type LedgerName,
 } from "@siteindex/core";
+import { serveReadOnlyMcp } from "./mcp";
 import {
   CLI_BIN,
   CLI_COMMANDS,
@@ -349,7 +351,7 @@ async function firstExisting(candidates: readonly string[]): Promise<string> {
   return candidates[0] ?? process.cwd();
 }
 
-async function createRuntime(io: CliIO, browserExecutablePath?: string): Promise<Runtime> {
+async function createRuntime(io: CliIO, browserExecutablePath?: string, projectPathOverride?: string): Promise<Runtime> {
   const env = io.env ?? process.env;
   const cwd = path.resolve(io.cwd ?? process.cwd());
   const settings = io.settings ? { ...await readRuntimeSettings(env), ...io.settings } : await readRuntimeSettings(env);
@@ -365,14 +367,14 @@ async function createRuntime(io: CliIO, browserExecutablePath?: string): Promise
     path.join(moduleDir, "templates", "project"), path.resolve(moduleDir, "../../../templates/project"), path.resolve(cwd, "templates/project"),
   ]);
   const service = io.service ?? createCoreService({
-    resolveProject: (id) => resolveProjectPath(String(id), cwd, settings),
+    resolveProject: (id) => projectPathOverride ?? resolveProjectPath(String(id), cwd, settings),
     deviceId, deviceName, cacheDir, templateDir, browserExecutablePath,
   });
   return { io, settings, cwd, env, cacheDir, deviceId, deviceName, skillsDir, service };
 }
 
 function outputHelp(): string {
-  return "用法: " + CLI_BIN + " <命令> [参数]\n命令: " + CLI_COMMANDS.filter((command) => command !== "folders").join(", ")
+  return "用法: " + CLI_BIN + " <命令> [参数]\n命令: " + [...CLI_COMMANDS.filter((command) => command !== "folders"), "mcp"].join(", ")
     + "\n运行 design / index-check 时使用 --browser <Chrome/Edge 可执行文件路径>。";
 }
 
@@ -853,16 +855,36 @@ function asExitCode(value: number): ExitCode {
   return Object.values(EXIT).some((code) => code === value) ? value as ExitCode : EXIT.SOURCE_FAILED;
 }
 
+async function executeMcp(parsed: ParsedArgs, io: CliIO): Promise<number> {
+  if (parsed.json) throw new CliError("BAD_ARGS", "MCP 使用 stdout 传输协议，不能与 --json 同时使用。");
+  if (parsed.positionals.length !== 1) throw new CliError("BAD_ARGS", "用法: siteindex mcp --project <路径>");
+  const unexpected = [...parsed.options.keys()].find((key) => key !== "project");
+  if (unexpected) throw new CliError("BAD_ARGS", `mcp 不支持 --${unexpected}。`);
+  const projectValues = parsed.options.get("project") ?? [];
+  if (projectValues.length !== 1 || typeof projectValues[0] !== "string" || !projectValues[0].trim()) {
+    throw new CliError("BAD_ARGS", "MCP 必须且只能提供 --project <路径>。");
+  }
+  const cwd = path.resolve(io.cwd ?? process.cwd());
+  const projectPath = path.resolve(cwd, projectValues[0]);
+  await resolveProjectLayout(projectPath);
+  const runtime = await createRuntime(io, undefined, projectPath);
+  serveReadOnlyMcp(runtime.service, projectId("mcp-selected-project"));
+  return EXIT.OK;
+}
+
 export async function main(argv: string[], io: CliIO): Promise<number> {
-  let json = argv.includes("--json");
+  const rawMcpInvocation = argv[0] === "mcp" || argv[0] === "--json" && argv[1] === "mcp";
+  let json = rawMcpInvocation ? false : argv.includes("--json");
   try {
     const parsed = parseArgs(argv);
-    json = parsed.json;
+    const isMcp = parsed.positionals[0] === "mcp";
+    json = isMcp ? false : parsed.json;
     if (parsed.help || !parsed.positionals.length) {
       const help = outputHelp();
       emitOutcome(io, json, success(help, help));
       return EXIT.OK;
     }
+    if (isMcp) return await executeMcp(parsed, io);
     const runtime = await createRuntime(io, option(parsed.options, "browser"));
     const outcome = await execute(runtime, parsed);
     emitOutcome(io, json, outcome);
