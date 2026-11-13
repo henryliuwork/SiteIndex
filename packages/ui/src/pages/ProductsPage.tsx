@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, Image as ImageIcon, Plus, Settings2, Tag, Trash2, X } from "lucide-react";
+import { ExternalLink, Image as ImageIcon, Plus, Settings2, Tag, Trash2, TrendingUp, X } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, SkuRecord, StockStatus } from "@siteindex/shared";
+import type { HistoryRange, ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, SkuRecord, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, FilterPill, Input, Notice, ProjectHeader, ProjectTabPanel, Select, StatusCells, stockTone, useToast } from "../components";
+import { CategoryPanel, requestInventorySummary, TrendChart } from "./InventoryPage";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 
 const initialQuery: ListQuery<ProductFilters> = { page: 1, pageSize: 100, filters: {} };
@@ -185,6 +186,11 @@ export function ProductsPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<ListQuery<ProductFilters>>(initialQuery);
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [historyRange, setHistoryRange] = useState<HistoryRange>(30);
+  const [trendSelection, setTrendSelection] = useState<{ projectId: string; categories: string[] } | null>(null);
+  const [showDefaultCategories, setShowDefaultCategories] = useState<boolean | null>(null);
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false);
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
   const [newTag, setNewTag] = useState("");
@@ -195,21 +201,28 @@ export function ProductsPage() {
   const listQuery = useQuery({ queryKey: ["products", id, query], queryFn: () => api.products.list(id, query), placeholderData: (previous) => previous });
   const tagsQuery = useQuery({ queryKey: ["product-tags", id], queryFn: () => api.products.listTags(id) });
   const detailQuery = useQuery({ queryKey: ["product", id, selectedHandle], queryFn: () => api.products.get(id, selectedHandle ?? ""), enabled: Boolean(selectedHandle) });
+  const inventorySummaryQuery = useQuery({ queryKey: ["inventory-summary", id, historyRange], queryFn: () => requestInventorySummary(id, historyRange), enabled: inventoryOpen });
   const columns = useMemo(productColumns, []);
   const stock = query.filters?.stock ?? "all";
   const tag = query.filters?.tag ?? "all";
+  const category = query.filters?.category;
   const project = projectQuery.data?.summary;
+  const watchedCategories = projectQuery.data?.config.categories.watched ?? [];
+  const showDefaultCategoryRates = showDefaultCategories ?? watchedCategories.length === 0;
+  const selectedTrendCategories = trendSelection?.projectId === id ? trendSelection.categories : null;
+  const inventorySummary = inventorySummaryQuery.data;
   const skuGrouping = projectQuery.data?.config.sku_grouping;
   const groupingEnabled = skuGrouping?.enabled === true;
   const groupingRule: SkuGroupingRule = skuGrouping?.rule ?? { type: "separator", value: "-" };
   const detail = detailQuery.data;
 
   useEffect(() => {
-    setQuery(initialQuery); setSelectedHandle(null); setTagDialogOpen(false); setGroupingDrawerOpen(false); setNewTag(""); setDeleteTag(null);
+    setQuery(initialQuery); setSelectedHandle(null); setInventoryOpen(false); setHistoryRange(30); setTrendSelection(null); setShowDefaultCategories(null); setCategoriesExpanded(false); setTagDialogOpen(false); setGroupingDrawerOpen(false); setNewTag(""); setDeleteTag(null);
   }, [id]);
 
   const onStockChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, stock: !value || value === "all" ? undefined : value as ProductFilters["stock"] } }));
   const onTagChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, tag: !value || value === "all" ? undefined : value } }));
+  const onCategoryChange = (value: string | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, category: value || undefined } }));
   const onParentOnlyChange = (checked: boolean) => {
     if (!groupingEnabled) {
       if (checked) setGroupingDrawerOpen(true);
@@ -225,6 +238,10 @@ export function ProductsPage() {
   const openGroupingSettings = () => {
     setGroupingDrawerOpen(false);
     navigate("/p/" + id + "/settings/config?section=sku-grouping");
+  };
+  const openCategorySettings = () => {
+    setInventoryOpen(false);
+    navigate("/p/" + id + "/settings/config?section=watched-categories");
   };
 
   const exportCsv = async () => {
@@ -275,7 +292,7 @@ export function ProductsPage() {
       project={project}
       activeTab="products"
       hasTabPanel
-      actions={<Button variant="primary" onClick={() => void exportCsv()}>导出 CSV</Button>}
+      actions={<><Button variant="primary" onClick={() => void exportCsv()}>导出 CSV</Button><Button icon={<TrendingUp size={14} />} onClick={() => setInventoryOpen(true)}>趋势与分类在线率</Button></>}
       overflow={[{ label: "SKU 父子规则设置", onSelect: openGroupingSettings, icon: <Settings2 size={14} /> }]}
     />
     <ProjectTabPanel projectId={project.id} tab="products">
@@ -284,6 +301,7 @@ export function ProductsPage() {
         <span className="si-products-filter-label">库存</span>{stockOptions.map((option) => <FilterPill key={option.value} currentValue={stock} value={option.value} onValueChange={onStockChange}>{option.label}</FilterPill>)}
         <span className="si-products-filter-label is-separated">标签</span><FilterPill currentValue={tag} value="all" onValueChange={onTagChange}>全部</FilterPill>
         {(tagsQuery.data ?? []).map((item) => <FilterPill key={item.tag} currentValue={tag} value={item.tag} onValueChange={onTagChange}>{item.tag}</FilterPill>)}
+        {category && <><span className="si-products-filter-label is-separated">分类</span><FilterPill currentValue={category} value={category} onValueChange={() => onCategoryChange(undefined)}>{category}</FilterPill></>}
       </FilterBar>
       <label className="si-products-parent-toggle"><input type="checkbox" aria-label="仅展示父 SKU" checked={Boolean(query.filters?.parent_only && groupingEnabled)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>
       <Button size="small" icon={<Tag size={14} />} onClick={() => setTagDialogOpen(true)}>标签管理</Button>
@@ -321,6 +339,12 @@ export function ProductsPage() {
     <Drawer open={groupingDrawerOpen} onOpenChange={setGroupingDrawerOpen} title="配置父子 SKU 规则" description="仅当项目启用分组后，产品列表才会筛选父 SKU。预览由 Core 计算。" footer={<div className="si-products-drawer-actions"><Button onClick={() => setGroupingDrawerOpen(false)}>关闭</Button><Button variant="primary" onClick={openGroupingSettings}>前往项目设置</Button></div>}>
       <Notice tone="warn" title="当前未启用父子 SKU 分组">“仅展示父 SKU”暂时不会改变产品列表。先在项目设置中启用规则，再返回这里筛选。</Notice>
       <ProductGroupingPreview projectId={id} rule={groupingRule} enabled={groupingDrawerOpen} />
+    </Drawer>
+    <Drawer open={inventoryOpen} onOpenChange={setInventoryOpen} title="库存趋势与分类在线率" description="趋势使用 Core 返回的真实业务日期；分类数据与库存页共用同一接口。" width="wide">
+      {inventorySummaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : inventorySummaryQuery.isError || !inventorySummary ? <ApiErrorNotice label="库存概览加载失败。" error={inventorySummaryQuery.error} onRetry={() => void inventorySummaryQuery.refetch()} /> : <div className="si-inventory-overview-grid">
+        <TrendChart summary={inventorySummary} range={historyRange} onRangeChange={setHistoryRange} selectedCategories={selectedTrendCategories} onSelectedCategoriesChange={(categories) => setTrendSelection({ projectId: id, categories })} />
+        <CategoryPanel summary={inventorySummary} project={project} watchedCategories={watchedCategories} showDefaultCategories={showDefaultCategoryRates} onShowDefaultCategories={setShowDefaultCategories} expanded={categoriesExpanded} onToggleExpanded={() => setCategoriesExpanded((value) => !value)} onManage={openCategorySettings} onSelectCategory={(slug) => { onCategoryChange(slug); setInventoryOpen(false); }} />
+      </div>}
     </Drawer>
     </ProjectTabPanel>
   </div>;

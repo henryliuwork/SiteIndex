@@ -105,6 +105,7 @@ async function renderProductsPage(options: {
   if (options.detail) mockApi.products.get = vi.fn(async () => options.detail!);
   vi.doMock("../api", () => ({
     api: mockApi,
+    isMockApi: true,
     apiErrorMessage: (_error: unknown, fallback: string) => fallback,
   }));
   if (options.simulateDelayedPageSizeRestore) {
@@ -151,6 +152,28 @@ describe("ProductsPage 页面操作区", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
     expect(await screen.findByRole("menuitem", { name: "SKU 父子规则设置" })).toBeTruthy();
+  });
+
+  it("在产品页打开库存趋势和分类在线率，并可按分类筛选产品", async () => {
+    const mockApi = await renderProductsPage();
+    const listSpy = vi.spyOn(mockApi.products, "list");
+    const summarySpy = vi.spyOn(mockApi.inventory, "summary");
+
+    fireEvent.click(await screen.findByRole("button", { name: "趋势与分类在线率" }));
+
+    const drawer = await screen.findByRole("dialog");
+    expect(await within(drawer).findByRole("heading", { name: /分类在线率趋势/ })).toBeTruthy();
+    expect(within(drawer).getByRole("heading", { name: "分类在线率" })).toBeTruthy();
+    await waitFor(() => expect(summarySpy).toHaveBeenCalledWith("demo", 30));
+
+    const categoryButton = drawer.querySelector<HTMLButtonElement>(".si-category-rate");
+    expect(categoryButton).not.toBeNull();
+    fireEvent.click(categoryButton!);
+
+    await waitFor(() => expect(listSpy).toHaveBeenLastCalledWith("demo", expect.objectContaining({
+      filters: expect.objectContaining({ category: expect.any(String) }),
+    })));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

@@ -35,7 +35,7 @@ function businessDateLabel(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(new Date(value + "T00:00:00Z"));
 }
 
-function requestInventorySummary(id: string, range: HistoryRange): Promise<InventorySummary> {
+export function requestInventorySummary(id: string, range: HistoryRange): Promise<InventorySummary> {
   if (!isMockApi) {
     if (range !== 30) throw new Error("当前桌面接口仅支持 30 天范围，其他范围将在接口更新后开放。");
     return api.inventory.summary(id, 30);
@@ -66,7 +66,7 @@ function categorySourceLabel(summary: InventorySummary, project: ProjectSummary 
   return "URL 规则";
 }
 
-const TrendChart = memo(function TrendChart({ summary, range, onRangeChange, selectedCategories, onSelectedCategoriesChange }: {
+export const TrendChart = memo(function TrendChart({ summary, range, onRangeChange, selectedCategories, onSelectedCategoriesChange }: {
   summary: InventorySummary;
   range: HistoryRange;
   onRangeChange: (range: HistoryRange) => void;
@@ -131,7 +131,7 @@ const TrendChart = memo(function TrendChart({ summary, range, onRangeChange, sel
   );
 });
 
-const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCategories, showDefaultCategories, onShowDefaultCategories, expanded, onToggleExpanded, onManage, onSelectCategory }: {
+export const CategoryPanel = memo(function CategoryPanel({ summary, project, watchedCategories, showDefaultCategories, onShowDefaultCategories, expanded, onToggleExpanded, onManage, onSelectCategory }: {
   summary: InventorySummary;
   project: ProjectSummary | undefined;
   watchedCategories: WatchedCategory[];
