@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import type { SiteIndexApi } from "@siteindex/shared";
+import type { JobResult, SiteIndexApi } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 const pendingWizardHandlers = [
   "workspace.check",
   "workspace.create",
 ];
+let removeTestFinishedListener: (() => void) | undefined;
 
 function mockWorkspaceCapabilities(pendingHandlers: readonly string[]) {
   vi.doMock("./workspace-capabilities", async () => {
@@ -24,6 +25,8 @@ function mockWorkspaceCapabilities(pendingHandlers: readonly string[]) {
 
 afterEach(() => {
   cleanup();
+  removeTestFinishedListener?.();
+  removeTestFinishedListener = undefined;
   vi.doUnmock("../api");
   vi.doUnmock("./workspace-capabilities");
   vi.resetModules();
@@ -98,6 +101,10 @@ describe("NewProjectWizardPage workspace step", () => {
   it("creates a project with no feed when the user chooses to configure it later", async () => {
     const mockApi = createMockApi();
     mockApi.workspace = undefined;
+    const initResults: JobResult[] = [];
+    removeTestFinishedListener = mockApi.jobs.onFinished((result) => {
+      if (result.job === "init") initResults.push(result);
+    });
     const createProject = vi.spyOn(mockApi.projects, "create");
     const inspectFeed = vi.spyOn(mockApi.projects, "inspectFeed");
     vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
@@ -124,7 +131,8 @@ describe("NewProjectWizardPage workspace step", () => {
     fireEvent.click(nextToSource);
     fireEvent.click(await screen.findByRole("button", { name: "跳过 Feed，稍后配置" }));
 
-    expect(await screen.findByText("创建项目后可在项目设置补充。未配置 Feed 时，首次每日同步可能失败。")).toBeTruthy();
+    const feedSkippedNotice = "创建项目后可在项目设置补充。未配置 Feed 时，首次商品同步会跳过；配置 Feed 后可运行每日同步。";
+    expect(await screen.findByText(feedSkippedNotice)).toBeTruthy();
     expect(screen.getByTestId("current-route").textContent).toBe("/new/brand");
     await waitFor(() => {
       expect((screen.getByLabelText("品牌名") as HTMLInputElement).value).toBe("Kingsyard");
@@ -135,9 +143,25 @@ describe("NewProjectWizardPage workspace step", () => {
     await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({ feed_urls: [] })));
     expect(inspectFeed).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/new/done"));
-    expect(await screen.findByText("创建项目后可在项目设置补充。首次每日同步可能失败，完成页会显示每一步的实际结果。")).toBeTruthy();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "创建完成，但有步骤失败", level: 1 })).toBeTruthy(), { timeout: 10_000 });
-    expect(screen.getByText("首次每日同步失败：尚未配置 GMC Feed。")).toBeTruthy();
+    expect(await screen.findByText(feedSkippedNotice + "完成页会显示每一步的实际结果。")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "创建完成，部分步骤已跳过", level: 1 })).toBeTruthy(), { timeout: 10_000 });
+    const initResult = initResults.at(-1);
+    expect(initResult?.status).toBe("ok");
+    expect(initResult?.exitCode).toBe(0);
+    expect(initResult?.errors ?? []).toEqual([]);
+    expect(initResult?.steps?.find(({ key }) => key === "daily")).toEqual({
+      key: "daily",
+      status: "skipped",
+      message: "未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。",
+    });
+    const dailyStep = screen.getByText("首次每日同步").closest(".si-wizard-progress-row") as HTMLElement | null;
+    expect(dailyStep).toBeTruthy();
+    expect(dailyStep?.classList.contains("is-skipped")).toBe(true);
+    expect(within(dailyStep!).getByText("已跳过")).toBeTruthy();
+    const dailyReason = within(dailyStep!).getByText("未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。");
+    expect(dailyReason).toBeTruthy();
+    expect(dailyReason.getAttribute("role")).toBeNull();
+    expect(screen.queryByText(/首次每日同步可能失败|首次每日同步失败：尚未配置 GMC Feed/)).toBeNull();
   }, 30_000);
 
   it("keeps the workspace step hidden when the optional API is absent", async () => {
