@@ -60,7 +60,7 @@ describe("GSC Search Analytics local sync", () => {
     expect(mock.requests[1]?.dimensions).toEqual(["date", "page", "query"]);
     date = "2026-11-11";
     const second = await syncSearchAnalytics({ mode: "incremental" }, options);
-    expect(second.metadata.requested_range).toEqual({ start_date: "2026-08-13", end_date: "2026-11-11" });
+    expect(second.metadata.requested_range).toEqual({ start_date: "2026-11-08", end_date: "2026-11-11" });
     const stored = JSON.parse(await readFile(historyPath, "utf8")) as { rows: Array<{ date: string; impressions: number; ctr: number }> };
     expect(stored.rows.map((row) => row.date)).toEqual(["2026-11-10", "2026-11-11"]);
     expect(stored.rows[0]).toMatchObject({ impressions: 20, ctr: 0.15, collected_at: today.toISOString() });
@@ -73,20 +73,37 @@ describe("GSC Search Analytics local sync", () => {
     await writeFile(historyPath, JSON.stringify({ version: 1, rows: [row("2026-11-08")], pending_dates: [] }));
     let first = true;
     const mock = await serverFor((body) => {
-      const dates = ["2026-11-09", "2026-11-10", "2026-11-11"].filter((date) => date >= body.startDate && date <= body.endDate);
+      const dates = ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"].filter((date) => date >= body.startDate && date <= body.endDate);
       return { data: { rows: body.dimensions.length === 1
         ? dates.map((date) => ({ keys: [date] }))
-        : dates.filter((date) => !first || date !== "2026-11-10").map((date) => ({ keys: [date, "https://store.example.test/a", "demo"], clicks: 1, impressions: 3, ctr: 0.333, position: 2 })) } };
+        : dates.filter((date) => !first || date !== "2026-11-09").map((date) => ({ keys: [date, "https://store.example.test/a", "demo"], clicks: 1, impressions: 3, ctr: 0.333, position: 2 })) } };
     });
     const options = { historyPath, property, accessToken: "synthetic-token", now: today, apiBaseUrl: mock.apiBaseUrl };
     const partial = await syncSearchAnalytics({ mode: "incremental" }, options);
-    expect(partial.metadata.missing_ranges).toContainEqual({ start_date: "2026-11-10", end_date: "2026-11-10", reason: "not_returned" });
+    expect(partial.metadata.missing_ranges).toContainEqual({ start_date: "2026-11-09", end_date: "2026-11-09", reason: "not_returned" });
     first = false;
     const recovered = await syncSearchAnalytics({ mode: "incremental" }, options);
-    expect(recovered.metadata.requested_range?.start_date).toBe("2026-11-10");
+    expect(recovered.metadata.requested_range?.start_date).toBe("2026-11-09");
     const stored = JSON.parse(await readFile(historyPath, "utf8")) as { rows: Array<{ date: string }>; pending_dates: unknown[] };
-    expect(stored.rows.map((item) => item.date)).toEqual(["2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"]);
+    expect(stored.rows.map((item) => item.date)).toEqual(["2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"]);
     expect(stored.pending_dates).toEqual([]);
+  });
+
+  it("advances past naturally empty days while retaining a bounded recent overlap", async () => {
+    const historyPath = await fixture("legacy");
+    const row = { property, date: "2026-11-08", page: "https://store.example.test/a", query: "demo", clicks: 1, impressions: 3, ctr: 0.333, position: 2, collected_at: today.toISOString() };
+    await writeFile(historyPath, JSON.stringify({ version: 1, rows: [row], pending_dates: [] }));
+    let dates = ["2026-11-09", "2026-11-11"];
+    const mock = await serverFor((body) => ({ data: { rows: dates.filter((date) => date >= body.startDate && date <= body.endDate).map((date) => body.dimensions.length === 1
+      ? { keys: [date] } : { keys: [date, row.page, row.query], clicks: 1, impressions: 3, ctr: 0.333, position: 2 }) } }));
+    const options = { historyPath, property, accessToken: "synthetic-token", now: today, apiBaseUrl: mock.apiBaseUrl };
+    const first = await syncSearchAnalytics({ mode: "incremental" }, options);
+    expect(first.metadata.missing_ranges).toContainEqual({ start_date: "2026-11-10", end_date: "2026-11-10", reason: "no_rows" });
+    const stored = JSON.parse(await readFile(historyPath, "utf8")) as { pending_dates: unknown[] };
+    expect(stored.pending_dates).toEqual([]);
+    dates = ["2026-11-09", "2026-11-11", "2026-11-12"];
+    const second = await syncSearchAnalytics({ mode: "incremental" }, options);
+    expect(second.metadata.requested_range).toEqual({ start_date: "2026-11-09", end_date: "2026-11-12" });
   });
 
   it("keeps existing bytes unchanged when dates or detailed rows are empty", async () => {

@@ -103,7 +103,7 @@ export async function syncSearchAnalytics(input: GscSyncInput, options: GscAnaly
   const lastDate = existingDates.at(-1);
   const pendingDates = history.pending_dates?.filter((entry) => entry.property === property).flatMap((entry) => entry.dates) ?? [];
   // Older history files did not record gaps; rescan their last 90 days once.
-  const nextDate = lastDate && history.pending_dates === undefined ? shift(lastDate, -89) : lastDate && shift(lastDate, 1);
+  const nextDate = lastDate && history.pending_dates === undefined ? shift(lastDate, -89) : lastDate && shift(lastDate, -2);
   const availabilityStart = input.mode === "incremental" && nextDate
     ? [nextDate, ...pendingDates].sort()[0]! : shift(today, -119);
   if (availabilityStart > today) return { state: "complete", mode: input.mode, records_received: 0, records_written: 0, history_effect: "merged", metadata: { ...metadata, data_through: lastDate ?? null, quality: "complete" } };
@@ -175,7 +175,7 @@ export async function syncSearchAnalytics(input: GscSyncInput, options: GscAnaly
     for (const row of received) rows.set(key(row), row);
     const merged = [...rows.values()].sort((a, b) => compareKeys(key(a), key(b)));
     const remaining = pendingDates.filter((date) => date < start || date > through);
-    for (const gap of metadata.missing_ranges) {
+    for (const gap of metadata.missing_ranges.filter((item) => item.reason === "not_returned")) {
       for (let date = gap.start_date; date <= gap.end_date; date = shift(date, 1)) remaining.push(date);
     }
     const pending = (history.pending_dates ?? []).filter((entry) => entry.property !== property);
