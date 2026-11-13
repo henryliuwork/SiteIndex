@@ -80,7 +80,21 @@ function mockService() {
       validate: vi.fn(async () => report),
       repair: vi.fn(async (_id: string, file: string) => ({ path: file, status: "ok" })),
     },
-    products: { list: vi.fn(async () => queryResult) },
+    products: {
+      list: vi.fn(async () => queryResult),
+      skuBrief: vi.fn(async (_id: string, _sku: string) => ({
+        data: null,
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
+      })),
+      changes: vi.fn(async (_id: string, _sku?: string) => ({
+        data: [],
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
+      })),
+      groupFamily: vi.fn(async (_id: string, _sku: string) => ({
+        data: null,
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
+      })),
+    },
     inventory: { listSkus: vi.fn(async () => queryResult) },
     seo: {
       listPages: vi.fn(async () => queryResult),
@@ -270,6 +284,37 @@ describe("siteindex CLI", () => {
 
     Reflect.deleteProperty(methods.seo, "pageBrief");
     expect(await main(["query", "kingsyard", "seo-page-brief", "https://shop.example.test/synthetic-page", "--json"], t.io)).toBe(EXIT.SOURCE_FAILED);
+    expect(parseEnvelope(t.stdout.at(-1)!).error?.code).toBe("CORE_METHOD_UNAVAILABLE");
+  });
+
+  it("routes product scenario queries with positional and --sku arguments", async () => {
+    const { service, methods } = mockService();
+    const t = collect(service);
+
+    expect(await main(["query", "kingsyard", "product-sku-brief", "DEMO-001", "--json"], t.io)).toBe(EXIT.OK);
+    expect(await main(["query", "kingsyard", "product-group-family", "--sku", "DEMO-002", "--json"], t.io)).toBe(EXIT.OK);
+    expect(await main(["query", "kingsyard", "product-changes", "--json"], t.io)).toBe(EXIT.OK);
+    expect(await main(["query", "kingsyard", "product-changes", "DEMO-003", "--json"], t.io)).toBe(EXIT.OK);
+    expect(await main(["query", "kingsyard", "product-changes", "--sku", "DEMO-004", "--json"], t.io)).toBe(EXIT.OK);
+
+    expect(methods.products.skuBrief).toHaveBeenCalledWith("kingsyard", "DEMO-001");
+    expect(methods.products.groupFamily).toHaveBeenCalledWith("kingsyard", "DEMO-002");
+    expect(methods.products.changes).toHaveBeenNthCalledWith(1, "kingsyard");
+    expect(methods.products.changes).toHaveBeenNthCalledWith(2, "kingsyard", "DEMO-003");
+    expect(methods.products.changes).toHaveBeenNthCalledWith(3, "kingsyard", "DEMO-004");
+    expect(t.stdout).toHaveLength(5);
+    expect(t.stdout.every((line) => parseEnvelope(line).ok)).toBe(true);
+  });
+
+  it("requires SKU for product-specific queries and reports unavailable optional methods", async () => {
+    const { service, methods } = mockService();
+    const t = collect(service);
+    expect(await main(["query", "kingsyard", "product-sku-brief", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+    expect(await main(["query", "kingsyard", "product-group-family", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+    expect(methods.products.skuBrief).not.toHaveBeenCalled();
+
+    Reflect.deleteProperty(methods.products, "groupFamily");
+    expect(await main(["query", "kingsyard", "product-group-family", "DEMO-005", "--json"], t.io)).toBe(EXIT.SOURCE_FAILED);
     expect(parseEnvelope(t.stdout.at(-1)!).error?.code).toBe("CORE_METHOD_UNAVAILABLE");
   });
 

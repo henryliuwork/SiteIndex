@@ -194,6 +194,7 @@
 ### v0.5.0 · SEO 场景只读查询
 - [x] 契约：可选 `seo.pageBrief` / `seo.issueCandidates` / `seo.internalLinkContext`，并加入 CLI 查询目标
 - [x] Core + CLI：只读复用 SEO 页面、问题、链接与 weekly 运行记录；metadata 标明来源、最近一次成功 weekly 的采集时间、缺失、超过 14 天的过期状态与异常
+- [x] Core + CLI：只读支持 `products.skuBrief`、`products.changes`（SKU 或项目级）、`products.groupFamily`，复用目录、库存视图、事件、分组配置与 daily 运行记录；如实返回来源、采集时间、缺失和异常
 
 ### v0.5.1 · 工作区迁移元数据补齐
 - [x] `workspace.importCheck` 仅在元数据缺失且有有效清单来源时，把 `workspace.version`、目录列表与 EDM 预设补入 `site.json`；保留其他配置；损坏或冲突时保持原文件并报告

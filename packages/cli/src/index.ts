@@ -448,6 +448,37 @@ function deleteKeys(ledger: LedgerName, raw: readonly string[]): LedgerKey[] {
 
 async function query(runtime: Runtime, id: ProjectId, target: string, options: ParsedArgs["options"], extra: readonly string[]): Promise<unknown> {
   if (!(QUERY_TARGETS as readonly string[]).includes(target)) throw new CliError("BAD_ARGS", "不支持的 query 目标: " + target);
+  if (target === "product-sku-brief" || target === "product-changes" || target === "product-group-family") {
+    if ([...options.keys()].some((key) => key !== "sku")) {
+      throw new CliError("BAD_ARGS", "产品场景查询只接受 --sku 参数。", EXIT.BAD_ARGS);
+    }
+    const skuValues = options.get("sku") ?? [];
+    const optionSku = skuValues[0];
+    if (skuValues.length > 1 || (optionSku !== undefined && typeof optionSku !== "string")) {
+      throw new CliError("BAD_ARGS", "--sku 只能指定一次并需要一个 SKU。", EXIT.BAD_ARGS);
+    }
+    if (extra.length > 1 || (skuValues.length > 0 && extra.length > 0)) {
+      throw new CliError("BAD_ARGS", "产品场景查询最多接受一个 SKU。", EXIT.BAD_ARGS);
+    }
+    const sku = typeof optionSku === "string" ? optionSku : extra[0];
+    if (sku !== undefined && !sku.trim()) throw new CliError("BAD_ARGS", "SKU 不能为空。", EXIT.BAD_ARGS);
+    if (target !== "product-changes" && !sku) {
+      throw new CliError("BAD_ARGS", "用法: query <p> " + target + " <sku> [--json]");
+    }
+    if (target === "product-sku-brief") {
+      const skuBrief = runtime.service.products.skuBrief;
+      if (!skuBrief) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 SKU 摘要查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+      return await skuBrief(id, sku ?? "");
+    }
+    if (target === "product-group-family") {
+      const groupFamily = runtime.service.products.groupFamily;
+      if (!groupFamily) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 SKU 家族查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+      return await groupFamily(id, sku ?? "");
+    }
+    const changes = runtime.service.products.changes;
+    if (!changes) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持商品变化记录查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+    return sku === undefined ? await changes(id) : await changes(id, sku);
+  }
   if (target === "seo-page-brief" || target === "seo-internal-link-context") {
     const optionUrl = option(options, "url");
     if (extra.length > 1 || (optionUrl !== undefined && extra.length > 0)) {

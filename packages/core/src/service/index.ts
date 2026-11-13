@@ -104,6 +104,7 @@ import { checkWorkspaceImport } from "../workspace/import-check";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
 import { buildSeoIssueCounts, buildSeoRuleSettings } from "../seo/rules";
+import { readProductChanges, readProductGroupFamily, readProductSkuBrief } from "../products/scenario-queries";
 import { readSeoInternalLinkContext, readSeoIssueCandidates, readSeoPageBrief } from "../seo/scenario-queries";
 import { runMonthly } from "../jobs/monthly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
@@ -158,7 +159,11 @@ export interface CoreService {
   overview: SiteIndexApi["overview"];
   sku: NonNullable<SiteIndexApi["sku"]>;
   inventory: Pick<SiteIndexApi["inventory"], "summary" | "listSkus" | "dailyReport">;
-  products: Pick<SiteIndexApi["products"], "list" | "get" | "setTags" | "listTags" | "createTag" | "deleteTag">;
+  products: Pick<SiteIndexApi["products"], "list" | "get" | "setTags" | "listTags" | "createTag" | "deleteTag"> & {
+    skuBrief: NonNullable<SiteIndexApi["products"]["skuBrief"]>;
+    changes: NonNullable<SiteIndexApi["products"]["changes"]>;
+    groupFamily: NonNullable<SiteIndexApi["products"]["groupFamily"]>;
+  };
   seo: Omit<SiteIndexApi["seo"], "checkIndex" | "setIssueStatus" | "setRuleIgnored" | "getRuleSettings"> & {
     setIssueStatus: NonNullable<SiteIndexApi["seo"]["setIssueStatus"]>;
     setRuleIgnored: NonNullable<SiteIndexApi["seo"]["setRuleIgnored"]>;
@@ -2196,6 +2201,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         } : null,
       };
     },
+    skuBrief: async (id, sku) => readProductSkuBrief(resolve(id), sku),
+    changes: async (id, sku) => readProductChanges(resolve(id), sku),
+    groupFamily: async (id, sku) => readProductGroupFamily(resolve(id), sku),
     setTags: async (id, handle, inputTags) => {
       const projectPath = resolve(id);
       return withLock(projectPath, async () => {
