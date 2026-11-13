@@ -765,7 +765,7 @@ describe("createCoreService initial namespaces", () => {
     const childHandle = skuRows.find((row) => row.sku === "DEMO003C01")!.handle;
     for (const handle of [parentHandle, childHandle]) {
       const details = await api.products.get("fixture", handle);
-      expect(details.variants.map((row) => row.sku)).toEqual(["DEMO003C", "DEMO003C01", "DEMO003C02"]);
+      expect(details.variants?.map((row) => row.sku)).toEqual(["DEMO003C", "DEMO003C01", "DEMO003C02"]);
     }
     const feedInventory = await api.inventory.listSkus("fixture", { page: 1, pageSize: 0, filters: { parent_only: true } });
     const parentStock = feedStocks.find((row) => row.sku === "DEMO003C")!;
