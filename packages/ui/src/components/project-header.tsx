@@ -8,6 +8,7 @@ import "./project-header.css";
 
 export const PROJECT_TABS = [
   { value: "overview", label: "概览" },
+  { value: "todos", label: "待办" },
   { value: "products", label: "产品管理" },
   { value: "seo", label: "SEO" },
   { value: "content", label: "内容" },

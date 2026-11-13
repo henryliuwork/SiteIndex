@@ -18,6 +18,35 @@ function CurrentPath() {
 }
 
 describe("ProjectHeader compact layout", () => {
+  it("keeps the shared project navigation order and all project destinations", () => {
+    const { container } = render(<MemoryRouter initialEntries={["/p/demo-store/products"]}>
+      <ProjectHeader project={project} activeTab="products" />
+      <CurrentPath />
+    </MemoryRouter>);
+    const scoped = within(container);
+
+    expect(PROJECT_TABS.map(({ value }) => value)).toEqual([
+      "overview", "todos", "products", "seo", "content", "edm", "design", "readme", "runs", "settings",
+    ]);
+
+    const destinations = [
+      ["概览", "/p/demo-store"],
+      ["待办", "/p/demo-store/todos"],
+      ["产品管理", "/p/demo-store/products"],
+      ["SEO", "/p/demo-store/seo"],
+      ["内容", "/p/demo-store/content"],
+      ["EDM", "/p/demo-store/edm"],
+      ["设计", "/p/demo-store/design"],
+      ["README", "/p/demo-store/readme"],
+      ["运行", "/p/demo-store/runs"],
+      ["设置", "/p/demo-store/settings/config"],
+    ] as const;
+    for (const [label, path] of destinations) {
+      fireEvent.click(scoped.getByRole("tab", { name: label }));
+      expect(scoped.getByTestId("current-path").textContent).toBe(path);
+    }
+  });
+
   it("keeps identity on the first row and puts page title, metadata, and actions on the tab row", () => {
     const { container } = render(<MemoryRouter>
       <ProjectHeader
@@ -76,7 +105,7 @@ describe("ProjectHeader compact layout", () => {
       return new DOMRect(0, 0, 0, 0);
     });
 
-    const { container } = render(<MemoryRouter><ProjectHeader project={project} activeTab="settings" /></MemoryRouter>);
+    const { container } = render(<MemoryRouter><ProjectHeader project={project} activeTab="todos" /></MemoryRouter>);
 
     const scrollLeft = (container.querySelector(".si-tabs") as HTMLElement).scrollLeft;
     rectSpy.mockRestore();
