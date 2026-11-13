@@ -241,6 +241,41 @@ async function inspectPage(page: Page): Promise<{
     const root = document.scrollingElement ?? document.documentElement;
     const bodyStyle = getComputedStyle(document.body);
     const firstFont = bodyStyle.fontFamily.split(",")[0]?.trim().replace(/^['"]|['"]$/g, "") ?? "";
+    const poppinsFontLoaded = Array.from(document.fonts).some((font) => font.family.replace(/^['"]|['"]$/g, "") === "Poppins" && font.status === "loaded");
+    const sharedTypographyElements = Array.from(document.querySelectorAll<HTMLElement>([
+      ".si-title", ".si-nav-link", ".si-nav-caption", ".si-button", ".si-filter-pill",
+      ".si-segmented button", ".si-tabs button", ".si-chip", ".si-length-badge",
+      ".si-checkbox-row", ".si-pagination", ".si-search-input input", ".si-collapse-toggle",
+      ".si-runner", ".si-page-header *", ".si-project-header *", ".si-drawer *",
+      ".si-toast *", ".si-notice *", ".si-empty-state *", ".si-update-reminder *",
+    ].join(", "))).filter((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && Number.parseFloat(getComputedStyle(element).fontSize) < 14;
+    }).map((element) => element.innerText?.trim().slice(0, 60) || element.className.toString());
+    const clippedHeaderActions: string[] = [];
+    for (const slot of Array.from(document.querySelectorAll<HTMLElement>(".si-project-header-action-slot"))) {
+      const actions = slot.querySelector<HTMLElement>(".si-project-header-actions");
+      if (!actions) continue;
+      const viewport = actions.getBoundingClientRect();
+      for (const control of Array.from(actions.querySelectorAll<HTMLElement>("button, a[href], [role='button']"))) {
+        const rect = control.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        if (rect.left < viewport.left - 1 || rect.right > viewport.right + 1) {
+          const label = control.getAttribute("aria-label") || control.innerText.trim() || control.tagName.toLowerCase();
+          clippedHeaderActions.push(`${label} [${Math.round(rect.left)}–${Math.round(rect.right)} / ${Math.round(viewport.left)}–${Math.round(viewport.right)}]`);
+        }
+      }
+    }
+    const clippedActiveTabs: string[] = [];
+    for (const tabs of Array.from(document.querySelectorAll<HTMLElement>(".si-project-header .si-tabs"))) {
+      const activeTab = tabs.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      if (!activeTab) continue;
+      const viewport = tabs.getBoundingClientRect();
+      const rect = activeTab.getBoundingClientRect();
+      if (rect.width > 0 && (rect.left < viewport.left - 1 || rect.right > viewport.right + 1)) {
+        clippedActiveTabs.push(activeTab.innerText.trim());
+      }
+    }
     const documentElement = document.documentElement;
     const horizontalOverflow = Math.max(documentElement.scrollWidth, document.body.scrollWidth) > window.innerWidth + 1;
     const verticalOverflow = root.scrollHeight > root.clientHeight + 1;
@@ -396,7 +431,11 @@ async function inspectPage(page: Page): Promise<{
         documentClientWidth: documentElement.clientWidth,
         bodyFontSize: bodyStyle.fontSize,
         bodyFontFamily: bodyStyle.fontFamily,
-        bodyFirstFontIsGeist: /geist/i.test(firstFont),
+        bodyFirstFontIsPoppins: /poppins/i.test(firstFont),
+        poppinsFontLoaded,
+        sharedTypographyElements,
+        clippedHeaderActions,
+        clippedActiveTabs,
         tableCount: tables.length,
         emptySurface,
         contentSurface,
@@ -479,7 +518,11 @@ async function main(): Promise<void> {
             verticalOverflow: boolean;
             horizontalOverflow: boolean;
             bodyFontSize: string;
-            bodyFirstFontIsGeist: boolean;
+            bodyFirstFontIsPoppins: boolean;
+            poppinsFontLoaded: boolean;
+            sharedTypographyElements: string[];
+            clippedHeaderActions: string[];
+            clippedActiveTabs: string[];
             tableCount: number;
             emptySurface: boolean;
             contentSurface: boolean;
@@ -510,9 +553,12 @@ async function main(): Promise<void> {
           }
           if (values.verticalOverflow) failures.push({ rule: "vertical-overflow", message: "窗口 document 有纵向滚动；内容应在应用内部滚动。" });
           if (values.horizontalOverflow) failures.push({ rule: "horizontal-overflow", message: "页面内容超出视口宽度。" });
-          if (values.bodyFontSize !== "12px" || !values.bodyFirstFontIsGeist) {
-            failures.push({ rule: "body-font", message: `正文要求 Geist 12px，实际为 ${values.bodyFontFamily ?? "unknown"} / ${values.bodyFontSize ?? "unknown"}。` });
+          if (values.bodyFontSize !== "14px" || !values.bodyFirstFontIsPoppins || !values.poppinsFontLoaded) {
+            failures.push({ rule: "body-font", message: `正文要求本地 Poppins 14px，实际为 ${values.bodyFontFamily ?? "unknown"} / ${values.bodyFontSize ?? "unknown"}，字体加载=${values.poppinsFontLoaded ?? false}。` });
           }
+          if (values.sharedTypographyElements.length) failures.push({ rule: "shared-min-font-size", message: `共享控件存在小于 14px 的文字：${values.sharedTypographyElements.join("；")}` });
+          if (values.clippedHeaderActions.length) failures.push({ rule: "project-header-actions", message: `页头操作按钮未完整显示：${values.clippedHeaderActions.join("；")}` });
+          if (values.clippedActiveTabs.length) failures.push({ rule: "project-header-tabs", message: `当前项目标签未完整显示：${values.clippedActiveTabs.join("；")}` });
           if (values.clippedCells.length) failures.push({ rule: "table-cell-clipping", message: `表格文字被裁切且没有完整文本提示：${values.clippedCells.join("；")}` });
           if (values.scheduleTableMissingStandardScroll) failures.push({ rule: "table-scroll", message: "定时任务表格尚未接入 DataTable 的内部滚动区。" });
           if (values.tableCount && values.tables.some((table) => table.overflowY !== "auto" && table.overflowY !== "scroll")) {

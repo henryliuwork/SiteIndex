@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Cloud } from "lucide-react";
 import type { ProjectSummary } from "@siteindex/shared";
@@ -71,9 +71,25 @@ export function ProjectHeader({
   hasTabPanel?: boolean;
 }) {
   const navigate = useNavigate();
+  const headerRef = useRef<HTMLDivElement>(null);
   const projectSubtitle = subtitle ?? `${project.domain} · ${platformLabels[project.platform]}`;
 
-  return <div className="si-project-header">
+  useLayoutEffect(() => {
+    const revealActiveTab = () => {
+      const tabs = headerRef.current?.querySelector<HTMLElement>(".si-tabs");
+      const activeTabElement = tabs?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      if (!tabs || !activeTabElement) return;
+      const tabsRect = tabs.getBoundingClientRect();
+      const activeRect = activeTabElement.getBoundingClientRect();
+      if (activeRect.left < tabsRect.left) tabs.scrollLeft -= tabsRect.left - activeRect.left;
+      else if (activeRect.right > tabsRect.right) tabs.scrollLeft += activeRect.right - tabsRect.right;
+    };
+
+    revealActiveTab();
+    void document.fonts?.ready.then(revealActiveTab);
+  }, [activeTab]);
+
+  return <div ref={headerRef} className="si-project-header">
     <header className="si-project-header-row">
       <div className="si-project-header-identity">
         <h1 title={project.name}>{project.name}</h1>

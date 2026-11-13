@@ -105,6 +105,13 @@
 
 ## 本机存储提醒与已识别同步目录只读提示（Issue #480 · B）
 - [x] 项目中心与新建向导说明仅支持本机存储；明确未识别不代表已验证本机，转移需用户手动复制；现有项目共享页头及项目卡片提示已识别的第三方同步目录只读。项目中心隐藏该项目的同步、配置、导入检查及提醒状态写入入口，保留只取消登记且不删文件的显式移除入口 — [PR #484](https://github.com/henryliuwork/SiteIndex/pull/484)
+
+## v0.5-W1 · 字体与共享项目页头
+- [x] 全局和共享组件改用本地 Poppins（拉丁字重）与中英文系统回退；共享正文/控件字号最低 14px。Poppins 按 SIL OFL 1.1 随 UI 打包，不增加 npm 依赖。
+- [x] ProjectHeader 在路由进入和字体加载后将活动 tab 滚入可见区；操作槽保留 420px/340px 固定宽度，缩紧按钮内边距并显示溢出滚动条；`ui:check` 检查按钮与活动 tab 不被裁切。
+- [x] 最终 mock 截图：1280×800 与 1920×1080，见 `packages/ui/screenshots/v05-w1/`；42 个路由/视口检查中 39 项通过。余下 3 项仅在 D 负责的 EDM 页（“agent 使用”单元格裁切两项、1280×800 分页条出视口一项），本 PR 未改 D 页面。
+- D 页面仍有 `font-size: 11–13px` 硬编码的文件：`content/page.css`、`runs/page.css`、`project-settings-files/page.css`、`project-settings-categories/page.css`、`project-settings-config/page.css`；需要 D 后续迁移到字号 token 才能满足全站 14px 下限。
+
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码
