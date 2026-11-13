@@ -298,7 +298,7 @@ export function ProjectSettingsConfigPage() {
         </ConfigCard>
 
         <ConfigCard id="sku-grouping" title="父子 SKU">
-          <p className="si-config-help">Feed 只提供子 SKU 时，可按规则推导父 SKU。库存状态仍按子 SKU 计算；规则只用于分组展示，不改写 Feed 中的原始 SKU。</p>
+          <p className="si-config-help">虚拟父 SKU 的库存状态按子 SKU 聚合；明确选择 Feed 父 SKU 后，使用 Feed 中该父 SKU 自身的库存记录。规则只用于分组展示，不改写 Feed 中的原始 SKU。</p>
           <label className="si-config-check si-config-grouping-switch"><input type="checkbox" checked={grouping.enabled} onChange={(event) => patch("sku_grouping", { ...grouping, enabled: event.target.checked })} /><span>启用父子 SKU 分组</span></label>
           <div className="si-config-grouping-rule">
             <div className="si-config-grouping-preset">
