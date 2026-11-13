@@ -58,6 +58,10 @@ display:flex; align-items:center; gap:10px; margin:18px 0 8px;
 height:44px; flex:1;
 }
 
+.si-wizard-url-form > .si-button {
+height:44px;
+}
+
 .si-wizard-result-line {
 display:grid; min-height:46px; grid-template-columns:22px 140px minmax(0,1fr) auto; align-items:center; gap:12px; border-top:1px solid var(--color-line-soft); color:var(--color-ink-2); font-size: var(--fs-sub-title);
 }
