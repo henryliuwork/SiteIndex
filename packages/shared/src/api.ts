@@ -40,6 +40,7 @@ import type {
 } from "./models";
 import type { ProjectPaths } from "./paths";
 import type { JobProgress, JobRequest, JobResult, SchedulableJob } from "./jobs";
+import type { ScenarioQueryResult } from "./read-model";
 
 // ---------- 通用 ----------
 
@@ -325,6 +326,21 @@ export interface SeoPageFilters {
   indexed?: "yes" | "no" | "unchecked";
 }
 
+/** Existing index records returned for one SEO page; absent information stays absent in `page`. */
+export interface SeoPageBrief {
+  page: SeoPage;
+  issues: SeoIssue[];
+  incoming_links: SeoLink[];
+  outgoing_links: SeoLink[];
+}
+
+/** A page's stored SEO links and the indexed records for their endpoints; no recommendations are inferred. */
+export interface SeoInternalLinkContext {
+  page: SeoPage;
+  incoming_links: { link: SeoLink; source_page: SeoPage | null }[];
+  outgoing_links: { link: SeoLink; target_page: SeoPage | null }[];
+}
+
 // ---------- 内容 ----------
 
 export interface ContentSummary {
@@ -560,6 +576,12 @@ export interface SiteIndexApi {
   seo: {
     summary(id: ProjectId): Promise<SeoSummary>;
     listIssues(id: ProjectId, q: ListQuery<SeoIssueFilters>): Promise<PageResult<SeoIssue>>;
+    /** Read-only indexed page context; absent page records resolve with data=null and metadata describing the gap. */
+    pageBrief?(id: ProjectId, url: string): Promise<ScenarioQueryResult<SeoPageBrief>>;
+    /** Stored open issues only, optionally narrowed to an exact indexed URL; not a generated or ranked recommendation. */
+    issueCandidates?(id: ProjectId, url?: string): Promise<ScenarioQueryResult<SeoIssue[]>>;
+    /** Read-only stored inbound/outbound link edges and indexed endpoint pages for one exact URL. */
+    internalLinkContext?(id: ProjectId, url: string): Promise<ScenarioQueryResult<SeoInternalLinkContext>>;
     /** 按 URL + 规则键批量更新问题状态；兼容旧 bridge，待 Core/IPC 接入后成为常用方法。 */
     setIssueStatus?(id: ProjectId, input: { targets: { url: string; rule: SeoIssue["rule"] }[]; status: SeoIssue["status"] }): Promise<{ updated: number }>;
     /** 整类规则忽略状态；落盘与下次 weekly 的状态继承由 Core 实现。 */

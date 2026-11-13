@@ -190,3 +190,7 @@
 
 ### v0.5.0 · W0 shared contract
 - [x] A：新增只读场景查询的 JSON 元信息 envelope，以及待办规则结果、人工状态和复核历史分离类型；旧 API 签名保持不变
+
+### v0.5.0 · SEO 场景只读查询
+- [x] 契约：可选 `seo.pageBrief` / `seo.issueCandidates` / `seo.internalLinkContext`，并加入 CLI 查询目标
+- [ ] Core + CLI：复用 SEO 页面、问题、链接与 weekly 运行记录；按 metadata 标明来源、采集时间、缺失、过期与异常

@@ -20,7 +20,11 @@ export const CLI_COMMANDS = [
 ] as const;
 export type CliCommand = (typeof CLI_COMMANDS)[number];
 
-export const QUERY_TARGETS = ["products", "sku-stock", "seo-pages", "seo-issues", "blog", "keywords", "sku-media"] as const;
+export const QUERY_TARGETS = [
+  "products", "sku-stock", "seo-pages", "seo-issues",
+  "seo-page-brief", "seo-issue-candidates", "seo-internal-link-context",
+  "blog", "keywords", "sku-media",
+] as const;
 export type QueryTarget = (typeof QUERY_TARGETS)[number];
 
 export const WRITABLE_LEDGERS = ["keywords", "sku_media", "sku_tags", "edm_campaigns", "outreach"] as const;
