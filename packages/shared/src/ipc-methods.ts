@@ -43,6 +43,9 @@ export const API_INVOKE_METHODS = [
   "sku.previewGrouping",
   "seo.summary",
   "seo.listIssues",
+  "seo.pageBrief",
+  "seo.issueCandidates",
+  "seo.internalLinkContext",
   "seo.setIssueStatus",
   "seo.setRuleIgnored",
   "seo.listPages",
@@ -109,7 +112,11 @@ export const API_EVENT_METHODS = [
   "updates.onStatus",
 ] as const;
 
-export const PENDING_HANDLERS: readonly string[] = [];
+export const PENDING_HANDLERS: readonly string[] = [
+  "seo.pageBrief",
+  "seo.issueCandidates",
+  "seo.internalLinkContext",
+];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
 
