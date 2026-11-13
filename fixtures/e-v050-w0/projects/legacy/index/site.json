@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.1",
+  "domain": "synthetic-shop.test",
+  "base_url": "https://synthetic-shop.test",
+  "platform": "other",
+  "currency": "USD",
+  "locale": "en-US",
+  "timezone": "UTC",
+  "markets": ["US"],
+  "brand": {
+    "name": "Synthetic Shop",
+    "tagline": "Fixture data only"
+  },
+  "sitemaps": ["https://synthetic-shop.test/sitemap.xml"],
+  "crawl": {
+    "adapter": "gmc_feed",
+    "feed_url": "https://synthetic-shop.test/feed.tsv",
+    "sku_field": "id",
+    "missing_as": "out_of_stock",
+    "rate_limit_ms": 200,
+    "stock_rules": {
+      "in_stock": ["in stock"],
+      "out_of_stock": ["out of stock"],
+      "preorder": ["pre-order"]
+    }
+  },
+  "categories": {
+    "mode": "feed",
+    "watched": []
+  },
+  "sku_grouping": {
+    "enabled": true,
+    "rule": {
+      "type": "regex",
+      "value": "^(.+[A-Za-z])\\d{2}[A-Za-z]{0,3}$"
+    }
+  },
+  "workspace_folders": [],
+  "schedule": {
+    "daily": {"enabled": false, "time": "02:00"},
+    "validate": {"enabled": false, "time": "03:00"},
+    "weekly": {"enabled": false, "days": [1], "time": "04:00"},
+    "readme": {"enabled": false, "time": "05:00"},
+    "monthly": {"enabled": false, "day_of_month": 1, "time": "06:00"},
+    "options": {
+      "wake_to_run": false,
+      "run_if_missed": false,
+      "notify_on_failure": false,
+      "validate_after_sync": false
+    }
+  }
+}

@@ -1,0 +1,3 @@
+{"sku":"SYN-AX01","stock_status":"in_stock","qty":8,"since":"2026-11-01","checked_at":"2026-11-13T08:00:00.000Z"}
+{"sku":"SYN-AX02","stock_status":"out_of_stock","qty":0,"since":"2026-11-12","checked_at":"2026-11-13T08:00:00.000Z"}
+{"sku":"SYN-LOOSE","stock_status":"preorder","qty":null,"since":"2026-11-08","checked_at":"2026-11-13T08:00:00.000Z"}
