@@ -111,6 +111,14 @@
   overflow-wrap: anywhere;
 }
 
+.si-design-font-fallback-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
 .si-design-type-list {
   display: grid;
 }
