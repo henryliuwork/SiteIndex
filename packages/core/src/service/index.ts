@@ -104,6 +104,7 @@ import { checkWorkspaceImport } from "../workspace/import-check";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
 import { buildSeoIssueCounts, buildSeoRuleSettings } from "../seo/rules";
+import { readSeoInternalLinkContext, readSeoIssueCandidates, readSeoPageBrief } from "../seo/scenario-queries";
 import { runMonthly } from "../jobs/monthly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
 import { launchChromium, type BrowserLauncher } from "../browser/automation";
@@ -2352,6 +2353,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         && (!query.filters?.rules?.length || query.filters.rules.includes(issue.rule)));
       return paginate(rows, query, (row) => [row.url, row.rule, row.detail, row.severity, row.status], "severity", (row) => `${row.url}\u0000${row.rule}`);
     },
+    pageBrief: async (id, url) => readSeoPageBrief(resolve(id), url),
+    issueCandidates: async (id, url) => readSeoIssueCandidates(resolve(id), url),
+    internalLinkContext: async (id, url) => readSeoInternalLinkContext(resolve(id), url),
     setIssueStatus: async (id, input): Promise<{ updated: number }> => {
       const projectPath = resolve(id);
       return withLock(projectPath, async () => {
