@@ -126,6 +126,11 @@ describe("NewProjectWizardPage workspace step", () => {
 
     expect(await screen.findByText("创建项目后可在项目设置补充。未配置 Feed 时，首次每日同步可能失败。")).toBeTruthy();
     expect(screen.getByTestId("current-route").textContent).toBe("/new/brand");
+    await waitFor(() => {
+      expect((screen.getByLabelText("品牌名") as HTMLInputElement).value).toBe("Kingsyard");
+      expect((screen.getByLabelText(/项目根目录/) as HTMLInputElement).value).toBe("D:/SiteIndex/projects");
+      expect((screen.getByLabelText("项目文件夹名") as HTMLInputElement).value).toBe("kingsyard");
+    });
     fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({ feed_urls: [] })));
     expect(inspectFeed).not.toHaveBeenCalled();

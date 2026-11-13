@@ -177,7 +177,7 @@ export function AppSettingsPage() {
       <TabPanel className="si-app-settings-panel" id={`app-settings-panel-${activeTab}`} labelledBy={`app-settings-tab-${activeTab}`}>
       {activeTab === "basic" && <Card className="si-app-settings-card">
         <h2>常规</h2>
-        <div className="si-app-setting-row">
+        <div className="si-app-setting-row si-project-root-row">
           <label htmlFor="si-projects-root">项目根目录</label>
           <div className="si-project-root-field">
             <input id="si-projects-root" className="si-setting-input si-setting-mono" value={draft.projects_root} onChange={(event) => setDraft({ ...draft, projects_root: event.target.value })} onBlur={() => void saveSettings({ projects_root: draft.projects_root })} />
