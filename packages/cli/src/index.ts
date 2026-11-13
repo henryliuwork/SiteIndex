@@ -448,6 +448,31 @@ function deleteKeys(ledger: LedgerName, raw: readonly string[]): LedgerKey[] {
 
 async function query(runtime: Runtime, id: ProjectId, target: string, options: ParsedArgs["options"], extra: readonly string[]): Promise<unknown> {
   if (!(QUERY_TARGETS as readonly string[]).includes(target)) throw new CliError("BAD_ARGS", "不支持的 query 目标: " + target);
+  if (target === "seo-page-brief" || target === "seo-internal-link-context") {
+    const optionUrl = option(options, "url");
+    if (extra.length > 1 || (optionUrl !== undefined && extra.length > 0)) {
+      throw new CliError("BAD_ARGS", "该 SEO 查询只接受一个 URL。", EXIT.BAD_ARGS);
+    }
+    const url = optionUrl ?? extra[0];
+    if (!url) throw new CliError("BAD_ARGS", "用法: query <p> " + target + " <url> [--json]");
+    if (target === "seo-page-brief") {
+      const pageBrief = runtime.service.seo.pageBrief;
+      if (!pageBrief) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 SEO 页面摘要查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+      return await pageBrief(id, url);
+    }
+    const internalLinkContext = runtime.service.seo.internalLinkContext;
+    if (!internalLinkContext) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 SEO 内链上下文查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+    return await internalLinkContext(id, url);
+  }
+  if (target === "seo-issue-candidates") {
+    const optionUrl = option(options, "url");
+    if (extra.length > 1 || (optionUrl !== undefined && extra.length > 0)) {
+      throw new CliError("BAD_ARGS", "该 SEO 查询最多接受一个 URL。", EXIT.BAD_ARGS);
+    }
+    const issueCandidates = runtime.service.seo.issueCandidates;
+    if (!issueCandidates) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 SEO 问题候选查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+    return await issueCandidates(id, optionUrl ?? extra[0]);
+  }
   const q = queryInput(options, extra);
   switch (target) {
     case "products": return await runtime.service.products.list(id, q as unknown as ListQuery<ProductFilters>);

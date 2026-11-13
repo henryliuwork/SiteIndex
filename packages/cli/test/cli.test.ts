@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CoreService } from "@siteindex/core";
-import { EXIT, PATHS, type CliJsonOutput, type CreateProjectInput, type SiteConfig, type ScheduleConfig, type SkillInfo, type ValidationReport } from "@siteindex/shared";
+import { EXIT, PATHS, type CliJsonOutput, type CreateProjectInput, type ScenarioQueryResult, type SeoIssue, type SiteConfig, type ScheduleConfig, type SkillInfo, type ValidationReport } from "@siteindex/shared";
 import { main, type CliIO } from "../src";
 
 const projectFixture = fileURLToPath(new URL("../../../fixtures/expected/project/", import.meta.url));
@@ -82,7 +82,22 @@ function mockService() {
     },
     products: { list: vi.fn(async () => queryResult) },
     inventory: { listSkus: vi.fn(async () => queryResult) },
-    seo: { listPages: vi.fn(async () => queryResult), listIssues: vi.fn(async () => queryResult) },
+    seo: {
+      listPages: vi.fn(async () => queryResult),
+      listIssues: vi.fn(async () => queryResult),
+      pageBrief: vi.fn(async (_id: string, _url: string): Promise<ScenarioQueryResult<null>> => ({
+        data: null,
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete", anomalies: [] },
+      })),
+      issueCandidates: vi.fn(async (_id: string, _url?: string): Promise<ScenarioQueryResult<SeoIssue[]>> => ({
+        data: [],
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete", anomalies: [] },
+      })),
+      internalLinkContext: vi.fn(async (_id: string, _url: string): Promise<ScenarioQueryResult<null>> => ({
+        data: null,
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete", anomalies: [] },
+      })),
+    },
     content: { listBlog: vi.fn(async () => queryResult), listKeywords: vi.fn(async () => queryResult) },
     edm: {
       listImages: vi.fn(async () => queryResult),
@@ -227,6 +242,35 @@ describe("siteindex CLI", () => {
       expect(await main(["query", "kingsyard", target, "--page", "2", "--size", "20", "--json"], t.io)).toBe(EXIT.OK);
     }
     expect(methods.products.list).toHaveBeenCalledWith("kingsyard", expect.objectContaining({ page: 2, pageSize: 20 }));
+  });
+
+  it("routes the three SEO scenario query targets and passes exact URLs", async () => {
+    const { service, methods } = mockService();
+    const t = collect(service);
+    const pageUrl = "https://shop.example.test/synthetic-page";
+
+    expect(await main(["query", "kingsyard", "seo-page-brief", pageUrl, "--json"], t.io)).toBe(EXIT.OK);
+    expect(await main(["query", "kingsyard", "seo-issue-candidates", "--url", pageUrl, "--json"], t.io)).toBe(EXIT.OK);
+    expect(await main(["query", "kingsyard", "seo-issue-candidates", "--json"], t.io)).toBe(EXIT.OK);
+    expect(await main(["query", "kingsyard", "seo-internal-link-context", "--url", pageUrl, "--json"], t.io)).toBe(EXIT.OK);
+
+    expect(methods.seo.pageBrief).toHaveBeenCalledWith("kingsyard", pageUrl);
+    expect(methods.seo.issueCandidates).toHaveBeenNthCalledWith(1, "kingsyard", pageUrl);
+    expect(methods.seo.issueCandidates).toHaveBeenNthCalledWith(2, "kingsyard", undefined);
+    expect(methods.seo.internalLinkContext).toHaveBeenCalledWith("kingsyard", pageUrl);
+    expect(t.stdout).toHaveLength(4);
+    expect(t.stdout.every((line) => parseEnvelope(line).ok)).toBe(true);
+  });
+
+  it("requires URLs for page-specific SEO queries and reports an unavailable optional Core method", async () => {
+    const { service, methods } = mockService();
+    const t = collect(service);
+    expect(await main(["query", "kingsyard", "seo-page-brief", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+    expect(methods.seo.pageBrief).not.toHaveBeenCalled();
+
+    Reflect.deleteProperty(methods.seo, "pageBrief");
+    expect(await main(["query", "kingsyard", "seo-page-brief", "https://shop.example.test/synthetic-page", "--json"], t.io)).toBe(EXIT.SOURCE_FAILED);
+    expect(parseEnvelope(t.stdout.at(-1)!).error?.code).toBe("CORE_METHOD_UNAVAILABLE");
   });
 
   it("upserts JSONL and CSV rows and deletes ledger keys from the fixture project", async () => {
