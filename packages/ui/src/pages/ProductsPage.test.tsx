@@ -131,15 +131,16 @@ async function renderProductsPage(options: {
   }
   const { ToastProvider } = await import("../components");
   const { ProductsPage } = await import("./ProductsPage");
-  const route = options.legacyInventoryPath ? (await import("./inventory/route")).route : null;
+  const inventoryRoute = (await import("./inventory/route")).route;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <ToastProvider>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[options.legacyInventoryPath ? "/p/demo/inventory" : "/p/demo/products"]}>
-          <Routes>{route
-            ? <Route path={route.path} element={route.element} />
-            : <Route path="/p/:id/products" element={<ProductsPage />} />}</Routes>
+          <Routes>
+            <Route path="/p/:id/products" element={<ProductsPage />} />
+            <Route path={inventoryRoute.path} element={inventoryRoute.element} />
+          </Routes>
         </MemoryRouter>
       </QueryClientProvider>
     </ToastProvider>,
@@ -173,11 +174,30 @@ describe("ProductsPage 页面操作区", () => {
     expect(within(missingSkuRow).getByText("SKU —")).toBeTruthy();
   });
 
-  it("保留旧库存路由，并打开产品与库存管理页面", async () => {
+  it("从产品页可见入口打开完整 SKU 库存表，并可查看单个 SKU 的价格与库存详情", async () => {
+    const mockApi = await renderProductsPage();
+    fireEvent.click(await screen.findByRole("button", { name: "SKU 库存明细" }));
+
+    expect(await screen.findByRole("heading", { name: "SKU 库存明细" })).toBeTruthy();
+    const sample = await mockApi.inventory.listSkus("demo", { page: 1, pageSize: 50, filters: {} });
+    const firstSku = sample.rows[0]!;
+    const table = await screen.findByRole("table");
+    const skuCell = await within(table).findByText(firstSku.sku);
+    fireEvent.click(skuCell.closest("tr")!);
+
+    const drawer = await screen.findByRole("dialog");
+    expect(await within(drawer).findByText("价格趋势")).toBeTruthy();
+    expect(within(drawer).getByText("当前状态持续")).toBeTruthy();
+    expect(within(drawer).getByText("30 天状态变化")).toBeTruthy();
+    expect(within(drawer).getByText("近 30 天库存状态")).toBeTruthy();
+  });
+
+  it("旧库存路径仍打开完整 SKU 库存表", async () => {
     await renderProductsPage({ legacyInventoryPath: true });
 
-    expect(await screen.findByRole("button", { name: "导出 CSV" })).toBeTruthy();
-    expect(await screen.findByRole("button", { name: "趋势与分类在线率" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "SKU 库存明细" })).toBeTruthy();
+    expect(await screen.findByRole("table")).toBeTruthy();
+    expect(document.getElementById("project-tab-demo-products")?.getAttribute("aria-selected")).toBe("true");
   });
 
   it("在产品页打开库存趋势和分类在线率，并可按分类筛选产品", async () => {
@@ -317,5 +337,35 @@ describe("ProductsPage 父 SKU 与变体库存交互", () => {
     expect((await within(drawer).findAllByText("已下架")).length).toBe(2);
     expect(within(drawer).getByText("商品页不存在（404/410）")).toBeTruthy();
     expect(within(drawer).getByText("连续多次未见于 Feed")).toBeTruthy();
+  });
+
+  it("产品详情直接列出全部 SKU，不截断到前 8 个", async () => {
+    const skus: SkuRecord[] = Array.from({ length: 10 }, (_, index) => ({
+      sku: "DEMO-ACCESSORY-" + String(index + 1).padStart(2, "0"),
+      product_id: single.product_id,
+      handle: single.handle,
+      title: single.title,
+      variant_title: "虚构款式 " + (index + 1),
+      url: single.url,
+      category: single.category,
+      category_source: "feed",
+      price: 24,
+      compare_at_price: null,
+      currency: "USD",
+      image_url: null,
+      status: "active",
+      first_seen: "2026-11-01",
+      last_seen: "2026-11-01",
+      updated_at: "2026-11-01",
+    }));
+    const detail: ProductFull = { product: single, skus, details: null, seo: null, variants: [] };
+    await renderProductsPage({ products: [single], detail });
+
+    fireEvent.click((await screen.findByText("演示独立配件", { selector: "strong" })).closest("tr")!);
+    const drawer = await screen.findByRole("dialog");
+    const skuSection = (await within(drawer).findByRole("heading", { name: "SKU 与变体 · 10 个" })).closest("section")!;
+    const skuList = within(skuSection).getByRole("list");
+    expect(within(skuList).getAllByRole("listitem")).toHaveLength(10);
+    expect(within(skuList).getByText("DEMO-ACCESSORY-10")).toBeTruthy();
   });
 });
