@@ -1,12 +1,12 @@
 .si-project-config-page { gap: var(--si-gap-4); }
 .si-project-config-page > .si-tab-panel { display: flex; flex-direction: column; gap: var(--si-gap-4); }
 .si-config-subtabs { display: flex; align-items: center; gap: var(--si-gap-1); }
-.si-config-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 var(--si-gap-3); border-radius: 6px; color: var(--color-ink-2); font-size: 13px; text-decoration: none; }
+.si-config-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 var(--si-gap-3); border-radius: 6px; color: var(--color-ink-2); font-size: var(--fs-body); text-decoration: none; }
 .si-config-subtabs a:hover { background: var(--color-neutral-soft); }
 .si-config-subtabs a.active { background: var(--color-ink); color: #fff; }
 .si-config-layout { display: grid; grid-template-columns: minmax(155px, 180px) minmax(0, 1fr); align-items: start; gap: var(--si-gap-4); }
 .si-config-outline { position: sticky; top: calc(112px + var(--si-content-top-padding, 0px)); display: grid; gap: var(--si-gap-1); padding: var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
-.si-config-outline button { padding: var(--si-gap-2) var(--si-gap-3); border: 0; border-radius: 6px; background: transparent; color: var(--color-ink-2); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.si-config-outline button { padding: var(--si-gap-2) var(--si-gap-3); border: 0; border-radius: 6px; background: transparent; color: var(--color-ink-2); font: inherit; font-size: var(--fs-body); text-align: left; cursor: pointer; }
 .si-config-outline button:hover, .si-config-outline button.active { background: var(--color-neutral-soft); color: var(--color-ink); }
 .si-config-outline button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 .si-config-sections { display: grid; gap: var(--si-gap-3); min-width: 0; }
@@ -15,30 +15,30 @@
 .si-config-grid { display: grid; min-width: 0; gap: var(--si-gap-4); }
 .si-config-grid-3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .si-config-grid-2 { grid-template-columns: repeat(2,minmax(0,1fr)); }
-.si-config-field { display: grid; min-width: 0; gap: var(--si-gap-1); color: var(--color-ink-2); font-size: 12px; font-weight: 600; }
+.si-config-field { display: grid; min-width: 0; gap: var(--si-gap-1); color: var(--color-ink-2); font-size: var(--fs-body); font-weight: 600; }
 .si-config-mono { font-family: var(--font-mono); }
-.si-config-field .si-text-field { height: 38px; font-size: 13px; }
-.si-config-textarea { width: 100%; min-width: 0; padding: var(--si-gap-2) var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink-2); font: 13px/1.5 var(--font-sans); resize: vertical; }
+.si-config-field .si-text-field { height: 38px; font-size: var(--fs-body); }
+.si-config-textarea { width: 100%; min-width: 0; padding: var(--si-gap-2) var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink-2); font: var(--fs-body)/1.5 var(--font-sans); resize: vertical; }
 .si-config-textarea:focus { border-color: var(--color-brand); box-shadow: 0 0 0 2px rgba(30,107,82,.12); }
 .si-config-card-title { display: flex; align-items: center; justify-content: space-between; gap: var(--si-gap-3); }
 .si-config-feed-actions { display: flex; flex-wrap: wrap; gap: var(--si-gap-2); }
-.si-config-feed-result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--si-gap-2) var(--si-gap-4); padding: var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: 12px; }
+.si-config-feed-result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--si-gap-2) var(--si-gap-4); padding: var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: var(--fs-body); }
 .si-config-feed-result strong { color: var(--color-ink); }
-.si-config-card-title p { margin: 0; color: var(--color-ink-2); font-size: 13px; font-weight: 600; }
+.si-config-card-title p { margin: 0; color: var(--color-ink-2); font-size: var(--fs-body); font-weight: 600; }
 .si-config-callout { display: flex; align-items: center; justify-content: space-between; gap: var(--si-gap-3); padding: var(--si-gap-3); border-radius: 8px; background: #F2F8F5; }
-.si-config-callout > span { display: grid; gap: var(--si-gap-1); color: var(--color-ink); font-size: 12px; }
-.si-config-callout small { color: var(--color-muted); font-size: 12px; }
-.si-config-inline-link { flex: none; padding: var(--si-gap-2) var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 6px; background: #fff; color: var(--color-ink-2); font-size: 12px; text-decoration: none; }
-.si-config-help { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.55; }
+.si-config-callout > span { display: grid; gap: var(--si-gap-1); color: var(--color-ink); font-size: var(--fs-body); }
+.si-config-callout small { color: var(--color-muted); font-size: var(--fs-caption); }
+.si-config-inline-link { flex: none; padding: var(--si-gap-2) var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 6px; background: #fff; color: var(--color-ink-2); font-size: var(--fs-body); text-decoration: none; }
+.si-config-help { margin: 0; color: var(--color-muted); font-size: var(--fs-caption); line-height: 1.55; }
 .si-config-grouping-switch { align-self: start; }
 .si-config-grouping-rule { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(260px, 1.2fr); align-items: end; gap: var(--si-gap-3) var(--si-gap-4); }
 .si-config-grouping-preset { display: grid; gap: var(--si-gap-1); min-width: 0; }
-.si-config-grouping-caveat { color: #8A5200; font-size: 12px; line-height: 1.45; }
-.si-config-grouping-preview { display: grid; gap: var(--si-gap-3); padding: var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: 12px; }
-.si-config-grouping-preview-heading, .si-config-watched-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--si-gap-3); color: var(--color-ink); font-size: 12px; }
+.si-config-grouping-caveat { color: #8A5200; font-size: var(--fs-caption); line-height: 1.45; }
+.si-config-grouping-preview { display: grid; gap: var(--si-gap-3); padding: var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-config-grouping-preview-heading, .si-config-watched-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--si-gap-3); color: var(--color-ink); font-size: var(--fs-body); }
 .si-config-grouping-preview-heading span, .si-config-watched-heading span { color: var(--color-muted); font-weight: 400; }
 .si-config-grouping-preview p { margin: 0; color: var(--color-muted); }
-.si-config-field-hint { color: var(--color-muted); font-size: 12px; font-weight: 400; line-height: 1.45; }
+.si-config-field-hint { color: var(--color-muted); font-size: var(--fs-caption); font-weight: 400; line-height: 1.45; }
 .si-config-grouping-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--si-gap-2); }
 .si-config-grouping-stats span { padding: var(--si-gap-2) var(--si-gap-3); border-radius: 6px; background: var(--color-surface); color: var(--color-muted); }
 .si-config-grouping-stats strong { margin-right: var(--si-gap-1); color: var(--color-ink); font-family: var(--font-mono); font-size: 15px; }
@@ -46,39 +46,39 @@
 .si-config-grouping-preview li { display: grid; grid-template-columns: minmax(100px,.6fr) minmax(0,1.4fr); gap: var(--si-gap-2); padding: var(--si-gap-1) var(--si-gap-2); border-radius: 5px; background: var(--color-surface); }
 .si-config-grouping-preview li span { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
 .si-config-grouping-collisions { display: grid; gap: var(--si-gap-2); padding: var(--si-gap-2) var(--si-gap-3); border-left: 3px solid var(--color-warning, #B87B1B); border-radius: 4px; background: var(--color-surface); }
-.si-config-grouping-collisions summary { color: var(--color-ink); cursor: pointer; font-size: 12px; font-weight: 600; }
+.si-config-grouping-collisions summary { color: var(--color-ink); cursor: pointer; font-size: var(--fs-body); font-weight: 600; }
 .si-config-grouping-collisions ul { display: grid; gap: var(--si-gap-1); margin: 0; padding: 0; list-style: none; }
 .si-config-grouping-collisions li { display: grid; grid-template-columns: minmax(100px,.6fr) minmax(0,1.4fr); gap: var(--si-gap-2); padding: var(--si-gap-1) var(--si-gap-2); border-radius: 5px; background: var(--color-subtle); }
 .si-config-grouping-collisions li span { overflow-wrap: anywhere; color: var(--color-muted); }
-.si-config-grouping-preview > small { color: var(--color-muted); font-size: 12px; }
+.si-config-grouping-preview > small { color: var(--color-muted); font-size: var(--fs-caption); }
 .si-config-watched-options, .si-config-watched-list { display: grid; gap: var(--si-gap-2); }
 .si-config-watched-option { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: var(--si-gap-3); min-height: 48px; padding: var(--si-gap-2) var(--si-gap-3); border: 1px solid var(--color-line-soft); border-radius: 7px; cursor: pointer; }
 .si-config-watched-option:hover { background: var(--color-subtle); }
 .si-config-watched-option input { accent-color: var(--color-brand); }
-.si-config-watched-option > span, .si-config-watched-item > span { display: grid; min-width: 0; gap: var(--si-gap-1); color: var(--color-ink-2); font-size: 12px; }
-.si-config-watched-option small, .si-config-watched-item small { overflow: hidden; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.si-config-watched-option > span, .si-config-watched-item > span { display: grid; min-width: 0; gap: var(--si-gap-1); color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-config-watched-option small, .si-config-watched-item small { overflow: hidden; color: var(--color-muted); font-size: var(--fs-caption); text-overflow: ellipsis; white-space: nowrap; }
 .si-config-watched-option > small { color: var(--color-muted); white-space: nowrap; }
 .si-config-manual-watched { display: grid; gap: var(--si-gap-3); padding: var(--si-gap-3); border: 1px dashed var(--color-line); border-radius: 8px; }
-.si-config-manual-watched > strong { color: var(--color-ink); font-size: 12px; }
+.si-config-manual-watched > strong { color: var(--color-ink); font-size: var(--fs-body); }
 .si-config-manual-watched > .si-button { justify-self: start; }
 .si-config-watched-list { padding-top: var(--si-gap-2); border-top: 1px solid var(--color-line-soft); }
 .si-config-watched-item { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: var(--si-gap-3); padding: var(--si-gap-2) var(--si-gap-3); border: 1px solid var(--color-line-soft); border-radius: 7px; }
-.si-config-empty { margin: 0; padding: var(--si-gap-3); border-radius: 6px; background: var(--color-subtle); color: var(--color-muted); font-size: 12px; }
-.si-config-inline-error { display: flex; align-items: center; gap: var(--si-gap-3); color: var(--color-danger); font-size: 12px; }
-.si-config-check { display: flex; align-items: center; align-self: end; gap: var(--si-gap-2); min-height: 38px; color: var(--color-ink-2); font-size: 12px; }
+.si-config-empty { margin: 0; padding: var(--si-gap-3); border-radius: 6px; background: var(--color-subtle); color: var(--color-muted); font-size: var(--fs-caption); }
+.si-config-inline-error { display: flex; align-items: center; gap: var(--si-gap-3); color: var(--color-danger); font-size: var(--fs-body); }
+.si-config-check { display: flex; align-items: center; align-self: end; gap: var(--si-gap-2); min-height: 38px; color: var(--color-ink-2); font-size: var(--fs-body); }
 .si-config-check input { accent-color: var(--color-brand); }
-.si-config-range { display: grid; gap: var(--si-gap-1); color: var(--color-ink-2); font-size: 12px; font-weight: 600; }
+.si-config-range { display: grid; gap: var(--si-gap-1); color: var(--color-ink-2); font-size: var(--fs-body); font-weight: 600; }
 .si-config-range > div { display: flex; align-items: center; gap: var(--si-gap-2); }
 .si-config-range input { width: 100%; height: 38px; }
 .si-config-reserved-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--si-gap-3); }
-.si-config-reserved { display: grid; gap: var(--si-gap-2); min-width: 0; padding: var(--si-gap-3); border: 1px dashed #CDD2D8; border-radius: 8px; color: var(--color-ink-2); font-size: 12px; }
-.si-config-reserved span { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
+.si-config-reserved { display: grid; gap: var(--si-gap-2); min-width: 0; padding: var(--si-gap-3); border: 1px dashed #CDD2D8; border-radius: 8px; color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-config-reserved span { color: var(--color-muted); font-size: var(--fs-caption); line-height: 1.5; }
 .si-config-reserved .si-chip { justify-self: start; }
 .si-config-json-overlay { position: fixed; z-index: 60; inset: 0; background: rgba(20,24,29,.42); }
 .si-config-json-dialog { position: fixed; z-index: 61; top: 50%; left: 50%; display: grid; width: min(760px,calc(100vw - 32px)); max-height: min(820px,90vh); gap: var(--si-gap-3); overflow: auto; padding: var(--si-gap-4); transform: translate(-50%,-50%); border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); box-shadow: 0 12px 32px rgba(20,24,29,.2); }
 .si-config-json-dialog h2 { margin: 0; font-size: 15px; }
-.si-config-json-dialog p { margin: 0; color: var(--color-muted); font-size: 12px; }
-.si-config-json-editor { min-height: 340px; width: 100%; resize: vertical; padding: var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 6px; color: var(--color-ink); font: 12px/1.5 var(--font-mono); }
+.si-config-json-dialog p { margin: 0; color: var(--color-muted); font-size: var(--fs-caption); }
+.si-config-json-editor { min-height: 340px; width: 100%; resize: vertical; padding: var(--si-gap-3); border: 1px solid var(--color-line); border-radius: 6px; color: var(--color-ink); font: var(--fs-mono)/1.5 var(--font-mono); }
 .si-config-json-actions { display: flex; justify-content: flex-end; gap: var(--si-gap-2); }
 @media (max-width: 980px) {
   .si-config-layout { grid-template-columns: 1fr; }
