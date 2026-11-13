@@ -71,7 +71,7 @@ describe("workspace.importCheck", () => {
 
     const beforeCheck = await api.workspace.importCheck("demo");
     expect(beforeCheck.issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: paths.site, code: "workspace_metadata_missing", auto_fixable: false }),
+      expect.objectContaining({ path: paths.site, code: "workspace_metadata_missing", auto_fixable: true }),
       expect.objectContaining({ path: manifestRelative, code: "workspace_manifest_missing", auto_fixable: true }),
       expect.objectContaining({ path: paths.keywords, code: "missing_ledger", auto_fixable: true }),
       expect.objectContaining({ path: paths.skuTags, code: "header", auto_fixable: false }),
@@ -89,27 +89,19 @@ describe("workspace.importCheck", () => {
 
     const applied = await api.workspace.importCheck("demo", { apply: true });
     expect(applied.repaired).toEqual(expect.arrayContaining([
-      manifestRelative, paths.keywords, paths.readme, paths.agentsMd,
+      manifestRelative, paths.site, paths.keywords, paths.readme, paths.agentsMd,
     ]));
-    expect(applied.repaired).not.toContain(paths.site);
     expect(applied.issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: paths.site, code: "workspace_metadata_missing", auto_fixable: false }),
       expect.objectContaining({ path: paths.skuTags, code: "header", auto_fixable: false }),
       expect.objectContaining({ path: paths.blogIndex, code: "parse", auto_fixable: false }),
     ]));
     expect(applied.issues).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "workspace_manifest_missing" }),
+      expect.objectContaining({ code: "workspace_metadata_missing" }),
       expect.objectContaining({ path: paths.keywords, code: "missing_ledger" }),
       expect.objectContaining({ code: "missing_auto_block:workspace-map" }),
       expect.objectContaining({ code: "missing_auto_block:data-guide" }),
     ]));
-    const metadataIssue = applied.issues.find((issue) => issue.code === "workspace_metadata_missing");
-    expect(metadataIssue).toEqual({
-      path: paths.site,
-      code: "workspace_metadata_missing",
-      message: "site.json 缺少 workspace 元数据。为避免覆盖用户配置，请根据 _site-index/workspace.json 手动补充 workspace.version、workspace.sections（目录名数组）和 workspace.esp_presets；若该文件缺失，请先运行自动修复，再重新检查。",
-      auto_fixable: false,
-    });
     const repairedManifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
       version: string;
       sections: { id: string; dir: string }[];
@@ -118,8 +110,16 @@ describe("workspace.importCheck", () => {
     expect(repairedManifest.version).toBe("1.0");
     expect(repairedManifest.sections.map((section) => section.dir)).toContain("01-brand");
     expect(repairedManifest.esp_presets).toEqual(["mailchimp"]);
-    expect(await readFile(configPath, "utf8")).toBe(configAfterUserEdit);
-    expect(JSON.parse(configAfterUserEdit)).not.toHaveProperty("workspace");
+    const restoredConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    const savedConfig = JSON.parse(configAfterUserEdit) as Record<string, unknown>;
+    expect(restoredConfig).toEqual({
+      ...savedConfig,
+      workspace: {
+        version: repairedManifest.version,
+        sections: repairedManifest.sections.map((section) => section.dir),
+        esp_presets: repairedManifest.esp_presets,
+      },
+    });
     expect(await readFile(path.join(project, paths.keywords), "utf8")).toBe("");
     expect(await readFile(malformedCsvPath, "utf8")).toBe(malformedCsv);
     expect(await readFile(malformedJsonlPath, "utf8")).toBe(malformedJsonl);
@@ -127,6 +127,121 @@ describe("workspace.importCheck", () => {
     expect(await readFile(readmePath, "utf8")).toContain("用户补充：检查后编辑也要保留。");
     expect(await readFile(readmePath, "utf8")).toContain('id="workspace-map"');
     expect(await readFile(agentsPath, "utf8")).toContain('id="data-guide"');
+  }, 30_000);
+
+  it("fills only missing workspace metadata from the valid manifest and preserves the rest of site.json", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-import-metadata-"));
+    TEMP_DIRS.push(root);
+    const project = path.join(root, "demo");
+    const api = service(project);
+    await api.workspace.create(createInput(project));
+
+    const configPath = path.join(project, paths.site);
+    const manifestPath = path.join(project, manifestRelative);
+    const originalConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      version: string;
+      sections: { id: string; dir: string }[];
+      esp_presets: string[];
+    };
+    delete originalConfig.workspace;
+    originalConfig.operator_note = { keep: ["all", "existing", "values"] };
+    originalConfig.custom_settings = { mode: "manual", enabled: false };
+    await writeFile(configPath, `${JSON.stringify(originalConfig, null, 2)}\n`, "utf8");
+
+    const checked = await api.workspace.importCheck("demo");
+    expect(checked.issues).toContainEqual(expect.objectContaining({
+      path: paths.site,
+      code: "workspace_metadata_missing",
+      auto_fixable: true,
+    }));
+    expect(await readFile(configPath, "utf8")).toContain('"operator_note"');
+
+    const applied = await api.workspace.importCheck("demo", { apply: true });
+    expect(applied.repaired).toContain(paths.site);
+    expect(applied.issues).not.toContainEqual(expect.objectContaining({ code: "workspace_metadata_missing" }));
+    const restoredConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    expect(restoredConfig).toEqual({
+      ...originalConfig,
+      workspace: {
+        version: manifest.version,
+        sections: manifest.sections.map((section) => section.dir),
+        esp_presets: manifest.esp_presets,
+      },
+    });
+    expect(await readFile(manifestPath, "utf8")).toBe(`${JSON.stringify(manifest, null, 2)}\n`);
+    expect(await api.workspace.importCheck("demo", { apply: true })).toEqual({ issues: [], repaired: [] });
+  }, 30_000);
+
+  it("keeps malformed workspace metadata and a conflicting manifest untouched", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-import-metadata-invalid-"));
+    TEMP_DIRS.push(root);
+    const project = path.join(root, "demo");
+    const api = service(project);
+    await api.workspace.create(createInput(project));
+
+    const configPath = path.join(project, paths.site);
+    const manifestPath = path.join(project, manifestRelative);
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    const workspace = config.workspace as { version: string; sections: string[]; esp_presets: string[] };
+    workspace.sections = [...workspace.sections, workspace.sections[0]!];
+    config.workspace = workspace;
+    const malformedConfig = `${JSON.stringify(config, null, 2)}\n`;
+    const originalManifest = await readFile(manifestPath, "utf8");
+    await writeFile(configPath, malformedConfig, "utf8");
+
+    const invalid = await api.workspace.importCheck("demo", { apply: true });
+    expect(invalid.issues).toContainEqual(expect.objectContaining({
+      path: paths.site,
+      code: "workspace_metadata_invalid",
+      auto_fixable: false,
+    }));
+    expect(await readFile(configPath, "utf8")).toBe(malformedConfig);
+    expect(await readFile(manifestPath, "utf8")).toBe(originalManifest);
+    expect(invalid.repaired).not.toContain(paths.site);
+
+    workspace.sections = workspace.sections.slice(0, -1);
+    workspace.sections[0] = "custom-section";
+    config.workspace = workspace;
+    const conflictingConfig = `${JSON.stringify(config, null, 2)}\n`;
+    await writeFile(configPath, conflictingConfig, "utf8");
+
+    const conflict = await api.workspace.importCheck("demo", { apply: true });
+    expect(conflict.issues).toContainEqual(expect.objectContaining({
+      path: paths.site,
+      code: "workspace_metadata_conflict",
+      auto_fixable: false,
+    }));
+    expect(await readFile(configPath, "utf8")).toBe(conflictingConfig);
+    expect(await readFile(manifestPath, "utf8")).toBe(originalManifest);
+    expect(conflict.repaired).toEqual([]);
+  }, 30_000);
+
+  it("does not infer metadata from a corrupt workspace manifest", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-workspace-import-metadata-corrupt-manifest-"));
+    TEMP_DIRS.push(root);
+    const project = path.join(root, "demo");
+    const api = service(project);
+    await api.workspace.create(createInput(project));
+
+    const configPath = path.join(project, paths.site);
+    const manifestPath = path.join(project, manifestRelative);
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    delete config.workspace;
+    const missingMetadataConfig = `${JSON.stringify(config, null, 2)}\n`;
+    const corruptManifest = '{"layout":"workspace","sections":[]}\n';
+    await writeFile(configPath, missingMetadataConfig, "utf8");
+    await writeFile(manifestPath, corruptManifest, "utf8");
+
+    const checked = await api.workspace.importCheck("demo", { apply: true });
+    expect(checked.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: paths.site, code: "workspace_metadata_missing", auto_fixable: false }),
+      expect.objectContaining({ path: manifestRelative, code: "workspace_manifest_invalid", auto_fixable: false }),
+    ]));
+    expect(await readFile(configPath, "utf8")).toBe(missingMetadataConfig);
+    expect(await readFile(manifestPath, "utf8")).toBe(corruptManifest);
+    expect(checked.repaired).not.toContain(paths.site);
+    expect(checked.repaired).not.toContain(manifestRelative);
   }, 30_000);
 
   it("does not repair a legacy-only project as a workspace", async () => {
