@@ -52,9 +52,11 @@ function productColumns(): ColumnDef<ProductView, unknown>[] {
   return [
     { id: "product", accessorKey: "title", header: "产品", meta: { width: 320, grow: 2, minWidth: 240, text: "single" }, cell: ({ row }) => {
       const product = row.original;
+      const firstSku = product.skus[0] ?? "—";
+      const additionalSkuCount = Math.max(0, product.skus.length - 1);
       return <span className="si-product-main-cell">
         <ProductThumbnail src={product.image_url} />
-        <span className="si-product-main-copy"><strong>{product.title}</strong><span><code>{product.handle}</code>{product.status === "removed" && <Chip tone="neutral">已下架</Chip>}{product.price_dropped_at && <Chip tone="warn">降价</Chip>}{product.restocked_at && <Chip tone="ok">到货</Chip>}{product.is_new && <Chip tone="info">新品</Chip>}</span></span>
+        <span className="si-product-main-copy"><strong>{product.title}</strong><span><code className="si-product-sku" title={product.skus.join("、") || "尚无 SKU"} aria-label={"SKU " + (product.skus.join("、") || "尚无")}>SKU {firstSku}{additionalSkuCount > 0 ? " +" + additionalSkuCount : ""}</code><code>{product.handle}</code>{product.status === "removed" && <Chip tone="neutral">已下架</Chip>}{product.price_dropped_at && <Chip tone="warn">降价</Chip>}{product.restocked_at && <Chip tone="ok">到货</Chip>}{product.is_new && <Chip tone="info">新品</Chip>}</span></span>
       </span>;
     }, enableSorting: true },
     { id: "category", accessorKey: "category", header: "分类", meta: { width: 160, grow: 1, minWidth: 130, text: "single" }, cell: ({ row }) => <code className="si-mono">{row.original.category || "—"}</code>, enableSorting: true },
