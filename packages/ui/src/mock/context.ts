@@ -747,15 +747,17 @@ export function finishRun(runId: string, status: "ok" | "skipped" = "ok"): void 
   finishedListeners.forEach((callback) => callback(clone(result)));
 }
 
-export function beginRun(projectPath: string, job: JobName): string {
+export function beginRun(projectPath: string, job: JobName, options: { missingFeed?: boolean } = {}): string {
   runCounter += 1;
   const runId = "mock-run-" + String(runCounter).padStart(3, "0");
   const active = { projectPath, job, pct: 0, timer: 0 as unknown as ReturnType<typeof setInterval> };
   if (job === "init") {
-    const dailyFails = mockMode === "init-daily-fail";
+    const dailyFails = mockMode === "init-daily-fail" || options.missingFeed === true;
     const scheduleSkipped = mockMode === "init-schedule-skipped";
     const scheduleResultMissing = mockMode === "init-missing-schedule";
-    const dailyError = "首次每日同步失败：模拟 Feed 请求超时。";
+    const dailyError = options.missingFeed
+      ? "首次每日同步失败：尚未配置 GMC Feed。"
+      : "首次每日同步失败：模拟 Feed 请求超时。";
     let index = 0;
     active.timer = setInterval(() => {
       const key = INIT_STEPS[index];

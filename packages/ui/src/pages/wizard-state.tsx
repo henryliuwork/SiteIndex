@@ -6,6 +6,7 @@ export interface WizardDraft {
   detect: DetectResult | null;
   feedUrls: string[];
   feedResult: FeedInspectResult | null;
+  feedSkipped: boolean;
   skuField: string;
   categoryDepth: number;
   missingAs: "out_of_stock" | "removed";
@@ -24,6 +25,7 @@ const initialDraft: WizardDraft = {
   detect: null,
   feedUrls: [],
   feedResult: null,
+  feedSkipped: false,
   skuField: "id",
   categoryDepth: 2,
   missingAs: "out_of_stock",
