@@ -24,8 +24,15 @@ function LocationProbe() {
 
 async function renderSettings(initialEntry: string) {
   const mockApi = createMockApi();
-  const updateConfig = vi.spyOn(mockApi.projects, "updateConfig");
-  const saveCategories = vi.spyOn(mockApi.categories, "save");
+  const originalUpdateConfig = mockApi.projects.updateConfig.bind(mockApi.projects);
+  const updateConfig = vi.spyOn(mockApi.projects, "updateConfig").mockImplementation(originalUpdateConfig);
+  const originalSaveCategories = mockApi.categories.save.bind(mockApi.categories);
+  const saveCategories = vi.spyOn(mockApi.categories, "save").mockImplementation(async (id, config) => {
+    const result = await originalSaveCategories(id, config);
+    const currentProject = await mockApi.projects.get(id);
+    await originalUpdateConfig(id, { ...currentProject.config, categories: config });
+    return result;
+  });
   const validateFiles = vi.spyOn(mockApi.files, "validate");
   vi.doMock("../api", () => ({
     api: mockApi,
@@ -66,19 +73,29 @@ describe("项目设置单页区块", () => {
     expect(screen.getByTestId("location").textContent).toBe(entry);
   }, 20_000);
 
-  it("保留配置、分类保存和本地文件校验操作，并在分类保存后保留未保存的配置草稿", async () => {
-    const { updateConfig, saveCategories, validateFiles } = await renderSettings("/p/demo/settings/config");
+  it("先保存关注分类后再保存分类识别时保留 watched 和未保存配置草稿", async () => {
+    const { mockApi, updateConfig, saveCategories, validateFiles } = await renderSettings("/p/demo/settings/config");
     const domain = await screen.findByLabelText("域名") as HTMLInputElement;
-    fireEvent.change(domain, { target: { value: "draft.example.test" } });
+    fireEvent.change(domain, { target: { value: "saved.example.test" } });
+    fireEvent.change(screen.getByPlaceholderText("例如：户外灯具"), { target: { value: "自定义关注分类" } });
+    fireEvent.change(screen.getByPlaceholderText("例如：outdoor-lights"), { target: { value: "demo-watched-category" } });
+    fireEvent.change(screen.getByPlaceholderText("https://example.com/collections/lights"), { target: { value: "https://demo-store.example.test/collections/demo-watched-category" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加关注分类" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({
+      categories: expect.objectContaining({ watched: expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })]) }),
+    })));
+    await waitFor(async () => expect((await mockApi.projects.get("demo")).config.categories.watched).toEqual(expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })])));
+
+    fireEvent.change(screen.getByLabelText("一句话定位"), { target: { value: "尚未保存的品牌草稿" } });
 
     fireEvent.click(await screen.findByRole("button", { name: "保存并重新归类" }));
     await waitFor(() => expect(saveCategories).toHaveBeenCalledOnce());
-    await waitFor(() => expect((screen.getByLabelText("域名") as HTMLInputElement).value).toBe("draft.example.test"));
+    await waitFor(async () => expect((await mockApi.projects.get("demo")).config.categories.watched).toEqual(expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })])));
+    expect((screen.getByLabelText("一句话定位") as HTMLInputElement).value).toBe("尚未保存的品牌草稿");
 
     fireEvent.click(await screen.findByRole("button", { name: "一键校验全部" }));
     await waitFor(() => expect(validateFiles).toHaveBeenCalledWith("demo"));
-
-    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({ domain: "draft.example.test" })));
   }, 20_000);
 });

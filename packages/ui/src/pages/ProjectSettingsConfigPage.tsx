@@ -123,9 +123,9 @@ export function ProjectSettingsConfigPage() {
   const patchCrawl = <K extends keyof SiteConfig["crawl"]>(key: K, value: SiteConfig["crawl"][K]) => setDraft((current) => current ? { ...current, crawl: { ...current.crawl, [key]: value } } : current);
   const patchSeo = <K extends keyof NonNullable<SiteConfig["seo"]>>(key: K, value: NonNullable<SiteConfig["seo"]>[K]) => setDraft((current) => current ? { ...current, seo: { ...current.seo, [key]: value } } : current);
   const patchEdm = <K extends keyof NonNullable<SiteConfig["edm"]>>(key: K, value: NonNullable<SiteConfig["edm"]>[K]) => setDraft((current) => current ? { ...current, edm: { ...current.edm, [key]: value } } : current);
-  const updateCategoryDraft = (categories: CategoriesConfig) => setDraft((current) => current ? {
+  const updateCategoryDraft = (categories: SiteConfig["categories"]) => setDraft((current) => current ? {
     ...current,
-    categories: { ...current.categories, ...categories, watched: current.categories.watched },
+    categories: { ...current.categories, ...categories, watched: categories.watched ?? current.categories.watched },
   } : current);
 
   const toggleWatchedCategory = (category: Pick<WatchedCategory, "name" | "slug" | "url">) => {
@@ -336,7 +336,7 @@ export function ProjectSettingsConfigPage() {
           </div>
         </ConfigCard>
 
-        <ProjectSettingsCategoriesPage embedded onConfigSaved={updateCategoryDraft} />
+        <ProjectSettingsCategoriesPage embedded watchedCategories={draft.categories.watched} onConfigSaved={updateCategoryDraft} />
 
         <ConfigCard id="seo" title="SEO"><div className="si-config-grid si-config-grid-2">
           <TextAreaField label="核心关键词（每行一项）" value={asLines(draft.seo?.core_keywords)} onChange={(value) => patchSeo("core_keywords", fromLines(value))} rows={3} />

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory } from "@siteindex/shared";
+import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory, SiteConfig } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel, useToast } from "../components";
@@ -41,7 +41,7 @@ function categorySlug(url: string): string {
   return segment.replace(/\.html?$/i, "").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "new-category";
 }
 
-export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved }: { embedded?: boolean; onConfigSaved?: (config: CategoriesConfig) => void } = {}) {
+export function ProjectSettingsCategoriesPage({ embedded = false, watchedCategories, onConfigSaved }: { embedded?: boolean; watchedCategories?: SiteConfig["categories"]["watched"]; onConfigSaved?: (config: SiteConfig["categories"]) => void } = {}) {
   const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -120,9 +120,15 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
     }
     setSaving(true);
     try {
+      const latestProject = await api.projects.get(id);
+      const categoriesToPersist: SiteConfig["categories"] = {
+        ...draft,
+        watched: watchedCategories ?? latestProject.config.categories.watched,
+      };
       const result = await api.categories.save(id, draft);
+      const savedConfig = await api.projects.updateConfig(id, { categories: categoriesToPersist });
       setPreview(result);
-      onConfigSaved?.(draft);
+      onConfigSaved?.(savedConfig.categories);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["categories", id] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-summary", id] }),
