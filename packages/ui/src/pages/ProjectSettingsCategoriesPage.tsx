@@ -41,7 +41,10 @@ function categorySlug(url: string): string {
   return segment.replace(/\.html?$/i, "").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "new-category";
 }
 
-export function ProjectSettingsCategoriesPage({ embedded = false, watchedCategories, onConfigSaved }: { embedded?: boolean; watchedCategories?: SiteConfig["categories"]["watched"]; onConfigSaved?: (config: SiteConfig["categories"]) => void } = {}) {
+// Core stores the complete categories object, so include the latest persisted watched list in the same save.
+type CategoriesSaveConfig = CategoriesConfig & Pick<SiteConfig["categories"], "watched">;
+
+export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved }: { embedded?: boolean; onConfigSaved?: (config: CategoriesConfig) => void } = {}) {
   const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -121,14 +124,13 @@ export function ProjectSettingsCategoriesPage({ embedded = false, watchedCategor
     setSaving(true);
     try {
       const latestProject = await api.projects.get(id);
-      const categoriesToPersist: SiteConfig["categories"] = {
+      const configToSave: CategoriesSaveConfig = {
         ...draft,
-        watched: watchedCategories ?? latestProject.config.categories.watched,
+        watched: latestProject.config.categories.watched,
       };
-      const result = await api.categories.save(id, draft);
-      const savedConfig = await api.projects.updateConfig(id, { categories: categoriesToPersist });
+      const result = await api.categories.save(id, configToSave);
       setPreview(result);
-      onConfigSaved?.(savedConfig.categories);
+      onConfigSaved?.(draft);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["categories", id] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-summary", id] }),

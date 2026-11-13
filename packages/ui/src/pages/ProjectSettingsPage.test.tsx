@@ -73,7 +73,7 @@ describe("项目设置单页区块", () => {
     expect(screen.getByTestId("location").textContent).toBe(entry);
   }, 20_000);
 
-  it("先保存关注分类后再保存分类识别时保留 watched 和未保存配置草稿", async () => {
+  it("分类识别保存只提交已保存的 watched，保留未保存关注分类和配置草稿", async () => {
     const { mockApi, updateConfig, saveCategories, validateFiles } = await renderSettings("/p/demo/settings/config");
     const domain = await screen.findByLabelText("域名") as HTMLInputElement;
     fireEvent.change(domain, { target: { value: "saved.example.test" } });
@@ -88,11 +88,23 @@ describe("项目设置单页区块", () => {
     })));
     await waitFor(async () => expect((await mockApi.projects.get("demo")).config.categories.watched).toEqual(expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })])));
 
+    updateConfig.mockClear();
+    fireEvent.change(screen.getByPlaceholderText("例如：户外灯具"), { target: { value: "未保存关注分类" } });
+    fireEvent.change(screen.getByPlaceholderText("例如：outdoor-lights"), { target: { value: "unsaved-watched-category" } });
+    fireEvent.change(screen.getByPlaceholderText("https://example.com/collections/lights"), { target: { value: "https://demo-store.example.test/collections/unsaved-watched-category" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加关注分类" }));
+
     fireEvent.change(screen.getByLabelText("一句话定位"), { target: { value: "尚未保存的品牌草稿" } });
 
     fireEvent.click(await screen.findByRole("button", { name: "保存并重新归类" }));
     await waitFor(() => expect(saveCategories).toHaveBeenCalledOnce());
     await waitFor(async () => expect((await mockApi.projects.get("demo")).config.categories.watched).toEqual(expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })])));
+    expect((await mockApi.projects.get("demo")).config.categories.watched).not.toEqual(expect.arrayContaining([expect.objectContaining({ slug: "unsaved-watched-category" })]));
+    expect(saveCategories).toHaveBeenCalledWith("demo", expect.objectContaining({
+      watched: expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })]),
+    }));
+    expect(updateConfig).not.toHaveBeenCalled();
+    expect(screen.getByText("未保存关注分类")).toBeTruthy();
     expect((screen.getByLabelText("一句话定位") as HTMLInputElement).value).toBe("尚未保存的品牌草稿");
 
     fireEvent.click(await screen.findByRole("button", { name: "一键校验全部" }));
