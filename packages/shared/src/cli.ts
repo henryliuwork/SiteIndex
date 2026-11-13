@@ -24,6 +24,7 @@ export const QUERY_TARGETS = [
   "products", "sku-stock", "seo-pages", "seo-issues",
   "seo-page-brief", "seo-issue-candidates", "seo-internal-link-context",
   "product-sku-brief", "product-changes", "product-group-family",
+  "edm-candidates", "edm-media-gaps", "edm-campaign-safety",
   "blog", "keywords", "sku-media",
 ] as const;
 export type QueryTarget = (typeof QUERY_TARGETS)[number];

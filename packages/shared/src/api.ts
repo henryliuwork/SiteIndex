@@ -419,6 +419,110 @@ export interface EdmCommandInput {
   promo_code?: string;
 }
 
+/** Deterministic product-data filters for the EDM candidate pool; no AI ranking or external lookup is implied. */
+export interface EdmCandidatesQuery {
+  /** Exact normalized category match. */
+  category?: string;
+  /** Exact normalized tag match. */
+  tag?: string;
+  /** Defaults to in-stock rows; `any` also includes other stock states. */
+  stock?: "in_stock" | "any";
+  /** Uses configured SKU grouping; includes parent rows and ungrouped singles when true. */
+  parent_only?: boolean;
+  /** Defaults to false; when true, rows marked `exclude_edm` are included with that flag visible. */
+  include_excluded?: boolean;
+  /** Maximum rows returned. `total` remains the count before this limit. */
+  limit?: number;
+}
+
+/** A factual product row for local EDM planning; it is not an AI-generated recommendation. */
+export interface EdmCandidate {
+  sku: string;
+  title: string;
+  category: string | null;
+  tags: string[];
+  stock_status: StockStatus;
+  price: number | null;
+  compare_at_price: number | null;
+  currency: string | null;
+  image_url: string | null;
+  image_source: "feed" | "manual" | "none";
+  priority: number | null;
+  last_featured: ISODate | null;
+  exclude_edm: boolean;
+  discount_tier: number | null;
+}
+
+export interface EdmCandidatesData {
+  /** Factual rows are returned in deterministic SKU order; they are not scored or ranked recommendations. */
+  rows: EdmCandidate[];
+  /** Number of rows matching the filters before `limit` is applied. */
+  total: number;
+}
+
+/** Filters for the read-only report of products without an EDM-compatible image. */
+export interface EdmMediaGapsQuery {
+  /** Optional exact set of real SKU or configured parent-row keys. */
+  skus?: string[];
+  /** Defaults to in-stock rows; `any` also includes other stock states. */
+  stock?: "in_stock" | "any";
+  /** Uses configured SKU grouping; includes parent rows and ungrouped singles when true. */
+  parent_only?: boolean;
+  /** Maximum rows returned. `total` remains the count before this limit. */
+  limit?: number;
+}
+
+export interface EdmMediaGap {
+  sku: string;
+  title: string;
+  stock_status: StockStatus;
+  /** `missing` means no indexed image source; `webp_only` means sources exist but none is EDM-compatible. */
+  reason: "missing" | "webp_only";
+  feed_image_url: string | null;
+  manual_image_url: string | null;
+}
+
+export interface EdmMediaGapsData {
+  rows: EdmMediaGap[];
+  /** Number of gaps matching the filters before `limit` is applied. */
+  total: number;
+}
+
+/** Product selection and campaign date to check against local indexed EDM data; this query never writes or sends. */
+export interface EdmCampaignSafetyQuery {
+  campaign_date: ISODate;
+  /** Selected real feed SKU keys or configured parent-row keys; duplicate entries may be reported as findings. */
+  skus: string[];
+}
+
+export type EdmCampaignSafetyFindingCode =
+  | "duplicate_sku"
+  | "sku_not_found"
+  | "out_of_stock"
+  | "excluded_from_edm"
+  | "missing_image"
+  | "webp_only"
+  | "cooldown_active"
+  | "discount_tier_invalid"
+  | "currency_mismatch";
+
+export interface EdmCampaignSafetyFinding {
+  code: EdmCampaignSafetyFindingCode;
+  severity: "blocker" | "warning";
+  sku?: string;
+  field?: string;
+  message: string;
+}
+
+/** Local product-data preflight only; it does not inspect email HTML, consent, audience or ESP state. */
+export interface EdmCampaignSafetyData {
+  scope: "local_product_data";
+  /** `clear` requires complete local inputs; incomplete inputs must be represented as `needs_review` plus partial metadata. */
+  status: "clear" | "needs_review" | "blocked";
+  checked_skus: string[];
+  findings: EdmCampaignSafetyFinding[];
+}
+
 // ---------- README / 文件夹 / 分类 ----------
 
 export interface ReadmeData {
@@ -639,6 +743,12 @@ export interface SiteIndexApi {
   edm: {
     summary(id: ProjectId): Promise<{ total: number; feed: number; manual: number; none: number }>;
     listImages(id: ProjectId, q: ListQuery<SkuImageFilters>): Promise<PageResult<SkuImageRow>>;
+    /** Read-only deterministic candidate facts; metadata reports the indexed sources, collection time, gaps and anomalies. */
+    candidates?(id: ProjectId, query: EdmCandidatesQuery): Promise<ScenarioQueryResult<EdmCandidatesData>>;
+    /** Read-only report of missing or EDM-incompatible product images; no URLs are fetched by this contract. */
+    mediaGaps?(id: ProjectId, query: EdmMediaGapsQuery): Promise<ScenarioQueryResult<EdmMediaGapsData>>;
+    /** Read-only local product-data preflight; never schedules, sends, or claims to validate ESP/content safety. */
+    campaignSafety?(id: ProjectId, query: EdmCampaignSafetyQuery): Promise<ScenarioQueryResult<EdmCampaignSafetyData>>;
     setManualImage(id: ProjectId, sku: string, url: string | null): Promise<SkuImageRow>;
     /** 按 canonical 导出行键（真实 SKU 或当前规则生成的父 SKU）设置折扣档位，不向父子行传播；仅接受 site.json.edm.discount_tiers 中的百分比，null 清除。旧 bridge 可不提供。 */
     setDiscountTier?(id: ProjectId, sku: string, discountTier: number | null): Promise<{ sku: string; discount_tier: number | null }>;
