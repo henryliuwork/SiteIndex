@@ -47,10 +47,11 @@ export interface TodoRuleFinding {
   detail?: string;
   severity?: Severity;
   first_seen_at: ISODateTime;
+  /** Updated only when this finding is observed, never from a partial or failed scan. */
   last_seen_at: ISODateTime;
 }
 
-/** Current user-maintained state, stored separately from rule output and its history. */
+/** Current manual state and note; rule regeneration preserves both. */
 export interface TodoManualState {
   dedupe_key: string;
   status: TodoManualStatus;
@@ -74,4 +75,42 @@ export type TodoManualHistoryEntry =
       action: "note_changed";
       note: string | null;
       changed_at: ISODateTime;
+    }
+  | {
+      event_id: string;
+      dedupe_key: string;
+      /** A renewed rule match reopens a completed todo for human review. */
+      action: "rule_reopened";
+      from_status: "done";
+      to_status: "pending_review";
+      rule_id: string;
+      /** Timestamp when a complete trusted scan confirmed this rule finding was absent. */
+      absence_confirmed_at: ISODateTime;
+      changed_at: ISODateTime;
     };
+
+/** Current rule result joined to its separately stored manual lifecycle. */
+export interface ProjectTodo {
+  finding: TodoRuleFinding;
+  state: TodoManualState;
+}
+
+/** Only complete means all required rule sources were read and trusted for absence conclusions. */
+export type TodoRuleScanStatus = "not_run" | "complete" | "partial" | "failed";
+
+export interface TodoRuleScanSummary {
+  /** complete means every required rule source was readable, complete, and trusted for absence conclusions. */
+  status: TodoRuleScanStatus;
+  evaluated_at: ISODateTime | null;
+}
+
+/** Snapshot of current findings plus the scan quality needed to interpret missing findings safely. */
+export interface ProjectTodosResult {
+  items: ProjectTodo[];
+  scan: TodoRuleScanSummary;
+}
+
+/** At least one manual field must be supplied; omitted fields remain unchanged and note=null clears the note. */
+export type UpdateTodoManualInput =
+  | { dedupe_key: string; status: TodoManualStatus; note?: string | null }
+  | { dedupe_key: string; status?: never; note: string | null };

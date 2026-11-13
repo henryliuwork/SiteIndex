@@ -41,7 +41,15 @@ import type {
 } from "./models";
 import type { ProjectPaths } from "./paths";
 import type { JobProgress, JobRequest, JobResult, SchedulableJob } from "./jobs";
-import type { ScenarioAnomaly, ScenarioDataQuality, ScenarioQueryResult } from "./read-model";
+import type {
+  ProjectTodosResult,
+  ScenarioAnomaly,
+  ScenarioDataQuality,
+  ScenarioQueryResult,
+  TodoManualHistoryEntry,
+  TodoManualState,
+  UpdateTodoManualInput,
+} from "./read-model";
 
 // ---------- 通用 ----------
 
@@ -739,6 +747,20 @@ export interface SiteIndexApi {
   uiState?: {
     get(id: ProjectId): Promise<ProjectUiState>;
     set(id: ProjectId, patch: Partial<ProjectUiState>): Promise<ProjectUiState>;
+  };
+  /**
+   * Project-scoped rule findings and user-maintained review state; optional for older bridges.
+   * Re-evaluation preserves status and notes for stable dedupe keys. Only a complete trusted scan can
+   * confirm absence; partial/failed scans must retain prior findings. A later match after confirmed absence
+   * moves a done item to pending_review and appends a rule_reopened event; ignored remains until user change.
+   */
+  todos?: {
+    /** Findings include rule_id and canonical subject identity; scan status prevents gaps looking resolved. */
+    list(id: ProjectId): Promise<ProjectTodosResult>;
+    /** Updates only explicitly supplied manual fields; note=null clears the note. */
+    update(id: ProjectId, input: UpdateTodoManualInput): Promise<TodoManualState>;
+    /** Returns append-only manual and rule-reopen events for one stable dedupe key. */
+    history(id: ProjectId, dedupeKey: string): Promise<TodoManualHistoryEntry[]>;
   };
   projects: {
     list(): Promise<ProjectSummary[]>;

@@ -32,6 +32,12 @@ describe("shared contracts", () => {
     expect(workspacePaths.skillsDir).toBe("_site-index/skills");
     expect(workspacePaths.skillsManifest).toBe("_site-index/skills/manifest.json");
     expect(workspacePaths.seoIssues).toBe("_site-index/seo/issues.jsonl");
+    expect(pathsFor("legacy").todos).toBe("index/todos/findings.jsonl");
+    expect(pathsFor("legacy").todoStates).toBe("index/todos/manual-state.jsonl");
+    expect(pathsFor("legacy").todoHistory).toBe("index/todos/history.jsonl");
+    expect(workspacePaths.todos).toBe("_site-index/todos/findings.jsonl");
+    expect(workspacePaths.todoStates).toBe("_site-index/todos/manual-state.jsonl");
+    expect(workspacePaths.todoHistory).toBe("_site-index/todos/history.jsonl");
     expect(pathsFor("legacy").gscSearchAnalytics).toBe("index/gsc/history.json");
     expect(workspacePaths.gscSearchAnalytics).toBe("_site-index/gsc/history.json");
     expect(workspacePaths.readme).toBe(PATHS.readme);
