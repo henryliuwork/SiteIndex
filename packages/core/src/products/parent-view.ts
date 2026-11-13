@@ -140,13 +140,17 @@ export function groupProductRows(
     });
   }
 
+  const feedMode = rule.type === "regex" && rule.parent_source === "feed";
   const parentRows = grouping.groups.flatMap(({ parent, children }) => {
-    const row = parentProductRow(parent, children, productBySku, skuById, stockBySku);
-    return row ? [row] : [];
+    const members = feedMode ? [parent, ...children] : children;
+    const row = parentProductRow(parent, members, productBySku, skuById, stockBySku);
+    const parentStock = feedMode ? stockBySku.get(parent) : undefined;
+    return row ? [{ ...row, ...(feedMode ? { stock_status: parentStock?.stock_status ?? "unknown", stock_since: parentStock?.since ?? null } : {}) }] : [];
   });
+  const groupedParents = new Set(feedMode ? grouping.groups.map((group) => group.parent) : []);
   const singles: ProductView[] = [];
   for (const row of products) {
-    const ungrouped = row.skus.filter((sku) => !grouping.parentByChild.has(sku));
+    const ungrouped = row.skus.filter((sku) => !grouping.parentByChild.has(sku) && !groupedParents.has(sku));
     if (ungrouped.length > 0) singles.push(subsetProductRow(row, ungrouped, skuById, stockBySku));
   }
   return [...parentRows, ...singles].sort((left, right) => compareKeys(left.handle, right.handle));

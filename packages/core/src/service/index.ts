@@ -2103,10 +2103,12 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const filters = query.filters;
       const priceRange = filters?.price_changed_within;
       const parentView = Boolean(filters?.parent_only && snapshot.config.sku_grouping?.enabled);
-      const grouped = parentView ? parentStockRows(snapshot.skuStock, snapshot.asOf) : null;
+      const rule = snapshot.config.sku_grouping?.rule;
+      const feedParents = rule?.type === "regex" && rule.parent_source === "feed";
+      const grouped = parentView ? parentStockRows(snapshot.skuStock, snapshot.asOf, feedParents) : null;
       const source = grouped?.rows ?? snapshot.skuStock;
       const relatedRows = (row: SkuStockView): readonly SkuStockView[] =>
-        row.is_parent ? grouped?.childrenByParent.get(row.sku) ?? [] : [row];
+        row.is_parent ? [...(feedParents ? [row] : []), ...(grouped?.childrenByParent.get(row.sku) ?? [])] : [row];
       const todaySkus = new Set(snapshot.events.filter((event) => event.date === snapshot.asOf).map((event) => event.sku));
       const watchedCategoryTokens = filters?.watched_only
         ? new Set(mergedCategoryRates(snapshot).filter((category) => category.watched).flatMap((category) => [...category.tokens]))
@@ -2173,7 +2175,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             return parent ? [parent] : [];
           }));
           for (const group of grouping.groups) {
-            if (relatedParents.has(group.parent)) for (const child of group.children) relatedSkuIds.add(child);
+            if (relatedParents.has(group.parent) || relatedSkuIds.has(group.parent)) {
+              if (allActiveSkus.some((row) => row.sku === group.parent)) relatedSkuIds.add(group.parent);
+              for (const child of group.children) relatedSkuIds.add(child);
+            }
           }
         } catch (error) {
           if (error instanceof SkuGroupingRuleError) throw siteError(error.code, error.message, error.detail);

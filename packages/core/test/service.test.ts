@@ -750,6 +750,30 @@ describe("createCoreService initial namespaces", () => {
     ]);
     expect(await readFile(productViewPath)).toEqual(persistedBefore);
 
+    // The fixture contains a real DEMO003C parent and two real children.
+    site.sku_grouping.rule.parent_source = "feed";
+    await writeFile(sitePath, JSON.stringify(site));
+    const feedStocks = stockRows.map((row) => row.sku.startsWith("DEMO003C") && row.sku !== "DEMO003C"
+      ? { ...row, parent_sku: "DEMO003C" } : row);
+    await writeJsonl(path.join(projectPath, PATHS.skuStockView), feedStocks as unknown as JsonRecord[], { primaryKey: ["sku"] });
+    api.invalidate(projectPath);
+    const feedProducts = await api.products.list("fixture", { page: 1, pageSize: 0, filters: { parent_only: true } });
+    const familyRow = feedProducts.rows.find((row) => row.product_id === "DEMO003C");
+    expect(familyRow).toMatchObject({ row_kind: "parent", skus: ["DEMO003C", "DEMO003C01", "DEMO003C02"] });
+    expect(feedProducts.rows.flatMap((row) => row.skus).filter((sku) => sku === "DEMO003C")).toHaveLength(1);
+    const parentHandle = skuRows.find((row) => row.sku === "DEMO003C")!.handle;
+    const childHandle = skuRows.find((row) => row.sku === "DEMO003C01")!.handle;
+    for (const handle of [parentHandle, childHandle]) {
+      const details = await api.products.get("fixture", handle);
+      expect(details.variants.map((row) => row.sku)).toEqual(["DEMO003C", "DEMO003C01", "DEMO003C02"]);
+    }
+    const feedInventory = await api.inventory.listSkus("fixture", { page: 1, pageSize: 0, filters: { parent_only: true } });
+    const parentStock = feedStocks.find((row) => row.sku === "DEMO003C")!;
+    expect(feedInventory.rows.filter((row) => row.sku === "DEMO003C")).toEqual([
+      expect.objectContaining({ stock_status: parentStock.stock_status, history_30d: parentStock.history_30d, is_parent: true }),
+    ]);
+    expect(await readFile(productViewPath)).toEqual(persistedBefore);
+
     site.sku_grouping.enabled = false;
     await writeFile(sitePath, JSON.stringify(site));
     api.invalidate(projectPath);

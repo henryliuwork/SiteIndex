@@ -28,6 +28,15 @@ function childRow(
 }
 
 describe("parent SKU stock history", () => {
+  it("preserves the real feed parent stock once", () => {
+    const parent = { ...childRow("DEMOCP", "", "out_of_stock", "o".repeat(30)), price: 42 };
+    const child = childRow("DEMOCP01", "DEMOCP", "in_stock", "i".repeat(30));
+    expect(parentStockRows([parent, child], "2026-11-09", true).rows).toEqual([
+      { ...parent, is_parent: true, children_count: 1, in_stock_children_count: 1 },
+    ]);
+    expect(parentStockRows([parent, child], "2026-11-09").rows).toEqual([parent, child]);
+  });
+
   it("aggregates daily child states, online rates and the latest aggregate stock change", () => {
     const demoHistoryFixture = [
       childRow("DEMO010A01", "DEMO010A", "in_stock", "-".repeat(20) + "ooiiooouoi"),
