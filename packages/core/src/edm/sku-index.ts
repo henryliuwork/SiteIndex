@@ -183,6 +183,7 @@ function exportRows(input: EdmSkuIndexInput): ExportRow[] {
   const activeSkus = input.skus.filter((sku) => sku.status === "active");
   const activeBySku = new Map(activeSkus.map((sku) => [sku.sku, sku]));
   const stockBySku = new Map(input.stock.map((row) => [row.sku, row]));
+  const mediaBySku = latestLedgerRows(input.skuMedia.filter((row) => row.image_role === "main"), "sku");
   const products = input.grouping?.enabled
     ? groupProductRows(input.products, activeSkus, input.stock, input.grouping.rule, true)
     : input.products.map((row) => ({ ...row, row_kind: "single" as const }));
@@ -193,7 +194,14 @@ function exportRows(input: EdmSkuIndexInput): ExportRow[] {
     if (product.status !== "active" || product.exclude_edm === 1) continue;
     if (product.row_kind === "parent") {
       const children = product.skus.filter((sku) => activeBySku.has(sku)).sort(compareKeys);
-      const representative = children.find((sku) => stockBySku.get(sku)?.stock_status === "in_stock") ?? children[0];
+      const feedParent = input.grouping?.rule.type === "regex" && input.grouping.rule.parent_source === "feed"
+        ? activeBySku.get(product.product_id) : undefined;
+      const parentHasImage = feedParent && (supportedImageUrl(mediaBySku.get(feedParent.sku)?.image_url).url
+        || supportedImageUrl(feedParent.image_url).url);
+      const available = feedParent ? children.filter((sku) => supportedImageUrl(mediaBySku.get(sku)?.image_url).url
+        || supportedImageUrl(activeBySku.get(sku)?.image_url).url) : children;
+      const representative = parentHasImage ? feedParent.sku
+        : available.find((sku) => stockBySku.get(sku)?.stock_status === "in_stock") ?? available[0] ?? children[0];
       if (!representative || seen.has(product.product_id)) continue;
       const representativeRecord = activeBySku.get(representative);
       if (!representativeRecord) continue;
