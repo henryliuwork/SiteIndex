@@ -112,6 +112,9 @@
 - [x] 最终 mock 截图：1280×800 与 1920×1080，见 `packages/ui/screenshots/v05-w1/`；42 个路由/视口检查中 39 项通过。余下 3 项仅在 D 负责的 EDM 页（“agent 使用”单元格裁切两项、1280×800 分页条出视口一项），本 PR 未改 D 页面。
 - D 页面仍有 `font-size: 11–13px` 硬编码的文件：`content/page.css`、`runs/page.css`、`project-settings-files/page.css`、`project-settings-categories/page.css`、`project-settings-config/page.css`；需要 D 后续迁移到字号 token 才能满足全站 14px 下限。
 
+## v0.5.1 · 工作区导入自动补齐体验
+- [x] UI/mock 按 `workspace.importCheck` 的 `auto_fixable` / `repaired` 显示自动补齐 workspace 元数据；不可修复的异常仍提供明确手动处理说明。此 PR 只完成 UI 准备，整体验收与合并等待 A 提供安全的 Core 自动补齐实现。
+
 ## v0.5.2 · 新建项目 GMC Feed 可选
 - [x] 新建项目向导允许跳过 GMC Feed，创建请求传空 `feed_urls`；明确提示创建后可在项目设置补充，并由 mock 展示无 Feed 时首次每日同步失败 — 本 PR
 
