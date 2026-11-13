@@ -1,0 +1,166 @@
+.si-project-todos-page {
+  gap: var(--space-4);
+}
+
+.si-todo-back-link {
+  color: var(--color-brand);
+  margin-inline-start: var(--space-3);
+  text-decoration: none;
+}
+
+.si-todo-back-link:hover {
+  text-decoration: underline;
+}
+
+.si-todo-loading,
+.si-todo-inline-status {
+  color: var(--color-muted);
+  padding: var(--space-4);
+}
+
+.si-todo-filter-bar {
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.si-todo-search {
+  min-width: min(100%, 260px);
+  width: min(100%, 340px);
+}
+
+.si-todo-result-count {
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+.si-todo-finding-cell,
+.si-todo-rule-cell {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.si-todo-finding-cell strong {
+  color: var(--color-ink);
+  font-weight: var(--fw-sub-title);
+}
+
+.si-todo-finding-cell small,
+.si-todo-rule-cell small,
+.si-todo-detail small {
+  color: var(--color-muted);
+  font-size: var(--fs-caption);
+}
+
+.si-todo-rule-cell code,
+.si-todo-detail code {
+  color: var(--color-ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+}
+
+.si-todo-detail {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.si-todo-detail section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.si-todo-detail h3 {
+  align-items: center;
+  color: var(--color-ink);
+  display: flex;
+  font-size: var(--fs-section-title);
+  font-weight: var(--fw-section-title);
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.si-todo-detail-summary dl {
+  display: grid;
+  gap: var(--space-2) var(--space-4);
+  grid-template-columns: minmax(8rem, 0.6fr) minmax(0, 1.4fr);
+  margin: 0;
+}
+
+.si-todo-detail-summary dl > div {
+  display: contents;
+}
+
+.si-todo-detail-summary dt {
+  color: var(--color-muted);
+}
+
+.si-todo-detail-summary dd {
+  color: var(--color-ink);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.si-todo-detail-summary p {
+  color: var(--color-ink-2);
+  margin: 0;
+}
+
+.si-todo-detail-sources ul,
+.si-todo-detail-history ol {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.si-todo-detail-sources li {
+  background: var(--color-subtle);
+  border: 1px solid var(--color-line-soft);
+  border-radius: 8px;
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.si-todo-detail-sources li strong {
+  color: var(--color-ink);
+}
+
+.si-todo-detail-sources li span,
+.si-todo-detail-sources li small {
+  overflow-wrap: anywhere;
+}
+
+.si-todo-detail-history li {
+  align-items: start;
+  border-inline-start: 1px solid var(--color-line);
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 0 0 var(--space-3) var(--space-3);
+}
+
+.si-todo-history-icon {
+  color: var(--color-brand);
+}
+
+.si-todo-detail-history li > div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .si-todo-search {
+    width: 100%;
+  }
+
+  .si-todo-detail-summary dl {
+    grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+  }
+}
