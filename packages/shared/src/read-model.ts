@@ -1,4 +1,5 @@
 import type { ISODateTime, Severity } from "./models";
+import type { PathKey } from "./paths";
 
 /** Read-only query data source. `kind` is a stable lowercase identifier, not a URL or credential. */
 export interface ScenarioSource {
@@ -46,9 +47,18 @@ export interface TodoRuleFinding {
   title: string;
   detail?: string;
   severity?: Severity;
+  /** Non-empty references to source records; path is a PATHS key resolved for the project's layout. */
+  sources: [TodoRuleSourceReference, ...TodoRuleSourceReference[]];
   first_seen_at: ISODateTime;
   /** Updated only when this finding is observed, never from a partial or failed scan. */
   last_seen_at: ISODateTime;
+}
+
+/** Traceable reference to the source file and record that supports a rule finding. */
+export interface TodoRuleSourceReference {
+  path: PathKey;
+  record_key: string;
+  collected_at: ISODateTime;
 }
 
 /** Current manual state and note; rule regeneration preserves both. */
@@ -57,6 +67,8 @@ export interface TodoManualState {
   status: TodoManualStatus;
   note: string | null;
   updated_at: ISODateTime;
+  /** Persisted timestamp from a complete trusted scan that confirmed this finding was absent; cleared on reappearance. */
+  absence_confirmed_at?: ISODateTime | null;
 }
 
 /** Append-only review event. Note changes and status changes remain explicit and serializable. */

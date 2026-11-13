@@ -751,8 +751,9 @@ export interface SiteIndexApi {
   /**
    * Project-scoped rule findings and user-maintained review state; optional for older bridges.
    * Re-evaluation preserves status and notes for stable dedupe keys. Only a complete trusted scan can
-   * confirm absence; partial/failed scans must retain prior findings. A later match after confirmed absence
-   * moves a done item to pending_review and appends a rule_reopened event; ignored remains until user change.
+   * persist absence_confirmed_at; partial/failed scans must retain prior findings and never confirm absence.
+   * A later match after confirmed absence moves a done item to pending_review and appends rule_reopened;
+   * ignored remains until user change.
    */
   todos?: {
     /** Findings include rule_id and canonical subject identity; scan status prevents gaps looking resolved. */
