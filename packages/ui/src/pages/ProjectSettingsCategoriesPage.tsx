@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory } from "@siteindex/shared";
+import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory, SiteConfig } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel, useToast } from "../components";
@@ -41,7 +41,10 @@ function categorySlug(url: string): string {
   return segment.replace(/\.html?$/i, "").replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "new-category";
 }
 
-export function ProjectSettingsCategoriesPage() {
+// Core stores the complete categories object, so include the latest persisted watched list in the same save.
+type CategoriesSaveConfig = CategoriesConfig & Pick<SiteConfig["categories"], "watched">;
+
+export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved }: { embedded?: boolean; onConfigSaved?: (config: CategoriesConfig) => void } = {}) {
   const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -120,8 +123,14 @@ export function ProjectSettingsCategoriesPage() {
     }
     setSaving(true);
     try {
-      const result = await api.categories.save(id, draft);
+      const latestProject = await api.projects.get(id);
+      const configToSave: CategoriesSaveConfig = {
+        ...draft,
+        watched: latestProject.config.categories.watched,
+      };
+      const result = await api.categories.save(id, configToSave);
       setPreview(result);
+      onConfigSaved?.(draft);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["categories", id] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-summary", id] }),
@@ -171,22 +180,16 @@ export function ProjectSettingsCategoriesPage() {
     setSelectedIndex(null);
   };
 
-  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
-  if (projectQuery.isError || !projectQuery.data) return <ApiErrorNotice page label="项目分类设置页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
+  if (projectQuery.isLoading) return embedded ? <section id="categories" className="si-category-embedded" aria-labelledby="categories-heading"><h2 id="categories-heading">分类设置</h2><div className="si-query-loading" role="status">正在加载项目信息…</div></section> : <div className="si-page-loading" role="status">正在加载项目信息…</div>;
+  if (projectQuery.isError || !projectQuery.data) return embedded ? <section id="categories" className="si-category-embedded" aria-labelledby="categories-heading"><h2 id="categories-heading">分类设置</h2><ApiErrorNotice label="项目信息加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} /></section> : <ApiErrorNotice page label="项目分类设置页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
   const project = projectQuery.data.summary;
-  if (configQuery.isError) return <div className="si-page si-category-page">
-    <ProjectHeader project={project} activeTab="settings" hasTabPanel />
-    <ProjectTabPanel projectId={project.id} tab="settings">
-    <SettingsNav id={id} />
-    <ApiErrorNotice label="分类配置加载失败。" error={configQuery.error} onRetry={() => void configQuery.refetch()} />
-    </ProjectTabPanel>
-  </div>;
-  if (configQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载分类设置…</div>;
+  const sectionActions = <><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></>;
+  if (configQuery.isError) return embedded
+    ? <section id="categories" className="si-category-embedded" aria-labelledby="categories-heading"><h2 id="categories-heading">分类设置</h2><ApiErrorNotice label="分类配置加载失败。" error={configQuery.error} onRetry={() => void configQuery.refetch()} /></section>
+    : <div className="si-page si-category-page"><ProjectHeader project={project} activeTab="settings" hasTabPanel /><ProjectTabPanel projectId={project.id} tab="settings"><SettingsNav id={id} /><ApiErrorNotice label="分类配置加载失败。" error={configQuery.error} onRetry={() => void configQuery.refetch()} /></ProjectTabPanel></div>;
+  if (configQuery.isLoading || !draft) return embedded ? <section id="categories" className="si-category-embedded" aria-labelledby="categories-heading"><h2 id="categories-heading">分类设置</h2><div className="si-query-loading" role="status">正在加载分类设置…</div></section> : <div className="si-page-loading" role="status">正在加载分类设置…</div>;
 
-  return <div className="si-page si-category-page">
-    <ProjectHeader project={project} activeTab="settings" hasTabPanel pageTitle="分类设置" pageMeta={<Chip tone="neutral">{modeDescription(draft.mode)}</Chip>} actions={<><Button disabled={previewing} onClick={() => void previewConfig()}>{previewing ? "预览中…" : "预览匹配结果"}</Button><Button variant="primary" disabled={saving} onClick={() => void saveConfig()}>{saving ? "保存中…" : "保存并重新归类"}</Button></>} />
-    <ProjectTabPanel projectId={project.id} tab="settings">
-    <SettingsNav id={id} />
+  const categoryContent = <>
     <section className="si-category-mode-section"><h2>分类识别方式</h2><div className="si-category-mode-grid">{matchingModes.map((mode) => <button type="button" key={mode.value} className={`si-category-mode-card${draft.mode === mode.value ? " active" : ""}`} aria-pressed={draft.mode === mode.value} onClick={() => setDraft((current) => current ? { ...current, mode: mode.value } : current)}><span className="si-category-mode-title"><strong>{mode.title}</strong><Chip tone={draft.mode === mode.value ? "ok" : "neutral"}>{draft.mode === mode.value ? "当前" : mode.hint}</Chip></span><span>{mode.detail}</span></button>)}</div></section>
     {draft.mode === "url_rule" && <section className="si-category-url-rule"><label htmlFor="si-category-url-pattern">分类 URL 规则</label><input id="si-category-url-pattern" className="si-text-field si-category-mono" value={draft.url_pattern ?? "/collections/{slug} , /product-category/{slug}/"} onChange={(event) => setDraft((current) => current ? { ...current, url_pattern: event.target.value } : current)} /><p>用 <code>{"{slug}"}</code> 表示分类 slug；支持多个 URL 模式。</p></section>}
     {draft.mode === "feed" && <section className="si-category-feed-note"><strong>使用 Feed 分类字段</strong><span>分类层级读取当前项目配置中的主分类层级；可在「配置 → 数据源」中调整。</span></section>}
@@ -209,6 +212,18 @@ export function ProjectSettingsCategoriesPage() {
       <p className="si-category-editor-count">当前预览命中 {selected.skuCount.toLocaleString("zh-CN")} 个 SKU。编辑后请重新预览匹配结果。</p>
       <div className="si-category-editor-actions"><Button variant="danger" onClick={() => removeCategory(selectedIndex)}>删除分类</Button><Button variant="primary" onClick={() => setSelectedIndex(null)}>完成编辑</Button></div>
     </div>}</DetailPanel>
+  </>;
+
+  if (embedded) return <section id="categories" className="si-category-embedded" aria-labelledby="categories-heading">
+    <div className="si-category-embedded-heading"><div><h2 id="categories-heading">分类设置</h2><p>{modeDescription(draft.mode)} · 分类规则、候选分类页与匹配预览</p></div><div>{sectionActions}</div></div>
+    {categoryContent}
+  </section>;
+
+  return <div className="si-page si-category-page">
+    <ProjectHeader project={project} activeTab="settings" hasTabPanel pageTitle="分类设置" pageMeta={<Chip tone="neutral">{modeDescription(draft.mode)}</Chip>} actions={sectionActions} />
+    <ProjectTabPanel projectId={project.id} tab="settings">
+      <SettingsNav id={id} />
+      {categoryContent}
     </ProjectTabPanel>
   </div>;
 }
