@@ -335,6 +335,22 @@ describe("media Core Job", () => {
     expect(first.runId).not.toBe(reused.runId);
   }, 30_000);
 
+  it("uses the real feed parent's image or an available child's image", async () => {
+    for (const missingParent of [false, true]) {
+      const { projectPath } = await makeProject({
+        wordpressOrigin: "https://fixture.example.test", sourceImageUrl: "https://cdn.example.test/synthetic.png",
+        skuIds: ["DEMOCP", "DEMOCP01"], missingImageSkus: missingParent ? ["DEMOCP"] : [],
+        grouping: { enabled: true, rule: { type: "regex", value: "^(.*CP)\\d+$", parent_source: "feed" } },
+      });
+      const result = await service(projectPath).runJob({
+        projectPath, job: "media", trigger: "manual", date: "2026-11-11", skus: ["DEMOCP"],
+      }, () => undefined);
+      expect(result.media_results).toMatchObject([{ sku: "DEMOCP", status: "recorded" }]);
+      const ledger = await readCsv(path.join(projectPath, PATHS.skuMedia));
+      expect(ledger.map((row) => row.sku)).toEqual([missingParent ? "DEMOCP01" : "DEMOCP"]);
+    }
+  }, 30_000);
+
   it("reports globally unique media execution IDs before work and uses the same ID in both checkpoints", async () => {
     const credentials = createFakeCredentialCanary();
     const wordpress = await makeWordPress({ credentials });

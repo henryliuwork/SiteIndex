@@ -231,7 +231,10 @@ async function readSiteSource(projectPath: string, relativePath: string): Promis
       const rawRule = value.sku_grouping.rule;
       if (!object(rawRule) || (rawRule.type !== "suffix" && rawRule.type !== "separator" && rawRule.type !== "regex")
         || typeof rawRule.value !== "string" || !rawRule.value.trim()) throw new Error("invalid grouping rule");
-      grouping = { enabled: value.sku_grouping.enabled, rule: { type: rawRule.type, value: rawRule.value } };
+      if (rawRule.type === "regex" && rawRule.parent_source !== undefined && rawRule.parent_source !== "derived" && rawRule.parent_source !== "feed") throw new Error("invalid parent source");
+      grouping = { enabled: value.sku_grouping.enabled, rule: rawRule.type === "regex"
+        ? { type: "regex", value: rawRule.value, ...(rawRule.parent_source ? { parent_source: rawRule.parent_source as "derived" | "feed" } : {}) }
+        : { type: rawRule.type, value: rawRule.value } };
     }
     const priority: ("feed" | "manual")[] = imagePriority[0] === "feed" ? ["feed", "manual"] : ["manual", "feed"];
     return {
@@ -387,12 +390,18 @@ function candidateRows(sources: EdmSources, parentOnly: boolean, extras: Scenari
     const grouping = groupSkuIds(skus.map((row) => row.sku), sources.site.rows.grouping.rule);
     const bySku = new Map(base.map((row) => [row.candidate.sku, row]));
     const children = new Set(grouping.groups.flatMap((group) => group.children));
+    const rule = sources.site.rows.grouping.rule;
+    const feedParents = rule.type === "regex" && rule.parent_source === "feed";
+    const parentIds = new Set(feedParents ? grouping.groups.map((group) => group.parent) : []);
     const parents = grouping.groups.flatMap((group) => {
       const childRows = group.children.flatMap((sku) => bySku.get(sku) ? [bySku.get(sku)!] : []);
-      const parent = aggregateParent(group.parent, childRows, sources.site.rows!.imagePriority);
-      return parent ? [parent] : [];
+      const realParent = feedParents ? bySku.get(group.parent) : undefined;
+      const parent = aggregateParent(group.parent, realParent ? [realParent, ...childRows] : childRows, sources.site.rows!.imagePriority);
+      if (!parent) return [];
+      return realParent ? [{ ...parent, candidate: { ...realParent.candidate,
+        image_url: parent.candidate.image_url, image_source: parent.candidate.image_source } }] : [parent];
     });
-    const singles = base.filter((row) => !children.has(row.candidate.sku));
+    const singles = base.filter((row) => !children.has(row.candidate.sku) && !parentIds.has(row.candidate.sku));
     return [...parents, ...singles].sort((left, right) => compareKeys(left.candidate.sku, right.candidate.sku));
   } catch {
     extras.push(anomaly("SKU_GROUPING_RULE_INVALID", "unreliable", "项目 SKU 分组规则无效，无法生成父行查询结果。", "site.sku_grouping.rule"));

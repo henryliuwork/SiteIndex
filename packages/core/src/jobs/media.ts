@@ -727,8 +727,12 @@ function chooseRepresentative(
 ): string | null {
   const children = parentToChildren.get(requestedSku);
   if (!children) return activeBySku.has(requestedSku) ? requestedSku : null;
+  const realParent = activeBySku.get(requestedSku);
+  if (realParent?.image_url) return requestedSku;
   const sorted = [...children].sort(compareKeys);
-  return sorted.filter((sku) => statusBySku.get(sku) === "in_stock").sort(compareKeys)[0] ?? sorted[0] ?? null;
+  const withImage = sorted.filter((sku) => activeBySku.get(sku)?.image_url);
+  const candidates = realParent ? withImage : sorted;
+  return candidates.find((sku) => statusBySku.get(sku) === "in_stock") ?? candidates[0] ?? (realParent ? requestedSku : null);
 }
 
 function orderUniqueSkus(skus: readonly string[]): string[] {
