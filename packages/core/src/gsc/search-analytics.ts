@@ -15,7 +15,8 @@ export interface GscAnalyticsRow {
   collected_at: string;
 }
 
-interface History { version: 1; rows: GscAnalyticsRow[] }
+interface PendingDates { property: string; dates: string[] }
+interface History { version: 1; rows: GscAnalyticsRow[]; pending_dates?: PendingDates[] }
 
 export interface GscAnalyticsOptions {
   /** Resolved by the project-layout integration; no credentials are written to this file. */
@@ -56,7 +57,11 @@ async function readHistory(file: string): Promise<History> {
     const data: unknown = JSON.parse(await readFile(file, "utf8"));
     if (!data || typeof data !== "object" || !("version" in data) || data.version !== 1 || !("rows" in data)
       || !Array.isArray(data.rows) || !data.rows.every(isRow)) throw new Error("invalid history");
-    return { version: 1, rows: data.rows };
+    const pending = "pending_dates" in data ? data.pending_dates : undefined;
+    if (pending !== undefined && (!Array.isArray(pending) || !pending.every((entry: unknown) =>
+      !!entry && typeof entry === "object" && "property" in entry && typeof entry.property === "string"
+      && "dates" in entry && Array.isArray(entry.dates) && entry.dates.every(validDate)))) throw new Error("invalid pending dates");
+    return { version: 1, rows: data.rows, pending_dates: pending as PendingDates[] | undefined };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, rows: [] };
     throw error;
@@ -96,7 +101,11 @@ export async function syncSearchAnalytics(input: GscSyncInput, options: GscAnaly
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
   const existingDates = history.rows.filter((row) => row.property === property).map((row) => row.date).sort();
   const lastDate = existingDates.at(-1);
-  const availabilityStart = input.mode === "incremental" && lastDate ? shift(lastDate, 1) : shift(today, -119);
+  const pendingDates = history.pending_dates?.filter((entry) => entry.property === property).flatMap((entry) => entry.dates) ?? [];
+  // Older history files did not record gaps; rescan their last 90 days once.
+  const nextDate = lastDate && history.pending_dates === undefined ? shift(lastDate, -89) : lastDate && shift(lastDate, 1);
+  const availabilityStart = input.mode === "incremental" && nextDate
+    ? [nextDate, ...pendingDates].sort()[0]! : shift(today, -119);
   if (availabilityStart > today) return { state: "complete", mode: input.mode, records_received: 0, records_written: 0, history_effect: "merged", metadata: { ...metadata, data_through: lastDate ?? null, quality: "complete" } };
 
   const request = async (range: GscDateRange, dimensions: string[], startRow = 0): Promise<unknown[]> => {
@@ -165,7 +174,13 @@ export async function syncSearchAnalytics(input: GscSyncInput, options: GscAnaly
     const rows = new Map(history.rows.map((row) => [key(row), row]));
     for (const row of received) rows.set(key(row), row);
     const merged = [...rows.values()].sort((a, b) => compareKeys(key(a), key(b)));
-    await atomicWrite(options.historyPath, `${JSON.stringify({ version: 1, rows: merged })}\n`);
+    const remaining = pendingDates.filter((date) => date < start || date > through);
+    for (const gap of metadata.missing_ranges) {
+      for (let date = gap.start_date; date <= gap.end_date; date = shift(date, 1)) remaining.push(date);
+    }
+    const pending = (history.pending_dates ?? []).filter((entry) => entry.property !== property);
+    if (remaining.length) pending.push({ property, dates: [...new Set(remaining)].sort() });
+    await atomicWrite(options.historyPath, `${JSON.stringify({ version: 1, rows: merged, pending_dates: pending })}\n`);
     metadata.collected_at = requestedAt;
     metadata.quality = metadata.missing_ranges.length || metadata.missing_fields.length ? "partial" : "complete";
     return { state: metadata.quality === "complete" ? "complete" : "partial", mode: input.mode, records_received: received.length, records_written: received.length, history_effect: "merged", metadata };
