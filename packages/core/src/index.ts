@@ -33,5 +33,7 @@ export { buildViews } from "./views/build";
 export type { BuildViewsOptions, BuildViewsResult } from "./views/build";
 export { createCoreService } from "./service";
 export type { CoreService, CoreServiceContext } from "./service";
+export { syncProjectSearchAnalytics } from "./gsc/project-service";
+export type { GscProjectSyncOptions } from "./gsc/project-service";
 
 export const CORE_SCHEMA_VERSION = SCHEMA_VERSION;
