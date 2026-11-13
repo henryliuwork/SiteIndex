@@ -145,6 +145,48 @@ describe("createApiBridge IPC errors", () => {
     expect(invoke).toHaveBeenCalledWith("si:projects.createWorkspaceOnly", input);
   });
 
+  it("forwards Todo findings, manual status and notes, and history through the API bridge", async () => {
+    const findingResult = {
+      items: [],
+      scan: { status: "complete" as const, evaluated_at: "2026-11-13T10:00:00.000Z" },
+    };
+    const statusResult = {
+      dedupe_key: "todo:v1:fixture",
+      status: "in_progress" as const,
+      note: null,
+      updated_at: "2026-11-13T10:01:00.000Z",
+    };
+    const noteResult = { ...statusResult, note: "synthetic review note", updated_at: "2026-11-13T10:02:00.000Z" };
+    const historyResult = [
+      {
+        event_id: "fixture-event-1",
+        dedupe_key: "todo:v1:fixture",
+        action: "status_changed" as const,
+        from_status: "open" as const,
+        to_status: "in_progress" as const,
+        changed_at: "2026-11-13T10:01:00.000Z",
+      },
+    ];
+    const responses = [findingResult, statusResult, noteResult, historyResult];
+    const invoke = vi.fn(async () => responses.shift());
+    const bridge = createApiBridge({ invoke, listen: () => () => undefined });
+
+    await expect(bridge.todos?.list("fixture-project")).resolves.toEqual(findingResult);
+    await expect(
+      bridge.todos?.update("fixture-project", { dedupe_key: "todo:v1:fixture", status: "in_progress" }),
+    ).resolves.toEqual(statusResult);
+    await expect(
+      bridge.todos?.update("fixture-project", { dedupe_key: "todo:v1:fixture", note: "synthetic review note" }),
+    ).resolves.toEqual(noteResult);
+    await expect(bridge.todos?.history("fixture-project", "todo:v1:fixture")).resolves.toEqual(historyResult);
+    expect(invoke.mock.calls).toEqual([
+      ["si:todos.list", "fixture-project"],
+      ["si:todos.update", "fixture-project", { dedupe_key: "todo:v1:fixture", status: "in_progress" }],
+      ["si:todos.update", "fixture-project", { dedupe_key: "todo:v1:fixture", note: "synthetic review note" }],
+      ["si:todos.history", "fixture-project", "todo:v1:fixture"],
+    ]);
+  });
+
   it("forwards read-only system task listing through the API bridge", async () => {
     const rows = [
       {

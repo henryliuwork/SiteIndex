@@ -13,6 +13,7 @@ type SkuApi = NonNullable<SiteIndexApi["sku"]>;
 type WorkspaceApi = NonNullable<SiteIndexApi["workspace"]>;
 type MediaApi = NonNullable<SiteIndexApi["media"]>;
 type GscApi = NonNullable<SiteIndexApi["gsc"]>;
+type TodosApi = NonNullable<SiteIndexApi["todos"]>;
 
 function decodeIpcError(error: unknown): unknown {
   const message =
@@ -81,6 +82,11 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
     uiState: {
       get: (...args) => invoke<UiStateApi["get"]>("uiState.get", ...args),
       set: (...args) => invoke<UiStateApi["set"]>("uiState.set", ...args),
+    },
+    todos: {
+      list: (...args) => invoke<TodosApi["list"]>("todos.list", ...args),
+      update: (...args) => invoke<TodosApi["update"]>("todos.update", ...args),
+      history: (...args) => invoke<TodosApi["history"]>("todos.history", ...args),
     },
     projects: {
       list: () => invoke<SiteIndexApi["projects"]["list"]>("projects.list"),
