@@ -121,7 +121,7 @@ export function createProjectsMock(
         });
       }
       createdPaths.set(id, path);
-      return { id, runId: beginRun(path, "init") };
+      return { id, runId: beginRun(path, "init", { missingFeed: input.feed_urls.length === 0 }) };
     }),
     createWorkspaceOnly: (input: CreateWorkspaceOnlyInput) => reply(() => {
       const path = joinPath(input.projects_root, input.folder_name);

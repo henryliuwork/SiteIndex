@@ -70,7 +70,7 @@ function DetectSummary({ result }: { result: DetectResult }) {
     <ResultLine label="Sitemap" status={result.sitemaps.length ? "已展开" : "未发现"}>{sitemapText}</ResultLine>
     <ResultLine label="平台">{platformNames[result.platform]}（{result.platform_evidence}）{result.frontend ? " · 前台 " + result.frontend : ""}</ResultLine>
     <ResultLine label="语言 / 币种">{result.locale ?? "未识别语言"} / {result.currency ?? "未识别币种"}</ResultLine>
-    <ResultLine label="GMC feed" tone={result.feed_candidates.length ? "ok" : "warn"} status={result.feed_candidates.length ? "已识别" : "待填写"}>{result.feed_candidates.length ? "发现 " + result.feed_candidates.length + " 个候选地址" : "网站上未发现公开的 feed 地址，下一步手动填写"}</ResultLine>
+    <ResultLine label="GMC feed" tone={result.feed_candidates.length ? "ok" : "warn"} status={result.feed_candidates.length ? "已识别" : "待配置"}>{result.feed_candidates.length ? "发现 " + result.feed_candidates.length + " 个候选地址" : "网站上未发现公开的 Feed 地址，可手动填写或创建后补充"}</ResultLine>
   </div>;
 }
 
@@ -209,13 +209,13 @@ export function NewProjectWizardPage() {
     try {
       const projects = await queryClient.fetchQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list(), staleTime: 0 });
       if (findExistingProject(projects, draft.url)) {
-        update({ detect: null, feedResult: null });
+        update({ detect: null, feedResult: null, feedSkipped: false });
         toast.info("该网站已登记，请打开已有项目。");
         return;
       }
       const result = await api.projects.detect(draft.url.trim());
       const brandName = draft.brand.name || slugFor(draft.url).replace(/(^|-)([a-z])/g, (_match, _dash, letter: string) => letter.toUpperCase());
-      update({ detect: result, feedUrls: result.feed_candidates, feedResult: null, folderName: draft.folderName || slugFor(draft.url), brand: { ...draft.brand, name: brandName }, workspacePlatform: workspacePlatformFromDetected(result.platform) });
+      update({ detect: result, feedUrls: result.feed_candidates, feedResult: null, feedSkipped: false, folderName: draft.folderName || slugFor(draft.url), brand: { ...draft.brand, name: brandName }, workspacePlatform: workspacePlatformFromDetected(result.platform) });
       toast.success("网站检测完成。");
     } catch (cause) { const message = apiErrorMessage(cause, "网站检测或重复项目检查失败，请重试。"); setError(message); toast.error(message); }
     finally { setBusy(false); }
@@ -227,16 +227,24 @@ export function NewProjectWizardPage() {
     setBusy(true); setError(""); setFeedError(""); setCanRetryFeed(false);
     try {
       const result = await api.projects.inspectFeed(feedUrls, { sku_field: draft.skuField, category_depth: draft.categoryDepth });
-      update({ feedUrls, feedResult: result });
+      update({ feedUrls, feedResult: result, feedSkipped: false });
       toast.success("Feed 检测完成。");
       return true;
     } catch (cause) { const message = apiErrorMessage(cause, "Feed 检测失败，请检查地址后重试。"); setFeedError(message); setCanRetryFeed(true); toast.error(message); return false; }
     finally { setBusy(false); }
   };
 
+  const skipFeed = () => {
+    setFeedError("");
+    setCanRetryFeed(false);
+    setError("");
+    update({ feedUrls: [], feedResult: null, feedSkipped: true });
+    navigate("/new/brand");
+  };
+
   const createProject = async () => {
     const root = draft.projectsRoot || settings.data?.projects_root || "";
-    if (!draft.feedResult) { setError("请先返回数据源步骤并检测 Feed。"); return; }
+    if (!draft.feedResult && !draft.feedSkipped) { setError("请先检测 Feed，或选择稍后配置。"); return; }
     if (!draft.brand.name.trim() || !draft.folderName.trim() || !root.trim()) { setError("请填写品牌名、项目文件夹名和项目根目录。"); return; }
     if (workspaceApiAvailable && draft.workspaceEnabled && workspaceCheck.state !== "empty") {
       setError(workspaceCheck.message || "请先确认 Agent 工作区目标目录为空。");
@@ -252,7 +260,7 @@ export function NewProjectWizardPage() {
       }
       const created = await api.projects.create({
         url: draft.detect?.final_url ?? draft.url,
-        feed_urls: draft.feedUrls,
+        feed_urls: draft.feedSkipped ? [] : draft.feedUrls,
         sku_field: draft.skuField,
         category_depth: draft.categoryDepth,
         missing_as: draft.missingAs,
@@ -337,6 +345,7 @@ export function NewProjectWizardPage() {
   if (pathname.endsWith("/agent-workspace") && !workspaceApiAvailable) return <Navigate to="/new/brand" replace />;
   if (activeStepKey === "done" && !draft.created) return <Navigate to="/new/brand" replace />;
   const detection = draft.detect;
+  const canContinueFeed = Boolean(draft.feedResult || draft.feedSkipped);
   const duplicateProject = findExistingProject(registeredProjects.data ?? [], draft.url, detection?.final_url ?? "");
   const previewPath = pathJoin(projectRoot || "D:/SiteIndex/projects", draft.folderName || "[文件夹名]");
   const states: InitStepStates = { ...stepStates, ...retryStates };
@@ -360,7 +369,7 @@ export function NewProjectWizardPage() {
       <header><h2>输入网站地址</h2><p>SiteIndex 会自动检测跳转、robots.txt、sitemap、建站平台、语言和币种。</p></header>
       <form className="si-wizard-url-form" onSubmit={(event) => void detectSite(event)}>
         <label className="si-sr-only" htmlFor="site-url">网站地址</label>
-        <input id="site-url" className="si-text-field si-mono" value={draft.url} onChange={(event) => update({ url: event.target.value, detect: null, feedResult: null })} placeholder="https://example.com" />
+        <input id="site-url" className="si-text-field si-mono" value={draft.url} onChange={(event) => update({ url: event.target.value, detect: null, feedUrls: [], feedResult: null, feedSkipped: false })} placeholder="https://example.com" />
         <Button type="submit" variant="primary" disabled={busy}>{busy ? "正在检测…" : "检测"}</Button>
       </form>
       {detection ? <DetectSummary result={detection} /> : <EmptyState icon={<CircleAlert size={18} />}>输入网址后检测站点信息。</EmptyState>}
@@ -377,13 +386,15 @@ export function NewProjectWizardPage() {
         <div><dt>robots.txt</dt><dd>{detection.robots.found ? "已读取 · " + detection.robots.disallow_count + " 条 Disallow" : "未找到"}</dd></div>
         <div><dt>Sitemap</dt><dd>{detection.sitemaps.length} 个 sitemap · {detection.total_urls.toLocaleString("zh-CN")} 个 URL</dd></div>
         <div><dt>语言 / 币种</dt><dd>{detection.locale ?? "—"} / {detection.currency ?? "—"}</dd></div>
-      </dl><p>GMC feed 可能不在网站上公开，请从 Merchant Center 或 Feed 插件中复制地址。</p></section>
+      </dl><p>GMC Feed 可能不在网站上公开，可从 Merchant Center 或 Feed 插件复制地址，也可创建后在项目设置补充。</p></section>
       <div className="si-wizard-source-main">
         {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
         <section className="si-wizard-card">
-          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null }); }} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null }); }}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null })}><Plus size={14} /></Button></>}</div>)}
+          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null, feedSkipped: false })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null, feedSkipped: false }); }} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null, feedSkipped: false }); }}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null, feedSkipped: false })}><Plus size={14} /></Button></>}</div>)}
             {feedError && <div className="si-wizard-feed-error" role="alert"><span>{feedError}</span>{canRetryFeed && <Button size="small" disabled={busy} onClick={() => void inspectFeed()}>{busy ? "正在重试…" : "重试"}</Button>}</div>}
             <div className="si-wizard-feed-actions"><span>可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。</span></div>
+            <p className="si-wizard-note">GMC Feed 为可选项；暂时没有时可跳过，创建后再到项目设置补充。</p>
+            {draft.feedSkipped && <Notice tone="info" title="GMC Feed 将稍后配置">创建项目后，可在项目设置补充 Feed。</Notice>}
             {draft.feedResult && <FeedStats result={draft.feedResult} />}
           </div>
           {error && <p className="si-form-error" role="alert">{error}</p>}
@@ -394,12 +405,13 @@ export function NewProjectWizardPage() {
           </div><div className="si-wizard-field"><span>商品从 Feed 消失时</span><label className="si-radio-row"><input type="radio" checked={draft.missingAs === "out_of_stock"} onChange={() => update({ missingAs: "out_of_stock" })} />先记为缺货，连续 30 天未出现再判定下架</label><label className="si-radio-row"><input type="radio" checked={draft.missingAs === "removed"} onChange={() => update({ missingAs: "removed" })} />立即判定下架</label></div>
             <div className="si-wizard-category-chips">{draft.feedResult.category_distribution.slice(0, 4).map((category) => <Chip key={category.slug}>{category.slug} · {category.count}</Chip>)}</div>
           </section>} />}
-        <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/url")}>上一步</Button><Button variant="primary" disabled={!draft.feedResult || Boolean(duplicateProject)} onClick={() => navigate("/new/brand")}>下一步：品牌配置</Button></footer>
+        <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/url")}>上一步</Button>{!draft.feedSkipped && <Button disabled={busy || Boolean(duplicateProject)} onClick={skipFeed}>跳过 Feed，稍后配置</Button>}<Button variant="primary" disabled={!canContinueFeed || Boolean(duplicateProject)} onClick={() => navigate("/new/brand")}>下一步：品牌配置</Button></footer>
       </div>
     </div>}
 
     {active === 2 && detection && <>
       {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
+      {draft.feedSkipped && <Notice tone="warn" title="尚未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次每日同步可能失败。</Notice>}
       <div className="si-wizard-brand-layout">
         <section className="si-wizard-card">
           <header className="si-wizard-card-heading"><h2>品牌信息</h2><Chip tone="info">根据网址预填，可修改</Chip></header>
@@ -424,11 +436,12 @@ export function NewProjectWizardPage() {
         </section>
       </div>
       {error && <p className="si-form-error" role="alert">{error}</p>}
-      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/source")}>上一步</Button><Button variant="primary" onClick={() => workspaceApiAvailable ? navigate("/new/agent-workspace") : void createProject()} disabled={busy || !draft.feedResult || Boolean(duplicateProject)}>{busy ? "正在创建…" : workspaceApiAvailable ? "下一步：Agent 工作区" : "创建项目"}</Button></footer>
+      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/source")}>上一步</Button><Button variant="primary" onClick={() => workspaceApiAvailable ? navigate("/new/agent-workspace") : void createProject()} disabled={busy || !canContinueFeed || Boolean(duplicateProject)}>{busy ? "正在创建…" : workspaceApiAvailable ? "下一步：Agent 工作区" : "创建项目"}</Button></footer>
     </>}
 
     {activeStepKey === "agent-workspace" && detection && <>
       {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
+      {draft.feedSkipped && <Notice tone="warn" title="尚未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次每日同步可能失败。</Notice>}
       <div className="si-wizard-workspace-layout">
         <section className="si-wizard-card si-wizard-workspace-settings">
           <header className="si-wizard-card-heading"><div><h2>Agent 工作区</h2><p>为 Agent 生成可直接开始工作的目录、说明和平台预设。</p></div></header>
@@ -455,10 +468,11 @@ export function NewProjectWizardPage() {
           <pre>{workspaceDirectoryTree(draft.folderName || "[项目文件夹]")}</pre>
         </section>
       </div>
-      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/brand")}>上一步</Button><Button variant="primary" onClick={() => void createProject()} disabled={busy || !draft.feedResult || Boolean(duplicateProject) || (draft.workspaceEnabled && workspaceCheck.state !== "empty")}>{busy ? "正在创建…" : "创建项目"}</Button></footer>
+      <footer className="si-wizard-actions"><Button onClick={() => navigate("/new/brand")}>上一步</Button><Button variant="primary" onClick={() => void createProject()} disabled={busy || !canContinueFeed || Boolean(duplicateProject) || (draft.workspaceEnabled && workspaceCheck.state !== "empty")}>{busy ? "正在创建…" : "创建项目"}</Button></footer>
     </>}
 
     {activeStepKey === "done" && draft.created && <div className="si-wizard-done-layout">
+      {draft.feedSkipped && <Notice tone="warn" title="项目未配置 GMC Feed">创建项目后可在项目设置补充。首次每日同步可能失败，完成页会显示每一步的实际结果。</Notice>}
       {draft.created.path ? null : <p className="si-form-error" role="alert">项目已创建，但暂时无法读取实际路径。请重试读取，路径读取成功后即可打开文件夹。</p>}
       <section className="si-wizard-card si-wizard-progress-card">
         <header className="si-wizard-progress-heading"><h1>{allSucceeded ? "项目创建完成" : hasFinishedFailures ? "创建完成，但有步骤失败" : completionStatus === "skipped" ? "创建完成，部分步骤已跳过" : completionStatus === "incomplete" ? "项目创建未完成" : "正在创建 " + draft.brand.name}</h1><Chip tone={hasFinishedFailures ? "danger" : allSucceeded ? "ok" : completionStatus === "skipped" || completionStatus === "incomplete" ? "warn" : "info"}>{hasFinishedFailures ? "需处理" : allSucceeded ? "完成" : completionStatus === "skipped" ? "有步骤跳过" : completionStatus === "incomplete" ? "未完成" : completedCount + " / " + INIT_STEPS.length}</Chip></header>
