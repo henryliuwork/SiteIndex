@@ -191,6 +191,25 @@ describe("EDM scenario queries", () => {
     expect(result.data?.rows[0]).toMatchObject({ stock_status: "in_stock", price: 20, tags: ["blue", "summer"] });
   });
 
+  it.each(["legacy", "workspace"] as const)("keeps a real feed parent once in %s queries", async (layout) => {
+    const { projectPath, paths } = await makeProject(layout);
+    await writeFile(path.join(projectPath, paths.site), JSON.stringify({
+      schema_version: "1.0", domain: "shop.example.test", currency: "USD",
+      edm: { cooldown_days: 21, image_priority: ["feed", "manual"], discount_tiers: [10] },
+      sku_grouping: { enabled: true, rule: { type: "regex", value: "^(.*CP)\\d+$", parent_source: "feed" } },
+    }));
+    await populate(projectPath, paths, {
+      skus: [{ sku: "DEMOCP" }, { sku: "DEMOCP01", image_url: "https://images.example.test/child.jpg" }, { sku: "MISSINGCP01" }],
+      stock: [{ sku: "DEMOCP", stock_status: "out_of_stock" }, { sku: "DEMOCP01", stock_status: "in_stock" }, { sku: "MISSINGCP01", stock_status: "unknown" }],
+    });
+    const edm = service(projectPath).edm;
+    const result = await edm.candidates("synthetic", { parent_only: true, stock: "any" });
+    expect(result.data?.rows.map((row) => row.sku)).toEqual(["DEMOCP", "MISSINGCP01"]);
+    expect(result.data?.rows[0]).toMatchObject({ stock_status: "out_of_stock", image_url: "https://images.example.test/child.jpg" });
+    const gaps = await edm.mediaGaps("synthetic", { parent_only: true, stock: "any" });
+    expect(gaps.data?.rows.map((row) => row.sku)).toEqual(["MISSINGCP01"]);
+  });
+
   it("reports absent and incompatible images without fetching or exposing unsafe URLs", async () => {
     const { projectPath, paths } = await makeProject();
     await populate(projectPath, paths, {

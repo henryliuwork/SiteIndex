@@ -95,6 +95,16 @@ describe("EDM parent-only image rows", () => {
     expect(ledger.filter((row) => ["DEMO001A01", "DEMO001A02"].includes(String(row.sku))).map((row) => row.image_url))
       .toEqual(["https://images.example.test/parent.jpg", "https://images.example.test/parent.jpg"]);
 
+    site.sku_grouping.rule.parent_source = "feed";
+    await writeFile(sitePath, JSON.stringify(site));
+    api.invalidate(projectPath);
+    const feedRows = await api.edm.listImages("fixture", { page: 1, pageSize: 0, filters: { parent_only: true } });
+    expect(feedRows.rows.map((row) => row.sku)).toEqual(["DEMO001A01", "DEMO001A02", "DEMO003C", "DEMO004D"]);
+    expect(feedRows.rows.find((row) => row.sku === "DEMO003C")).toMatchObject({
+      title: "Demo Collision Parent", stock_status: "unknown", feed_image_url: "https://images.example.test/feed-c01.jpg",
+    });
+    expect((await api.edm.listImages("fixture", { page: 1, pageSize: 10, search: "DEMO003C01", filters: { parent_only: true } })).rows.map((row) => row.sku)).toEqual(["DEMO003C"]);
+
     site.sku_grouping.enabled = false;
     await writeFile(sitePath, JSON.stringify(site));
     api.invalidate(projectPath);

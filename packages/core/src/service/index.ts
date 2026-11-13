@@ -2615,12 +2615,16 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       if (parentOnly && groupingConfig) {
         const grouping = groupSkuIds(activeSkus.map((sku) => sku.sku), groupingConfig.rule);
         for (const group of grouping.groups) childrenByParent.set(group.parent, group.children);
+        const feedParents = groupingConfig.rule.type === "regex" && groupingConfig.rule.parent_source === "feed";
         const parents = grouping.groups.flatMap(({ parent, children }) => {
-          const row = parentImageRow(parent, children, skuById, latestBySku, manualBySku, priority);
-          return row ? [row] : [];
+          const row = parentImageRow(parent, feedParents ? [parent, ...children] : children, skuById, latestBySku, manualBySku, priority);
+          if (!row) return [];
+          const real = feedParents ? skuById.get(parent) : undefined;
+          return [real ? { ...row, title: real.title, stock_status: latestBySku.get(parent)?.stock_status ?? "unknown" } : row];
         });
         const groupedChildren = new Set([...childrenByParent.values()].flat());
-        const singles = activeSkus.filter((sku) => !groupedChildren.has(sku.sku))
+        const groupedParents = new Set(feedParents ? grouping.groups.map((group) => group.parent) : []);
+        const singles = activeSkus.filter((sku) => !groupedChildren.has(sku.sku) && !groupedParents.has(sku.sku))
           .map((sku) => imageRowForSku(sku, latestBySku, manualBySku, priority));
         sourceRows = [...parents, ...singles].sort((left, right) => compareKeys(left.sku, right.sku));
       } else {
