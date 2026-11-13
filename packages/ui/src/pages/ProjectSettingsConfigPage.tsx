@@ -298,7 +298,7 @@ export function ProjectSettingsConfigPage() {
         </ConfigCard>
 
         <ConfigCard id="sku-grouping" title="父子 SKU">
-          <p className="si-config-help">Feed 只提供子 SKU 时，可按规则推导父 SKU。库存状态仍按子 SKU 计算。</p>
+          <p className="si-config-help">虚拟父 SKU 的库存状态按子 SKU 聚合；明确选择 Feed 父 SKU 后，使用 Feed 中该父 SKU 自身的库存记录。规则只用于分组展示，不改写 Feed 中的原始 SKU。</p>
           <label className="si-config-check si-config-grouping-switch"><input type="checkbox" checked={grouping.enabled} onChange={(event) => patch("sku_grouping", { ...grouping, enabled: event.target.checked })} /><span>启用父子 SKU 分组</span></label>
           <div className="si-config-grouping-rule">
             <div className="si-config-grouping-preset">
@@ -306,6 +306,7 @@ export function ProjectSettingsConfigPage() {
               patch("sku_grouping", { ...grouping, rule: skuGroupingRuleForPreset(value as SkuGroupingPreset, grouping.rule) });
               }} />
               {groupingPreset === "trailing-number" && <small className="si-config-grouping-caveat">可能把以数字结尾的普通 SKU 误判为子 SKU，也不识别末尾字母后缀。</small>}
+              {groupingPreset === "cp-parent-any-suffix" && <small className="si-config-grouping-caveat">匹配父 SKU 末尾的 CP，并把其后的非空部分作为子 SKU 后缀；若后缀本身也含 CP，边界可能有歧义，请核对下方 Core 预览。</small>}
             </div>
             <TextField label="规则值" mono value={grouping.rule.value} placeholder={groupingRulePlaceholder} hint={<small className="si-config-field-hint">示例：{skuGroupingExample(grouping.rule)}</small>} onChange={(value) => patch("sku_grouping", { ...grouping, rule: { ...grouping.rule, value } as SkuGroupingRule })} />
           </div>
