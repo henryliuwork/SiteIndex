@@ -2933,6 +2933,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             const eventDirectory = absoluteProjectPath(projectPath, PATHS.eventsDir, paths);
             let eventRows: InventoryEvent[] = [];
             let eventsAt: string | null = null;
+            let eventsStatus: TodoRuleSnapshot<InventoryEvent>["status"] = "partial";
             try {
               const eventFiles = (await readdir(eventDirectory)).filter((name) => /^\d{4}-\d{2}\.jsonl$/u.test(name)).sort(compareKeys);
               const [rowsByMonth, stamps] = await Promise.all([
@@ -2946,13 +2947,19 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
                 })),
               ]);
               eventRows = rowsByMonth.flat();
-              eventsAt = stamps.filter((stamp): stamp is string => stamp !== null).sort(compareKeys).at(-1)
-                ?? await collectedAt(PATHS.eventsDir);
+              const presentStamps = stamps.filter((stamp): stamp is string => stamp !== null).sort(compareKeys);
+              eventsAt = presentStamps.at(-1) ?? (eventFiles.length ? null : await collectedAt(PATHS.eventsDir));
+              eventsStatus = eventFiles.length ? stamps.every((stamp) => stamp !== null) ? "complete" : "partial"
+                : eventsAt ? "complete" : "partial";
             } catch (error) {
               if ((error as NodeJS.ErrnoException).code !== "ENOENT" && (error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
             }
-            const ruleSnapshot = <T>(rows: readonly T[], at: string | null): TodoRuleSnapshot<T> => ({
-              status: at ? "complete" : "partial", collected_at: at, rows,
+            const ruleSnapshot = <T>(
+              rows: readonly T[],
+              at: string | null,
+              status: TodoRuleSnapshot<T>["status"] = at ? "complete" : "partial",
+            ): TodoRuleSnapshot<T> => ({
+              status, collected_at: at, rows,
             });
             const edmResult = await readEdmCandidates(projectPath, { stock: "any", include_excluded: true });
             const edmStatus: TodoRuleSnapshot<TodoRuleEdmCandidate>["status"] = edmResult.metadata.quality === "unreliable"
@@ -2979,7 +2986,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
               seo_issues: ruleSnapshot(snapshot.seoIssues, seoAt),
               skus: ruleSnapshot(snapshot.skus, skusAt),
               inventory_latest: ruleSnapshot(snapshot.latest, latestAt),
-              inventory_events: ruleSnapshot(eventRows, eventsAt),
+              inventory_events: ruleSnapshot(eventRows, eventsAt, eventsStatus),
               site: ruleSnapshot([{ sku_grouping: snapshot.config.sku_grouping }], siteAt),
               edm_candidates: { status: edmStatus, collected_at: edmResult.metadata.collected_at, rows: edmCandidates },
               runs: ruleSnapshot(snapshot.runs, await collectedAt(PATHS.runs)),
