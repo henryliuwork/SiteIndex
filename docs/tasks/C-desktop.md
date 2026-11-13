@@ -215,7 +215,7 @@
 - [x] 虚构路径注入测试覆盖创建/导入/addExisting/Job 早期拒绝、Windows 云项目任务保留和显式移除、macOS LaunchAgent 保留；未知位置继续按现有行为处理，不宣称识别所有云服务。
 - [x] 本机 `pnpm typecheck` 与定向 Desktop 测试通过：6 个测试文件、82 项；未在真实云盘目录写入或移动项目数据。
 
-## v0.5 · Project Todo IPC groundwork
+## v0.5 · Project Todo IPC
 
-- [x] preload 暴露 `todos.list/update/history`；Desktop handler 将列表、状态/备注更新和历史查询委托给同契约适配器，并按项目登记解析 ID。虚构数据覆盖路由与错误传递。
-- [ ] Core `createCoreService` 尚未公开 `todos` 服务；生产 handler 在 A 的 service 接口接入前返回 `NOT_IMPLEMENTED`。保留 `PENDING_HANDLERS`，待 Desktop 与 Core 生产接线完成后走独立 contract PR 清理。
+- [x] preload 暴露 `todos.list/update/history`；Desktop handler 在项目登记校验后直通 `CoreService.todos`。虚构本地项目通过 preload → IPC → Core 往返验证列表、状态/备注更新和历史记录；不按设备筛选待办。
+- [ ] `PENDING_HANDLERS` 保留至此 Desktop 接线 PR 合并后，再通过独立 contract PR 清理。
