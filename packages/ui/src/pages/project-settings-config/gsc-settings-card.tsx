@@ -86,10 +86,12 @@ export function GscSettingsCard({
   projectId,
   gsc,
   isDemo = false,
+  onPropertySelectionChange,
 }: {
   projectId: string;
   gsc?: SiteIndexApi["gsc"];
   isDemo?: boolean;
+  onPropertySelectionChange?: (siteUrl: string | null) => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -151,6 +153,7 @@ export function GscSettingsCard({
       queryClient.setQueryData(gscPropertiesKey(projectId), (current: typeof propertyResult | undefined) => current?.data
         ? { ...current, data: { ...current.data, selected_site_url: selection.site_url } }
         : current);
+      onPropertySelectionChange?.(selection.site_url);
       toast.success(selection.site_url ? "Search Console 属性选择已保存。" : "已清除 Search Console 属性选择。");
     } catch (error) {
       setOperationError({ label: "无法保存属性选择", error });

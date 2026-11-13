@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import type { SiteConfig } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 beforeEach(() => {
@@ -22,9 +23,27 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
-async function renderSettings(initialEntry: string, omitGsc = false) {
+async function renderSettings(initialEntry: string, omitGsc = false, initialGscProperty?: string) {
   const mockApi = createMockApi();
   if (omitGsc) mockApi.gsc = undefined;
+  if (initialGscProperty) {
+    const originalGetProject = mockApi.projects.get.bind(mockApi.projects);
+    vi.spyOn(mockApi.projects, "get").mockImplementation(async (id) => {
+      const project = await originalGetProject(id);
+      return {
+        ...project,
+        config: {
+          ...project.config,
+          integrations: {
+            ...project.config.integrations,
+            gsc: { ...project.config.integrations?.gsc, property_site_url: initialGscProperty, keep_fixture_value: true },
+          },
+        },
+      };
+    });
+    await mockApi.gsc?.connect();
+    await mockApi.gsc?.selectProperty("demo", initialGscProperty);
+  }
   const originalUpdateConfig = mockApi.projects.updateConfig.bind(mockApi.projects);
   const updateConfig = vi.spyOn(mockApi.projects, "updateConfig").mockImplementation(originalUpdateConfig);
   const originalSaveCategories = mockApi.categories.save.bind(mockApi.categories);
@@ -122,5 +141,47 @@ describe("项目设置单页区块", () => {
     await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({
       brand: expect.objectContaining({ tagline: "本地设置仍可使用" }),
     })));
+  }, 20_000);
+
+  it("选择 GSC 属性 B 后保存其他设置时保留 B 和其他未保存草稿", async () => {
+    const { updateConfig } = await renderSettings(
+      "/p/demo/settings/config",
+      false,
+      "sc-domain:demo.example.test",
+    );
+    updateConfig.mockImplementation(async (_id, config) => config as SiteConfig);
+
+    const propertySelect = await screen.findByRole("combobox", { name: "Search Console 属性" });
+    fireEvent.click(propertySelect);
+    fireEvent.click(await screen.findByRole("option", { name: "https://store.demo.example.test/ · 完全用户" }));
+    fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "保留的未保存草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({
+      brand: expect.objectContaining({ tagline: "保留的未保存草稿" }),
+      integrations: expect.objectContaining({
+        gsc: expect.objectContaining({ property_site_url: "https://store.demo.example.test/", keep_fixture_value: true }),
+      }),
+    })));
+  }, 20_000);
+
+  it("清除 GSC 属性后保存其他设置时不把旧属性写回去", async () => {
+    const { updateConfig } = await renderSettings(
+      "/p/demo/settings/config",
+      false,
+      "sc-domain:demo.example.test",
+    );
+    updateConfig.mockImplementation(async (_id, config) => config as SiteConfig);
+
+    const propertySelect = await screen.findByRole("combobox", { name: "Search Console 属性" });
+    fireEvent.click(propertySelect);
+    fireEvent.click(await screen.findByRole("option", { name: "清除当前属性选择" }));
+    fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "清除后保留的草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledOnce());
+    const savedConfig = updateConfig.mock.calls[0]?.[1];
+    expect(savedConfig?.brand?.tagline).toBe("清除后保留的草稿");
+    expect(savedConfig?.integrations?.gsc).toEqual({ keep_fixture_value: true });
   }, 20_000);
 });

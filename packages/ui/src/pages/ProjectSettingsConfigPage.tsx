@@ -128,6 +128,22 @@ export function ProjectSettingsConfigPage() {
     ...current,
     categories: { ...current.categories, ...categories, watched: current.categories.watched },
   } : current);
+  const updateGscPropertyDraft = (siteUrl: string | null) => setDraft((current) => {
+    if (!current) return current;
+    const integrations = current.integrations ?? {};
+    const gsc = { ...(integrations.gsc ?? {}) };
+    if (siteUrl === null) delete gsc.property_site_url;
+    else gsc.property_site_url = siteUrl;
+
+    const nextIntegrations = { ...integrations };
+    if (Object.keys(gsc).length > 0) nextIntegrations.gsc = gsc;
+    else delete nextIntegrations.gsc;
+
+    const next = { ...current };
+    if (Object.keys(nextIntegrations).length > 0) next.integrations = nextIntegrations;
+    else delete next.integrations;
+    return next;
+  });
 
   const toggleWatchedCategory = (category: Pick<WatchedCategory, "name" | "slug" | "url">) => {
     if (!draft) return;
@@ -358,7 +374,7 @@ export function ProjectSettingsConfigPage() {
         <ConfigCard id="integrations" title="集成与预留数据源"><div className="si-config-grid si-config-grid-2">
           <TextField label="LinkFlow MCP 服务" value={draft.integrations?.linkflow?.mcp_server ?? ""} onChange={(value) => patch("integrations", { ...draft.integrations, linkflow: { ...draft.integrations?.linkflow, mcp_server: value } })} mono />
           <TextField label="录入工具" value={draft.integrations?.linkflow?.create_tool ?? ""} onChange={(value) => patch("integrations", { ...draft.integrations, linkflow: { ...draft.integrations?.linkflow, create_tool: value } })} mono />
-        </div><GscSettingsCard projectId={id} gsc={api.gsc} isDemo={isMockApi} /><div className="si-config-reserved-grid">{[
+        </div><GscSettingsCard projectId={id} gsc={api.gsc} isDemo={isMockApi} onPropertySelectionChange={updateGscPropertyDraft} /><div className="si-config-reserved-grid">{[
           ["销量数据", "Magento API / WordPress REST / MCP → index/sales/"], ["Mailchimp 报告", "收件、打开、点击、收入 → edm_campaigns"],
         ].map(([title, detail]) => <div className="si-config-reserved" key={title}><strong>{title}</strong><span>{detail}</span><Chip tone="neutral">预留 · 未连接</Chip></div>)}</div></ConfigCard>
 
