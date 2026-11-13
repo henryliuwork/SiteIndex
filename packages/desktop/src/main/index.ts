@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, Notification, safeStorage, utilityProcess } from "electron";
+import { app, dialog, ipcMain, Notification, safeStorage, shell, utilityProcess } from "electron";
 import electronUpdater from "electron-updater";
 import { basename, dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -36,6 +36,7 @@ import { backgroundSchedulerArgument, createAppTray, updateLoginAutostart, type 
 import { registerWordPressCredentialHandlers } from "./wordpress-credential-ipc.js";
 import { createWordPressCredentialVault } from "./wordpress-credential-vault.js";
 import { createWordPressMediaCredentialProvider } from "./wordpress-media-credential-provider.js";
+import { createGscOAuthService } from "./gsc-oauth.js";
 import { isHostedWindowsAcceptanceMode } from "./hosted-acceptance-mode.js";
 import { createEdmIndexSaveAs, resolveEdmIndexDefaultPath } from "./edm-index-save-as.js";
 import { isMediaPrepareReady } from "./media-readiness.js";
@@ -149,6 +150,19 @@ if (!hasSingleInstanceLock) {
         encryptStringAsync: (plainText) => safeStorage.encryptStringAsync(plainText),
         decryptStringAsync: (encrypted) => safeStorage.decryptStringAsync(encrypted),
       },
+    });
+    const gscClientId = process.env.SITEINDEX_GSC_CLIENT_ID?.trim();
+    const gscOAuth = createGscOAuthService({
+      clientId: gscClientId,
+      platform: process.platform,
+      localAppData: process.env.LOCALAPPDATA,
+      homeDirectory: app.getPath("home"),
+      safeStorage: {
+        isAsyncEncryptionAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
+        encryptStringAsync: (plainText) => safeStorage.encryptStringAsync(plainText),
+        decryptStringAsync: (encrypted) => safeStorage.decryptStringAsync(encrypted),
+      },
+      openExternal: (url) => shell.openExternal(url),
     });
     registerWordPressCredentialHandlers(
       (channel, listener) => ipcMain.handle(channel, async (event, ...args) => listener(event, ...args)),
@@ -553,6 +567,8 @@ if (!hasSingleInstanceLock) {
         await reconcileSchedules(true);
       },
       notifyProjectChanged: (id) => windowManager.sendToWindows("si:projects.onChanged", id),
+      gscOAuth,
+      gscClientIdConfigured: Boolean(gscClientId),
       skills: skillService,
       desktopIntegrations,
     });
