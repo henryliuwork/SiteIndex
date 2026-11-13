@@ -64,6 +64,9 @@ export const API_INVOKE_METHODS = [
   "content.listDrafts",
   "edm.summary",
   "edm.listImages",
+  "edm.candidates",
+  "edm.mediaGaps",
+  "edm.campaignSafety",
   "edm.setManualImage",
   "edm.setDiscountTier",
   "edm.buildCommand",
@@ -122,6 +125,9 @@ export const PENDING_HANDLERS: readonly string[] = [
   "products.skuBrief",
   "products.changes",
   "products.groupFamily",
+  "edm.candidates",
+  "edm.mediaGaps",
+  "edm.campaignSafety",
 ];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];
