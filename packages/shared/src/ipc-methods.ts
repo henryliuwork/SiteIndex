@@ -16,6 +16,9 @@ export const API_INVOKE_METHODS = [
   "settings.openLogs",
   "uiState.get",
   "uiState.set",
+  "todos.list",
+  "todos.update",
+  "todos.history",
   "projects.list",
   "projects.get",
   "projects.detect",
@@ -140,6 +143,9 @@ export const PENDING_HANDLERS: readonly string[] = [
   "gsc.listProperties",
   "gsc.selectProperty",
   "gsc.sync",
+  "todos.list",
+  "todos.update",
+  "todos.history",
 ];
 
 export type ApiInvokeMethod = (typeof API_INVOKE_METHODS)[number];

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type {
+  ProjectTodo,
+  ProjectTodosResult,
   ScenarioQueryResult,
   TodoManualHistoryEntry,
   TodoManualState,
   TodoManualStatus,
   TodoRuleFinding,
+  TodoRuleScanStatus,
+  UpdateTodoManualInput,
 } from "../src";
 
 describe("v0.5 read-model contract", () => {
@@ -25,6 +29,7 @@ describe("v0.5 read-model contract", () => {
 
   it("keeps rule output, current human state, and append-only review history separate", () => {
     const statuses: TodoManualStatus[] = ["open", "in_progress", "pending_review", "done", "ignored"];
+    const scanStatuses: TodoRuleScanStatus[] = ["not_run", "complete", "partial", "failed"];
     const finding: TodoRuleFinding = {
       dedupe_key: "todo-demo-finding-001",
       rule_id: "missing_title",
@@ -56,10 +61,48 @@ describe("v0.5 read-model contract", () => {
         note: state.note,
         changed_at: state.updated_at,
       },
+      {
+        event_id: "event-demo-3",
+        dedupe_key: finding.dedupe_key,
+        action: "rule_reopened",
+        from_status: "done",
+        to_status: "pending_review",
+        rule_id: finding.rule_id,
+        absence_confirmed_at: "2026-11-12T08:08:00.000Z",
+        changed_at: "2026-11-12T08:10:00.000Z",
+      },
+    ];
+    const todo: ProjectTodo = { finding, state };
+    const completeScan: ProjectTodosResult = {
+      items: [todo],
+      scan: { status: "complete", evaluated_at: "2026-11-12T08:10:00.000Z" },
+    };
+    const partialScan: ProjectTodosResult = {
+      items: [todo],
+      scan: { status: "partial", evaluated_at: "2026-11-12T08:11:00.000Z" },
+    };
+    const updates: UpdateTodoManualInput[] = [
+      { dedupe_key: finding.dedupe_key, status: "done" },
+      { dedupe_key: finding.dedupe_key, note: "再次复核" },
+      { dedupe_key: finding.dedupe_key, status: "ignored", note: null },
     ];
 
     expect(JSON.parse(JSON.stringify(statuses))).toEqual(["open", "in_progress", "pending_review", "done", "ignored"]);
+    expect(JSON.parse(JSON.stringify(scanStatuses))).toEqual(["not_run", "complete", "partial", "failed"]);
     expect(finding.dedupe_key).toBe(state.dedupe_key);
-    expect(JSON.parse(JSON.stringify({ finding, state, history }))).toEqual({ finding, state, history });
+    expect(todo.finding.rule_id).toBe("missing_title");
+    expect(todo.finding.subject.key).toBe("https://demo.example.test/item");
+    expect(history[2]).toMatchObject({ action: "rule_reopened", from_status: "done", to_status: "pending_review" });
+    expect(history[2]).toHaveProperty("absence_confirmed_at", "2026-11-12T08:08:00.000Z");
+    expect(completeScan.scan.status).toBe("complete");
+    expect(partialScan.items).toHaveLength(1);
+    expect(partialScan.scan.status).toBe("partial");
+    expect(updates).toHaveLength(3);
+    expect(JSON.parse(JSON.stringify({ completeScan, partialScan, history, updates }))).toEqual({
+      completeScan,
+      partialScan,
+      history,
+      updates,
+    });
   });
 });

@@ -42,6 +42,13 @@ export const PATHS = {
   seoLinks: "index/seo/links.jsonl",
   gscSearchAnalytics: "index/gsc/history.json",
 
+  /** Rule-derived project todos; regenerated from source indexes and deduped by rule plus canonical subject. */
+  todos: "index/todos/findings.jsonl",
+  /** User-maintained todo state and notes, kept separate from regenerated rule findings. */
+  todoStates: "index/todos/manual-state.jsonl",
+  /** Append-only manual review and rule-reopen history. */
+  todoHistory: "index/todos/history.jsonl",
+
   blogIndex: "index/content/blog_index.jsonl",
   keywords: "index/content/keywords.jsonl",
 
@@ -98,6 +105,9 @@ const WORKSPACE_PATHS: ProjectPaths = {
   seoIssues: "_site-index/seo/issues.jsonl",
   seoLinks: "_site-index/seo/links.jsonl",
   gscSearchAnalytics: "_site-index/gsc/history.json",
+  todos: "_site-index/todos/findings.jsonl",
+  todoStates: "_site-index/todos/manual-state.jsonl",
+  todoHistory: "_site-index/todos/history.jsonl",
   blogIndex: "_site-index/content/blog_index.jsonl",
   keywords: "_site-index/content/keywords.jsonl",
   skuMedia: "_site-index/ledgers/sku_media.csv",
