@@ -210,8 +210,8 @@ function exportRows(input: EdmSkuIndexInput): ExportRow[] {
         sku: product.product_id,
         product,
         representativeSku: representative,
-        originalPrice: representativeRecord.price,
-        currency: representativeRecord.currency,
+        originalPrice: feedParent?.price ?? representativeRecord.price,
+        currency: feedParent?.currency ?? representativeRecord.currency,
         stockStatus: product.stock_status,
       });
       continue;

@@ -100,7 +100,7 @@ describe("EDM SKU index rendering", () => {
   it("uses a real feed parent's prepared image even when a child is in stock", async () => {
     const input = await fixtureInput("legacy", "sku-media-legacy.csv");
     const child = input.skus.find((sku) => sku.sku === "DEMO-GROUP01")!;
-    const parent = { ...child, sku: "DEMO-GROUP", handle: "parent-handle", product_id: "DEMO-GROUP", image_url: null };
+    const parent = { ...child, sku: "DEMO-GROUP", handle: "parent-handle", product_id: "DEMO-GROUP", price: 77, image_url: null };
     const stock = { ...input.stock.find((row) => row.sku === child.sku)!, sku: parent.sku, stock_status: "out_of_stock" as const };
     const result = renderEdmSkuIndex({ ...input, skus: [...input.skus, parent], stock: [...input.stock, stock],
       skuMedia: [...input.skuMedia, { sku: parent.sku, image_role: "main", image_url: "https://images.example.test/parent.jpg", updated_at: "2099-01-01" }],
@@ -109,6 +109,12 @@ describe("EDM SKU index rendering", () => {
     const lines = result.content.split("\n").filter((line) => line.startsWith("| DEMO-GROUP |"));
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("https://images.example.test/parent.jpg");
+    expect(lines[0]).toContain("| 77.00 |");
+    const fallback = renderEdmSkuIndex({ ...input, skus: [...input.skus, parent], stock: [...input.stock, stock],
+      grouping: { enabled: true, rule: { type: "regex", value: "^(DEMO-GROUP)\\d+$", parent_source: "feed" } },
+    });
+    const fallbackLine = fallback.content.split("\n").find((line) => line.startsWith("| DEMO-GROUP |"));
+    expect(fallbackLine).toContain("| 77.00 |");
   });
 
   it("uses each canonical row's configured tier and never inherits a child tier for its parent", async () => {
