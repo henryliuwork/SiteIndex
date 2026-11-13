@@ -3,6 +3,7 @@ import type {
   ScenarioQueryResult,
   TodoManualHistoryEntry,
   TodoManualState,
+  TodoManualStatus,
   TodoRuleFinding,
 } from "../src";
 
@@ -23,6 +24,7 @@ describe("v0.5 read-model contract", () => {
   });
 
   it("keeps rule output, current human state, and append-only review history separate", () => {
+    const statuses: TodoManualStatus[] = ["open", "in_progress", "pending_review", "done", "ignored"];
     const finding: TodoRuleFinding = {
       dedupe_key: "todo-demo-finding-001",
       rule_id: "missing_title",
@@ -56,6 +58,7 @@ describe("v0.5 read-model contract", () => {
       },
     ];
 
+    expect(JSON.parse(JSON.stringify(statuses))).toEqual(["open", "in_progress", "pending_review", "done", "ignored"]);
     expect(finding.dedupe_key).toBe(state.dedupe_key);
     expect(JSON.parse(JSON.stringify({ finding, state, history }))).toEqual({ finding, state, history });
   });

@@ -32,8 +32,11 @@ export interface ScenarioQueryResult<T> {
   metadata: ScenarioResultMetadata;
 }
 
-/** User-maintained lifecycle for a rule finding; independent of whether the rule matches again. */
-export type TodoManualStatus = "open" | "done" | "ignored";
+/**
+ * User-maintained lifecycle for a rule finding; independent of whether the rule matches again.
+ * open=待处理, in_progress=进行中, pending_review=待复核, done=已完成, ignored=已忽略.
+ */
+export type TodoManualStatus = "open" | "in_progress" | "pending_review" | "done" | "ignored";
 
 /** Rule output. `dedupe_key` is an opaque, stable join key derived from rule and canonical subject identity. */
 export interface TodoRuleFinding {
