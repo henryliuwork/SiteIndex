@@ -67,7 +67,7 @@ describe("workspace mock", () => {
     });
   });
 
-  it("simulates import auto-repair while keeping missing site.json workspace metadata manual", async () => {
+  it("simulates safely repairing missing site.json workspace metadata", async () => {
     const api = createMockApi();
     const importCheck = api.workspace?.importCheck;
     if (!importCheck) throw new Error("workspace import-check mock is missing");
@@ -76,18 +76,34 @@ describe("workspace mock", () => {
     expect(initial.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: "_site-index/workspace.json", code: "workspace_manifest_missing", auto_fixable: true }),
       expect.objectContaining({ path: "_site-index/ledgers/sku_media.csv", code: "missing_ledger", auto_fixable: true }),
-      expect.objectContaining({ path: "_site-index/site.json", code: "workspace_metadata_missing", auto_fixable: false }),
+      expect.objectContaining({ path: "_site-index/site.json", code: "workspace_metadata_missing", auto_fixable: true }),
     ]));
 
     const applied = await importCheck("demo2", { apply: true });
-    expect(applied.repaired).toEqual(["_site-index/ledgers/sku_media.csv", "_site-index/workspace.json"]);
-    expect(applied.issues).toHaveLength(1);
-    expect(applied.issues[0]).toMatchObject({ code: "workspace_metadata_missing", auto_fixable: false });
-    expect(applied.issues[0]?.message).toContain("workspace.version、workspace.sections");
+    expect(applied.repaired).toEqual([
+      "_site-index/ledgers/sku_media.csv",
+      "_site-index/site.json",
+      "_site-index/workspace.json",
+    ]);
+    expect(applied.issues).toEqual([]);
 
     const checkedAgain = await importCheck("demo2");
     expect(checkedAgain.repaired).toEqual([]);
-    expect(checkedAgain.issues.map(({ code }) => code)).toEqual(["workspace_metadata_missing"]);
+    expect(checkedAgain.issues).toEqual([]);
+  });
+
+  it("keeps invalid workspace metadata as a non-repairable manual issue", async () => {
+    const api = createMockApi();
+    const result = await api.workspace?.importCheck?.("demo3", { apply: true });
+    expect(result).toEqual({
+      issues: [expect.objectContaining({
+        path: "_site-index/site.json",
+        code: "workspace_metadata_invalid",
+        message: "site.json 的 workspace 字段格式无效，请手动检查。",
+        auto_fixable: false,
+      })],
+      repaired: [],
+    });
   });
 
   it("recognizes a project without the workspace site config and makes no repair", async () => {

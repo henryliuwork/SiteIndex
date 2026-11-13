@@ -8,6 +8,7 @@ import { Button, EmptyState, Notice, useToast } from "../../components";
 
 const workspaceConfigMissingCode = "workspace_config_missing";
 const workspaceMetadataMissingCode = "workspace_metadata_missing";
+const workspaceMetadataInvalidCode = "workspace_metadata_invalid";
 
 export function WorkspaceImportCheckDialog({
   open, onOpenChange, project, available,
@@ -67,7 +68,8 @@ export function WorkspaceImportCheckDialog({
   const issues = result?.issues ?? [];
   const autoFixableCount = issues.filter((issue) => issue.auto_fixable).length;
   const isNotWorkspace = issues.some((issue) => issue.code === workspaceConfigMissingCode);
-  const metadataMissing = issues.some((issue) => issue.code === workspaceMetadataMissingCode);
+  const metadataMissingIssue = issues.find((issue) => issue.code === workspaceMetadataMissingCode);
+  const metadataInvalidIssue = issues.find((issue) => issue.code === workspaceMetadataInvalidCode);
 
   return <Dialog.Root open={open} onOpenChange={(nextOpen) => {
     if (busy) return;
@@ -83,12 +85,15 @@ export function WorkspaceImportCheckDialog({
         {busy && <p className="si-workspace-import-loading" role="status" aria-live="polite">正在检查工作区导入状态…</p>}
         {error && <Notice tone="error" title="导入检查失败">{error}</Notice>}
         {result && isNotWorkspace && <Notice tone="info" title="未识别为 Agent 工作区">此项目没有找到工作区数据目录；本次没有修改项目文件。</Notice>}
-        {result && !isNotWorkspace && metadataMissing && <Notice tone="warn" title="site.json.workspace 需要手动补充">
+        {result && !isNotWorkspace && metadataMissingIssue && !metadataMissingIssue.auto_fixable && <Notice tone="warn" title="site.json.workspace 需要手动补充">
           <ol className="si-workspace-import-manual-steps">
             <li>如果 <code>_site-index/workspace.json</code> 缺失，先点击“自动补齐可修复项”创建它。</li>
             <li>从 <code>_site-index/workspace.json</code> 抄录字段：<code>version</code> → <code>workspace.version</code>；每个 <code>sections[].dir</code> → <code>workspace.sections</code>（目录名数组）；<code>esp_presets</code> → <code>workspace.esp_presets</code>。</li>
             <li>把这些值手动补入 <code>_site-index/site.json</code> 的 <code>workspace</code> 对象，保留该文件其他字段，然后点击“重新检查”。这一步不会自动完成。</li>
           </ol>
+        </Notice>}
+        {result && !isNotWorkspace && metadataInvalidIssue && <Notice tone="warn" title="site.json.workspace 需要手动检查">
+          自动补齐已跳过，请核对下方错误说明后修改配置。
         </Notice>}
 
         {result && result.repaired.length > 0 && <Notice tone="info" title={`本次已补齐 ${result.repaired.length} 个路径或区块`}>
@@ -103,7 +108,7 @@ export function WorkspaceImportCheckDialog({
               <code>{issue.path}</code>
               <span className={issue.auto_fixable ? "is-fixable" : "is-manual"}>{issue.auto_fixable ? "可自动补齐" : "需要手动处理"}</span>
             </div>
-            <p>{issue.message}</p>
+            <p>{issue.code === workspaceMetadataMissingCode && issue.auto_fixable ? "缺少的 workspace 元数据可自动补齐。" : issue.message}</p>
             <small>{issue.code}</small>
           </li>)}</ul>
         </section>}

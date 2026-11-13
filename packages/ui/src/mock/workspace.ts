@@ -6,7 +6,13 @@ const workspaceManifestPath = workspacePaths.index + "/workspace.json";
 const workspaceMetadataIssue: WorkspaceImportIssue = {
   path: workspacePaths.site,
   code: "workspace_metadata_missing",
-  message: "site.json 缺少 workspace 元数据。为避免覆盖用户配置，请根据 _site-index/workspace.json 手动补充 workspace.version、workspace.sections（目录名数组）和 workspace.esp_presets；若该文件缺失，请先运行自动修复，再重新检查。",
+  message: "缺少 workspace 元数据，可通过安全修复补齐。",
+  auto_fixable: true,
+};
+const workspaceMetadataInvalidIssue: WorkspaceImportIssue = {
+  path: workspacePaths.site,
+  code: "workspace_metadata_invalid",
+  message: "site.json 的 workspace 字段格式无效，请手动检查。",
   auto_fixable: false,
 };
 
@@ -63,6 +69,9 @@ export function createWorkspaceMock(): WorkspaceMock {
     create: (input) => reply(() => createNow(input)),
     importCheck: (id, options) => reply(() => {
       const projectId = String(id);
+      if (projectId === "demo3") {
+        return { issues: [workspaceMetadataInvalidIssue], repaired: [] };
+      }
       if (projectId !== "demo2") {
         return {
           issues: [{
@@ -79,11 +88,11 @@ export function createWorkspaceMock(): WorkspaceMock {
       if (options?.apply && !wasRepaired) {
         repairedImports.add(projectId);
         return {
-          issues: [workspaceMetadataIssue],
-          repaired: [workspacePaths.skuMedia, workspaceManifestPath],
+          issues: [],
+          repaired: [workspacePaths.skuMedia, workspacePaths.site, workspaceManifestPath],
         };
       }
-      if (wasRepaired) return { issues: [workspaceMetadataIssue], repaired: [] };
+      if (wasRepaired) return { issues: [], repaired: [] };
       return {
         issues: [
           { path: workspacePaths.skuMedia, code: "missing_ledger", message: "缺少 SKU 媒体台账文件，可自动补齐空模板。", auto_fixable: true },
