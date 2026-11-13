@@ -12,6 +12,7 @@ type UpdatesApi = NonNullable<SiteIndexApi["updates"]>;
 type SkuApi = NonNullable<SiteIndexApi["sku"]>;
 type WorkspaceApi = NonNullable<SiteIndexApi["workspace"]>;
 type MediaApi = NonNullable<SiteIndexApi["media"]>;
+type GscApi = NonNullable<SiteIndexApi["gsc"]>;
 
 function decodeIpcError(error: unknown): unknown {
   const message =
@@ -153,6 +154,14 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
     },
     media: {
       prepare: (...args) => invoke<MediaApi["prepare"]>("media.prepare", ...args),
+    },
+    gsc: {
+      status: () => invoke<GscApi["status"]>("gsc.status"),
+      connect: () => invoke<GscApi["connect"]>("gsc.connect"),
+      disconnect: () => invoke<GscApi["disconnect"]>("gsc.disconnect"),
+      listProperties: (...args) => invoke<GscApi["listProperties"]>("gsc.listProperties", ...args),
+      selectProperty: (...args) => invoke<GscApi["selectProperty"]>("gsc.selectProperty", ...args),
+      sync: (...args) => invoke<GscApi["sync"]>("gsc.sync", ...args),
     },
     design: {
       get: (...args) => invoke<SiteIndexApi["design"]["get"]>("design.get", ...args),

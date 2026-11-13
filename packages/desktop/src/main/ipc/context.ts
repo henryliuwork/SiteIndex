@@ -9,6 +9,7 @@ import type { UpdateService } from "../update-service.js";
 import type { SkillService } from "../skill-service.js";
 import type { DesktopIntegrations } from "../desktop-integrations.js";
 import type { AddExistingTimingCallback, AddExistingTraceWriter } from "../add-existing-trace.js";
+import type { GscOAuthService } from "../gsc-oauth.js";
 
 export interface IpcDependencies {
   settings: SettingsStore;
@@ -36,6 +37,8 @@ export interface IpcDependencies {
   traceAddExisting?: AddExistingTraceWriter;
   onRunnerClaimed?: (id: ProjectId, projectPath: string) => Promise<void>;
   notifyProjectChanged?: (id: ProjectId) => void;
+  gscOAuth: GscOAuthService;
+  gscClientIdConfigured: boolean;
   skills: SkillService;
   desktopIntegrations: DesktopIntegrations;
 }

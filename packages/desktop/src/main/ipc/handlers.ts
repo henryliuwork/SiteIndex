@@ -7,6 +7,7 @@ import { createDesignHandlers } from "./design.js";
 import { createEdmHandlers } from "./edm.js";
 import { createFilesHandlers } from "./files.js";
 import { createFoldersHandlers } from "./folders.js";
+import { createGscHandlers } from "./gsc.js";
 import { createInventoryHandlers } from "./inventory.js";
 import { createJobsHandlers } from "./jobs.js";
 import { createMediaHandlers } from "./media.js";
@@ -40,6 +41,7 @@ export function createIpcHandlerImplementations(context: IpcContext): IpcHandler
     ...createSeoHandlers(context),
     ...createContentHandlers(context),
     ...createEdmHandlers(context),
+    ...createGscHandlers(context),
     ...createDesignHandlers(context),
     ...createReadmeHandlers(context),
     ...createCategoriesHandlers(context),
