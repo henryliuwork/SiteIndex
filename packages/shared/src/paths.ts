@@ -40,6 +40,7 @@ export const PATHS = {
   seoPages: "index/seo/pages.jsonl",
   seoIssues: "index/seo/issues.jsonl",
   seoLinks: "index/seo/links.jsonl",
+  gscSearchAnalytics: "index/gsc/history.json",
 
   blogIndex: "index/content/blog_index.jsonl",
   keywords: "index/content/keywords.jsonl",
@@ -96,6 +97,7 @@ const WORKSPACE_PATHS: ProjectPaths = {
   seoPages: "_site-index/seo/pages.jsonl",
   seoIssues: "_site-index/seo/issues.jsonl",
   seoLinks: "_site-index/seo/links.jsonl",
+  gscSearchAnalytics: "_site-index/gsc/history.json",
   blogIndex: "_site-index/content/blog_index.jsonl",
   keywords: "_site-index/content/keywords.jsonl",
   skuMedia: "_site-index/ledgers/sku_media.csv",
