@@ -51,7 +51,7 @@ min-height: 92px;
 }
 
 .si-wizard-url-form {
-display:flex; gap:10px; margin:18px 0 8px;
+display:flex; align-items:center; gap:10px; margin:18px 0 8px;
 }
 
 .si-wizard-url-form input {
@@ -131,6 +131,8 @@ color:var(--color-muted); font-size: var(--fs-body); font-weight:400;
 .si-wizard-feed-input,.si-wizard-directory {
 display:flex; gap:8px;
 }
+
+.si-wizard-feed-input { align-items:center; }
 
 .si-wizard-feed-input input,.si-wizard-directory input {
 flex:1; min-width:0;
