@@ -5,7 +5,6 @@ import type {
   GscSyncInput,
   GscSyncResult,
   ProjectId,
-  SiteIndexApi,
   SiteIndexError,
 } from "@siteindex/shared";
 import type { GscProjectSyncOptions } from "@siteindex/core";
@@ -34,8 +33,6 @@ export interface IpcDependencies {
     projectRoot: string,
     rendered: Awaited<ReturnType<CoreService["edm"]["renderIndex"]>>,
   ) => Promise<EdmSkuIndexExportResult>;
-  /** Core Todo adapter; optional until the Core service exposes its project todo methods. */
-  todos?: NonNullable<SiteIndexApi["todos"]>;
   scheduler: SystemScheduler;
   reconcileSchedules: (
     allowElevation: boolean,
