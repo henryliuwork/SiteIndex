@@ -1,10 +1,14 @@
 import type {
   GscAuthorizationStatus,
   GscPropertyListData,
+  GscSyncInput,
+  GscSyncMode,
+  GscSyncResult,
+  ProjectId,
   ScenarioQueryResult,
   SiteIndexError,
 } from "@siteindex/shared";
-import { GscOAuthError } from "../gsc-oauth.js";
+import { GscOAuthError, type GscOAuthCredential } from "../gsc-oauth.js";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import type { IpcContext } from "./context.js";
 
@@ -63,6 +67,82 @@ function selectedProperty(config: Awaited<ReturnType<IpcContext["core"]["project
 
 export function createGscHandlers(context: IpcContext): IpcHandlerImplementations {
   let reauthorizationRequired = false;
+  const syncsInProgress = new Set<string>();
+
+  function syncFailure(
+    mode: GscSyncMode,
+    property: string | null,
+    code: string,
+    message: string,
+  ): GscSyncResult {
+    return {
+      state: "blocked",
+      mode,
+      records_received: 0,
+      records_written: 0,
+      history_effect: "preserved",
+      metadata: {
+        data_source: "google_search_console",
+        property_site_url: property,
+        requested_at: new Date().toISOString(),
+        collected_at: null,
+        data_through: null,
+        requested_range: null,
+        missing_ranges: [],
+        missing_fields: [],
+        quality: "partial",
+        anomalies: [{ code, severity: "warning", message }],
+      },
+      error: { code, message },
+    };
+  }
+
+  async function sync(id: ProjectId, value: unknown): Promise<GscSyncResult> {
+    if (!value || typeof value !== "object" || !("mode" in value) ||
+      (value.mode !== "initial_90_days" && value.mode !== "incremental")) {
+      throw {
+        code: "CONFIG_INVALID",
+        message: "Search Console 同步模式无效。",
+      } satisfies SiteIndexError;
+    }
+    const input: GscSyncInput = { mode: value.mode };
+    const projectPath = context.projects.resolveProject(id);
+    const project = await context.core.projects.get(id);
+    const property = selectedProperty(project.config);
+    if (syncsInProgress.has(id)) {
+      return syncFailure(input.mode, property, "GSC_SYNC_IN_PROGRESS", "该项目的 Search Console 同步正在进行，请稍后再试。");
+    }
+    if (!property) {
+      return context.syncGscProjectSearchAnalytics(projectPath, input, { property: null, accessToken: "" });
+    }
+    if (!context.gscClientIdConfigured) {
+      return syncFailure(input.mode, property, "GSC_NOT_CONFIGURED", "Google Search Console 尚未配置 OAuth 客户端 ID。");
+    }
+
+    syncsInProgress.add(id);
+    try {
+      let credential: GscOAuthCredential | null;
+      try {
+        credential = await context.gscOAuth.getCredentials();
+      } catch (error) {
+        if (errorCode(error) === "AUTHORIZATION_REQUIRED") {
+          reauthorizationRequired = true;
+          return syncFailure(input.mode, property, "GSC_REAUTHORIZATION_REQUIRED", "Google Search Console 授权已失效，请重新连接。");
+        }
+        if (errorCode(error) === "NOT_CONFIGURED") {
+          return await context.syncGscProjectSearchAnalytics(projectPath, input, { property, accessToken: "" });
+        }
+        return syncFailure(input.mode, property, "GSC_CREDENTIALS_UNAVAILABLE", safeOAuthError(error).message);
+      }
+      reauthorizationRequired = false;
+      return await context.syncGscProjectSearchAnalytics(projectPath, input, {
+        property,
+        accessToken: credential?.accessToken ?? "",
+      });
+    } finally {
+      syncsInProgress.delete(id);
+    }
+  }
 
   async function getStatus(): Promise<GscAuthorizationStatus> {
     if (!context.gscClientIdConfigured) return { state: "not_configured", reason: "client_id_missing" };
@@ -117,6 +197,7 @@ export function createGscHandlers(context: IpcContext): IpcHandlerImplementation
       }
       return getStatus();
     },
+    "gsc.sync": (...args) => context.withProject(args[0], (id) => sync(id, args[1])),
     "gsc.listProperties": (...args) =>
       context.withProject(args[0], async (id) => {
         requireClientId();

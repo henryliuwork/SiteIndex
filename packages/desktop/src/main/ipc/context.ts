@@ -1,5 +1,6 @@
 import { assertProjectStorageLocal as assertCoreProjectStorageLocal, type CoreService } from "@siteindex/core";
-import type { AppSettings, EdmSkuIndexExportResult, ProjectId, SiteIndexError } from "@siteindex/shared";
+import type { AppSettings, EdmSkuIndexExportResult, GscSyncInput, GscSyncResult, ProjectId, SiteIndexError } from "@siteindex/shared";
+import type { GscProjectSyncOptions } from "@siteindex/core";
 import type { JobManager } from "../job-manager.js";
 import type { ProjectCatalog } from "../project-catalog.js";
 import type { ScheduleRuntimeStatus, SystemScheduler } from "../scheduler/schedule.js";
@@ -39,6 +40,11 @@ export interface IpcDependencies {
   notifyProjectChanged?: (id: ProjectId) => void;
   gscOAuth: GscOAuthService;
   gscClientIdConfigured: boolean;
+  syncGscProjectSearchAnalytics: (
+    projectPath: string,
+    input: GscSyncInput,
+    options: GscProjectSyncOptions,
+  ) => Promise<GscSyncResult>;
   skills: SkillService;
   desktopIntegrations: DesktopIntegrations;
 }
