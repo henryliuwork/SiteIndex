@@ -65,6 +65,7 @@
 
 ## M3 · 打磨
 - [x] 新建向导网址与 Feed 表单中输入框、普通/小按钮垂直居中；共享 Input / Select / Button 在实际界面保持 14px — 本 PR
+- [x] v0.5.5 软件设置的项目根目录输入框与“选择…”按钮顶边/高度对齐；1280/1920 前后截图与 640 窄屏点击验证 — 本 PR
 - [ ] B-T3 共享层：DataTable 列设置置于常规工具栏槽位、FilterBar 超过两行可折叠、补充间距 token — 本 PR；D 页面样式中的 `top:-50px` / `padding-right:90px` 遗留规则未改，需由 D 清理
   - [x] FilterBar 按垂直重叠识别行，混合高度标签与 chip 不误折叠；折叠边界为第二行最大 bottom，并为焦点描边留白（本 PR）
 - [x] 逐页对照画板修正细节；1100 宽窗口下布局不溢出（侧栏折叠）— [PR #51](https://github.com/henryliuwork/SiteIndex/pull/51)、[PR #60](https://github.com/henryliuwork/SiteIndex/pull/60)、[PR #61](https://github.com/henryliuwork/SiteIndex/pull/61)、[PR #62](https://github.com/henryliuwork/SiteIndex/pull/62)、[PR #63](https://github.com/henryliuwork/SiteIndex/pull/63)、[PR #64](https://github.com/henryliuwork/SiteIndex/pull/64)、[PR #65](https://github.com/henryliuwork/SiteIndex/pull/65)、[PR #66](https://github.com/henryliuwork/SiteIndex/pull/66)、[PR #67](https://github.com/henryliuwork/SiteIndex/pull/67)、[PR #68](https://github.com/henryliuwork/SiteIndex/pull/68)
