@@ -45,6 +45,7 @@
 ## M2 · 全部页面
 
 - [x] B5 新建向导 4 步（NewProjectUrl / NewProject / NewProjectBrand / NewProjectDone）：detect → inspectFeed → create；完成页订阅 Job 进度；品牌配置步仅配置品牌与项目位置，不管理工作区文件夹 — [PR #21](https://github.com/henryliuwork/SiteIndex/pull/21)、[PR #34](https://github.com/henryliuwork/SiteIndex/pull/34)、[PR #114](https://github.com/henryliuwork/SiteIndex/issues/114)
+- [x] 无 GMC Feed 时，新建向导 mock 的 daily 步骤与 Core 一致返回 skipped；更新提示并覆盖非失败终态 — 本 PR
 - [x] [Issue #102] 完成页按 `INIT_STEPS` 消费 init Job 的百分比、进度消息及最终成功/失败/跳过结果；调度重试核对 Desktop 返回的注册状态 — [PR #195](https://github.com/henryliuwork/SiteIndex/pull/195)。
 - [x] B6 概览（Overview）：KPI 跳转、需要关注、复制 agent 指令；快捷操作打开项目文件夹 — [PR #22](https://github.com/henryliuwork/SiteIndex/pull/22)、[PR #34](https://github.com/henryliuwork/SiteIndex/pull/34)、[PR #114](https://github.com/henryliuwork/SiteIndex/issues/114)
 - [x] B7 产品（Products）：标签增删、标签管理弹窗、详情面板（1:1 主图、Schema 胶囊）、预留销量列 — [PR #34](https://github.com/henryliuwork/SiteIndex/pull/34)、[PR #62](https://github.com/henryliuwork/SiteIndex/pull/62)

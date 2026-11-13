@@ -752,12 +752,12 @@ export function beginRun(projectPath: string, job: JobName, options: { missingFe
   const runId = "mock-run-" + String(runCounter).padStart(3, "0");
   const active = { projectPath, job, pct: 0, timer: 0 as unknown as ReturnType<typeof setInterval> };
   if (job === "init") {
-    const dailyFails = mockMode === "init-daily-fail" || options.missingFeed === true;
+    const dailyFails = mockMode === "init-daily-fail";
+    const dailySkipped = options.missingFeed === true && !dailyFails;
     const scheduleSkipped = mockMode === "init-schedule-skipped";
     const scheduleResultMissing = mockMode === "init-missing-schedule";
-    const dailyError = options.missingFeed
-      ? "首次每日同步失败：尚未配置 GMC Feed。"
-      : "首次每日同步失败：模拟 Feed 请求超时。";
+    const dailyError = "首次每日同步失败：模拟 Feed 请求超时。";
+    const dailySkippedMessage = "未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。";
     let index = 0;
     active.timer = setInterval(() => {
       const key = INIT_STEPS[index];
@@ -767,7 +767,7 @@ export function beginRun(projectPath: string, job: JobName, options: { missingFe
       progressListeners.forEach((callback) => callback({
         runId, projectPath, job, pct: active.pct, step: key,
         level: dailyFails && key === "daily" || scheduleResultMissing && key === "schedule" ? "error" : "info",
-        message: dailyFails && key === "daily" ? dailyError : scheduleResultMissing && key === "schedule" ? "模拟调度错误事件；最终步骤结果缺失。" : `正在执行 ${key} 步骤`,
+        message: dailyFails && key === "daily" ? dailyError : dailySkipped && key === "daily" ? dailySkippedMessage : scheduleResultMissing && key === "schedule" ? "模拟调度错误事件；最终步骤结果缺失。" : `正在执行 ${key} 步骤`,
         at: new Date().toISOString(),
       }));
       if (index < INIT_STEPS.length) return;
@@ -782,7 +782,9 @@ export function beginRun(projectPath: string, job: JobName, options: { missingFe
         ],
         steps: INIT_STEPS.filter((step) => !scheduleResultMissing || step !== "schedule").map((step) => step === "schedule" && scheduleSkipped
           ? { key: step, status: "skipped" as const, message: "项目未启用定时任务。" }
-          : { key: step, status: dailyFails && step === "daily" ? "failed" as const : "ok" as const, ...(dailyFails && step === "daily" ? { message: dailyError } : {}) }),
+          : step === "daily" && dailySkipped
+            ? { key: step, status: "skipped" as const, message: dailySkippedMessage }
+            : { key: step, status: dailyFails && step === "daily" ? "failed" as const : "ok" as const, ...(dailyFails && step === "daily" ? { message: dailyError } : {}) }),
       };
       runHistory.unshift({ run_id: runId, job, trigger: "manual", device_name: "本地开发工作站", started_at: "2026-10-22T10:00:00+08:00", finished_at: "2026-10-22T10:00:03+08:00", status: result.status, errors: result.errors });
       finishedListeners.forEach((callback) => callback(clone(result)));

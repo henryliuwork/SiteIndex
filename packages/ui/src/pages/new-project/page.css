@@ -405,6 +405,7 @@ color:var(--color-muted); font-size: var(--fs-body);
 
 .si-wizard-progress-row .si-wizard-step-message { color:var(--color-info); }
 .si-wizard-progress-row .si-wizard-step-reason { color:var(--color-danger); }
+.si-wizard-progress-row.is-skipped .si-wizard-step-reason { color:var(--color-muted); }
 .si-wizard-step-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; }
 .si-wizard-progress-row.is-failed .si-wizard-step-actions>span { color:var(--color-danger); }
 .si-wizard-step-actions .si-button { min-height:28px; padding:0 9px; font-size: var(--fs-body); }

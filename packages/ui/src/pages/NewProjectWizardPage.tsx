@@ -411,7 +411,7 @@ export function NewProjectWizardPage() {
 
     {active === 2 && detection && <>
       {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
-      {draft.feedSkipped && <Notice tone="warn" title="尚未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次每日同步可能失败。</Notice>}
+      {draft.feedSkipped && <Notice tone="warn" title="尚未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次商品同步会跳过；配置 Feed 后可运行每日同步。</Notice>}
       <div className="si-wizard-brand-layout">
         <section className="si-wizard-card">
           <header className="si-wizard-card-heading"><h2>品牌信息</h2><Chip tone="info">根据网址预填，可修改</Chip></header>
@@ -441,7 +441,7 @@ export function NewProjectWizardPage() {
 
     {activeStepKey === "agent-workspace" && detection && <>
       {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
-      {draft.feedSkipped && <Notice tone="warn" title="尚未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次每日同步可能失败。</Notice>}
+      {draft.feedSkipped && <Notice tone="warn" title="尚未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次商品同步会跳过；配置 Feed 后可运行每日同步。</Notice>}
       <div className="si-wizard-workspace-layout">
         <section className="si-wizard-card si-wizard-workspace-settings">
           <header className="si-wizard-card-heading"><div><h2>Agent 工作区</h2><p>为 Agent 生成可直接开始工作的目录、说明和平台预设。</p></div></header>
@@ -472,7 +472,7 @@ export function NewProjectWizardPage() {
     </>}
 
     {activeStepKey === "done" && draft.created && <div className="si-wizard-done-layout">
-      {draft.feedSkipped && <Notice tone="warn" title="项目未配置 GMC Feed">创建项目后可在项目设置补充。首次每日同步可能失败，完成页会显示每一步的实际结果。</Notice>}
+      {draft.feedSkipped && <Notice tone="warn" title="项目未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次商品同步会跳过；配置 Feed 后可运行每日同步。完成页会显示每一步的实际结果。</Notice>}
       {draft.created.path ? null : <p className="si-form-error" role="alert">项目已创建，但暂时无法读取实际路径。请重试读取，路径读取成功后即可打开文件夹。</p>}
       <section className="si-wizard-card si-wizard-progress-card">
         <header className="si-wizard-progress-heading"><h1>{allSucceeded ? "项目创建完成" : hasFinishedFailures ? "创建完成，但有步骤失败" : completionStatus === "skipped" ? "创建完成，部分步骤已跳过" : completionStatus === "incomplete" ? "项目创建未完成" : "正在创建 " + draft.brand.name}</h1><Chip tone={hasFinishedFailures ? "danger" : allSucceeded ? "ok" : completionStatus === "skipped" || completionStatus === "incomplete" ? "warn" : "info"}>{hasFinishedFailures ? "需处理" : allSucceeded ? "完成" : completionStatus === "skipped" ? "有步骤跳过" : completionStatus === "incomplete" ? "未完成" : completedCount + " / " + INIT_STEPS.length}</Chip></header>
