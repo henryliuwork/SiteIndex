@@ -6,12 +6,14 @@ import { resolveWordPressCredentialDirectory, type SafeStorageAdapter } from "./
 
 const AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const GSC_SITES_ENDPOINT = "https://www.googleapis.com/webmasters/v3/sites";
 const GSC_READ_ONLY_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
 const CALLBACK_PATH = "/";
 const STORAGE_FILE_NAME = "gsc-oauth.v1.json";
 const STORAGE_FORMAT_VERSION = 1;
 const DEFAULT_AUTHORIZATION_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_TOKEN_TIMEOUT_MS = 15_000;
+const ACCESS_TOKEN_REFRESH_SKEW_MS = 60_000;
 
 export interface GscOAuthCredential {
   accessToken: string;
@@ -19,6 +21,11 @@ export interface GscOAuthCredential {
   tokenType: "Bearer";
   expiresAt: number;
   scopes: readonly [typeof GSC_READ_ONLY_SCOPE];
+}
+
+export interface GscProperty {
+  siteUrl: string;
+  permissionLevel: string;
 }
 
 export interface GscOAuthOptions {
@@ -49,6 +56,11 @@ export type GscOAuthErrorCode =
   | "TIMEOUT"
   | "AUTHORIZATION_FAILED"
   | "TOKEN_EXCHANGE_FAILED"
+  | "NOT_CONFIGURED"
+  | "AUTHORIZATION_REQUIRED"
+  | "TOKEN_REFRESH_FAILED"
+  | "NETWORK_ERROR"
+  | "PROPERTY_LIST_FAILED"
   | "ENCRYPTION_UNAVAILABLE"
   | "STORAGE_UNAVAILABLE";
 
@@ -60,6 +72,11 @@ const ERROR_MESSAGES: Record<GscOAuthErrorCode, string> = {
   TIMEOUT: "等待 Google Search Console 授权超时。",
   AUTHORIZATION_FAILED: "Google Search Console 授权未完成。",
   TOKEN_EXCHANGE_FAILED: "无法安全完成 Google Search Console 凭据交换。",
+  NOT_CONFIGURED: "尚未连接 Google Search Console。",
+  AUTHORIZATION_REQUIRED: "Google Search Console 授权已失效，请重新授权。",
+  TOKEN_REFRESH_FAILED: "无法刷新 Google Search Console 授权。",
+  NETWORK_ERROR: "暂时无法连接 Google Search Console。",
+  PROPERTY_LIST_FAILED: "无法读取 Google Search Console 属性列表。",
   ENCRYPTION_UNAVAILABLE: "本机安全存储暂不可用，凭据未保存。",
   STORAGE_UNAVAILABLE: "无法读取或保存本机加密凭据。",
 };
@@ -261,6 +278,64 @@ function extractCredential(response: unknown, now: number): GscOAuthCredential {
   };
 }
 
+function extractRefreshedCredential(response: unknown, current: GscOAuthCredential, now: number): GscOAuthCredential {
+  if (!isRecord(response)) throw new GscOAuthError("TOKEN_REFRESH_FAILED");
+  const expiresIn = response.expires_in;
+  const scopes =
+    typeof response.scope === "string" ? response.scope.trim().split(/\s+/).filter(Boolean) : current.scopes;
+  const refreshToken = typeof response.refresh_token === "string" ? response.refresh_token : current.refreshToken;
+  if (
+    typeof response.access_token !== "string" ||
+    !response.access_token ||
+    response.access_token.length > 16_384 ||
+    !refreshToken ||
+    refreshToken.length > 16_384 ||
+    response.token_type !== "Bearer" ||
+    typeof expiresIn !== "number" ||
+    !Number.isFinite(expiresIn) ||
+    expiresIn <= 0 ||
+    scopes.length !== 1 ||
+    scopes[0] !== GSC_READ_ONLY_SCOPE
+  ) {
+    throw new GscOAuthError("TOKEN_REFRESH_FAILED");
+  }
+  return {
+    accessToken: response.access_token,
+    refreshToken,
+    tokenType: "Bearer",
+    expiresAt: now + expiresIn * 1000,
+    scopes: [GSC_READ_ONLY_SCOPE],
+  };
+}
+
+function parseGscProperties(value: unknown): GscProperty[] {
+  if (!isRecord(value) || !Array.isArray(value.siteEntry)) throw new GscOAuthError("PROPERTY_LIST_FAILED");
+  const properties: GscProperty[] = [];
+  for (const entry of value.siteEntry) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.siteUrl !== "string" ||
+      !entry.siteUrl ||
+      typeof entry.permissionLevel !== "string" ||
+      !entry.permissionLevel
+    ) {
+      throw new GscOAuthError("PROPERTY_LIST_FAILED");
+    }
+    properties.push({ siteUrl: entry.siteUrl, permissionLevel: entry.permissionLevel });
+  }
+  return properties;
+}
+
+async function responseIsInvalidGrant(response: Response): Promise<boolean> {
+  if (response.status !== 400 && response.status !== 401) return false;
+  try {
+    const payload: unknown = await response.clone().json();
+    return isRecord(payload) && payload.error === "invalid_grant";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Main-process-only OAuth foundation. It has no IPC or UI registration by design.
  * Desktop OAuth clients are public clients: this service never accepts a client secret.
@@ -270,6 +345,8 @@ export function createGscOAuthService(options: GscOAuthOptions) {
   const now = options.now ?? Date.now;
   const pendingWrites = new Map<string, Promise<void>>();
   let authorizationInProgress = false;
+  let propertiesRequest: Promise<GscProperty[]> | undefined;
+  let credentialRevision = 0;
 
   function credentialDirectory(): string {
     if (options.directoryOverride) return options.directoryOverride;
@@ -395,6 +472,73 @@ export function createGscOAuthService(options: GscOAuthOptions) {
     }
   }
 
+  async function refreshCredential(current: GscOAuthCredential): Promise<GscOAuthCredential> {
+    const clientId = options.clientId?.trim();
+    if (!clientId) throw new GscOAuthError("CONFIGURATION_MISSING");
+
+    let response: Response;
+    try {
+      response = await fetchImpl(TOKEN_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: clientId,
+          grant_type: "refresh_token",
+          refresh_token: current.refreshToken,
+        }),
+        signal: AbortSignal.timeout(options.tokenTimeoutMs ?? DEFAULT_TOKEN_TIMEOUT_MS),
+      });
+    } catch {
+      throw new GscOAuthError("NETWORK_ERROR");
+    }
+
+    if (!response.ok) {
+      if (await responseIsInvalidGrant(response)) throw new GscOAuthError("AUTHORIZATION_REQUIRED");
+      if (response.status === 429 || response.status >= 500) throw new GscOAuthError("NETWORK_ERROR");
+      throw new GscOAuthError("TOKEN_REFRESH_FAILED");
+    }
+    try {
+      return extractRefreshedCredential(await response.json(), current, now());
+    } catch (error) {
+      if (error instanceof GscOAuthError) throw error;
+      throw new GscOAuthError("TOKEN_REFRESH_FAILED");
+    }
+  }
+
+  async function requestProperties(accessToken: string): Promise<GscProperty[]> {
+    let response: Response;
+    try {
+      response = await fetchImpl(GSC_SITES_ENDPOINT, {
+        method: "GET",
+        headers: { Accept: "application/json", Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(options.tokenTimeoutMs ?? DEFAULT_TOKEN_TIMEOUT_MS),
+      });
+    } catch {
+      throw new GscOAuthError("NETWORK_ERROR");
+    }
+    if (response.status === 401) throw new GscOAuthError("AUTHORIZATION_REQUIRED");
+    if (response.status === 429 || response.status >= 500) throw new GscOAuthError("NETWORK_ERROR");
+    if (!response.ok) throw new GscOAuthError("PROPERTY_LIST_FAILED");
+    try {
+      return parseGscProperties(await response.json());
+    } catch (error) {
+      if (error instanceof GscOAuthError) throw error;
+      throw new GscOAuthError("PROPERTY_LIST_FAILED");
+    }
+  }
+
+  async function loadProperties(): Promise<GscProperty[]> {
+    const revisionAtStart = credentialRevision;
+    const current = await readCredential();
+    if (!current) throw new GscOAuthError("NOT_CONFIGURED");
+
+    const needsRefresh = current.expiresAt <= now() + ACCESS_TOKEN_REFRESH_SKEW_MS;
+    const credential = needsRefresh ? await refreshCredential(current) : current;
+    const properties = await requestProperties(credential.accessToken);
+    if (needsRefresh && revisionAtStart === credentialRevision) await writeCredential(credential);
+    return properties;
+  }
+
   return {
     async authorize(): Promise<void> {
       const clientId = options.clientId?.trim();
@@ -456,8 +600,19 @@ export function createGscOAuthService(options: GscOAuthOptions) {
       return readCredential();
     },
 
+    /** Read-only Search Console sites.list; refreshed credentials commit only after the list succeeds. */
+    listProperties(): Promise<GscProperty[]> {
+      if (propertiesRequest) return propertiesRequest;
+      const current = loadProperties();
+      propertiesRequest = current;
+      return current.finally(() => {
+        if (propertiesRequest === current) propertiesRequest = undefined;
+      });
+    },
+
     /** Remove the encrypted local credential without contacting Google. */
     async clear(): Promise<void> {
+      credentialRevision += 1;
       const filePath = storagePath();
       await serializeWrite(filePath, async () => {
         try {
