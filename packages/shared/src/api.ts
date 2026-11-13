@@ -41,7 +41,7 @@ import type {
 } from "./models";
 import type { ProjectPaths } from "./paths";
 import type { JobProgress, JobRequest, JobResult, SchedulableJob } from "./jobs";
-import type { ScenarioQueryResult } from "./read-model";
+import type { ScenarioAnomaly, ScenarioDataQuality, ScenarioQueryResult } from "./read-model";
 
 // ---------- 通用 ----------
 
@@ -54,6 +54,81 @@ export interface ListQuery<F = Record<string, unknown>> {
   search?: string;
   sort?: { field: string; dir: "asc" | "desc" };
   filters?: F;
+}
+
+// ---------- Google Search Console ----------
+
+export type GscAuthorizationState =
+  "not_configured" | "disconnected" | "connected" | "reauthorization_required" | "unavailable";
+
+/** Local connection state only. OAuth tokens, account email and raw provider responses are never exposed. */
+export interface GscAuthorizationStatus {
+  state: GscAuthorizationState;
+  reason?: "client_id_missing" | "encryption_unavailable" | "credentials_unreadable" | "refresh_token_rejected";
+}
+
+export interface GscProperty {
+  site_url: string;
+  permission_level: string;
+}
+
+/** The account's readable properties and the explicitly selected property for one SiteIndex project. */
+export interface GscPropertyListData {
+  properties: GscProperty[];
+  selected_site_url: string | null;
+}
+
+export interface GscPropertySelection {
+  site_url: string | null;
+}
+
+export type GscSyncMode = "initial_90_days" | "incremental";
+
+export interface GscDateRange {
+  start_date: ISODate;
+  end_date: ISODate;
+}
+
+export interface GscMissingRange extends GscDateRange {
+  reason: "no_rows" | "not_yet_available" | "not_returned";
+}
+
+export interface GscSyncMetadata {
+  data_source: "google_search_console";
+  property_site_url: string | null;
+  requested_at: ISODateTime;
+  collected_at: ISODateTime | null;
+  /** Latest Search Console business date included in the response, if available. */
+  data_through: ISODate | null;
+  requested_range: GscDateRange | null;
+  missing_ranges: GscMissingRange[];
+  missing_fields: string[];
+  quality: ScenarioDataQuality;
+  anomalies: ScenarioAnomaly[];
+}
+
+interface GscSyncResultBase {
+  mode: GscSyncMode;
+  records_received: number;
+  records_written: number;
+  metadata: GscSyncMetadata;
+}
+
+/**
+ * A failed/blocked sync preserves existing history. Successful and partial batches merge/upsert their dates;
+ * neither mode replaces the complete historical dataset.
+ */
+export type GscSyncResult =
+  | (GscSyncResultBase & { state: "complete" | "partial"; history_effect: "merged" })
+  | (GscSyncResultBase & {
+      state: "blocked" | "failed";
+      history_effect: "preserved";
+      error: { code: string; message: string };
+    });
+
+export interface GscSyncInput {
+  /** First import covers the last 90 days of data available from Search Console. */
+  mode: GscSyncMode;
 }
 
 export type PageSize = 0 | 20 | 50 | 100 | 200;
@@ -764,6 +839,18 @@ export interface SiteIndexApi {
   /** WordPress 媒体准备以后台 Job 执行；旧 bridge 可不提供此命名空间。 */
   media?: {
     prepare(input: { project: ProjectId; skus: string[] }): Promise<{ runId: string }>;
+  };
+  /** GSC authorization and read-only synchronization; optional until Desktop/UI wiring is implemented. */
+  gsc?: {
+    status(): Promise<GscAuthorizationStatus>;
+    connect(): Promise<GscAuthorizationStatus>;
+    disconnect(): Promise<GscAuthorizationStatus>;
+    /** Read the account's properties and the current project's explicit selection, with source/quality metadata. */
+    listProperties(id: ProjectId): Promise<ScenarioQueryResult<GscPropertyListData>>;
+    /** Select one property returned by listProperties; null clears the current project's selection. */
+    selectProperty(id: ProjectId, siteUrl: string | null): Promise<GscPropertySelection>;
+    /** Initial mode imports 90 available days; incremental mode continues from committed history. */
+    sync(id: ProjectId, input: GscSyncInput): Promise<GscSyncResult>;
   };
   design: {
     get(id: ProjectId): Promise<{
