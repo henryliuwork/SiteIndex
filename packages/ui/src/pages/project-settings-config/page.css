@@ -70,6 +70,26 @@
 .si-config-reserved { display: grid; gap: var(--si-gap-2); min-width: 0; padding: var(--si-gap-3); border: 1px dashed #CDD2D8; border-radius: 8px; color: var(--color-ink-2); font-size: var(--fs-body); }
 .si-config-reserved span { color: var(--color-muted); font-size: var(--fs-caption); line-height: 1.5; }
 .si-config-reserved .si-chip { justify-self: start; }
+.si-gsc-settings { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); }
+.si-gsc-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.si-gsc-heading h3 { margin: 0; color: var(--color-ink); font-size: var(--fs-sub-title); font-weight: 600; }
+.si-gsc-heading p, .si-gsc-property-row > p, .si-gsc-inline-status { margin: 0; color: var(--color-muted); font-size: var(--fs-caption); line-height: 1.5; }
+.si-gsc-status-row { display: grid; grid-template-columns: auto auto minmax(0,1fr) auto; align-items: center; gap: var(--space-2) var(--space-3); color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-gsc-status-row > small { color: var(--color-muted); font-size: var(--fs-caption); }
+.si-gsc-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.si-gsc-connected-content { display: grid; gap: var(--space-3); }
+.si-gsc-property-row { display: grid; gap: var(--space-2); }
+.si-gsc-sync-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: var(--space-3); }
+.si-gsc-sync-result { display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-3); border: 1px solid var(--color-line-soft); border-radius: 8px; background: var(--color-surface); color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-gsc-sync-result-heading { display: flex; align-items: center; gap: var(--space-2); color: var(--color-ink); }
+.si-gsc-sync-result p, .si-gsc-sync-detail strong { margin: 0; }
+.si-gsc-sync-result dl { display: grid; gap: var(--space-1); margin: 0; }
+.si-gsc-sync-result dl > div { display: grid; grid-template-columns: minmax(72px,auto) minmax(0,1fr); gap: var(--space-2); }
+.si-gsc-sync-result dt { color: var(--color-muted); }
+.si-gsc-sync-result dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.si-gsc-sync-result small { color: var(--color-muted); font-size: var(--fs-caption); }
+.si-gsc-sync-detail { display: grid; gap: var(--space-1); }
+.si-gsc-sync-detail ul { display: grid; gap: var(--space-1); margin: 0; padding-left: var(--space-4); }
 .si-config-json-overlay { position: fixed; z-index: 60; inset: 0; background: rgba(20,24,29,.42); }
 .si-config-json-dialog { position: fixed; z-index: 61; top: 50%; left: 50%; display: grid; width: min(760px,calc(100vw - 32px)); max-height: min(820px,90vh); gap: var(--si-gap-3); overflow: auto; padding: var(--si-gap-4); transform: translate(-50%,-50%); border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); box-shadow: 0 12px 32px rgba(20,24,29,.2); }
 .si-config-json-dialog h2 { margin: 0; font-size: 15px; }
@@ -82,6 +102,9 @@
 }
 @media (max-width: 760px) {
   .si-config-grid-3, .si-config-grid-2, .si-config-reserved-grid { grid-template-columns: 1fr; }
+  .si-gsc-status-row { grid-template-columns: auto 1fr; }
+  .si-gsc-status-row > small, .si-gsc-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .si-gsc-sync-row { grid-template-columns: 1fr; }
   .si-config-grouping-rule, .si-config-grouping-stats { grid-template-columns: 1fr; }
   .si-config-watched-option { grid-template-columns: 18px minmax(0,1fr); }
   .si-config-watched-option > small { grid-column: 2; }

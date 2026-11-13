@@ -3,7 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import type { CategoriesConfig, FeedInspectResult, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
-import { api, apiErrorMessage } from "../api";
+import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
@@ -13,6 +13,7 @@ import { invalidateInventoryForCategoryChange } from "./project-settings-config/
 import { didBlogRecognitionConfigChange, markBlogRecognitionConfigUpdated } from "./content/blog-recognition";
 import { ProjectSettingsCategoriesPage } from "./ProjectSettingsCategoriesPage";
 import { ProjectSettingsFilesPage } from "./ProjectSettingsFilesPage";
+import { GscSettingsCard } from "./project-settings-config/gsc-settings-card";
 import "./project-settings-config/page.css";
 function TextField({ label, value, onChange, mono = false, placeholder, type = "text", hint }: {
   label: string; value: string; onChange: (value: string) => void; mono?: boolean; placeholder?: string; type?: string; hint?: ReactNode;
@@ -357,8 +358,8 @@ export function ProjectSettingsConfigPage() {
         <ConfigCard id="integrations" title="集成与预留数据源"><div className="si-config-grid si-config-grid-2">
           <TextField label="LinkFlow MCP 服务" value={draft.integrations?.linkflow?.mcp_server ?? ""} onChange={(value) => patch("integrations", { ...draft.integrations, linkflow: { ...draft.integrations?.linkflow, mcp_server: value } })} mono />
           <TextField label="录入工具" value={draft.integrations?.linkflow?.create_tool ?? ""} onChange={(value) => patch("integrations", { ...draft.integrations, linkflow: { ...draft.integrations?.linkflow, create_tool: value } })} mono />
-        </div><div className="si-config-reserved-grid">{[
-          ["销量数据", "Magento API / WordPress REST / MCP → index/sales/"], ["Google Search Console", "收录、展现、点击、排名 → index/seo/"], ["Mailchimp 报告", "收件、打开、点击、收入 → edm_campaigns"],
+        </div><GscSettingsCard projectId={id} gsc={api.gsc} isDemo={isMockApi} /><div className="si-config-reserved-grid">{[
+          ["销量数据", "Magento API / WordPress REST / MCP → index/sales/"], ["Mailchimp 报告", "收件、打开、点击、收入 → edm_campaigns"],
         ].map(([title, detail]) => <div className="si-config-reserved" key={title}><strong>{title}</strong><span>{detail}</span><Chip tone="neutral">预留 · 未连接</Chip></div>)}</div></ConfigCard>
 
         <ProjectSettingsFilesPage embedded />

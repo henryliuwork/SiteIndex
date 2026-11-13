@@ -22,8 +22,9 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
-async function renderSettings(initialEntry: string) {
+async function renderSettings(initialEntry: string, omitGsc = false) {
   const mockApi = createMockApi();
+  if (omitGsc) mockApi.gsc = undefined;
   const originalUpdateConfig = mockApi.projects.updateConfig.bind(mockApi.projects);
   const updateConfig = vi.spyOn(mockApi.projects, "updateConfig").mockImplementation(originalUpdateConfig);
   const originalSaveCategories = mockApi.categories.save.bind(mockApi.categories);
@@ -109,5 +110,17 @@ describe("项目设置单页区块", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "一键校验全部" }));
     await waitFor(() => expect(validateFiles).toHaveBeenCalledWith("demo"));
+  }, 20_000);
+
+  it("旧 Desktop bridge 缺少 GSC 方法时仍能编辑并保存本地项目配置", async () => {
+    const { updateConfig } = await renderSettings("/p/demo/settings/config", true);
+
+    expect(await screen.findByText(/不影响本页其他项目设置/)).toBeTruthy();
+    fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "本地设置仍可使用" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({
+      brand: expect.objectContaining({ tagline: "本地设置仍可使用" }),
+    })));
   }, 20_000);
 });
