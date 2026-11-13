@@ -197,3 +197,6 @@
 
 ### v0.5.1 · 工作区迁移元数据补齐
 - [x] `workspace.importCheck` 仅在元数据缺失且有有效清单来源时，把 `workspace.version`、目录列表与 EDM 预设补入 `site.json`；保留其他配置；损坏或冲突时保持原文件并报告
+
+### v0.5.2 · 可选 GMC Feed
+- [x] 未配置 Feed 时，init 将 daily 标记为 skipped 并继续 weekly/视图索引；独立 daily 同样返回 skipped，不改写已有库存文件，真实 Feed 请求失败仍按失败记录

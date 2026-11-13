@@ -1620,18 +1620,22 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             try { await access(path.join(executionPath, relative)); record(key, "ok", label, pct); }
             catch { record(key, "failed", `${label.replace("已", "未")}：${relative} 不存在。`, pct); }
           }
-          progress(25, "daily", "正在读取商品 feed 并同步库存");
-          try {
-            const items = await readFeeds(config as FeedSiteConfig);
-            const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
-            const daily = await runDaily(executionPath, snapshot, { date: requestedDate, force: req.force });
-            Object.assign(counts, daily.counts);
-            const message = daily.status === "failed"
-              ? `每日同步失败：${daily.errors.join("；") || "数据源未生成有效数据。"}`
-              : daily.status === "partial" ? `每日同步部分完成：${daily.errors.join("；") || "部分库存状态未知。"}` : "每日同步完成。";
-            record("daily", daily.status === "ok" ? "ok" : "failed", message, 45);
-          } catch (error) {
-            record("daily", "failed", `每日同步失败：${isSiteIndexError(error) ? error.message : error instanceof Error ? error.message : String(error)}`, 45);
+          if (!feedUrlsFromConfig(config).length) {
+            record("daily", "skipped", "未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。", 45);
+          } else {
+            progress(25, "daily", "正在读取商品 feed 并同步库存");
+            try {
+              const items = await readFeeds(config as FeedSiteConfig);
+              const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
+              const daily = await runDaily(executionPath, snapshot, { date: requestedDate, force: req.force });
+              Object.assign(counts, daily.counts);
+              const message = daily.status === "failed"
+                ? `每日同步失败：${daily.errors.join("；") || "数据源未生成有效数据。"}`
+                : daily.status === "partial" ? `每日同步部分完成：${daily.errors.join("；") || "部分库存状态未知。"}` : "每日同步完成。";
+              record("daily", daily.status === "ok" ? "ok" : "failed", message, 45);
+            } catch (error) {
+              record("daily", "failed", `每日同步失败：${isSiteIndexError(error) ? error.message : error instanceof Error ? error.message : String(error)}`, 45);
+            }
           }
           progress(50, "weekly", "正在同步 SEO 页面与内容");
           try {
@@ -1683,30 +1687,41 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             summary: status === "ok" ? "项目初始化完成。" : status === "partial" ? "项目初始化部分完成，请查看失败步骤。" : "项目初始化失败。",
             counts, ...(errors.length ? { errors } : {}), steps };
         } else if (req.job === "daily") {
-          progress(5, "feed", "正在读取商品 feed");
-          const items = await readFeeds(config as FeedSiteConfig);
-          const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
-          progress(35, "daily", "正在合并商品与库存数据");
-          const daily = await runDaily(executionPath, snapshot, {
-            date: requestedDate,
-            force: req.force,
-            ...(ctx.testOnlyBeforeDailyTargetReplace
-              ? { testOnlyBeforeTargetReplace: ctx.testOnlyBeforeDailyTargetReplace }
-              : {}),
-          });
-          if (daily.status !== "failed") {
-            progress(80, "views", "正在生成产品与库存视图");
-            await buildViews(executionPath, { date: requestedDate });
+          if (!feedUrlsFromConfig(config).length) {
+            jobResult = {
+              runId,
+              job: req.job,
+              status: "skipped",
+              exitCode: EXIT.OK,
+              summary: "未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。",
+            };
+            progress(90, "daily", jobResult.summary, "warn");
+          } else {
+            progress(5, "feed", "正在读取商品 feed");
+            const items = await readFeeds(config as FeedSiteConfig);
+            const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
+            progress(35, "daily", "正在合并商品与库存数据");
+            const daily = await runDaily(executionPath, snapshot, {
+              date: requestedDate,
+              force: req.force,
+              ...(ctx.testOnlyBeforeDailyTargetReplace
+                ? { testOnlyBeforeTargetReplace: ctx.testOnlyBeforeDailyTargetReplace }
+                : {}),
+            });
+            if (daily.status !== "failed") {
+              progress(80, "views", "正在生成产品与库存视图");
+              await buildViews(executionPath, { date: requestedDate });
+            }
+            jobResult = {
+              runId,
+              job: req.job,
+              status: daily.status,
+              exitCode: daily.exitCode,
+              summary: daily.status === "failed" ? "每日同步失败。" : daily.status === "partial" ? "每日同步完成，包含库存未知项。" : "每日同步完成。",
+              counts: daily.counts,
+              ...(daily.errors.length ? { errors: daily.errors } : {}),
+            };
           }
-          jobResult = {
-            runId,
-            job: req.job,
-            status: daily.status,
-            exitCode: daily.exitCode,
-            summary: daily.status === "failed" ? "每日同步失败。" : daily.status === "partial" ? "每日同步完成，包含库存未知项。" : "每日同步完成。",
-            counts: daily.counts,
-            ...(daily.errors.length ? { errors: daily.errors } : {}),
-          };
         } else if (req.job === "views") {
           progress(10, "views", "正在重新生成数据视图");
           const built = await buildViews(executionPath, { date: requestedDate });
@@ -1842,7 +1857,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           jobResult = jobFailure(req, runId, EXIT.SOURCE_FAILED, message, [message]);
         }
 
-        if ((req.job === "daily" || req.job === "weekly") && jobResult.status !== "failed" && config.schedule.options.validate_after_sync) {
+        if ((req.job === "daily" || req.job === "weekly")
+          && (jobResult.status === "ok" || jobResult.status === "partial")
+          && config.schedule.options.validate_after_sync) {
           progress(94, "validate", "同步后正在校验本次生成的数据");
           const validation = await validateProjectFiles(executionPath, { trigger: "after_sync" });
           if (validation.summary.error || validation.summary.missing || validation.summary.conflict_copy) {
@@ -1863,7 +1880,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             device_name: ctx.deviceName ?? (await readRunner(projectPath))?.device_name ?? "SiteIndex",
             started_at: typeof existing?.started_at === "string" ? existing.started_at : startedAt,
             finished_at: zonedTimestamp(config.timezone),
-            status: jobResult.status === "skipped" ? "failed" as const : jobResult.status,
+            status: jobResult.status,
             ...(jobResult.counts ? { counts: jobResult.counts } : {}),
             ...(jobResult.errors ? { errors: jobResult.errors } : {}),
             ...(req.job === "init" ? { steps: jobResult.steps ?? initSteps } : {}),
@@ -1882,6 +1899,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: req.job });
       const finalStep = req.job === "init" ? "schedule" : "done";
       if (result.status === "ok" || result.status === "partial") progress(100, finalStep, result.summary);
+      else if (result.status === "skipped") progress(100, finalStep, result.summary, "warn");
       else progress(null, finalStep, result.summary, "error");
       return result;
     } catch (error) {

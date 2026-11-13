@@ -355,6 +355,76 @@ describe("project service", () => {
     expect(initRun).toMatchObject({ job: "init", status: "partial", steps: result.steps });
   }, 60_000);
 
+  it("indexes sitemap pages when a newly created project has no GMC feed", async () => {
+    mockWebsite(true);
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-init-no-feed-"));
+    TEMP_DIRS.push(root);
+    const api = makeService();
+    await api.projects.create({ ...createInput(root), feed_urls: [] });
+    const projectPath = path.join(root, "example-shop");
+    const sitePath = path.join(projectPath, PATHS.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
+    site.crawl.rate_limit_ms = 200;
+    site.categories = { mode: "url_rule", url_pattern: "/category/" };
+    await writeFile(sitePath, JSON.stringify(site, null, 2) + "\n");
+
+    const result = await api.runJob({ projectPath, job: "init", trigger: "manual", date: "2026-10-22" }, () => undefined);
+
+    expect(result.status, JSON.stringify(result.steps)).toBe("ok");
+    expect(result.steps?.find((step) => step.key === "daily")).toMatchObject({
+      status: "skipped",
+      message: expect.stringContaining("未配置 GMC Feed"),
+    });
+    expect(result.steps?.find((step) => step.key === "weekly")?.status).toBe("ok");
+    expect((await readJsonl(path.join(projectPath, PATHS.seoPages))).length).toBeGreaterThan(0);
+    const initRun = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.run_id === result.runId);
+    expect(initRun).toMatchObject({ job: "init", status: "ok", steps: result.steps });
+  }, 60_000);
+
+  it("continues non-product indexing with an empty feed and preserves existing inventory data", async () => {
+    mockWebsite(true);
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-init-empty-feed-"));
+    TEMP_DIRS.push(root);
+    const feedPath = path.join(root, "synthetic-feed.xml");
+    await writeFile(feedPath, '<?xml version="1.0"?><rss xmlns:g="http://base.google.com/ns/1.0"><channel><item><g:id>DEMO-FEED-1</g:id><g:title>Synthetic feeder</g:title><g:link>https://example.com/products/feeder</g:link><g:price>10 USD</g:price><g:availability>in stock</g:availability></item></channel></rss>');
+    const api = makeService();
+    await api.projects.create({ ...createInput(root), feed_urls: [feedPath] });
+    const projectPath = path.join(root, "example-shop");
+    const sitePath = path.join(projectPath, PATHS.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
+    site.crawl.rate_limit_ms = 200;
+    await writeFile(sitePath, JSON.stringify(site, null, 2) + "\n");
+
+    const initial = await api.runJob({ projectPath, job: "init", trigger: "manual", date: "2026-10-22" }, () => undefined);
+    expect(initial.status, JSON.stringify(initial.steps)).toBe("ok");
+    expect((await readJsonl(path.join(projectPath, PATHS.skus))).map((row) => row.sku)).toContain("DEMO-FEED-1");
+
+    const protectedPaths = [PATHS.skus, PATHS.inventoryLatest, PATHS.dailySummary] as const;
+    const beforeEmptyFeed = await Promise.all(protectedPaths.map((relativePath) => readFile(path.join(projectPath, relativePath))));
+    const emptyFeedSite = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
+    emptyFeedSite.crawl.feed_url = [];
+    await writeFile(sitePath, JSON.stringify(emptyFeedSite, null, 2) + "\n");
+
+    const result = await api.runJob({ projectPath, job: "init", trigger: "manual", date: "2026-10-23" }, () => undefined);
+
+    expect(result.status).toBe("ok");
+    expect(result.steps?.find((step) => step.key === "daily")).toMatchObject({
+      status: "skipped",
+      message: expect.stringContaining("未配置 GMC Feed"),
+    });
+    expect(result.steps?.find((step) => step.key === "weekly")?.status).toBe("ok");
+    expect((await readJsonl(path.join(projectPath, PATHS.seoPages))).length).toBeGreaterThan(0);
+    const afterEmptyFeed = await Promise.all(protectedPaths.map((relativePath) => readFile(path.join(projectPath, relativePath))));
+    expect(afterEmptyFeed).toEqual(beforeEmptyFeed);
+
+    const daily = await api.runJob({ projectPath, job: "daily", trigger: "manual", date: "2026-10-24" }, () => undefined);
+    expect(daily).toMatchObject({ job: "daily", status: "skipped", exitCode: 0 });
+    const afterStandaloneDaily = await Promise.all(protectedPaths.map((relativePath) => readFile(path.join(projectPath, relativePath))));
+    expect(afterStandaloneDaily).toEqual(beforeEmptyFeed);
+    const dailyRun = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.run_id === daily.runId);
+    expect(dailyRun).toMatchObject({ job: "daily", status: "skipped" });
+  }, 60_000);
+
   it("preserves existing user folders, _about.md and README in the chosen project directory", async () => {
     mockWebsite();
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-existing-workspace-"));
