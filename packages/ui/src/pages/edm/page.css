@@ -1,5 +1,5 @@
 .si-edm-page {
-  --si-table-min-h: 416px;
+  --si-table-min-h: 360px;
   display: flex;
   min-height: 0;
   height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2);
