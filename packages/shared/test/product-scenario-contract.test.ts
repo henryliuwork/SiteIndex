@@ -25,6 +25,27 @@ describe("product scenario query contract", () => {
     expect(QUERY_TARGETS).toContain("product-group-family");
   });
 
+  it("allows project-wide or single-SKU change queries", async () => {
+    const requestedSkus: Array<string | undefined> = [];
+    const queryChanges: NonNullable<SiteIndexApi["products"]["changes"]> = async (_id, sku) => {
+      requestedSkus.push(sku);
+      return {
+        data: [],
+        metadata: {
+          sources: [{ kind: "inventory.events" }],
+          collected_at: null,
+          missing_fields: [],
+          quality: "complete",
+          anomalies: [],
+        },
+      };
+    };
+
+    await expect(queryChanges("fixture")).resolves.toMatchObject({ data: [], metadata: { quality: "complete" } });
+    await expect(queryChanges("fixture", "DEMO-001")).resolves.toMatchObject({ data: [], metadata: { quality: "complete" } });
+    expect(requestedSkus).toEqual([undefined, "DEMO-001"]);
+  });
+
   it("represents usable and unavailable indexed data without inventing records", () => {
     const sku: SkuRecord = {
       sku: "DEMO-001-A",

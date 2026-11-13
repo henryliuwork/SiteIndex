@@ -588,8 +588,8 @@ export interface SiteIndexApi {
     get(id: ProjectId, handle: string): Promise<ProductFull>;
     /** Read-only SKU brief from stored catalog and stock indexes; unavailable source data is described by metadata. */
     skuBrief?(id: ProjectId, sku: string): Promise<ScenarioQueryResult<ProductSkuBrief>>;
-    /** Read-only inventory event history for one SKU; no events is an empty array. */
-    changes?(id: ProjectId, sku: string): Promise<ScenarioQueryResult<ProductChanges>>;
+    /** Read-only inventory event history for the project, optionally filtered to one SKU; no events is an empty array. */
+    changes?(id: ProjectId, sku?: string): Promise<ScenarioQueryResult<ProductChanges>>;
     /** Read-only parent/child relation for one real feed SKU; never creates parent stock. */
     groupFamily?(id: ProjectId, sku: string): Promise<ScenarioQueryResult<ProductGroupFamily>>;
     setTags(id: ProjectId, handle: string, tags: string[]): Promise<string[]>;
