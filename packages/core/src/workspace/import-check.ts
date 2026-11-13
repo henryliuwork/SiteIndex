@@ -2,6 +2,7 @@ import { appendFile, lstat, mkdir, open, readFile, unlink } from "node:fs/promis
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CSV_HEADERS, PATHS, pathsFor, type SiteConfig, type WorkspaceImportCheckResult, type WorkspaceImportIssue } from "@siteindex/shared";
+import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { parseReadmeAutoBlocks } from "../readme";
 import { validateProjectFiles } from "../validate";
@@ -30,25 +31,82 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isManifestSection(value: unknown): value is { id: string; dir: string } {
+  return record(value) && nonEmptyString(value.id) && nonEmptyString(value.dir);
+}
+
 function validManifest(value: unknown): value is WorkspaceManifest {
-  return record(value)
-    && typeof value.version === "string"
-    && value.layout === "workspace"
-    && Array.isArray(value.sections)
-    && value.sections.every((section) => record(section) && typeof section.id === "string" && typeof section.dir === "string")
-    && record(value.paths)
-    && Object.values(value.paths).every((entry) => typeof entry === "string")
-    && Array.isArray(value.esp_presets)
-    && value.esp_presets.every((entry) => typeof entry === "string");
+  if (!record(value)
+    || !nonEmptyString(value.version)
+    || value.layout !== "workspace"
+    || !Array.isArray(value.sections)
+    || !value.sections.every(isManifestSection)
+    || !record(value.paths)
+    || !Object.entries(value.paths).every(([key, entry]) => nonEmptyString(key) && nonEmptyString(entry))
+    || !Array.isArray(value.esp_presets)
+    || !value.esp_presets.every(nonEmptyString)) return false;
+
+  const sections = value.sections;
+  const ids = sections.map((section) => section.id);
+  const dirs = sections.map((section) => section.dir);
+  return new Set(ids).size === ids.length
+    && new Set(dirs).size === dirs.length
+    && new Set(value.esp_presets).size === value.esp_presets.length;
 }
 
 function validWorkspaceConfig(value: unknown): value is NonNullable<SiteConfig["workspace"]> {
-  return record(value)
-    && typeof value.version === "string"
-    && Array.isArray(value.sections)
-    && value.sections.every((entry) => typeof entry === "string")
-    && Array.isArray(value.esp_presets)
-    && value.esp_presets.every((entry) => typeof entry === "string");
+  if (!record(value)
+    || !nonEmptyString(value.version)
+    || !Array.isArray(value.sections)
+    || !value.sections.every(nonEmptyString)
+    || !Array.isArray(value.esp_presets)
+    || !value.esp_presets.every(nonEmptyString)) return false;
+
+  return new Set(value.sections).size === value.sections.length
+    && new Set(value.esp_presets).size === value.esp_presets.length;
+}
+
+function metadataFromManifest(manifest: WorkspaceManifest): NonNullable<SiteConfig["workspace"]> {
+  return {
+    version: manifest.version,
+    sections: manifest.sections.map((section) => section.dir),
+    esp_presets: [...manifest.esp_presets],
+  };
+}
+
+function metadataMatchesManifest(workspace: NonNullable<SiteConfig["workspace"]>, manifest: WorkspaceManifest): boolean {
+  const expected = metadataFromManifest(manifest);
+  return workspace.version === expected.version
+    && workspace.sections.length === expected.sections.length
+    && workspace.sections.every((entry, index) => entry === expected.sections[index])
+    && workspace.esp_presets.length === expected.esp_presets.length
+    && workspace.esp_presets.every((entry, index) => entry === expected.esp_presets[index]);
+}
+
+async function addMissingWorkspaceMetadata(
+  configPath: string,
+  expectedText: string,
+  workspace: NonNullable<SiteConfig["workspace"]>,
+): Promise<boolean> {
+  let currentText: string;
+  try { currentText = await readFile(configPath, "utf8"); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  if (currentText !== expectedText) return false;
+
+  let currentConfig: unknown;
+  try { currentConfig = JSON.parse(currentText); }
+  catch { return false; }
+  if (!record(currentConfig) || Object.hasOwn(currentConfig, "workspace")) return false;
+
+  await atomicWrite(configPath, `${JSON.stringify({ ...currentConfig, workspace }, null, 2)}\n`);
+  return true;
 }
 
 function workspaceTemplateCandidates(templateDir?: string): string[] {
@@ -135,6 +193,7 @@ function emptyTemplateDoc(templateText: string, config: Record<string, unknown>)
 async function inspectWorkspace(projectPath: string): Promise<{
   issues: WorkspaceImportIssue[];
   config?: Record<string, unknown>;
+  configText?: string;
   manifest?: WorkspaceManifest;
 }> {
   const paths = pathsFor("workspace");
@@ -182,14 +241,25 @@ async function inspectWorkspace(projectPath: string): Promise<{
   }
 
   if (config.workspace === undefined) {
+    const manifestInvalid = issues.some((issue) => issue.path === manifestPath && issue.code === "workspace_manifest_invalid");
+    const canRecoverMetadata = manifest !== undefined || !manifestInvalid;
     issues.push({
       path: paths.site,
       code: "workspace_metadata_missing",
-      message: "site.json 缺少 workspace 元数据。为避免覆盖用户配置，请根据 _site-index/workspace.json 手动补充 workspace.version、workspace.sections（目录名数组）和 workspace.esp_presets；若该文件缺失，请先运行自动修复，再重新检查。",
-      auto_fixable: false,
+      message: canRecoverMetadata
+        ? "site.json 缺少 workspace 元数据；自动修复会从有效的 workspace.json（缺失时使用工作区模板）补齐此字段，并保留 site.json 其他配置。"
+        : "site.json 缺少 workspace 元数据，且 workspace.json 已损坏；为避免猜测或覆盖配置，未自动补齐。请先手动修复 workspace.json。",
+      auto_fixable: canRecoverMetadata,
     });
   } else if (!validWorkspaceConfig(config.workspace)) {
     issues.push({ path: paths.site, code: "workspace_metadata_invalid", message: "site.json 的 workspace 字段格式无效，请手动检查。", auto_fixable: false });
+  } else if (manifest && !metadataMatchesManifest(config.workspace, manifest)) {
+    issues.push({
+      path: paths.site,
+      code: "workspace_metadata_conflict",
+      message: "site.json.workspace 与 _site-index/workspace.json 的版本、板块或 EDM 预设不一致；未自动更改任一文件。",
+      auto_fixable: false,
+    });
   }
 
   const report = await validateProjectFiles(projectPath, { writeReport: false });
@@ -223,7 +293,7 @@ async function inspectWorkspace(projectPath: string): Promise<{
     }
   }
   issues.sort((left, right) => compareKeys(left.path, right.path) || compareKeys(left.code, right.code));
-  return { issues, config, ...(manifest ? { manifest } : {}) };
+  return { issues, config, configText, ...(manifest ? { manifest } : {}) };
 }
 
 async function appendMissingBlocks(filePath: string, markdown: string, required: readonly string[]): Promise<boolean> {
@@ -256,6 +326,23 @@ export async function checkWorkspaceImport(
   if (codes.has(`${manifestRelative}\0workspace_manifest_missing`)) {
     const created = await exclusiveWrite(path.join(project, manifestRelative), `${JSON.stringify(manifest, null, 2)}\n`);
     if (created) repaired.add(manifestRelative);
+  }
+
+  const metadataMissing = first.issues.some((issue) => issue.code === "workspace_metadata_missing" && issue.auto_fixable);
+  if (metadataMissing && first.config && first.configText) {
+    // Re-read after a missing-manifest repair so an existing concurrent file remains authoritative.
+    let metadataSource = first.manifest;
+    if (!metadataSource && codes.has(`${manifestRelative}\0workspace_manifest_missing`)) {
+      try {
+        const value: unknown = JSON.parse(await readFile(path.join(project, manifestRelative), "utf8"));
+        if (validManifest(value)) metadataSource = value;
+      } catch { /* The final inspection will report a missing or corrupt manifest. */ }
+    }
+    if (metadataSource && await addMissingWorkspaceMetadata(
+      path.join(project, paths.site),
+      first.configText,
+      metadataFromManifest(metadataSource),
+    )) repaired.add(paths.site);
   }
 
   for (const issue of first.issues.filter((item) => item.code === "missing_ledger" && item.auto_fixable)) {
