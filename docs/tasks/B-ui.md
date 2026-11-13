@@ -144,3 +144,4 @@
   ```
 - 2026-11-10 mock 复核：1280×800 与 1920×1080 下 Tab 均完整可见；EDM 的两个右侧操作都在固定槽内可见。共享“更多”菜单的键盘路径由 `project-header.test.tsx` 覆盖。仍需 D 把 `OverviewPage`、`ProductsPage`、`SeoPage`、`InventoryPage` 的独立 `PageHeader` 并入 `ProjectHeader`；截图显示这些页面仍保留第三行标题/操作区，业务页不在本 PR 修改范围。
 - Products mock 在 1280×800 下，旧结构表格滚动区 320px；合并标题行并移除独立 `PageHeader` 后 417px，增加 97px。截图：[改造前](../../packages/ui/screenshots/compact-project-header-before-1280.png) / [改造后](../../packages/ui/screenshots/compact-project-header-after-1280.png)
+- [x] v0.5.5 新建项目网址步骤“检测”按钮与 44px 输入框顶边/高度对齐；1280/1920/640 mock Playwright 量测并验证检测交互 — 本 PR
