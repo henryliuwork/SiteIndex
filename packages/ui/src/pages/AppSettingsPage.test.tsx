@@ -71,6 +71,15 @@ async function renderSettings(options: { settings?: AppSettings; wordpress?: boo
 }
 
 describe("AppSettingsPage background options", () => {
+  it("explains per-device local project storage and keeps the root chooser available", async () => {
+    await renderSettings();
+
+    expect(await screen.findByText(/项目需保存在本机非同步目录；不同设备分别存放，不支持云盘同步同一项目。/)).toBeTruthy();
+    expect(screen.getByText("数据库等缓存只保存在本机")).toBeTruthy();
+    expect((screen.getByLabelText("项目根目录") as HTMLInputElement).value).toBe("D:/SiteIndex/projects");
+    expect(screen.getByRole("button", { name: "选择…" })).toBeTruthy();
+  });
+
   it("shows and persists the tray and launch-at-login options", async () => {
     const { save } = await renderSettings();
     const closeToTray = await screen.findByRole("checkbox", { name: /关闭窗口时最小化到托盘/ });

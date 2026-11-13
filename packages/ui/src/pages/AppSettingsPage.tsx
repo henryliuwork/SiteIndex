@@ -181,7 +181,7 @@ export function AppSettingsPage() {
           <label htmlFor="si-projects-root">项目根目录</label>
           <div className="si-project-root-field">
             <input id="si-projects-root" className="si-setting-input si-setting-mono" value={draft.projects_root} onChange={(event) => setDraft({ ...draft, projects_root: event.target.value })} onBlur={() => void saveSettings({ projects_root: draft.projects_root })} />
-            <small className="si-setting-hint">软件会自动扫描这个目录里的项目；也是新建项目的默认位置。不在此目录的项目请用“添加已有项目”。</small>
+            <small className="si-setting-hint">软件会自动扫描这个目录里的项目；也是新建项目的默认位置。不在此目录的项目请用“添加已有项目”。项目需保存在本机非同步目录；不同设备分别存放，不支持云盘同步同一项目。</small>
           </div>
           <Button onClick={() => void chooseProjectsRoot()}>选择…</Button>
         </div>
@@ -193,7 +193,7 @@ export function AppSettingsPage() {
         <div className="si-app-setting-row">
           <label htmlFor="si-cache-dir">本机缓存目录</label>
           <input id="si-cache-dir" className="si-setting-input si-setting-mono" value={draft.cache_dir} onChange={(event) => setDraft({ ...draft, cache_dir: event.target.value })} onBlur={() => void saveSettings({ cache_dir: draft.cache_dir })} />
-          <span className="si-setting-hint">数据库等不进云盘</span>
+          <span className="si-setting-hint">数据库等缓存只保存在本机</span>
         </div>
       </Card>}
 
