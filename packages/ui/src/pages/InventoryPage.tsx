@@ -404,7 +404,7 @@ export function InventoryPage() {
     <div className="si-page si-inventory-page">
       <ProjectHeader
         project={project}
-        activeTab="inventory"
+        activeTab="products"
         hasTabPanel
         status={project.sync.state === "ok" ? <Chip tone="ok">{project.sync.at ? `${dateTime(project.sync.at)} · 同步成功` : "同步成功 · 时间未知"}</Chip> : <Chip tone={project.sync.state === "failed" ? "danger" : "warn"}>{project.sync.state === "failed" ? "同步失败" : project.sync.state === "running" ? "同步中" : "待处理"}</Chip>}
         pageMeta={<Chip tone="neutral">{summary?.as_of ? "数据日期：" + summary.as_of : "库存数据"}</Chip>}
@@ -418,7 +418,7 @@ export function InventoryPage() {
           { label: "查看今日日报", onSelect: () => void openReport(), icon: <FileText size={14} /> },
         ]}
       />
-      <ProjectTabPanel projectId={project.id} tab="inventory">
+      <ProjectTabPanel projectId={project.id} tab="products">
       {syncMessage && <Notice tone="info" title="库存同步进行中">{syncMessage}</Notice>}
       {skuQuery.isFetching && skuQuery.data && <div className="si-inventory-query-state" role="status">正在更新 SKU 列表…</div>}
       {skuQuery.isError && <ApiErrorNotice className="si-inventory-query-state" label={"SKU 列表更新失败" + (skuQuery.data ? "，当前保留上次结果。" : "。")} error={skuQuery.error} onRetry={() => void skuQuery.refetch()} />}

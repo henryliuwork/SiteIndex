@@ -167,7 +167,7 @@ function ProductDetailContent({
         <div><span>Google 收录</span><p>{detail.seo.google_indexed === true ? "已收录" : detail.seo.google_indexed === false ? "未收录" : "未检查"}</p></div>
       </div> : <p className="si-muted">暂无 SEO 页面数据。</p>}
     </section>
-    {detail.skus.length > 0 && <section><h4>SKU 与变体</h4><ul className="si-product-sku-list">{detail.skus.slice(0, 8).map((sku) => {
+    {detail.skus.length > 0 && <section><h4>SKU 与变体 · {detail.skus.length} 个</h4><ul className="si-product-sku-list">{detail.skus.map((sku) => {
       const removalReason = removedSkuReason(sku);
       return <li key={sku.sku}><code>{sku.sku}</code><span className="si-product-sku-meta"><span>{sku.variant_title || "默认变体"}</span>{removalReason && <><Chip tone="warn">已下架</Chip><small>{removalReason}</small></>}</span></li>;
     })}</ul></section>}
@@ -294,7 +294,7 @@ export function ProductsPage() {
       project={project}
       activeTab="products"
       hasTabPanel
-      actions={<><Button variant="primary" onClick={() => void exportCsv()}>导出 CSV</Button><Button icon={<TrendingUp size={14} />} onClick={() => setInventoryOpen(true)}>趋势与分类在线率</Button></>}
+      actions={<><Button variant="primary" onClick={() => void exportCsv()}>导出 CSV</Button><Button onClick={() => navigate("/p/" + id + "/inventory")}>SKU 库存明细</Button><Button icon={<TrendingUp size={14} />} onClick={() => setInventoryOpen(true)}>趋势与分类在线率</Button></>}
       overflow={[{ label: "SKU 父子规则设置", onSelect: openGroupingSettings, icon: <Settings2 size={14} /> }]}
     />
     <ProjectTabPanel projectId={project.id} tab="products">
