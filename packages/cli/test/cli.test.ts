@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CoreService } from "@siteindex/core";
-import { EXIT, PATHS, type CliJsonOutput, type CreateProjectInput, type ScenarioQueryResult, type SeoIssue, type SiteConfig, type ScheduleConfig, type SkillInfo, type ValidationReport } from "@siteindex/shared";
+import { EXIT, PATHS, type CliJsonOutput, type CreateProjectInput, type ProductGroupFamily, type ScenarioQueryResult, type SeoIssue, type SiteConfig, type ScheduleConfig, type SkillInfo, type ValidationReport } from "@siteindex/shared";
 import { main, type CliIO } from "../src";
 
 const projectFixture = fileURLToPath(new URL("../../../fixtures/expected/project/", import.meta.url));
@@ -90,8 +90,8 @@ function mockService() {
         data: [],
         metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
       })),
-      groupFamily: vi.fn(async (_id: string, _sku: string) => ({
-        data: null,
+      groupFamily: vi.fn(async (_id: string, sku: string): Promise<ScenarioQueryResult<ProductGroupFamily>> => ({
+        data: { sku, role: "single", parent_sku: null, child_skus: [], collision: null, members: [{ sku, role: "single", stock: null }] },
         metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
       })),
     },
@@ -302,6 +302,9 @@ describe("siteindex CLI", () => {
     expect(methods.products.changes).toHaveBeenNthCalledWith(1, "kingsyard");
     expect(methods.products.changes).toHaveBeenNthCalledWith(2, "kingsyard", "DEMO-003");
     expect(methods.products.changes).toHaveBeenNthCalledWith(3, "kingsyard", "DEMO-004");
+    expect(parseEnvelope<ScenarioQueryResult<ProductGroupFamily>>(t.stdout[1]!).data?.data?.members).toEqual([
+      { sku: "DEMO-002", role: "single", stock: null },
+    ]);
     expect(t.stdout).toHaveLength(5);
     expect(t.stdout.every((line) => parseEnvelope(line).ok)).toBe(true);
   });
