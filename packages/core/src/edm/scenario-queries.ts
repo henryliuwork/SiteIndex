@@ -278,6 +278,9 @@ function metadata(sources: EdmSources, extras: readonly ScenarioAnomaly[] = [], 
   const rows = sourceRows(sources);
   const missing = new Set(missingExtras);
   const anomalies = [...extras];
+  for (const item of extras) {
+    if (item.code === "SKU_STOCK_MISSING" && item.field) missing.add(item.field);
+  }
   for (const source of rows) {
     if (source.state === "ok") continue;
     missing.add(source.field);
@@ -365,7 +368,7 @@ function groupedStatus(statuses: readonly StockStatus[]): StockStatus {
   return "unknown";
 }
 
-function candidateRows(sources: EdmSources, parentOnly: boolean, extras: ScenarioAnomaly[]): CandidateRow[] | null {
+function candidateRows(sources: EdmSources, parentOnly: boolean, extras: ScenarioAnomaly[], featuredThrough?: string): CandidateRow[] | null {
   if (sources.skus.state !== "ok" || !sources.skus.rows) return null;
   const skus = sources.skus.rows.filter((row) => row.status === "active").sort((left, right) => compareKeys(left.sku, right.sku));
   const skuCounts = new Map<string, number>();
@@ -376,9 +379,9 @@ function candidateRows(sources: EdmSources, parentOnly: boolean, extras: Scenari
     return null;
   }
   if (parentOnly && sources.site.state !== "ok") return null;
-  if (parentOnly && sources.site.rows?.grouping?.enabled !== true) return baseCandidateRows(sources);
+  if (parentOnly && sources.site.rows?.grouping?.enabled !== true) return baseCandidateRows(sources, featuredThrough);
 
-  const base = baseCandidateRows(sources);
+  const base = baseCandidateRows(sources, featuredThrough);
   if (!parentOnly || !sources.site.rows?.grouping?.enabled || !sources.site.rows.grouping) return base;
   try {
     const grouping = groupSkuIds(skus.map((row) => row.sku), sources.site.rows.grouping.rule);
@@ -397,7 +400,7 @@ function candidateRows(sources: EdmSources, parentOnly: boolean, extras: Scenari
   }
 }
 
-function baseCandidateRows(sources: EdmSources): CandidateRow[] {
+function baseCandidateRows(sources: EdmSources, featuredThrough?: string): CandidateRow[] {
   const skus = sources.skus.rows ?? [];
   const stockRows = sources.stock.rows ?? [];
   const stockBySku = new Map<string, StockRow[]>();
@@ -407,6 +410,7 @@ function baseCandidateRows(sources: EdmSources): CandidateRow[] {
   const featuredByHandle = new Map<string, string>();
   for (const campaign of sources.campaigns.rows ?? []) {
     const featuredDate = campaign.send_date || campaign.date;
+    if (featuredThrough && featuredDate > featuredThrough) continue;
     for (const handle of campaign.handles) {
       if (featuredDate > (featuredByHandle.get(handle) ?? "")) featuredByHandle.set(handle, featuredDate);
     }
@@ -508,6 +512,13 @@ function filteredCandidates(rows: readonly CandidateRow[], query: EdmCandidatesQ
 
 function sourceAnomalies(sources: EdmSources): ScenarioAnomaly[] {
   const anomalies: ScenarioAnomaly[] = [];
+  if (sources.skus.state === "ok" && sources.skus.rows && sources.stock.state === "ok" && sources.stock.rows) {
+    const stockSkus = new Set(sources.stock.rows.map((row) => row.sku));
+    const missingStockCount = sources.skus.rows.filter((row) => row.status === "active" && !stockSkus.has(row.sku)).length;
+    if (missingStockCount > 0) {
+      anomalies.push(anomaly("SKU_STOCK_MISSING", "warning", `${missingStockCount} 个在售 SKU 缺少库存视图记录，按未知库存处理。`, "views.sku_stock.sku"));
+    }
+  }
   const stockCounts = new Map<string, number>();
   for (const row of sources.stock.rows ?? []) stockCounts.set(row.sku, (stockCounts.get(row.sku) ?? 0) + 1);
   if ([...stockCounts.values()].some((count) => count > 1)) {
@@ -578,8 +589,8 @@ export async function readEdmCampaignSafety(projectPath: string, query: EdmCampa
   const sources = await readEdmSources(projectPath);
   if (!date(query.campaign_date)) return invalidDateResult<EdmCampaignSafetyData>(sources, "campaign_date");
   const extras = sourceAnomalies(sources);
-  const realRows = candidateRows(sources, false, extras);
-  const parentRows = candidateRows(sources, true, extras);
+  const realRows = candidateRows(sources, false, extras, query.campaign_date);
+  const parentRows = candidateRows(sources, true, extras, query.campaign_date);
   const bySku = new Map([...(realRows ?? []), ...(parentRows ?? [])].map((row) => [row.candidate.sku, row]));
   const selected = [...new Set(query.skus)].sort(compareKeys);
   const findings: EdmCampaignSafetyFinding[] = [];

@@ -87,14 +87,14 @@ async function writeCsv(projectPath: string, relative: string, headers: readonly
 async function populate(
   projectPath: string,
   paths: ReturnType<typeof pathsFor>,
-  options: { skus: SyntheticSku[]; stock?: SyntheticStock[]; tags?: SyntheticTag[]; media?: SyntheticMedia[]; lastFeatured?: Record<string, string | null> },
+  options: { skus: SyntheticSku[]; stock?: SyntheticStock[]; tags?: SyntheticTag[]; media?: SyntheticMedia[]; lastFeatured?: Record<string, string | null>; campaigns?: readonly Record<string, unknown>[] },
 ): Promise<void> {
   await Promise.all([
     writeJsonl(projectPath, paths.skus, options.skus.map(({ sku: skuId, ...overrides }) => sku(skuId, overrides))),
     writeJsonl(projectPath, paths.skuStockView, (options.stock ?? options.skus.map(({ sku: skuId }) => ({ sku: skuId, stock_status: "in_stock" as const }))).map((row) => ({
       sku: row.sku, title: `Synthetic ${row.sku}`, stock_status: row.stock_status, price: 20,
     }))),
-    writeJsonl(projectPath, paths.edmCampaigns, options.skus.flatMap((row) => {
+    writeJsonl(projectPath, paths.edmCampaigns, options.campaigns ?? options.skus.flatMap((row) => {
       const date = options.lastFeatured?.[row.sku];
       return date ? [{
         campaign_id: `synthetic-campaign-${row.sku}`,
@@ -214,6 +214,34 @@ describe("EDM scenario queries", () => {
     ]);
   });
 
+  it("marks filtered unknown-stock SKUs as incomplete in candidate and media-gap metadata", async () => {
+    const { projectPath, paths } = await makeProject();
+    await populate(projectPath, paths, {
+      skus: [
+        { sku: "DEMO-STOCKED", image_url: "https://images.example.test/stocked.jpg" },
+        { sku: "DEMO-STOCK-MISSING" },
+      ],
+      stock: [{ sku: "DEMO-STOCKED", stock_status: "in_stock" }],
+    });
+    const edm = service(projectPath).edm;
+
+    const candidates = await edm.candidates("synthetic", {});
+    expect(candidates.data?.rows.map((row) => row.sku)).toEqual(["DEMO-STOCKED"]);
+    expect(candidates.metadata).toMatchObject({
+      quality: "partial",
+      missing_fields: ["views.sku_stock.sku"],
+      anomalies: [expect.objectContaining({ code: "SKU_STOCK_MISSING", severity: "warning" })],
+    });
+
+    const mediaGaps = await edm.mediaGaps("synthetic", {});
+    expect(mediaGaps.data).toEqual({ rows: [], total: 0 });
+    expect(mediaGaps.metadata).toMatchObject({
+      quality: "partial",
+      missing_fields: ["views.sku_stock.sku"],
+      anomalies: [expect.objectContaining({ code: "SKU_STOCK_MISSING", severity: "warning" })],
+    });
+  });
+
   it("reports local campaign blockers and warnings deterministically without sending", async () => {
     const { projectPath, paths } = await makeProject();
     await populate(projectPath, paths, {
@@ -253,6 +281,37 @@ describe("EDM scenario queries", () => {
       ["webp_only", "DEMO-WEBP"],
     ]);
     expect(result.metadata.quality).toBe("complete");
+  });
+
+  it("uses the latest campaign on or before the requested date, ignoring a later scheduled campaign", async () => {
+    const { projectPath, paths } = await makeProject();
+    await populate(projectPath, paths, {
+      skus: [{ sku: "DEMO-COOLDOWN", image_url: "https://images.example.test/cooldown.jpg" }],
+      campaigns: [
+        {
+          campaign_id: "synthetic-sent-campaign",
+          date: "2026-11-15",
+          theme: "Synthetic previous campaign",
+          status: "sent",
+          handles: ["demo-demo-cooldown"],
+        },
+        {
+          campaign_id: "synthetic-future-campaign",
+          date: "2026-12-10",
+          theme: "Synthetic future campaign",
+          status: "scheduled",
+          handles: ["demo-demo-cooldown"],
+        },
+      ],
+    });
+
+    const result = await service(projectPath).edm.campaignSafety("synthetic", {
+      campaign_date: "2026-11-30",
+      skus: ["DEMO-COOLDOWN"],
+    });
+
+    expect(result.data?.findings).toContainEqual(expect.objectContaining({ code: "cooldown_active", sku: "DEMO-COOLDOWN" }));
+    expect(result.data?.status).toBe("needs_review");
   });
 
   it("does not claim a clear preflight when required indexed inputs are absent", async () => {
