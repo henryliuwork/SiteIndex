@@ -1,0 +1,1 @@
+{"url":"https://synthetic-shop.test/products/syn-ax","rule":"http_5xx","severity":"high","detail":"合成响应为 503。","status":"open","first_seen":"2026-11-13","last_seen":"2026-11-13"}

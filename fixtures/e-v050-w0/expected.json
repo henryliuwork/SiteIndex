@@ -1,0 +1,83 @@
+{
+  "layouts": {
+    "legacy": {
+      "project_root": "projects/legacy",
+      "index_root": "index",
+      "seo_pages": "index/seo/pages.jsonl",
+      "seo_issues": "index/seo/issues.jsonl",
+      "catalog_skus": "index/catalog/skus.jsonl",
+      "inventory_latest": "index/inventory/latest.jsonl",
+      "products_view": "index/views/products.jsonl",
+      "sku_stock_view": "index/views/sku_stock.jsonl"
+    },
+    "workspace": {
+      "project_root": "projects/workspace",
+      "index_root": "_site-index",
+      "seo_pages": "_site-index/seo/pages.jsonl",
+      "seo_issues": "_site-index/seo/issues.jsonl",
+      "catalog_skus": "_site-index/catalog/skus.jsonl",
+      "inventory_latest": "_site-index/inventory/latest.jsonl",
+      "products_view": "_site-index/views/products.jsonl",
+      "sku_stock_view": "_site-index/views/sku_stock.jsonl"
+    }
+  },
+  "seo_scenarios": [
+    {
+      "id": "SEO-SOURCE-COMPLETE",
+      "result_id": "complete",
+      "expected_quality": "complete",
+      "expected_collected_at": "2026-11-13T08:00:00.000Z",
+      "expected_missing_fields": [],
+      "expected_anomaly_codes": []
+    },
+    {
+      "id": "SEO-SOURCE-PARTIAL",
+      "result_id": "partial",
+      "expected_quality": "partial",
+      "expected_collected_at": "2026-11-13T08:05:00.000Z",
+      "expected_missing_fields": ["open_issue_count"],
+      "expected_anomaly_codes": ["source_field_missing"]
+    },
+    {
+      "id": "SEO-SOURCE-UNAVAILABLE",
+      "result_id": "unreliable",
+      "expected_quality": "unreliable",
+      "expected_collected_at": null,
+      "expected_missing_fields": ["page_count", "open_issue_count"],
+      "expected_anomaly_codes": ["source_unavailable"]
+    }
+  ],
+  "products_inventory": {
+    "grouping_rule": {
+      "type": "regex",
+      "value": "^(.+[A-Za-z])\\d{2}[A-Za-z]{0,3}$"
+    },
+    "sku_ids": ["SYN-AX01", "SYN-AX02", "SYN-LOOSE"],
+    "groups": [
+      {
+        "parent_sku": "SYN-AX",
+        "children": ["SYN-AX01", "SYN-AX02"]
+      }
+    ],
+    "unmatched_skus": ["SYN-LOOSE"],
+    "parent_only_inventory_skus": ["SYN-AX", "SYN-LOOSE"],
+    "parent_only_product_handles": ["syn-loose", "syn-parent"],
+    "persisted_synthetic_parent_rows": 0,
+    "summary_sku_count": 3,
+    "legacy_routes": ["/p/:id/products", "/p/:id/inventory"],
+    "retained_features": [
+      "products.search",
+      "products.pagination",
+      "products.tags",
+      "products.exportCsv",
+      "products.detailDrawer",
+      "products.parentOnly",
+      "inventory.search",
+      "inventory.pagination",
+      "inventory.history",
+      "inventory.exportCsv",
+      "inventory.parentOnly",
+      "inventory.summary"
+    ]
+  }
+}

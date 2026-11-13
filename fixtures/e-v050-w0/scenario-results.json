@@ -1,0 +1,73 @@
+{
+  "fixture_only": true,
+  "note": "source.kind 值是本夹具的稳定标识，不定义产品数据源枚举；data 是通用示例，不代表现有 API 已实现该查询。",
+  "results": {
+    "complete": {
+      "data": {
+        "page_count": 2,
+        "open_issue_count": 1
+      },
+      "metadata": {
+        "sources": [
+          {
+            "kind": "siteindex_seo_index",
+            "label": "合成 SEO 索引"
+          }
+        ],
+        "collected_at": "2026-11-13T08:00:00.000Z",
+        "missing_fields": [],
+        "quality": "complete",
+        "anomalies": []
+      }
+    },
+    "partial": {
+      "data": {
+        "page_count": 2
+      },
+      "metadata": {
+        "sources": [
+          {
+            "kind": "siteindex_seo_index",
+            "label": "合成 SEO 索引"
+          },
+          {
+            "kind": "synthetic_optional_metric",
+            "label": "合成可选指标"
+          }
+        ],
+        "collected_at": "2026-11-13T08:05:00.000Z",
+        "missing_fields": ["open_issue_count"],
+        "quality": "partial",
+        "anomalies": [
+          {
+            "code": "source_field_missing",
+            "severity": "warning",
+            "message": "合成来源未提供可选问题计数。",
+            "field": "open_issue_count"
+          }
+        ]
+      }
+    },
+    "unreliable": {
+      "data": null,
+      "metadata": {
+        "sources": [
+          {
+            "kind": "synthetic_optional_metric",
+            "label": "合成可选指标"
+          }
+        ],
+        "collected_at": null,
+        "missing_fields": ["page_count", "open_issue_count"],
+        "quality": "unreliable",
+        "anomalies": [
+          {
+            "code": "source_unavailable",
+            "severity": "unreliable",
+            "message": "合成来源不可用；没有可用查询结果。"
+          }
+        ]
+      }
+    }
+  }
+}
