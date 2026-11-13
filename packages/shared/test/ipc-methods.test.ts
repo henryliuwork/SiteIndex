@@ -6,13 +6,13 @@ import { API_INVOKE_METHODS, PENDING_HANDLERS } from "../src/ipc-methods";
 import { CSV_HEADERS, pathsFor } from "../src/paths";
 
 describe("shared IPC method contract", () => {
-  it("marks project todo methods as contracted but not implemented", () => {
+  it("marks project todo methods as implemented while keeping the namespace optional for older bridges", () => {
     const legacyApi: Pick<SiteIndexApi, "todos"> = {};
 
     expect(legacyApi.todos).toBeUndefined();
     for (const method of ["todos.list", "todos.update", "todos.history"] as const) {
       expect(API_INVOKE_METHODS.filter((entry) => entry === method)).toHaveLength(1);
-      expect(PENDING_HANDLERS).toContain(method);
+      expect(PENDING_HANDLERS).not.toContain(method);
     }
   });
 
