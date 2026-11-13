@@ -23,7 +23,10 @@ import {
   type DailySummaryRow,
   type DetectResult,
   type EdmCampaign,
+  type EdmCampaignSafetyQuery,
+  type EdmCandidatesQuery,
   type EdmCommandInput,
+  type EdmMediaGapsQuery,
   type FeedInspectResult,
   type InventoryEvent,
   type InventoryLatest,
@@ -106,6 +109,7 @@ import { runWeekly } from "../jobs/weekly";
 import { buildSeoIssueCounts, buildSeoRuleSettings } from "../seo/rules";
 import { readProductChanges, readProductGroupFamily, readProductSkuBrief } from "../products/scenario-queries";
 import { readSeoInternalLinkContext, readSeoIssueCandidates, readSeoPageBrief } from "../seo/scenario-queries";
+import { readEdmCampaignSafety, readEdmCandidates, readEdmMediaGaps } from "../edm/scenario-queries";
 import { runMonthly } from "../jobs/monthly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
 import { launchChromium, type BrowserLauncher } from "../browser/automation";
@@ -170,8 +174,11 @@ export interface CoreService {
     getRuleSettings: NonNullable<SiteIndexApi["seo"]["getRuleSettings"]>;
   };
   content: SiteIndexApi["content"];
-  edm: Omit<SiteIndexApi["edm"], "setDiscountTier"> & {
+  edm: Omit<SiteIndexApi["edm"], "setDiscountTier" | "candidates" | "mediaGaps" | "campaignSafety"> & {
     setDiscountTier: NonNullable<SiteIndexApi["edm"]["setDiscountTier"]>;
+    candidates: NonNullable<SiteIndexApi["edm"]["candidates"]>;
+    mediaGaps: NonNullable<SiteIndexApi["edm"]["mediaGaps"]>;
+    campaignSafety: NonNullable<SiteIndexApi["edm"]["campaignSafety"]>;
     renderIndex(id: ProjectId): Promise<{ content: string; sku_count: number; missing_image_count: number }>;
   };
   design: SiteIndexApi["design"];
@@ -2579,6 +2586,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         return { sku, discount_tier: discountTier };
       }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "edm-set-discount-tier" });
     },
+    candidates: async (id, query: EdmCandidatesQuery) => readEdmCandidates(resolve(id), query),
+    mediaGaps: async (id, query: EdmMediaGapsQuery) => readEdmMediaGaps(resolve(id), query),
+    campaignSafety: async (id, query: EdmCampaignSafetyQuery) => readEdmCampaignSafety(resolve(id), query),
     summary: async (id) => {
       const snapshot = await load(resolve(id));
       const result = { total: snapshot.products.length, feed: 0, manual: 0, none: 0 };

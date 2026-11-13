@@ -115,6 +115,18 @@ function mockService() {
     content: { listBlog: vi.fn(async () => queryResult), listKeywords: vi.fn(async () => queryResult) },
     edm: {
       listImages: vi.fn(async () => queryResult),
+      candidates: vi.fn(async (_id: string, _query: unknown) => ({
+        data: { rows: [], total: 0 },
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
+      })),
+      mediaGaps: vi.fn(async (_id: string, _query: unknown) => ({
+        data: { rows: [], total: 0 },
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
+      })),
+      campaignSafety: vi.fn(async (_id: string, _query: unknown) => ({
+        data: { scope: "local_product_data" as const, status: "clear" as const, checked_skus: [], findings: [] },
+        metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
+      })),
       renderIndex: vi.fn(async () => ({ content: "# Synthetic EDM\n", sku_count: 2, missing_image_count: 1 })),
     },
     categories: {
@@ -274,6 +286,41 @@ describe("siteindex CLI", () => {
     expect(methods.seo.internalLinkContext).toHaveBeenCalledWith("kingsyard", pageUrl);
     expect(t.stdout).toHaveLength(4);
     expect(t.stdout.every((line) => parseEnvelope(line).ok)).toBe(true);
+  });
+
+  it("routes EDM scenario query options and repeated SKU selections to read-only Core methods", async () => {
+    const { service, methods } = mockService();
+    const t = collect(service);
+
+    expect(await main([
+      "query", "kingsyard", "edm-candidates", "--category", "Accessories", "--tag", "summer",
+      "--stock", "any", "--parent-only", "--include-excluded", "--limit", "12", "--json",
+    ], t.io)).toBe(EXIT.OK);
+    expect(methods.edm.candidates).toHaveBeenCalledWith("kingsyard", {
+      category: "Accessories", tag: "summer", stock: "any", parent_only: true, include_excluded: true, limit: 12,
+    });
+
+    expect(await main([
+      "query", "kingsyard", "edm-media-gaps", "--sku", "DEMO-A", "--sku", "DEMO-B", "--stock", "any", "--json",
+    ], t.io)).toBe(EXIT.OK);
+    expect(methods.edm.mediaGaps).toHaveBeenCalledWith("kingsyard", { skus: ["DEMO-A", "DEMO-B"], stock: "any" });
+
+    expect(await main([
+      "query", "kingsyard", "edm-campaign-safety", "--date", "2026-11-30", "--sku", "DEMO-A", "--sku", "DEMO-A", "--json",
+    ], t.io)).toBe(EXIT.OK);
+    expect(methods.edm.campaignSafety).toHaveBeenCalledWith("kingsyard", {
+      campaign_date: "2026-11-30", skus: ["DEMO-A", "DEMO-A"],
+    });
+  });
+
+  it("rejects invalid EDM scenario options before calling Core", async () => {
+    const { service, methods } = mockService();
+    const t = collect(service);
+
+    expect(await main(["query", "kingsyard", "edm-candidates", "--stock", "preorder", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+    expect(await main(["query", "kingsyard", "edm-campaign-safety", "--sku", "DEMO-A", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+    expect(methods.edm.candidates).not.toHaveBeenCalled();
+    expect(methods.edm.campaignSafety).not.toHaveBeenCalled();
   });
 
   it("requires URLs for page-specific SEO queries and reports an unavailable optional Core method", async () => {

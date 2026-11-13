@@ -46,6 +46,9 @@ import {
   type BlogFilters,
   type KeywordFilters,
   type SkuImageFilters,
+  type EdmCandidatesQuery,
+  type EdmMediaGapsQuery,
+  type EdmCampaignSafetyQuery,
 } from "@siteindex/shared";
 
 export interface CliIO {
@@ -150,7 +153,7 @@ async function writeEdmIndexNoClobber(outputPath: string, content: string): Prom
   }
 }
 
-const BOOLEAN_OPTIONS = new Set(["allow-oos", "force", "json", "repair"]);
+const BOOLEAN_OPTIONS = new Set(["allow-oos", "force", "json", "repair", "parent-only", "include-excluded"]);
 const QUERY_CONTROL_OPTIONS = new Set(["page", "size", "search", "sort", "order"]);
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -194,6 +197,24 @@ function option(options: ParsedArgs["options"], name: string): string | undefine
 function optionEnabled(options: ParsedArgs["options"], name: string): boolean {
   const value = options.get(name)?.[0];
   return value === true || value === "true" || value === "1";
+}
+
+function booleanOption(options: ParsedArgs["options"], name: string): boolean {
+  const values = options.get(name) ?? [];
+  if (values.length > 1) throw new CliError("BAD_ARGS", `--${name} 只能指定一次。`);
+  const value = values[0];
+  if (value === undefined) return false;
+  if (value === true || value === "true" || value === "1") return true;
+  if (value === "false" || value === "0") return false;
+  throw new CliError("BAD_ARGS", `--${name} 只能是 true 或 false。`);
+}
+
+function repeatableStrings(options: ParsedArgs["options"], name: string): string[] {
+  const values = options.get(name) ?? [];
+  if (values.some((value) => typeof value !== "string" || !value.trim())) {
+    throw new CliError("BAD_ARGS", `--${name} 需要非空文本。`);
+  }
+  return values.map((value) => typeof value === "string" ? value : "");
 }
 
 function requiredArg(args: readonly string[], index: number, usage: string): string {
@@ -503,6 +524,68 @@ async function query(runtime: Runtime, id: ProjectId, target: string, options: P
     const issueCandidates = runtime.service.seo.issueCandidates;
     if (!issueCandidates) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 SEO 问题候选查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
     return await issueCandidates(id, optionUrl ?? extra[0]);
+  }
+  if (target === "edm-candidates" || target === "edm-media-gaps" || target === "edm-campaign-safety") {
+    if (extra.length) throw new CliError("BAD_ARGS", `${target} 使用命名选项，不接受位置参数。`);
+    const allowed = target === "edm-candidates"
+      ? new Set(["category", "tag", "stock", "parent-only", "include-excluded", "limit"])
+      : target === "edm-media-gaps"
+        ? new Set(["sku", "stock", "parent-only", "limit"])
+        : new Set(["date", "sku"]);
+    const unexpected = [...options.keys()].find((key) => !allowed.has(key));
+    if (unexpected) throw new CliError("BAD_ARGS", `${target} 不支持 --${unexpected}。`);
+
+    if (target === "edm-candidates") {
+      for (const name of ["category", "tag", "stock", "limit"]) {
+        if ((options.get(name)?.length ?? 0) > 1) throw new CliError("BAD_ARGS", `--${name} 只能指定一次。`);
+      }
+      const stock = option(options, "stock");
+      if (stock !== undefined && stock !== "in_stock" && stock !== "any") {
+        throw new CliError("BAD_ARGS", "--stock 只能是 in_stock 或 any。");
+      }
+      const method = runtime.service.edm.candidates;
+      if (!method) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 EDM 候选查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+      const query: EdmCandidatesQuery = {
+        ...(option(options, "category") !== undefined ? { category: option(options, "category") } : {}),
+        ...(option(options, "tag") !== undefined ? { tag: option(options, "tag") } : {}),
+        ...(stock ? { stock } : {}),
+        ...(options.has("parent-only") ? { parent_only: booleanOption(options, "parent-only") } : {}),
+        ...(options.has("include-excluded") ? { include_excluded: booleanOption(options, "include-excluded") } : {}),
+        ...(option(options, "limit") !== undefined ? { limit: parseInteger(option(options, "limit"), 0, "--limit", 0) } : {}),
+      };
+      return await method(id, query);
+    }
+
+    if (target === "edm-media-gaps") {
+      for (const name of ["stock", "limit"]) {
+        if ((options.get(name)?.length ?? 0) > 1) throw new CliError("BAD_ARGS", `--${name} 只能指定一次。`);
+      }
+      const stock = option(options, "stock");
+      if (stock !== undefined && stock !== "in_stock" && stock !== "any") {
+        throw new CliError("BAD_ARGS", "--stock 只能是 in_stock 或 any。");
+      }
+      const method = runtime.service.edm.mediaGaps;
+      if (!method) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 EDM 图片缺口查询，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+      const query: EdmMediaGapsQuery = {
+        skus: repeatableStrings(options, "sku"),
+        ...(stock ? { stock } : {}),
+        ...(options.has("parent-only") ? { parent_only: booleanOption(options, "parent-only") } : {}),
+        ...(option(options, "limit") !== undefined ? { limit: parseInteger(option(options, "limit"), 0, "--limit", 0) } : {}),
+      };
+      if (!options.has("sku")) delete query.skus;
+      return await method(id, query);
+    }
+
+    const dates = options.get("date") ?? [];
+    if (dates.length !== 1 || typeof dates[0] !== "string" || !dates[0]) {
+      throw new CliError("BAD_ARGS", "edm-campaign-safety 必须且只能提供 --date YYYY-MM-DD。");
+    }
+    const skus = repeatableStrings(options, "sku");
+    if (!skus.length) throw new CliError("BAD_ARGS", "edm-campaign-safety 至少需要一个 --sku。");
+    const method = runtime.service.edm.campaignSafety;
+    if (!method) throw new CliError("CORE_METHOD_UNAVAILABLE", "当前 Core 不支持 EDM 活动安全检查，请更新 SiteIndex 软件。", EXIT.SOURCE_FAILED);
+    const query: EdmCampaignSafetyQuery = { campaign_date: dates[0], skus };
+    return await method(id, query);
   }
   const q = queryInput(options, extra);
   switch (target) {

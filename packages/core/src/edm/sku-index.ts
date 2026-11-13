@@ -97,6 +97,16 @@ function supportedImageUrl(value: unknown): PublicUrlResult {
     : { url: null, needsReview: false };
 }
 
+/** Sanitizes a stored image source for read-only reporting, regardless of format; performs no network request. */
+export function normalizeEdmImageSourceUrl(value: unknown): string | null {
+  return normalizePublicUrl(value).url;
+}
+
+/** Returns only an EDM-compatible, sanitized public image URL. This performs no network request. */
+export function normalizeEdmImageUrl(value: unknown): string | null {
+  return supportedImageUrl(value).url;
+}
+
 function markdownCell(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "";
   return String(value)
