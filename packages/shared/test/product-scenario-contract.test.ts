@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   ProductChanges,
   ProductGroupFamily,
+  ProductGroupFamilyMember,
   ProductSkuBrief,
   ScenarioQueryResult,
   SiteIndexApi,
@@ -109,6 +110,25 @@ describe("product scenario query contract", () => {
       child_skus: [sku.sku],
       collision: null,
     };
+    const members: ProductGroupFamilyMember[] = [
+      { sku: sku.sku, role: "child", stock },
+      { sku: "DEMO-001-B", role: "child", stock: null },
+    ];
+    const familyWithStock: ScenarioQueryResult<ProductGroupFamily> = {
+      data: { ...family, members },
+      metadata: {
+        sources: [{ kind: "catalog.skus" }, { kind: "site.sku_grouping" }, { kind: "views.sku_stock" }],
+        collected_at: "2026-11-13T08:00:00.000Z",
+        missing_fields: ["views.sku_stock.DEMO-001-B"],
+        quality: "partial",
+        anomalies: [{
+          code: "SKU_STOCK_NOT_INDEXED",
+          severity: "warning",
+          field: "views.sku_stock.DEMO-001-B",
+          message: "该家族成员没有可用的库存视图记录。",
+        }],
+      },
+    };
     const unavailableBrief: ScenarioQueryResult<ProductSkuBrief> = {
       data: null,
       metadata: {
@@ -155,7 +175,8 @@ describe("product scenario query contract", () => {
       },
     };
 
-    expect(JSON.parse(JSON.stringify({ completeBrief, changes, noChanges, family, unavailableBrief, missingStockIndex, unavailableFamily })))
-      .toEqual({ completeBrief, changes, noChanges, family, unavailableBrief, missingStockIndex, unavailableFamily });
+    expect(JSON.parse(JSON.stringify({ completeBrief, changes, noChanges, family, familyWithStock, unavailableBrief, missingStockIndex, unavailableFamily })))
+      .toEqual({ completeBrief, changes, noChanges, family, familyWithStock, unavailableBrief, missingStockIndex, unavailableFamily });
+    expect(familyWithStock.data?.members?.map((member) => member.sku)).not.toContain(family.parent_sku);
   });
 });
