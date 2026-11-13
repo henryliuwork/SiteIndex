@@ -270,7 +270,7 @@ function imageColumns(projectId: string, discountTiers: readonly number[], disco
     { id: "discount_tier", accessorKey: "discount_tier", header: "折扣档位", meta: { width: 148, grow: 0, minWidth: 136, text: "single" }, cell: ({ row }) => <EdmDiscountTierCell projectId={projectId} row={row.original} tiers={discountTiers} capability={discountTierCapability} /> },
     { id: "feed_image_url", accessorKey: "feed_image_url", header: "抓取到的首图 URL", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-edm-feed-cell"><ImageThumbnail src={row.original.feed_image_url} label={row.original.sku + " Feed 首图"} /><code title={row.original.feed_image_url ?? undefined}>{feedImageLabel(row.original.feed_image_url)}</code></span> },
     { id: "manual_image_url", accessorKey: "manual_image_url", header: "手动输入的首图 URL", meta: { width: 340, grow: 2, minWidth: 280, text: "single" }, cell: ({ row }) => <ManualImageCell projectId={projectId} row={row.original} /> },
-    { id: "used", accessorKey: "used", header: "agent 使用", meta: { width: 100, grow: 0, minWidth: 96, text: "single" }, cell: ({ row }) => <Chip tone={row.original.used === "manual" ? "info" : row.original.used === "feed" ? "ok" : "danger"}>{row.original.used === "manual" ? "手动首图" : row.original.used === "feed" ? "抓取首图" : "缺图"}</Chip>, enableSorting: true },
+    { id: "used", accessorKey: "used", header: "agent 使用", meta: { width: 128, grow: 0, minWidth: 120, text: "single" }, cell: ({ row }) => <Chip tone={row.original.used === "manual" ? "info" : row.original.used === "feed" ? "ok" : "danger"}>{row.original.used === "manual" ? "手动首图" : row.original.used === "feed" ? "抓取首图" : "缺图"}</Chip>, enableSorting: true },
   ];
 }
 
