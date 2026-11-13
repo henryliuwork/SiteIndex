@@ -588,6 +588,7 @@ export function createGscOAuthService(options: GscOAuthOptions) {
           verifier,
           clientId,
         });
+        credentialRevision += 1;
         await writeCredential(credential);
       } finally {
         await listener?.close();

@@ -48,6 +48,14 @@ async function callLocalCallback(url: URL): Promise<number> {
   });
 }
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 async function completeFictionalBrowserAuthorization(url: string): Promise<void> {
   const authorization = parseAuthorizationUrl(url);
   const callback = new URL(authorization.searchParams.get("redirect_uri")!);
@@ -62,6 +70,11 @@ type SitesBehavior = "success" | "network";
 async function createLocalGoogleServices() {
   let refreshBehavior: RefreshBehavior = "success";
   let sitesBehavior: SitesBehavior = "success";
+  let authorizationTokens = {
+    accessToken: "fictional-expired-access-token",
+    refreshToken: "fictional-refresh-token",
+  };
+  let nextSiteResponseBarrier: { started: ReturnType<typeof deferred>; gate: ReturnType<typeof deferred> } | undefined;
   const refreshRequests: URLSearchParams[] = [];
   const siteAuthorizationHeaders: string[] = [];
   const server = createServer(async (request, response) => {
@@ -75,8 +88,8 @@ async function createLocalGoogleServices() {
         response.writeHead(200, { "Content-Type": "application/json" });
         response.end(
           JSON.stringify({
-            access_token: "fictional-expired-access-token",
-            refresh_token: "fictional-refresh-token",
+            access_token: authorizationTokens.accessToken,
+            refresh_token: authorizationTokens.refreshToken,
             expires_in: 1,
             token_type: "Bearer",
             scope: GSC_SCOPE,
@@ -108,6 +121,12 @@ async function createLocalGoogleServices() {
 
     if (request.method === "GET" && request.url === "/sites") {
       siteAuthorizationHeaders.push(String(request.headers.authorization ?? ""));
+      const barrier = nextSiteResponseBarrier;
+      nextSiteResponseBarrier = undefined;
+      if (barrier) {
+        barrier.started.resolve();
+        await barrier.gate.promise;
+      }
       if (sitesBehavior === "network") {
         request.socket.destroy();
         return;
@@ -149,6 +168,15 @@ async function createLocalGoogleServices() {
     },
     setSitesBehavior(value: SitesBehavior) {
       sitesBehavior = value;
+    },
+    setAuthorizationTokens(accessToken: string, refreshToken: string) {
+      authorizationTokens = { accessToken, refreshToken };
+    },
+    holdNextSiteResponse() {
+      const started = deferred();
+      const gate = deferred();
+      nextSiteResponseBarrier = { started, gate };
+      return { started: started.promise, release: gate.resolve };
     },
     fetchImpl: async (input: RequestInfo | URL, init?: RequestInit) => {
       const requestedUrl = String(input);
@@ -407,5 +435,41 @@ describe("GSC read-only OAuth helper", () => {
     await expect(service.listProperties()).rejects.toMatchObject({ code: "NETWORK_ERROR" });
     await expect(readFile(credentialFile, "utf8")).resolves.toBe(originalEnvelope);
     await expect(service.getCredentials()).resolves.toEqual(original);
+  });
+
+  it("does not let an older delayed property list overwrite a newly authorized account", async () => {
+    const directory = await tempDirectory();
+    const localServices = await createLocalGoogleServices();
+    let clock = 1_800_000_000_000;
+    const service = createGscOAuthService({
+      clientId: "fictional-desktop-client-id",
+      platform: "darwin",
+      homeDirectory: "/Users/fictional",
+      directoryOverride: path.join(directory, "credentials"),
+      safeStorage: fakeSafeStorage(),
+      now: () => clock,
+      openExternal: completeFictionalBrowserAuthorization,
+      fetchImpl: localServices.fetchImpl,
+    });
+
+    await service.authorize();
+    const original = await service.getCredentials();
+    clock = original!.expiresAt + 1;
+    const barrier = localServices.holdNextSiteResponse();
+    const oldAccountList = service.listProperties();
+    await barrier.started;
+
+    localServices.setAuthorizationTokens("fictional-new-account-access-token", "fictional-new-account-refresh-token");
+    await service.authorize();
+    barrier.release();
+
+    await expect(oldAccountList).resolves.toEqual([
+      { siteUrl: "sc-domain:fictional.example", permissionLevel: "siteOwner" },
+      { siteUrl: "https://store.fictional.example/", permissionLevel: "siteFullUser" },
+    ]);
+    await expect(service.getCredentials()).resolves.toMatchObject({
+      accessToken: "fictional-new-account-access-token",
+      refreshToken: "fictional-new-account-refresh-token",
+    });
   });
 });
