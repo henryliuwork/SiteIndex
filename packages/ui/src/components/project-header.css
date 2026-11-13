@@ -89,13 +89,14 @@
 .si-project-header .si-tabs {
   min-width: 0;
   flex: 1 1 auto;
-  gap: var(--space-1);
+  gap: var(--space-2);
   overflow-x: auto;
   border-bottom: 0;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
-.si-project-header .si-tabs::-webkit-scrollbar { display: none; }
+.si-project-header .si-tabs::-webkit-scrollbar { display: block; height: 4px; }
+.si-project-header .si-tabs::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--color-line); }
 .si-project-header .si-tabs button { flex: 0 0 auto; }
 
 .si-project-header-page-heading {
@@ -130,16 +131,16 @@
 
 .si-project-header-actions {
   display: flex;
-  width: max-content;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   align-items: center;
-  justify-content: flex-start;
-  gap: var(--space-2);
+  justify-content: flex-end;
+  gap: var(--space-1);
   overflow-x: auto;
   white-space: nowrap;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
 .si-project-header-action-slot {
@@ -152,9 +153,11 @@
   justify-content: flex-end;
 }
 
-.si-project-header-actions::-webkit-scrollbar { display: none; }
+.si-project-header-actions::-webkit-scrollbar { display: block; height: 4px; }
+.si-project-header-actions::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--color-line); }
 .si-project-header-actions > * { flex: 0 0 auto; }
 .si-project-header-actions .si-page-header-more { flex: none; }
+.si-project-header-actions > .si-button { padding-right: var(--space-1); padding-left: var(--space-1); }
 
 @media (max-width: 900px) {
   .si-project-header-identity { gap: var(--space-2); }

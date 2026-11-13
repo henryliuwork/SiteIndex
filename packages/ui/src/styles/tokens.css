@@ -28,7 +28,7 @@
   --color-overlay: rgba(16, 22, 19, 0.28);
   --color-focus: rgba(30, 107, 82, 0.12);
 
-  --font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --font-sans: "Poppins", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   --font-mono: "Geist Mono Variable", Consolas, monospace;
 
   --fs-page-title: 20px;
@@ -37,20 +37,20 @@
   --fs-section-title: 15px;
   --lh-section-title: 22px;
   --fw-section-title: 600;
-  --fs-sub-title: 13px;
+  --fs-sub-title: 14px;
   --lh-sub-title: 20px;
   --fw-sub-title: 600;
-  --fs-body: 12px;
-  --lh-body: 18px;
+  --fs-body: 14px;
+  --lh-body: 20px;
   --fw-body: 400;
-  --fs-caption: 11px;
-  --lh-caption: 16px;
+  --fs-caption: 14px;
+  --lh-caption: 18px;
   --fw-caption: 400;
   --fs-kpi: 24px;
   --lh-kpi: 30px;
   --fw-kpi: 600;
-  --fs-mono: 12px;
-  --lh-mono: 18px;
+  --fs-mono: 14px;
+  --lh-mono: 20px;
   --fw-mono: 400;
 
   --space-1: 4px;
@@ -72,4 +72,36 @@
   --si-gap-4: 16px;
   --si-gap-5: 24px;
   --si-gap-6: 32px;
+}
+
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/poppins-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../assets/fonts/poppins-latin-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/poppins-latin-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/poppins-latin-700-normal.woff2") format("woff2");
 }

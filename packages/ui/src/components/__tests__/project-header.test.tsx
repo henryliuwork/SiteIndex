@@ -45,6 +45,20 @@ describe("ProjectHeader compact layout", () => {
     expect(container.querySelector(".si-project-header-action-slot .si-project-header-actions")).toBeNull();
   });
 
+  it("scrolls the selected tab fully into the visible tab strip", () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("si-tabs")) return new DOMRect(0, 0, 300, 44);
+      if (this.getAttribute("role") === "tab" && this.getAttribute("aria-selected") === "true") return new DOMRect(280, 0, 70, 44);
+      return new DOMRect(0, 0, 0, 0);
+    });
+
+    const { container } = render(<MemoryRouter><ProjectHeader project={project} activeTab="settings" /></MemoryRouter>);
+
+    const scrollLeft = (container.querySelector(".si-tabs") as HTMLElement).scrollLeft;
+    rectSpy.mockRestore();
+    expect(scrollLeft).toBe(50);
+  });
+
   it("warns when a project is known to be under third-party sync", () => {
     render(<MemoryRouter><ProjectHeader project={{ ...project, storage_location: "known_cloud_sync" }} activeTab="products" /></MemoryRouter>);
     expect(screen.getByRole("note", { name: /当前版本仅支持查看/ }).textContent).toContain("已识别同步目录 · 只读");

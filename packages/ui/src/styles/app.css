@@ -35,7 +35,7 @@ a { color: var(--color-brand); }
 }
 .si-title-bar-win { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
 .si-title-bar-mac { padding-left: 78px; }
-.si-title { color: var(--color-muted); font-size: 12px; font-weight: 600; }
+.si-title { color: var(--color-muted); font-size: var(--fs-body); font-weight: 600; }
 .si-layout { display: flex; min-height: 0; flex: 1; overflow: hidden; border-top: 1px solid var(--color-line); contain: paint; }
 .si-side-nav {
   display: flex; width: 232px; min-height: 0; flex: none; flex-direction: column; gap: 4px;
@@ -52,7 +52,7 @@ a { color: var(--color-brand); }
 }
 .si-nav-link:hover { background: var(--color-neutral-soft); color: var(--color-ink); }
 .si-nav-link.active { background: var(--color-brand-soft); color: var(--color-brand-strong); }
-.si-nav-caption { padding: 22px 12px 8px; color: var(--color-muted); font-size: 12px; font-weight: 600; }
+.si-nav-caption { padding: 22px 12px 8px; color: var(--color-muted); font-size: var(--fs-body); font-weight: 600; }
 .si-content { --si-content-top-padding: 28px; min-width: 0; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: var(--si-content-top-padding) 36px 40px; }
 .si-placeholder {
   display: grid; min-height: 340px; place-content: center; gap: 12px;
