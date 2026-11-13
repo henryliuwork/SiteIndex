@@ -66,7 +66,7 @@ describe("ProjectTodosPage", () => {
     fireEvent.click(await screen.findByText("页面标题需要复核"));
 
     expect(await screen.findByRole("heading", { name: "状态与备注" })).toBeTruthy();
-    expect(screen.getByText("等待内容负责人确认新版标题。")).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "编辑待办备注" }) as HTMLTextAreaElement).value).toBe("等待内容负责人确认新版标题。");
     expect(screen.getByText("SEO 页面")).toBeTruthy();
     expect(screen.getByText("seoPages")).toBeTruthy();
     expect(screen.getByText("记录：https://demo-store.example.test/products/demo-item-001")).toBeTruthy();
@@ -128,7 +128,92 @@ describe("ProjectTodosPage", () => {
 
     fireEvent.click(await screen.findByText("页面标题需要复核"));
     expect(await screen.findByText("操作记录接口尚未接入")).toBeTruthy();
-    expect(screen.getByText("等待内容负责人确认新版标题。")).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "编辑待办备注" }) as HTMLTextAreaElement).value).toBe("等待内容负责人确认新版标题。");
+  });
+
+  it("保存状态后刷新列表与操作记录并提示成功", async () => {
+    const mockApi = await renderTodos();
+    const list = vi.spyOn(mockApi.todos!, "list");
+    const originalUpdate = mockApi.todos!.update.bind(mockApi.todos);
+    let finishUpdate!: () => void;
+    const updateGate = new Promise<void>((resolve) => { finishUpdate = resolve; });
+    const update = vi.spyOn(mockApi.todos!, "update").mockImplementation(async (projectId, input) => {
+      await updateGate;
+      return originalUpdate(projectId, input);
+    });
+    const history = vi.spyOn(mockApi.todos!, "history");
+    fireEvent.click(await screen.findByText("页面标题需要复核"));
+    const listCallsBeforeSave = list.mock.calls.length;
+    const historyCallsBeforeSave = history.mock.calls.length;
+
+    fireEvent.click(await screen.findByRole("combobox", { name: "更新待办状态" }));
+    fireEvent.click(await screen.findByRole("option", { name: "已完成" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存状态" }));
+
+    expect(await screen.findAllByRole("button", { name: "正在保存…" })).toHaveLength(2);
+    finishUpdate();
+    expect(await screen.findByText("待办状态已保存。")).toBeTruthy();
+    expect(update).toHaveBeenCalledWith("demo", {
+      dedupe_key: "demo:seo.title-review:https://demo-store.example.test/products/demo-item-001",
+      status: "done",
+    });
+    expect(await screen.findByText("状态：待复核 → 已完成")).toBeTruthy();
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(listCallsBeforeSave));
+    await waitFor(() => expect(history.mock.calls.length).toBeGreaterThan(historyCallsBeforeSave));
+    expect(screen.getAllByText("已完成").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("保存备注后刷新操作记录并提示成功", async () => {
+    const mockApi = await renderTodos();
+    const list = vi.spyOn(mockApi.todos!, "list");
+    const update = vi.spyOn(mockApi.todos!, "update");
+    const history = vi.spyOn(mockApi.todos!, "history");
+    fireEvent.click(await screen.findByText("页面标题需要复核"));
+    const listCallsBeforeSave = list.mock.calls.length;
+    fireEvent.change(screen.getByRole("textbox", { name: "编辑待办备注" }), { target: { value: "复核演示页面的新版标题。" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存备注" }));
+
+    expect(await screen.findByText("待办备注已保存。")).toBeTruthy();
+    expect(update).toHaveBeenCalledWith("demo", {
+      dedupe_key: "demo:seo.title-review:https://demo-store.example.test/products/demo-item-001",
+      note: "复核演示页面的新版标题。",
+    });
+    expect(await screen.findByText("更新备注：复核演示页面的新版标题。")).toBeTruthy();
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(listCallsBeforeSave));
+    await waitFor(() => expect(history.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it("状态保存失败时保留原状态并提供失败反馈", async () => {
+    const mockApi = await renderTodos();
+    vi.spyOn(mockApi.todos!, "update").mockRejectedValue(new Error("mock save failed"));
+    fireEvent.click(await screen.findByText("页面标题需要复核"));
+    fireEvent.click(await screen.findByRole("combobox", { name: "更新待办状态" }));
+    fireEvent.click(await screen.findByRole("option", { name: "已完成" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存状态" }));
+
+    expect(await screen.findByText("待办状态保存失败，请重试。")).toBeTruthy();
+    expect(screen.getAllByText("待复核").length).toBeGreaterThan(0);
+  });
+
+  it("备注保存失败时保留草稿并提供失败反馈", async () => {
+    const mockApi = await renderTodos();
+    vi.spyOn(mockApi.todos!, "update").mockRejectedValue(new Error("mock note save failed"));
+    fireEvent.click(await screen.findByText("页面标题需要复核"));
+    const note = screen.getByRole("textbox", { name: "编辑待办备注" });
+    fireEvent.change(note, { target: { value: "保留待重试的虚构备注。" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存备注" }));
+
+    expect(await screen.findByText("待办备注保存失败，请重试。")).toBeTruthy();
+    expect((note as HTMLTextAreaElement).value).toBe("保留待重试的虚构备注。");
+  });
+
+  it("更新 API 缺失时保留只读详情并明确提示", async () => {
+    await renderTodos((todos) => { delete (todos as Partial<typeof todos>).update; });
+    fireEvent.click(await screen.findByText("页面标题需要复核"));
+
+    expect(await screen.findByText("待办编辑接口尚未接入")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "更新待办状态" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "编辑待办备注" })).toBeNull();
   });
 
   it("列表失败可重试，且失败不显示为无待办", async () => {
