@@ -50,8 +50,10 @@ import {
   type ProductView,
   type ProjectDetail,
   type ProjectId,
+  type ProjectTodo,
   type ProjectPaths,
   type ProjectSummary,
+  type ProjectTodosResult,
   type ReadmeData,
   type RunLog,
   type RunnerState,
@@ -73,6 +75,12 @@ import {
   type SkuStockView,
   type StockStatus,
   type TagStat,
+  type TodoManualHistoryEntry,
+  type TodoManualState,
+  type TodoRuleFinding,
+  type TodoRuleScanSummary,
+  type TodoRuleSourceReference,
+  type UpdateTodoManualInput,
   type RunnerInfo,
   type SiteIndexError,
   type ValidationReport,
@@ -110,6 +118,8 @@ import { buildSeoIssueCounts, buildSeoRuleSettings } from "../seo/rules";
 import { readProductChanges, readProductGroupFamily, readProductSkuBrief } from "../products/scenario-queries";
 import { readSeoInternalLinkContext, readSeoIssueCandidates, readSeoPageBrief } from "../seo/scenario-queries";
 import { readEdmCampaignSafety, readEdmCandidates, readEdmMediaGaps } from "../edm/scenario-queries";
+import { readTodoManualHistory, readTodoManualStates, reconcileTodoManualStates, updateTodoManualState } from "../todos/manual-store";
+import { generateTodoRuleFindings, type TodoRuleEdmCandidate, type TodoRuleSnapshot } from "../todos/rule-generation";
 import { runMonthly } from "../jobs/monthly";
 import { repairProjectFile, validateProjectFiles } from "../validate";
 import { launchChromium, type BrowserLauncher } from "../browser/automation";
@@ -188,6 +198,7 @@ export interface CoreService {
   files: SiteIndexApi["files"];
   schedule: SiteIndexApi["schedule"];
   runner: Pick<SiteIndexApi["runner"], "get">;
+  todos: NonNullable<SiteIndexApi["todos"]>;
   runJob(req: JobRequest, report: ProgressReporter): Promise<JobResult>;
   invalidate(projectPath: string): void;
 }
@@ -1046,6 +1057,69 @@ function parentImageRow(
 function setError(error: unknown): SiteIndexError {
   if (isSiteIndexError(error)) return error;
   return siteError("WRITE_FAILED", "写入项目数据失败", String(error));
+}
+
+const TODO_FINDING_FIELDS = [
+  "dedupe_key", "rule_id", "subject", "title", "detail", "severity", "sources", "first_seen_at", "last_seen_at",
+] as const;
+
+function isTodoRuleFinding(value: unknown): value is TodoRuleFinding {
+  const finding = asRecord(value);
+  const subject = asRecord(finding?.subject);
+  const sources = finding?.sources;
+  const isoDateTime = (date: unknown) => typeof date === "string" && Number.isFinite(Date.parse(date));
+  return Boolean(finding && typeof finding.dedupe_key === "string" && finding.dedupe_key
+    && typeof finding.rule_id === "string" && typeof finding.title === "string"
+    && subject && typeof subject.kind === "string" && typeof subject.key === "string"
+    && (subject.label === undefined || typeof subject.label === "string")
+    && (finding.detail === undefined || typeof finding.detail === "string")
+    && (finding.severity === undefined || finding.severity === "high" || finding.severity === "mid" || finding.severity === "low")
+    && Array.isArray(sources) && sources.length > 0 && sources.every((source) => {
+      const ref = asRecord(source);
+      return Boolean(ref && typeof ref.path === "string" && Object.hasOwn(PATHS, ref.path)
+        && typeof ref.record_key === "string" && ref.record_key && isoDateTime(ref.collected_at));
+    })
+    && isoDateTime(finding.first_seen_at) && isoDateTime(finding.last_seen_at));
+}
+
+async function readTodoFindings(projectPath: string): Promise<TodoRuleFinding[]> {
+  const rows = await readJsonl(await projectFilePath(projectPath, PATHS.todos));
+  return rows.map((row) => {
+    if (!isTodoRuleFinding(row)) throw new Error("待办规则结果文件无效，未进行修改。");
+    return row;
+  });
+}
+
+async function writeTodoFindings(projectPath: string, findings: readonly TodoRuleFinding[]): Promise<void> {
+  await writeJsonl(await projectFilePath(projectPath, PATHS.todos), findings as unknown as JsonRecord[], {
+    primaryKey: ["dedupe_key"], fieldOrder: TODO_FINDING_FIELDS,
+  });
+}
+
+function mergeTodoFindings(
+  previous: readonly TodoRuleFinding[],
+  current: readonly TodoRuleFinding[],
+  scan: TodoRuleScanSummary,
+): TodoRuleFinding[] {
+  const previousByKey = new Map(previous.map((finding) => [finding.dedupe_key, finding]));
+  const merged = new Map(current.map((finding) => {
+    const old = previousByKey.get(finding.dedupe_key);
+    return [finding.dedupe_key, old ? { ...finding, first_seen_at: old.first_seen_at } : finding] as const;
+  }));
+  if (scan.status !== "complete") {
+    for (const finding of previous) if (!merged.has(finding.dedupe_key)) merged.set(finding.dedupe_key, finding);
+  }
+  return [...merged.values()].sort((left, right) => compareKeys(left.dedupe_key, right.dedupe_key));
+}
+
+function projectTodoItems(findings: readonly TodoRuleFinding[], states: readonly TodoManualState[]): ProjectTodo[] {
+  const stateByKey = new Map(states.map((state) => [state.dedupe_key, state]));
+  return findings.map((finding) => ({
+    finding,
+    state: stateByKey.get(finding.dedupe_key) ?? {
+      dedupe_key: finding.dedupe_key, status: "open", note: null, updated_at: finding.first_seen_at,
+    },
+  }));
 }
 
 const STOCK_STATUS_VALUES: readonly StockStatus[] = ["in_stock", "out_of_stock", "preorder", "unknown"];
@@ -2832,6 +2906,121 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
   };
 
+  const todos: CoreService["todos"] = {
+    list: async (id): Promise<ProjectTodosResult> => {
+      const projectPath = resolve(id);
+      const lockOptions = { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "todos-scan" };
+      try {
+        return await withLock(projectPath, async () => {
+          const previous = await readTodoFindings(projectPath);
+          const observedAt = new Date().toISOString();
+          let generated: ReturnType<typeof generateTodoRuleFindings> | null = null;
+          try {
+            const snapshot = await load(projectPath);
+            const paths = await pathsForProject(projectPath);
+            const collectedAt = async (relativePath: string): Promise<string | null> => {
+              try { return (await stat(absoluteProjectPath(projectPath, relativePath, paths))).mtime.toISOString(); }
+              catch (error) {
+                if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as NodeJS.ErrnoException).code === "ENOTDIR") return null;
+                throw error;
+              }
+            };
+            const [seoAt, skusAt, latestAt, siteAt, stockViewAt, mediaAt, tagsAt] = await Promise.all([
+              collectedAt(PATHS.seoIssues), collectedAt(PATHS.skus), collectedAt(PATHS.inventoryLatest),
+              collectedAt(PATHS.site), collectedAt(PATHS.skuStockView),
+              collectedAt(PATHS.skuMedia), collectedAt(PATHS.skuTags),
+            ]);
+            const eventDirectory = absoluteProjectPath(projectPath, PATHS.eventsDir, paths);
+            let eventRows: InventoryEvent[] = [];
+            let eventsAt: string | null = null;
+            try {
+              const eventFiles = (await readdir(eventDirectory)).filter((name) => /^\d{4}-\d{2}\.jsonl$/u.test(name)).sort(compareKeys);
+              const [rowsByMonth, stamps] = await Promise.all([
+                Promise.all(eventFiles.map((name) => readJsonlAs<InventoryEvent>(projectPath, `${PATHS.eventsDir}/${name}`, paths))),
+                Promise.all(eventFiles.map(async (name) => {
+                  try { return (await stat(path.join(eventDirectory, name))).mtime.toISOString(); }
+                  catch (error) {
+                    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+                    throw error;
+                  }
+                })),
+              ]);
+              eventRows = rowsByMonth.flat();
+              eventsAt = stamps.filter((stamp): stamp is string => stamp !== null).sort(compareKeys).at(-1)
+                ?? await collectedAt(PATHS.eventsDir);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT" && (error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
+            }
+            const ruleSnapshot = <T>(rows: readonly T[], at: string | null): TodoRuleSnapshot<T> => ({
+              status: at ? "complete" : "partial", collected_at: at, rows,
+            });
+            const edmResult = await readEdmCandidates(projectPath, { stock: "any", include_excluded: true });
+            const edmStatus: TodoRuleSnapshot<TodoRuleEdmCandidate>["status"] = edmResult.metadata.quality === "unreliable"
+              ? "failed"
+              : edmResult.metadata.quality === "complete" && edmResult.data ? "complete" : "partial";
+            const skuKeys = new Set(snapshot.skus.map((row) => row.sku));
+            const stockKeys = new Set(snapshot.skuStock.map((row) => row.sku));
+            const mediaKeys = new Set(snapshot.skuMedia.map((row) => String(row.sku ?? "")));
+            const tagKeys = new Set(snapshot.skuTags.map((row) => String(row.sku ?? "")));
+            const source = (sourcePath: PathKey, recordKey: string, at: string | null): TodoRuleSourceReference | null =>
+              at && recordKey ? { path: sourcePath, record_key: recordKey, collected_at: at } : null;
+            const edmCandidates = (edmResult.data?.rows ?? []).map((candidate) => ({
+              candidate,
+              sources: [
+                skuKeys.has(candidate.sku) ? source("skus", candidate.sku, skusAt) : null,
+                stockKeys.has(candidate.sku) ? source("skuStockView", candidate.sku, stockViewAt) : null,
+                mediaKeys.has(candidate.sku) ? source("skuMedia", candidate.sku, mediaAt) : null,
+                tagKeys.has(candidate.sku) ? source("skuTags", candidate.sku, tagsAt) : null,
+                source("site", "edm", siteAt),
+              ].filter((item): item is TodoRuleSourceReference => item !== null),
+            }));
+            generated = generateTodoRuleFindings({
+              observed_at: observedAt,
+              seo_issues: ruleSnapshot(snapshot.seoIssues, seoAt),
+              skus: ruleSnapshot(snapshot.skus, skusAt),
+              inventory_latest: ruleSnapshot(snapshot.latest, latestAt),
+              inventory_events: ruleSnapshot(eventRows, eventsAt),
+              site: ruleSnapshot([{ sku_grouping: snapshot.config.sku_grouping }], siteAt),
+              edm_candidates: { status: edmStatus, collected_at: edmResult.metadata.collected_at, rows: edmCandidates },
+              runs: ruleSnapshot(snapshot.runs, await collectedAt(PATHS.runs)),
+            });
+          } catch {
+            generated = null;
+          }
+
+          const scan: TodoRuleScanSummary = generated?.scan ?? { status: "failed", evaluated_at: observedAt };
+          const findings = generated ? mergeTodoFindings(previous, generated.findings, scan) : previous;
+          if (generated && scan.status !== "not_run") await writeTodoFindings(projectPath, findings);
+          const states = generated
+            ? await reconcileTodoManualStates(projectPath, findings, scan)
+            : await readTodoManualStates(projectPath);
+          return { items: projectTodoItems(findings, states), scan };
+        }, lockOptions);
+      } catch (error) {
+        if (isSiteIndexError(error) && (error.code === "LOCKED" || error.code === "PROJECT_CLOUD_SYNC_UNSUPPORTED")) {
+          const [findings, states] = await Promise.all([readTodoFindings(projectPath), readTodoManualStates(projectPath)]);
+          return { items: projectTodoItems(findings, states), scan: { status: "not_run", evaluated_at: null } };
+        }
+        throw setError(error);
+      }
+    },
+    update: async (id, input: UpdateTodoManualInput): Promise<TodoManualState> => {
+      const projectPath = resolve(id);
+      return withLock(projectPath, async () => {
+        const findings = await readTodoFindings(projectPath);
+        if (!findings.some((finding) => finding.dedupe_key === input.dedupe_key)) {
+          throw siteError("UNKNOWN", "待办项已不存在或尚未扫描，请刷新待办列表后重试。", input.dedupe_key);
+        }
+        try { return await updateTodoManualState(projectPath, input); }
+        catch (error) { throw setError(error); }
+      }, { deviceId: ctx.deviceId, deviceName: ctx.deviceName, job: "todos-update" });
+    },
+    history: async (id, dedupeKey): Promise<TodoManualHistoryEntry[]> => {
+      try { return await readTodoManualHistory(resolve(id), dedupeKey); }
+      catch (error) { throw setError(error); }
+    },
+  };
+
   const validateProject = async (id: ProjectId, selectedPath?: string, trigger: ValidationReport["trigger"] = "manual"): Promise<ValidationReport> => {
     const projectPath = resolve(id);
     try {
@@ -2881,5 +3070,5 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     },
   };
 
-  return { projects, workspace, overview, sku, inventory, products, seo, content, edm, design, readme, categories, folders, files, schedule, runner, runJob, invalidate };
+  return { projects, workspace, overview, sku, inventory, products, seo, content, edm, design, readme, categories, folders, files, schedule, runner, todos, runJob, invalidate };
 }
