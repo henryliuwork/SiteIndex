@@ -264,11 +264,17 @@ async function readGroupingConfig(projectPath: string, relativePath: string): Pr
     || !rule.value.trim()) {
     return { field, source: source(field, label), state: "invalid", rows: null, mode: "enabled" };
   }
+  if (rule.type === "regex" && rule.parent_source !== undefined && rule.parent_source !== "derived" && rule.parent_source !== "feed") {
+    return { field, source: source(field, label), state: "invalid", rows: null, mode: "enabled" };
+  }
+  const parsedRule: SkuGroupingRule = rule.type === "regex"
+    ? { type: "regex", value: rule.value, ...(rule.parent_source ? { parent_source: rule.parent_source as "derived" | "feed" } : {}) }
+    : { type: rule.type, value: rule.value };
   return {
     field,
     source: source(field, label),
     state: "ok",
-    rows: [{ type: rule.type, value: rule.value }],
+    rows: [parsedRule],
     mode: "enabled",
   };
 }
@@ -525,7 +531,11 @@ export async function readProductGroupFamily(projectPath: string, sku: string): 
     parent_sku: normalChild.parent,
     child_skus: [...normalChild.children],
     collision,
-  }, normalChild.children.map((child) => ({ sku: child, role: "child" })), stock, sources, collection);
+  }, [
+    ...(skus.rows.some((row) => row.sku === normalChild.parent && row.status === "active")
+      ? [{ sku: normalChild.parent, role: "parent" as const }] : []),
+    ...normalChild.children.map((child) => ({ sku: child, role: "child" as const })),
+  ], stock, sources, collection);
   if (normalParent) return withFamilyMembers({
     sku,
     role: "parent",

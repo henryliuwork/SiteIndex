@@ -30,7 +30,7 @@ export class SkuGroupingRuleError extends Error {
 
 type NormalizedRule =
   | { type: "suffix" | "separator"; value: string }
-  | { type: "regex"; value: string; expression: RegExp };
+  | { type: "regex"; value: string; expression: RegExp; parentSource: "derived" | "feed" };
 
 function normalizeRule(input: unknown): NormalizedRule {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
@@ -44,8 +44,11 @@ function normalizeRule(input: unknown): NormalizedRule {
     throw new SkuGroupingRuleError("规则值不能为空。");
   }
   if (candidate.type !== "regex") return { type: candidate.type, value: candidate.value };
+  if (candidate.parent_source !== undefined && candidate.parent_source !== "derived" && candidate.parent_source !== "feed") {
+    throw new SkuGroupingRuleError("父 SKU 来源必须是 derived 或 feed。");
+  }
   try {
-    return { type: "regex", value: candidate.value, expression: new RegExp(candidate.value) };
+    return { type: "regex", value: candidate.value, expression: new RegExp(candidate.value), parentSource: candidate.parent_source ?? "derived" };
   } catch {
     throw new SkuGroupingRuleError("正则表达式语法无效。");
   }
@@ -71,8 +74,8 @@ function deriveParentSku(sku: string, rule: NormalizedRule): string | null {
 
 /**
  * Groups feed SKUs using the same suffix, last-separator and first-regex-capture
- * semantics as the project settings preview. A parent that is itself a feed
- * SKU is treated as a collision, so no synthetic parent can shadow real stock.
+ * semantics as the project settings preview. Derived mode treats a feed SKU
+ * as a collision; explicit feed mode groups only parents present in the feed.
  */
 export function groupSkuIds(skus: readonly string[], inputRule: SkuGroupingRule): SkuGroupingResult {
   const rule = normalizeRule(inputRule);
@@ -88,12 +91,13 @@ export function groupSkuIds(skus: readonly string[], inputRule: SkuGroupingRule)
     candidates.set(parent, children);
   }
 
+  const feedParents = rule.type === "regex" && rule.parentSource === "feed";
   const groups = [...candidates]
-    .filter(([parent]) => !skuSet.has(parent))
+    .filter(([parent]) => feedParents ? skuSet.has(parent) : !skuSet.has(parent))
     .map(([parent, children]) => ({ parent, children: [...children].sort(compareKeys) }))
     .sort((left, right) => compareKeys(left.parent, right.parent));
   const collisions = [...candidates]
-    .filter(([parent]) => skuSet.has(parent))
+    .filter(([parent]) => !feedParents && skuSet.has(parent))
     .map(([parent, children]) => ({ parent, children: [...children].sort(compareKeys) }))
     .sort((left, right) => compareKeys(left.parent, right.parent));
   const parentByChild = new Map<string, string>();

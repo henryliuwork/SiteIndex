@@ -221,6 +221,26 @@ describe("product scenario queries", () => {
     });
   });
 
+  it.each(["legacy", "workspace"] as const)("returns the real feed parent and child stock in %s layout", async (layout) => {
+    const { projectPath, paths } = await makeProject(layout, {
+      sku_grouping: { enabled: true, rule: { type: "regex", value: "^(.*CP)\\d+$", parent_source: "feed" } },
+    });
+    const rows = [skuRecord("DEMOCP"), skuRecord("DEMOCP01"), skuRecord("MISSINGCP01")];
+    await Promise.all([
+      writeRows(projectPath, paths.skus, rows),
+      writeRows(projectPath, paths.skuStockView, rows.map((row) => stockView(row.sku))),
+      writeRows(projectPath, paths.runs, [runLog()]),
+    ]);
+    const api = service(projectPath);
+    for (const sku of ["DEMOCP", "DEMOCP01"]) {
+      const family = await api.products.groupFamily!("fixture", sku);
+      expect(family.data).toMatchObject({ parent_sku: "DEMOCP", child_skus: ["DEMOCP01"], collision: null,
+        members: [{ sku: "DEMOCP", role: "parent", stock: stockView("DEMOCP") },
+          { sku: "DEMOCP01", role: "child", stock: stockView("DEMOCP01") }] });
+    }
+    expect((await api.products.groupFamily!("fixture", "MISSINGCP01")).data?.role).toBe("single");
+  });
+
   it.each(["legacy", "workspace"] as const)("keeps real family members and reports missing stock rows/sources in %s layout", async (layout) => {
     const { projectPath, paths } = await makeProject(layout, {
       sku_grouping: { enabled: true, rule: { type: "separator", value: "-" } },

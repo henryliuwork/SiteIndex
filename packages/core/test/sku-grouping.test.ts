@@ -113,6 +113,14 @@ describe("deterministic SKU grouping", () => {
     expect(preview.collisions).toEqual([{ parent: "DEMO001A", children }]);
   });
 
+  it("groups only existing feed parents in explicit feed mode", () => {
+    const rule: SkuGroupingRule = { type: "regex", value: "^(.*CP)\\d+$", parent_source: "feed" };
+    const result = groupSkuIds(["DEMO001CP", "DEMO001CP01", "DEMO001CP02", "MISSINGCP01"], rule);
+    expect(result.groups).toEqual([{ parent: "DEMO001CP", children: ["DEMO001CP01", "DEMO001CP02"] }]);
+    expect(result.collisions).toEqual([]);
+    expect(result.unmatched).toEqual(["DEMO001CP", "MISSINGCP01"]);
+  });
+
   it("treats a derived parent that already exists as a real SKU as a collision", () => {
     const result = groupSkuIds(["BASE-RED", "BASE-BLUE", "BASE"], { type: "separator", value: "-" });
     expect(result.groups).toEqual([]);
