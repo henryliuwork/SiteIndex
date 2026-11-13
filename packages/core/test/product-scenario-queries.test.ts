@@ -179,13 +179,14 @@ describe("product scenario queries", () => {
     expect(result.metadata.missing_fields).toEqual(expect.arrayContaining(["inventory.events", "logs.runs"]));
   });
 
-  it("returns family for a grouped child and a collision candidate", async () => {
-    const { projectPath, paths } = await makeProject("legacy", {
+  it.each(["legacy", "workspace"] as const)("returns stored stock for every real family member in %s layout", async (layout) => {
+    const { projectPath, paths } = await makeProject(layout, {
       sku_grouping: { enabled: true, rule: { type: "separator", value: "-" } },
     });
     const rows = [skuRecord("DEMOPARENT-01"), skuRecord("DEMOPARENT-02")];
     await Promise.all([
       writeRows(projectPath, paths.skus, rows),
+      writeRows(projectPath, paths.skuStockView, rows.map((row) => stockView(row.sku))),
       writeRows(projectPath, paths.runs, [runLog()]),
     ]);
     const child = await service(projectPath).products.groupFamily!("fixture", "DEMOPARENT-02");
@@ -195,10 +196,16 @@ describe("product scenario queries", () => {
       parent_sku: "DEMOPARENT",
       child_skus: ["DEMOPARENT-01", "DEMOPARENT-02"],
       collision: null,
+      members: [
+        { sku: "DEMOPARENT-01", role: "child", stock: stockView("DEMOPARENT-01") },
+        { sku: "DEMOPARENT-02", role: "child", stock: stockView("DEMOPARENT-02") },
+      ],
     });
     expect(child.metadata.collected_at).toBe(DAILY_FINISHED_AT);
+    expect(child.data?.members?.map((member) => member.sku)).not.toContain("DEMOPARENT");
 
     await writeRows(projectPath, paths.skus, [...rows, skuRecord("DEMOPARENT")]);
+    await writeRows(projectPath, paths.skuStockView, [...rows.map((row) => stockView(row.sku)), stockView("DEMOPARENT")]);
     const collision = await service(projectPath).products.groupFamily!("fixture", "DEMOPARENT");
     expect(collision.data).toEqual({
       sku: "DEMOPARENT",
@@ -206,7 +213,48 @@ describe("product scenario queries", () => {
       parent_sku: "DEMOPARENT",
       child_skus: ["DEMOPARENT-01", "DEMOPARENT-02"],
       collision: { parent: "DEMOPARENT", children: ["DEMOPARENT-01", "DEMOPARENT-02"] },
+      members: [
+        { sku: "DEMOPARENT", role: "parent", stock: stockView("DEMOPARENT") },
+        { sku: "DEMOPARENT-01", role: "child", stock: stockView("DEMOPARENT-01") },
+        { sku: "DEMOPARENT-02", role: "child", stock: stockView("DEMOPARENT-02") },
+      ],
     });
+  });
+
+  it.each(["legacy", "workspace"] as const)("keeps real family members and reports missing stock rows/sources in %s layout", async (layout) => {
+    const { projectPath, paths } = await makeProject(layout, {
+      sku_grouping: { enabled: true, rule: { type: "separator", value: "-" } },
+    });
+    const rows = [skuRecord("DEMOFAMILY-01"), skuRecord("DEMOFAMILY-02")];
+    await Promise.all([
+      writeRows(projectPath, paths.skus, rows),
+      writeRows(projectPath, paths.skuStockView, [stockView("DEMOFAMILY-01")]),
+      writeRows(projectPath, paths.runs, [runLog()]),
+    ]);
+    const api = service(projectPath);
+
+    const partial = await api.products.groupFamily!("fixture", "DEMOFAMILY-01");
+    expect(partial.data?.members).toEqual([
+      { sku: "DEMOFAMILY-01", role: "child", stock: stockView("DEMOFAMILY-01") },
+      { sku: "DEMOFAMILY-02", role: "child", stock: null },
+    ]);
+    expect(partial.metadata.missing_fields).toContain("views.sku_stock.DEMOFAMILY-02");
+    expect(partial.metadata.anomalies).toContainEqual(expect.objectContaining({
+      code: "SKU_STOCK_NOT_INDEXED",
+      field: "views.sku_stock.DEMOFAMILY-02",
+    }));
+
+    await rm(path.join(projectPath, paths.skuStockView), { force: true });
+    const missingSource = await api.products.groupFamily!("fixture", "DEMOFAMILY-01");
+    expect(missingSource.data?.members).toEqual([
+      { sku: "DEMOFAMILY-01", role: "child", stock: null },
+      { sku: "DEMOFAMILY-02", role: "child", stock: null },
+    ]);
+    expect(missingSource.metadata.missing_fields).toContain("views.sku_stock");
+    expect(missingSource.metadata.anomalies).toContainEqual(expect.objectContaining({
+      code: "SOURCE_MISSING",
+      field: "views.sku_stock",
+    }));
   });
 
   it("reports a real SKU as single when grouping is not configured and reports bad grouping rules", async () => {
@@ -217,7 +265,14 @@ describe("product scenario queries", () => {
     ]);
     const api = service(projectPath);
     const single = await api.products.groupFamily!("fixture", "DEMO-SINGLE");
-    expect(single.data).toEqual({ sku: "DEMO-SINGLE", role: "single", parent_sku: null, child_skus: [], collision: null });
+    expect(single.data).toEqual({
+      sku: "DEMO-SINGLE",
+      role: "single",
+      parent_sku: null,
+      child_skus: [],
+      collision: null,
+      members: [{ sku: "DEMO-SINGLE", role: "single", stock: null }],
+    });
     expect(single.metadata.anomalies).toContainEqual(expect.objectContaining({ code: "SKU_GROUPING_NOT_CONFIGURED" }));
     expect(single.metadata.anomalies).toContainEqual(expect.objectContaining({ code: "DAILY_LATEST_NOT_SUCCESSFUL" }));
 

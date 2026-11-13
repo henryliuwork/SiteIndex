@@ -4,6 +4,7 @@ import type {
   InventoryEvent,
   ProductChanges,
   ProductGroupFamily,
+  ProductGroupFamilyMember,
   ProductSkuBrief,
   RunLog,
   ScenarioAnomaly,
@@ -427,14 +428,58 @@ function emptyFamily(sku: string): ProductGroupFamily {
   return { sku, role: "single", parent_sku: null, child_skus: [], collision: null };
 }
 
+interface FamilyMemberInput {
+  sku: string;
+  role: ProductGroupFamilyMember["role"];
+}
+
+function withFamilyMembers(
+  family: ProductGroupFamily,
+  memberInputs: readonly FamilyMemberInput[],
+  stock: SourceRows<SkuStockView>,
+  sources: readonly SourceRows<unknown>[],
+  collection: DailyCollection,
+  extras: MetadataExtras = {},
+): ScenarioQueryResult<ProductGroupFamily> {
+  const stockBySku = new Map<string, SkuStockView[]>();
+  if (stock.state === "ok" && stock.rows) {
+    for (const row of stock.rows) stockBySku.set(row.sku, [...(stockBySku.get(row.sku) ?? []), row]);
+  }
+
+  const uniqueInputs = new Map<string, FamilyMemberInput>();
+  for (const member of memberInputs) uniqueInputs.set(member.sku, member);
+  const missingFields = [...(extras.missingFields ?? [])];
+  const anomalies = [...(extras.anomalies ?? [])];
+  const members = [...uniqueInputs.values()].sort((left, right) => compareKeys(left.sku, right.sku)).map(({ sku, role }) => {
+    if (stock.state !== "ok" || !stock.rows) return { sku, role, stock: null };
+    const matches = stockBySku.get(sku) ?? [];
+    if (matches.length > 1) {
+      const field = `${stock.field}.${sku}`;
+      missingFields.push(field);
+      anomalies.push(anomaly("SKU_STOCK_DUPLICATE", "unreliable", "家族成员存在重复库存视图记录，未返回其库存。", field));
+      return { sku, role, stock: null };
+    }
+    if (matches.length === 0) {
+      const field = `${stock.field}.${sku}`;
+      missingFields.push(field);
+      anomalies.push(anomaly("SKU_STOCK_NOT_INDEXED", "warning", "家族成员没有可用的库存视图记录。", field));
+      return { sku, role, stock: null };
+    }
+    return { sku, role, stock: matches[0]! };
+  });
+
+  return result({ ...family, members }, sources, collection, { missingFields, anomalies });
+}
+
 export async function readProductGroupFamily(projectPath: string, sku: string): Promise<ScenarioQueryResult<ProductGroupFamily>> {
   const paths = await pathsForProject(projectPath);
-  const [skus, grouping, runs] = await Promise.all([
+  const [skus, stock, grouping, runs] = await Promise.all([
     readJsonlSource(projectPath, paths.skus, "catalog.skus", "商品 SKU 目录", isSkuRecord),
+    readJsonlSource(projectPath, paths.skuStockView, "views.sku_stock", "SKU 库存视图", isSkuStockView),
     readGroupingConfig(projectPath, paths.site),
     readJsonlSource(projectPath, paths.runs, "logs.runs", "Job 运行记录", isRunLog),
   ]);
-  const sources = [skus, grouping, runs];
+  const sources = [skus, stock, grouping, runs];
   const collection = dailyCollection(runs);
   if (skus.state !== "ok" || !skus.rows || grouping.state !== "ok" || !grouping.rows) {
     return result<ProductGroupFamily>(null, sources, collection);
@@ -450,10 +495,10 @@ export async function readProductGroupFamily(projectPath: string, sku: string): 
     anomalies: [anomaly("SKU_NOT_ACTIVE", "warning", "该 SKU 已不在当前 active feed 中，无法确认现行分组关系。", "catalog.skus.active_sku")],
   });
 
-  if (grouping.mode === "unconfigured") return result(emptyFamily(sku), sources, collection, {
+  if (grouping.mode === "unconfigured") return withFamilyMembers(emptyFamily(sku), [{ sku, role: "single" }], stock, sources, collection, {
     anomalies: [anomaly("SKU_GROUPING_NOT_CONFIGURED", "warning", "项目未配置 SKU 分组规则；当前 SKU 按独立商品处理。", "site.sku_grouping")],
   });
-  if (grouping.mode === "disabled") return result(emptyFamily(sku), sources, collection, {
+  if (grouping.mode === "disabled") return withFamilyMembers(emptyFamily(sku), [{ sku, role: "single" }], stock, sources, collection, {
     anomalies: [anomaly("SKU_GROUPING_DISABLED", "warning", "项目已关闭 SKU 分组；当前 SKU 按独立商品处理。", "site.sku_grouping")],
   });
 
@@ -474,26 +519,32 @@ export async function readProductGroupFamily(projectPath: string, sku: string): 
     anomalies: [anomaly("SKU_FAMILY_AMBIGUOUS", "unreliable", "该 SKU 同时命中多个分组关系，无法用单一家族结果准确表达。", "site.sku_grouping")],
   });
   const collision = collisions[0] ?? null;
-  if (normalChild) return result({
+  if (normalChild) return withFamilyMembers({
     sku,
     role: "child",
     parent_sku: normalChild.parent,
     child_skus: [...normalChild.children],
     collision,
-  }, sources, collection);
-  if (normalParent) return result({
+  }, normalChild.children.map((child) => ({ sku: child, role: "child" })), stock, sources, collection);
+  if (normalParent) return withFamilyMembers({
     sku,
     role: "parent",
     parent_sku: normalParent.parent,
     child_skus: [...normalParent.children],
     collision,
-  }, sources, collection);
-  if (collision) return result({
+  }, [
+    { sku, role: "parent" },
+    ...normalParent.children.map((child) => ({ sku: child, role: "child" as const })),
+  ], stock, sources, collection);
+  if (collision) return withFamilyMembers({
     sku,
     role: "collision",
     parent_sku: collision.parent,
     child_skus: [...collision.children],
     collision,
-  }, sources, collection);
-  return result(emptyFamily(sku), sources, collection);
+  }, [
+    { sku: collision.parent, role: "parent" },
+    ...collision.children.map((child) => ({ sku: child, role: "child" as const })),
+  ], stock, sources, collection);
+  return withFamilyMembers(emptyFamily(sku), [{ sku, role: "single" }], stock, sources, collection);
 }
