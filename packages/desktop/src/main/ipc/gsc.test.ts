@@ -75,6 +75,10 @@ function fixtureContext(clientIdConfigured = true) {
       };
     }),
     getCredentials: vi.fn(async () => credentials),
+    getValidAccessToken: vi.fn(async () => {
+      if (!credentials) throw new GscOAuthError("NOT_CONFIGURED");
+      return credentials.accessToken;
+    }),
     listProperties: vi.fn(async () => FIXTURE_PROPERTIES),
     clear: vi.fn(async () => {
       credentials = null;
@@ -278,13 +282,20 @@ describe("GSC Desktop IPC and preload", () => {
       const address = server.address();
       if (!address || typeof address === "string") throw new Error("fixture GSC service unavailable");
       const apiBaseUrl = `http://127.0.0.1:${address.port}`;
-      const { bridge, context, syncGsc } = fixtureContext();
+      const { bridge, context, oauth, syncGsc } = fixtureContext();
       vi.mocked(context.projects.resolveProject).mockReturnValue(projectPath);
+      vi.mocked(oauth.getValidAccessToken).mockResolvedValue("fictional-refreshed-access-token");
+      const authorizationHeaders: string[] = [];
+      const requestFetch = globalThis.fetch;
       syncGsc.mockImplementation((resolvedProjectPath, input, options: GscProjectSyncOptions) =>
         syncProjectSearchAnalytics(resolvedProjectPath, input, {
           ...options,
           now: new Date("2026-11-13T12:00:00.000Z"),
           apiBaseUrl,
+          fetch: async (request, init) => {
+            authorizationHeaders.push(new Headers(init?.headers).get("authorization") ?? "");
+            return requestFetch(request, init);
+          },
         }));
 
       const result = await bridge.gsc?.sync("fixture-project", { mode: "initial_90_days" });
@@ -298,7 +309,20 @@ describe("GSC Desktop IPC and preload", () => {
       const historyPath = path.join(projectPath, PATHS.gscSearchAnalytics);
       const savedHistory = await readFile(historyPath, "utf8");
       expect(savedHistory).toContain("fictional-query");
-      expect(savedHistory).not.toContain("fictional-access-token");
+      expect(savedHistory).not.toContain("fictional-refreshed-access-token");
+      expect(authorizationHeaders.length).toBeGreaterThan(0);
+      expect(authorizationHeaders.every((header) => header === "Bearer fictional-refreshed-access-token")).toBe(true);
+      expect(JSON.stringify(result)).not.toContain("fictional-refreshed-access-token");
+
+      vi.mocked(oauth.getValidAccessToken).mockRejectedValue(new GscOAuthError("NETWORK_ERROR"));
+      await expect(bridge.gsc?.sync("fixture-project", { mode: "incremental" })).resolves.toMatchObject({
+        state: "blocked",
+        error: { code: "GSC_CREDENTIALS_UNAVAILABLE" },
+        history_effect: "preserved",
+      });
+      expect(syncGsc).toHaveBeenCalledOnce();
+      await expect(readFile(historyPath, "utf8")).resolves.toBe(savedHistory);
+
       await expect(bridge.gsc?.disconnect()).resolves.toEqual({ state: "disconnected" });
       await expect(readFile(historyPath, "utf8")).resolves.toBe(savedHistory);
     } finally {
@@ -323,7 +347,7 @@ describe("GSC Desktop IPC and preload", () => {
     );
 
     vi.mocked(context.core.projects.get).mockResolvedValue({ config: { integrations: { gsc: { property_site_url: FIXTURE_PROPERTY } } } } as never);
-    vi.mocked(oauth.getCredentials).mockResolvedValue(null);
+    vi.mocked(oauth.getValidAccessToken).mockRejectedValue(new GscOAuthError("NOT_CONFIGURED"));
     await expect(bridge.gsc?.sync("fixture-project", { mode: "incremental" })).resolves.toMatchObject({
       state: "blocked",
       error: { code: "GSC_AUTH_REQUIRED" },
@@ -333,7 +357,7 @@ describe("GSC Desktop IPC and preload", () => {
 
   it("returns a reauthorization state when sync credentials have expired", async () => {
     const { bridge, oauth, syncGsc } = fixtureContext();
-    vi.mocked(oauth.getCredentials).mockRejectedValue(new GscOAuthError("AUTHORIZATION_REQUIRED"));
+    vi.mocked(oauth.getValidAccessToken).mockRejectedValue(new GscOAuthError("AUTHORIZATION_REQUIRED"));
 
     await expect(bridge.gsc?.sync("fixture-project", { mode: "incremental" })).resolves.toMatchObject({
       state: "blocked",

@@ -8,7 +8,7 @@ import type {
   ScenarioQueryResult,
   SiteIndexError,
 } from "@siteindex/shared";
-import { GscOAuthError, type GscOAuthCredential } from "../gsc-oauth.js";
+import { GscOAuthError } from "../gsc-oauth.js";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import type { IpcContext } from "./context.js";
 
@@ -121,9 +121,9 @@ export function createGscHandlers(context: IpcContext): IpcHandlerImplementation
 
     syncsInProgress.add(id);
     try {
-      let credential: GscOAuthCredential | null;
+      let accessToken: string;
       try {
-        credential = await context.gscOAuth.getCredentials();
+        accessToken = await context.gscOAuth.getValidAccessToken();
       } catch (error) {
         if (errorCode(error) === "AUTHORIZATION_REQUIRED") {
           reauthorizationRequired = true;
@@ -137,7 +137,7 @@ export function createGscHandlers(context: IpcContext): IpcHandlerImplementation
       reauthorizationRequired = false;
       return await context.syncGscProjectSearchAnalytics(projectPath, input, {
         property,
-        accessToken: credential?.accessToken ?? "",
+        accessToken,
       });
     } finally {
       syncsInProgress.delete(id);
