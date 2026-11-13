@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ProjectSummary } from "@siteindex/shared";
-import { ProjectHeader } from "../project-header";
+import { PROJECT_TABS, ProjectHeader, ProjectTabPanel, projectPanelId, projectTabId } from "../project-header";
 import { Button } from "../primitives";
 
 const project: Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location"> = {
@@ -12,6 +12,10 @@ const project: Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "sto
   domain: "store.example.test",
   platform: "shopify",
 };
+
+function CurrentPath() {
+  return <output data-testid="current-path">{useLocation().pathname}</output>;
+}
 
 describe("ProjectHeader compact layout", () => {
   it("keeps identity on the first row and puts page title, metadata, and actions on the tab row", () => {
@@ -32,11 +36,31 @@ describe("ProjectHeader compact layout", () => {
     expect(identity?.textContent).toContain("store.example.test");
     expect(identity?.textContent).toContain("同步完成");
     expect(identity?.textContent).not.toContain("导出 CSV");
-    expect(tabsRow?.textContent).toContain("产品");
+    expect(tabsRow?.textContent).toContain("产品管理");
     expect(tabsRow?.textContent).toContain("11-08 17:00");
     expect(tabsRow?.textContent).toContain("导出 CSV");
     expect(container.querySelector(".si-project-header-tabs-row .si-tabs")).not.toBeNull();
     expect(container.querySelector(".si-project-header-action-slot .si-project-header-actions")).not.toBeNull();
+  });
+
+  it("uses one products tab and maps the legacy inventory view to its selection and IDs", () => {
+    const { container } = render(<MemoryRouter initialEntries={["/p/demo-store/inventory"]}>
+      <ProjectHeader project={project} activeTab="inventory" hasTabPanel />
+      <ProjectTabPanel projectId={project.id} tab="inventory">库存明细</ProjectTabPanel>
+      <CurrentPath />
+    </MemoryRouter>);
+    const scoped = within(container);
+
+    const productTab = scoped.getByRole("tab", { name: "产品管理" });
+    expect(PROJECT_TABS.filter(({ value }) => value === "products")).toHaveLength(1);
+    expect(scoped.queryByRole("tab", { name: "库存" })).toBeNull();
+    expect(productTab.getAttribute("aria-selected")).toBe("true");
+    expect(productTab.id).toBe(projectTabId(project.id, "products"));
+    expect(scoped.getByRole("tabpanel").id).toBe(projectPanelId(project.id, "products"));
+    expect(scoped.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(productTab.id);
+
+    fireEvent.click(productTab);
+    expect(scoped.getByTestId("current-path").textContent).toBe("/p/demo-store/products");
   });
 
   it("reserves the action slot when a tab has no visible actions", () => {

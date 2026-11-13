@@ -8,8 +8,7 @@ import "./project-header.css";
 
 export const PROJECT_TABS = [
   { value: "overview", label: "概览" },
-  { value: "inventory", label: "库存" },
-  { value: "products", label: "产品" },
+  { value: "products", label: "产品管理" },
   { value: "seo", label: "SEO" },
   { value: "content", label: "内容" },
   { value: "edm", label: "EDM" },
@@ -20,17 +19,23 @@ export const PROJECT_TABS = [
 ] as const;
 
 export type ProjectTab = (typeof PROJECT_TABS)[number]["value"];
+type ProjectTabAlias = "inventory";
+type ProjectTabValue = ProjectTab | ProjectTabAlias;
 type HeaderProject = Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location">;
 
-export function projectTabId(projectId: ProjectSummary["id"], tab: ProjectTab): string {
-  return `project-tab-${encodeURIComponent(projectId)}-${tab}`;
+function canonicalProjectTab(tab: ProjectTabValue): ProjectTab {
+  return tab === "inventory" ? "products" : tab;
 }
 
-export function projectPanelId(projectId: ProjectSummary["id"], tab: ProjectTab): string {
-  return `project-panel-${encodeURIComponent(projectId)}-${tab}`;
+export function projectTabId(projectId: ProjectSummary["id"], tab: ProjectTabValue): string {
+  return `project-tab-${encodeURIComponent(projectId)}-${canonicalProjectTab(tab)}`;
 }
 
-export function ProjectTabPanel({ projectId, tab, children }: { projectId: ProjectSummary["id"]; tab: ProjectTab; children: ReactNode }) {
+export function projectPanelId(projectId: ProjectSummary["id"], tab: ProjectTabValue): string {
+  return `project-panel-${encodeURIComponent(projectId)}-${canonicalProjectTab(tab)}`;
+}
+
+export function ProjectTabPanel({ projectId, tab, children }: { projectId: ProjectSummary["id"]; tab: ProjectTabValue; children: ReactNode }) {
   return <TabPanel id={projectPanelId(projectId, tab)} labelledBy={projectTabId(projectId, tab)}>{children}</TabPanel>;
 }
 
@@ -59,7 +64,7 @@ export function ProjectHeader({
   hasTabPanel = false,
 }: {
   project: HeaderProject;
-  activeTab: ProjectTab;
+  activeTab: ProjectTabValue;
   subtitle?: string;
   status?: ReactNode;
   /** 页面标题移入标签栏右侧后，页面可删除单独的 PageHeader 行。 */
@@ -73,6 +78,7 @@ export function ProjectHeader({
   const navigate = useNavigate();
   const headerRef = useRef<HTMLDivElement>(null);
   const projectSubtitle = subtitle ?? `${project.domain} · ${platformLabels[project.platform]}`;
+  const selectedTab = canonicalProjectTab(activeTab);
 
   useLayoutEffect(() => {
     const revealActiveTab = () => {
@@ -87,7 +93,7 @@ export function ProjectHeader({
 
     revealActiveTab();
     void document.fonts?.ready.then(revealActiveTab);
-  }, [activeTab]);
+  }, [selectedTab]);
 
   return <div ref={headerRef} className="si-project-header">
     <header className="si-project-header-row">
@@ -105,7 +111,7 @@ export function ProjectHeader({
     </header>
     <div className="si-project-header-tabs-row">
       <Tabs
-        value={activeTab}
+        value={selectedTab}
         options={PROJECT_TABS}
         ariaLabel="项目页面"
         tabIdPrefix={`project-tab-${encodeURIComponent(project.id)}`}
