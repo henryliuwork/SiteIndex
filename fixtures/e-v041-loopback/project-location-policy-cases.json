@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "fixtureOnly": true,
+  "decision": {
+    "storageModel": "device-local-independent",
+    "knownSyncDirectoryOnCreateOrImport": "block-before-project-write-or-registration",
+    "existingRegisteredKnownSyncDirectory": "preserve-and-warn",
+    "unclassifiedDirectory": "no-absolute-exclusion-guarantee"
+  },
+  "syntheticKnownRoots": [
+    {
+      "id": "win-onedrive",
+      "platform": "win32",
+      "root": "C:/Synthetic/SyncRoots/OneDrive",
+      "childProject": "C:/Synthetic/SyncRoots/OneDrive/ShopFixture"
+    },
+    {
+      "id": "win-dropbox",
+      "platform": "win32",
+      "root": "C:/Synthetic/SyncRoots/Dropbox",
+      "childProject": "C:/Synthetic/SyncRoots/Dropbox/ShopFixture"
+    },
+    {
+      "id": "mac-icloud",
+      "platform": "darwin",
+      "root": "/Synthetic/Library/Mobile Documents/com~apple~CloudDocs",
+      "childProject": "/Synthetic/Library/Mobile Documents/com~apple~CloudDocs/ShopFixture"
+    }
+  ],
+  "classificationBoundaries": [
+    {
+      "id": "near-match-is-not-known-root",
+      "platform": "win32",
+      "path": "C:/Synthetic/OneDrive-Archive/ShopFixture",
+      "expected": "not-detected",
+      "uiMustNotClaim": "confirmed-local"
+    },
+    {
+      "id": "unlisted-sync-provider",
+      "platform": "win32",
+      "path": "D:/Synthetic/UnlistedSyncProvider/ShopFixture",
+      "expected": "not-detected",
+      "uiMustSay": "SiteIndex 仅支持本机存储；未识别不表示云同步受支持。"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "create-known-sync-root",
+      "operations": ["projects.create"],
+      "pathCase": "win-onedrive",
+      "expected": {
+        "blocked": true,
+        "errorCodeProposal": "PROJECT_CLOUD_SYNC_UNSUPPORTED",
+        "messageMustExplainLocalOnly": true,
+        "projectFilesCreated": false,
+        "settingsRegistrationChanged": false,
+        "initJobStarted": false,
+        "scheduleDefinitionChanged": false
+      }
+    },
+    {
+      "id": "create-empty-workspace-known-sync-root",
+      "operations": ["projects.createWorkspaceOnly"],
+      "pathCase": "win-dropbox",
+      "expected": {
+        "blocked": true,
+        "errorCodeProposal": "PROJECT_CLOUD_SYNC_UNSUPPORTED",
+        "projectFilesCreated": false,
+        "settingsRegistrationChanged": false,
+        "projectChangedEventSent": false
+      }
+    },
+    {
+      "id": "import-known-sync-root",
+      "operations": ["projects.addExisting"],
+      "pathCase": "mac-icloud",
+      "expected": {
+        "blocked": true,
+        "errorCodeProposal": "PROJECT_CLOUD_SYNC_UNSUPPORTED",
+        "settingsRegistrationChanged": false,
+        "scheduleReconciliationStarted": false,
+        "projectFilesChanged": false
+      }
+    },
+    {
+      "id": "set-project-root-to-known-sync-root",
+      "operations": ["settings.set.projects_root"],
+      "pathCase": "win-dropbox",
+      "expected": {
+        "blocked": true,
+        "errorCodeProposal": "PROJECT_CLOUD_SYNC_UNSUPPORTED",
+        "settingsProjectsRootChanged": false,
+        "unregisteredChildAutoRegistered": false,
+        "existingRegistrationsChanged": false
+      }
+    },
+    {
+      "id": "existing-registered-cloud-project",
+      "operations": ["projects.list", "project.readOnlyView", "jobs.run", "scheduled.--run-job"],
+      "projectFixture": {
+        "layouts": ["legacy-index-site-json", "workspace-site-json"],
+        "registration": "pre-existing"
+      },
+      "expected": {
+        "projectRemainsListed": true,
+        "knownCloudWarningVisible": true,
+        "readOnlyViewsRemainAvailable": true,
+        "settingsRegistrationChanged": false,
+        "projectFilesChanged": false,
+        "systemTaskDefinitionChanged": false,
+        "writeJobsBlockedBeforeFirstWrite": true,
+        "blockedJobWritesLockOrRunHistory": false,
+        "blockedJobErrorCodeProposal": "PROJECT_CLOUD_SYNC_UNSUPPORTED"
+      },
+      "taskDisposition": "proposed-safe-default; A/C must confirm before product acceptance"
+    },
+    {
+      "id": "manual-copy-old-project-to-local",
+      "operations": ["copy-synthetic-fixture", "projects.addExisting"],
+      "expected": {
+        "sourceFixtureDeletedOrMoved": false,
+        "cancelledAttemptChangesSourceOrTarget": false,
+        "localCopyCanBeAddedIndependently": true,
+        "legacyLayoutRewrittenOnRead": false,
+        "workspaceLayoutRewrittenOnRead": false
+      }
+    }
+  ]
+}

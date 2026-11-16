@@ -132,3 +132,19 @@ oracle 数据结构对照 C 当前 hosted 脚本的 `report.credentialIsolation`
 | ID | 候选包操作 | 通过标准 | 脱敏证据 | 当前状态 |
 |---|---|---|---|---|
 | PKG-CRED-01 | 在 C 确认的 GitHub-hosted Windows workflow 中，以正式候选安装包、固定 tag/commit/SHA256 和 `RUNNER_TEMP` 唯一根执行 `credential-isolation-package-acceptance.md`；配置 A/B 两个 `.invalid` 虚构项目，分别保存凭据，完全重启读回，替换并删除 B 后再次重启读回 | 六个实际 env path + 四个 Electron runtime path 共 10 项 canonical containment 均通过且无 reparse；项目与 vault 在隔离根内；A/B 状态跨重启正确，改/删 B 不影响 A；安装与活动进程位于隔离根；UI、storage、IPC、日志、项目/vault 文件和 artifact 均无 canary；runner 注册表恢复且清理无残留 | tag/commit/installer SHA256、Windows build、runner、路径诊断布尔值与数量、状态别名/阶段、重启布尔值、IPC 次数、canary 匹配类别/计数、cleanup 布尔值；不保留真实路径、canary 或原始日志 | **待正式候选包；本轮仅源码复核和合成报告 oracle 自测，未运行安装包。** schema 已对照源码，oracle 尚未接入 hosted runner；入口参数与接入点待 C 确认 |
+
+## 2026-11-12 · 项目本机存储策略补充（用户已确认）
+
+**产品规则：** SiteIndex 只支持本机项目数据；不同设备的数据互相独立，不提供云盘同步。新建或导入时识别到已知云同步目录，必须在创建项目文件或保存登记前阻止并提示用户选本机目录。已登记的已知云目录项目保留原位置、文件、登记和计划任务定义；不自动移动、删除或改写。项目可继续只读查看并显示明确提示，建议用户手动复制到本机后再添加。未识别路径不代表已确认本机；界面应说明“仅支持本机存储”，不得承诺能排除所有同步工具。
+
+| ID | 合成夹具与步骤 | 通过标准 | 必需证据 | 证据层与当前状态 |
+|---|---|---|---|---|
+| STOR-01 | 对 `projects.create`、`projects.createWorkspaceOnly` 和 `projects.addExisting` 分别传入 `project-location-policy-cases.json` 中的已知云目录路径；另从设置入口尝试把 `projects_root` 改到已知云目录并放入一份未登记的合成子项目 | 创建/导入以及新设或更改 `projects_root` 在写入项目文件、保存新根、登记项目、启动 init Job 或校正计划任务前被阻止；旧配置中已存在的云目录项目依 STOR-02 保留并警告，不得把新选目录下的子项目静默注册。返回稳定、脱敏的错误码与“请选择本机目录”提示 | 调用入口、稳定错误码、提示原文；创建前后目标目录/设置根/项目登记/计划任务定义的摘要对比 | L0 路径用例可证明合成路径集合；L1/L2 产品代码与打包 IPC 未验证 |
+| STOR-02 | 用合成 legacy 与 workspace 项目预先填充旧 `projects_root` / `extra_projects` 登记，再启动应用；分别查看项目卡片和只读页面，检查原 `site.json`、代表性索引文件、设置登记与计划任务 XML 的前后摘要 | 已登记项目仍可发现并显示已知云目录警告；只读页面可用。启动扫描不移动、删除、改写项目文件或设置，也不自动删除、禁用、重建计划任务。**建议安全默认：**手动或定时写 Job、CLI/MCP 写入命令在首个写入前阻止并给出本机目录提示；OS 任务定义保留不改，触发时安全退出，不向旧项目写锁、run history 或错误记录 | 警告文案；文件与设置摘要；计划任务定义摘要；手动/定时写操作的错误码与“未触及项目文件”证据 | L0 仅固定预期；现有项目读写与运行门禁必须分别由 L1/L2 实测。定时任务策略需 A/C 在实现前确认，确认前不能报通过 |
+| STOR-03 | 对 `C:/Synthetic/SyncRoots/OneDrive/ShopFixture`、`C:/Synthetic/SyncRoots/Dropbox/ShopFixture`、`/Synthetic/Library/Mobile Documents/com~apple~CloudDocs/ShopFixture` 进行分类；再用 `C:/Synthetic/OneDrive-Archive/ShopFixture` 和夹具定义的未知同步路径做边界测试 | 被产品明确列为“已知”的同步根须拦截；仅名称相似但不在已知根下的路径不得误报。未知路径不得被标成“已确认本机”，界面始终说明本产品仅支持本机存储 | 分类结果枚举、拦截/提示截图或脱敏 DOM、误报反例 | L0 可以覆盖已枚举规则；已知根清单和各 OS 获取方式尚需 C 明确，真实第三方同步软件本轮不测试 |
+| STOR-04 | 用 legacy `index/site.json` 旧项目和 workspace `_site-index/site.json` 旧项目各做一份**本机合成副本**，添加并只读浏览；另运行仅检查、不应用补齐的导入检查 | 两种既有布局均能识别读取；首次打开不触发布局转换或 schema 重写；用户文件和旧台账字节保持不变。导入检查发现的问题与“应用修复”分开呈现 | 两种布局的 fixture 标识、读前/读后文件摘要、导入检查只读结果 | L0 fixture 本身不证明解析器；L1/Core 与 L2/打包读取仍待验证 |
+| STOR-05 | 从合成已知云目录夹具手动**复制**到合成本机目录，再添加本机副本；取消一次添加/迁移流程后重试 | SiteIndex 不自动移动、删除或改名源项目；取消流程不改两份数据；本机副本可独立添加。只有用户单独执行移除登记时才取消本机登记，且不删除源目录 | 源/目标目录清单及摘要；取消后设置与计划任务摘要；重新添加本机副本的结果 | L0 文件摘要 oracle；L2 IPC/页面行为未验证；不操作真实项目 |
+
+**实现依赖与限制：** E 只提供本矩阵和 `project-location-policy-cases.json`，不改产品代码。C 需要负责已知根识别、设置/项目扫描与创建/导入的权威拦截，并保持旧登记与系统任务定义不变；B 需要在项目中心/新建向导显示可理解的提示；A/C 需共同覆盖 Core/CLI、Desktop 手动 Job 与 `--run-job`，防止已登记目录的写任务绕过拦截。shared 契约候选为新增 `PROJECT_CLOUD_SYNC_UNSUPPORTED` 稳定错误码；`ProjectSummary.warnings` 已存在，可先承载项目卡警告，只有 UI 需要机器判定分类时再以单独 contract PR 加可选状态字段。需要在 contract PR 允许合并前协调，不绕过共享契约流程。重复检查未发现现有问题，已开 [Issue #480](https://github.com/henryliuwork/SiteIndex/issues/480) 跟踪 C/A/B 与契约协作。
+
+当前文档仍将项目文件夹描述为云盘同步文件夹（PRD、ARCHITECTURE 与 v0.4 roadmap），需由对应所有者另行修订；此矩阵依据本条用户新决策，不代表产品实现或任何安装包已通过。真实云同步客户端、真实项目与真实数据均未访问；此组结果只可分别标为 fixture、Core/CLI、打包 IPC/页面或未执行的真实环境证据。
