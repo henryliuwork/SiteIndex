@@ -44,12 +44,13 @@ describe("库存页关注分类数据", () => {
   });
 
   it("库存页将仅关注分类作为 API 筛选条件并为无数据返回空状态", () => {
-    const source = readFileSync(new URL("../InventoryPage.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../ProductsPage.tsx", import.meta.url), "utf8");
+    const categoryPanel = readFileSync(new URL("../products/inventory-widgets.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("api.inventory.listSkus(id, query)");
-    expect(source).toContain("watched_only: checked || undefined");
-    expect(source).toContain("item.total > 0 ? <span className=\"si-category-track\"");
+    expect(source).toContain("api.inventory.listSkus(id, { page: 1, pageSize: 0, filters:");
+    expect(source).toContain("watched_only: query.filters?.watched_only");
+    expect(categoryPanel).toContain("item.total > 0 ? <span className=\"si-category-track\"");
     expect(source).toContain("关注分类中没有符合当前筛选条件的 SKU。");
-    expect(source).not.toMatch(/categoryMap\.set\([^\n]*rate:\s*0/);
+    expect(categoryPanel).not.toMatch(/categoryMap\.set\([^\n]*rate:\s*0/);
   });
 });
