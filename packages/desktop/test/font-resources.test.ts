@@ -52,6 +52,22 @@ describe("Desktop font resources", () => {
     );
   });
 
+  it("copies every file from a 101-subset variable font", async () => {
+    const subsetDirectory = join(temporaryDirectory, "ui", "assets", "noto-sans-sc");
+    const resourceFonts = join(temporaryDirectory, "resources", "fonts");
+    await mkdir(subsetDirectory, { recursive: true });
+    for (let subset = 1; subset <= 101; subset += 1) {
+      await writeFile(join(subsetDirectory, `noto-sans-sc-${subset}-wght-normal.woff2`), `subset ${subset}`);
+    }
+
+    const copiedPaths = await copyFontAssets(join(temporaryDirectory, "ui"), resourceFonts);
+
+    expect(copiedPaths).toHaveLength(101);
+    await expect(
+      readFile(join(resourceFonts, "assets", "noto-sans-sc", "noto-sans-sc-101-wght-normal.woff2"), "utf8"),
+    ).resolves.toBe("subset 101");
+  });
+
   it("returns an empty list when no UI font assets are available", async () => {
     await expect(
       copyFontAssets(join(temporaryDirectory, "missing-ui"), join(temporaryDirectory, "fonts")),
