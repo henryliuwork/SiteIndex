@@ -207,3 +207,6 @@
 
 ### v0.5.2 · 可选 GMC Feed
 - [x] 未配置 Feed 时，init 将 daily 标记为 skipped 并继续 weekly/视图索引；独立 daily 同样返回 skipped，不改写已有库存文件，真实 Feed 请求失败仍按失败记录
+
+### v0.5.2 · #163 CLI schema 路径
+- [x] Core schema 读取兼容源代码、仓库内 CLI bundle 与 Windows 安装包 `resources/cli.js` 旁的 `resources/schemas/`；使用虚构路径测试覆盖安装包与本地 bundle 布局
