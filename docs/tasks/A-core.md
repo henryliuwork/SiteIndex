@@ -210,3 +210,6 @@
 
 ### v0.5.2 · #163 CLI schema 路径
 - [x] Core schema 读取兼容源代码、仓库内 CLI bundle 与 Windows 安装包 `resources/cli.js` 旁的 `resources/schemas/`；使用虚构路径测试覆盖安装包与本地 bundle 布局
+
+### v0.5.2 · #155 Windows 测试稳定性
+- [x] Windows 项目路径创建与同目标并发创建测试显式使用 15 秒 timeout，避免全仓并发负载下默认 5 秒超时导致清理阶段 EBUSY/ENOTEMPTY
