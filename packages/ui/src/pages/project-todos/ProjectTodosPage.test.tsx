@@ -60,7 +60,11 @@ describe("ProjectTodosPage", () => {
   it("显示规则状态、来源、备注和操作历史", async () => {
     const mockApi = await renderTodos();
     const history = vi.spyOn(mockApi.todos!, "history");
-    expect(await screen.findByRole("heading", { name: "项目待办" })).toBeTruthy();
+    const todosTab = await screen.findByRole("tab", { name: "待办" });
+    const todosPanel = await screen.findByRole("tabpanel");
+    expect(todosTab.getAttribute("aria-selected")).toBe("true");
+    expect(todosPanel.getAttribute("aria-labelledby")).toBe(todosTab.id);
+    expect(screen.queryByText("返回项目概览")).toBeNull();
     expect(screen.getByText("虚构演示数据")).toBeTruthy();
 
     fireEvent.click(await screen.findByText("页面标题需要复核"));

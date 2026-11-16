@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { ListQuery, PathKey, ProjectTodo, TodoManualHistoryEntry, TodoManualStatus, UpdateTodoManualInput } from "@siteindex/shared";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { AlertCircle, CheckCircle2, ClipboardList, Clock3, FileSearch, MinusCircle } from "lucide-react";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageHeader, Select, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageHeader, ProjectHeader, ProjectTabPanel, Select, useToast } from "../components";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import "./project-todos/page.css";
@@ -213,12 +213,9 @@ export function ProjectTodosPage() {
   const project = projectQuery.data?.summary;
   const scan = todosQuery.data?.scan;
   const scanStatus = scan ? scanSummary(scan.status, scan.evaluated_at) : null;
-  const pageHeader = <PageHeader
-    title="项目待办"
-    meta={project
-      ? <><span>{project.name} · {project.domain}</span><Link className="si-todo-back-link" to={`/p/${id}`}>返回项目概览</Link></>
-      : "规则结果、人工状态和检查记录"}
-  />;
+  const pageHeader = project
+    ? <ProjectHeader project={project} activeTab="todos" hasTabPanel />
+    : <PageHeader title="项目待办" meta="规则结果、人工状态和检查记录" />;
 
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在打开项目待办…</div>;
   if (projectQuery.isError || !project) return <div className="si-page si-project-todos-page">
@@ -228,19 +225,19 @@ export function ProjectTodosPage() {
 
   if (!hasListApi) return <div className="si-page si-project-todos-page">
     {pageHeader}
-    <Notice tone="warn" title="当前运行环境尚未接入项目待办">
+    <ProjectTabPanel projectId={project.id} tab="todos"><Notice tone="warn" title="当前运行环境尚未接入项目待办">
       待办页面和规则数据契约已准备好，但当前桌面桥接没有提供读取方法。请升级到包含 Core 与 Desktop 待办接线的版本后重试。
-    </Notice>
+    </Notice></ProjectTabPanel>
   </div>;
 
   if (todosQuery.isPending) return <div className="si-page si-project-todos-page">
     {pageHeader}
-    <div className="si-todo-loading" role="status">正在读取项目待办…</div>
+    <ProjectTabPanel projectId={project.id} tab="todos"><div className="si-todo-loading" role="status">正在读取项目待办…</div></ProjectTabPanel>
   </div>;
 
   if (todosQuery.isError || !todosQuery.data) return <div className="si-page si-project-todos-page">
     {pageHeader}
-    <ApiErrorNotice page label="项目待办读取失败" error={todosQuery.error} detail="未将读取失败解释为“没有待办”。" onRetry={() => void todosQuery.refetch()} />
+    <ProjectTabPanel projectId={project.id} tab="todos"><ApiErrorNotice page label="项目待办读取失败" error={todosQuery.error} detail="未将读取失败解释为“没有待办”。" onRetry={() => void todosQuery.refetch()} /></ProjectTabPanel>
   </div>;
 
   const emptyTitle = allItems.length > 0 ? "没有匹配的待办"
@@ -255,6 +252,7 @@ export function ProjectTodosPage() {
 
   return <div className="si-page si-project-todos-page">
     {pageHeader}
+    <ProjectTabPanel projectId={project.id} tab="todos">
     {isMockApi && <Notice tone="info" title="虚构演示数据">当前待办与来源记录均为本地合成样例，不对应真实项目检查结果。</Notice>}
     {scanStatus?.tone && <Notice tone={scanStatus.tone} title={scanStatus.title}>{scanStatus.message}</Notice>}
 
@@ -296,6 +294,7 @@ export function ProjectTodosPage() {
         <span className="si-todo-result-count">{filteredItems.length} 项</span>
       </FilterBar>}
     />
+    </ProjectTabPanel>
 
     <Drawer
       open={Boolean(selectedTodo)}

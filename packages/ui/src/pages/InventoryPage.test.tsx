@@ -111,7 +111,7 @@ async function renderStockDetail(row: SkuStockView) {
 }
 
 describe("InventoryPage D-2", () => {
-  it("项目同步成功状态显示具体月日和时间", async () => {
+  it("项目同步成功状态在项目头显示一次具体月日和时间", async () => {
     const mockApi = createMockApi();
     const project = await mockApi.projects.get("demo");
     mockApi.projects.get = vi.fn(async () => ({
@@ -120,7 +120,10 @@ describe("InventoryPage D-2", () => {
     }));
     await renderInventoryPage(true, false, mockApi);
 
-    expect(await screen.findByText(/11-08 17:00 · 同步成功/)).toBeTruthy();
+    expect(await screen.findByText(/最近同步/)).toBeTruthy();
+    expect(document.querySelector(".si-project-header-sync")?.textContent).toContain("11-08 17:00");
+    expect(await screen.findByText("同步成功")).toBeTruthy();
+    expect(screen.queryByText(/11-08 17:00 · 同步成功/)).toBeNull();
     expect(screen.queryByText(/今天/)).toBeNull();
   }, 15_000);
 

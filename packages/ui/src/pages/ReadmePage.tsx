@@ -23,7 +23,7 @@ const blockTitles: Record<string, string> = {
 function latestUpdate(data: ReadmeData | undefined): string {
   const value = data?.auto_blocks.find((block) => block.id === "index-summary")?.updated_at;
   if (!value) return "暂无自动区块更新时间";
-  return `更新于 ${formatDateTime(value)}`;
+  return `README 更新于 ${formatDateTime(value)}`;
 }
 
 function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving, editingRules, onEditRules, onCancelRules }: {

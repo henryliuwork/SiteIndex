@@ -117,7 +117,7 @@ describe("ProjectCenterPage add existing project flow", () => {
     resolvePendingAdd(addedProject);
 
     const projectLink = await screen.findByRole("link", { name: "Cedar Shop" });
-    expect(projectLink.getAttribute("href")).toBe("/p/cedar-shop/inventory");
+    expect(projectLink.getAttribute("href")).toBe("/p/cedar-shop");
     expect(addExisting).toHaveBeenNthCalledWith(1, projectPath);
     await expectToast("已添加项目：Cedar Shop", "success");
     await waitFor(() => expect(verify).toHaveBeenCalledTimes(1));
@@ -144,7 +144,7 @@ describe("ProjectCenterPage add existing project flow", () => {
     expect(await screen.findAllByRole("link", { name: "Cedar Shop" })).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("link", { name: "Cedar Shop" }));
-    expect(screen.getByTestId("current-route").textContent).toBe("/p/cedar-shop/inventory");
+    expect(screen.getByTestId("current-route").textContent).toBe("/p/cedar-shop");
   }, 25_000);
 });
 

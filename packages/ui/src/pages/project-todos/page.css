@@ -2,16 +2,6 @@
   gap: var(--space-4);
 }
 
-.si-todo-back-link {
-  color: var(--color-brand);
-  margin-inline-start: var(--space-3);
-  text-decoration: none;
-}
-
-.si-todo-back-link:hover {
-  text-decoration: underline;
-}
-
 .si-todo-loading,
 .si-todo-inline-status {
   color: var(--color-muted);

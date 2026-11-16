@@ -75,7 +75,7 @@ export function SideNav({ projects = [], deviceName, runnerProject }: SideNavPro
       <div className="si-nav-caption">项目</div>
       <div className="si-nav-projects">
         {projects.map((project) => (
-          <NavLink key={project.id} to={"/p/" + project.id + "/inventory"} className={({ isActive }) => "si-nav-link" + (isActive || pathname === "/p/" + project.id || pathname.startsWith("/p/" + project.id + "/") ? " active" : "")} title={project.name}>
+          <NavLink key={project.id} to={"/p/" + project.id} className={({ isActive }) => "si-nav-link" + (isActive || pathname === "/p/" + project.id || pathname.startsWith("/p/" + project.id + "/") ? " active" : "")} title={project.name}>
             <span className={"si-project-indicator si-project-indicator-" + (project.state ?? "ok")} aria-hidden="true" />
             <span className="si-nav-label">{project.name}</span>
           </NavLink>

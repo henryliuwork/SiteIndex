@@ -55,6 +55,18 @@
   overflow: hidden;
 }
 
+.si-project-header-sync {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.si-project-header-sync time { font-variant-numeric: tabular-nums; }
+
 .si-project-header-storage-warning {
   display: inline-flex;
   min-width: 0;
@@ -124,8 +136,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--color-muted);
-  font-size: var(--fs-caption);
-  line-height: var(--lh-caption);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
   text-overflow: ellipsis;
 }
 

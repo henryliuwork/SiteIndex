@@ -68,7 +68,10 @@ describe("OverviewPage 布局和操作", () => {
     }));
     await renderOverview(mockApi);
 
-    expect(await screen.findByText(/11-08 17:00 · 同步成功/)).toBeTruthy();
+    expect(await screen.findByText(/最近同步/)).toBeTruthy();
+    expect(document.querySelector(".si-project-header-sync")?.textContent).toContain("11-08 17:00");
+    expect(await screen.findByText("同步成功")).toBeTruthy();
+    expect(screen.queryByText(/11-08 17:00 · 同步成功/)).toBeNull();
     expect(screen.queryByText(/今天/)).toBeNull();
   });
 
