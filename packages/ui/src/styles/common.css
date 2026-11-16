@@ -1,9 +1,9 @@
 .si-page {
-display: grid; gap: 24px; min-width: 0;
+display: grid; gap: var(--space-6); min-width: 0;
 }
 
 .si-page-heading {
-display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 20px;
+display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-5);
 }
 
 .si-page-heading h1 {
@@ -11,7 +11,7 @@ margin: 0; color: var(--color-ink); font-size: var(--fs-page-title); font-weight
 }
 
 .si-page-heading p {
-margin: 7px 0 0; color: var(--color-muted); font-size: var(--fs-body);
+margin: var(--space-2) 0 0; color: var(--color-muted); font-size: var(--fs-body);
 }
 
 .si-page-heading code {
@@ -19,7 +19,7 @@ color: var(--color-ink-2); font-family: var(--font-mono); font-size: var(--fs-mo
 }
 
 .si-page-actions {
-display: flex; flex: none; align-items: center; gap: 10px;
+display: flex; flex: none; align-items: center; gap: var(--space-2);
 }
 
 .si-mono {
@@ -31,19 +31,19 @@ color: var(--color-muted);
 }
 
 .si-page-loading {
-display: grid; min-height: 280px; place-content: center; gap: 10px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); text-align: center;
+display: grid; min-height: 280px; place-content: center; gap: var(--space-2); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); text-align: center;
 }
 
 .si-query-loading {
-display: grid; min-height: 72px; place-content: center; padding: 12px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface); color: var(--color-muted); font-size: var(--fs-body); text-align: center;
+display: grid; min-height: 72px; place-content: center; padding: var(--space-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface); color: var(--color-muted); font-size: var(--fs-body); text-align: center;
 }
 
 .si-api-error-state {
-display: grid; justify-items: start; gap: 5px; color: var(--color-danger); font-size: var(--fs-body);
+display: grid; justify-items: start; gap: var(--space-1); color: var(--color-danger); font-size: var(--fs-body);
 }
 
 .si-api-error-state.is-page {
-min-height: 280px; place-content: center; justify-items: center; gap: 10px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); text-align: center;
+min-height: 280px; place-content: center; justify-items: center; gap: var(--space-2); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); text-align: center;
 }
 
 .si-api-error-detail {
@@ -55,7 +55,7 @@ width: fit-content; padding: 0; border: 0; background: transparent; color: var(-
 }
 
 .si-feedback {
-margin: -14px 0 -8px; color: var(--color-brand-strong); font-size: var(--fs-body);
+margin: calc(0px - var(--space-3)) 0 calc(0px - var(--space-2)); color: var(--color-brand-strong); font-size: var(--fs-body);
 }
 
 .si-field-label {
@@ -71,7 +71,7 @@ border-color: var(--color-brand); box-shadow: 0 0 0 2px var(--color-focus);
 }
 
 .si-form-error {
-margin: 8px 0 0; color: var(--color-danger); font-size: var(--fs-body);
+margin: var(--space-2) 0 0; color: var(--color-danger); font-size: var(--fs-body);
 }
 
 .si-detail-list {
@@ -79,7 +79,7 @@ display: grid; gap: 0; margin: 0;
 }
 
 .si-detail-list > div {
-display: grid; grid-template-columns: 112px minmax(0,1fr); gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--color-line-soft);
+display: grid; grid-template-columns: 112px minmax(0,1fr); gap: var(--space-2); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-line-soft);
 }
 
 .si-detail-list dt {
@@ -95,11 +95,11 @@ min-width: 0; border: 1px solid var(--color-line); border-radius: 10px; backgrou
 }
 
 .si-panel-heading {
-display: flex; min-height: 24px; align-items: center; justify-content: space-between; gap: 12px;
+display: flex; min-height: 24px; align-items: center; justify-content: space-between; gap: var(--space-3);
 }
 
 .si-panel-heading h2 {
-margin: 0; color: var(--color-ink); font-size: 14px; font-weight: 700;
+margin: 0; color: var(--color-ink); font-size: var(--fs-section-title); font-weight: 700;
 }
 
 .si-panel-heading a {
@@ -107,7 +107,7 @@ color: var(--color-brand); font-size: var(--fs-body); text-decoration: none;
 }
 
 .si-trend-chart {
-height: 318px; margin-top: 8px;
+height: 318px; margin-top: var(--space-2);
 }
 
 .si-sr-only {

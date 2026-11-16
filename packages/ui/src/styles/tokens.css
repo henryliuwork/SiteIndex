@@ -7,10 +7,19 @@
   --color-muted: #5B6470;
   --color-faint: #626D78;
   --color-line: #E1E4E8;
+  --color-line-strong: #BFC7C1;
+  --color-control-line: #AEB6BE;
+  --color-line-muted: #D6DADF;
   --color-line-soft: #EEF0F2;
   --color-surface: #FFFFFF;
+  --color-surface-muted: #FCFCFD;
   --color-canvas: #F4F5F7;
   --color-subtle: #F8F9FA;
+  --color-neutral-reserved: #F0F1F3;
+  --color-stock-not-listed: #E9EBEE;
+  --color-row-hover: #F2F8F5;
+  --color-project-success: #56A77D;
+  --color-project-partial: #D89A32;
   --color-warn: #8A4B00;
   --color-warn-soft: #FFF1DB;
   --color-danger: #A3200F;
@@ -26,6 +35,7 @@
   --color-chart-baths: #D9822B;
   --color-chart-houses: #7FB2E5;
   --color-overlay: rgba(16, 22, 19, 0.28);
+  --color-overlay-subtle: rgba(16, 22, 19, 0.12);
   --color-focus: rgba(30, 107, 82, 0.12);
 
   --font-sans: "Geist Variable", "Source Han Sans SC", "Microsoft YaHei UI", "PingFang SC", sans-serif;
@@ -84,6 +94,12 @@
 
   --shadow-pop: 0 12px 32px rgba(20, 24, 29, 0.16);
   --shadow-drawer: -12px 0 32px rgba(20, 24, 29, 0.16);
+  --shadow-dialog: 0 20px 56px rgba(20, 24, 29, 0.22);
+  --shadow-detail: 0 10px 36px rgba(20, 24, 29, 0.18);
+
+  /* Platform title-bar geometry, not content spacing. */
+  --window-controls-fallback-width: 138px;
+  --titlebar-mac-controls-inset: 78px;
 
   /* Legacy spacing aliases are retained until the page migration in B-4. */
   --si-gap-1: 6px;

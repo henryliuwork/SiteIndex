@@ -75,7 +75,7 @@
   align-items: center;
   gap: var(--space-1);
   overflow: hidden;
-  padding: 2px var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border-radius: 5px;
   background: var(--color-warn-soft);
   color: var(--color-warn);

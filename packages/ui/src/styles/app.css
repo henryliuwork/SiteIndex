@@ -31,42 +31,42 @@ a { color: var(--color-brand); }
 }
 .si-title-bar {
   display: flex; height: var(--si-title-bar-height); min-height: var(--si-title-bar-height); flex: none; align-items: center;
-  padding-left: 16px; background: #FFFFFF;
+  padding-left: var(--space-4); background: var(--color-surface);
   -webkit-app-region: drag;
 }
-.si-title-bar-win { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))); }
-.si-title-bar-mac { padding-left: 78px; }
+.si-title-bar-win { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - var(--window-controls-fallback-width)))); }
+.si-title-bar-mac { padding-left: var(--titlebar-mac-controls-inset); }
 .si-title { color: var(--color-muted); font-size: var(--fs-body); font-weight: 600; }
 .si-layout { display: flex; min-height: 0; flex: 1; overflow: hidden; border-top: 1px solid var(--color-line); contain: paint; }
 .si-side-nav {
-  display: flex; width: 232px; min-height: 0; flex: none; flex-direction: column; gap: 4px;
-  padding: 20px 14px; border-right: 1px solid var(--color-line); background: var(--color-surface);
+  display: flex; width: 232px; min-height: 0; flex: none; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-5) var(--space-3); border-right: 1px solid var(--color-line); background: var(--color-surface);
 }
 .si-brand {
-  display: flex; align-items: center; gap: 10px; padding: 0 12px 20px;
-  color: var(--color-ink); font-size: 17px; font-weight: 700; text-decoration: none;
+  display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3) var(--space-5);
+  color: var(--color-ink); font-size: var(--fs-section-title); font-weight: 700; text-decoration: none;
 }
-.si-brand-mark { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 7px; background: var(--color-brand); color: white; }
+.si-brand-mark { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 7px; background: var(--color-brand); color: var(--color-surface); }
 .si-nav-link {
-  display: flex; min-height: 40px; align-items: center; gap: 10px; padding: 0 12px;
+  display: flex; min-height: 40px; align-items: center; gap: var(--space-2); padding: 0 var(--space-3);
   border-radius: 6px; color: var(--color-ink-2); font-weight: 500; text-decoration: none;
 }
 .si-nav-link:hover { background: var(--color-neutral-soft); color: var(--color-ink); }
 .si-nav-link.active { background: var(--color-brand-soft); color: var(--color-brand-strong); }
-.si-nav-caption { padding: 22px 12px 8px; color: var(--color-muted); font-size: var(--fs-body); font-weight: 600; }
-.si-content { --si-content-top-padding: 28px; min-width: 0; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: var(--si-content-top-padding) 36px 40px; }
+.si-nav-caption { padding: var(--space-6) var(--space-3) var(--space-2); color: var(--color-muted); font-size: var(--fs-body); font-weight: 600; }
+.si-content { --si-content-top-padding: var(--space-7); min-width: 0; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: var(--si-content-top-padding) var(--space-7) var(--space-8); }
 .si-placeholder {
-  display: grid; min-height: 340px; place-content: center; gap: 12px;
+  display: grid; min-height: 340px; place-content: center; gap: var(--space-3);
   border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
   color: var(--color-muted); text-align: center;
 }
-.si-placeholder h1 { margin: 0; color: var(--color-ink); font-size: 24px; }
+.si-placeholder h1 { margin: 0; color: var(--color-ink); font-size: var(--fs-page-title); }
 .si-placeholder p { margin: 0; }
-@media (max-width: 1100px) { .si-content { --si-content-top-padding: 24px; padding: 24px; } }
+@media (max-width: 1100px) { .si-content { --si-content-top-padding: var(--space-6); padding: var(--space-6); } }
 @media (max-width: 760px) {
-  .si-side-nav { width: 64px; padding: 16px 8px; }
+  .si-side-nav { width: 64px; padding: var(--space-4) var(--space-2); }
   .si-brand { justify-content: center; padding-right: 0; padding-left: 0; }
   .si-brand-name, .si-nav-label, .si-nav-caption, .si-nav-projects, .si-runner { display: none; }
   .si-nav-link { justify-content: center; padding: 0; }
-  .si-content { --si-content-top-padding: 20px; padding: 20px 16px; }
+  .si-content { --si-content-top-padding: var(--space-5); padding: var(--space-5) var(--space-4); }
 }

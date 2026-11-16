@@ -132,6 +132,7 @@
 - [x] 将 `--font-sans` 固定为 Geist Variable + Source Han Sans SC；Noto Sans SC variable（SIL OFL-1.1）随包离线提供，字号 token 与最小 10px 字号规范已更新。
 - [x] 补齐间距映射、控件高度、InputWithAction、Tab 与日期时间约定；`ui:check` 对裸字号/裸色值/裸 px 间距/小于 10px 字号的新违规失败，并对同页多处日期时间输出复核告警。
 - [x] AGENTS、WORKSTREAMS 阅读入口和 PR 模板已加入 UI/UX 硬性规范与检查项。
+- [x] W1 共享样式迁移：styles 与共享组件样式改用字号、间距、颜色和阴影 token；共享样式基线减少 126 条，页面侧 499 条保留给逐页迁移 — 本 PR
 
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
