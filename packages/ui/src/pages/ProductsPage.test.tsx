@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuRecord } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
@@ -132,13 +132,17 @@ async function renderProductsPage(options: {
   const { ToastProvider } = await import("../components");
   const { ProductsPage } = await import("./ProductsPage");
   const inventoryRoute = (await import("./inventory/route")).route;
+  function CurrentPath() {
+    const { pathname, search } = useLocation();
+    return <output data-testid="current-route">{pathname}{search}</output>;
+  }
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <ToastProvider>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[options.legacyInventoryPath ? "/p/demo/inventory" : "/p/demo/products"]}>
           <Routes>
-            <Route path="/p/:id/products" element={<ProductsPage />} />
+            <Route path="/p/:id/products" element={<><ProductsPage /><CurrentPath /></>} />
             <Route path={inventoryRoute.path} element={inventoryRoute.element} />
           </Routes>
         </MemoryRouter>
@@ -174,28 +178,19 @@ describe("ProductsPage 页面操作区", () => {
     expect(within(missingSkuRow).getByText("SKU —")).toBeTruthy();
   });
 
-  it("从产品页可见入口打开完整 SKU 库存表，并可查看单个 SKU 的价格与库存详情", async () => {
-    const mockApi = await renderProductsPage();
+  it("产品页旧库存入口通过兼容路由回到产品管理", async () => {
+    await renderProductsPage();
+    expect((await screen.findByTestId("current-route")).textContent).toBe("/p/demo/products");
     fireEvent.click(await screen.findByRole("button", { name: "SKU 库存明细" }));
 
-    expect(await screen.findByRole("heading", { name: "SKU 库存明细" })).toBeTruthy();
-    const sample = await mockApi.inventory.listSkus("demo", { page: 1, pageSize: 50, filters: {} });
-    const firstSku = sample.rows[0]!;
-    const table = await screen.findByRole("table");
-    const skuCell = await within(table).findByText(firstSku.sku);
-    fireEvent.click(skuCell.closest("tr")!);
-
-    const drawer = await screen.findByRole("dialog");
-    expect(await within(drawer).findByText("价格趋势")).toBeTruthy();
-    expect(within(drawer).getByText("当前状态持续")).toBeTruthy();
-    expect(within(drawer).getByText("30 天状态变化")).toBeTruthy();
-    expect(within(drawer).getByText("近 30 天库存状态")).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/p/demo/products"));
+    expect(document.getElementById("project-tab-demo-products")?.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("旧库存路径仍打开完整 SKU 库存表", async () => {
+  it("旧库存路径重定向到产品管理页", async () => {
     await renderProductsPage({ legacyInventoryPath: true });
 
-    expect(await screen.findByRole("heading", { name: "SKU 库存明细" })).toBeTruthy();
+    expect((await screen.findByTestId("current-route")).textContent).toBe("/p/demo/products");
     expect(await screen.findByRole("table")).toBeTruthy();
     expect(document.getElementById("project-tab-demo-products")?.getAttribute("aria-selected")).toBe("true");
   });

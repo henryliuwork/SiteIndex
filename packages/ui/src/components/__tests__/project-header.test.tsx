@@ -5,12 +5,14 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ProjectSummary } from "@siteindex/shared";
 import { PROJECT_TABS, ProjectHeader, ProjectTabPanel, projectPanelId, projectTabId } from "../project-header";
 import { Button } from "../primitives";
+import { formatDateTime } from "../utils";
 
-const project: Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location"> = {
+const project: Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location" | "sync"> = {
   id: "demo-store",
   name: "示例商店",
   domain: "store.example.test",
   platform: "shopify",
+  sync: { state: "ok", at: "2026-11-13T08:30:00.000Z", job: null },
 };
 
 function CurrentPath() {
@@ -72,10 +74,10 @@ describe("ProjectHeader compact layout", () => {
     expect(container.querySelector(".si-project-header-action-slot .si-project-header-actions")).not.toBeNull();
   });
 
-  it("uses one products tab and maps the legacy inventory view to its selection and IDs", () => {
-    const { container } = render(<MemoryRouter initialEntries={["/p/demo-store/inventory"]}>
-      <ProjectHeader project={project} activeTab="inventory" hasTabPanel />
-      <ProjectTabPanel projectId={project.id} tab="inventory">库存明细</ProjectTabPanel>
+  it("uses a single products tab and stable tab/panel IDs", () => {
+    const { container } = render(<MemoryRouter initialEntries={["/p/demo-store/products"]}>
+      <ProjectHeader project={project} activeTab="products" hasTabPanel />
+      <ProjectTabPanel projectId={project.id} tab="products">产品列表</ProjectTabPanel>
       <CurrentPath />
     </MemoryRouter>);
     const scoped = within(container);
@@ -90,6 +92,19 @@ describe("ProjectHeader compact layout", () => {
 
     fireEvent.click(productTab);
     expect(scoped.getByTestId("current-path").textContent).toBe("/p/demo-store/products");
+  });
+
+  it("shows one absolute sync time and removes a duplicate from the page status", () => {
+    const time = formatDateTime(project.sync.at);
+    const { container } = render(<MemoryRouter>
+      <ProjectHeader project={project} activeTab="overview" status={<span>{time} · 同步成功</span>} />
+    </MemoryRouter>);
+    const headerText = container.querySelector(".si-project-header-row")?.textContent ?? "";
+    expect(container.querySelector(".si-project-header-status")?.textContent).toBe("同步成功");
+    expect(headerText.split(time)).toHaveLength(2);
+    expect(headerText).toContain("最近同步");
+    expect(container.querySelector(".si-project-header-status")?.textContent).toBe("同步成功");
+    expect(headerText).not.toMatch(/今天|昨天/);
   });
 
   it("reserves the action slot when a tab has no visible actions", () => {

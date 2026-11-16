@@ -144,7 +144,7 @@ function ProjectCard({
     <Card className={"si-project-card" + (showWarning ? " is-warning" : "")}>
       <div className="si-project-card-heading">
         <div className="si-project-heading-copy">
-          <Link to={"/p/" + project.id + "/inventory"} className="si-project-title">{project.name}</Link>
+          <Link to={"/p/" + project.id} className="si-project-title">{project.name}</Link>
           <span className="si-project-domain">{project.domain} · {platformNames[project.platform]}</span>
         </div>
         <div className="si-project-card-actions">
@@ -575,7 +575,7 @@ export function ProjectCenterPage() {
   const metrics: Kpi[] = [
     { key: "projects", label: "项目", value: String(projects.length) },
     { key: "attention", label: "待处理提醒", value: String(totalAttention), tone: totalAttention ? "warn" : "default" },
-    { key: "today-oos", label: "今日新缺货 SKU", value: String(newOutOfStock), tone: newOutOfStock ? "danger" : "default", link: primary ? "/p/" + primary.id + "/inventory" : undefined },
+    { key: "today-oos", label: "今日新缺货 SKU", value: String(newOutOfStock), tone: newOutOfStock ? "danger" : "default", link: primary ? "/p/" + primary.id + "/products" : undefined },
     { key: "next-run", label: "下一个定时任务", value: scheduleQuery.isLoading ? "正在读取…" : scheduleQuery.isError ? "读取失败" : nextTime === "—" ? "暂无计划" : nextTime + " · " + (primary?.name ?? ""), hint: nextJob },
   ];
 

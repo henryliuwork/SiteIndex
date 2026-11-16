@@ -1,3 +1,12 @@
-import { createPageRoute } from "../create-page-route";
+import { Navigate, useLocation, useParams } from "react-router-dom";
 
-export const route = createPageRoute("/p/:id/inventory", "正在加载 SKU 库存明细…", () => import("../InventoryPage").then(({ InventoryPage }) => ({ default: InventoryPage })));
+function InventoryRedirect() {
+  const { id = "demo" } = useParams<{ id: string }>();
+  const { search, hash } = useLocation();
+  return <Navigate replace to={{ pathname: `/p/${id}/products`, search, hash }} />;
+}
+
+export const route = {
+  path: "/p/:id/inventory",
+  element: <InventoryRedirect />,
+};

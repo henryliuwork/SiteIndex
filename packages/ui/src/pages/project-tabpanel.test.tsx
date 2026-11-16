@@ -44,11 +44,12 @@ const pageCases = [
   },
 ] as const;
 
-const testProject: Pick<ProjectSummary, "id" | "name" | "domain" | "platform"> = {
+const testProject: Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "sync"> = {
   id: "merchant/site",
   name: "演示项目",
   domain: "example.test",
   platform: "shopify",
+  sync: { state: "ok", at: null, job: null },
 };
 
 describe("D 项目页面 tabpanel 接入", () => {

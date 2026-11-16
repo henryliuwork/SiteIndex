@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { cloneElement, isValidElement, useLayoutEffect, useRef, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Cloud } from "lucide-react";
 import type { ProjectSummary } from "@siteindex/shared";
 import { PageHeaderActions, type PageHeaderOverflowAction } from "./layout-primitives";
 import { TabPanel, Tabs } from "./primitives";
+import { formatDateTime } from "./utils";
 import "./project-header.css";
 
 export const PROJECT_TABS = [
@@ -20,24 +21,36 @@ export const PROJECT_TABS = [
 ] as const;
 
 export type ProjectTab = (typeof PROJECT_TABS)[number]["value"];
-type ProjectTabAlias = "inventory";
-type ProjectTabValue = ProjectTab | ProjectTabAlias;
-type HeaderProject = Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location">;
+type HeaderProject = Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location" | "sync">;
 
-function canonicalProjectTab(tab: ProjectTabValue): ProjectTab {
-  return tab === "inventory" ? "products" : tab;
+export function projectTabId(projectId: ProjectSummary["id"], tab: ProjectTab): string {
+  return `project-tab-${encodeURIComponent(projectId)}-${tab}`;
 }
 
-export function projectTabId(projectId: ProjectSummary["id"], tab: ProjectTabValue): string {
-  return `project-tab-${encodeURIComponent(projectId)}-${canonicalProjectTab(tab)}`;
+export function projectPanelId(projectId: ProjectSummary["id"], tab: ProjectTab): string {
+  return `project-panel-${encodeURIComponent(projectId)}-${tab}`;
 }
 
-export function projectPanelId(projectId: ProjectSummary["id"], tab: ProjectTabValue): string {
-  return `project-panel-${encodeURIComponent(projectId)}-${canonicalProjectTab(tab)}`;
-}
-
-export function ProjectTabPanel({ projectId, tab, children }: { projectId: ProjectSummary["id"]; tab: ProjectTabValue; children: ReactNode }) {
+export function ProjectTabPanel({ projectId, tab, children }: { projectId: ProjectSummary["id"]; tab: ProjectTab; children: ReactNode }) {
   return <TabPanel id={projectPanelId(projectId, tab)} labelledBy={projectTabId(projectId, tab)}>{children}</TabPanel>;
+}
+
+function removeDuplicateSyncTime(status: ReactNode, formattedTime: string): ReactNode {
+  if (!formattedTime || !isValidElement<{ children?: ReactNode }>(status)) return status;
+  const children = status.props.children;
+  const text = Array.isArray(children)
+    ? children.map((child) => typeof child === "string" || typeof child === "number" ? String(child) : "").join("")
+    : typeof children === "string" || typeof children === "number" ? String(children) : "";
+  if (!text.includes(formattedTime)) return status;
+  const remaining = text.replace(formattedTime, "").replace(/^[\s·•|]+|[\s·•|]+$/g, "").trim();
+  return remaining ? cloneElement(status, undefined, remaining) : null;
+}
+
+function labelInventoryDataSource(pageMeta: ReactNode): ReactNode {
+  if (!isValidElement<{ children?: ReactNode }>(pageMeta)) return pageMeta;
+  const children = pageMeta.props.children;
+  if (typeof children !== "string" || !children.startsWith("数据日期：")) return pageMeta;
+  return cloneElement(pageMeta, undefined, children.replace("数据日期：", "库存数据截至："));
 }
 
 const platformLabels: Record<ProjectSummary["platform"], string> = {
@@ -65,7 +78,7 @@ export function ProjectHeader({
   hasTabPanel = false,
 }: {
   project: HeaderProject;
-  activeTab: ProjectTabValue;
+  activeTab: ProjectTab;
   subtitle?: string;
   status?: ReactNode;
   /** 页面标题移入标签栏右侧后，页面可删除单独的 PageHeader 行。 */
@@ -79,7 +92,11 @@ export function ProjectHeader({
   const navigate = useNavigate();
   const headerRef = useRef<HTMLDivElement>(null);
   const projectSubtitle = subtitle ?? `${project.domain} · ${platformLabels[project.platform]}`;
-  const selectedTab = canonicalProjectTab(activeTab);
+  const selectedTab = activeTab;
+  const syncAt = project.sync?.at ?? null;
+  const formattedSyncTime = formatDateTime(syncAt);
+  const projectStatus = removeDuplicateSyncTime(status, formattedSyncTime);
+  const normalizedPageMeta = activeTab === "products" ? labelInventoryDataSource(pageMeta) : pageMeta;
 
   useLayoutEffect(() => {
     const revealActiveTab = () => {
@@ -101,7 +118,8 @@ export function ProjectHeader({
       <div className="si-project-header-identity">
         <h1 title={project.name}>{project.name}</h1>
         <code title={projectSubtitle}>{projectSubtitle}</code>
-        {status && <div className="si-project-header-status">{status}</div>}
+        <div className="si-project-header-sync">最近同步 <time dateTime={syncAt ?? undefined}>{formattedSyncTime}</time></div>
+        {projectStatus && <div className="si-project-header-status">{projectStatus}</div>}
         {project.storage_location === "known_cloud_sync" && <span
           className="si-project-header-storage-warning"
           role="note"
@@ -119,9 +137,9 @@ export function ProjectHeader({
         panelIdPrefix={hasTabPanel ? `project-panel-${encodeURIComponent(project.id)}` : undefined}
         onChange={(tab) => navigate(projectTabPath(project.id, tab))}
       />
-      {(pageTitle || pageMeta) && <div className="si-project-header-page-heading">
+      {(pageTitle || normalizedPageMeta) && <div className="si-project-header-page-heading">
         {pageTitle && <h2>{pageTitle}</h2>}
-        {pageMeta && <div className="si-project-header-page-meta">{pageMeta}</div>}
+        {normalizedPageMeta && <div className="si-project-header-page-meta">{normalizedPageMeta}</div>}
       </div>}
       <div className="si-project-header-action-slot">
         <PageHeaderActions actions={actions} overflow={overflow} className="si-project-header-actions" />
