@@ -1,6 +1,6 @@
 # SiteIndex · 界面设计规范 v2
 
-界面结构与文案以 design/demo/*.dc.html 画板为参考，数据与交互行为遵循当前 PRD 和 API 契约。v0.3 起，全局字号、间距、基础组件、页面操作区与表格遵循本规范；新增页面不得自创基础视觉值。
+界面结构与文案以 design/demo/*.dc.html 画板为参考，数据与交互行为遵循当前 PRD 和 API 契约。v0.6 起，全局字号、间距、基础组件、页面操作区与表格遵循本规范；新增页面不得自创基础视觉值。
 
 ## 1. 设计 token
 
@@ -33,19 +33,25 @@
 
 ### 1.2 字体与字号
 
-正文和标题使用 Geist Variable；SKU、URL、路径、数字等使用 Geist Mono Variable。中文回退 Microsoft YaHei UI、PingFang SC。不要加载远程字体。
+正文与标题按 `--font-sans` 使用 Geist Variable（英文、数字）及 Source Han Sans SC（中文）；SKU、URL、路径等标识符使用 Geist Mono Variable。Noto Sans SC variable 以 SIL OFL-1.1 发布包随 UI 打包，并以 `Source Han Sans SC` CSS family 名称提供；这是思源黑体同设计的离线字体，不依赖网络或用户系统安装。保留 Microsoft YaHei UI、PingFang SC 作为后备字体。
+
+```css
+--font-sans: "Geist Variable", "Source Han Sans SC", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+--font-mono: "Geist Mono Variable", Consolas, monospace;
+```
 
 | token | 字号 / 行高 | 字重 | 用途 |
 |---|---:|---:|---|
 | --fs-page-title | 20px / 28px | 600 | 页面标题、项目名 |
-| --fs-section-title | 15px / 22px | 600 | 卡片与区块标题 |
+| --fs-section-title | 14px / 20px | 600 | 卡片与区块标题 |
 | --fs-sub-title | 13px / 20px | 600 | 子区块、抽屉分组标题 |
 | --fs-body | 12px / 18px | 400 | 默认正文、表格单元格、按钮、输入框 |
 | --fs-caption | 11px / 16px | 400 | 辅助说明、表头小字、徽标 |
+| --fs-micro | 10px / 14px | 400 | 仅说明性文字；全站字号下限 |
 | --fs-kpi | 24px / 30px | 600 | 指标数字 |
 | --fs-mono | 12px / 18px | 400 | 等宽内容 |
 
-表头使用 12px、字重 600、muted 色；文字对比度不低于 4.5:1。页面 CSS 不得新增裸 px 字号；确需新层级时先扩展 token。
+表头使用 12px、字重 600、muted 色；文字对比度不低于 4.5:1。任何文字不得小于 10px。页面 CSS 不得新增裸字号；确需新层级时先扩展 token。
 
 ### 1.3 间距、圆角与阴影
 
@@ -69,6 +75,16 @@
 
 卡片和普通页面元素不加阴影。历史 --si-gap-* 只为尚未迁移的页面保留；新组件和迁移后的页面必须使用 --space-*。逐页清理在 B-4 完成。
 
+页面内边距使用 `--space-page-padding`（`--space-6`）；区块间距使用 `--space-section`、卡片内边距使用 `--space-card-padding`（两者均为 `--space-4`）；表单项间距使用 `--space-form-item`（`--space-3`）；输入框与按钮、按钮组及相邻控件使用 `--space-control-group`（`--space-2`）；表头与内容的紧邻间距使用 `--space-table-header-content`（`--space-2`）。新 CSS 的 margin / padding / gap 不写裸 px；允许 `0`，边框允许 1px。
+
+### 1.4 控件、组合输入、Tab 与时间
+
+- 按钮、输入框、下拉、复选框统一使用 `--control-height: 32px`；紧凑场景使用 `--control-height-compact: 28px`。同一行的控件垂直居中，不能由按钮文案或图标改变行高。
+- “输入框 + 操作按钮”使用共享 `InputWithAction`：两项同高、垂直居中、间距为 `--input-with-action-gap`；页面不得各自手写 flex 组合。组件在 W1 提供，W0 先固定契约。
+- Tab 只有两种：**项目导航 Tab** 改变路由，在 ProjectHeader 中使用，待办也是项目导航 Tab；当前项使用主色文字和底部指示线。**页内分段 Tab** 只切换当前页内容，不改变路由；选中项使用实底突出。不得新增第三层 Tab。窄窗口下项目导航收纳到“更多”，当前项和键盘焦点保持可见。
+- 时间统一通过共享 `formatDateTime` 展示：同年为 `MM-DD HH:mm`，跨年带年份；禁止“今天 / 昨天”等相对前缀。项目头只显示一次最近同步时间；页面内只显示不同数据源的日期，并注明来源。表格历史记录中的多个时间不属于重复页头提示。
+- `ui:check` 对裸字号、裸色值、裸 px 间距和小于 10px 的字号执行失败检查。已有 D 页面遗留问题记录在 `packages/ui/visual/style-baseline.json`；命令会报告基线数量，新违规立即失败，页面迁移时逐步降低基线。页面日期/时间超过一处时产生人工复核告警。
+
 ## 2. 基础组件
 
 B 维护 packages/ui/src/components/ 中的共享组件。页面组合这些组件，不复制基础交互与状态样式。
@@ -77,6 +93,8 @@ B 维护 packages/ui/src/components/ 中的共享组件。页面组合这些组�
 |---|---|
 | Button | 高 32px，小号 28px；primary / secondary / ghost / danger。每个操作区最多一个 primary；图标按钮必须有 aria-label 和 tooltip。 |
 | Input / Select / Checkbox | 控件高 32px，聚焦环统一。Select 使用 Radix Select/Popover，不用原生 select。 |
+| InputWithAction | 输入框与同行操作按钮共用高度、垂直居中与 `--input-with-action-gap`；作为共享组件使用。 |
+| Tabs | 只允许项目导航 Tab（路由切换）与页内分段 Tab（内容切换）两种；不得新增第三层。 |
 | FilterBar | 筛选下拉优先于 pill；内容超过两行时可折叠，最多两行时不显示“更多筛选”。 |
 | Chip | ok / warn / danger / info / neutral；字号使用 --fs-caption、字重 600。处理状态等状态列统一使用 Chip。 |
 | Card / KpiCard | 卡片圆角 8px、内边距 16px；标题使用 --fs-section-title；KPI 数字使用 --fs-kpi。可点击卡片提供 hover 和 focus 状态。 |

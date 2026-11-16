@@ -2,6 +2,7 @@
 <!-- 一两句话 -->
 
 ## 工作流
+- [ ] docs
 - [ ] A core/cli
 - [ ] B ui
 - [ ] C desktop
@@ -13,3 +14,5 @@
 - [ ] 只改了本工作流拥有的目录（见 docs/WORKSTREAMS.md）
 - [ ] 对应任务清单（docs/tasks/*.md）已勾选
 - [ ] 涉及界面：已附截图（Windows）
+- [ ] 涉及界面：PR 描述附 `pnpm ui:check` 输出，且没有新增裸字号、裸色值、裸 px 间距或小于 10px 的字号
+- [ ] 涉及界面：字体、控件高度、Tab 用法、日期时间格式符合 `docs/DESIGN.md`

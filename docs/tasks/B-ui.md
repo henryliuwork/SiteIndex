@@ -4,7 +4,7 @@
 **必读**：`docs/DESIGN.md`（全文）、`docs/PRD.md` §4–§5、`packages/shared/src/api.ts`、`design/README.md` 与 `design/demo/*.dc.html`（21 个画板，界面以此为准）
 **原则**：只依赖 `@siteindex/shared`；所有数据通过 `window.siteindex`（`SiteIndexApi`）获取；浏览器中用 mock 独立运行，不需要 Electron。
 
-技术：React 19、Vite、TypeScript、Tailwind v4（`@theme` token）、Radix UI（Popover/Dialog/Tooltip/Checkbox）、TanStack Table + TanStack Virtual、TanStack Query（数据获取与缓存失效）、React Router（hash 路由，Electron 用 `file://` 加载）、Recharts（趋势图）。字体 IBM Plex Sans/Mono 本地打包（`@fontsource`）。
+技术：React 19、Vite、TypeScript、Tailwind v4（`@theme` token）、Radix UI（Popover/Dialog/Tooltip/Checkbox）、TanStack Table + TanStack Virtual、TanStack Query（数据获取与缓存失效）、React Router（hash 路由，Electron 用 `file://` 加载）、Recharts（趋势图）。字体 Geist Variable / Geist Mono Variable 与 Source Han Sans SC（使用 Noto Sans SC variable OFL-1.1 打包版）本地打包。
 
 ---
 
@@ -127,6 +127,11 @@
 - [x] 为“添加已有项目”和“创建空工作区”补充 Escape 关闭后的焦点返回回归测试。该项不包含单独的字体字号专项。
 - [x] ProjectHeader 在 1100×800 / 1280×800 下保留分类设置页标题与模式标签的完整宽度；标签栏承担收缩并可滚动，操作槽按钮保持可见。另记录当前 `/inventory` 兼容路由及其视口检查；该路由现展示 ProductsPage（#524）。Playwright 截图见 `packages/ui/screenshots/v055-project-header/` — 本 PR。
 - [x] 项目导航只保留一个 `products` tab，显示“产品管理”并进入 `/products`；`/inventory` 作为兼容视图映射到同一 tab/tabpanel ID — 本 PR。
+
+## v0.6.0 · W0 UI 规范与 token
+- [x] 将 `--font-sans` 固定为 Geist Variable + Source Han Sans SC；Noto Sans SC variable（SIL OFL-1.1）随包离线提供，字号 token 与最小 10px 字号规范已更新。
+- [x] 补齐间距映射、控件高度、InputWithAction、Tab 与日期时间约定；`ui:check` 对裸字号/裸色值/裸 px 间距/小于 10px 字号的新违规失败，并对同页多处日期时间输出复核告警。
+- [x] AGENTS、WORKSTREAMS 阅读入口和 PR 模板已加入 UI/UX 硬性规范与检查项。
 
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
