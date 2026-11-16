@@ -1,10 +1,11 @@
-import { mkdir, readdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
 import { classifyDataSurface, classifyPageSurface, getVerticalScrollDelta, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
 import { isDataTableRoute } from "./routes";
+import { compareStyleFindings, scanUiStyles, timeDisplayPatternSource, type StyleBaseline } from "./style-policy";
 
 type BrowserChannel = "msedge" | "chrome";
 
@@ -32,10 +33,13 @@ interface CheckReport {
   metrics: Record<string, unknown>;
   failures: CheckFailure[];
   consoleErrors: string[];
+  timeWarnings: string[];
 }
 
 const uiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const shotsDir = path.join(uiRoot, ".shots");
+const shotsDir = process.env.SITEINDEX_UI_CHECK_SHOTS_DIR
+  ? path.resolve(uiRoot, process.env.SITEINDEX_UI_CHECK_SHOTS_DIR)
+  : path.join(uiRoot, ".shots");
 const viewports: Viewport[] = [
   { width: 1280, height: 800 },
   { width: 1920, height: 1080 },
@@ -276,13 +280,14 @@ async function scrollCheckViewportTableIntoContent(page: Page): Promise<void> {
 async function inspectPage(page: Page): Promise<{
   heading: string | null;
   metrics: Record<string, unknown>;
-  styleWarnings: string[];
+  timeWarnings: string[];
 }> {
-  return page.evaluate(() => {
+  return page.evaluate((timePattern) => {
     const root = document.scrollingElement ?? document.documentElement;
     const bodyStyle = getComputedStyle(document.body);
     const firstFont = bodyStyle.fontFamily.split(",")[0]?.trim().replace(/^['"]|['"]$/g, "") ?? "";
-    const poppinsFontLoaded = Array.from(document.fonts).some((font) => font.family.replace(/^['"]|['"]$/g, "") === "Poppins" && font.status === "loaded");
+    const geistFontLoaded = Array.from(document.fonts).some((font) => font.family.replace(/^['"]|['"]$/g, "") === "Geist Variable" && font.status === "loaded");
+    const sourceHanFontLoaded = Array.from(document.fonts).some((font) => font.family.replace(/^['"]|['"]$/g, "") === "Source Han Sans SC" && font.status === "loaded");
     const sharedTypographyElements = Array.from(document.querySelectorAll<HTMLElement>([
       ".si-title", ".si-nav-link", ".si-nav-caption", ".si-button", ".si-filter-pill",
       ".si-segmented button", ".si-tabs button", ".si-chip", ".si-length-badge",
@@ -291,7 +296,7 @@ async function inspectPage(page: Page): Promise<{
       ".si-toast *", ".si-notice *", ".si-empty-state *", ".si-update-reminder *",
     ].join(", "))).filter((element) => {
       const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 && Number.parseFloat(getComputedStyle(element).fontSize) < 14;
+      return rect.width > 0 && rect.height > 0 && Number.parseFloat(getComputedStyle(element).fontSize) < 10;
     }).map((element) => element.innerText?.trim().slice(0, 60) || element.className.toString());
     const clippedHeaderActions: string[] = [];
     for (const slot of Array.from(document.querySelectorAll<HTMLElement>(".si-project-header-action-slot"))) {
@@ -445,21 +450,14 @@ async function inspectPage(page: Page): Promise<{
       }
     }
 
-    const styleWarnings: string[] = [];
-    for (const sheet of Array.from(document.styleSheets)) {
-      const node = sheet.ownerNode as HTMLElement | null;
-      const source = node?.getAttribute("data-vite-dev-id") ?? node?.getAttribute("href") ?? sheet.href ?? "inline stylesheet";
-      if (/tokens\.css(?:[?#]|$)/i.test(source)) continue;
-      try {
-        const css = Array.from(sheet.cssRules, (rule) => rule.cssText).join("\n");
-        const colors = css.match(/(?:^|[;{}])\s*(?:color|background(?:-color)?|border(?:-[\w-]+)?-color|outline-color|fill|stroke)\s*:\s*(#[\da-f]{3,8}\b|rgba?\([^)]*\))/gim) ?? [];
-        const fontSizes = css.match(/font-size\s*:\s*[\d.]+px\b/gim) ?? [];
-        if (colors.length) styleWarnings.push(`${source}: 裸色值 ${colors.length} 处`);
-        if (fontSizes.length) styleWarnings.push(`${source}: font-size 裸 px ${fontSizes.length} 处`);
-      } catch {
-        styleWarnings.push(`${source}: 无法读取样式表规则`);
-      }
+    const timeRoot = document.createElement("div");
+    for (const header of Array.from(document.querySelectorAll<HTMLElement>("main .si-project-header, main .si-page-header"))) {
+      const headerClone = header.cloneNode(true) as HTMLElement;
+      headerClone.querySelectorAll(".si-data-table, table, [role='dialog'], .si-toast, .si-popover").forEach((element) => element.remove());
+      timeRoot.append(headerClone);
     }
+    const timeDisplayCount = (timeRoot?.innerText.match(new RegExp(timePattern, "g")) ?? []).length;
+    const timeWarnings = timeDisplayCount > 1 ? [`页面主体含 ${timeDisplayCount} 处日期或时间展示，需人工确认是否重复。`] : [];
 
     return {
       heading: document.querySelector("main h1")?.textContent?.trim() ?? null,
@@ -473,8 +471,9 @@ async function inspectPage(page: Page): Promise<{
         contentScrollTop: document.querySelector<HTMLElement>(".si-content")?.scrollTop ?? null,
         bodyFontSize: bodyStyle.fontSize,
         bodyFontFamily: bodyStyle.fontFamily,
-        bodyFirstFontIsPoppins: /poppins/i.test(firstFont),
-        poppinsFontLoaded,
+        bodyFirstFontIsGeist: /^geist variable$/i.test(firstFont),
+        geistFontLoaded,
+        sourceHanFontLoaded,
         sharedTypographyElements,
         clippedHeaderActions,
         clippedActiveTabs,
@@ -488,9 +487,9 @@ async function inspectPage(page: Page): Promise<{
         inlineClickTargetCount: clickTargets.length,
         inlineClickMisses: clickMisses,
       },
-      styleWarnings: Array.from(new Set(styleWarnings)),
+      timeWarnings,
     };
-  });
+  }, timeDisplayPatternSource);
 }
 
 function slug(value: string): string {
@@ -502,7 +501,11 @@ async function main(): Promise<void> {
   let server: ViteDevServer | undefined;
   let browser: Browser | undefined;
   const reports: CheckReport[] = [];
-  const allStyleWarnings = new Set<string>();
+  const allTimeWarnings = new Set<string>();
+  const styleFindings = await scanUiStyles(path.join(uiRoot, "src"));
+  const baselinePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "style-baseline.json");
+  const styleBaselineFile = JSON.parse(await readFile(baselinePath, "utf8")) as { version: number; counts: StyleBaseline };
+  const stylePolicy = compareStyleFindings(styleFindings, styleBaselineFile.counts);
 
   try {
     const linkedNodeModules = await realpath(path.resolve(uiRoot, "..", "..", "node_modules"));
@@ -546,6 +549,7 @@ async function main(): Promise<void> {
         const consoleErrors: string[] = [];
         let heading: string | null = null;
         let metrics: Record<string, unknown> = {};
+        let timeWarnings: string[] = [];
         currentConsoleErrors = consoleErrors;
         try {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
@@ -555,14 +559,16 @@ async function main(): Promise<void> {
           const inspection = await inspectPage(page);
           heading = inspection.heading;
           metrics = { ...inspection.metrics, dataSurfaceState };
-          for (const warning of inspection.styleWarnings) allStyleWarnings.add(warning);
+          timeWarnings = inspection.timeWarnings;
+          for (const warning of timeWarnings) allTimeWarnings.add(`${route.path} @ ${viewport.width}: ${warning}`);
 
           const values = metrics as {
             verticalOverflow: boolean;
             horizontalOverflow: boolean;
             bodyFontSize: string;
-            bodyFirstFontIsPoppins: boolean;
-            poppinsFontLoaded: boolean;
+            bodyFirstFontIsGeist: boolean;
+            geistFontLoaded: boolean;
+            sourceHanFontLoaded: boolean;
             sharedTypographyElements: string[];
             clippedHeaderActions: string[];
             clippedActiveTabs: string[];
@@ -596,10 +602,10 @@ async function main(): Promise<void> {
           }
           if (values.verticalOverflow) failures.push({ rule: "vertical-overflow", message: "窗口 document 有纵向滚动；内容应在应用内部滚动。" });
           if (values.horizontalOverflow) failures.push({ rule: "horizontal-overflow", message: "页面内容超出视口宽度。" });
-          if (values.bodyFontSize !== "14px" || !values.bodyFirstFontIsPoppins || !values.poppinsFontLoaded) {
-            failures.push({ rule: "body-font", message: `正文要求本地 Poppins 14px，实际为 ${values.bodyFontFamily ?? "unknown"} / ${values.bodyFontSize ?? "unknown"}，字体加载=${values.poppinsFontLoaded ?? false}。` });
+          if (values.bodyFontSize !== "12px" || !values.bodyFirstFontIsGeist || !values.geistFontLoaded || !values.sourceHanFontLoaded) {
+            failures.push({ rule: "body-font", message: `正文要求本地 Geist Variable / Source Han Sans SC 12px，实际为 ${values.bodyFontFamily ?? "unknown"} / ${values.bodyFontSize ?? "unknown"}，字体加载=${values.geistFontLoaded ?? false}/${values.sourceHanFontLoaded ?? false}。` });
           }
-          if (values.sharedTypographyElements.length) failures.push({ rule: "shared-min-font-size", message: `共享控件存在小于 14px 的文字：${values.sharedTypographyElements.join("；")}` });
+          if (values.sharedTypographyElements.length) failures.push({ rule: "shared-min-font-size", message: `共享控件存在小于 10px 的文字：${values.sharedTypographyElements.join("；")}` });
           if (values.clippedHeaderActions.length) failures.push({ rule: "project-header-actions", message: `页头操作按钮未完整显示：${values.clippedHeaderActions.join("；")}` });
           if (values.clippedActiveTabs.length) failures.push({ rule: "project-header-tabs", message: `当前项目标签未完整显示：${values.clippedActiveTabs.join("；")}` });
           if (values.clippedCells.length) failures.push({ rule: "table-cell-clipping", message: `表格文字被裁切且没有完整文本提示：${values.clippedCells.join("；")}` });
@@ -624,7 +630,7 @@ async function main(): Promise<void> {
         await page.screenshot({ path: path.join(shotsDir, fileName), fullPage: false }).catch((error: unknown) => {
           failures.push({ rule: "screenshot", message: asErrorMessage(error) });
         });
-        reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors });
+        reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors, timeWarnings });
         const state = failures.length ? `FAIL ${failures.length}` : "PASS";
         const terminalState = typeof metrics.dataSurfaceState === "string" ? ` (${metrics.dataSurfaceState})` : "";
         console.log(`[${state}] ${route.path} @ ${viewport.width}×${viewport.height}${terminalState}`);
@@ -641,16 +647,24 @@ async function main(): Promise<void> {
     viewportSet: viewports,
     routeCount: new Set(reports.map(({ routeName }) => routeName)).size,
     checkCount: reports.length,
-    failureCount: reports.reduce((count, item) => count + item.failures.length, 0),
-    styleWarnings: [...allStyleWarnings].sort(),
+    failureCount: reports.reduce((count, item) => count + item.failures.length, 0) + stylePolicy.introduced.length,
+    stylePolicy: {
+      baselineVersion: styleBaselineFile.version,
+      legacyFindingCount: stylePolicy.legacyCount,
+      remainingBaselineCount: stylePolicy.remainingBaselineCount,
+      failures: stylePolicy.introduced,
+    },
+    timeWarnings: [...allTimeWarnings].sort(),
     checks: reports,
   };
   await writeFile(path.join(shotsDir, "report.json"), JSON.stringify(report, null, 2) + "\n", "utf8");
   const failures = reports.flatMap((item) => item.failures.map((failure) => ({ route: item.route, viewport: item.viewport.width, ...failure })));
-  console.log(`ui:check complete: ${reports.length} route/viewport checks, ${failures.length} failures, ${allStyleWarnings.size} stylesheet warning(s).`);
+  console.log(`ui:check complete: ${reports.length} route/viewport checks, ${failures.length} UI failures, ${stylePolicy.introduced.length} new style failure(s), ${stylePolicy.legacyCount} legacy baseline finding(s), ${allTimeWarnings.size} time warning(s).`);
   console.log(`Report: ${path.relative(uiRoot, path.join(shotsDir, "report.json"))}`);
   for (const failure of failures) console.error(`- ${failure.route} @ ${failure.viewport}: [${failure.rule}] ${failure.message}`);
-  if (failures.length) process.exitCode = 1;
+  for (const finding of stylePolicy.introduced) console.error(`- ${finding.source}:${finding.line}: [${finding.rule}] ${finding.signature}`);
+  for (const warning of allTimeWarnings) console.warn(`- [time-display-warning] ${warning}`);
+  if (failures.length || stylePolicy.introduced.length) process.exitCode = 1;
 }
 
 void main().catch((error: unknown) => {

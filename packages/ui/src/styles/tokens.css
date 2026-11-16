@@ -28,29 +28,32 @@
   --color-overlay: rgba(16, 22, 19, 0.28);
   --color-focus: rgba(30, 107, 82, 0.12);
 
-  --font-sans: "Poppins", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  --font-sans: "Geist Variable", "Source Han Sans SC", "Microsoft YaHei UI", "PingFang SC", sans-serif;
   --font-mono: "Geist Mono Variable", Consolas, monospace;
 
   --fs-page-title: 20px;
   --lh-page-title: 28px;
   --fw-page-title: 600;
-  --fs-section-title: 15px;
-  --lh-section-title: 22px;
+  --fs-section-title: 14px;
+  --lh-section-title: 20px;
   --fw-section-title: 600;
-  --fs-sub-title: 14px;
+  --fs-sub-title: 13px;
   --lh-sub-title: 20px;
   --fw-sub-title: 600;
-  --fs-body: 14px;
-  --lh-body: 20px;
+  --fs-body: 12px;
+  --lh-body: 18px;
   --fw-body: 400;
-  --fs-caption: 14px;
-  --lh-caption: 18px;
+  --fs-caption: 11px;
+  --lh-caption: 16px;
   --fw-caption: 400;
+  --fs-micro: 10px;
+  --lh-micro: 14px;
+  --fw-micro: 400;
   --fs-kpi: 24px;
   --lh-kpi: 30px;
   --fw-kpi: 600;
-  --fs-mono: 14px;
-  --lh-mono: 20px;
+  --fs-mono: 12px;
+  --lh-mono: 18px;
   --fw-mono: 400;
 
   --space-1: 4px;
@@ -61,6 +64,23 @@
   --space-6: 24px;
   --space-7: 32px;
   --space-8: 40px;
+
+  --space-page-padding: var(--space-6);
+  --space-section: var(--space-4);
+  --space-card-padding: var(--space-4);
+  --space-form-item: var(--space-3);
+  --space-control-group: var(--space-2);
+  --space-table-header-content: var(--space-2);
+
+  --control-height: 32px;
+  --control-height-compact: 28px;
+  --input-with-action-gap: var(--space-2);
+  --project-tab-row-height: 44px;
+  --page-segment-height: 32px;
+
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-overlay: 12px;
 
   --shadow-pop: 0 12px 32px rgba(20, 24, 29, 0.16);
   --shadow-drawer: -12px 0 32px rgba(20, 24, 29, 0.16);
@@ -74,34 +94,10 @@
   --si-gap-6: 32px;
 }
 
-@font-face {
-  font-family: "Poppins";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("../assets/fonts/poppins-latin-400-normal.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Poppins";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("../assets/fonts/poppins-latin-500-normal.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Poppins";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("../assets/fonts/poppins-latin-600-normal.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Poppins";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("../assets/fonts/poppins-latin-700-normal.woff2") format("woff2");
-}
+/*
+ * Spacing map: page padding --space-page-padding; section/card --space-section/--space-card-padding;
+ * form rows --space-form-item; control groups and table header/content --space-control-group/--space-table-header-content.
+ * Exceptions for raw spacing are 0 and 1px borders. Form rows pair inputs/actions with InputWithAction and --input-with-action-gap.
+ * Tabs: --project-tab-row-height is for route navigation; --page-segment-height is for in-page segments only.
+ * Dates use shared formatDateTime (same-year MM-DD HH:mm, include year across years); never add relative labels such as “今天”.
+ */

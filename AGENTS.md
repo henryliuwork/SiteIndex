@@ -3,7 +3,7 @@
 你是 SiteIndex 的并行工作流之一（A / B / C / D / E）。开始任何工作前：
 
 1. 读 `docs/WORKSTREAMS.md` §1，确认你是 **A（Core）/ B（UI 共享层）/ C（Desktop）/ D（UI 项目页面）/ E（真实项目验收）** 中的哪一个，以及你**只能修改的目录**
-2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。当前执行计划（v0.3.x）**唯一以 `docs/plan/2026-11-05-v030-roadmap.md` 为准**；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`，`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
+2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。当前 UI 规范与 v0.6 执行计划以 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md` 为准；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
@@ -22,6 +22,14 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 - 小步提交，PR ≤ 600 行改动为宜；开工前 `git pull --rebase origin main`
 - **仓库公开**：禁止提交密钥、token、Webhook、真实客户或订单数据
 - 界面文案为中文；代码注释中文或英文均可
+
+## UI/UX 硬性规则
+- 字体只用 `tokens.css` 中的 `--font-sans` / `--font-mono`；Source Han Sans SC 必须随 UI 打包，不能依赖联网或用户系统字体。
+- 正文字号使用字号 token；正文为 12px，任何文字不得小于 10px。页面不得新增裸字号、裸色值或裸 px 间距；新样式先使用或扩展语义 token。
+- 控件统一使用 `--control-height`（32px）或 `--control-height-compact`（28px）。输入框与同行按钮组合使用共享 `InputWithAction`，页面不得自行拼 flex 组合。
+- Tab 只有项目导航 Tab（路由切换）和页内分段 Tab（内容切换）两种；不得新增第三层 Tab。窄窗口下项目导航收纳到“更多”。
+- 日期时间通过共享 `formatDateTime` 展示，跨年时带年份；禁止“今天 / 昨天”等相对前缀，并避免在同页重复显示同一时间信息。
+- 涉及 UI 的 PR 必须附 `pnpm ui:check` 输出；样式扫描中新违规会使检查失败，日期/时间重复启发式只给人工复核告警。
 
 ## 常用命令
 ```bash
