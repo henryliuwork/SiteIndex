@@ -3,7 +3,7 @@
 .si-app-settings-card { display: grid; min-width: 0; padding: 8px 24px 12px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
 .si-app-settings-card h2 { margin: 14px 0 6px; color: var(--color-ink); font-size: var(--fs-section-title); font-weight: var(--fw-section-title); line-height: var(--lh-section-title); }
 .si-app-setting-row { display: grid; min-width: 0; grid-template-columns: 200px minmax(0,1fr) auto; align-items: center; gap: 12px 16px; padding: 13px 0; border-top: 1px solid var(--color-line-soft); }
-.si-project-root-row > .si-button { align-self: start; height: 38px; margin-top: 0; }
+.si-app-setting-row.si-project-root-row, .si-app-setting-row.si-browser-path-row { grid-template-columns: 200px minmax(0,1fr); }
 .si-project-root-field { display: grid; min-width: 0; gap: 6px; }
 .si-project-migration-steps { display: grid; gap: 9px; margin: 0; padding: 12px 0 4px; border-top: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: var(--fs-sub-title); line-height: 1.6; list-style: none; }
 .si-project-migration-steps li { display: grid; grid-template-columns: 20px minmax(0,1fr); align-items: start; gap: 8px; }
@@ -14,9 +14,6 @@
 .si-app-setting-row > span > code { color: var(--color-ink); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); }
 .si-app-setting-row .si-setting-hint { color: var(--color-muted) !important; font-size: var(--fs-body) !important; }
 .si-setting-input { width: 100%; min-width: 0; height: 38px; padding: 0 11px; border: 1px solid var(--color-line); border-radius: 6px; outline: 0; background: var(--color-surface); color: var(--color-ink); font: var(--fw-body) var(--fs-sub-title)/var(--lh-sub-title) var(--font-sans); }
-#si-browser-path + .si-button { height: 38px; }
-#si-dingtalk-webhook + .si-button { height: 38px; }
-.si-app-setting-row > input.si-setting-input + .si-platform-actions .si-button { height: 38px; }
 .si-setting-input:focus { border-color: var(--color-brand); box-shadow: 0 0 0 2px var(--color-focus); }
 .si-setting-input::placeholder { color: var(--color-faint); }
 .si-setting-mono { font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); }

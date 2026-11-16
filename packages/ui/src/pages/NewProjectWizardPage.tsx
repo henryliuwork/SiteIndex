@@ -5,7 +5,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, EmptyState, Notice, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, EmptyState, Input, InputWithAction, Notice, PageHeader, useToast } from "../components";
 import { useWizardDraft } from "./wizard-state";
 import { applyInitProgress, applyInitResult, finalInitProgressPercent, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
 import { findExistingProject, type ExistingProject } from "./new-project/duplicate-check";
@@ -369,8 +369,9 @@ export function NewProjectWizardPage() {
       <header><h2>输入网站地址</h2><p>SiteIndex 会自动检测跳转、robots.txt、sitemap、建站平台、语言和币种。</p></header>
       <form className="si-wizard-url-form" onSubmit={(event) => void detectSite(event)}>
         <label className="si-sr-only" htmlFor="site-url">网站地址</label>
-        <input id="site-url" className="si-text-field si-mono" value={draft.url} onChange={(event) => update({ url: event.target.value, detect: null, feedUrls: [], feedResult: null, feedSkipped: false })} placeholder="https://example.com" />
-        <Button type="submit" variant="primary" disabled={busy}>{busy ? "正在检测…" : "检测"}</Button>
+        <InputWithAction action={<Button type="submit" variant="primary" disabled={busy}>{busy ? "正在检测…" : "检测"}</Button>}>
+          <Input id="site-url" className="si-mono" value={draft.url} onChange={(event) => update({ url: event.target.value, detect: null, feedUrls: [], feedResult: null, feedSkipped: false })} placeholder="https://example.com" />
+        </InputWithAction>
       </form>
       {detection ? <DetectSummary result={detection} /> : <EmptyState icon={<CircleAlert size={18} />}>输入网址后检测站点信息。</EmptyState>}
       {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
@@ -390,7 +391,9 @@ export function NewProjectWizardPage() {
       <div className="si-wizard-source-main">
         {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
         <section className="si-wizard-card">
-          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null, feedSkipped: false })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <div className="si-wizard-feed-input" key={index}><input className="si-text-field si-mono" value={url} onChange={(event) => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null, feedSkipped: false }); }} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null, feedSkipped: false }); }}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null, feedSkipped: false })}><Plus size={14} /></Button></>}</div>)}
+          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null, feedSkipped: false })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <InputWithAction key={index} action={<>{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null, feedSkipped: false }); }}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null, feedSkipped: false })}><Plus size={14} /></Button></>}</>}>
+            <Input className="si-mono" value={url} onChange={(event) => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null, feedSkipped: false }); }} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />
+          </InputWithAction>)}
             {feedError && <div className="si-wizard-feed-error" role="alert"><span>{feedError}</span>{canRetryFeed && <Button size="small" disabled={busy} onClick={() => void inspectFeed()}>{busy ? "正在重试…" : "重试"}</Button>}</div>}
             <div className="si-wizard-feed-actions"><span>可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。</span></div>
             <p className="si-wizard-note">GMC Feed 为可选项；暂时没有时可跳过，创建后再到项目设置补充。</p>
@@ -429,7 +432,7 @@ export function NewProjectWizardPage() {
         </section>
         <section className="si-wizard-card si-wizard-location-card">
           <h2>项目位置</h2>
-          <label className="si-wizard-field">项目根目录<div className="si-wizard-directory"><input className="si-text-field si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /><Button onClick={() => void chooseProjectsRoot()}>更改</Button></div><small className="si-wizard-storage-policy">仅支持本机存储。第三方同步目录可能无法识别；未显示提示不代表路径已验证为本机。需要转移项目时请手动复制后重新添加，SiteIndex 不会自动迁移或删除文件。</small></label>
+          <label className="si-wizard-field">项目根目录<InputWithAction action={<Button onClick={() => void chooseProjectsRoot()}>更改</Button>}><Input className="si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /></InputWithAction><small className="si-wizard-storage-policy">仅支持本机存储。第三方同步目录可能无法识别；未显示提示不代表路径已验证为本机。需要转移项目时请手动复制后重新添加，SiteIndex 不会自动迁移或删除文件。</small></label>
           {settings.isError && <ApiErrorNotice label="项目根目录设置读取失败。" error={settings.error} onRetry={() => void settings.refetch()} />}
           <label className="si-wizard-field">项目文件夹名<input className="si-text-field si-mono" value={draft.folderName} onChange={(event) => update({ folderName: event.target.value })} /></label>
           <div className="si-wizard-path"><span>将创建</span><code>{previewPath}</code></div>

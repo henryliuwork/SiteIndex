@@ -24,6 +24,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-button-ghost:hover:not(:disabled), .si-button-quiet:hover:not(:disabled) { border-color: transparent; background: var(--color-neutral-soft); color: var(--color-ink); }
 .si-button-small { height: 28px; padding: 0 var(--space-2); font-size: var(--fs-body); }
 .si-button-icon { display: inline-grid; place-items: center; }
+.si-input-with-action { display: flex; min-width: 0; align-items: center; gap: var(--input-with-action-gap); }
+.si-input-with-action > input { width: 100%; min-width: 0; height: var(--control-height); flex: 1 1 auto; }
+.si-input-with-action-actions { display: flex; flex: none; align-items: center; gap: var(--input-with-action-gap); }
+.si-input-with-action-actions > * { flex: none; }
+.si-input-with-action-actions > .si-button { height: var(--control-height); }
 .si-filter-pill {
   display: inline-flex;
   height: 30px;

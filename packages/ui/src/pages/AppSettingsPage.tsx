@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Card, Chip, Notice, PageHeader, TabPanel, Tabs, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, Input, InputWithAction, Notice, PageHeader, TabPanel, Tabs, useToast } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
 import { WordPressCredentialsCard } from "./app-settings/wordpress-credentials";
 import "./app-settings/page.css";
@@ -180,10 +180,11 @@ export function AppSettingsPage() {
         <div className="si-app-setting-row si-project-root-row">
           <label htmlFor="si-projects-root">项目根目录</label>
           <div className="si-project-root-field">
-            <input id="si-projects-root" className="si-setting-input si-setting-mono" value={draft.projects_root} onChange={(event) => setDraft({ ...draft, projects_root: event.target.value })} onBlur={() => void saveSettings({ projects_root: draft.projects_root })} />
+            <InputWithAction action={<Button onClick={() => void chooseProjectsRoot()}>选择…</Button>}>
+              <Input id="si-projects-root" className="si-setting-input si-setting-mono" value={draft.projects_root} onChange={(event) => setDraft({ ...draft, projects_root: event.target.value })} onBlur={() => void saveSettings({ projects_root: draft.projects_root })} />
+            </InputWithAction>
             <small className="si-setting-hint">软件会自动扫描这个目录里的项目；也是新建项目的默认位置。不在此目录的项目请用“添加已有项目”。项目需保存在本机非同步目录；不同设备分别存放，不支持云盘同步同一项目。</small>
           </div>
-          <Button onClick={() => void chooseProjectsRoot()}>选择…</Button>
         </div>
         <div className="si-app-setting-row">
           <label htmlFor="si-device-name">本机设备名</label>
@@ -230,10 +231,11 @@ export function AppSettingsPage() {
           {browserQuery.isLoading ? <span className="si-setting-hint" role="status">正在检测…</span> : browserQuery.isError ? <ApiErrorNotice className="si-setting-error" label="浏览器检测失败" error={browserQuery.error} onRetry={() => void browserQuery.refetch()} /> : <span><code>{browserStatus?.name ?? "未检测到浏览器"}</code>{browserStatus?.path && <code className="si-setting-hint si-setting-path">{browserStatus.path}</code>}</span>}
           <Chip tone={browserStatus?.available ? "ok" : "warn"}>{browserStatus?.available ? "可用" : "不可用"}</Chip>
         </div>
-        <div className="si-app-setting-row">
+        <div className="si-app-setting-row si-browser-path-row">
           <label htmlFor="si-browser-path">自定义路径</label>
-          <input id="si-browser-path" className="si-setting-input si-setting-mono" placeholder="留空则自动使用 Edge / Chrome" value={draft.browser.executable_path ?? ""} onChange={(event) => setDraft({ ...draft, browser: { ...draft.browser, channel: event.target.value ? "custom" : "msedge", executable_path: event.target.value || null } })} onBlur={saveBrowserPath} />
-          <Button disabled={testingBrowser} onClick={() => void testBrowser()}>{testingBrowser ? "检测中…" : "测试"}</Button>
+          <InputWithAction action={<Button disabled={testingBrowser} onClick={() => void testBrowser()}>{testingBrowser ? "检测中…" : "测试"}</Button>}>
+            <Input id="si-browser-path" className="si-setting-input si-setting-mono" placeholder="留空则自动使用 Edge / Chrome" value={draft.browser.executable_path ?? ""} onChange={(event) => setDraft({ ...draft, browser: { ...draft.browser, channel: event.target.value ? "custom" : "msedge", executable_path: event.target.value || null } })} onBlur={saveBrowserPath} />
+          </InputWithAction>
         </div>
       </Card>
 
@@ -278,9 +280,12 @@ export function AppSettingsPage() {
           const editablePlatform = platform.id === "codex" || platform.id.startsWith("custom-");
           return <div className="si-app-setting-row" key={platform.id}>
             <strong>{platform.name}</strong>
-            {detectedPlatform || platform.id === "qwenpaw" ? <code className="si-setting-mono si-platform-path">{platform.dir}</code> : <input aria-label={`${platform.name} Skill 目录`} className="si-setting-input si-setting-mono" value={platform.dir} onChange={(event) => setDraft({ ...draft, skill_platforms: draft.skill_platforms.map((item, itemIndex) => itemIndex === index ? { ...item, dir: event.target.value, detected: false } : item) })} onBlur={editablePlatform && platform.id !== "codex" ? () => void saveSettings({ skill_platforms: draft.skill_platforms }) : undefined} />}
+            {detectedPlatform || platform.id === "qwenpaw" ? <code className="si-setting-mono si-platform-path">{platform.dir}</code> : <InputWithAction action={editablePlatform && platform.id === "codex" ? <Button onClick={savePlatform}>保存</Button> : <Button aria-label={`移除 ${platform.name}`} onClick={() => savePlatforms(draft.skill_platforms.filter((_, itemIndex) => itemIndex !== index))}>移除</Button>}>
+              <Input aria-label={`${platform.name} Skill 目录`} className="si-setting-input si-setting-mono" value={platform.dir} onChange={(event) => setDraft({ ...draft, skill_platforms: draft.skill_platforms.map((item, itemIndex) => itemIndex === index ? { ...item, dir: event.target.value, detected: false } : item) })} onBlur={editablePlatform && platform.id !== "codex" ? () => void saveSettings({ skill_platforms: draft.skill_platforms }) : undefined} />
+            </InputWithAction>}
             <div className="si-platform-actions">
-              {detectedPlatform ? <Chip tone="ok">已检测到</Chip> : editablePlatform && platform.id === "codex" ? <Button onClick={savePlatform}>保存</Button> : <Button aria-label={`移除 ${platform.name}`} onClick={() => savePlatforms(draft.skill_platforms.filter((_, itemIndex) => itemIndex !== index))}>移除</Button>}
+              {detectedPlatform && <Chip tone="ok">已检测到</Chip>}
+              {platform.id === "qwenpaw" && <Button aria-label={`移除 ${platform.name}`} onClick={() => savePlatforms(draft.skill_platforms.filter((_, itemIndex) => itemIndex !== index))}>移除</Button>}
             </div>
           </div>;
         })}
