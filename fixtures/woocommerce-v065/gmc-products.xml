@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="https://feed.example.test/ns/g/1.0" version="2.0"><channel><title>Example product feed</title>
+<item><g:id>DEMO-WC-LAMP</g:id><title>Sample lamp</title><link>https://shop.example.test/product/sample-lamp/</link><g:price>19.00 USD</g:price><g:availability>in_stock</g:availability><g:product_type>Lighting</g:product_type></item>
+<item><g:id>DEMO-WC-LAMP-BLUE</g:id><title>Sample lamp blue</title><link>https://shop.example.test/product/sample-lamp/?attribute_pa_color=blue</link><g:price>21.00 USD</g:price><g:availability>out_of_stock</g:availability><g:item_group_id>DEMO-WC-LAMP</g:item_group_id></item>
+</channel></rss>

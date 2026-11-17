@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="https://schema.example.test/sitemap/0.9">
+<url><loc>https://shop.example.test/shop/lighting/</loc></url>
+<url><loc>https://shop.example.test/gear/outdoor/</loc></url>
+</urlset>

@@ -1,0 +1,21 @@
+[
+  { "scenario": "site", "method": "GET", "path": "/", "status": 200, "content_type": "text/html", "body": "home.html" },
+  { "scenario": "valid_feed", "method": "GET", "path": "/merchant/products.xml", "status": 200, "content_type": "application/xml", "body": "gmc-products.xml" },
+  { "scenario": "blog_rss", "method": "GET", "path": "/feed/", "status": 200, "content_type": "application/rss+xml", "body": "blog-rss.xml" },
+  { "scenario": "blog_rss", "method": "GET", "path": "/comments/feed/", "status": 200, "content_type": "application/rss+xml", "body": "blog-rss.xml" },
+  { "scenario": "inquiry_feed", "method": "GET", "path": "/merchant/inquiry.xml", "status": 200, "content_type": "application/xml", "body": "b2b-no-price.xml" },
+  { "scenario": "store_api", "method": "GET", "path": "/wp-json/wc/store/v1/products", "status": 200, "content_type": "application/json", "body": "store-api-products.json" },
+  { "scenario": "store_api", "method": "GET", "path": "/wp-json/wc/store/v1/products?type=variation", "status": 200, "content_type": "application/json", "body": "store-api-variations.json" },
+  { "scenario": "store_api", "method": "GET", "path": "/wp-json/wc/store/v1/products/categories", "status": 200, "content_type": "application/json", "body": "store-api-categories.json" },
+  { "scenario": "api_forbidden", "method": "GET", "path": "/wp-json/wc/store/v1/products", "status": 403, "content_type": "application/json", "body": "store-api-forbidden.json" },
+  { "scenario": "api_missing", "method": "GET", "path": "/wp-json/wc/store/v1/products", "status": 404, "content_type": "application/json", "body": "store-api-missing.json" },
+  { "scenario": "site", "method": "GET", "path": "/robots.txt", "status": 200, "content_type": "text/plain", "body": "robots.txt" },
+  { "scenario": "site", "method": "GET", "path": "/sitemap_index.xml", "status": 200, "content_type": "application/xml", "body": "sitemap-index.xml" },
+  { "scenario": "site", "method": "GET", "path": "/product-sitemap.xml", "status": 200, "content_type": "application/xml", "body": "product-sitemap.xml" },
+  { "scenario": "site", "method": "GET", "path": "/product_cat-sitemap.xml", "status": 200, "content_type": "application/xml", "body": "category-sitemap.xml" },
+  { "scenario": "site", "method": "GET", "path": "/post-sitemap.xml", "status": 200, "content_type": "application/xml", "body": "post-sitemap.xml" },
+  { "scenario": "site", "method": "GET", "path": "/product/sample-lamp/", "status": 200, "content_type": "text/html", "body": "product-page.html" },
+  { "scenario": "site", "method": "GET", "path": "/shop/lighting/", "status": 200, "content_type": "text/html", "body": "category-page.html" },
+  { "scenario": "site", "method": "GET", "path": "/gear/outdoor/", "status": 200, "content_type": "text/html", "body": "category-page.html" },
+  { "scenario": "site", "method": "GET", "path": "/journal/sample-post/", "status": 200, "content_type": "text/html", "body": "blog-page.html" }
+]

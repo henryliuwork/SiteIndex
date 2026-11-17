@@ -1,0 +1,19 @@
+[
+  {
+    "id": 110, "name": "Sample lamp", "slug": "sample-lamp", "type": "variable",
+    "permalink": "https://shop.example.test/product/sample-lamp/", "sku": "DEMO-WC-LAMP",
+    "is_purchasable": true, "is_in_stock": true, "is_on_backorder": false,
+    "prices": { "currency_code": "USD", "currency_minor_unit": 2, "price": "1900", "regular_price": "1900", "sale_price": "1900" },
+    "categories": [{ "id": 21, "name": "Lighting", "slug": "lighting", "link": "https://shop.example.test/shop/lighting/" }],
+    "images": [{ "id": 301, "src": "https://shop.example.test/media/sample-lamp.jpg", "alt": "Sample lamp" }],
+    "variations": [111, 112]
+  },
+  {
+    "id": 120, "name": "Sample kit", "slug": "sample-kit", "type": "simple",
+    "permalink": "https://shop.example.test/product/sample-kit/", "sku": "DEMO-WC-KIT",
+    "is_purchasable": true, "is_in_stock": false, "is_on_backorder": false,
+    "prices": { "currency_code": "USD", "currency_minor_unit": 2, "price": "2500", "regular_price": "2500", "sale_price": "2500" },
+    "categories": [{ "id": 22, "name": "Outdoor", "slug": "outdoor", "link": "https://shop.example.test/gear/outdoor/" }],
+    "images": []
+  }
+]

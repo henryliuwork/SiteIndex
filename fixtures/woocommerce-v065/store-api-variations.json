@@ -1,0 +1,16 @@
+[
+  {
+    "id": 111, "name": "Sample lamp - blue", "type": "variation", "sku": "DEMO-WC-LAMP-BLUE",
+    "permalink": "https://shop.example.test/product/sample-lamp/?attribute_pa_color=blue",
+    "is_purchasable": true, "is_in_stock": false, "is_on_backorder": false,
+    "prices": { "currency_code": "USD", "currency_minor_unit": 2, "price": "2100" },
+    "_links": { "up": [{ "href": "https://shop.example.test/wp-json/wc/store/v1/products/110" }] }
+  },
+  {
+    "id": 112, "name": "Sample lamp - white", "type": "variation", "sku": "DEMO-WC-LAMP-WHITE",
+    "permalink": "https://shop.example.test/product/sample-lamp/?attribute_pa_color=white",
+    "is_purchasable": true, "is_in_stock": true, "is_on_backorder": false,
+    "prices": { "currency_code": "USD", "currency_minor_unit": 2, "price": "1900" },
+    "_links": { "up": [{ "href": "https://shop.example.test/wp-json/wc/store/v1/products/110" }] }
+  }
+]
