@@ -1,0 +1,5 @@
+[
+  { "id": 20, "name": "Catalog", "slug": "catalog", "parent": 0, "count": 3, "permalink": "https://shop.example.test/shop/" },
+  { "id": 21, "name": "Lighting", "slug": "lighting", "parent": 20, "count": 1, "permalink": "https://shop.example.test/shop/lighting/" },
+  { "id": 22, "name": "Outdoor", "slug": "outdoor", "parent": 20, "count": 1, "permalink": "https://shop.example.test/gear/outdoor/" }
+]

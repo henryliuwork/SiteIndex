@@ -1,0 +1,2 @@
+User-agent: *
+Sitemap: https://shop.example.test/sitemap_index.xml

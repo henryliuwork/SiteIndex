@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="https://schema.example.test/sitemap/0.9">
+<url><loc>https://shop.example.test/product/sample-lamp/</loc></url>
+<url><loc>https://shop.example.test/product/sample-lamp/?attribute_pa_color=blue</loc></url>
+<url><loc>https://shop.example.test/product/sample-kit/</loc></url>
+</urlset>
