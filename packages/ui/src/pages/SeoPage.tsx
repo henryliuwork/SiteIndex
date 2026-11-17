@@ -11,7 +11,7 @@ import type {
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, KpiCard, LengthBadge, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, KpiCard, LengthBadge, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./seo/filters";
 import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams, type SeoSearchParamPatch, type SeoView } from "./seo/query-params";
 
@@ -466,8 +466,7 @@ export function SeoPage() {
       project={project}
       activeTab="seo"
       hasTabPanel
-      status={<Chip tone="neutral">SEO 抓取：周一 03:00 · {pageList?.total ?? 0} 个页面</Chip>}
-      pageMeta={<Chip tone="neutral">最近抓取：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}</Chip>}
+      status={<Chip tone="neutral">SEO 页面：{pageList?.total ?? 0} 个</Chip>}
       actions={<>
         <Button variant="primary" icon={<Settings2 size={14} />} onClick={() => setRuleSettingsOpen(true)}>规则设置</Button>
         <Button disabled={busy} icon={<Globe2 size={14} />} onClick={() => void checkIndex()}>{runKind === "index-check" ? "检查中…" : "重新检查收录"}</Button>
@@ -477,6 +476,7 @@ export function SeoPage() {
     />
     <ProjectTabPanel projectId={project.id} tab="seo">
       <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+      {summary?.crawled_at && <p className="si-seo-data-date">SEO 抓取数据截至 {formatDateTime(summary.crawled_at)}</p>}
       <div className="si-seo-controls" data-view={view}>
         <Segmented value={view} options={views} onChange={changeView} ariaLabel="SEO 视图" />
         {view !== "links" && <FilterBar className="si-seo-filterbar">
@@ -525,7 +525,7 @@ export function SeoPage() {
           {orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}
         </div>
       </details>}
-      <p className="si-seo-disclaimer">Google site: 检查结果仅供参考，以 Search Console 为准。收录数据最后检查：{summary?.crawled_at?.slice(5, 10) ?? "未检查"}。</p>
+      <p className="si-seo-disclaimer">Google site: 检查结果仅供参考，以 Search Console 为准。</p>
     </ProjectTabPanel>
     <Drawer open={Boolean(selectedUrl)} onOpenChange={(open) => { if (!open) { setSelectedUrl(null); setSelectedLink(null); } }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
       {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}

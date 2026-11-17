@@ -5,7 +5,7 @@ import { useParams } from "react-router-dom";
 import { PATHS, pathsFor, type DesignButtonVariant, type DesignColorRole, type DesignTokens, type DesignTypographyScaleKey } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, EmptyState, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, EmptyState, Notice, ProjectHeader, ProjectTabPanel, formatDateTime, useToast } from "../components";
 
 const colorRoles: { key: DesignColorRole; label: string }[] = [
   { key: "primary", label: "主色" }, { key: "secondary", label: "辅助色" },
@@ -45,11 +45,6 @@ function projectArtifactPath(projectRoot: string, relativePath: string): string 
 
 const displayValue = (value: string | number | null | undefined): string =>
   value === null || value === undefined || value === "" ? "未识别" : String(value);
-
-const formatExtracted = (value: string): string => {
-  const [year, month, day] = value.slice(0, 10).split("-");
-  return year && month && day ? `${month}-${day}` : value;
-};
 
 function ColorRolesCard({ tokens, onCopy, copied }: { tokens: DesignTokens | null; onCopy: (value: string) => void; copied: string }) {
   const roles = tokens?.color.roles;
@@ -262,7 +257,7 @@ export function DesignPage() {
   return (
     <div className="si-page si-design-page">
       <ProjectHeader project={project} activeTab="design" hasTabPanel status={tokens
-        ? <Chip tone="neutral">提取于 {formatExtracted(tokens.extracted_at)} · {tokens.source_pages.length} 个页面{import.meta.env.DEV ? " · 示例数据" : ""}</Chip>
+        ? <Chip tone="neutral">设计规范已提取 · {tokens.source_pages.length} 个页面{import.meta.env.DEV ? " · 示例数据" : ""}</Chip>
         : <Chip tone="warn">尚未提取设计规范</Chip>} actions={
           <>
             <Button variant="secondary" disabled={!tokens} onClick={() => void copyTokens()}>复制 Token（JSON）</Button>
@@ -273,6 +268,7 @@ export function DesignPage() {
           ...(safeArtifactPaths.brand ? [{ label: "打开 brand.md", onSelect: () => void openDesignArtifact("brand") }] : []),
         ]} />
       <ProjectTabPanel projectId={project.id} tab="design">
+        {tokens && <p className="si-design-data-date">设计规范提取任务：{formatDateTime(tokens.extracted_at)} · 来源页面 {tokens.source_pages.length} 个</p>}
         {runMessage && <Notice tone="info" title={activeRunId ? "设计规范提取进行中" : "正在启动设计规范提取"}>{runMessage}</Notice>}
         {designQuery.data && missingArtifactLabels.length > 0 && <Notice tone="warn" title="部分设计文件无法打开">
           Core 未提供受支持的固定相对路径：{missingArtifactLabels.join("、")}。请更新数据后重试。
