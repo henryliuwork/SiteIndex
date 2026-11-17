@@ -28,6 +28,7 @@ type CredentialBridgeInput = Partial<Pick<CredentialBridgeMock, "status" | "save
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "siteindexWindow");
   vi.doUnmock("../api");
   vi.resetModules();
@@ -74,8 +75,10 @@ describe("AppSettingsPage background options", () => {
   it("explains per-device local project storage and keeps the root chooser available", async () => {
     await renderSettings();
 
-    expect(await screen.findByText(/项目需保存在本机非同步目录；不同设备分别存放，不支持云盘同步同一项目。/)).toBeTruthy();
-    expect(screen.getByText("数据库等缓存只保存在本机")).toBeTruthy();
+    const storageHelp = await screen.findByRole("button", { name: "项目根目录说明" });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    fireEvent.focus(storageHelp);
+    expect((await screen.findByRole("tooltip")).textContent).toContain("自动扫描此目录中的项目");
     expect((screen.getByLabelText("项目根目录") as HTMLInputElement).value).toBe("D:/SiteIndex/projects");
     expect(screen.getByRole("button", { name: "选择…" })).toBeTruthy();
   });

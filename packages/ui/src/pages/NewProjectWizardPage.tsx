@@ -5,7 +5,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, EmptyState, Input, InputWithAction, Notice, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, EmptyState, InfoTooltip, Input, InputWithAction, Notice, PageHeader, useToast } from "../components";
 import { useWizardDraft } from "./wizard-state";
 import { applyInitProgress, applyInitResult, finalInitProgressPercent, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
 import { findExistingProject, type ExistingProject } from "./new-project/duplicate-check";
@@ -361,12 +361,12 @@ export function NewProjectWizardPage() {
     : completionStatus === "incomplete" ? finished?.errors?.join("；") || finished?.summary || "未收到全部步骤的完成结果。" : "";
 
   return <div className="si-page si-wizard-page">
-    <PageHeader title="新建项目" meta={<span><Link to="/">项目中心</Link> · 第 {active + 1} 步：{steps[active]?.label}</span>} />
+    <PageHeader title="新建项目" />
     <WizardSteps active={active} steps={steps} />
     {activeStepKey === "brand" && workspaceCapabilities.explainWizardUnavailable && <Notice tone="info" title="Agent 工作区暂不可用">桌面端尚未接入工作区检查和创建操作；仍可继续创建并初始化 SiteIndex 项目。</Notice>}
 
     {active === 0 && <Card className="si-wizard-card si-wizard-url-card">
-      <header><h2>输入网站地址</h2><p>SiteIndex 会自动检测跳转、robots.txt、sitemap、建站平台、语言和币种。</p></header>
+      <header><h2>输入网站地址</h2><InfoTooltip label="网站检测说明" content="检测跳转、robots.txt、Sitemap、平台、语言和币种。" /></header>
       <form className="si-wizard-url-form" onSubmit={(event) => void detectSite(event)}>
         <label className="si-sr-only" htmlFor="site-url">网站地址</label>
         <InputWithAction action={<Button type="submit" variant="primary" disabled={busy}>{busy ? "正在检测…" : "检测"}</Button>}>
@@ -387,16 +387,14 @@ export function NewProjectWizardPage() {
         <div><dt>robots.txt</dt><dd>{detection.robots.found ? "已读取 · " + detection.robots.disallow_count + " 条 Disallow" : "未找到"}</dd></div>
         <div><dt>Sitemap</dt><dd>{detection.sitemaps.length} 个 sitemap · {detection.total_urls.toLocaleString("zh-CN")} 个 URL</dd></div>
         <div><dt>语言 / 币种</dt><dd>{detection.locale ?? "—"} / {detection.currency ?? "—"}</dd></div>
-      </dl><p>GMC Feed 可能不在网站上公开，可从 Merchant Center 或 Feed 插件复制地址，也可创建后在项目设置补充。</p></section>
+      </dl></section>
       <div className="si-wizard-source-main">
         {duplicateProject && <DuplicateProjectNotice project={duplicateProject} />}
         <section className="si-wizard-card">
-          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label>{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null, feedSkipped: false })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <InputWithAction key={index} action={<>{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null, feedSkipped: false }); }}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null, feedSkipped: false })}><Plus size={14} /></Button></>}</>}>
+          <div className="si-wizard-field"><div className="si-wizard-feed-heading"><label>GMC 商品 Feed 地址</label><InfoTooltip label="Feed 地址说明" content="可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。没有地址可跳过，稍后在项目设置补充。" />{!draft.feedUrls.length && <Button size="small" onClick={() => update({ feedUrls: [""], feedResult: null, feedSkipped: false })}><Plus size={14} />添加 Feed</Button>}</div>{draft.feedUrls.map((url, index) => <InputWithAction key={index} action={<>{draft.feedUrls.length > 1 && <Button aria-label="移除此 Feed" onClick={() => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.filter((_, itemIndex) => itemIndex !== index), feedResult: null, feedSkipped: false }); }}><X size={14} /></Button>}{index === 0 && <><Button variant="primary" disabled={busy || !url.trim()} onClick={() => void inspectFeed()}>{busy ? "正在检测…" : draft.feedResult ? "重新检测" : "检测 Feed"}</Button><Button size="small" aria-label="添加 Feed" title="添加 Feed" onClick={() => update({ feedUrls: [...draft.feedUrls, ""], feedResult: null, feedSkipped: false })}><Plus size={14} /></Button></>}</>}>
             <Input className="si-mono" value={url} onChange={(event) => { setFeedError(""); setCanRetryFeed(false); update({ feedUrls: draft.feedUrls.map((item, itemIndex) => itemIndex === index ? event.target.value : item), feedResult: null, feedSkipped: false }); }} placeholder="https://example.com/feed.xml" aria-label={"Feed 地址 " + (index + 1)} />
           </InputWithAction>)}
             {feedError && <div className="si-wizard-feed-error" role="alert"><span>{feedError}</span>{canRetryFeed && <Button size="small" disabled={busy} onClick={() => void inspectFeed()}>{busy ? "正在重试…" : "重试"}</Button>}</div>}
-            <div className="si-wizard-feed-actions"><span>可添加多个 Feed，按顺序合并；同一 ID 以先出现的为准。</span></div>
-            <p className="si-wizard-note">GMC Feed 为可选项；暂时没有时可跳过，创建后再到项目设置补充。</p>
             {draft.feedSkipped && <Notice tone="info" title="GMC Feed 将稍后配置">创建项目后，可在项目设置补充 Feed。</Notice>}
             {draft.feedResult && <FeedStats result={draft.feedResult} />}
           </div>
@@ -417,7 +415,7 @@ export function NewProjectWizardPage() {
       {draft.feedSkipped && <Notice tone="warn" title="尚未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次商品同步会跳过；配置 Feed 后可运行每日同步。</Notice>}
       <div className="si-wizard-brand-layout">
         <section className="si-wizard-card">
-          <header className="si-wizard-card-heading"><h2>品牌信息</h2><Chip tone="info">根据网址预填，可修改</Chip></header>
+          <header className="si-wizard-card-heading"><h2>品牌信息</h2><InfoTooltip label="品牌信息用途" content="将写入项目配置和 README，供 Agent 读取；创建后仍可修改。" /></header>
           <div className="si-wizard-form-grid">
             <label className="si-wizard-field">品牌名<input className="si-text-field" value={draft.brand.name} onChange={(event) => update({ brand: { ...draft.brand, name: event.target.value } })} /></label>
             <label className="si-wizard-field">目标市场<input className="si-text-field" value={draft.market} onChange={(event) => update({ market: event.target.value })} placeholder="US, CA" /></label>
@@ -428,11 +426,10 @@ export function NewProjectWizardPage() {
           <div className="si-wizard-field si-wizard-usp"><span>核心卖点</span><div className="si-wizard-usp-list">{draft.brand.usp?.map((item) => <Chip key={item}>{item}<button type="button" aria-label={"删除卖点 " + item} onClick={() => update({ brand: { ...draft.brand, usp: draft.brand.usp?.filter((value) => value !== item) } })}>×</button></Chip>)}
             <input value={uspDraft} onChange={(event) => setUspDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (uspDraft.trim()) update({ brand: { ...draft.brand, usp: [...(draft.brand.usp ?? []), uspDraft.trim()] } }); setUspDraft(""); } }} placeholder="输入后按 Enter 添加" aria-label="添加核心卖点" />
           </div></div>
-          <p className="si-wizard-note">这些信息会写入 index/site.json 与 README「项目概况」，Agent 写文案时会读取。也可以之后在项目设置里补充。</p>
         </section>
         <section className="si-wizard-card si-wizard-location-card">
-          <h2>项目位置</h2>
-          <label className="si-wizard-field">项目根目录<InputWithAction action={<Button onClick={() => void chooseProjectsRoot()}>更改</Button>}><Input className="si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /></InputWithAction><small className="si-wizard-storage-policy">仅支持本机存储。第三方同步目录可能无法识别；未显示提示不代表路径已验证为本机。需要转移项目时请手动复制后重新添加，SiteIndex 不会自动迁移或删除文件。</small></label>
+          <h2>项目位置 <InfoTooltip label="项目存储规则" content="仅支持本机非同步目录；移动项目时请手动复制文件夹后重新添加。" /></h2>
+          <label className="si-wizard-field">项目根目录<InputWithAction action={<Button onClick={() => void chooseProjectsRoot()}>更改</Button>}><Input className="si-mono" value={draft.projectsRoot || settings.data?.projects_root || ""} onChange={(event) => update({ projectsRoot: event.target.value })} /></InputWithAction></label>
           {settings.isError && <ApiErrorNotice label="项目根目录设置读取失败。" error={settings.error} onRetry={() => void settings.refetch()} />}
           <label className="si-wizard-field">项目文件夹名<input className="si-text-field si-mono" value={draft.folderName} onChange={(event) => update({ folderName: event.target.value })} /></label>
           <div className="si-wizard-path"><span>将创建</span><code>{previewPath}</code></div>
@@ -447,8 +444,8 @@ export function NewProjectWizardPage() {
       {draft.feedSkipped && <Notice tone="warn" title="尚未配置 GMC Feed">创建项目后可在项目设置补充。未配置 Feed 时，首次商品同步会跳过；配置 Feed 后可运行每日同步。</Notice>}
       <div className="si-wizard-workspace-layout">
         <section className="si-wizard-card si-wizard-workspace-settings">
-          <header className="si-wizard-card-heading"><div><h2>Agent 工作区</h2><p>为 Agent 生成可直接开始工作的目录、说明和平台预设。</p></div></header>
-          <label className="si-wizard-workspace-toggle"><input type="checkbox" checked={draft.workspaceEnabled} onChange={(event) => update({ workspaceEnabled: event.target.checked })} /><span><strong>创建 Agent 工作区</strong><small>默认启用；关闭后只创建 SiteIndex 项目数据。</small></span></label>
+          <header className="si-wizard-card-heading"><h2>Agent 工作区</h2><InfoTooltip label="Agent 工作区说明" content="默认创建目录与平台预设；关闭后只创建项目数据。" /></header>
+          <label className="si-wizard-workspace-toggle"><input type="checkbox" checked={draft.workspaceEnabled} onChange={(event) => update({ workspaceEnabled: event.target.checked })} /><span><strong>创建 Agent 工作区</strong></span></label>
           <label className="si-wizard-field">电商平台
             <select className="si-text-field" value={draft.workspacePlatform} disabled={!draft.workspaceEnabled} onChange={(event) => update({ workspacePlatform: event.target.value as typeof draft.workspacePlatform })}>
               <option value="magento2">Magento 2</option><option value="woocommerce">WooCommerce</option><option value="shopify">Shopify</option><option value="other">其他平台</option>

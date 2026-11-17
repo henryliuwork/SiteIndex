@@ -144,6 +144,7 @@
 
 ## v0.6.1 · 共享页头与说明提示
 - [x] ProjectHeader 按 ResizeObserver 收纳项目 Tab，窄屏无横向滚动并在路由切换后恢复焦点；新增 InfoTooltip 与四档宽度的 ui:check 页头断言 — 本 PR
+- [x] B 自有五页精简说明并接入 InfoTooltip；修正设置输入框和 Skill 按钮高度、非同步 Job 的页头标签，ui:check 检查 Tab 纵向滚动和计算高度 — 本 PR
 
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点

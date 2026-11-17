@@ -636,7 +636,10 @@ describe("ProjectCenterPage local-storage policy", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
 
-    expect(await screen.findByText("SiteIndex 仅支持本机存储")).toBeTruthy();
+    const storageHelp = await screen.findByRole("button", { name: "项目存储规则" });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    fireEvent.focus(storageHelp);
+    expect((await screen.findByRole("tooltip")).textContent).toContain("仅支持本机非同步目录");
     const projectLink = await screen.findByRole("link", { name: "Demo Store" });
     const card = projectLink.closest(".si-project-card");
     expect(card).toBeTruthy();

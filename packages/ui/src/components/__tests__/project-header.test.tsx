@@ -109,6 +109,15 @@ describe("ProjectHeader compact layout", () => {
     expect(headerText).not.toMatch(/今天|昨天/);
   });
 
+  it.each([
+    ["daily", "最近同步"], ["weekly", "最近同步"],
+    ["validate", "最近校验"], ["readme", "最近运行"], ["views", "最近运行"],
+  ])("labels a %s job as %s", (job, label) => {
+    const { container } = render(<MemoryRouter><ProjectHeader project={{ ...project, sync: { ...project.sync, job } }} activeTab="overview" /></MemoryRouter>);
+    expect(container.querySelector(".si-project-header-sync")?.textContent).toContain(label);
+    if (job !== "daily" && job !== "weekly") expect(container.querySelector(".si-project-header-sync")?.textContent).not.toContain("最近同步");
+  });
+
   it("reserves the action slot when a tab has no visible actions", () => {
     const { container } = render(<MemoryRouter><ProjectHeader project={project} activeTab="products" /></MemoryRouter>);
     expect(container.querySelector(".si-project-header-action-slot")).not.toBeNull();

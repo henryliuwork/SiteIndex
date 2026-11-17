@@ -25,6 +25,7 @@ function mockWorkspaceCapabilities(pendingHandlers: readonly string[]) {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   removeTestFinishedListener?.();
   removeTestFinishedListener = undefined;
   vi.doUnmock("../api");
@@ -74,17 +75,20 @@ describe("NewProjectWizardPage workspace step", () => {
     fireEvent.click(nextToSource);
     fireEvent.click(await screen.findByRole("button", { name: "检测 Feed" }));
     await screen.findByText("可用 SKU");
-    expect(inspectFeed).toHaveBeenCalledWith(["https://kingsyard.com/products.json"], expect.any(Object));
+    expect(inspectFeed).toHaveBeenCalledWith(["https://shop.example.test/products.json"], expect.any(Object));
     const nextToBrand = screen.getByRole("button", { name: "下一步：品牌配置" });
     await waitFor(() => expect((nextToBrand as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(nextToBrand);
-    expect(await screen.findByText(/仅支持本机存储。第三方同步目录可能无法识别/)).toBeTruthy();
+    const storageHelp = await screen.findByRole("button", { name: "项目存储规则" });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    fireEvent.focus(storageHelp);
+    expect((await screen.findByRole("tooltip")).textContent).toContain("仅支持本机非同步目录");
     fireEvent.click(await screen.findByRole("button", { name: "下一步：Agent 工作区" }));
 
     expect((await screen.findByRole("checkbox", { name: /创建 Agent 工作区/ }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("checkbox", { name: "Mailchimp" }) as HTMLInputElement).checked).toBe(true);
     await screen.findByText("目标目录为空，可以继续。");
-    await waitFor(() => expect(checkWorkspace).toHaveBeenCalledWith("D:/SiteIndex/projects/kingsyard"));
+    await waitFor(() => expect(checkWorkspace).toHaveBeenCalledWith("D:/SiteIndex/projects/shop"));
     expect(screen.getByRole("heading", { name: "将生成的目录树" })).toBeTruthy();
     const preview = screen.getByText((_content, element) => element?.tagName === "PRE");
     expect(preview.textContent).toContain("_site-index/");
@@ -92,7 +96,7 @@ describe("NewProjectWizardPage workspace step", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({
-      feed_urls: ["https://kingsyard.com/products.json"],
+      feed_urls: ["https://shop.example.test/products.json"],
       workspace: { enabled: true, platform: "shopify", esp_presets: ["mailchimp"] },
     })));
     await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/new/done"));
@@ -135,9 +139,9 @@ describe("NewProjectWizardPage workspace step", () => {
     expect(await screen.findByText(feedSkippedNotice)).toBeTruthy();
     expect(screen.getByTestId("current-route").textContent).toBe("/new/brand");
     await waitFor(() => {
-      expect((screen.getByLabelText("品牌名") as HTMLInputElement).value).toBe("Kingsyard");
+      expect((screen.getByLabelText("品牌名") as HTMLInputElement).value).toBe("Shop");
       expect((screen.getByLabelText(/项目根目录/) as HTMLInputElement).value).toBe("D:/SiteIndex/projects");
-      expect((screen.getByLabelText("项目文件夹名") as HTMLInputElement).value).toBe("kingsyard");
+      expect((screen.getByLabelText("项目文件夹名") as HTMLInputElement).value).toBe("shop");
     });
     fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({ feed_urls: [] })));

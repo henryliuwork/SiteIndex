@@ -8,7 +8,7 @@ import { Link, useNavigate } from "react-router-dom";
 import type { CreateWorkspaceOnlyInput, Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue, WorkspaceCreateInput } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, Input, InputWithAction, KpiCard, Notice, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, InfoTooltip, Input, InputWithAction, KpiCard, Notice, PageHeader, useToast } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
 import { WorkspaceImportCheckDialog } from "./project-center/workspace-import-dialog";
 import { workspaceDirectoryTree, workspacePathJoin } from "./new-project/workspace-preview";
@@ -583,14 +583,13 @@ export function ProjectCenterPage() {
     <div className="si-page si-project-center">
       <PageHeader
         title="项目中心"
-        meta={<div className="si-project-root-line"><span>项目根目录 <code>{projectRoot}</code></span>{needsRootSetup && <Button size="small" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}</div>}
+        meta={<div className="si-project-root-line"><span>项目根目录 <code>{projectRoot}</code></span><InfoTooltip label="项目存储规则" content="仅支持本机非同步目录；移动项目时请手动复制文件夹后重新添加。" />{needsRootSetup && <Button size="small" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}</div>}
         actions={<>
           <Button icon={<FolderOpen size={15} />} onClick={(event) => { dialogReturnFocusRef.current = event.currentTarget; setAddExistingOpen(true); }}>添加已有项目</Button>
           {workspaceCapabilities.emptyWorkspaceAvailable && <Button icon={<FolderOpen size={15} />} onClick={(event) => { dialogReturnFocusRef.current = event.currentTarget; setCreateWorkspaceOpen(true); }}>创建空工作区</Button>}
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
         </>}
       />
-      <Notice className="si-center-storage-policy" tone="info" title="SiteIndex 仅支持本机存储">第三方同步目录可能无法识别；未显示同步提示不代表路径已验证为本机。需要转移项目时请手动复制文件夹后重新添加，SiteIndex 不会自动迁移或删除项目文件。</Notice>
       {workspaceCapabilities.explainEmptyWorkspaceUnavailable && <Notice tone="info" title="Agent 工作区暂不可用">桌面端尚未接入空工作区创建和目录检查操作；现有项目添加与普通新建流程仍可使用。</Notice>}
       {settingsQuery.isError && <ApiErrorNotice className="si-center-query-error" label="项目根目录读取失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
       {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : <>
@@ -615,7 +614,7 @@ export function ProjectCenterPage() {
               canImportCheck={workspaceCapabilities.importCheckAvailable}
               scheduleVerification={scheduleVerifications[project.id]}
             />)}
-            <Link className="si-new-project-card" to="/new/url"><Plus size={22} /><strong>新建项目</strong><span>输入网址，3 分钟生成工作区</span></Link>
+            <Link className="si-new-project-card" to="/new/url"><Plus size={22} /><strong>新建项目</strong></Link>
           </>}
         </section>
         <section className="si-recent-runs" aria-label="最近运行">
