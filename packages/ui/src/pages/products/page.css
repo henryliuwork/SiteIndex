@@ -115,11 +115,11 @@ color: var(--color-ink-2); font-weight: 600;
 }
 
 .si-product-main-copy .si-chip {
-min-height: 16px; padding: 0 5px; font-size: var(--fs-body);
+min-height: 16px; padding: 0 var(--space-1); font-size: var(--fs-body);
 }
 
 .si-product-tag {
-display: inline-flex; min-height: 19px; align-items: center; gap: var(--space-1); padding: 1px var(--space-2); border-radius: 10px; background: var(--color-info-soft); color: var(--color-info); font-size: var(--fs-body); white-space: nowrap;
+display: inline-flex; min-height: 19px; align-items: center; gap: var(--space-1); padding: 0 var(--space-2); border-radius: 10px; background: var(--color-info-soft); color: var(--color-info); font-size: var(--fs-body); white-space: nowrap;
 }
 
 .si-product-detail {
@@ -231,7 +231,7 @@ display: flex; flex-wrap: wrap; gap: var(--space-1);
 }
 
 .si-product-schema-pill {
-padding: 3px 8px; border: 1px solid var(--color-brand-soft); border-radius: 11px; background: var(--color-brand-soft); color: var(--color-brand-strong); font-family: var(--font-mono); font-size: var(--fs-body);
+padding: var(--space-1) var(--space-2); border: 1px solid var(--color-brand-soft); border-radius: 11px; background: var(--color-brand-soft); color: var(--color-brand-strong); font-family: var(--font-mono); font-size: var(--fs-body);
 }
 
 .si-product-sku-list {
