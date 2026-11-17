@@ -1,5 +1,5 @@
 .si-files-page { gap: var(--si-gap-4); }
-.si-files-embedded { display: grid; min-width: 0; gap: var(--si-gap-3); padding: var(--si-gap-4); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); scroll-margin-top: calc(112px + var(--si-content-top-padding, 0px)); }
+.si-files-embedded { display: grid; min-width: 0; gap: var(--si-gap-3); padding: var(--si-gap-4); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); scroll-margin-top: calc(var(--project-tab-row-height) + var(--space-7) * 2 + var(--si-content-top-padding, 0px)); }
 .si-files-embedded-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--si-gap-3); }
 .si-files-embedded-heading > div:first-child { display: grid; min-width: 0; gap: var(--si-gap-1); }
 .si-files-embedded-heading h2 { margin: 0; color: var(--color-ink); font-size: var(--fs-section-title); font-weight: var(--fw-section-title); line-height: var(--lh-section-title); }
@@ -10,10 +10,10 @@
 .si-files-subtabs { display: flex; align-items: center; gap: var(--si-gap-1); }
 .si-files-subtabs a { display: inline-flex; height: 32px; align-items: center; padding: 0 var(--si-gap-3); border-radius: 6px; color: var(--color-ink-2); font-size: var(--fs-body); text-decoration: none; }
 .si-files-subtabs a:hover { background: var(--color-neutral-soft); }
-.si-files-subtabs a.active { background: var(--color-ink); color: #fff; }
+.si-files-subtabs a.active { background: var(--color-ink); color: var(--color-surface); }
 .si-files-summary { display: flex; min-height: 50px; align-items: center; flex-wrap: wrap; gap: var(--si-gap-5); padding: var(--si-gap-2) var(--si-gap-4); border: 1px solid var(--color-line); border-radius: 9px; background: var(--color-surface); }
 .si-files-summary > div { display: flex; align-items: baseline; gap: var(--si-gap-1); color: var(--color-muted); font-size: var(--fs-caption); }
-.si-files-summary strong { color: var(--color-ink); font-size: 16px; font-variant-numeric: tabular-nums; }
+.si-files-summary strong { color: var(--color-ink); font-size: var(--fs-section-title); font-variant-numeric: tabular-nums; }
 .si-files-summary .is-ok { color: var(--color-brand); }
 .si-files-summary .is-error { color: var(--color-danger); }
 .si-files-summary .is-warn { color: var(--color-warning); }
