@@ -79,6 +79,38 @@ async function renderSettings(initialEntry: string, omitGsc = false, initialGscP
 }
 
 describe("项目设置单页区块", () => {
+  it("WooCommerce 与 WordPress 平台可分别显示并保存", async () => {
+    const { updateConfig } = await renderSettings("/p/demo2/settings/config");
+    const platform = await screen.findByLabelText("平台") as HTMLSelectElement;
+    expect(platform.value).toBe("woocommerce");
+    expect([...platform.options].map((option) => option.value)).toContain("wordpress");
+    fireEvent.change(platform, { target: { value: "wordpress" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", expect.objectContaining({ platform: "wordpress" })));
+  }, 30_000);
+
+  it("逐条编辑多个分类前缀，预览只显示 Core 返回的匹配结果", async () => {
+    const { saveCategories } = await renderSettings("/p/demo2/settings/config?section=categories");
+    const first = await screen.findByRole("textbox", { name: "分类 URL 规则 1" }) as HTMLInputElement;
+    expect(first.value).toBe("/shop/{slug}");
+    expect((screen.getByRole("textbox", { name: "分类 URL 规则 2" }) as HTMLInputElement).value).toBe("/product-category/{slug}");
+    expect(screen.getByRole("button", { name: "分类 URL 前缀说明" })).toBeTruthy();
+    await screen.findByText("预览匹配 2 个分类");
+
+    fireEvent.click(screen.getByRole("button", { name: "+ 添加前缀" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "分类 URL 规则 3" }), { target: { value: "/collections/{slug}" } });
+    expect(screen.getByText("规则已修改，预览后可查看匹配的分类。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "预览匹配结果" }));
+    await screen.findByText("预览匹配 3 个分类");
+
+    fireEvent.click(screen.getByRole("button", { name: "删除分类 URL 规则 2" }));
+    expect((screen.getByRole("textbox", { name: "分类 URL 规则 2" }) as HTMLInputElement).value).toBe("/collections/{slug}");
+    fireEvent.click(screen.getByRole("button", { name: "保存并重新归类" }));
+    await waitFor(() => expect(saveCategories).toHaveBeenCalledWith("demo2", expect.objectContaining({
+      url_pattern: "/shop/{slug}, /collections/{slug}",
+    })));
+  }, 20_000);
+
   it.each([
     ["/p/demo/settings/categories", "categories", "分类设置"],
     ["/p/demo/settings/files", "files", "本地文件校验"],

@@ -231,7 +231,7 @@ export function defaultConfig(id: ProjectId): SiteConfig {
   const domain = demo ? "demo-store.example.test" : "demo-catalog.example.test";
   return {
     schema_version: "1.1", domain, base_url: "https://" + domain,
-    platform: demo ? "magento" : "shopify", currency: "USD", locale: "en-US", timezone: "America/Los_Angeles",
+    platform: demo ? "magento" : "woocommerce", currency: "USD", locale: "en-US", timezone: "America/Los_Angeles",
     markets: ["US"],
     brand: {
       name: demo ? "Demo Store" : "Demo Catalog",
@@ -244,6 +244,7 @@ export function defaultConfig(id: ProjectId): SiteConfig {
     crawl: { adapter: "gmc_feed", feed_url: demo ? "https://feed.example.test/catalog.xml" : "", sku_field: "id", category_depth: 2, missing_as: "out_of_stock", rate_limit_ms: 200 },
     categories: {
       mode: demo ? "manual" : "url_rule",
+      ...(!demo ? { url_pattern: "/shop/{slug}, /product-category/{slug}" } : {}),
       watched: demo ? [{ name: "示例分类 1", slug: "demo-category-1", url: "https://" + domain + "/collections/demo-category-1" }] : [],
     },
     sku_grouping: demo ? { enabled: true, rule: { type: "regex", value: "^(.+?)-[A-Z]$" } } : { enabled: false, rule: { type: "separator", value: "-" } },
@@ -432,7 +433,7 @@ export const initialManualCategories: NonNullable<CategoriesConfig["manual"]> = 
 ];
 export const categoryConfigs: Record<MockProjectId, CategoriesConfig> = {
   demo: { mode: "manual", manual: initialManualCategories },
-  demo2: { mode: "url_rule", url_pattern: "/collections/:category" },
+  demo2: { mode: "url_rule", url_pattern: "/shop/{slug}, /product-category/{slug}" },
 };
 export const tagsByHandle = new Map<string, string[]>();
 export const manualImages = new Map<string, string | null>();

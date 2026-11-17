@@ -252,7 +252,7 @@ export function ProjectSettingsConfigPage() {
         <ConfigCard id="basic" title="基本信息"><div className="si-config-grid si-config-grid-3">
           <TextField label="域名" value={draft.domain} mono onChange={(value) => patch("domain", value)} />
           <TextField label="网站地址" value={draft.base_url} mono onChange={(value) => patch("base_url", value)} />
-          <SelectField label="平台" value={draft.platform} options={[{ value: "magento", label: "Magento" }, { value: "wordpress", label: "WordPress / WooCommerce" }, { value: "shopify", label: "Shopify" }, { value: "other", label: "其他" }]} onChange={(value) => patch("platform", value as SiteConfig["platform"])} />
+          <SelectField label="平台" value={draft.platform} options={[{ value: "magento", label: "Magento" }, { value: "woocommerce", label: "WooCommerce" }, { value: "wordpress", label: "WordPress" }, { value: "shopify", label: "Shopify" }, { value: "other", label: "其他" }]} onChange={(value) => patch("platform", value as SiteConfig["platform"])} />
           <TextField label="币种" value={draft.currency} onChange={(value) => patch("currency", value.toUpperCase())} />
           <TextField label="语言" value={draft.locale} onChange={(value) => patch("locale", value)} />
           <TextField label="时区" value={draft.timezone} onChange={(value) => patch("timezone", value)} />

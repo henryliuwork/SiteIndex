@@ -4,8 +4,9 @@ import { Link, useParams } from "react-router-dom";
 import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory, SiteConfig } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, InputWithAction, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, InfoTooltip, InputWithAction, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
+import { categoryUrlPatternError, joinCategoryUrlPatterns, splitCategoryUrlPatterns } from "./project-settings-categories/url-patterns";
 import "./project-settings-categories/page.css";
 
 const settingsTabs = [
@@ -16,7 +17,7 @@ const matchTypeOptions: { value: CategoryMatchType; label: string }[] = [
   { value: "url_contains", label: "URL 包含" }, { value: "skus", label: "指定 SKU" },
 ];
 const matchingModes = [
-  { value: "url_rule", title: "URL 规则", hint: "Shopify · WooCommerce", detail: "分类页有固定路径，例如 Shopify /collections/、WooCommerce /product-category/。" },
+  { value: "url_rule", title: "URL 规则", hint: "Shopify · WooCommerce", detail: "按分类页路径识别，支持多个前缀。" },
   { value: "feed", title: "Feed 分类字段", hint: "依赖 feed 质量", detail: "读取 feed 的 product_type 或 google_product_category 分类层级。" },
   { value: "manual", title: "手动配置", hint: "适合 Magento 等", detail: "逐个填写分类名、分类页 URL 和匹配规则；规则按顺序匹配。" },
 ] as const;
@@ -52,6 +53,8 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
   const configQuery = useQuery({ queryKey: ["categories", id], queryFn: () => api.categories.get(id) });
   const [draft, setDraft] = useState<CategoriesConfig | null>(null);
   const [preview, setPreview] = useState<CategoryPreview | null>(null);
+  const [previewedRuleKey, setPreviewedRuleKey] = useState<string | null>(null);
+  const [showRuleError, setShowRuleError] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -64,7 +67,10 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
     let current = true;
     setPreviewing(true);
     void api.categories.preview(id, initial).then((result) => {
-      if (current) setPreview(result);
+      if (current) {
+        setPreview(result);
+        setPreviewedRuleKey(initial.mode === "url_rule" ? initial.url_pattern ?? "" : null);
+      }
     }).catch((error: unknown) => {
       if (current) toast.error("分类预览失败：" + apiErrorMessage(error, "请稍后重试"));
     }).finally(() => {
@@ -92,6 +98,9 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
   const rows = useMemo<CategoryRow[]>(() => (draft?.manual ?? []).map((category, index) => ({
     ...category, rowId: "category-" + index, skuCount: preview?.categories.find((item) => item.slug === category.slug)?.sku_count ?? 0,
   })), [draft?.manual, preview]);
+  const urlPatterns = splitCategoryUrlPatterns(draft?.url_pattern);
+  const urlRuleError = draft?.mode === "url_rule" ? categoryUrlPatternError(urlPatterns) : null;
+  const updateUrlPatterns = (patterns: string[]) => setDraft((current) => current ? { ...current, url_pattern: joinCategoryUrlPatterns(patterns) } : current);
   const selected = selectedIndex === null ? null : rows[selectedIndex] ?? null;
   const columns = useMemo<ColumnDef<CategoryRow, unknown>[]>(() => [
     { id: "category", header: "分类", meta: { width: 280, grow: 2, minWidth: 200, text: "single" }, cell: ({ row }) => <div className="si-category-name-cell"><strong>{row.original.name || "未命名分类"}</strong><code>{row.original.slug}</code></div> },
@@ -103,9 +112,11 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
 
   const previewConfig = async () => {
     if (!draft || previewing) return;
+    if (urlRuleError) { setShowRuleError(true); toast.error(urlRuleError); return; }
     setPreviewing(true);
     try {
       setPreview(await api.categories.preview(id, draft));
+      setPreviewedRuleKey(draft.mode === "url_rule" ? draft.url_pattern ?? "" : null);
       toast.success("分类预览结果已更新。");
     } catch (error) {
       toast.error("分类预览失败：" + apiErrorMessage(error, "请稍后重试"));
@@ -116,6 +127,7 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
 
   const saveConfig = async () => {
     if (!draft || saving) return;
+    if (urlRuleError) { setShowRuleError(true); toast.error(urlRuleError); return; }
     const categories = draft.manual ?? [];
     if (draft.mode === "manual" && categories.some((category) => !category.name.trim() || !category.slug.trim() || !category.url.trim() || category.match.length === 0 || category.match.some((rule) => !rule.value.trim()))) {
       toast.error("请补齐分类名、slug、分类页 URL 和至少一条匹配规则。");
@@ -130,6 +142,7 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
       };
       const result = await api.categories.save(id, configToSave);
       setPreview(result);
+      setPreviewedRuleKey(draft.mode === "url_rule" ? draft.url_pattern ?? "" : null);
       onConfigSaved?.(draft);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["categories", id] }),
@@ -190,8 +203,16 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
   if (configQuery.isLoading || !draft) return embedded ? <section id="categories" className="si-category-embedded" aria-labelledby="categories-heading"><h2 id="categories-heading">分类设置</h2><div className="si-query-loading" role="status">正在加载分类设置…</div></section> : <div className="si-page-loading" role="status">正在加载分类设置…</div>;
 
   const categoryContent = <>
-    <section className="si-category-mode-section"><h2>分类识别方式</h2><div className="si-category-mode-grid">{matchingModes.map((mode) => <button type="button" key={mode.value} className={`si-category-mode-card${draft.mode === mode.value ? " active" : ""}`} aria-pressed={draft.mode === mode.value} onClick={() => setDraft((current) => current ? { ...current, mode: mode.value } : current)}><span className="si-category-mode-title"><strong>{mode.title}</strong><Chip tone={draft.mode === mode.value ? "ok" : "neutral"}>{draft.mode === mode.value ? "当前" : mode.hint}</Chip></span><span>{mode.detail}</span></button>)}</div></section>
-    {draft.mode === "url_rule" && <section className="si-category-url-rule"><label htmlFor="si-category-url-pattern">分类 URL 规则</label><input id="si-category-url-pattern" className="si-text-field si-category-mono" value={draft.url_pattern ?? "/collections/{slug} , /product-category/{slug}/"} onChange={(event) => setDraft((current) => current ? { ...current, url_pattern: event.target.value } : current)} /><p>用 <code>{"{slug}"}</code> 表示分类 slug；支持多个 URL 模式。</p></section>}
+    <section className="si-category-mode-section"><h2>分类识别方式</h2><div className="si-category-mode-grid">{matchingModes.map((mode) => <button type="button" key={mode.value} className={`si-category-mode-card${draft.mode === mode.value ? " active" : ""}`} aria-pressed={draft.mode === mode.value} onClick={() => { setShowRuleError(false); setDraft((current) => current ? { ...current, mode: mode.value } : current); }}><span className="si-category-mode-title"><strong>{mode.title}</strong><Chip tone={draft.mode === mode.value ? "ok" : "neutral"}>{draft.mode === mode.value ? "当前" : mode.hint}</Chip></span><span>{mode.detail}</span></button>)}</div></section>
+    {draft.mode === "url_rule" && <section className="si-category-url-rule">
+      <div className="si-category-url-rule-heading"><strong>分类 URL 前缀</strong><InfoTooltip label="分类 URL 前缀说明" content="每条规则用 {slug} 表示分类名；按列表顺序匹配，可填写 /shop/{slug} 等路径。" /></div>
+      <div className="si-category-url-rule-list">{urlPatterns.map((pattern, index) => <InputWithAction key={index} action={<Button size="small" variant="quiet" aria-label={`删除分类 URL 规则 ${index + 1}`} disabled={urlPatterns.length === 1} onClick={() => updateUrlPatterns(urlPatterns.filter((_, itemIndex) => itemIndex !== index))}>删除</Button>}>
+        <input className="si-text-field si-category-mono" aria-label={`分类 URL 规则 ${index + 1}`} value={pattern} placeholder={index === 0 ? "/shop/{slug}" : "/product-category/{slug}"} onChange={(event) => updateUrlPatterns(urlPatterns.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
+      </InputWithAction>)}</div>
+      <Button size="small" onClick={() => updateUrlPatterns([...urlPatterns, ""])} disabled={urlPatterns.some((pattern) => !pattern.trim())}>+ 添加前缀</Button>
+      {showRuleError && urlRuleError && <span className="si-category-url-rule-error" role="alert">{urlRuleError}</span>}
+      <div className="si-category-url-rule-preview" aria-live="polite">{previewing ? "正在预览分类匹配…" : previewedRuleKey !== (draft.url_pattern ?? "") ? "规则已修改，预览后可查看匹配的分类。" : preview ? <><strong>预览匹配 {preview.categories.length} 个分类</strong>{preview.categories.length ? <ul>{preview.categories.slice(0, 6).map((category) => <li key={category.slug}><code>{category.url || category.slug}</code><span>{category.sku_count} 个 SKU</span></li>)}</ul> : <span>当前数据未匹配到分类。</span>}</> : "暂无预览结果。"}</div>
+    </section>}
     {draft.mode === "feed" && <section className="si-category-feed-note"><strong>使用 Feed 分类字段</strong><span>分类层级读取当前项目配置中的主分类层级；可在「配置 → 数据源」中调整。</span></section>}
     {draft.mode === "manual" && <div className="si-category-layout">
       <section className="si-category-table-card"><div className="si-category-card-heading"><div><h2>手动分类 · {rows.length}</h2><p>规则按顺序匹配，第一个命中的作为主分类。</p></div><Button size="small" onClick={() => addCategory()}>+ 新增分类</Button></div>
