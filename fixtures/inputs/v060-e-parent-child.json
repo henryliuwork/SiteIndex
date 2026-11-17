@@ -1,0 +1,41 @@
+{
+  "description": "Synthetic E acceptance sample for the v0.6 merged Products page",
+  "site": {
+    "schema_version": "1.0",
+    "domain": "fictional.example.test",
+    "base_url": "https://fictional.example.test",
+    "platform": "magento",
+    "currency": "USD",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "markets": [],
+    "brand": { "name": "Fictional Catalog" },
+    "sitemaps": [],
+    "crawl": {
+      "adapter": "gmc_feed",
+      "feed_url": "https://feed.example.test/fictional.xml",
+      "sku_field": "id",
+      "category_depth": 2
+    },
+    "sku_grouping": {
+      "enabled": true,
+      "rule": { "type": "regex", "value": "^(.*CP)\\d{2}$" }
+    }
+  },
+  "rows": [
+    { "sku": "DEMOA100CP01", "handle": "fictional-a-01", "title": "Fictional A variant 01", "stock_status": "in_stock" },
+    { "sku": "DEMOA100CP02", "handle": "fictional-a-02", "title": "Fictional A variant 02", "stock_status": "out_of_stock" },
+    { "sku": "DEMOB200CP01", "handle": "fictional-b-01", "title": "Fictional B variant 01", "stock_status": "in_stock" },
+    { "sku": "DEMOB200CP02", "handle": "fictional-b-02", "title": "Fictional B variant 02", "stock_status": "in_stock" },
+    { "sku": "DEMO-SINGLE", "handle": "fictional-single", "title": "Fictional independent product", "stock_status": "out_of_stock" }
+  ],
+  "expected": {
+    "parent_only_rows": 3,
+    "all_rows": 5,
+    "parent_rows": [
+      { "sku": "DEMOA100CP", "in_stock_variants": 1, "variant_count": 2 },
+      { "sku": "DEMOB200CP", "in_stock_variants": 2, "variant_count": 2 }
+    ],
+    "ungrouped_skus": ["DEMO-SINGLE"]
+  }
+}
