@@ -3,7 +3,7 @@
 你是 SiteIndex 的并行工作流之一（A / B / C / D / E）。开始任何工作前：
 
 1. 读 `docs/WORKSTREAMS.md` §1，确认你是 **A（Core）/ B（UI 共享层）/ C（Desktop）/ D（UI 项目页面）/ E（真实项目验收）** 中的哪一个，以及你**只能修改的目录**
-2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。当前 UI 规范与 v0.6 执行计划以 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md` 为准；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
+2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
@@ -27,7 +27,9 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 - 字体只用 `tokens.css` 中的 `--font-sans` / `--font-mono`；Source Han Sans SC 必须随 UI 打包，不能依赖联网或用户系统字体。
 - 正文字号使用字号 token；正文为 12px，任何文字不得小于 10px。页面不得新增裸字号、裸色值或裸 px 间距；新样式先使用或扩展语义 token。
 - 控件统一使用 `--control-height`（32px）或 `--control-height-compact`（28px）。输入框与同行按钮组合使用共享 `InputWithAction`，页面不得自行拼 flex 组合。
-- Tab 只有项目导航 Tab（路由切换）和页内分段 Tab（内容切换）两种；不得新增第三层 Tab。窄窗口下项目导航收纳到“更多”。
+- Tab 只有项目导航 Tab（路由切换）和页内分段 Tab（内容切换）两种；不得新增第三层 Tab。窄窗口下项目导航 Tab 与页头操作按钮均收纳到“更多 ⋯”，禁止出现横向滚动条。
+- **界面精简与提示原则**：`Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.` 尽量通过布局和标签本身让用户直观理解，不写冗余副标题或大段操作说明；确需解释时使用共享 `<InfoTooltip>`（圆形 `i` 图标 hover/focus 展示短句）。
+- **表格顶部操作区规范**：采用固定两层结构——页内视角切换 `Segmented` 前置，工具栏固定“左：搜索 + 筛选（超过两行可折叠） / 右：视图开关 + 列设置 + 统计计数”；运行、同步、导出、规则设置等整页级动作统一放右上角页头，不混入表格筛选条；批量操作仅在勾选行后浮出。
 - 日期时间通过共享 `formatDateTime` 展示，跨年时带年份；禁止“今天 / 昨天”等相对前缀，并避免在同页重复显示同一时间信息。
 - 涉及 UI 的 PR 必须附 `pnpm ui:check` 输出；样式扫描中新违规会使检查失败，日期/时间重复启发式只给人工复核告警。
 

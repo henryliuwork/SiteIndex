@@ -87,7 +87,8 @@
     <Input aria-label="网站地址" value={url} onChange={(event) => setUrl(event.target.value)} />
   </InputWithAction>
   ```
-- Tab 只有两种：**项目导航 Tab** 改变路由，在 ProjectHeader 中使用，待办也是项目导航 Tab；当前项使用主色文字和底部指示线。**页内分段 Tab** 只切换当前页内容，不改变路由；选中项使用实底突出。不得新增第三层 Tab。窄窗口下项目导航收纳到“更多”，当前项和键盘焦点保持可见。
+- Tab 只有两种：**项目导航 Tab** 改变路由，在 ProjectHeader 中使用，待办也是项目导航 Tab；当前项使用主色文字和底部指示线。**页内分段 Tab** 只切换当前页内容，不改变路由；选中项使用实底突出。不得新增第三层 Tab。窄窗口下项目导航 Tab 与页头操作区均自动测量溢出并收纳到“更多 ⋯”，**禁止出现横向滚动条**，当前项和键盘焦点保持可见。
+- **界面文案精简原则**：`Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.` 页面不写多余的副标题、解释段或重复提示；必须说明的规则或术语统一放在共享 `<InfoTooltip>`（圆形 `i` 图标按钮，hover/focus 触发短句气泡，宽度 ≤ 240px）。
 - 时间统一通过共享 `formatDateTime` 展示：同年为 `MM-DD HH:mm`，跨年带年份；禁止“今天 / 昨天”等相对前缀。项目头只显示一次最近同步时间；页面内只显示不同数据源的日期，并注明来源。表格历史记录中的多个时间不属于重复页头提示。
 - `ui:check` 对裸字号、裸色值、裸 px 间距和小于 10px 的字号执行失败检查。已有 D 页面遗留问题记录在 `packages/ui/visual/style-baseline.json`；命令会报告基线数量，新违规立即失败，页面迁移时逐步降低基线。页面日期/时间超过一处时产生人工复核告警。
 
@@ -100,6 +101,7 @@ B 维护 packages/ui/src/components/ 中的共享组件。页面组合这些组�
 | Button | 高 32px，小号 28px；primary / secondary / ghost / danger。每个操作区最多一个 primary；图标按钮必须有 aria-label 和 tooltip。 |
 | Input / Select / Checkbox | 控件高 32px，聚焦环统一。Select 使用 Radix Select/Popover，不用原生 select。 |
 | InputWithAction | 输入框与同行操作按钮共用高度、垂直居中与 `--input-with-action-gap`；作为共享组件使用。 |
+| InfoTooltip | 圆形 `i` 图标按钮（基于 `@radix-ui/react-tooltip`），hover/focus 弹出单句说明（≤ 240px）；禁止用大段内联说明文字替代。 |
 | Tabs | 只允许项目导航 Tab（路由切换）与页内分段 Tab（内容切换）两种；不得新增第三层。 |
 | FilterBar | 筛选下拉优先于 pill；内容超过两行时可折叠，最多两行时不显示“更多筛选”。 |
 | Chip | ok / warn / danger / info / neutral；字号使用 --fs-caption、字重 600。处理状态等状态列统一使用 Chip。 |
@@ -159,15 +161,25 @@ width 是基准宽度，grow 为剩余空间分配权重（0 固定、1 次要�
 | 页面 | 主按钮 | 次按钮 | 更多 ⋯ |
 |---|---|---|---|
 | 概览 | 立即同步 | 打开项目文件夹 | 校验本地数据文件、复制 agent 接入指令、打开 README |
-| 库存 | 趋势与分类在线率（Drawer） | 导出 CSV | SKU 父子规则设置 |
-| 产品 | 导出 CSV | — | SKU 父子规则设置 |
-| SEO | 规则设置（Drawer） | 重新检查收录、导出 | — |
+| 产品管理 | 立即同步 | 趋势与分类在线率（Drawer）、导出 CSV | 查看今日日报、标签管理、SKU 父子规则预览与设置 |
+| SEO | 规则设置（Drawer） | 重新检查收录、导出 | 重新抓取 SEO 数据 |
 | 内容 | 重新抓取博客 | 博客识别设置；最近识别日期显示为状态标签 | 导出 |
 | EDM | 生成命令 | 导出 | — |
 | 设计 | 重新抓取设计规范 | 复制 Token（JSON） | 导出 design.md |
 | README | 刷新 README | 编辑 | — |
 | 运行 | 立即运行（选 job） | — | 打开日志目录 |
 | 设置各子页 | 保存 | — | — |
+
+### 3.1 表格顶部工具栏规范（方案 A）
+
+所有带表格的业务页统一采用固定两层结构，禁止把整页动作或筛选操作混排混乱：
+
+1. **视角切换行（如有）**：页内分段 Tab `Segmented` 单独前置左对齐（如 SEO 的 问题/页面/内链、内容的 博客/关键词），不与筛选条或搜索框硬挤一行。
+2. **工具栏（左 / 右严格分区）**：
+   - **左侧**：`SearchInput` + `FilterBar` 筛选控件（超过两行可折叠）；
+   - **右侧**：展示模式切换（如仅父 SKU / 显示子 SKU）、列设置（如适用）、结果统计（`显示 a / b 条`）；
+   - **禁止混入**：`运行`、`立即同步`、`导出`、`规则设置` 等整页级动作**全部留在右上角页头**，不进表格工具栏；筛选条内不放业务动作按钮；
+   - **批量选择**：仅当用户勾选表格行时，才在工具栏位置浮出或叠加批量操作条（标记已处理、忽略等），未勾选时不占位。
 
 ## 4. 路由与画板对照
 
