@@ -1,30 +1,4 @@
 {
   "version": 1,
-  "counts": {
-    "pages/skills/page.css|bare-spacing|gap:20px (20px)": 2,
-    "pages/skills/page.css|bare-spacing|gap:2px (2px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:10px (10px)": 1,
-    "pages/skills/page.css|bare-spacing|gap:5px (5px)": 3,
-    "pages/skills/page.css|bare-spacing|padding:10px 13px (10px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:10px 13px (13px)": 1,
-    "pages/skills/page.css|bare-spacing|gap:8px (8px)": 3,
-    "pages/skills/page.css|bare-spacing|gap:16px (16px)": 1,
-    "pages/skills/page.css|bare-spacing|gap:14px (14px)": 3,
-    "pages/skills/page.css|bare-spacing|padding:20px (20px)": 1,
-    "pages/skills/page.css|bare-spacing|gap:9px (9px)": 1,
-    "pages/skills/page.css|bare-spacing|gap:12px (12px)": 2,
-    "pages/skills/page.css|bare-spacing|padding:12px 14px (12px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:12px 14px (14px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:14px 16px (14px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:14px 16px (16px)": 1,
-    "pages/skills/page.css|bare-spacing|margin:12px (12px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:16px 20px (16px)": 2,
-    "pages/skills/page.css|bare-spacing|padding:16px 20px (20px)": 2,
-    "pages/skills/page.css|bare-spacing|padding:9px 18px (9px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:9px 18px (18px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:12px 18px 16px (12px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:12px 18px 16px (18px)": 1,
-    "pages/skills/page.css|bare-spacing|padding:12px 18px 16px (16px)": 1,
-    "pages/skills/page.css|bare-spacing|margin-left:8px (8px)": 1
-  }
+  "counts": {}
 }
