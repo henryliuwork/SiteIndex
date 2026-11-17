@@ -41,6 +41,7 @@ interface DailySite {
 export type DailySnapshot = JsonRecord & { sku: string };
 export interface DailyOptions {
   date?: string;
+  emptyFeedReason?: string;
   now?: Date | (() => Date);
   maxRemovedRatio?: number;
   force?: boolean;
@@ -301,7 +302,7 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     return { exitCode, status: "failed", counts, errors: [message] };
   };
 
-  if (!snapshot.length) return fail(EXIT.SOURCE_FAILED, "Feed 快照为空，未写入数据。");
+  if (!snapshot.length) return fail(EXIT.SOURCE_FAILED, options.emptyFeedReason ?? "Feed 快照为空，未写入数据。");
   const overrides = site.crawl?.overrides ?? {};
   const snapBy = new Map<string, DailySnapshot>();
   for (const raw of snapshot) {

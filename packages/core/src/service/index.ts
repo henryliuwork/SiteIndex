@@ -92,7 +92,7 @@ import { parseJsonl, readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl"
 import { upsertLedger } from "../ledger";
 import { pathsForProject, resolveProjectLayout } from "../io/project-layout";
 import { assertProjectStorageLocal, inspectProjectStorageLocation } from "../io/project-storage";
-import { FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
+import { emptySnapshotReason, FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
 import { groupSkuIds, previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
 import { selectInventoryDates, type InventorySummaryRange } from "../inventory/history-range";
 import {
@@ -1144,6 +1144,7 @@ async function inspectFeeds(feedUrls: string[], opts: { sku_field: string; categ
     };
     const items = await readFeeds(site);
     const snapshot = toSnapshot(items, site, localDate("UTC"));
+    if (!snapshot.rows.length) throw new FeedError("FEED_FETCH_FAILED", emptySnapshotReason(items, snapshot));
     const stock = Object.fromEntries(STOCK_STATUS_VALUES.map((status) => [status, snapshot.stats[status] ?? 0])) as Record<StockStatus, number>;
     const present = (value: unknown): boolean => value !== undefined && value !== null && String(value).trim() !== "";
     const field_coverage = [opts.sku_field || "id", ...INSPECTED_FEED_FIELDS]
@@ -1164,9 +1165,9 @@ async function inspectFeeds(feedUrls: string[], opts: { sku_field: string; categ
       usable_skus: snapshot.rows.length,
       products: new Set(snapshot.rows.map((row) => row.handle)).size,
       skipped: {
-        duplicate: snapshot.stats.duplicate ?? 0,
-        missing_price_or_link: snapshot.stats.missing_price_or_link ?? 0,
-        no_id: snapshot.stats.no_id ?? 0,
+        duplicate: snapshot.filtered.duplicate,
+        missing_price_or_link: snapshot.filtered.missing_price_or_link,
+        no_id: snapshot.filtered.no_id,
       },
       stock,
       field_coverage,
@@ -1712,8 +1713,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             progress(25, "daily", "正在读取商品 feed 并同步库存");
             try {
               const items = await readFeeds(config as FeedSiteConfig);
-              const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
-              const daily = await runDaily(executionPath, snapshot, { date: requestedDate, force: req.force });
+              const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate);
+              const daily = await runDaily(executionPath, snapshot.rows, { date: requestedDate, force: req.force,
+                emptyFeedReason: emptySnapshotReason(items, snapshot) });
               Object.assign(counts, daily.counts);
               const message = daily.status === "failed"
                 ? `每日同步失败：${daily.errors.join("；") || "数据源未生成有效数据。"}`
@@ -1785,11 +1787,12 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
           } else {
             progress(5, "feed", "正在读取商品 feed");
             const items = await readFeeds(config as FeedSiteConfig);
-            const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate).rows;
+            const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate);
             progress(35, "daily", "正在合并商品与库存数据");
-            const daily = await runDaily(executionPath, snapshot, {
+            const daily = await runDaily(executionPath, snapshot.rows, {
               date: requestedDate,
               force: req.force,
+              emptyFeedReason: emptySnapshotReason(items, snapshot),
               ...(ctx.testOnlyBeforeDailyTargetReplace
                 ? { testOnlyBeforeTargetReplace: ctx.testOnlyBeforeDailyTargetReplace }
                 : {}),

@@ -1,4 +1,5 @@
 import type { DetectResult, Platform } from "@siteindex/shared";
+import { compareKeys } from "../io/compare";
 
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_SITEMAPS = 12;
@@ -110,10 +111,16 @@ function feedLinks(html: string, baseUrl: string): string[] {
     if (!href || !(rel.includes("alternate") || rel.includes("feed")) || !/(rss|atom|xml)/.test(type)) continue;
     try {
       const url = new URL(href, baseUrl);
-      if (url.protocol === "http:" || url.protocol === "https:") values.add(url.href);
+      const hint = `${url.pathname} ${url.search} ${attrs.title ?? ""}`;
+      const productFeed = /product|catalog|merchant|shopping|\bgmc\b|woocommerce/i.test(hint);
+      const articleFeed = /(?:^|\/)(?:comments?|tag|author|blog|news)(?:\/|$)/i.test(url.pathname)
+        || /^\/feed\/?$/i.test(url.pathname)
+        || /\/feed\/?$/i.test(url.pathname)
+        || /(?:^|[?&])feed=(?:rss2?|atom)(?:&|$)/i.test(url.search);
+      if ((url.protocol === "http:" || url.protocol === "https:") && productFeed && !articleFeed) values.add(url.href);
     } catch { /* 跳过无效候选地址 */ }
   }
-  return [...values].sort();
+  return [...values].sort(compareKeys);
 }
 
 function sitemapLocs(xml: string): string[] {
@@ -122,35 +129,84 @@ function sitemapLocs(xml: string): string[] {
     .filter(Boolean);
 }
 
-async function inspectSitemaps(baseUrl: string, robotsText: string): Promise<DetectResult["sitemaps"]> {
+type SitemapRole = "product" | "category" | "post" | "other";
+interface SitemapInspection {
+  rows: DetectResult["sitemaps"];
+  hints: { url: string; role: SitemapRole }[];
+  categoryPrefixCandidates: string[];
+}
+
+function sitemapRole(url: string): SitemapRole {
+  let name: string;
+  try { name = new URL(url).pathname.toLowerCase(); }
+  catch { return "other"; }
+  if (/product[-_]?cat|categor|taxonomy|collection/.test(name)) return "category";
+  if (/product/.test(name)) return "product";
+  if (/post|blog|news/.test(name)) return "post";
+  return "other";
+}
+
+async function inspectSitemaps(baseUrl: string, robotsText: string): Promise<SitemapInspection> {
   const candidates = new Set<string>();
   for (const match of robotsText.matchAll(/^\s*sitemap\s*:\s*(\S+)/gim)) candidates.add(match[1]!);
-  if (candidates.size === 0) candidates.add(new URL("/sitemap.xml", baseUrl).href);
+  const fallback = candidates.size === 0;
+  if (fallback) for (const name of ["/sitemap_index.xml", "/wp-sitemap.xml", "/sitemap.xml"]) candidates.add(new URL(name, baseUrl).href);
 
   const results: DetectResult["sitemaps"] = [];
-  const queue = [...candidates].slice(0, MAX_SITEMAPS);
+  const hints: SitemapInspection["hints"] = [];
+  const prefixes = new Map<string, number>();
+  const queue = fallback ? [] : [...candidates].slice(0, MAX_SITEMAPS);
   const inspected = new Set<string>();
+  const prefetched = new Map<string, TextResponse>();
+  if (fallback) {
+    for (const candidate of candidates) {
+      try {
+        const fetched = await fetchText(candidate);
+        if (fetched.response.ok && /<(?:\w+:)?(?:urlset|sitemapindex)\b/i.test(fetched.text)) {
+          prefetched.set(candidate, fetched);
+          queue.push(candidate);
+          break;
+        }
+      } catch { /* 继续尝试下一个常见 sitemap 地址 */ }
+    }
+  }
   while (queue.length && inspected.size < MAX_SITEMAPS) {
     const url = queue.shift()!;
     if (inspected.has(url)) continue;
     inspected.add(url);
     try {
-      const { response, text } = await fetchText(url);
+      const { response, text } = prefetched.get(url) ?? await fetchText(url);
       if (!response.ok || !/<(?:\w+:)?(?:urlset|sitemapindex)\b/i.test(text)) continue;
       if (/<(?:\w+:)?sitemapindex\b/i.test(text)) {
         const children = sitemapLocs(text).filter((child) => /^https?:\/\//i.test(child));
         results.push({ url, type: "index", url_count: children.length });
+        hints.push({ url, role: "other" });
+        const priority = { category: 0, product: 1, post: 2, other: 3 };
+        children.sort((a, b) => priority[sitemapRole(a)] - priority[sitemapRole(b)] || compareKeys(a, b));
         for (const child of children) if (!inspected.has(child) && queue.length + inspected.size < MAX_SITEMAPS) queue.push(child);
       } else {
         results.push({ url, type: "urlset", url_count: [...text.matchAll(/<(?:\w+:)?url\b/gi)].length });
+        const role = sitemapRole(url);
+        hints.push({ url, role });
+        if (role === "category") for (const location of sitemapLocs(text)) {
+          try {
+            const page = new URL(location);
+            if (page.origin !== baseUrl) continue;
+            const segments = page.pathname.split("/").filter(Boolean);
+            if (segments.length < 2) continue;
+            const prefix = `/${segments[0]}/`;
+            prefixes.set(prefix, (prefixes.get(prefix) ?? 0) + 1);
+          } catch { /* 跳过无效分类 URL */ }
+        }
       }
     } catch { /* 一张 sitemap 不可用时继续检查其他候选 */ }
   }
-  return results;
+  return { rows: results, hints, categoryPrefixCandidates: [...prefixes]
+    .sort(([a, countA], [b, countB]) => countB - countA || compareKeys(a, b)).map(([prefix]) => prefix) };
 }
 
 /** 识别站点平台、robots、sitemap 与 feed 链接候选。 */
-export async function detectSiteDetailed(input: string): Promise<{ result: DetectResult; robotsText: string }> {
+export async function detectSiteDetailed(input: string): Promise<{ result: DetectResult; robotsText: string; sitemapHints: SitemapInspection["hints"]; categoryPrefixCandidates: string[] }> {
   const inputUrl = normalizeInput(input);
   let home: Awaited<ReturnType<typeof fetchHome>>;
   try {
@@ -169,7 +225,8 @@ export async function detectSiteDetailed(input: string): Promise<{ result: Detec
     robotsFound = robots.response.ok;
     if (robotsFound) robotsText = robots.text;
   } catch { /* robots.txt 可选 */ }
-  const sitemapRows = await inspectSitemaps(origin, robotsText);
+  const sitemapInspection = await inspectSitemaps(origin, robotsText);
+  const sitemapRows = sitemapInspection.rows;
   const platform = sitePlatform(home.result.text, home.result.response.headers);
   const localeRaw = metaValue(home.result.text, ["og:locale"]) ?? /<html\b[^>]*\blang\s*=\s*(["']?)([^\s"'>]+)\1/i.exec(home.result.text)?.[2] ?? null;
   const locale = localeRaw?.replaceAll("_", "-") ?? null;
@@ -195,7 +252,7 @@ export async function detectSiteDetailed(input: string): Promise<{ result: Detec
     currency: currency?.toUpperCase() ?? null,
     feed_candidates: feedLinks(home.result.text, finalUrl.href),
   };
-  return { result, robotsText };
+  return { result, robotsText, sitemapHints: sitemapInspection.hints, categoryPrefixCandidates: sitemapInspection.categoryPrefixCandidates };
 }
 
 export async function detectSite(input: string): Promise<DetectResult> {
