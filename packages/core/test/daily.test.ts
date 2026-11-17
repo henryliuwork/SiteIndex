@@ -106,6 +106,7 @@ describe("daily sync", () => {
     const cases = [
       { config: { mode: "feed" }, category: "feed-category", source: "feed" },
       { config: { mode: "url_rule", url_pattern: "/collections/{slug}" }, category: "bird-feeders", source: "url_rule" },
+      { config: { mode: "url_rule", url_pattern: "/shop/{slug}, /collections/{slug}" }, category: "bird-feeders", source: "url_rule" },
       { config: { mode: "manual", manual: [{ slug: "manual-match", match: [{ type: "product_type_contains", value: "Bird Feeders" }] }, { slug: "second", match: [{ type: "sku_prefix", value: "SKU" }] }] }, category: "manual-match", source: "manual" },
       { config: { mode: "manual", manual: [{ slug: "no-hit", match: [{ type: "sku_prefix", value: "OTHER" }] }] }, category: "uncategorized", source: "none" },
     ] as const;

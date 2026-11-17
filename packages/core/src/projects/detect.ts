@@ -2,7 +2,7 @@ import type { DetectResult, Platform } from "@siteindex/shared";
 import { compareKeys } from "../io/compare";
 
 const REQUEST_TIMEOUT_MS = 12_000;
-const MAX_SITEMAPS = 12;
+const MAX_SITEMAPS = 32;
 
 interface TextResponse {
   response: Response;
@@ -129,7 +129,7 @@ function sitemapLocs(xml: string): string[] {
     .filter(Boolean);
 }
 
-type SitemapRole = "product" | "category" | "post" | "other";
+type SitemapRole = "product" | "category" | "blog" | "index" | "other";
 interface SitemapInspection {
   rows: DetectResult["sitemaps"];
   hints: { url: string; role: SitemapRole }[];
@@ -142,7 +142,7 @@ function sitemapRole(url: string): SitemapRole {
   catch { return "other"; }
   if (/product[-_]?cat|categor|taxonomy|collection/.test(name)) return "category";
   if (/product/.test(name)) return "product";
-  if (/post|blog|news/.test(name)) return "post";
+  if (/post|blog|news/.test(name)) return "blog";
   return "other";
 }
 
@@ -179,22 +179,22 @@ async function inspectSitemaps(baseUrl: string, robotsText: string): Promise<Sit
       if (!response.ok || !/<(?:\w+:)?(?:urlset|sitemapindex)\b/i.test(text)) continue;
       if (/<(?:\w+:)?sitemapindex\b/i.test(text)) {
         const children = sitemapLocs(text).filter((child) => /^https?:\/\//i.test(child));
-        results.push({ url, type: "index", url_count: children.length });
-        hints.push({ url, role: "other" });
-        const priority = { category: 0, product: 1, post: 2, other: 3 };
+        results.push({ url, type: "index", url_count: children.length, role: "index" });
+        hints.push({ url, role: "index" });
+        const priority = { category: 0, product: 1, blog: 2, index: 3, other: 4 };
         children.sort((a, b) => priority[sitemapRole(a)] - priority[sitemapRole(b)] || compareKeys(a, b));
         for (const child of children) if (!inspected.has(child) && queue.length + inspected.size < MAX_SITEMAPS) queue.push(child);
       } else {
-        results.push({ url, type: "urlset", url_count: [...text.matchAll(/<(?:\w+:)?url\b/gi)].length });
         const role = sitemapRole(url);
+        results.push({ url, type: "urlset", url_count: [...text.matchAll(/<(?:\w+:)?url\b/gi)].length, role });
         hints.push({ url, role });
         if (role === "category") for (const location of sitemapLocs(text)) {
           try {
             const page = new URL(location);
             if (page.origin !== baseUrl) continue;
-            const segments = page.pathname.split("/").filter(Boolean);
+            const segments = decodeURI(page.pathname).split("/").filter(Boolean);
             if (segments.length < 2) continue;
-            const prefix = `/${segments[0]}/`;
+            const prefix = `/${segments.slice(0, -1).join("/")}/{slug}`;
             prefixes.set(prefix, (prefixes.get(prefix) ?? 0) + 1);
           } catch { /* 跳过无效分类 URL */ }
         }
@@ -244,6 +244,7 @@ export async function detectSiteDetailed(input: string): Promise<{ result: Detec
     redirect_status: home.redirectStatus,
     robots: { found: robotsFound, disallow_count: disallowCount, sitemaps: sitemapUrls },
     sitemaps: sitemapRows,
+    category_prefix_candidates: sitemapInspection.categoryPrefixCandidates,
     total_urls: sitemapRows.filter((row) => row.type === "urlset").reduce((total, row) => total + row.url_count, 0),
     platform: platform.platform,
     platform_evidence: platform.evidence,

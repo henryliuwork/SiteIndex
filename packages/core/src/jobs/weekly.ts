@@ -6,6 +6,7 @@ import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { readJsonl, writeJsonl } from "../io/jsonl";
 import { resolveProjectLayoutOrLegacy } from "../io/project-layout";
+import { categorySlug, categorySlugForUrl } from "./category-url-rule";
 
 type HtmlNode = { type: string; name?: string; data?: string; attribs?: Record<string, string>; children?: HtmlNode[] };
 type JsonObject = Record<string, unknown>;
@@ -232,8 +233,10 @@ function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), cat
   if (doc && hasProductDocument(doc)) return "product";
   if (pathname === "/") return "home";
   if (/\/products?\//i.test(pathname)) return "product";
-  const leaf = pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(?:html?|php)$/i, "").toLowerCase() ?? "";
-  if (/\/collections?\//i.test(pathname) || /collection|category|catalog/i.test(pathname) || categorySlugs.has(leaf) || (categoryPattern ? pattern(url, categoryPattern.split(/\s*,\s*/)) : false)) return "collection";
+  const encodedLeaf = pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(?:html?|php)$/i, "").toLowerCase() ?? "";
+  let leaf = encodedLeaf;
+  try { leaf = decodeURIComponent(encodedLeaf); } catch { /* malformed segment stays encoded */ }
+  if (/\/collections?\//i.test(pathname) || /collection|category|catalog/i.test(pathname) || categorySlugs.has(leaf) || categorySlugForUrl(url, categoryPattern)) return "collection";
   if (isConfiguredBlogUrl(url, blog) || (doc && hasBlogDocument(doc)) || isBlogPostPath(pathname)) return "blog";
   if (/\/pages?\//i.test(pathname) || pathname.split("/").filter(Boolean).length === 1) return "page";
   return "other";
@@ -552,11 +555,19 @@ function categories(config: SiteConfig, rows: Parsed[], skus: JsonObject[], date
       result.set(slug, { slug, name, url: collection?.page.url ?? "", parent: null, source: "feed", ...counts(slug), last_seen: date });
     }
   } else for (const row of rows) {
-    if (row.page.page_type !== "collection" || (config.categories.url_pattern && !pattern(row.page.url, config.categories.url_pattern.split(/\s*,\s*/)))) continue;
+    const matchedSlug = categorySlugForUrl(row.page.url, config.categories.url_pattern);
+    if (row.page.page_type !== "collection" || (config.categories.url_pattern && !matchedSlug)) continue;
     const path = new URL(row.page.url).pathname.split("/").filter(Boolean);
-    const slug = path.at(-1) ?? "";
+    let slug = urlSlug(row.page.url);
+    try { slug = decodeURIComponent(slug); } catch { /* malformed segment stays encoded */ }
+    slug = categorySlug(slug);
     if (!slug) continue;
-    result.set(slug, { slug, name: row.page.h1 ?? row.page.title ?? slug, url: row.page.url, parent: path.length > 2 ? path.at(-2)! : null, source: "url_rule", ...counts(slug), intro_text_words: row.page.word_count, last_seen: date });
+    let parent = path.length > 2 ? path.at(-2)! : null;
+    if (parent) {
+      try { parent = decodeURIComponent(parent); } catch { /* malformed segment stays encoded */ }
+      parent = categorySlug(parent);
+    }
+    result.set(slug, { slug, name: row.page.h1 ?? row.page.title ?? slug, url: row.page.url, parent, source: "url_rule", ...counts(slug), intro_text_words: row.page.word_count, last_seen: date });
   }
   return [...result.values()].sort((a, b) => compareKeys(a.slug, b.slug));
 }
