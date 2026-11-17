@@ -24,6 +24,8 @@ function stubSite(sitemapName: string): string[] {
     if (url.pathname.includes("product_cat")) return new Response(`<urlset>
       <url><loc>https://shop.example.test/collections/gear/</loc></url>
       <url><loc>https://shop.example.test/collections/home/</loc></url>
+      <url><loc>https://shop.example.test/shop/%E5%AE%B6%E5%85%B7/</loc></url>
+      <url><loc>https://shop.example.test/product-category/outdoor/</loc></url>
     </urlset>`);
     if (url.pathname.includes("product-1")) return new Response('<urlset><url><loc>https://shop.example.test/item/a/</loc></url></urlset>');
     if (url.pathname.includes("post-1")) return new Response('<urlset><url><loc>https://shop.example.test/story/a/</loc></url></urlset>');
@@ -46,9 +48,10 @@ describe("WooCommerce detection", () => {
     expect(requested.filter((name) => ["/sitemap_index.xml", "/wp-sitemap.xml", "/sitemap.xml"].includes(name))
       .slice(0, ["/sitemap_index.xml", "/wp-sitemap.xml", "/sitemap.xml"].indexOf(sitemapName) + 1))
       .toEqual(["/sitemap_index.xml", "/wp-sitemap.xml", "/sitemap.xml"].slice(0, ["/sitemap_index.xml", "/wp-sitemap.xml", "/sitemap.xml"].indexOf(sitemapName) + 1));
-    expect(detected.sitemapHints.map((hint) => hint.role)).toEqual(["other", "category", "product", "post"]);
-    expect(detected.categoryPrefixCandidates).toEqual(["/collections/"]);
-    expect(detected.result.total_urls).toBe(4);
+    expect(detected.result.sitemaps.map((row) => row.role)).toEqual(["index", "category", "product", "blog"]);
+    expect(detected.result.category_prefix_candidates).toEqual(["/collections/{slug}", "/product-category/{slug}", "/shop/{slug}"]);
+    expect(detected.categoryPrefixCandidates).toEqual(detected.result.category_prefix_candidates);
+    expect(detected.result.total_urls).toBe(6);
   });
 
   it("prefers a robots.txt sitemap over fallback names", async () => {

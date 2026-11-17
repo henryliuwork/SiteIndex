@@ -111,8 +111,8 @@ describe("project service", () => {
       feed_candidates: ["https://example.com/products.xml"],
     });
     expect(result.sitemaps).toEqual([
-      { url: "https://example.com/sitemap.xml", type: "index", url_count: 1 },
-      { url: "https://example.com/child.xml", type: "urlset", url_count: 2 },
+      { url: "https://example.com/sitemap.xml", type: "index", url_count: 1, role: "index" },
+      { url: "https://example.com/child.xml", type: "urlset", url_count: 2, role: "other" },
     ]);
   });
 

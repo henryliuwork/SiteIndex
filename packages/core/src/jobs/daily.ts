@@ -3,6 +3,7 @@ import path from "node:path";
 import { CSV_HEADERS, EXIT, pathsFor, type CategoryMode } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
+import { categorySlugForUrl } from "./category-url-rule";
 import { parseCsv, writeCsv } from "../io/csv";
 import { parseJsonl, readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl";
 import { resolveProjectLayout } from "../io/project-layout";
@@ -139,19 +140,8 @@ function categoryFor(site: DailySite, sku: string, snapshot: DailySnapshot): { c
     return { category, categories: Array.isArray(snapshot.categories) && snapshot.categories.length ? snapshot.categories.map(String) : [category], source: "feed" };
   }
   if (config.mode === "url_rule") {
-    const pathname = typeof snapshot.url === "string" ? new URL(snapshot.url).pathname : "";
-    for (const rawPattern of (config.url_pattern ?? "").split(",")) {
-      const pattern = rawPattern.trim();
-      if (!pattern) continue;
-      const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\{slug\\\}/g, "([^/]+)");
-      const match = new RegExp(`^${escaped}(?:/|$)`, "i").exec(pathname);
-      if (match?.[1]) {
-        let category = match[1];
-        try { category = decodeURIComponent(category); } catch { /* malformed path segment stays encoded */ }
-        const slug = slugify(category);
-        return { category: slug, categories: [slug], source: "url_rule" };
-      }
-    }
+    const slug = typeof snapshot.url === "string" ? categorySlugForUrl(snapshot.url, config.url_pattern) : null;
+    if (slug) return { category: slug, categories: [slug], source: "url_rule" };
     return { category: "uncategorized", categories: ["uncategorized"], source: "none" };
   }
   if (config.mode === "manual") {
