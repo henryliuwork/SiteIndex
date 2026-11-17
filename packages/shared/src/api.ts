@@ -280,6 +280,10 @@ export interface CreateProjectInput {
   sku_field: string;
   category_depth: number;
   missing_as: "out_of_stock" | "removed";
+  /** 首次 init 前写入的分类规则；省略时沿用默认配置。 */
+  categories?: SiteConfig["categories"];
+  /** 首次 init 前启用无 Feed 商品采集；省略时保持旧行为。 */
+  auto_collect_products?: boolean;
   brand: SiteConfig["brand"];
   markets: string[];
   projects_root: string;
