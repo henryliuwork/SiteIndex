@@ -18,6 +18,7 @@ interface RouteCase {
 interface Viewport {
   width: number;
   height: number;
+  headerOnly?: boolean;
 }
 
 interface CheckFailure {
@@ -41,7 +42,9 @@ const shotsDir = process.env.SITEINDEX_UI_CHECK_SHOTS_DIR
   ? path.resolve(uiRoot, process.env.SITEINDEX_UI_CHECK_SHOTS_DIR)
   : path.join(uiRoot, ".shots");
 const viewports: Viewport[] = [
+  { width: 1024, height: 768, headerOnly: true }, // Extra compact viewport checks the shell/header; table viewport remains the 1280+ contract.
   { width: 1280, height: 800 },
+  { width: 1440, height: 900 },
   { width: 1920, height: 1080 },
 ];
 const mockModeOverride = process.env.SITEINDEX_UI_CHECK_MOCK_MODE;
@@ -313,6 +316,13 @@ async function inspectPage(page: Page): Promise<{
       }
     }
     const clippedActiveTabs: string[] = [];
+    const headerScrollbars: string[] = [];
+    for (const selector of [".si-project-header .si-tabs", ".si-project-header-actions"]) {
+      for (const element of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+        const style = getComputedStyle(element);
+        if (element.scrollWidth > element.clientWidth || ["auto", "scroll"].includes(style.overflowX)) headerScrollbars.push(selector);
+      }
+    }
     for (const tabs of Array.from(document.querySelectorAll<HTMLElement>(".si-project-header .si-tabs"))) {
       const activeTab = tabs.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
       if (!activeTab) continue;
@@ -477,6 +487,7 @@ async function inspectPage(page: Page): Promise<{
         sharedTypographyElements,
         clippedHeaderActions,
         clippedActiveTabs,
+        headerScrollbars,
         tableCount: tables.length,
         emptySurface,
         contentSurface,
@@ -572,6 +583,7 @@ async function main(): Promise<void> {
             sharedTypographyElements: string[];
             clippedHeaderActions: string[];
             clippedActiveTabs: string[];
+            headerScrollbars: string[];
             tableCount: number;
             emptySurface: boolean;
             contentSurface: boolean;
@@ -608,13 +620,14 @@ async function main(): Promise<void> {
           if (values.sharedTypographyElements.length) failures.push({ rule: "shared-min-font-size", message: `共享控件存在小于 10px 的文字：${values.sharedTypographyElements.join("；")}` });
           if (values.clippedHeaderActions.length) failures.push({ rule: "project-header-actions", message: `页头操作按钮未完整显示：${values.clippedHeaderActions.join("；")}` });
           if (values.clippedActiveTabs.length) failures.push({ rule: "project-header-tabs", message: `当前项目标签未完整显示：${values.clippedActiveTabs.join("；")}` });
+          if (values.headerScrollbars.length) failures.push({ rule: "project-header-scrollbar", message: `项目导航或页头操作区存在横向滚动：${values.headerScrollbars.join("；")}` });
           if (values.clippedCells.length) failures.push({ rule: "table-cell-clipping", message: `表格文字被裁切且没有完整文本提示：${values.clippedCells.join("；")}` });
           if (values.scheduleTableMissingStandardScroll) failures.push({ rule: "table-scroll", message: "定时任务表格尚未接入 DataTable 的内部滚动区。" });
           if (values.tableCount && values.tables.some((table) => table.overflowY !== "auto" && table.overflowY !== "scroll")) {
             failures.push({ rule: "table-scroll", message: "表格滚动区的 overflow-y 不是 auto/scroll。" });
           }
           if (values.tables.some((table) => table.checkViewport && !table.bottomInViewport)) failures.push({ rule: "table-viewport", message: "表格滚动区底部超出窗口视口。" });
-          if (values.tables.some((table) => table.checkViewport && table.hasPagination && !table.paginationInViewport)) failures.push({ rule: "table-pagination-viewport", message: "表格分页栏未完整显示在窗口视口内。" });
+          if (!viewport.headerOnly && values.tables.some((table) => table.checkViewport && table.hasPagination && !table.paginationInViewport)) failures.push({ rule: "table-pagination-viewport", message: "表格分页栏未完整显示在窗口视口内。" });
           if (values.tables.some((table) => !table.hasPagination || !table.hasPageSizeControl)) {
             failures.push({ rule: "table-pagination", message: "表格没有分页条或每页条数控件。" });
           }

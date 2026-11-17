@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ProjectSummary } from "@siteindex/shared";
-import { PROJECT_TABS, ProjectHeader, ProjectTabPanel, projectPanelId, projectTabId } from "../project-header";
+import { PROJECT_TABS, ProjectHeader, ProjectTabPanel, fitProjectTabs, projectPanelId, projectTabId } from "../project-header";
 import { Button } from "../primitives";
 import { formatDateTime } from "../utils";
 
@@ -14,6 +14,8 @@ const project: Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "sto
   platform: "shopify",
   sync: { state: "ok", at: "2026-11-13T08:30:00.000Z", job: null },
 };
+
+afterEach(cleanup);
 
 function CurrentPath() {
   return <output data-testid="current-path">{useLocation().pathname}</output>;
@@ -113,18 +115,41 @@ describe("ProjectHeader compact layout", () => {
     expect(container.querySelector(".si-project-header-action-slot .si-project-header-actions")).toBeNull();
   });
 
-  it("scrolls the selected tab fully into the visible tab strip", () => {
+  it("keeps the selected tab visible when only a subset fits", () => {
+    expect(fitProjectTabs([60, 60, 60, 60, 60], 230, 4, 8, 76)).toEqual([0, 4]);
+    expect(fitProjectTabs([60, 60, 60], 196, 2, 8, 76)).toEqual([0, 1, 2]);
+  });
+
+  it("moves tabs after a resize into a keyboard menu and focuses the selected destination", async () => {
+    const oldClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    let stripWidth = 1000;
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("si-project-tab-strip") ? stripWidth : 0; } });
     const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains("si-tabs")) return new DOMRect(0, 0, 300, 44);
-      if (this.getAttribute("role") === "tab" && this.getAttribute("aria-selected") === "true") return new DOMRect(280, 0, 70, 44);
-      return new DOMRect(0, 0, 0, 0);
+      return new DOMRect(0, 0, this.parentElement?.classList.contains("si-project-tab-measure") ? 60 : 0, 28);
     });
-
-    const { container } = render(<MemoryRouter><ProjectHeader project={project} activeTab="todos" /></MemoryRouter>);
-
-    const scrollLeft = (container.querySelector(".si-tabs") as HTMLElement).scrollLeft;
-    rectSpy.mockRestore();
-    expect(scrollLeft).toBe(50);
+    function ResponsiveHeader() {
+      const location = useLocation();
+      return <><ProjectHeader project={project} activeTab={location.pathname.endsWith("/seo") ? "seo" : "settings"} hasTabPanel /><CurrentPath /></>;
+    }
+    try {
+      render(<MemoryRouter initialEntries={["/p/demo-store/settings/config"]}><ResponsiveHeader /></MemoryRouter>);
+      expect(screen.getByRole("tab", { name: "设置" }).getAttribute("aria-selected")).toBe("true");
+      expect(screen.queryByRole("button", { name: "更多项目页面" })).toBeNull();
+      stripWidth = 230;
+      fireEvent(window, new Event("resize"));
+      await waitFor(() => expect(screen.getByRole("button", { name: "更多项目页面" })).not.toBeNull());
+      fireEvent.click(screen.getByRole("button", { name: "更多项目页面" }));
+      const menu = screen.getByRole("menu", { name: "更多项目页面" });
+      fireEvent.keyDown(menu, { key: "ArrowDown" });
+      expect(document.activeElement?.getAttribute("role")).toBe("menuitem");
+      fireEvent.click(within(menu).getByRole("menuitem", { name: "SEO" }));
+      expect(screen.getByTestId("current-path").textContent).toBe("/p/demo-store/seo");
+      await waitFor(() => expect(screen.getByRole("tab", { name: "SEO" })).toBe(document.activeElement));
+    } finally {
+      rectSpy.mockRestore();
+      if (oldClientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", oldClientWidth);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+    }
   });
 
   it("warns when a project is known to be under third-party sync", () => {
