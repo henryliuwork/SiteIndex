@@ -128,6 +128,7 @@ async function renderProductsPage(options: {
   stockRows?: SkuStockView[];
   detail?: ProductFull;
   groupingEnabled?: boolean;
+  feedlessCollection?: boolean;
   syncAt?: string;
   initialPath?: string;
 } = {}) {
@@ -143,6 +144,7 @@ async function renderProductsPage(options: {
       : project.summary,
     config: {
       ...project.config,
+      crawl: options.feedlessCollection ? { ...project.config.crawl, feed_url: "", auto_collect_products: true } : project.config.crawl,
       sku_grouping: { enabled: options.groupingEnabled !== false, rule: { type: "regex" as const, value: "^(.+?)\\d{2}$" } },
     },
   }));
@@ -188,6 +190,12 @@ function findCell(row: HTMLElement, headerName: string): string | undefined {
 }
 
 describe("合并后的产品管理表", () => {
+  it("无 Feed 自动采集已配置时不提示商品来源未配置", async () => {
+    await renderProductsPage({ feedlessCollection: true });
+    expect(await screen.findByText("无 Feed 商品采集已配置")).toBeTruthy();
+    expect(screen.queryByText(/未配置商品来源|每日库存同步未启用/)).toBeNull();
+  }, 15_000);
+
   it("保留 #574 的项目头同步时间展示且不重复显示", async () => {
     await renderProductsPage({ syncAt: new Date(2026, 10, 8, 17, 0).toISOString() });
 

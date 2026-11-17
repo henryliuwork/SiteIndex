@@ -79,6 +79,18 @@ async function renderSettings(initialEntry: string, omitGsc = false, initialGscP
 }
 
 describe("项目设置单页区块", () => {
+  it("无 Feed 商品采集开关可保存到抓取配置", async () => {
+    const { updateConfig } = await renderSettings("/p/demo2/settings/config?section=crawl");
+    const toggle = await screen.findByRole("checkbox", { name: "无 Feed 时自动采集商品" }) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    expect(screen.getByRole("button", { name: "自动采集商品说明" })).toBeTruthy();
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", expect.objectContaining({
+      crawl: expect.objectContaining({ feed_url: "", auto_collect_products: true }),
+    })));
+  }, 20_000);
+
   it("WooCommerce 与 WordPress 平台可分别显示并保存", async () => {
     const { updateConfig } = await renderSettings("/p/demo2/settings/config");
     const platform = await screen.findByLabelText("平台") as HTMLSelectElement;

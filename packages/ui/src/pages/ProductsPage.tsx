@@ -10,6 +10,7 @@ import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, formatDateTime, Input, InputWithAction, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, useToast, stockTone } from "../components";
 import { formatInventoryDetailDuration, formatInventoryTableDuration, InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
+import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
 import { CategoryPanel, GroupingPreview, historyRanges, requestInventorySummary, stockNames, TrendChart } from "./products/inventory-widgets";
 import { formatInStockVariants, formatProductPrice, matchesProductManagementSearch, mergeProductAndStockRows, type ProductManagementRow } from "./products/merged-rows";
 
@@ -278,6 +279,7 @@ export function ProductsPage() {
   const columns = useMemo(() => productColumns((row) => { setSelectedRow(row); setDrawerSegment("overview"); }, (url) => void openExternal(url)), []);
   const project = projectQuery.data?.summary;
   const config = projectQuery.data?.config;
+  const feedlessCollectionConfigured = hasFeedlessProductCollection(config);
   const watchedCategories = config?.categories.watched ?? [];
   const groupingEnabled = config?.sku_grouping?.enabled === true;
   const groupingRule: SkuGroupingRule = config?.sku_grouping?.rule ?? { type: "separator", value: "-" };
@@ -429,6 +431,7 @@ export function ProductsPage() {
     />
     <ProjectTabPanel projectId={project.id} tab="products">
       {syncMessage && <Notice tone="info" title="库存同步进行中">{syncMessage}</Notice>}
+      {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 商品采集已配置">当前展示最近一次同步的数据；自动采集功能待 Core 接入后生效。</Notice>}
       {!groupingEnabled && <Notice tone="warn" title="父 SKU 分组尚未启用">当前按 Core 返回的独立 SKU 展示。启用规则后，产品表会显示父 SKU 汇总。<Button size="small" onClick={() => setGroupingDrawerOpen(true)}>查看规则预览</Button></Notice>}
       {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <div className="si-inventory-kpis">{summary.kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>}
       {productListQuery.isFetching && productListQuery.data && <div className="si-inventory-query-state" role="status">正在更新产品列表…</div>}

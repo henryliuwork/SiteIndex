@@ -5,7 +5,7 @@ import { Link, useLocation, useParams, useSearchParams } from "react-router-dom"
 import type { CategoriesConfig, FeedInspectResult, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, InfoTooltip, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { recommendedSkuGroupingPattern, skuGroupingExample, skuGroupingPresetForRule, skuGroupingPresetOptions, skuGroupingRuleForPreset, trailingNumberPattern, type SkuGroupingPreset } from "./project-settings-config/sku-grouping-presets";
 import { configSectionLinks, isConfigSectionId, scrollToConfigSection, type ConfigSectionId } from "./project-settings-config/section-navigation";
@@ -285,6 +285,7 @@ export function ProjectSettingsConfigPage() {
           <TextField label="请求间隔（毫秒）" type="number" value={String(draft.crawl.rate_limit_ms)} onChange={(value) => patchCrawl("rate_limit_ms", Number(value) || 0)} />
           <TextField label="每周最多页面" type="number" value={String(draft.crawl.max_pages ?? 2000)} onChange={(value) => patchCrawl("max_pages", value === "" ? undefined : Number(value))} />
           <label className="si-config-check"><input type="checkbox" checked={draft.crawl.crawl_product_pages ?? true} onChange={(event) => patchCrawl("crawl_product_pages", event.target.checked)} /><span>每周抓取产品页 SEO</span></label>
+          <div className="si-config-check"><input id="si-auto-collect-products" type="checkbox" checked={draft.crawl.auto_collect_products ?? false} onChange={(event) => patchCrawl("auto_collect_products", event.target.checked)} /><label htmlFor="si-auto-collect-products">无 Feed 时自动采集商品</label><InfoTooltip label="自动采集商品说明" content="此设置待采集能力接入后生效：优先使用 WooCommerce Store API，失败后回退商品 Sitemap/HTML。" /></div>
         </div><div className="si-config-grid si-config-grid-2">
           <TextAreaField label="排除 URL 规则（每行一条）" value={asLines(draft.crawl.exclude_url_patterns)} onChange={(value) => patchCrawl("exclude_url_patterns", fromLines(value))} mono rows={2} />
         </div></ConfigCard>

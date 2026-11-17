@@ -37,6 +37,24 @@ async function renderOverview(mockApi: ReturnType<typeof createMockApi>) {
 }
 
 describe("OverviewPage 布局和操作", () => {
+  it("无 Feed 自动采集已配置时显示配置状态而非阻断提示", async () => {
+    const mockApi = createMockApi();
+    const project = await mockApi.projects.get("demo");
+    const overview = await mockApi.overview.get("demo");
+    mockApi.projects.get = vi.fn(async () => ({
+      ...project,
+      config: { ...project.config, crawl: { ...project.config.crawl, feed_url: "", auto_collect_products: true } },
+    }));
+    mockApi.overview.get = vi.fn(async () => ({ ...overview, attention: [
+      { severity: "mid" as const, text: "尚未填写 GMC feed", link: "/p/demo/settings", link_label: "配置 feed" },
+      ...overview.attention,
+    ] }));
+    await renderOverview(mockApi);
+    expect(await screen.findByText("无 Feed 商品采集已配置")).toBeTruthy();
+    expect(screen.queryByText("尚未填写 GMC feed")).toBeNull();
+    expect(screen.queryByText(/未配置商品来源|每日库存同步未启用/)).toBeNull();
+  });
+
   it("按 KPI、关注、README 摘要、变更记录排列，并把快捷操作放进页面操作区", async () => {
     await renderOverview(createMockApi());
 

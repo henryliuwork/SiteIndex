@@ -8,6 +8,7 @@ import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, formatDateTime, KpiCard, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
+import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
 };
@@ -125,6 +126,10 @@ export function OverviewPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目概览加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   const summary = project.summary;
+  const feedlessCollectionConfigured = hasFeedlessProductCollection(project.config);
+  const attention = feedlessCollectionConfigured
+    ? overview?.attention.filter((item) => item.text.toLowerCase() !== "尚未填写 gmc feed")
+    : overview?.attention;
   const canIgnoreAttention = typeof api.seo.setRuleIgnored === "function";
   return <div className="si-page si-overview-page">
     <ProjectHeader
@@ -144,6 +149,7 @@ export function OverviewPage() {
     />
     <ProjectTabPanel projectId={summary.id} tab="overview">
     <div className="si-overview-content">
+    {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 商品采集已配置">当前展示最近一次同步的数据；自动采集功能待 Core 接入后生效。</Notice>}
     {running && <Notice tone="info" title="每日同步进行中">{syncMessage || "正在同步项目数据…"}</Notice>}
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
     <section className="si-overview-kpis" aria-label="项目指标">
@@ -152,8 +158,8 @@ export function OverviewPage() {
 
     <section className="si-overview-attention si-panel">
       <div className="si-panel-heading"><h2>需要关注</h2><span>来自今日同步与数据检查</span></div>
-      {overview.attention.length ? <ul>
-        {overview.attention.map((item, index) => {
+      {attention?.length ? <ul>
+        {attention.map((item, index) => {
           const rule = attentionSeoRule(item.link, item.text);
           return <li key={item.text + index}>
             <Chip tone={severityTone(item.severity)}>{severityLabel(item.severity)}</Chip>

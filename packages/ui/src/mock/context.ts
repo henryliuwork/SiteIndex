@@ -264,7 +264,7 @@ export const makeProjectSummary = (id: MockProjectId): ProjectSummary => {
     id, name: project?.name ?? (isDemo ? "Demo Store" : "Demo Catalog"),
     path: "D:/演示项目/" + (isDemo ? "demo-store" : "demo-catalog"),
     domain: project?.domain ?? (isDemo ? "demo-store.example.test" : "demo-catalog.example.test"),
-    platform: isDemo ? "magento" : "shopify",
+    platform: isDemo ? "magento" : "woocommerce",
     sync: { state: isDemo ? "ok" : "never", at: isDemo ? "2026-10-22T02:04:00+08:00" : null, job: isDemo ? "daily" : null },
     sku_count: rows.length, product_count: Math.ceil(rows.length / 2),
     online_rate: rows.length === 0 ? null : inStock / rows.length,
