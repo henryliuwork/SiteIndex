@@ -66,6 +66,13 @@ color:var(--color-brand);
 .si-wizard-result-line strong {
 color:var(--color-ink); font-size: var(--fs-body);
 }
+.si-wizard-result-line > span { min-width: 0; }
+
+.si-wizard-sitemaps { display: grid; min-width: 0; gap: var(--space-1); margin: 0; padding: var(--space-2) 0; list-style: none; }
+.si-wizard-sitemaps li { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }
+.si-wizard-sitemaps code { min-width: 0; overflow: hidden; font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.si-wizard-sitemaps .si-chip, .si-wizard-sitemaps small { flex: none; }
+.si-wizard-sitemaps small { color: var(--color-muted); font-size: var(--fs-caption); }
 
 .si-wizard-empty {
 display:flex; min-height:92px; align-items:center; justify-content:center; gap:var(--space-2); color:var(--color-muted); font-size: var(--fs-sub-title);
@@ -114,6 +121,11 @@ margin:0; padding:var(--space-2) var(--space-3); border-radius:6px; background:v
 .si-wizard-source-main {
 display:grid; min-width:0; gap:var(--space-4);
 }
+
+.si-wizard-category-rules { display: grid; gap: var(--space-3); }
+.si-wizard-category-candidates { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.si-wizard-category-preview { overflow-wrap: anywhere; color: var(--color-muted); font-size: var(--fs-caption); }
+.si-wizard-feed-optional { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-ink-2); font-size: var(--fs-body); }
 
 .si-wizard-field {
 display:grid; min-width:0; gap:var(--space-2); color:var(--color-ink); font-size: var(--fs-body); font-weight:600;

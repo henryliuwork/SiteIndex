@@ -7,6 +7,7 @@ export interface WizardDraft {
   feedUrls: string[];
   feedResult: FeedInspectResult | null;
   feedSkipped: boolean;
+  categoryRules: string;
   skuField: string;
   categoryDepth: number;
   missingAs: "out_of_stock" | "removed";
@@ -26,6 +27,7 @@ const initialDraft: WizardDraft = {
   feedUrls: [],
   feedResult: null,
   feedSkipped: false,
+  categoryRules: "",
   skuField: "id",
   categoryDepth: 2,
   missingAs: "out_of_stock",
@@ -41,7 +43,7 @@ const initialDraft: WizardDraft = {
 
 interface WizardDraftContextValue {
   draft: WizardDraft;
-  update: (patch: Partial<WizardDraft>) => void;
+  update: (patch: Partial<WizardDraft> | ((current: WizardDraft) => Partial<WizardDraft>)) => void;
   reset: () => void;
 }
 
@@ -49,7 +51,7 @@ const WizardDraftContext = createContext<WizardDraftContextValue | null>(null);
 
 export function WizardDraftProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState(initialDraft);
-  const update = useCallback((patch: Partial<WizardDraft>) => setDraft((current) => ({ ...current, ...patch })), []);
+  const update = useCallback((patch: Partial<WizardDraft> | ((current: WizardDraft) => Partial<WizardDraft>)) => setDraft((current) => ({ ...current, ...(typeof patch === "function" ? patch(current) : patch) })), []);
   const reset = useCallback(() => setDraft({ ...initialDraft, brand: { ...initialDraft.brand, usp: [] } }), []);
   const value = useMemo(() => ({ draft, update, reset }), [draft, update, reset]);
   return <WizardDraftContext.Provider value={value}>{children}</WizardDraftContext.Provider>;
