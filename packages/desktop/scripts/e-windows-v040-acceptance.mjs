@@ -1208,7 +1208,9 @@ async function verifyPackagedFontsOffline(page) {
           const source = rule.style.getPropertyValue("src");
           for (const match of source.matchAll(/url\(["']?([^"')]+)["']?\)/gu)) {
             const url = new URL(match[1], sheet.href || document.baseURI);
-            ruleSources[family].push(url.protocol === "file:" && /\/resources\/ui\/assets\//iu.test(url.pathname));
+            const localFile = url.protocol === "file:" && /\/resources\/ui\/assets\//iu.test(url.pathname);
+            const embeddedFont = url.protocol === "data:" && /^font\/(?:woff2?|ttf|otf);base64,/iu.test(url.pathname);
+            ruleSources[family].push(localFile ? "file" : embeddedFont ? "embedded" : "external");
           }
         }
       }
@@ -1235,7 +1237,12 @@ async function verifyPackagedFontsOffline(page) {
         .filter((entry) => /\.(?:woff2?|ttf|otf)(?:[?#]|$)/iu.test(entry.name));
       return {
         loaded,
-        ruleSources: Object.fromEntries(Object.entries(ruleSources).map(([family, local]) => [family, { count: local.length, allLocal: local.length > 0 && local.every(Boolean) }])),
+        ruleSources: Object.fromEntries(Object.entries(ruleSources).map(([family, sources]) => [family, {
+          count: sources.length,
+          fileCount: sources.filter((source) => source === "file").length,
+          embeddedCount: sources.filter((source) => source === "embedded").length,
+          allLocal: sources.length > 0 && sources.every((source) => source !== "external"),
+        }])),
         fontResourceCount: fontResources.length,
         externalFontResources: fontResources.filter((entry) => new URL(entry.name).protocol !== "file:").length,
         chineseRendered,
