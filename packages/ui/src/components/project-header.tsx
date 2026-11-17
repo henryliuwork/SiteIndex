@@ -1,9 +1,10 @@
-import { cloneElement, isValidElement, useLayoutEffect, useRef, type ReactNode } from "react";
+import { cloneElement, isValidElement, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Cloud } from "lucide-react";
+import * as Popover from "@radix-ui/react-popover";
+import { Cloud, MoreHorizontal } from "lucide-react";
 import type { ProjectSummary } from "@siteindex/shared";
 import { PageHeaderActions, type PageHeaderOverflowAction } from "./layout-primitives";
-import { TabPanel, Tabs } from "./primitives";
+import { Button, TabPanel, Tabs } from "./primitives";
 import { formatDateTime } from "./utils";
 import "./project-header.css";
 
@@ -66,6 +67,92 @@ function projectTabPath(projectId: ProjectSummary["id"], tab: ProjectTab): strin
   return `/p/${projectId}${tab === "overview" ? "" : `/${tab}`}`;
 }
 
+export function fitProjectTabs(widths: readonly number[], available: number, activeIndex: number, gap: number, moreWidth: number): number[] {
+  const indices = widths.map((_, index) => index);
+  const total = widths.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, widths.length - 1);
+  if (total <= available) return indices;
+  const visible = new Set([activeIndex]);
+  let used = widths[activeIndex]! + moreWidth + gap * 2;
+  for (const index of indices) {
+    if (index === activeIndex) continue;
+    const next = widths[index]! + gap;
+    if (used + next <= available) { visible.add(index); used += next; }
+  }
+  return indices.filter((index) => visible.has(index));
+}
+
+let pendingProjectTabFocus: string | null = null;
+
+function ProjectNavigation({ projectId, activeTab, hasTabPanel }: { projectId: string; activeTab: ProjectTab; hasTabPanel: boolean }) {
+  const navigate = useNavigate();
+  const stripRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const menuSelection = useRef(false);
+  const menuItems = useRef<Array<HTMLButtonElement | null>>([]);
+  const [visibleIndices, setVisibleIndices] = useState<number[]>(() => PROJECT_TABS.map((_, index) => index));
+  const [open, setOpen] = useState(false);
+  const activeIndex = PROJECT_TABS.findIndex(({ value }) => value === activeTab);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const strip = stripRef.current;
+      const probe = measureRef.current;
+      if (!strip || !probe || !strip.clientWidth) return;
+      const widths = Array.from(probe.children, (item) => item.getBoundingClientRect().width);
+      if (widths.some((width) => width <= 0)) return;
+      const gap = Number.parseFloat(getComputedStyle(strip.querySelector(".si-tabs")!).columnGap) || 0;
+      const next = fitProjectTabs(widths, strip.clientWidth, activeIndex, gap, 76);
+      setVisibleIndices((current) => current.join() === next.join() ? current : next);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    if (stripRef.current) observer?.observe(stripRef.current);
+    if (measureRef.current) observer?.observe(measureRef.current);
+    window.addEventListener("resize", measure);
+    void document.fonts?.ready.then(measure);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
+  }, [activeIndex]);
+
+  useLayoutEffect(() => {
+    const targetId = projectTabId(projectId, activeTab);
+    if (pendingProjectTabFocus !== targetId) return;
+    const focusTab = (attempt = 0) => {
+      const tab = document.getElementById(targetId);
+      if (tab) { tab.focus(); pendingProjectTabFocus = null; }
+      else if (attempt < 30) window.requestAnimationFrame(() => focusTab(attempt + 1));
+    };
+    window.requestAnimationFrame(() => focusTab());
+  }, [projectId, activeTab, visibleIndices]);
+
+  const hiddenTabs = PROJECT_TABS.filter((_, index) => !visibleIndices.includes(index));
+  const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const current = menuItems.current.findIndex((item) => item === document.activeElement);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? hiddenTabs.length - 1
+      : (current + (event.key === "ArrowDown" ? 1 : -1) + hiddenTabs.length) % hiddenTabs.length;
+    event.preventDefault();
+    menuItems.current[next]?.focus();
+  };
+
+  return <div ref={stripRef} className="si-project-tab-strip">
+    <Tabs
+      value={activeTab}
+      options={PROJECT_TABS.filter((_, index) => visibleIndices.includes(index))}
+      ariaLabel="项目页面"
+      tabIdPrefix={`project-tab-${encodeURIComponent(projectId)}`}
+      panelIdPrefix={hasTabPanel ? `project-panel-${encodeURIComponent(projectId)}` : undefined}
+      onChange={(tab) => navigate(projectTabPath(projectId, tab))}
+    />
+    {hiddenTabs.length > 0 && <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild><Button size="small" variant="ghost" className="si-project-tab-more" aria-label="更多项目页面" aria-haspopup="menu" aria-expanded={open} icon={<MoreHorizontal size={16} />} >更多</Button></Popover.Trigger>
+      <Popover.Portal><Popover.Content className="si-page-header-menu" role="menu" aria-label="更多项目页面" align="start" sideOffset={4} onKeyDown={onMenuKeyDown} onCloseAutoFocus={(event) => { if (menuSelection.current) event.preventDefault(); }}>
+        {hiddenTabs.map(({ value, label }, index) => <button key={value} ref={(node) => { menuItems.current[index] = node; }} className="si-page-header-menu-item" type="button" role="menuitem" onClick={() => { menuSelection.current = true; pendingProjectTabFocus = projectTabId(projectId, value); navigate(projectTabPath(projectId, value)); setOpen(false); }}>{label}</button>)}
+      </Popover.Content></Popover.Portal>
+    </Popover.Root>}
+    <div ref={measureRef} className="si-project-tab-measure" aria-hidden="true">{PROJECT_TABS.map(({ value, label }) => <span key={value}>{label}</span>)}</div>
+  </div>;
+}
+
 export function ProjectHeader({
   project,
   activeTab,
@@ -89,8 +176,6 @@ export function ProjectHeader({
   overflow?: readonly PageHeaderOverflowAction[];
   hasTabPanel?: boolean;
 }) {
-  const navigate = useNavigate();
-  const headerRef = useRef<HTMLDivElement>(null);
   const projectSubtitle = subtitle ?? `${project.domain} · ${platformLabels[project.platform]}`;
   const selectedTab = activeTab;
   const syncAt = project.sync?.at ?? null;
@@ -98,22 +183,7 @@ export function ProjectHeader({
   const projectStatus = removeDuplicateSyncTime(status, formattedSyncTime);
   const normalizedPageMeta = activeTab === "products" ? labelInventoryDataSource(pageMeta) : pageMeta;
 
-  useLayoutEffect(() => {
-    const revealActiveTab = () => {
-      const tabs = headerRef.current?.querySelector<HTMLElement>(".si-tabs");
-      const activeTabElement = tabs?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-      if (!tabs || !activeTabElement) return;
-      const tabsRect = tabs.getBoundingClientRect();
-      const activeRect = activeTabElement.getBoundingClientRect();
-      if (activeRect.left < tabsRect.left) tabs.scrollLeft -= tabsRect.left - activeRect.left;
-      else if (activeRect.right > tabsRect.right) tabs.scrollLeft += activeRect.right - tabsRect.right;
-    };
-
-    revealActiveTab();
-    void document.fonts?.ready.then(revealActiveTab);
-  }, [selectedTab]);
-
-  return <div ref={headerRef} className="si-project-header">
+  return <div className="si-project-header">
     <header className="si-project-header-row">
       <div className="si-project-header-identity">
         <h1 title={project.name}>{project.name}</h1>
@@ -129,14 +199,7 @@ export function ProjectHeader({
       </div>
     </header>
     <div className="si-project-header-tabs-row">
-      <Tabs
-        value={selectedTab}
-        options={PROJECT_TABS}
-        ariaLabel="项目页面"
-        tabIdPrefix={`project-tab-${encodeURIComponent(project.id)}`}
-        panelIdPrefix={hasTabPanel ? `project-panel-${encodeURIComponent(project.id)}` : undefined}
-        onChange={(tab) => navigate(projectTabPath(project.id, tab))}
-      />
+      <ProjectNavigation projectId={project.id} activeTab={selectedTab} hasTabPanel={hasTabPanel} />
       {(pageTitle || normalizedPageMeta) && <div className="si-project-header-page-heading">
         {pageTitle && <h2>{pageTitle}</h2>}
         {normalizedPageMeta && <div className="si-project-header-page-meta">{normalizedPageMeta}</div>}

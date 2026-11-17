@@ -142,6 +142,9 @@
 - [x] W1 软件设置页的 31 条裸间距迁移到设计 token，样式基线只减不增 — 本 PR
 - [x] W1 按当前样式扫描清理 D 已迁移页面的过期基线；README 自动区块时间标明来源并移出页头 — 本 PR
 
+## v0.6.1 · 共享页头与说明提示
+- [x] ProjectHeader 按 ResizeObserver 收纳项目 Tab，窄屏无横向滚动并在路由切换后恢复焦点；新增 InfoTooltip 与四档宽度的 ui:check 页头断言 — 本 PR
+
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码
