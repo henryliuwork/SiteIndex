@@ -13,5 +13,6 @@ export default defineConfig({
   minify: true,
   sourcemap: false,
   external: ["playwright-core"],
-  noExternal: [/^@siteindex\//u],
+  // Bundle pure-JS runtime packages so the installed CLI runs without node_modules.
+  noExternal: [/^(?!playwright-core(?:\/|$)).*/u],
 });

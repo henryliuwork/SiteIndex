@@ -23,7 +23,6 @@ import {
   type LedgerKey,
   type LedgerName,
 } from "@siteindex/core";
-import { serveReadOnlyMcp } from "./mcp";
 import {
   CLI_BIN,
   CLI_COMMANDS,
@@ -868,6 +867,7 @@ async function executeMcp(parsed: ParsedArgs, io: CliIO): Promise<number> {
   const projectPath = path.resolve(cwd, projectValues[0]);
   await resolveProjectLayout(projectPath);
   const runtime = await createRuntime(io, undefined, projectPath);
+  const { serveReadOnlyMcp } = await import("./mcp");
   serveReadOnlyMcp(runtime.service, projectId("mcp-selected-project"));
   return EXIT.OK;
 }
