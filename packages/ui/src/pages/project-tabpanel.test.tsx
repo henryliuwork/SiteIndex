@@ -20,9 +20,9 @@ const pageCases = [
     tab: "products",
     projectIdExpression: "project.id",
     normal: "si-products-table-frame",
-    loading: "listQuery.isLoading",
-    error: "listQuery.isError",
-    empty: 'emptyTitle="没有匹配的产品"',
+    loading: "productListQuery.isLoading || inventoryListQuery.isLoading",
+    error: "productListQuery.isError",
+    empty: 'emptyTitle="没有匹配的产品或 SKU"',
   },
   {
     file: "EdmPage.tsx",

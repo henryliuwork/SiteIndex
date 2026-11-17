@@ -3,16 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import type { ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuRecord } from "@siteindex/shared";
+import type { ListQuery, ProductFilters, ProductFull, ProductView, SkuStockView } from "@siteindex/shared";
 import { createMockApi } from "../mock";
+import { formatInStockVariants } from "./products/merged-rows";
 
 beforeEach(() => {
   window.localStorage.clear();
-  vi.stubGlobal("ResizeObserver", class {
-    observe(): void {}
-    unobserve(): void {}
-    disconnect(): void {}
-  });
+  vi.stubGlobal("ResizeObserver", class { observe(): void {} unobserve(): void {} disconnect(): void {} });
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
     return this.classList.contains("si-table-scroll") ? 400 : 0;
   });
@@ -24,7 +21,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.doUnmock("../api");
-  vi.doUnmock("../components");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.resetModules();
@@ -70,80 +66,112 @@ function makeProduct(overrides: Partial<ProductView> & Pick<ProductView, "handle
   };
 }
 
-function tableCell(row: HTMLElement, columnName: string): string | undefined {
-  const table = row.closest("table");
-  const headers = Array.from(table?.querySelectorAll("thead th") ?? []);
-  const index = headers.findIndex((header) => header.textContent?.trim().includes(columnName));
-  return index < 0 ? undefined : row.querySelectorAll("td")[index]?.textContent?.trim();
+function makeStock(sku: string, price: number, overrides: Partial<SkuStockView> = {}): SkuStockView {
+  return {
+    sku,
+    title: "虚构组合商品",
+    variant_title: "虚构款式",
+    category: "演示分类",
+    price,
+    stock_status: "in_stock",
+    since: "2026-11-01",
+    days_in_status: 5,
+    online_rate_7d: 1,
+    online_rate_30d: 0.8,
+    history_30d: "i".repeat(30),
+    changes_30d: 2,
+    last_change: "stock_change",
+    last_change_at: "2026-11-12",
+    parent_sku: null,
+    price_history: [
+      { date: "2026-11-10", price: price - 2 },
+      { date: "2026-11-12", price },
+    ],
+    ...overrides,
+  };
 }
+
+const parent = makeProduct({
+  handle: "demo-family",
+  title: "虚构组合商品",
+  product_id: "DEMO001A",
+  row_kind: "parent",
+  price_min: 20,
+  price_max: 40,
+  variant_count: 2,
+  in_stock_variants: 1,
+  skus: ["DEMO001A01", "DEMO001A02"],
+  rating: 4.8,
+  review_count: 23,
+});
+const child = makeProduct({
+  handle: "demo-family-child",
+  title: "虚构组合商品子款",
+  product_id: "demo-child-product",
+  row_kind: "child",
+  parent_sku: "DEMO001A",
+  price_min: 27,
+  price_max: 27,
+  variant_count: null,
+  in_stock_variants: null,
+  skus: ["DEMO001A01"],
+});
+const parentStock = makeStock("DEMO001A", 20, { is_parent: true, children_count: 2, in_stock_children_count: 1 });
+const childStocks = [
+  makeStock("DEMO001A01", 27, { parent_sku: "DEMO001A", variant_title: "蓝色款" }),
+  makeStock("DEMO001A02", 40, { parent_sku: "DEMO001A", stock_status: "out_of_stock", online_rate_30d: null, variant_title: "绿色款" }),
+];
 
 async function renderProductsPage(options: {
   products?: ProductView[];
-  groupingEnabled?: boolean;
+  parentStocks?: SkuStockView[];
+  stockRows?: SkuStockView[];
   detail?: ProductFull;
-  simulateDelayedPageSizeRestore?: boolean;
-  legacyInventoryPath?: boolean;
+  groupingEnabled?: boolean;
+  syncAt?: string;
+  initialPath?: string;
 } = {}) {
+  const products = options.products ?? [parent, child];
+  const parentStocks = options.parentStocks ?? [parentStock];
+  const stockRows = options.stockRows ?? [parentStock, ...childStocks];
   const mockApi = createMockApi();
-  if (options.groupingEnabled) {
-    const project = await mockApi.projects.get("demo");
-    mockApi.projects.get = vi.fn(async () => ({
-      ...project,
-      config: {
-        ...project.config,
-        sku_grouping: { enabled: true, rule: { type: "regex" as const, value: "^(.+?)\\d{2}$" } },
-      },
-    }));
-  }
-  if (options.products) {
-    mockApi.products.list = vi.fn(async (_id: string, query: ListQuery<ProductFilters>) => {
-      const rows = query.filters?.parent_only
-        ? options.products!.filter((product) => product.row_kind !== "child")
-        : options.products!;
-      return { rows, total: rows.length };
-    });
-  }
-  if (options.detail) mockApi.products.get = vi.fn(async () => options.detail!);
-  vi.doMock("../api", () => ({
-    api: mockApi,
-    isMockApi: true,
-    apiErrorMessage: (_error: unknown, fallback: string) => fallback,
+  const project = await mockApi.projects.get("demo");
+  mockApi.projects.get = vi.fn(async () => ({
+    ...project,
+    summary: options.syncAt
+      ? { ...project.summary, sync: { ...project.summary.sync, state: "ok" as const, at: options.syncAt } }
+      : project.summary,
+    config: {
+      ...project.config,
+      sku_grouping: { enabled: options.groupingEnabled !== false, rule: { type: "regex" as const, value: "^(.+?)\\d{2}$" } },
+    },
   }));
-  if (options.simulateDelayedPageSizeRestore) {
-    let queuedQuery: ListQuery<ProductFilters> | undefined;
-    let queuedOnQueryChange: ((query: ListQuery<ProductFilters>) => void) | undefined;
-    vi.doMock("../components", async () => {
-      const actual = await vi.importActual<typeof import("../components")>("../components");
-      const TableWithDelayedPageSizeRestore = (props: {
-        query: ListQuery<ProductFilters>;
-        onQueryChange: (query: ListQuery<ProductFilters>) => void;
-      }) => {
-        if (!queuedOnQueryChange) {
-          queuedQuery = props.query;
-          queuedOnQueryChange = props.onQueryChange;
-        }
-        return <button type="button" onClick={() => {
-          if (queuedQuery && queuedOnQueryChange) queuedOnQueryChange({ ...queuedQuery, page: 1, pageSize: 200 });
-        }}>模拟延迟页长恢复</button>;
-      };
-      return { ...actual, DataTable: TableWithDelayedPageSizeRestore as typeof actual.DataTable };
-    });
-  }
-  const { ToastProvider } = await import("../components");
-  const { ProductsPage } = await import("./ProductsPage");
-  const inventoryRoute = (await import("./inventory/route")).route;
-  function CurrentPath() {
-    const { pathname, search } = useLocation();
-    return <output data-testid="current-route">{pathname}{search}</output>;
-  }
+  mockApi.products.list = vi.fn(async (_id: string, query: ListQuery<ProductFilters>) => {
+    const rows = query.filters?.parent_only
+      ? products.filter((product) => product.row_kind !== "child")
+      : products.filter((product) => product.row_kind !== "parent");
+    return { rows, total: rows.length };
+  });
+  mockApi.inventory.listSkus = vi.fn(async (_id, query) => {
+    const rows = query.filters?.parent_only ? parentStocks : stockRows;
+    return { rows, total: rows.length };
+  });
+  if (options.detail) mockApi.products.get = vi.fn(async () => options.detail!);
+  vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+  const [{ ToastProvider }, { ProductsPage }] = await Promise.all([import("../components"), import("./ProductsPage")]);
+  const { route: inventoryRoute } = await import("./inventory/route");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function CurrentLocation() {
+    const location = useLocation();
+    return <output data-testid="current-location">{location.pathname}{location.search}{location.hash}</output>;
+  }
   render(
     <ToastProvider>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={[options.legacyInventoryPath ? "/p/demo/inventory" : "/p/demo/products"]}>
+        <MemoryRouter initialEntries={[options.initialPath ?? "/p/demo/products"]}>
           <Routes>
-            <Route path="/p/:id/products" element={<><ProductsPage /><CurrentPath /></>} />
             <Route path={inventoryRoute.path} element={inventoryRoute.element} />
+            <Route path="/p/:id/products" element={<><ProductsPage /><CurrentLocation /></>} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
@@ -152,215 +180,112 @@ async function renderProductsPage(options: {
   return mockApi;
 }
 
-describe("ProductsPage 页面操作区", () => {
-  it("把导出与 SKU 规则操作放进项目页头，不渲染重复 PageHeader", async () => {
-    await renderProductsPage();
+function findCell(row: HTMLElement, headerName: string): string | undefined {
+  const table = row.closest("table");
+  const headers = Array.from(table?.querySelectorAll("thead th") ?? []);
+  const index = headers.findIndex((header) => header.textContent?.trim().includes(headerName));
+  return index < 0 ? undefined : row.querySelectorAll("td")[index]?.textContent?.trim();
+}
 
-    expect(await screen.findByRole("button", { name: "导出 CSV" })).toBeTruthy();
-    expect(document.querySelector(".si-products-page > .si-tab-panel .si-page-header")).toBeNull();
+describe("合并后的产品管理表", () => {
+  it("保留 #574 的项目头同步时间展示且不重复显示", async () => {
+    await renderProductsPage({ syncAt: new Date(2026, 10, 8, 17, 0).toISOString() });
 
-    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
-    expect(await screen.findByRole("menuitem", { name: "SKU 父子规则设置" })).toBeTruthy();
-  });
+    expect(await screen.findByText(/最近同步/)).toBeTruthy();
+    expect(document.querySelector(".si-project-header-sync")?.textContent).toContain("11-08 17:00");
+    expect(await screen.findByText("同步成功")).toBeTruthy();
+    expect(document.body.textContent?.match(/11-08 17:00/g)).toHaveLength(1);
+    expect(screen.queryByText(/今天/)).toBeNull();
+  }, 15_000);
 
-  it("列表始终显示 SKU 标识，多 SKU 产品补充数量", async () => {
-    const product = makeProduct({ handle: "demo-sku-visible", title: "虚构 SKU 商品", skus: ["DEMO-SKU-01", "DEMO-SKU-02"] });
-    const productWithoutSku = makeProduct({ handle: "demo-sku-missing", title: "无 SKU 虚构商品" });
-    await renderProductsPage({ products: [product, productWithoutSku] });
+  it("保留旧库存路径重定向到合并后的产品管理页", async () => {
+    await renderProductsPage({ initialPath: "/p/demo/inventory?stock=out_of_stock#sku-42" });
 
-    const row = (await screen.findByText("虚构 SKU 商品", { selector: "strong" })).closest("tr")!;
-    const sku = within(row).getByText("SKU DEMO-SKU-01 +1");
-    expect(sku).toBeTruthy();
-    expect(sku.getAttribute("title")).toBe("DEMO-SKU-01、DEMO-SKU-02");
-    expect(within(row).getByText("demo-sku-visible")).toBeTruthy();
-
-    const missingSkuRow = (await screen.findByText("无 SKU 虚构商品", { selector: "strong" })).closest("tr")!;
-    expect(within(missingSkuRow).getByText("SKU —")).toBeTruthy();
-  });
-
-  it("产品页旧库存入口通过兼容路由回到产品管理", async () => {
-    await renderProductsPage();
-    expect((await screen.findByTestId("current-route")).textContent).toBe("/p/demo/products");
-    fireEvent.click(await screen.findByRole("button", { name: "SKU 库存明细" }));
-
-    await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/p/demo/products"));
-    expect(document.getElementById("project-tab-demo-products")?.getAttribute("aria-selected")).toBe("true");
-  });
-
-  it("旧库存路径重定向到产品管理页", async () => {
-    await renderProductsPage({ legacyInventoryPath: true });
-
-    expect((await screen.findByTestId("current-route")).textContent).toBe("/p/demo/products");
+    expect((await screen.findByTestId("current-location")).textContent).toBe("/p/demo/products?stock=out_of_stock#sku-42");
     expect(await screen.findByRole("table")).toBeTruthy();
-    expect(document.getElementById("project-tab-demo-products")?.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("在产品页打开库存趋势和分类在线率，并可按分类筛选产品", async () => {
+  it("默认仅显示父 SKU，切换后显示子 SKU", async () => {
     const mockApi = await renderProductsPage();
-    const listSpy = vi.spyOn(mockApi.products, "list");
-    const summarySpy = vi.spyOn(mockApi.inventory, "summary");
+    const table = await screen.findByRole("table");
+    await within(table).findByText("虚构组合商品", { selector: "strong" });
+    expect(within(table).queryByText("虚构组合商品子款", { selector: "strong" })).toBeNull();
+    expect(screen.getByRole("group", { name: "SKU 展示模式" })).toBeTruthy();
+    expect(mockApi.products.list).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: true }) }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "趋势与分类在线率" }));
-
-    const drawer = await screen.findByRole("dialog");
-    expect(await within(drawer).findByRole("heading", { name: /分类在线率趋势/ })).toBeTruthy();
-    expect(within(drawer).getByRole("heading", { name: "分类在线率" })).toBeTruthy();
-    await waitFor(() => expect(summarySpy).toHaveBeenCalledWith("demo", 30));
-
-    const categoryButton = drawer.querySelector<HTMLButtonElement>(".si-category-rate");
-    expect(categoryButton).not.toBeNull();
-    fireEvent.click(categoryButton!);
-
-    await waitFor(() => expect(listSpy).toHaveBeenLastCalledWith("demo", expect.objectContaining({
-      filters: expect.objectContaining({ category: expect.any(String) }),
-    })));
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-
-describe("ProductsPage 父 SKU 与变体库存交互", () => {
-  const parent = makeProduct({
-    handle: "demo-kit", title: "演示组合商品", row_kind: "parent", parent_sku: null,
-    variant_count: 2, in_stock_variants: 1, skus: ["DEMO-KIT-01", "DEMO-KIT-02"],
-  });
-  const child = makeProduct({
-    handle: "demo-kit-blue", title: "演示组合商品蓝色款", row_kind: "child", parent_sku: "DEMO-KIT",
-    variant_count: null, in_stock_variants: null, skus: ["DEMO-KIT-01"],
-  });
-  const single = makeProduct({
-    handle: "demo-accessory", title: "演示独立配件", row_kind: "single",
-    variant_count: null, in_stock_variants: null, skus: ["DEMO-ACCESSORY"],
+    fireEvent.click(screen.getByRole("button", { name: "显示子 SKU" }));
+    await within(table).findByText("虚构组合商品子款", { selector: "strong" });
+    await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: undefined }) })));
   });
 
-  it("开启仅展示父 SKU 后隐藏子行、保留独立产品，并把筛选传给列表 IPC", async () => {
-    const mockApi = await renderProductsPage({ products: [parent, child, single], groupingEnabled: true });
-    await vi.waitFor(() => expect(mockApi.products.list).toHaveBeenCalled());
-    expect(await screen.findByText("演示组合商品蓝色款")).toBeTruthy();
+  it("父 SKU 价格显示范围，子 SKU 显示自己的价格且只在父行显示有货变体数", async () => {
+    await renderProductsPage();
+    const table = await screen.findByRole("table");
+    const parentRow = (await within(table).findByText("虚构组合商品", { selector: "strong" })).closest("tr")!;
+    expect(findCell(parentRow, "价格")).toBe("20.00–40.00");
+    expect(findCell(parentRow, "有货变体")).toBe("1/2");
+    expect(findCell(parentRow, "评分 / 评价数")).toBe("4.8 · 23");
+    expect(findCell(parentRow, "最近变化")).toContain("stock_change");
+    expect(within(table).queryByText("30 天销量")).toBeNull();
+    expect(within(table).queryByText("30 天销售额")).toBeNull();
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "仅展示父 SKU" }));
-
-    await screen.findByText("演示独立配件");
-    await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({
-      filters: expect.objectContaining({ parent_only: true }),
-    })));
-    await waitFor(() => expect(screen.queryByText("演示组合商品蓝色款")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "显示子 SKU" }));
+    const childRow = (await within(table).findByText("虚构组合商品子款", { selector: "strong" })).closest("tr")!;
+    expect(findCell(childRow, "价格")).toBe("27.00");
+    expect(findCell(childRow, "有货变体")).toBe("—");
   });
 
-  it("页大小恢复回调晚于筛选变更到达时保留当前筛选", async () => {
-    const mockApi = await renderProductsPage({ products: [parent, child, single], simulateDelayedPageSizeRestore: true });
-    await waitFor(() => expect(mockApi.products.list).toHaveBeenCalled());
-
-    fireEvent.click(await screen.findByRole("button", { name: "有货" }));
-    await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({
-      filters: expect.objectContaining({ stock: "in" }),
-    })));
-
-    fireEvent.click(screen.getByRole("button", { name: "模拟延迟页长恢复" }));
-    await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({
-      page: 1,
-      pageSize: 200,
-      filters: expect.objectContaining({ stock: "in" }),
-    })));
+  it("缺少任一产品变体计数时显示破折号，不拿 SKU 分组数代替", () => {
+    const missingVariantCount = makeProduct({ handle: "demo-missing-count", title: "虚构缺少计数产品", row_kind: "parent", variant_count: null, in_stock_variants: 2 });
+    const missingStockCount = makeProduct({ handle: "demo-missing-stock", title: "虚构缺少有货计数产品", row_kind: "parent", variant_count: 3, in_stock_variants: null });
+    const base = { id: "test", sku: "DEMO001A", stock: parentStock };
+    expect(formatInStockVariants({ ...base, product: parent, kind: "parent" })).toBe("1/2");
+    expect(formatInStockVariants({ ...base, product: missingVariantCount, kind: "parent" })).toBe("—");
+    expect(formatInStockVariants({ ...base, product: missingStockCount, kind: "parent" })).toBe("—");
+    expect(formatInStockVariants({ ...base, product: parent, kind: "child" })).toBe("—");
   });
 
-  it("父行显示有货变体数，子行与独立产品的空聚合值显示破折号", async () => {
-    await renderProductsPage({ products: [parent, child, single] });
-
-    const parentRow = (await screen.findByText("演示组合商品", { selector: "strong" })).closest("tr")!;
-    const childRow = screen.getByText("演示组合商品蓝色款", { selector: "strong" }).closest("tr")!;
-    const singleRow = screen.getByText("演示独立配件", { selector: "strong" }).closest("tr")!;
-
-    expect(tableCell(parentRow, "有货变体")).toBe("1/2");
-    expect(tableCell(childRow, "有货变体")).toBe("—");
-    expect(tableCell(singleRow, "有货变体")).toBe("—");
-  });
-
-  it("只把 Core 标记 removed 的产品显示为已下架，active 缺货和旧数据不误标", async () => {
-    const activeOutOfStock = makeProduct({
-      handle: "demo-active-oos", title: "虚构在售商品", status: "active", stock_status: "out_of_stock",
-    });
-    const removed = makeProduct({
-      handle: "demo-removed", title: "虚构已下架商品", status: "removed",
-    });
-    const legacyProduct = Object.fromEntries(
-      Object.entries(makeProduct({ handle: "demo-legacy", title: "虚构旧数据商品" })).filter(([key]) => key !== "status"),
-    ) as unknown as ProductView;
-    await renderProductsPage({ products: [activeOutOfStock, removed, legacyProduct] });
-
-    const activeRow = (await screen.findByText("虚构在售商品", { selector: "strong" })).closest("tr")!;
-    const removedRow = screen.getByText("虚构已下架商品", { selector: "strong" }).closest("tr")!;
-    const legacyRow = screen.getByText("虚构旧数据商品", { selector: "strong" }).closest("tr")!;
-    expect(within(activeRow).getByText("缺货")).toBeTruthy();
-    expect(within(activeRow).queryByText("已下架")).toBeNull();
-    expect(within(removedRow).getByText("已下架")).toBeTruthy();
-    expect(within(legacyRow).queryByText("已下架")).toBeNull();
-  });
-
-  it("点击产品行打开真实详情 Drawer 并显示 Core 返回的变体库存表", async () => {
-    const variants: ProductVariantStock[] = [
-      { sku: "DEMO-KIT-01", title: "蓝色款", stock_status: "in_stock", since: "2026-11-01", days_in_status: 4, price: 24, history_30d: "i".repeat(30), online_rate_30d: 0.8 },
-      { sku: "DEMO-KIT-02", title: "绿色款", stock_status: "out_of_stock", since: "2026-11-02", days_in_status: 3, price: 24, history_30d: "o".repeat(30), online_rate_30d: null },
-    ];
-    const detail: ProductFull = { product: parent, skus: [], details: null, seo: null, variants };
-    const mockApi = await renderProductsPage({ products: [parent], detail });
-
-    const parentRow = (await screen.findByText("演示组合商品", { selector: "strong" })).closest("tr")!;
-    fireEvent.click(parentRow);
-
-    const drawer = await screen.findByRole("dialog");
-    expect(await within(drawer).findByRole("heading", { name: "变体库存" })).toBeTruthy();
-    expect(within(drawer).getByRole("heading", { name: "演示组合商品", level: 3 })).toBeTruthy();
-    expect(mockApi.products.get).toHaveBeenCalledWith("demo", "demo-kit");
-    const inventoryTable = within(drawer).getByRole("table");
-    expect(within(inventoryTable).getByText("DEMO-KIT-01")).toBeTruthy();
-    expect(within(inventoryTable).getByText("DEMO-KIT-02")).toBeTruthy();
-    expect(within(inventoryTable).getByText("80%")).toBeTruthy();
-    expect(within(inventoryTable).getByText("—")).toBeTruthy();
-    expect(within(inventoryTable).getByRole("img", { name: /DEMO-KIT-01近 30 天库存/ })).toBeTruthy();
-  });
-
-  it("在 SKU 详情中显示 Core 返回的下架状态和移除原因", async () => {
-    const removedSkus: SkuRecord[] = [
-      { sku: "DEMO-ACCESSORY-OLD", product_id: single.product_id, handle: single.handle, title: single.title, variant_title: "旧款 A", url: single.url, category: single.category, category_source: "feed", price: 24, compare_at_price: null, currency: "USD", image_url: null, status: "removed", removed_reason: "feed_absent_404", first_seen: "2026-10-01", last_seen: "2026-11-01", updated_at: "2026-11-02" },
-      { sku: "DEMO-ACCESSORY-AGED", product_id: single.product_id, handle: single.handle, title: single.title, variant_title: "旧款 B", url: single.url, category: single.category, category_source: "feed", price: 24, compare_at_price: null, currency: "USD", image_url: null, status: "removed", removed_reason: "feed_absent_aged", first_seen: "2026-10-01", last_seen: "2026-11-01", updated_at: "2026-11-02" },
-    ];
-    const detail: ProductFull = { product: single, skus: removedSkus, details: null, seo: null };
-    await renderProductsPage({ products: [single], detail });
-
-    fireEvent.click((await screen.findByText("演示独立配件", { selector: "strong" })).closest("tr")!);
-    const drawer = await screen.findByRole("dialog");
-    expect((await within(drawer).findAllByText("已下架")).length).toBe(2);
-    expect(within(drawer).getByText("商品页不存在（404/410）")).toBeTruthy();
-    expect(within(drawer).getByText("连续多次未见于 Feed")).toBeTruthy();
-  });
-
-  it("产品详情直接列出全部 SKU，不截断到前 8 个", async () => {
-    const skus: SkuRecord[] = Array.from({ length: 10 }, (_, index) => ({
-      sku: "DEMO-ACCESSORY-" + String(index + 1).padStart(2, "0"),
-      product_id: single.product_id,
-      handle: single.handle,
-      title: single.title,
-      variant_title: "虚构款式 " + (index + 1),
-      url: single.url,
-      category: single.category,
-      category_source: "feed",
-      price: 24,
-      compare_at_price: null,
-      currency: "USD",
-      image_url: null,
-      status: "active",
-      first_seen: "2026-11-01",
-      last_seen: "2026-11-01",
-      updated_at: "2026-11-01",
+  it("行详情使用共享分段并可切换概况、变体库存和历史", async () => {
+    const variants = childStocks.map((stock) => ({
+      sku: stock.sku,
+      title: stock.variant_title ?? "虚构款式",
+      stock_status: stock.stock_status,
+      since: stock.since,
+      days_in_status: stock.days_in_status,
+      price: stock.price,
+      history_30d: stock.history_30d,
+      online_rate_30d: stock.online_rate_30d,
     }));
-    const detail: ProductFull = { product: single, skus, details: null, seo: null, variants: [] };
-    await renderProductsPage({ products: [single], detail });
+    const detail: ProductFull = { product: parent, skus: [], details: null, seo: null, variants };
+    await renderProductsPage({ detail });
+    const table = await screen.findByRole("table");
+    await within(table).findByText("虚构组合商品", { selector: "strong" });
+    fireEvent.click(screen.getByRole("button", { name: "查看 DEMO001A 详情" }));
 
-    fireEvent.click((await screen.findByText("演示独立配件", { selector: "strong" })).closest("tr")!);
     const drawer = await screen.findByRole("dialog");
-    const skuSection = (await within(drawer).findByRole("heading", { name: "SKU 与变体 · 10 个" })).closest("section")!;
-    const skuList = within(skuSection).getByRole("list");
-    expect(within(skuList).getAllByRole("listitem")).toHaveLength(10);
-    expect(within(skuList).getByText("DEMO-ACCESSORY-10")).toBeTruthy();
+    await within(drawer).findByRole("heading", { name: "SEO 与 Google 收录" });
+    expect(within(drawer).getByRole("group", { name: "产品详情分段" })).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole("button", { name: "变体库存" }));
+    expect(await within(drawer).findByRole("heading", { name: "变体库存 · 2 个" })).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole("button", { name: "历史" }));
+    expect(await within(drawer).findByRole("heading", { name: "子 SKU 价格历史" })).toBeTruthy();
+    expect(within(drawer).getByRole("combobox", { name: "价格历史 SKU" })).toBeTruthy();
+  });
+
+  it("保留趋势抽屉，并把今日日报与标签管理收在更多菜单", async () => {
+    await renderProductsPage();
+    expect(await screen.findByRole("button", { name: "趋势与分类在线率" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    expect(await screen.findByRole("menuitem", { name: "查看今日日报" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "标签管理" })).toBeTruthy();
+  });
+
+  it("分组未启用时只显示一份提示，规则预览仍有单独入口", async () => {
+    await renderProductsPage({ groupingEnabled: false });
+    expect(await screen.findByText("父 SKU 分组尚未启用")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "SKU 父子规则预览与设置" }));
+    expect(await screen.findByRole("dialog", { name: "SKU 父子规则预览" })).toBeTruthy();
+    expect(screen.getAllByText("父 SKU 分组尚未启用")).toHaveLength(1);
   });
 });

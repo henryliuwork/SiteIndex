@@ -61,7 +61,7 @@ describe("库存趋势图分类与真实日期", () => {
   });
 
   it("页面按真实日期数量显示单日提示并将图例放在绘图区外", () => {
-    const source = readFileSync(new URL("../InventoryPage.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../products/inventory-widgets.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("hasNoDates ? <p className=\"si-inventory-trend-empty\"");
     expect(source).toContain("目前仅有 1 个业务日期，后续每日同步自动形成趋势。");

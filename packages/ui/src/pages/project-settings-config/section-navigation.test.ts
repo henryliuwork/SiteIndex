@@ -29,7 +29,7 @@ describe("项目配置区块导航", () => {
 
   it("页面用按钮导航并从路由查询参数处理库存页入口", () => {
     const source = readFileSync(new URL("../ProjectSettingsConfigPage.tsx", import.meta.url), "utf8");
-    const inventorySource = readFileSync(new URL("../InventoryPage.tsx", import.meta.url), "utf8");
+    const inventorySource = readFileSync(new URL("../ProductsPage.tsx", import.meta.url), "utf8");
     const categoriesRoute = readFileSync(new URL("../project-settings-categories/route.tsx", import.meta.url), "utf8");
     const filesRoute = readFileSync(new URL("../project-settings-files/route.tsx", import.meta.url), "utf8");
 
