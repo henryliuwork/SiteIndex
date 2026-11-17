@@ -69,7 +69,7 @@ const XML = new XMLParser({
   htmlEntities: true,
   ignoreDeclaration: true,
   transformTagName: (name) => name.toLowerCase(),
-  isArray: (name) => name === "item" || name === "entry",
+  isArray: (name) => name === "item" || name === "entry" || name === "product",
 });
 
 const HTML_FEED_MESSAGE = "这个地址返回的是网页而不是商品 feed（可能需要登录，或是 Google 表格/后台页面的链接）。请填写 Merchant Center 数据源中的'抓取网址'。";
@@ -124,6 +124,19 @@ function xmlRecord(value: unknown): FeedItem {
   return row;
 }
 
+function productRecord(value: unknown): FeedItem {
+  const row = xmlRecord(value);
+  for (const [target, aliases] of Object.entries({
+    id: ["sku"], title: ["name"], link: ["product_url", "url", "permalink"],
+    price: ["regular_price"], image_link: ["image_url"], availability: ["stock_status"],
+  })) {
+    if (row[target]) continue;
+    const alias = aliases.find((key) => row[key]);
+    if (alias) row[target] = row[alias];
+  }
+  return row;
+}
+
 function parseXmlItems(source: string): FeedItem[] {
   const validation = XMLValidator.validate(source);
   if (validation !== true) {
@@ -139,17 +152,23 @@ function parseXmlItems(source: string): FeedItem[] {
     throw new FeedError("FEED_FETCH_FAILED", parseErrorMessage(source, 1, 1, reason));
   }
 
+  const root = Object.keys(document as Record<string, unknown>).find((key) => !key.startsWith("?")) ?? "";
+  if (!["rss", "feed", "rdf", "products", "catalog"].includes(root)) {
+    throw new FeedError("FEED_FETCH_FAILED", `Feed XML 根节点 <${root || "未知"}> 不是商品记录容器；需要 <item>、<entry> 或 <products><product>。`);
+  }
   const items: FeedItem[] = [];
-  const visit = (node: unknown): void => {
+  const visit = (node: unknown, parent = ""): void => {
     if (!node || typeof node !== "object") return;
     if (Array.isArray(node)) {
-      for (const child of node) visit(child);
+      for (const child of node) visit(child, parent);
       return;
     }
     for (const [name, value] of Object.entries(node as Record<string, unknown>)) {
       if (name === "item" || name === "entry") {
         for (const record of Array.isArray(value) ? value : [value]) items.push(xmlRecord(record));
-      } else visit(value);
+      } else if (name === "product" && parent === "products") {
+        for (const record of Array.isArray(value) ? value : [value]) items.push(productRecord(record));
+      } else visit(value, name);
     }
   };
   visit(document);
@@ -291,6 +310,23 @@ function localDate(timezone?: string): string {
 export interface SnapshotResult {
   rows: FeedSnapshot[];
   stats: Record<string, number>;
+  filtered: { no_id: number; missing_price_or_link: number; duplicate: number };
+}
+
+/** 用计数说明空快照，不把源站内容写入日志。 */
+export function emptySnapshotReason(items: readonly FeedItem[], snapshot: SnapshotResult): string {
+  if (snapshot.rows.length) return "";
+  if (!items.length) return "Feed 中没有 <item>、<entry> 或 <products><product> 商品记录。";
+  const { no_id, missing_price_or_link, duplicate } = snapshot.filtered;
+  const blogEntries = items.filter((item) => item.pubdate || item.published || item.updated || item.guid);
+  const priced = items.filter((item) => item.price || item.regular_price);
+  if (blogEntries.length && !priced.length) return `疑似博客 RSS/Atom 订阅流，${items.length} 条文章均未提供商品价格；请填写商品 GMC Feed。`;
+  if (missing_price_or_link) {
+    const missingPrice = items.filter((item) => !item.price && !item.regular_price).length;
+    const missingLink = items.filter((item) => !item.link && !item.mobile_link && !item.product_url && !item.url && !item.permalink).length;
+    return `Feed 有 ${items.length} 条记录，但 ${missing_price_or_link} 条缺少有效价格或商品链接（缺价格 ${missingPrice}，缺链接 ${missingLink}）。`;
+  }
+  return `Feed 有 ${items.length} 条记录，但没有可用商品（无 SKU ${no_id}，重复 SKU ${duplicate}）。`;
 }
 
 /** 按 SKU 合并 site.json 的覆盖字段；daily 在写入主表前调用，快照原始文件保持 feed 原样。 */
@@ -368,7 +404,11 @@ export function toSnapshot(items: readonly FeedItem[], site: FeedSiteConfig, tod
       row.variant_title = variant.length ? variant.join(" / ") : null;
     }
   }
-  return { rows, stats };
+  return { rows, stats, filtered: {
+    no_id: stats.no_id ?? 0,
+    missing_price_or_link: stats.missing_price_or_link ?? 0,
+    duplicate: stats.duplicate ?? 0,
+  } };
 }
 
 /** 快照文件的格式按 gmc_feed.py 的 json.dumps 默认空格输出。 */
