@@ -613,6 +613,7 @@ export function EdmPage() {
     <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="edm">
     <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+    <div className="si-edm-status-area" role="region" aria-label="EDM 任务与提示" tabIndex={0}>
     {!isMockApi && <div className="si-edm-live-workflows">
       {exportCapability.available ? <div className="si-edm-export-control">
         <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>
@@ -684,6 +685,7 @@ export function EdmPage() {
     {discountTiers.length === 0
       ? <Notice tone="info" title="当前项目未配置折扣档位">SKU 折扣档位保持未选择；配置可选百分比后即可逐行选择。</Notice>
       : !discountTierCapability.available && <Notice tone="info" title="折扣档位暂时只读">{discountTierCapability.message} 现有选择仍会按读取结果显示。</Notice>}
+    </div>
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}

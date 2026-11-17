@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -40,7 +42,39 @@ async function renderRunsPage(history: RunLog[]) {
   return { mockApi };
 }
 
+async function renderRunsPageWithRecentLog() {
+  const mockApi = createMockApi();
+  const project = await mockApi.projects.get("demo");
+  mockApi.projects.get = vi.fn(async (id) => ({ ...project, summary: { ...project.summary, id } }));
+  mockApi.jobs.running = vi.fn(async () => ({ runId: "demo-active-run", job: "daily" }));
+  mockApi.jobs.onProgress = vi.fn((callback) => {
+    queueMicrotask(() => callback({
+      runId: "demo-active-run", projectPath: project.summary.path, job: "daily", pct: 25,
+      step: "fetch_feed", level: "info", message: "正在读取演示 Feed", at: "2026-11-17T00:00:00.000Z",
+    }));
+    return () => {};
+  });
+  vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+  const [{ RunsPage }, { ToastProvider }] = await Promise.all([import("./RunsPage"), import("../components")]);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
+  render(<ToastProvider><QueryClientProvider client={queryClient}>
+    <MemoryRouter initialEntries={["/p/demo/runs"]}><Routes><Route path="/p/:id/runs" element={<RunsPage />} /></Routes></MemoryRouter>
+  </QueryClientProvider></ToastProvider>);
+}
+
 describe("RunsPage 媒体任务历史", () => {
+  it("近期日志使用浅色卡片可读文字，深色控制台保留原有配色", async () => {
+    await renderRunsPageWithRecentLog();
+    await waitFor(() => expect(document.querySelector(".si-run-recent-log .si-run-log-info span")?.textContent).toBe("正在读取演示 Feed"));
+
+    const css = readFileSync(resolve(process.cwd(), "src/pages/runs/page.css"), "utf8");
+    expect(css).toMatch(/\.si-run-log span\s*\{\s*color:\s*var\(--color-surface\)/);
+    expect(css).toMatch(/\.si-run-recent-log \.si-run-log span\s*\{\s*color:\s*var\(--color-ink-2\)/);
+    expect(css).toMatch(/\.si-run-recent-log \.si-run-log small\s*\{\s*color:\s*var\(--color-muted\)/);
+    expect(css).toMatch(/\.si-run-recent-log \.si-run-log-warn span\s*\{\s*color:\s*var\(--color-warn\)/);
+    expect(css).toMatch(/\.si-run-recent-log \.si-run-log-error span\s*\{\s*color:\s*var\(--color-danger\)/);
+  });
+
   it("从页头选择任务运行，概览卡片只展示状态", async () => {
     const { mockApi } = await renderRunsPage([]);
     const runJob = vi.spyOn(mockApi.jobs, "run");

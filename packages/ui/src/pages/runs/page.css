@@ -98,6 +98,10 @@
 .si-run-recent-log { display: grid; gap: var(--space-1); max-height: 112px; overflow: auto; padding-top: var(--space-2); border-top: 1px solid var(--color-line-soft); }
 .si-run-recent-log .si-run-log { grid-template-columns: 62px minmax(0,1fr) auto; min-height: 25px; padding: var(--space-1) 0; color: var(--color-ink-2); }
 .si-run-recent-log .si-run-log code { color: var(--color-muted); }
+.si-run-recent-log .si-run-log span { color: var(--color-ink-2); }
+.si-run-recent-log .si-run-log small { color: var(--color-muted); }
+.si-run-recent-log .si-run-log-warn span { color: var(--color-warn); }
+.si-run-recent-log .si-run-log-error span { color: var(--color-danger); }
 .si-runs-schedule { gap: var(--space-3); }
 .si-schedule-mode { display: flex; align-items: center; gap: var(--space-2); color: var(--color-muted); font-size: var(--fs-caption); }
 .si-schedule-mode .si-schedule-runtime-error { margin: 0; }
