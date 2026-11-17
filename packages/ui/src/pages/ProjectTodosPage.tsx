@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { ListQuery, PathKey, ProjectTodo, TodoManualHistoryEntry, TodoManualStatus, UpdateTodoManualInput } from "@siteindex/shared";
 import { useParams } from "react-router-dom";
 import { AlertCircle, CheckCircle2, ClipboardList, Clock3, FileSearch, MinusCircle } from "lucide-react";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageHeader, ProjectHeader, ProjectTabPanel, Select, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, useToast } from "../components";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import "./project-todos/page.css";
@@ -270,15 +270,9 @@ export function ProjectTodosPage() {
       rowHeight={58}
       emptyTitle={emptyTitle}
       emptyDescription={emptyDescription}
-      toolbar={<FilterBar className="si-todo-filter-bar">
-        <Input
-          aria-label="搜索项目待办"
-          className="si-todo-search"
-          placeholder="搜索标题、规则、来源或备注"
-          value={query.search ?? ""}
-          onChange={(event) => setQuery((current) => ({ ...current, page: 1, search: event.target.value || undefined }))}
-        />
-        <Select
+      toolbar={<div className="si-todo-toolbar"><div className="si-todo-toolbar-left">
+        <SearchInput label="搜索项目待办" placeholder="搜索标题、规则、来源或备注" value={query.search ?? ""} onSearch={(search) => setQuery((current) => ({ ...current, page: 1, search: search || undefined }))} />
+        <FilterBar className="si-todo-filter-bar"><Select
           ariaLabel="待办状态筛选"
           value={query.filters?.status ?? "all"}
           options={[
@@ -290,9 +284,9 @@ export function ProjectTodosPage() {
             page: 1,
             filters: { status: value === "all" ? undefined : value as TodoManualStatus },
           }))}
-        />
-        <span className="si-todo-result-count">{filteredItems.length} 项</span>
-      </FilterBar>}
+        /></FilterBar></div>
+        <span className="si-todo-result-count">显示 {rows.length} / {filteredItems.length} 条</span>
+      </div>}
     />
     </ProjectTabPanel>
 

@@ -85,9 +85,9 @@ describe("ProjectTodosPage", () => {
 
     expect(await screen.findByText("价格历史存在日期缺口")).toBeTruthy();
     expect(screen.queryByText("库存状态与 Feed 记录不一致")).toBeNull();
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索项目待办" }), { target: { value: "DEMO002CP01" } });
-    expect(screen.getByText("价格历史存在日期缺口")).toBeTruthy();
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索项目待办" }), { target: { value: "not-a-demo-sku" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索项目待办" }), { target: { value: "DEMO002CP01" } });
+    expect(await screen.findByText("价格历史存在日期缺口")).toBeTruthy();
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索项目待办" }), { target: { value: "not-a-demo-sku" } });
     expect(await screen.findByText("没有匹配的待办")).toBeTruthy();
   });
 

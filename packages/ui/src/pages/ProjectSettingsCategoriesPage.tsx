@@ -216,7 +216,7 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
   </>;
 
   if (embedded) return <section id="categories" className="si-category-embedded" aria-labelledby="categories-heading">
-    <div className="si-category-embedded-heading"><div><h2 id="categories-heading">分类设置</h2><p>{modeDescription(draft.mode)} · 分类规则、候选分类页与匹配预览</p></div><div>{sectionActions}</div></div>
+    <div className="si-category-embedded-heading"><div><h2 id="categories-heading">分类设置</h2></div><div>{sectionActions}</div></div>
     {categoryContent}
   </section>;
 
