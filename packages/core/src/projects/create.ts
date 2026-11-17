@@ -133,6 +133,7 @@ export function createConfig(input: CreateProjectInput, detected: DetectResult):
     crawl: {
       adapter: "gmc_feed",
       feed_url: [...input.feed_urls],
+      ...(input.auto_collect_products !== undefined ? { auto_collect_products: input.auto_collect_products } : {}),
       sku_field: input.sku_field.trim() || "id",
       category_depth: Math.max(1, Math.floor(input.category_depth || 1)),
       missing_as: input.missing_as,
@@ -146,7 +147,7 @@ export function createConfig(input: CreateProjectInput, detected: DetectResult):
         preorder: ["pre-order", "preorder"],
       },
     } as SiteConfig["crawl"] & { stock_rules: { in_stock: string[]; out_of_stock: string[]; preorder: string[] } },
-    categories: { mode: "feed" },
+    categories: input.categories ?? { mode: "feed" },
     workspace_folders: [], // shared 契约暂未删除；写入 site.json 时剔除。
     schedule: {
       daily: { enabled: true, days: [1, 2, 3, 4, 5, 6, 7], time: "02:00" },

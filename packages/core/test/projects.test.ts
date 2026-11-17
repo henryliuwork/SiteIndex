@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCoreService, type CoreServiceContext } from "../src/service";
 import { createProjectFiles } from "../src/projects/create";
 import { readJsonl } from "../src/io/jsonl";
+import { validateProjectFiles } from "../src/validate";
 
 const FEED_PATH = path.resolve(process.cwd(), "fixtures/feeds/day1.xml");
 const TEMP_DIRS: string[] = [];
@@ -292,20 +293,36 @@ describe("project service", () => {
       .toMatch(/"domain": "(example\.com|other\.example)"/u);
   }, 15_000);
 
+  it("writes no-feed auto collection settings before init and validates site.json", async () => {
+    mockWebsite();
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-auto-create-"));
+    TEMP_DIRS.push(root);
+    await makeService().projects.create({ ...createInput(root), feed_urls: [], auto_collect_products: true,
+      categories: { mode: "url_rule", url_pattern: "/shop/{slug}" } });
+    const projectPath = path.join(root, "example-shop");
+    const config = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as SiteConfig;
+    expect(config.crawl).toMatchObject({ feed_url: [], auto_collect_products: true });
+    expect(config.categories).toEqual({ mode: "url_rule", url_pattern: "/shop/{slug}" });
+    expect((await validateProjectFiles(projectPath, { selectedPath: PATHS.site, writeReport: false })).files)
+      .toMatchObject([{ path: PATHS.site, status: "ok" }]);
+    expect(await readJsonl(path.join(projectPath, PATHS.runs))).toEqual([]);
+  }, 20_000);
+
   it("creates files immediately, then completes the init job with progress for every step", async () => {
     mockWebsite(true);
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-create-"));
     TEMP_DIRS.push(root);
     const feedPath = path.join(root, "feed.xml");
     await writeFile(feedPath, '<?xml version="1.0"?><rss xmlns:g="http://base.google.com/ns/1.0"><channel><item><g:id>F-1</g:id><g:title>Feeder</g:title><g:link>https://example.com/products/feeder</g:link><g:price>10 USD</g:price><g:availability>in stock</g:availability><g:product_type>Feeders</g:product_type></item></channel></rss>');
-    const result = await makeService().projects.create({ ...createInput(root), feed_urls: [feedPath] });
+    const result = await makeService().projects.create({ ...createInput(root), feed_urls: [feedPath],
+      categories: { mode: "url_rule", url_pattern: "/category/{slug}" }, auto_collect_products: true });
     const projectPath = path.join(root, "example-shop");
-    const config = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as {
-      domain: string; platform: string; currency: string; workspace_folders?: unknown;
-    };
+    const config = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as SiteConfig;
 
     expect(result).toEqual({ id: "example-shop", runId: expect.stringMatching(/^\d{4}-\d{2}-\d{2}-init$/) });
     expect(config).toMatchObject({ domain: "example.com", platform: "shopify", currency: "CAD" });
+    expect(config.categories).toEqual({ mode: "url_rule", url_pattern: "/category/{slug}" });
+    expect(config.crawl.auto_collect_products).toBe(true);
     expect(config).not.toHaveProperty("workspace_folders");
     expect(await readJsonl(path.join(projectPath, PATHS.skus))).toEqual([]);
     expect(await readJsonl(path.join(projectPath, PATHS.runs))).toEqual([]);
