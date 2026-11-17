@@ -22,8 +22,8 @@ const blockTitles: Record<string, string> = {
 
 function latestUpdate(data: ReadmeData | undefined): string {
   const value = data?.auto_blocks.find((block) => block.id === "index-summary")?.updated_at;
-  if (!value) return "暂无自动区块更新时间";
-  return `README 更新于 ${formatDateTime(value)}`;
+  if (!value) return "网站数据速览自动区块：暂无更新时间";
+  return `网站数据速览自动区块更新于 ${formatDateTime(value)}`;
 }
 
 function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving, editingRules, onEditRules, onCancelRules }: {
@@ -67,6 +67,7 @@ function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving
 function AutoBlocksCard({ data }: { data: ReadmeData }) {
   return <Card className="si-readme-card si-readme-auto-card" label="README 自动区块">
     <div className="si-readme-card-heading"><h2>自动区块</h2><Chip tone="ok">SiteIndex 生成 · 只读</Chip></div>
+    <p className="si-readme-auto-updated">{latestUpdate(data)}</p>
     {data.auto_blocks.map((block) => <div className="si-readme-auto-row" key={block.id}>
         <div className="si-readme-auto-label"><strong>{block.title || blockTitles[block.id] || block.id}</strong><code>{block.id}</code>{autoDescriptions[block.id] && <span>· {autoDescriptions[block.id]}</span>}</div>
         <span>{block.schedule}</span>
@@ -142,7 +143,7 @@ export function ReadmePage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 README 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-readme-page">
-    <ProjectHeader project={project} activeTab="readme" hasTabPanel pageMeta={latestUpdate(data)} actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />
+    <ProjectHeader project={project} activeTab="readme" hasTabPanel actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="readme">
     {runMessage && <Notice tone="info">{runMessage}</Notice>}
     {readmeQuery.isLoading ? <div className="si-page-loading" role="status">正在加载 README…</div> : readmeQuery.isError || !data ? <ApiErrorNotice label="README 内容加载失败。" error={readmeQuery.error} onRetry={() => void readmeQuery.refetch()} /> : <div className="si-readme-layout">
