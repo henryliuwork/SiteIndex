@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -67,7 +67,8 @@ describe("RunsPage 媒体任务历史", () => {
     await renderRunsPageWithRecentLog();
     await waitFor(() => expect(document.querySelector(".si-run-recent-log .si-run-log-info span")?.textContent).toBe("正在读取演示 Feed"));
 
-    const css = readFileSync(resolve(process.cwd(), "src/pages/runs/page.css"), "utf8");
+    const workspaceCssPath = resolve(process.cwd(), "packages/ui/src/pages/runs/page.css");
+    const css = readFileSync(existsSync(workspaceCssPath) ? workspaceCssPath : resolve(process.cwd(), "src/pages/runs/page.css"), "utf8");
     expect(css).toMatch(/\.si-run-log span\s*\{\s*color:\s*var\(--color-surface\)/);
     expect(css).toMatch(/\.si-run-recent-log \.si-run-log span\s*\{\s*color:\s*var\(--color-ink-2\)/);
     expect(css).toMatch(/\.si-run-recent-log \.si-run-log small\s*\{\s*color:\s*var\(--color-muted\)/);
