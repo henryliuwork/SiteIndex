@@ -277,7 +277,9 @@ if (!hasSingleInstanceLock) {
         const result = await jobs.runAndWait({ projectPath: resolve(args.projectPath), job: args.job }, "schedule");
         app.exit(result.exitCode);
       } catch (error) {
-        process.stderr.write(`SiteIndex Job 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
+        const code = error && typeof error === "object" && "code" in error && typeof error.code === "string"
+          ? `[${error.code}] ` : "";
+        process.stderr.write(`SiteIndex Job 启动失败：${code}${error instanceof Error ? error.message : String(error)}\n`);
         app.exit(EXIT.BAD_ARGS);
       }
       return;
