@@ -15,6 +15,28 @@ afterEach(() => {
 });
 
 describe("projects mock summary updates", () => {
+  it("returns synthetic WooCommerce sitemap roles and category candidates", async () => {
+    const api = createProjectsMock();
+    const detected = await api.detect("woo.example.test");
+    expect(detected.feed_candidates).toEqual([]);
+    expect(detected.sitemaps.map(({ role }) => role)).toEqual(["index", "product", "category", "blog"]);
+    expect(detected.category_prefix_candidates).toEqual(["/shop/{slug}", "/product-category/{slug}"]);
+  });
+
+  it("keeps a newly created project's category rules in its own config", async () => {
+    const api = createProjectsMock();
+    const created = await api.create({
+      url: "https://woo.example.test", feed_urls: [], sku_field: "id", category_depth: 2,
+      missing_as: "out_of_stock", brand: { name: "Fixture Shop" }, markets: ["US"],
+      projects_root: "D:/SiteIndex/projects", folder_name: "fixture-shop", workspace_folders: [],
+    });
+    await api.updateConfig(created.id, { categories: { mode: "url_rule", url_pattern: "/shop/{slug}, /product-category/{slug}" } });
+    expect((await api.get(created.id)).config.categories).toMatchObject({
+      mode: "url_rule", url_pattern: "/shop/{slug}, /product-category/{slug}",
+    });
+    expect((await api.list()).find(({ id }) => id === created.id)?.domain).toBe("woo.example.test");
+  });
+
   it("adds existing project paths to the list and rejects normalized duplicates", async () => {
     const api = createProjectsMock();
     const path = "D:/SiteIndex/Projects/Cedar Shop";

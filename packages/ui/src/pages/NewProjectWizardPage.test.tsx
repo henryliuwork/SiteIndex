@@ -38,6 +38,41 @@ function LocationProbe() {
 }
 
 describe("NewProjectWizardPage workspace step", () => {
+  it("shows Woo sitemap roles, saves edited multi-prefix rules, and continues without a Feed", async () => {
+    const mockApi = createMockApi();
+    mockApi.workspace = undefined;
+    const updateConfig = vi.spyOn(mockApi.projects, "updateConfig");
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
+      import("./NewProjectWizardPage"), import("./wizard-state"), import("../components/overlays"),
+    ]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><WizardDraftProvider>
+      <MemoryRouter initialEntries={["/new/url"]}><Routes><Route path="/new/*" element={<NewProjectWizardPage />} /></Routes><LocationProbe /></MemoryRouter>
+    </WizardDraftProvider></QueryClientProvider></ToastProvider>);
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "网站地址" }), { target: { value: "woo.example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "检测" }));
+    const sitemapList = await screen.findByRole("list", { name: "Sitemap 类型" });
+    for (const role of ["索引", "商品", "分类", "文章"]) expect(within(sitemapList).getByText(role)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "下一步：数据源" }));
+    expect(await screen.findByText("未发现 GMC Feed，可直接继续")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "跳过 Feed，稍后配置" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "使用 /shop/{slug}" }));
+    fireEvent.click(screen.getByRole("button", { name: "使用 /product-category/{slug}" }));
+    const rules = screen.getByRole("textbox", { name: "分类前缀（逗号分隔）" }) as HTMLInputElement;
+    expect(rules.value).toBe("/shop/{slug}, /product-category/{slug}");
+    fireEvent.change(rules, { target: { value: "/shop, /custom/{slug}" } });
+    expect(screen.getByText("将保存：/shop/{slug}，/custom/{slug}")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "下一步：品牌配置" }));
+    fireEvent.click(await screen.findByRole("button", { name: "创建项目" }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("woo", {
+      categories: { mode: "url_rule", url_pattern: "/shop/{slug}, /custom/{slug}" },
+    }));
+    await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/new/done"));
+    expect((await mockApi.projects.get("woo")).config.categories.url_pattern).toBe("/shop/{slug}, /custom/{slug}");
+  }, 30_000);
+
   it("checks the selected destination and sends the workspace options with project creation", async () => {
     const mockApi = createMockApi();
     const createProject = vi.spyOn(mockApi.projects, "create");

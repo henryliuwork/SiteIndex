@@ -146,6 +146,9 @@
 - [x] ProjectHeader 按 ResizeObserver 收纳项目 Tab，窄屏无横向滚动并在路由切换后恢复焦点；新增 InfoTooltip 与四档宽度的 ui:check 页头断言 — 本 PR
 - [x] B 自有五页精简说明并接入 InfoTooltip；修正设置输入框和 Skill 按钮高度、非同步 Job 的页头标签，ui:check 检查 Tab 纵向滚动和计算高度 — 本 PR
 
+## v0.6.2 · WooCommerce 站点探测向导
+- [x] 按 #611 的可选字段展示 Sitemap 角色和分类前缀候选；无 Feed 可直接继续，分类规则支持多前缀并在创建后保存 — 本 PR
+
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码

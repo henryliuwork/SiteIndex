@@ -57,13 +57,30 @@ export function createProjectsMock(
     detect: (url) => reply(() => {
       const normalized = /^https?:\/\//i.test(url) ? url : "https://" + url;
       const baseUrl = normalized.replace(/\/$/, "");
-      const isDemoStore = new URL(baseUrl).hostname.toLowerCase().endsWith(demoStoreHost);
+      const host = new URL(baseUrl).hostname.toLowerCase();
+      if (host === "woo.example.test") {
+        const indexUrl = `${baseUrl}/sitemap_index.xml`;
+        return {
+          input: url, final_url: baseUrl, redirect_status: null,
+          robots: { found: true, disallow_count: 1, sitemaps: [indexUrl] },
+          sitemaps: [
+            { url: indexUrl, type: "index" as const, url_count: 3, role: "index" as const },
+            { url: `${baseUrl}/product-sitemap.xml`, type: "urlset" as const, url_count: 28, role: "product" as const },
+            { url: `${baseUrl}/product_cat-sitemap.xml`, type: "urlset" as const, url_count: 6, role: "category" as const },
+            { url: `${baseUrl}/post-sitemap.xml`, type: "urlset" as const, url_count: 9, role: "blog" as const },
+          ],
+          category_prefix_candidates: ["/shop/{slug}", "/product-category/{slug}"],
+          total_urls: 43, platform: "woocommerce" as const, platform_evidence: "商品与分类 Sitemap",
+          frontend: "WordPress", locale: "en-US", currency: "USD", feed_candidates: [],
+        };
+      }
+      const isDemoStore = host.endsWith(demoStoreHost);
       if (isDemoStore) {
         const finalUrl = `https://${demoStoreHost}`;
         return {
           input: url, final_url: finalUrl, redirect_status: 301,
           robots: { found: true, disallow_count: 1, sitemaps: [finalUrl + "/sitemap.xml"] },
-          sitemaps: [{ url: finalUrl + "/sitemap.xml", type: "index", url_count: 9 }],
+          sitemaps: [{ url: finalUrl + "/sitemap.xml", type: "index", url_count: 9, role: "index" }],
           total_urls: 9, platform: "magento", platform_evidence: "/media/catalog/product/ 图片路径",
           frontend: "Next.js", locale: "en-US", currency: "USD", feed_candidates: [],
         };
@@ -71,7 +88,7 @@ export function createProjectsMock(
       return {
         input: url, final_url: normalized, redirect_status: null,
         robots: { found: true, disallow_count: 0, sitemaps: [baseUrl + "/sitemap.xml"] },
-        sitemaps: [{ url: baseUrl + "/sitemap.xml", type: "index", url_count: 1240 }],
+        sitemaps: [{ url: baseUrl + "/sitemap.xml", type: "index", url_count: 1240, role: "index" }],
         total_urls: 1240, platform: "shopify", platform_evidence: "检测到 Shopify 商品 Feed",
         frontend: "Shopify", locale: "en-US", currency: "USD", feed_candidates: [baseUrl + "/products.json"],
       };
@@ -121,6 +138,16 @@ export function createProjectsMock(
         });
       }
       createdPaths.set(id, path);
+      const domain = new URL(/^https?:\/\//i.test(input.url) ? input.url : "https://" + input.url).hostname;
+      const config = clone(projectConfigs.demo2);
+      config.base_url = /^https?:\/\//i.test(input.url) ? input.url : "https://" + input.url;
+      config.domain = domain;
+      config.platform = input.workspace?.platform === "magento2" ? "magento" : input.workspace?.platform ?? (domain === "woo.example.test" ? "woocommerce" : "shopify");
+      config.brand = clone(input.brand);
+      config.crawl.feed_url = clone(input.feed_urls);
+      const summary: ProjectSummary = { ...clone(projectSummaries.demo2), id, name: input.brand.name, domain, platform: config.platform, path };
+      addedProjects.set(normalizeProjectPath(path), { summary, config, runner: runners.demo2 });
+      notifyProjectChanged(id);
       return { id, runId: beginRun(path, "init", { missingFeed: input.feed_urls.length === 0 }) };
     }),
     createWorkspaceOnly: (input: CreateWorkspaceOnlyInput) => reply(() => {
@@ -200,24 +227,29 @@ export function createProjectsMock(
     }),
     updateConfig: (id, patch) => reply(() => {
       const key = projectKey(id);
-      const current = projectConfigs[key];
+      const added = [...addedProjects.values()].find((project) => project.summary.id === id);
+      const current = added?.config ?? projectConfigs[key];
       const hadFeed = hasConfiguredFeed(current.crawl.feed_url);
-      projectConfigs[key] = { ...current, ...clone(patch) };
-      const summary = projectSummaries[key];
-      const feedUrl = projectConfigs[key].crawl.feed_url;
+      const updatedConfig = { ...current, ...clone(patch) };
+      if (added) added.config = updatedConfig;
+      else projectConfigs[key] = updatedConfig;
+      const summary = added?.summary ?? projectSummaries[key];
+      const feedUrl = updatedConfig.crawl.feed_url;
       const hasFeed = hasConfiguredFeed(feedUrl);
       const feedWarning = "尚未填写 GMC feed 地址，每日库存同步未启用。";
-      const warnings = [...mockProjectNonFeedWarnings[key], ...(hasFeed ? [] : [feedWarning])];
+      const warnings = [...(added ? [] : mockProjectNonFeedWarnings[key]), ...(hasFeed ? [] : [feedWarning])];
       const attention = hasFeed && !hadFeed ? Math.max(0, summary.attention - 1)
         : !hasFeed && hadFeed ? summary.attention + 1 : summary.attention;
-      projectSummaries[key] = {
+      const updatedSummary = {
         ...summary,
         domain: patch.domain ?? summary.domain,
         attention,
-        warnings: hasFeed ? warnings : [...warnings, feedWarning],
+        warnings,
       };
+      if (added) added.summary = updatedSummary;
+      else projectSummaries[key] = updatedSummary;
       notifyProjectChanged(id);
-      return projectConfigs[key];
+      return updatedConfig;
     }),
     onChanged: (callback) => { projectsChanged.add(callback); return () => projectsChanged.delete(callback); },
   };
