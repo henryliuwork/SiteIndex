@@ -60,9 +60,9 @@ describe("ContentPage 博客重新抓取", () => {
     await waitFor(() => expect(listKeywords).toHaveBeenCalled());
     const settingsButton = await screen.findByRole("button", { name: "识别设置" });
     const refreshButton = await screen.findByRole("button", { name: "重新抓取" });
-    const dataDate = await screen.findByText(/博客识别数据来源：SEO 抓取 · 数据截至/);
+    const dataDate = await screen.findByText(/^最近识别：/);
     expect(dataDate.closest(".si-content-recognition-summary")).toBeTruthy();
-    expect(screen.queryByText(/最近识别：/)).toBeNull();
+    expect(screen.getByRole("button", { name: "博客识别来源说明" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /关键词映射/ })).toBeNull();
     expect(settingsButton).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "重新抓取" })).toHaveLength(1);

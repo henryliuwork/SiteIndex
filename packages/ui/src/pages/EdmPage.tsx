@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, Kpi, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, Input, InputWithAction, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, InfoTooltip, Input, InputWithAction, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { getEdmDiscountTierCapability, type EdmDiscountTierCapability } from "./edm/discount-tier-capability";
@@ -697,11 +697,11 @@ export function EdmPage() {
         </div>
         <div className="si-edm-toolbar-right">
           <label className="si-edm-parent-toggle"><input type="checkbox" aria-label="仅展示父 SKU" checked={Boolean(query.filters?.parent_only && groupingEnabled)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>
+          <InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />
           <span className="si-content-total">显示 {listQuery.data?.rows.length ?? 0} / {listQuery.data?.total ?? 0} 条</span>
         </div>
       </div>}
     />}
-    <p className="si-edm-rule-note">首图优先使用抓取结果；手动地址仅用于补充，且不会被同步覆盖。</p>
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.title ?? "SKU 图片详情"}>
       {selected && <div className="si-edm-detail">
         <ImageThumbnail src={selected.manual_image_url || selected.feed_image_url} label={selected.sku + " 当前使用图片"} />

@@ -11,7 +11,7 @@ import type {
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, KpiCard, LengthBadge, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, InfoTooltip, KpiCard, LengthBadge, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./seo/filters";
 import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams, type SeoSearchParamPatch, type SeoView } from "./seo/query-params";
 
@@ -113,8 +113,8 @@ function linkColumns(): ColumnDef<SeoLink, unknown>[] {
   ];
 }
 
-function SeoField({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="si-seo-detail-field"><span>{label}</span><div>{children || "—"}</div></div>;
+function SeoField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return <div className="si-seo-detail-field"><span>{label}{hint && <InfoTooltip label={`${label}说明`} content={hint} />}</span><div>{children || "—"}</div></div>;
 }
 
 function SeoDetail({
@@ -132,7 +132,7 @@ function SeoDetail({
     <section>
       <h4>Index</h4>
       <div className="si-seo-detail-grid">
-        <SeoField label="Google 收录"><Chip tone={page.google_indexed === true ? "ok" : page.google_indexed === false ? "danger" : "neutral"}>{page.google_indexed === true ? "已收录" : page.google_indexed === false ? "未收录" : "未检查"}</Chip></SeoField>
+        <SeoField label="Google 收录" hint="收录检查仅供参考，最终以 Search Console 中的数据为准。"><Chip tone={page.google_indexed === true ? "ok" : page.google_indexed === false ? "danger" : "neutral"}>{page.google_indexed === true ? "已收录" : page.google_indexed === false ? "未收录" : "未检查"}</Chip></SeoField>
         <SeoField label="可索引"><Chip tone={page.indexable ? "ok" : "warn"}>{page.indexable ? "是" : "否"}</Chip></SeoField>
         <SeoField label="检查日期">{page.index_checked_at || "未检查"}</SeoField>
         <SeoField label="HTTP 状态">{page.status_code}{page.response_ms != null && " · " + page.response_ms + " ms"}</SeoField>
@@ -142,8 +142,8 @@ function SeoDetail({
     </section>
     <section>
       <h4>页面元数据</h4>
-      <SeoField label="Title"><span className="si-seo-detail-length">{page.title || "—"}<LengthBadge length={page.title_length} kind="title" range={titleRange} /><small>{gradeLabel(page.title_length, "title", titleRange)}</small></span></SeoField>
-      <SeoField label="Description"><span className="si-seo-detail-length">{page.meta_description || "—"}<LengthBadge length={page.description_length} kind="description" range={descriptionRange} /><small>{gradeLabel(page.description_length, "description", descriptionRange)}</small></span></SeoField>
+      <SeoField label="Title" hint={`长度按当前规则的 ${titleRange[0]}–${titleRange[1]} 字分级，颜色表示是否落在建议范围内。`}><span className="si-seo-detail-length">{page.title || "—"}<LengthBadge length={page.title_length} kind="title" range={titleRange} /><small>{gradeLabel(page.title_length, "title", titleRange)}</small></span></SeoField>
+      <SeoField label="Description" hint={`长度按当前规则的 ${descriptionRange[0]}–${descriptionRange[1]} 字分级，颜色表示是否落在建议范围内。`}><span className="si-seo-detail-length">{page.meta_description || "—"}<LengthBadge length={page.description_length} kind="description" range={descriptionRange} /><small>{gradeLabel(page.description_length, "description", descriptionRange)}</small></span></SeoField>
       <SeoField label="Keywords">{page.meta_keywords}</SeoField>
       <SeoField label="H1">{page.h1}{page.h1_count > 1 && <Chip tone="warn">{page.h1_count} 个</Chip>}</SeoField>
       <SeoField label="H2">{page.h2?.join(" · ")}</SeoField>
@@ -516,7 +516,6 @@ export function SeoPage() {
           {orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}
         </div>
       </details>}
-      <p className="si-seo-disclaimer">收录检查仅供参考，以 Search Console 为准。</p>
     </ProjectTabPanel>
     <Drawer open={Boolean(selectedUrl)} onOpenChange={(open) => { if (!open) { setSelectedUrl(null); setSelectedLink(null); } }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
       {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}

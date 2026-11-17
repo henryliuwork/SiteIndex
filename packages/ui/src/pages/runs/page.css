@@ -6,6 +6,7 @@
 .si-runs-job-menu { display: grid; gap: var(--space-1); }
 .si-runs-job-menu .si-button { justify-content: flex-start; }
 .si-run-job-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--color-ink); }
+.si-run-job-help, .si-runs-heading-with-info { display: inline-flex; align-items: center; gap: var(--space-2); }
 .si-run-job-heading strong { font-size: var(--fs-body); }
 .si-run-job-heading svg { color: var(--color-brand); }
 .si-run-job-card > span:nth-child(2) { font-size: var(--fs-caption); line-height: 1.45; }
