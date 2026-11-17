@@ -99,6 +99,10 @@ export interface SiteConfig {
   crawl: {
     adapter: "gmc_feed";
     feed_url: Url | Url[];
+    /** 无 Feed 时启用 Store API → Sitemap/HTML 回退采集；默认关闭。 */
+    auto_collect_products?: boolean;
+    /** 允许无价格询价商品入库；默认关闭，价格空值契约另行迁移。 */
+    allow_unpriced_products?: boolean;
     sku_field?: string;
     category_depth?: number;
     missing_as?: "out_of_stock" | "removed";
