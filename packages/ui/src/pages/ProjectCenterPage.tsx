@@ -8,7 +8,7 @@ import { Link, useNavigate } from "react-router-dom";
 import type { CreateWorkspaceOnlyInput, Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue, WorkspaceCreateInput } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, KpiCard, Notice, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, Input, InputWithAction, KpiCard, Notice, PageHeader, useToast } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
 import { WorkspaceImportCheckDialog } from "./project-center/workspace-import-dialog";
 import { workspaceDirectoryTree, workspacePathJoin } from "./new-project/workspace-preview";
@@ -357,10 +357,10 @@ function CreateWorkspaceDialog({
           </div>
           <label className="si-workspace-create-checkbox"><input type="checkbox" checked={mailchimp} disabled={saving} onChange={(event) => setMailchimp(event.target.checked)} />Mailchimp 预设</label>
           <label className="si-field-label" htmlFor="workspace-projects-root">项目根目录</label>
-          <div className="si-wizard-directory"><input id="workspace-projects-root" className="si-text-field si-mono" value={projectsRoot} disabled={saving} onChange={(event) => setProjectsRoot(event.target.value)} /><Button type="button" disabled={saving} onClick={async () => {
+          <InputWithAction action={<Button type="button" disabled={saving} onClick={async () => {
             try { const selected = await api.settings.chooseDirectory(projectsRoot || undefined); if (selected) { setProjectsRoot(selected); toast.success("项目根目录已选择。"); } }
             catch (cause) { const message = apiErrorMessage(cause, "选择项目根目录失败，请重试。"); setError(message); toast.error(message); }
-          }}>选择</Button></div>
+          }}>选择</Button>}><Input id="workspace-projects-root" className="si-mono" value={projectsRoot} disabled={saving} onChange={(event) => setProjectsRoot(event.target.value)} /></InputWithAction>
           <label className="si-field-label" htmlFor="workspace-folder-name">项目文件夹名</label>
           <input id="workspace-folder-name" className="si-text-field si-mono" value={folderName} disabled={saving} onChange={(event) => setFolderName(event.target.value)} />
           <div className="si-wizard-path"><span>将创建</span><code>{targetPath || "请填写项目根目录和文件夹名"}</code></div>

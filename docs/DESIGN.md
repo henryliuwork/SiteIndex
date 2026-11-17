@@ -80,7 +80,13 @@
 ### 1.4 控件、组合输入、Tab 与时间
 
 - 按钮、输入框、下拉、复选框统一使用 `--control-height: 32px`；紧凑场景使用 `--control-height-compact: 28px`。同一行的控件垂直居中，不能由按钮文案或图标改变行高。
-- “输入框 + 操作按钮”使用共享 `InputWithAction`：两项同高、垂直居中、间距为 `--input-with-action-gap`；页面不得各自手写 flex 组合。组件在 W1 提供，W0 先固定契约。
+- “输入框 + 操作按钮”使用共享 `InputWithAction`：输入框与操作按钮同高、垂直居中，间距为 `--input-with-action-gap`；页面不得各自手写 flex 组合。通过 `children` 传入输入控件，通过 `action` 传入一个或多个操作按钮：
+
+  ```tsx
+  <InputWithAction action={<Button type="submit" variant="primary">检测</Button>}>
+    <Input aria-label="网站地址" value={url} onChange={(event) => setUrl(event.target.value)} />
+  </InputWithAction>
+  ```
 - Tab 只有两种：**项目导航 Tab** 改变路由，在 ProjectHeader 中使用，待办也是项目导航 Tab；当前项使用主色文字和底部指示线。**页内分段 Tab** 只切换当前页内容，不改变路由；选中项使用实底突出。不得新增第三层 Tab。窄窗口下项目导航收纳到“更多”，当前项和键盘焦点保持可见。
 - 时间统一通过共享 `formatDateTime` 展示：同年为 `MM-DD HH:mm`，跨年带年份；禁止“今天 / 昨天”等相对前缀。项目头只显示一次最近同步时间；页面内只显示不同数据源的日期，并注明来源。表格历史记录中的多个时间不属于重复页头提示。
 - `ui:check` 对裸字号、裸色值、裸 px 间距和小于 10px 的字号执行失败检查。已有 D 页面遗留问题记录在 `packages/ui/visual/style-baseline.json`；命令会报告基线数量，新违规立即失败，页面迁移时逐步降低基线。页面日期/时间超过一处时产生人工复核告警。

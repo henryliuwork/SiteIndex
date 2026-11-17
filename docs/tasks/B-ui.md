@@ -133,6 +133,9 @@
 - [x] 补齐间距映射、控件高度、InputWithAction、Tab 与日期时间约定；`ui:check` 对裸字号/裸色值/裸 px 间距/小于 10px 字号的新违规失败，并对同页多处日期时间输出复核告警。
 - [x] AGENTS、WORKSTREAMS 阅读入口和 PR 模板已加入 UI/UX 硬性规范与检查项。
 
+## v0.6.0 · W1 共享组件
+- [x] `InputWithAction` 作为共享组件提供单测和 DESIGN 用法；新建向导、项目中心及软件设置的路径/检测/保存输入组合改用该组件 — 本 PR
+
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码
