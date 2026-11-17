@@ -249,7 +249,9 @@ export interface DetectResult {
   final_url: string;
   redirect_status: number | null;
   robots: { found: boolean; disallow_count: number; sitemaps: string[] };
-  sitemaps: { url: string; type: "index" | "urlset"; url_count: number }[];
+  sitemaps: { url: string; type: "index" | "urlset"; url_count: number;
+    role?: "product" | "category" | "blog" | "index" | "other" }[];
+  category_prefix_candidates?: string[];
   total_urls: number;
   platform: Platform;
   platform_evidence: string;
