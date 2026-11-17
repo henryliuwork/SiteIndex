@@ -22,9 +22,16 @@ describe("packaged CLI schema paths", () => {
     );
   });
 
-  it("fails packaging when either Core schema path pattern is missing", () => {
-    expect(() => rewriteBundledCliSchemaPaths('new URL("../../../../schemas/sku.schema.json")')).toThrow(
-      "CLI bundle is missing expected schema path prefix: ../../../schemas/",
+  it("accepts Core's bundled schema fallback when older path patterns are absent", () => {
+    const bundle = 'new URL(`${sourceRelativePath}/${name}`,moduleUrl);new URL(`./schemas/${name}`,moduleUrl)';
+    const result = rewriteBundledCliSchemaPaths(bundle);
+    expect(result.source).toBe(bundle);
+    expect(result.replacementCount).toBe(0);
+  });
+
+  it("fails packaging when no bundled schema path exists", () => {
+    expect(() => rewriteBundledCliSchemaPaths('new URL("./other/file", import.meta.url)')).toThrow(
+      "CLI bundle has no packaged schema path (./schemas/)",
     );
   });
 });
