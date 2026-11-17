@@ -29,6 +29,8 @@
       "properties": {
         "adapter": { "const": "gmc_feed" },
         "feed_url": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+        "auto_collect_products": { "type": "boolean" },
+        "allow_unpriced_products": { "type": "boolean" },
         "sku_field": { "type": "string" },
         "category_depth": { "type": "integer", "minimum": 1 },
         "category_source": { "type": "string" },
