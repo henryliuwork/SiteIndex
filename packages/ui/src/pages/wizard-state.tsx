@@ -8,6 +8,7 @@ export interface WizardDraft {
   feedResult: FeedInspectResult | null;
   feedSkipped: boolean;
   categoryRules: string;
+  autoCollectProducts: boolean;
   skuField: string;
   categoryDepth: number;
   missingAs: "out_of_stock" | "removed";
@@ -28,6 +29,7 @@ const initialDraft: WizardDraft = {
   feedResult: null,
   feedSkipped: false,
   categoryRules: "",
+  autoCollectProducts: true,
   skuField: "id",
   categoryDepth: 2,
   missingAs: "out_of_stock",

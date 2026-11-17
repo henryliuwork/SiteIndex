@@ -149,6 +149,9 @@
 ## v0.6.2 · WooCommerce 站点探测向导
 - [x] 按 #611 的可选字段展示 Sitemap 角色和分类前缀候选；无 Feed 可直接继续，分类规则支持多前缀并在创建后保存 — 本 PR
 
+## v0.6.3 · 新建项目配置原子传入
+- [x] 向导创建请求直接传入多前缀分类规则和 WooCommerce 无 Feed 自动采集开关；mock 在 init 前应用配置 — 本 PR
+
 ## 交付给其他工作流
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码

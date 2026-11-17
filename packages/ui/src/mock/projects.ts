@@ -145,10 +145,11 @@ export function createProjectsMock(
       config.platform = input.workspace?.platform === "magento2" ? "magento" : input.workspace?.platform ?? (domain === "woo.example.test" ? "woocommerce" : "shopify");
       config.brand = clone(input.brand);
       config.crawl.feed_url = clone(input.feed_urls);
+      if (input.categories) config.categories = clone(input.categories);
       const summary: ProjectSummary = { ...clone(projectSummaries.demo2), id, name: input.brand.name, domain, platform: config.platform, path };
       addedProjects.set(normalizeProjectPath(path), { summary, config, runner: runners.demo2 });
       notifyProjectChanged(id);
-      return { id, runId: beginRun(path, "init", { missingFeed: input.feed_urls.length === 0 }) };
+      return { id, runId: beginRun(path, "init", { missingFeed: input.feed_urls.length === 0 && !input.auto_collect_products }) };
     }),
     createWorkspaceOnly: (input: CreateWorkspaceOnlyInput) => reply(() => {
       const path = joinPath(input.projects_root, input.folder_name);
