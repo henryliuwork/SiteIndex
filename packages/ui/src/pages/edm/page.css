@@ -221,7 +221,7 @@
 
 .si-edm-parent-toggle {
   display: inline-flex;
-  min-height: 32px;
+  min-height: var(--control-height);
   flex: none;
   align-items: center;
   gap: var(--space-2);
@@ -308,12 +308,8 @@
 }
 
 .si-edm-manual-cell {
-  display: grid;
   width: 100%;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 .si-edm-discount-select {
@@ -322,27 +318,7 @@
   padding-inline: var(--space-2);
 }
 
-.si-edm-manual-cell input {
-  width: 100%;
-  height: 32px;
-  min-width: 0;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-line);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-ink);
-  font-size: var(--fs-body);
-}
-
-.si-edm-manual-cell input:focus {
-  border-color: var(--color-brand);
-  outline: 2px solid var(--color-focus);
-}
-
 .si-edm-manual-cell .si-button {
-  grid-column: 2;
-  grid-row: 1;
-  height: 32px;
   padding: 0 var(--space-2);
   font-size: var(--fs-body);
   white-space: nowrap;

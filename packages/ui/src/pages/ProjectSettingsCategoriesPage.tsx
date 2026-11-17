@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import type { CategoryMatchType, CategoriesConfig, CategoryPreview, ListQuery, ManualCategory, SiteConfig } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, InputWithAction, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./project-settings-categories/page.css";
 
@@ -206,8 +206,9 @@ export function ProjectSettingsCategoriesPage({ embedded = false, onConfigSaved 
       <label>分类页 URL<input className="si-text-field si-category-mono" value={selected.url} onChange={(event) => updateCategory(selectedIndex, { url: event.target.value })} placeholder="/collections/demo-category-1" /></label>
       <fieldset><legend>匹配规则（按顺序）</legend>{selected.match.map((rule, ruleIndex) => <div className="si-category-editor-rule" key={`${selected.rowId}-${ruleIndex}`}>
         <select className="si-text-field" aria-label={`匹配规则类型 ${ruleIndex + 1}`} value={rule.type} onChange={(event) => updateMatch(selectedIndex, ruleIndex, { type: event.target.value as CategoryMatchType })}>{matchTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
-        <input className="si-text-field" aria-label={`匹配规则值 ${ruleIndex + 1}`} value={rule.value} onChange={(event) => updateMatch(selectedIndex, ruleIndex, { value: event.target.value })} placeholder="输入匹配值" />
-        <Button size="small" aria-label={`删除匹配规则 ${ruleIndex + 1}`} onClick={() => setDraft((current) => current ? { ...current, manual: (current.manual ?? []).map((category, index) => index === selectedIndex ? { ...category, match: category.match.filter((_, itemIndex) => itemIndex !== ruleIndex) } : category) } : current)} disabled={selected.match.length <= 1}>删除</Button>
+        <InputWithAction action={<Button aria-label={`删除匹配规则 ${ruleIndex + 1}`} onClick={() => setDraft((current) => current ? { ...current, manual: (current.manual ?? []).map((category, index) => index === selectedIndex ? { ...category, match: category.match.filter((_, itemIndex) => itemIndex !== ruleIndex) } : category) } : current)} disabled={selected.match.length <= 1}>删除</Button>}>
+          <input className="si-text-field" aria-label={`匹配规则值 ${ruleIndex + 1}`} value={rule.value} onChange={(event) => updateMatch(selectedIndex, ruleIndex, { value: event.target.value })} placeholder="输入匹配值" />
+        </InputWithAction>
       </div>)}<Button size="small" onClick={() => setDraft((current) => current ? { ...current, manual: (current.manual ?? []).map((category, index) => index === selectedIndex ? { ...category, match: [...category.match, { type: "product_type_contains", value: "" }] } : category) } : current)}>+ 添加匹配规则</Button></fieldset>
       <p className="si-category-editor-count">当前预览命中 {selected.skuCount.toLocaleString("zh-CN")} 个 SKU。编辑后请重新预览匹配结果。</p>
       <div className="si-category-editor-actions"><Button variant="danger" onClick={() => removeCategory(selectedIndex)}>删除分类</Button><Button variant="primary" onClick={() => setSelectedIndex(null)}>完成编辑</Button></div>

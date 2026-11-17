@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, Kpi, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterPill, Input, InputWithAction, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { getEdmDiscountTierCapability, type EdmDiscountTierCapability } from "./edm/discount-tier-capability";
@@ -251,10 +251,9 @@ function ManualImageCell({ projectId, row }: { projectId: string; row: SkuImageR
     },
     onError: (cause) => toast.error(apiErrorMessage(cause, "手动首图保存失败。")),
   });
-  return <div className="si-edm-manual-cell">
-    <input type="url" aria-label={row.sku + " 手动首图地址"} value={url} placeholder="粘贴 Mailchimp 等图片地址" onChange={(event) => setUrl(event.target.value)} />
-    <Button size="small" disabled={mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "保存中" : "保存"}</Button>
-  </div>;
+  return <InputWithAction className="si-edm-manual-cell" action={<Button disabled={mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? "保存中" : "保存"}</Button>}>
+    <Input type="url" aria-label={row.sku + " 手动首图地址"} value={url} placeholder="粘贴 Mailchimp 等图片地址" onChange={(event) => setUrl(event.target.value)} />
+  </InputWithAction>;
 }
 
 function feedImageLabel(url: string | null): string {
