@@ -7,7 +7,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import type { HistoryRange, InventorySummary, ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, SkuRecord, SkuStockFilters, SkuStockView, StockStatus, TagStat } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, formatDateTime, Input, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, useToast, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, formatDateTime, Input, InputWithAction, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, useToast, stockTone } from "../components";
 import { formatInventoryDetailDuration, formatInventoryTableDuration, InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { CategoryPanel, GroupingPreview, historyRanges, requestInventorySummary, stockNames, TrendChart } from "./products/inventory-widgets";
@@ -161,8 +161,8 @@ function ProductOverview({ detail, row, tags, isSaving, onAddTag, onCreateAndAdd
     <section className="si-product-detail-tag-section">
       <h4>标签</h4>
       <div className="si-product-detail-tags">{product.tags.length ? product.tags.map((tag) => <span className="si-product-tag" key={tag}>{tag}<button type="button" aria-label={`移除标签 ${tag}`} disabled={isSaving} onClick={() => onRemoveTag(tag)}><X size={12} /></button></span>) : <span className="si-muted">暂无标签</span>}</div>
-      <div className="si-product-tag-editor"><Select ariaLabel="从已有标签中添加" value={existingTag} placeholder="选择已有标签" options={tags.filter((tag) => !product.tags.includes(tag)).map((tag) => ({ value: tag, label: tag }))} onValueChange={setExistingTag} /><Button size="small" disabled={!existingTag || isSaving} onClick={() => { onAddTag(existingTag); setExistingTag(""); }}><Plus size={13} />添加</Button></div>
-      <div className="si-product-tag-editor is-stacked"><Input aria-label="新建并添加标签" value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="新建标签" /><Button size="small" disabled={!newTag.trim() || isSaving} onClick={() => { onCreateAndAddTag(newTag.trim()); setNewTag(""); }}><Plus size={13} />新建并添加</Button></div>
+      <InputWithAction className="si-product-tag-editor" action={<Button disabled={!existingTag || isSaving} onClick={() => { onAddTag(existingTag); setExistingTag(""); }}><Plus size={13} />添加</Button>}><Select ariaLabel="从已有标签中添加" value={existingTag} placeholder="选择已有标签" options={tags.filter((tag) => !product.tags.includes(tag)).map((tag) => ({ value: tag, label: tag }))} onValueChange={setExistingTag} /></InputWithAction>
+      <InputWithAction className="si-product-tag-editor" action={<Button disabled={!newTag.trim() || isSaving} onClick={() => { onCreateAndAddTag(newTag.trim()); setNewTag(""); }}><Plus size={13} />新建并添加</Button>}><Input aria-label="新建并添加标签" value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="新建标签" /></InputWithAction>
     </section>
     <section>
       <h4>SEO 与 Google 收录</h4>
@@ -216,7 +216,7 @@ function ProductTagManager({ tagsQuery, newTag, setNewTag, onCreate, onDelete }:
   onDelete: (tag: string) => void;
 }) {
   return <>
-    <div className="si-tag-manager-create"><Input aria-label="新标签名称" value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="输入新标签名称" onKeyDown={(event) => { if (event.key === "Enter") onCreate(); }} /><Button variant="primary" disabled={!newTag.trim()} onClick={onCreate}><Plus size={14} />创建标签</Button></div>
+    <InputWithAction className="si-tag-manager-create" action={<Button variant="primary" disabled={!newTag.trim()} onClick={onCreate}><Plus size={14} />创建标签</Button>}><Input aria-label="新标签名称" value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="输入新标签名称" onKeyDown={(event) => { if (event.key === "Enter") onCreate(); }} /></InputWithAction>
     {tagsQuery.isLoading ? <p className="si-muted" role="status">正在加载标签…</p> : tagsQuery.isError ? <ApiErrorNotice label="标签列表加载失败。" error={tagsQuery.error} onRetry={() => void tagsQuery.refetch()} /> : <>
       <ul className="si-tag-manager-list">{(tagsQuery.data ?? []).map((item) => <li key={item.tag}><span className="si-product-tag">{item.tag}</span><small>{item.products} 个产品</small><Button size="small" variant="quiet" icon={<Trash2 size={14} />} onClick={() => onDelete(item.tag)}>删除</Button></li>)}</ul>
       {!tagsQuery.data?.length && <div className="si-empty-state">暂无标签。</div>}
