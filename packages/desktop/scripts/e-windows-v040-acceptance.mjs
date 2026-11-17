@@ -2382,7 +2382,7 @@ async function testW2Pages(page, syntheticSite) {
     const link = page.getByRole("link", { name: "查看 SEO 问题" }).first();
     await link.waitFor({ state: "visible", timeout: 10_000 });
     await link.click();
-    await page.locator(".si-seo-controls").waitFor({ state: "visible", timeout: 20_000 });
+    await waitForW2Table(page, "seo.issues.v2");
     const selected = await page.evaluate(() => {
       const [, query = ""] = window.location.hash.split("?");
       const params = new URLSearchParams(query);
@@ -2566,7 +2566,7 @@ async function testW2Pages(page, syntheticSite) {
 
   await attemptW2("SEO rules Drawer ignores and restores a rule class", "ui", async () => {
     await clickProjectTab(page, "SEO");
-    await page.locator(".si-seo-controls").waitFor({ state: "visible", timeout: 15_000 });
+    await waitForW2Table(page, "seo.issues.v2");
     await page.getByRole("button", { name: "规则设置", exact: true }).click();
     let ruleSection = page.locator(".si-seo-rule-setting").filter({ hasText: "Title 缺失" }).first();
     await ruleSection.waitFor({ state: "visible", timeout: 15_000 });
