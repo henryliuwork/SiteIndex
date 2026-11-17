@@ -67,7 +67,7 @@ interface StockVerifyCursor {
   pending_skus: string[];
 }
 const TRACKED = ["product_id", "handle", "title", "variant_title", "url", "category", "categories", "category_source",
-  "price", "compare_at_price", "currency", "image_url"] as const;
+  "price", "compare_at_price", "currency", "image_url", "parent_sku"] as const;
 
 function nowDate(now: DailyOptions["now"]): Date {
   return now instanceof Date ? new Date(now) : typeof now === "function" ? now() : new Date();
@@ -345,6 +345,7 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     const rowForCatalog: JsonRecord = {};
     for (const key of TRACKED) {
       if (key === "category_source" && !site.categories) continue;
+      if (key === "parent_sku" && (typeof row.parent_sku !== "string" || !row.parent_sku)) continue;
       rowForCatalog[key] = row[key] ?? null;
     }
     rowForCatalog.categories = Array.isArray(rowForCatalog.categories) && rowForCatalog.categories.length
@@ -363,6 +364,7 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     }
     const changed = TRACKED.some((key) => key === "category_source" && !site.categories ? false : !equalValue(old[key], rowForCatalog[key])) || old.status !== "active";
     Object.assign(old, rowForCatalog, { status: "active", last_seen: day });
+    if (!rowForCatalog.parent_sku) delete old.parent_sku;
     if (changed) old.updated_at = day;
   }
 

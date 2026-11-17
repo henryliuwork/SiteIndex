@@ -11,6 +11,10 @@
     "product_id": {
       "type": "string"
     },
+    "parent_sku": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
     "handle": {
       "type": "string"
     },

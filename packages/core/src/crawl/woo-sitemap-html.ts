@@ -108,12 +108,22 @@ function pageProduct(html: string, url: string, site: WooSite): PageProduct | nu
   const offer = record(list(product.offers)[0]);
   const sku = string(product.sku) || text(withClass("sku")[0] ?? { type: "text", data: "" }).trim();
   const name = string(product.name) || text(titleNode ?? named("h1")[0] ?? { type: "text", data: "" }).trim();
-  const domPrice = text(withClass("price")[0] ?? { type: "text", data: "" }).trim().replace(/[^\d.,]/gu, "");
+  const priceNode = withClass("price")[0];
+  const amounts = priceNode ? nodes(priceNode, (node) => (node.attribs?.class ?? "").split(/\s+/u).includes("amount")) : [];
+  const saleNode = priceNode ? nodes(priceNode, (node) => node.name === "ins")[0] : undefined;
+  const saleAmount = saleNode ? nodes(saleNode, (node) => (node.attribs?.class ?? "").split(/\s+/u).includes("amount"))[0] : undefined;
+  const priceText = saleAmount ? text(saleAmount) : amounts.length === 1 ? text(amounts[0]!) :
+    amounts.length ? "" : text(priceNode ?? { type: "text", data: "" });
+  const tokens = priceText.match(/\d[\d,.]*/gu) ?? [];
+  const domPrice = tokens.length === 1 ? tokens[0] : "";
   const current = price(offer.price ?? record(offer.priceSpecification).price ?? domPrice);
   const available = pageStock(root, product) ?? "unknown";
-  const category = categorySlug(string(product.category));
+  const categoryLink = withClass("posted_in")[0];
+  const categoryName = categoryLink ? nodes(categoryLink, (node) => node.name === "a").map(text)[0] : "";
+  const category = categorySlug(string(product.category) || categoryName || "");
   const image = list(product.image)[0];
-  const mainImage = imageUrl(typeof image === "string" ? image : record(image).url, new URL(site.base_url));
+  const mainImage = imageUrl(typeof image === "string" ? image : record(image).url
+    || withClass("wp-post-image")[0]?.attribs?.src, new URL(site.base_url));
   const group = record(product.isVariantOf);
   const parentSku = string(group.sku);
   return {
@@ -139,11 +149,17 @@ async function textResponse(url: string, accept: string): Promise<string> {
 
 async function productUrls(site: WooSite): Promise<string[]> {
   const base = new URL(site.base_url);
-  const queue = (site.sitemaps.length ? site.sitemaps : ["/sitemap_index.xml", "/wp-sitemap.xml", "/sitemap.xml"])
+  const defaults = ["/sitemap_index.xml", "/wp-sitemap.xml", "/sitemap.xml"];
+  const queue = (site.sitemaps.length ? site.sitemaps : defaults)
     .map((url) => sameOrigin(url, base)).filter(Boolean);
   const visited = new Set<string>();
   const maps: { url: string; locations: string[] }[] = [];
-  while (queue.length && visited.size < MAX_SITEMAPS) {
+  let attemptedDefaults = !site.sitemaps.length;
+  while ((queue.length || (!attemptedDefaults && !maps.length)) && visited.size < MAX_SITEMAPS) {
+    if (!queue.length) {
+      queue.push(...defaults.map((url) => sameOrigin(url, base)).filter(Boolean));
+      attemptedDefaults = true;
+    }
     const sitemap = queue.shift()!;
     if (visited.has(sitemap)) continue;
     visited.add(sitemap);

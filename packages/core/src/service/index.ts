@@ -92,7 +92,9 @@ import { parseJsonl, readJsonl, writeJsonl, type JsonRecord } from "../io/jsonl"
 import { upsertLedger } from "../ledger";
 import { pathsForProject, resolveProjectLayout } from "../io/project-layout";
 import { assertProjectStorageLocal, inspectProjectStorageLocation } from "../io/project-storage";
-import { emptySnapshotReason, FeedError, readFeeds, toSnapshot, type FeedSiteConfig } from "../crawl/gmc-feed";
+import { emptySnapshotReason, FeedError, readFeeds, toSnapshot, type FeedSiteConfig, type FeedSnapshot } from "../crawl/gmc-feed";
+import { collectWooStoreApi } from "../crawl/woo-store-api";
+import { collectWooSitemapHtml } from "../crawl/woo-sitemap-html";
 import { groupSkuIds, previewSkuGrouping, SkuGroupingRuleError } from "../inventory/sku-grouping";
 import { selectInventoryDates, type InventorySummaryRange } from "../inventory/history-range";
 import {
@@ -103,7 +105,7 @@ import {
 } from "../projects/create-guard";
 import { hasPriceChangeWithin } from "../inventory/price-history";
 import { parentStockRows } from "../inventory/parent-stock-view";
-import { groupProductRows } from "../products/parent-view";
+import { groupExplicitProductRows, groupProductRows } from "../products/parent-view";
 import { runDaily } from "../jobs/daily";
 import { readDailyOutputTransactionOverlay, recoverDailyOutputTransaction } from "../jobs/daily-output-transaction";
 import { buildViews } from "../views/build";
@@ -351,6 +353,33 @@ function feedUrlsFromConfig(config: SiteConfig): string[] {
   const value = configuredFeedValue(config);
   return (Array.isArray(value) ? value : value === undefined ? [] : [value])
     .filter((url) => url.trim() && url.trim().toLowerCase() !== "todo");
+}
+
+interface ProductSourceSnapshot {
+  rows: FeedSnapshot[];
+  emptyReason: string;
+  warnings: string[];
+  filtered?: Record<string, number>;
+}
+
+async function productSourceSnapshot(config: SiteConfig, date: string): Promise<ProductSourceSnapshot | null> {
+  if (feedUrlsFromConfig(config).length) {
+    const items = await readFeeds(config as FeedSiteConfig);
+    const snapshot = toSnapshot(items, config as FeedSiteConfig, date);
+    return { rows: snapshot.rows, emptyReason: emptySnapshotReason(items, snapshot), warnings: [] };
+  }
+  if (!config.crawl.auto_collect_products) return null;
+  let storeReason = "";
+  try {
+    const store = await collectWooStoreApi(config);
+    if (store.rows.length) return { rows: store.rows, emptyReason: "", warnings: store.warnings, filtered: store.filtered };
+    storeReason = store.emptyReason ?? "";
+  } catch (error) {
+    storeReason = error instanceof Error ? error.message : "Store API 不可用。";
+  }
+  const fallback = await collectWooSitemapHtml(config);
+  return { rows: fallback.rows, emptyReason: [storeReason, fallback.emptyReason].filter(Boolean).join("；"),
+    warnings: fallback.warnings, filtered: fallback.filtered };
 }
 
 function normalizeSiteFeedConfig(config: SiteConfig): SiteConfig {
@@ -702,7 +731,8 @@ function projectSummary(
   const syncJobs = new Set(["init", "daily", "weekly", "monthly", "index-check", "design"]);
   const latestRun = snapshot.runs.filter((run) => syncJobs.has(run.job))
     .sort((a, b) => codeUnitCompare(b.started_at, a.started_at))[0];
-  const warnings = feedUrlsFromConfig(snapshot.config).length ? [] : ["尚未填写 GMC feed"];
+  const warnings = feedUrlsFromConfig(snapshot.config).length || snapshot.config.crawl.auto_collect_products
+    ? [] : ["尚未填写 GMC feed"];
   if (storageLocation.status === "known-cloud") {
     warnings.push("此项目位于已知云同步目录，当前仅支持只读查看。请手动复制到本机目录后重新添加。");
   }
@@ -1709,19 +1739,19 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             try { await access(path.join(executionPath, relative)); record(key, "ok", label, pct); }
             catch { record(key, "failed", `${label.replace("已", "未")}：${relative} 不存在。`, pct); }
           }
-          if (!feedUrlsFromConfig(config).length) {
+          if (!feedUrlsFromConfig(config).length && !config.crawl.auto_collect_products) {
             record("daily", "skipped", "未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。", 45);
           } else {
-            progress(25, "daily", "正在读取商品 feed 并同步库存");
+            progress(25, "daily", "正在采集商品并同步库存");
             try {
-              const items = await readFeeds(config as FeedSiteConfig);
-              const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate);
+              const snapshot = (await productSourceSnapshot(config, requestedDate))!;
               const daily = await runDaily(executionPath, snapshot.rows, { date: requestedDate, force: req.force,
-                emptyFeedReason: emptySnapshotReason(items, snapshot) });
-              Object.assign(counts, daily.counts);
+                emptyFeedReason: snapshot.emptyReason });
+              Object.assign(counts, daily.counts, snapshot.filtered);
               const message = daily.status === "failed"
                 ? `每日同步失败：${daily.errors.join("；") || "数据源未生成有效数据。"}`
-                : daily.status === "partial" ? `每日同步部分完成：${daily.errors.join("；") || "部分库存状态未知。"}` : "每日同步完成。";
+                : daily.status === "partial" ? `每日同步部分完成：${daily.errors.join("；") || "部分库存状态未知。"}`
+                  : `每日同步完成。${snapshot.warnings.join("；")}`;
               record("daily", daily.status === "ok" ? "ok" : "failed", message, 45);
             } catch (error) {
               record("daily", "failed", `每日同步失败：${isSiteIndexError(error) ? error.message : error instanceof Error ? error.message : String(error)}`, 45);
@@ -1777,7 +1807,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             summary: status === "ok" ? "项目初始化完成。" : status === "partial" ? "项目初始化部分完成，请查看失败步骤。" : "项目初始化失败。",
             counts, ...(errors.length ? { errors } : {}), steps };
         } else if (req.job === "daily") {
-          if (!feedUrlsFromConfig(config).length) {
+          if (!feedUrlsFromConfig(config).length && !config.crawl.auto_collect_products) {
             jobResult = {
               runId,
               job: req.job,
@@ -1787,14 +1817,13 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             };
             progress(90, "daily", jobResult.summary, "warn");
           } else {
-            progress(5, "feed", "正在读取商品 feed");
-            const items = await readFeeds(config as FeedSiteConfig);
-            const snapshot = toSnapshot(items, config as FeedSiteConfig, requestedDate);
+            progress(5, "feed", "正在采集商品数据");
+            const snapshot = (await productSourceSnapshot(config, requestedDate))!;
             progress(35, "daily", "正在合并商品与库存数据");
             const daily = await runDaily(executionPath, snapshot.rows, {
               date: requestedDate,
               force: req.force,
-              emptyFeedReason: emptySnapshotReason(items, snapshot),
+              emptyFeedReason: snapshot.emptyReason,
               ...(ctx.testOnlyBeforeDailyTargetReplace
                 ? { testOnlyBeforeTargetReplace: ctx.testOnlyBeforeDailyTargetReplace }
                 : {}),
@@ -1808,8 +1837,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
               job: req.job,
               status: daily.status,
               exitCode: daily.exitCode,
-              summary: daily.status === "failed" ? "每日同步失败。" : daily.status === "partial" ? "每日同步完成，包含库存未知项。" : "每日同步完成。",
-              counts: daily.counts,
+              summary: daily.status === "failed" ? "每日同步失败。" : daily.status === "partial" ? "每日同步完成，包含库存未知项。" : `每日同步完成。${snapshot.warnings.join("；")}`,
+              counts: { ...daily.counts, ...snapshot.filtered },
               ...(daily.errors.length ? { errors: daily.errors } : {}),
             };
           }
@@ -2181,7 +2210,8 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const snapshot = await load(resolve(id));
       const filters = query.filters;
       const priceRange = filters?.price_changed_within;
-      const parentView = Boolean(filters?.parent_only && snapshot.config.sku_grouping?.enabled);
+      const parentView = Boolean(filters?.parent_only && (snapshot.config.sku_grouping?.enabled
+        || (snapshot.config.crawl.auto_collect_products && snapshot.skuStock.some((row) => row.parent_sku))));
       const rule = snapshot.config.sku_grouping?.rule;
       const feedParents = rule?.type === "regex" && rule.parent_source === "feed";
       const grouped = parentView ? parentStockRows(snapshot.skuStock, snapshot.asOf, feedParents) : null;
@@ -2221,15 +2251,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     list: async (id, query) => {
       const snapshot = await load(resolve(id));
       let sourceRows = snapshot.products;
-      if (snapshot.config.sku_grouping?.enabled) {
+      if (snapshot.config.sku_grouping?.enabled
+        || (snapshot.config.crawl.auto_collect_products && snapshot.skuStock.some((row) => row.parent_sku))) {
         try {
-          sourceRows = groupProductRows(
-            snapshot.products,
-            snapshot.skus,
-            snapshot.skuStock,
-            snapshot.config.sku_grouping.rule,
-            Boolean(query.filters?.parent_only),
-          );
+          sourceRows = snapshot.config.sku_grouping?.enabled
+            ? groupProductRows(snapshot.products, snapshot.skus, snapshot.skuStock,
+              snapshot.config.sku_grouping.rule, Boolean(query.filters?.parent_only))
+            : groupExplicitProductRows(snapshot.products, snapshot.skus, snapshot.skuStock,
+              Boolean(query.filters?.parent_only));
         } catch (error) {
           if (error instanceof SkuGroupingRuleError) throw siteError(error.code, error.message, error.detail);
           throw error;
