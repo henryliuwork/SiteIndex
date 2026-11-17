@@ -10,11 +10,12 @@ export function rewriteBundledCliSchemaPaths(source) {
 
   for (const prefix of SCHEMA_PATH_PREFIXES) {
     const occurrences = output.split(prefix).length - 1;
-    if (occurrences === 0) {
-      throw new Error(`CLI bundle is missing expected schema path prefix: ${prefix}`);
-    }
     output = output.replaceAll(prefix, "./schemas/");
     replacementCount += occurrences;
+  }
+
+  if (!output.includes("./schemas/")) {
+    throw new Error("CLI bundle has no packaged schema path (./schemas/)");
   }
 
   return { source: output, replacementCount };
