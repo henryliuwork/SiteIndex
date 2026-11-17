@@ -1391,7 +1391,7 @@ async function clickProjectTab(page, label) {
     await page.locator(".si-page").first().waitFor({ state: "visible", timeout: 15_000 });
     return "tab-click";
   }
-  await goToW2Route(page, `/p/${W2_PROJECT_ID}${label === "概览" ? "" : `/${({ 库存: "inventory", 产品: "products", SEO: "seo", 内容: "content", EDM: "edm" })[label] ?? ""}`}`);
+  await goToW2Route(page, `/p/${W2_PROJECT_ID}${label === "概览" ? "" : `/${({ 产品管理: "products", SEO: "seo", 内容: "content", EDM: "edm" })[label] ?? ""}`}`);
   return "route-fallback";
 }
 
@@ -2522,90 +2522,88 @@ async function testW2Pages(page, syntheticSite) {
     };
   });
 
-  await attemptW2("Inventory table renders rows and paginates", "ui", async () => {
-    await clickProjectTab(page, "库存");
-    const parentOnly = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
-    if (await parentOnly.isChecked()) await parentOnly.uncheck();
-    await waitForW2Table(page, "inventory.skus");
-    const pagination = await exerciseW2Pagination(page, "inventory.skus", W2_EXPECTED.totalSkus);
-    return { passed: pagination.passed, evidence: pagination };
+  await attemptW2("Legacy inventory route redirects to merged product management", "ui", async () => {
+    await page.evaluate((route) => { window.location.hash = `#${route}`; }, `/p/${W2_PROJECT_ID}/inventory`);
+    const expectedHash = `#/p/${W2_PROJECT_ID}/products`;
+    await page.waitForFunction((hash) => window.location.hash === hash, expectedHash, { timeout: 15_000 });
+    const productTab = page.getByRole("tab", { name: "产品管理", exact: true });
+    await waitForW2Table(page, "products.merged");
+    const selected = await productTab.getAttribute("aria-selected");
+    const legacyTabCount = await page.getByRole("tab", { name: "库存", exact: true }).count();
+    return { passed: selected === "true" && legacyTabCount === 0, evidence: { expectedHash, actualHash: await page.evaluate(() => window.location.hash), selected, legacyTabCount } };
   });
 
-  await attemptW2("Inventory parent-only UI renders the deterministic parent's 30-day trend and rate", "ui", async () => {
-    const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
-    await checkbox.check();
-    await page.waitForFunction(() => {
-      const table = document.querySelector('.si-data-table[aria-label="inventory.skus 数据表"]');
-      return table?.querySelector(".si-pagination-count")?.textContent?.includes("/ 80") ?? false;
-    }, null, { timeout: 10_000 });
-    await waitForW2TableTotal(page, "inventory.skus", W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus);
-    const metrics = await readW2TableMetrics(page, "inventory.skus");
-    const toolbarText = await page.locator(".si-table-total").innerText();
-    const inventoryTable = page.locator(w2DataTableSelector("inventory.skus"));
-    const rowIds = await inventoryTable.locator("tbody tr[data-row-id]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id") ?? ""));
-    const childrenVisible = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
-    const parentRow = inventoryTable.locator('tbody tr[data-row-id="SYN-P001"]');
-    await parentRow.waitFor({ state: "visible", timeout: 10_000 });
-    const trendBar = parentRow.locator(".si-status-cells");
-    const trendLabel = await trendBar.getAttribute("aria-label") ?? "";
-    const trendStatuses = trendLabel.split("：")[1]?.split("、") ?? [];
-    const trendCounts = trendStatuses.reduce((counts, status) => {
+  await attemptW2("Merged product management shows inventory KPIs, parent stock, and child pagination", "ui", async () => {
+    await clickProjectTab(page, "产品管理");
+    const tableId = "products.merged";
+    const table = page.locator(w2DataTableSelector(tableId));
+    const view = page.getByRole("group", { name: "SKU 展示模式" });
+    const parentButton = view.getByRole("button", { name: "仅父 SKU", exact: true });
+    const childButton = view.getByRole("button", { name: "显示子 SKU", exact: true });
+    const parentTotal = W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus;
+    const initial = await waitForW2TableTotal(page, tableId, parentTotal);
+    const defaultParentSelected = await parentButton.getAttribute("aria-pressed") === "true";
+    const kpis = await page.locator(".si-inventory-kpis .si-kpi-card").evaluateAll((cards) => Object.fromEntries(cards.map((card) => [
+      card.querySelector(".si-kpi-label")?.textContent?.trim() ?? "",
+      card.querySelector(".si-kpi-value")?.textContent?.trim() ?? "",
+    ])));
+    const rowIds = await readW2VisibleRowKeys(page, tableId);
+    const childrenVisibleByDefault = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
+    const variantRow = table.locator('tbody tr[data-row-id="group-000:SYN-P000"]');
+    const threeOfThree = await variantRow.getByText("3/3", { exact: true }).isVisible();
+    const trendRow = table.locator('tbody tr[data-row-id="group-001:SYN-P001"]');
+    const trendLabel = await trendRow.locator(".si-status-cells").getAttribute("aria-label") ?? "";
+    const statuses = trendLabel.split("：")[1]?.split("、") ?? [];
+    const trendCounts = statuses.reduce((counts, status) => {
       counts[status] = (counts[status] ?? 0) + 1;
       return counts;
     }, {});
-    const rateCellTexts = (await parentRow.locator(".si-rate-cell").allInnerTexts()).map((value) => value.trim());
-    const onlineRateHeaders = (await inventoryTable.locator("thead th").allInnerTexts())
-      .map((value) => value.trim())
-      .filter((value) => value.includes("在线率"));
-    const trendVisible = await trendBar.isVisible();
-    const rate30dVisible = onlineRateHeaders.some((value) => value.includes("30 天")) && rateCellTexts.includes("50%");
-    const rate7dVisibleInTable = onlineRateHeaders.some((value) => value.includes("7 天")) && rateCellTexts.includes("100%");
-    const passed = metrics.total === W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus
-      && await checkbox.isChecked() && !childrenVisible && toolbarText.includes("父 SKU")
-      && trendVisible && trendStatuses.length === 30
+    const rate30d = await trendRow.locator(".si-rate-cell").innerText();
+    const headers = await table.locator("thead th").allInnerTexts();
+    const parentPagination = await exerciseW2Pagination(page, tableId, parentTotal);
+
+    await childButton.click();
+    const allRows = await waitForW2TableTotal(page, tableId, W2_EXPECTED.totalSkus);
+    const childRowsVisible = (await readW2VisibleRowKeys(page, tableId)).some((value) => /-CH-\d{2}$/u.test(value));
+    const childPagination = await exerciseW2Pagination(page, tableId, W2_EXPECTED.totalSkus);
+    await parentButton.click();
+    const restoredParent = await waitForW2TableTotal(page, tableId, parentTotal);
+    const passed = initial.total === parentTotal && defaultParentSelected && !childrenVisibleByDefault
+      && kpis["在售 SKU"] === String(W2_EXPECTED.totalSkus)
+      && kpis["有货 SKU"] === String(W2_EXPECTED.inStock)
+      && kpis["缺货 SKU"] === String(W2_EXPECTED.outOfStock)
+      && threeOfThree && statuses.length === 30
       && trendCounts["缺货"] === 15 && trendCounts["有货"] === 15
-      && rate30dVisible;
+      && headers.some((header) => header.includes("30 天在线率")) && rate30d.trim() === "50%"
+      && parentPagination.passed && allRows.total === W2_EXPECTED.totalSkus
+      && childRowsVisible && childPagination.passed && restoredParent.total === parentTotal
+      && await parentButton.getAttribute("aria-pressed") === "true";
     return { passed, evidence: {
-      ...metrics,
-      childrenVisible,
-      toolbarShowsParentView: toolbarText.includes("父 SKU"),
-      parentTrend: { rowId: "SYN-P001", visible: trendVisible, statusCellCount: trendStatuses.length, outOfStockDays: trendCounts["缺货"] ?? 0, inStockDays: trendCounts["有货"] ?? 0 },
-      parentOnlineRates: { visibleColumns: onlineRateHeaders, visibleValues: rateCellTexts, expected30d: "50%", sevenDayRateVisibleInTable: rate7dVisibleInTable, expected7dViaPackagedIpc: "100%" },
+      kpis, defaultParentSelected, childrenVisibleByDefault, parentTotal: initial.total,
+      parentPagination, threeOfThree, parentTrend: { days: statuses.length, outOfStock: trendCounts["缺货"] ?? 0, inStock: trendCounts["有货"] ?? 0, rate30d: rate30d.trim() },
+      allRowsTotal: allRows.total, childRowsVisible, childPagination, restoredParentTotal: restoredParent.total,
     } };
   });
 
-  await attemptW2("Products parent-only UI shows grouped products and 3/3 in-stock variants", "ui", async () => {
-    await clickProjectTab(page, "产品");
-    const checkbox = page.getByRole("checkbox", { name: "仅展示父 SKU", exact: true });
-    if (await checkbox.isChecked()) await checkbox.uncheck();
-    await waitForW2Table(page, "products.list");
-    const pagination = await exerciseW2Pagination(page, "products.list", W2_EXPECTED.products);
-    await checkbox.check();
-    await page.waitForFunction(() => {
-      const table = document.querySelector('.si-data-table[aria-label="products.list 数据表"]');
-      return table?.innerText.includes("3/3") ?? false;
-    }, null, { timeout: 10_000 });
-    await waitForW2TableTotal(page, "products.list", W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus);
-    const metrics = await readW2TableMetrics(page, "products.list");
-    const row = page.locator(`${w2DataTableSelector("products.list")} tbody tr[data-row-id]`).filter({ hasText: "Synthetic grouped product 000" }).first();
-    const selectedRowId = await row.getAttribute("data-row-id");
+  await attemptW2("Merged product detail shows 3/3 in-stock variants and three child rows", "ui", async () => {
+    const table = page.locator(w2DataTableSelector("products.merged"));
+    const row = table.locator('tbody tr[data-row-id="group-000:SYN-P000"]');
     await row.click();
     const panel = page.locator(".si-drawer");
     await panel.waitFor({ state: "visible", timeout: 15_000 });
-    const detail = panel.locator(".si-product-detail");
-    await detail.waitFor({ state: "visible", timeout: 10_000 });
-    const inventoryHeading = await detail.getByText("变体库存", { exact: true }).isVisible();
-    const selectedTitle = await detail.locator("h3").innerText();
-    const selectedHandle = await detail.locator(".si-product-detail-handle code").innerText();
-    const variantSkuIds = await detail.locator('.si-data-table[aria-label="products.variant-stock 数据表"] tbody tr[data-row-id]').evaluateAll((rows) => rows.map((item) => item.getAttribute("data-row-id") ?? ""));
+    await panel.locator(".si-product-detail").waitFor({ state: "visible", timeout: 10_000 });
+    const title = await panel.locator(".si-product-detail h3").innerText();
+    const handle = await panel.locator(".si-product-detail-handle code").nth(1).innerText();
+    const overviewVariants = await panel.getByText("有货变体", { exact: true }).locator("..").innerText();
+    await panel.getByRole("group", { name: "产品详情分段" }).getByRole("button", { name: "变体库存", exact: true }).click();
+    await panel.getByRole("heading", { name: "变体库存 · 3 个" }).waitFor({ state: "visible", timeout: 10_000 });
+    const variantSkuIds = await panel.locator('.si-data-table[aria-label="products.variant-stock 数据表"] tbody tr[data-row-id]').evaluateAll((rows) => rows.map((item) => item.getAttribute("data-row-id") ?? ""));
     const expectedVariantSkuIds = ["SYN-P000-CH-01", "SYN-P000-CH-02", "SYN-P000-CH-03"];
     await page.keyboard.press("Escape");
     await panel.waitFor({ state: "hidden", timeout: 10_000 });
-    const passed = pagination.passed && metrics.total === W2_EXPECTED.products
-      && await checkbox.isChecked() && selectedRowId === "group-000"
-      && selectedTitle === "Synthetic grouped product 000" && selectedHandle === "group-000"
-      && inventoryHeading && JSON.stringify(variantSkuIds) === JSON.stringify(expectedVariantSkuIds);
-    return { passed, evidence: { pagination, parentOnlyTotal: metrics.total, selectedRowId, selectedTitle, selectedHandle, productDrawerShowsStock: inventoryHeading, variantSkuIds, expectedVariantSkuIds } };
+    const passed = title === "Synthetic grouped product 000" && handle === "group-000"
+      && overviewVariants.includes("3/3") && JSON.stringify(variantSkuIds) === JSON.stringify(expectedVariantSkuIds);
+    return { passed, evidence: { title, handle, overviewVariants, variantSkuIds, expectedVariantSkuIds } };
   });
 
   await attemptW2("EDM table paginates and parent-only UI hides child SKU rows", "ui", async () => {
