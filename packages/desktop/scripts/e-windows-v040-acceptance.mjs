@@ -72,6 +72,7 @@ const LOOPBACK_MEDIA_SKU = "SYN-MEDIA-001";
 const LOOPBACK_MEDIA_WEBP = Buffer.from("UklGRi4AAABXRUJQVlA4TCEAAAAvAUAAEB8w/wKCIv9HCwFB0XXLBXwU1LRtwOI36YjofxwA", "base64");
 const HOSTED_WINDOWS_ACCEPTANCE_ARGUMENT = "--siteindex-hosted-acceptance";
 const W2_EXPECTED = W2_SYNTHETIC_EXPECTED;
+const LOCATION_CASES = JSON.parse(await readFile(new URL("../../../fixtures/e-v041-loopback/project-location-policy-cases.json", import.meta.url), "utf8"));
 const CDP_PORT = 9333;
 const OUTPUT_DIR = process.env.SITEINDEX_ACCEPTANCE_OUTPUT;
 const RUNNER_TEMP = process.env.RUNNER_TEMP;
@@ -82,6 +83,10 @@ const APP_DATA_ROOT = PROFILE_LAYOUT.appDataRoot;
 const LOCAL_APP_DATA_ROOT = PROFILE_LAYOUT.localAppDataRoot;
 const PROJECTS_ROOT = PROFILE_LAYOUT.projectRoot;
 const W2_PROJECT_DIRECTORY = path.join(PROJECTS_ROOT, W2_PROJECT_ID);
+const WINDOWS_CLOUD_CASE = LOCATION_CASES.syntheticKnownRoots.find((entry) => entry.id === "win-onedrive" && entry.platform === "win32");
+if (!LOCATION_CASES.fixtureOnly || !WINDOWS_CLOUD_CASE) throw new Error("Synthetic Windows cloud-location case is missing.");
+const CLOUD_ROOT = path.join(TEST_ROOT, "sync-roots", path.win32.basename(WINDOWS_CLOUD_CASE.root));
+const CLOUD_PROJECT_DIRECTORY = path.join(CLOUD_ROOT, path.win32.basename(WINDOWS_CLOUD_CASE.childProject));
 const INSTALL_DIR = PROFILE_LAYOUT.installDir;
 const APP_DATA_DIR = path.join(APP_DATA_ROOT, "SiteIndex");
 const SETTINGS_FILE = path.join(APP_DATA_DIR, "settings.json");
@@ -152,6 +157,8 @@ const report = {
   previousRelease: { ...OLD_RELEASE },
   candidateInstallerSha256: null,
   installerStartedAppBeforeHarness: null,
+  packagedFonts: null,
+  cloudRunJob: null,
   windows: {
     version: process.env.SITEINDEX_WINDOWS_VERSION || os.version(),
     build: process.env.SITEINDEX_WINDOWS_BUILD || null,
@@ -1173,6 +1180,121 @@ async function connectToInstalledApp({ processHandle = null, verifyProfile = tru
   await delay(300);
   if (processHandle && processHandle.exitCode !== null) throw new Error("Packaged app process exited after CDP attached; refusing to use another app instance.");
   return page;
+}
+
+async function verifyPackagedFontsOffline(page) {
+  const fontRequestProtocols = [];
+  const onRequest = (request) => {
+    if (request.resourceType() === "font" || /\.(?:woff2?|ttf|otf)(?:[?#]|$)/iu.test(request.url())) {
+      fontRequestProtocols.push(new URL(request.url()).protocol);
+    }
+  };
+  page.on("request", onRequest);
+  let offline = false;
+  try {
+    await page.context().setOffline(true);
+    offline = true;
+    const evidence = await page.evaluate(async () => {
+      const samples = {
+        "Geist Variable": "SiteIndex",
+        "Source Han Sans SC": "设置项目、库存与产品管理",
+      };
+      const ruleSources = Object.fromEntries(Object.keys(samples).map((family) => [family, []]));
+      for (const sheet of document.styleSheets) {
+        for (const rule of sheet.cssRules) {
+          if (rule.type !== CSSRule.FONT_FACE_RULE) continue;
+          const family = rule.style.getPropertyValue("font-family").trim().replace(/^['"]|['"]$/gu, "");
+          if (!Object.hasOwn(ruleSources, family)) continue;
+          const source = rule.style.getPropertyValue("src");
+          for (const match of source.matchAll(/url\(["']?([^"')]+)["']?\)/gu)) {
+            const url = new URL(match[1], sheet.href || document.baseURI);
+            const localFile = url.protocol === "file:" && /\/resources\/ui\/assets\//iu.test(url.pathname);
+            const embeddedFont = url.protocol === "data:" && /^font\/(?:woff2?|ttf|otf);base64,/iu.test(url.pathname);
+            ruleSources[family].push(localFile ? "file" : embeddedFont ? "embedded" : "external");
+          }
+        }
+      }
+      const loaded = {};
+      for (const [family, sample] of Object.entries(samples)) {
+        const descriptor = `400 12px "${family}"`;
+        const faces = await document.fonts.load(descriptor, sample);
+        loaded[family] = {
+          requestedFaces: faces.length,
+          loadedFaces: [...document.fonts].filter((face) => face.family.replace(/^['"]|['"]$/gu, "") === family && face.status === "loaded").length,
+          check: document.fonts.check(descriptor, sample),
+        };
+      }
+      await document.fonts.ready;
+      const text = document.createElement("span");
+      text.textContent = samples["Source Han Sans SC"];
+      text.style.cssText = 'font-family: "Source Han Sans SC"; font-size: 12px; white-space: nowrap';
+      document.body.appendChild(text);
+      const bounds = text.getBoundingClientRect();
+      const chineseRendered = bounds.width > 0 && bounds.height > 0
+        && getComputedStyle(text).fontFamily.includes("Source Han Sans SC");
+      text.remove();
+      const fontResources = performance.getEntriesByType("resource")
+        .filter((entry) => /\.(?:woff2?|ttf|otf)(?:[?#]|$)/iu.test(entry.name));
+      return {
+        loaded,
+        ruleSources: Object.fromEntries(Object.entries(ruleSources).map(([family, sources]) => [family, {
+          count: sources.length,
+          fileCount: sources.filter((source) => source === "file").length,
+          embeddedCount: sources.filter((source) => source === "embedded").length,
+          allLocal: sources.length > 0 && sources.every((source) => source !== "external"),
+        }])),
+        fontResourceCount: fontResources.length,
+        externalFontResources: fontResources.filter((entry) => new URL(entry.name).protocol !== "file:").length,
+        chineseRendered,
+      };
+    });
+    report.packagedFonts = {
+      ...evidence,
+      offline,
+      observedFontRequests: fontRequestProtocols.length,
+      externalFontRequests: fontRequestProtocols.filter((protocol) => protocol !== "file:").length,
+    };
+  } finally {
+    if (offline) await page.context().setOffline(false);
+    page.off("request", onRequest);
+  }
+  const fonts = report.packagedFonts;
+  assert(fonts.offline && fonts.chineseRendered
+    && fonts.externalFontResources === 0 && fonts.externalFontRequests === 0
+    && Object.values(fonts.ruleSources).every((source) => source.allLocal)
+    && Object.values(fonts.loaded).every((family) => family.requestedFaces > 0 && family.loadedFaces > 0 && family.check),
+  "installed candidate loads Geist and Source Han Sans SC from local resources while offline", fonts);
+}
+
+async function verifyCloudRunJobBlocked(executablePath) {
+  await makeLegacyProject(CLOUD_PROJECT_DIRECTORY, "Synthetic cloud project");
+  const historyPath = path.join(CLOUD_PROJECT_DIRECTORY, "index", "logs", "runs.jsonl");
+  await writeJsonlFile(historyPath, []);
+  const before = await snapshotTree(CLOUD_PROJECT_DIRECTORY);
+  const historyModifiedAt = (await statFile(historyPath)).mtimeMs;
+  const result = spawnSync(executablePath, ["--run-job", CLOUD_PROJECT_DIRECTORY, "daily"], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 45_000,
+    env: isolatedProcessEnvironment({ OneDrive: CLOUD_ROOT }),
+  });
+  const lockAbsent = !(await exists(path.join(CLOUD_PROJECT_DIRECTORY, "index", ".lock")))
+    && !(await exists(path.join(CLOUD_PROJECT_DIRECTORY, "_site-index", ".lock")));
+  const historyUnchanged = (await readFile(historyPath, "utf8")) === ""
+    && (await statFile(historyPath)).mtimeMs === historyModifiedAt;
+  const projectUnchanged = JSON.stringify(await snapshotTree(CLOUD_PROJECT_DIRECTORY)) === JSON.stringify(before);
+  report.cloudRunJob = {
+    fixtureCase: WINDOWS_CLOUD_CASE.id,
+    exitCode: result.status,
+    spawnError: Boolean(result.error),
+    structuredErrorCode: result.stderr?.includes("PROJECT_CLOUD_SYNC_UNSUPPORTED") ?? false,
+    lockAbsent,
+    historyUnchanged,
+    projectUnchanged,
+  };
+  assert(!result.error && result.status !== null && result.status !== 0
+    && report.cloudRunJob.structuredErrorCode && lockAbsent && historyUnchanged && projectUnchanged,
+  "installed --run-job rejects a synthetic known-cloud project before lock or run-history writes", report.cloudRunJob);
 }
 
 async function waitForHostedUpdatedApp() {
@@ -3567,6 +3689,10 @@ async function main() {
       HOSTED_UPDATE ? "original updater-restarted candidate uses the isolated temporary profile" : "candidate installer app uses the isolated temporary profile",
       { profileMatchesTemporaryRoot: candidateProfileIsolated, originalRestartProfile: report.updaterRestart.originalRestartProfile });
   }
+  currentStage = "packaged offline font acceptance";
+  await verifyPackagedFontsOffline(page);
+  currentStage = "packaged known-cloud --run-job acceptance";
+  await verifyCloudRunJobBlocked(path.join(INSTALL_DIR, "SiteIndex.exe"));
   assert(candidateState.projectIds.includes("synthetic-legacy-project")
     && candidateState.projectIds.includes(W2_PROJECT_ID)
     && candidateState.projectCount === 2, "synthetic legacy and W2 projects are listed by the upgraded package", {
@@ -3690,6 +3816,8 @@ async function writeReport() {
     `- Windows build: \`${report.windows.build ?? report.windows.version}\``,
     `- Checks passed: ${report.checks.filter((check) => check.status === "passed").length}/${report.checks.length}`,
     `- Add-existing handler total: ${report.addExistingTrace?.handlerTotalMs ?? "not measured"} ms (target < 5000 ms)`,
+    `- Offline packaged fonts: ${report.packagedFonts ? JSON.stringify(report.packagedFonts) : "not checked"}`,
+    `- Known-cloud --run-job: ${report.cloudRunJob ? JSON.stringify(report.cloudRunJob) : "not checked"}`,
     `- Installed loopback Jobs: daily ${report.installedLoopbackJobs.daily.status} (${report.installedLoopbackJobs.daily.feedRequests} feed, ${report.installedLoopbackJobs.daily.graphqlRequests} GraphQL); media ${report.installedLoopbackJobs.media.status} (${report.installedLoopbackJobs.media.wordpressUploads} upload)`,
     `- Screenshot: ${report.visualEvidence?.screenshotCreated ? "created" : report.visualEvidence?.reason ?? "not available"}`,
     "- Data: synthetic runner-only project; no real project or customer data used.",
