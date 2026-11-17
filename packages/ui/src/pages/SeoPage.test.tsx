@@ -173,8 +173,9 @@ describe("SeoPage 问题处理", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await renderSeoPage(mockApi, "/p/demo/seo?status=open");
 
-    const bulkButton = await screen.findByRole("button", { name: /批量处理当前筛选结果/ });
-    await waitFor(() => expect(bulkButton.textContent).not.toContain("（0 条）"));
+    await waitFor(() => expect(screen.getByText(/显示 [1-9]\d* \/ [1-9]\d* 条/)).toBeTruthy());
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    const bulkButton = await screen.findByRole("menuitem", { name: /批量处理当前筛选结果/ });
     const count = Number(bulkButton.textContent?.match(/（(\d+) 条）/)?.[1]);
     expect(count).toBeGreaterThan(0);
     fireEvent.click(bulkButton);
@@ -189,7 +190,8 @@ describe("SeoPage 问题处理", () => {
     emptyApi.seo.setIssueStatus = vi.fn(async () => ({ updated: 0 }));
     emptyApi.seo.listIssues = vi.fn(async () => ({ rows: [], total: 0 }));
     await renderSeoPage(emptyApi, "/p/demo/seo?status=open");
-    expect((await screen.findByRole("button", { name: /批量处理当前筛选结果（0 条）/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    expect((await screen.findByRole("menuitem", { name: /批量处理当前筛选结果（0 条）/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("状态筛选写入 URL 并驱动真实列表查询", async () => {

@@ -1,13 +1,22 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { RunLog } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  });
+});
+
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.doUnmock("../api");
   vi.resetModules();
 });
@@ -32,6 +41,15 @@ async function renderRunsPage(history: RunLog[]) {
 }
 
 describe("RunsPage 媒体任务历史", () => {
+  it("从页头选择任务运行，概览卡片只展示状态", async () => {
+    const { mockApi } = await renderRunsPage([]);
+    const runJob = vi.spyOn(mockApi.jobs, "run");
+    fireEvent.click(await screen.findByRole("button", { name: "立即运行" }));
+    fireEvent.click(await screen.findByRole("button", { name: "每日同步" }));
+    await waitFor(() => expect(runJob).toHaveBeenCalledWith(expect.objectContaining({ job: "daily" })));
+    expect(document.querySelector(".si-run-job-card")?.tagName).toBe("DIV");
+  });
+
   it("任务卡片与展开详情不重复显示历史列表的开始时间", async () => {
     await renderRunsPage([{
       run_id: "demo-daily-history",

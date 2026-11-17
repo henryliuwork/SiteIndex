@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
 import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, formatDateTime as formatSharedDateTime, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, formatDateTime as formatSharedDateTime, Notice, Popover, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { getMediaRecoveryDisplay } from "./edm/media-recovery";
 import "./runs/page.css";
 
@@ -278,12 +279,12 @@ export function RunsPage() {
 
   return <DialogPrimitive.Root open={Boolean(editingScheduleJob)} onOpenChange={(open) => { if (!open) { setEditingScheduleJob(null); setScheduleDialogDraft(null); } }}>
     <div className="si-page si-runs-page si-runs-page-v2">
-      <ProjectHeader project={project} activeTab="runs" hasTabPanel />
+      <ProjectHeader project={project} activeTab="runs" hasTabPanel actions={<Popover align="end" trigger={<Button variant="primary" disabled={Boolean(activeRun) || startingJob}>立即运行</Button>}><div className="si-runs-job-menu">{jobCards.map(({ job, title }) => <PopoverPrimitive.Close asChild key={job}><Button variant="quiet" onClick={() => void startJob(job)}>{title}</Button></PopoverPrimitive.Close>)}</div></Popover>} />
       <ProjectTabPanel projectId={project.id} tab="runs">
       {activeRun && progress && <Notice tone="info" title={`${jobLabels[activeRun.job]}进行中`}>{progress.pct}% · {progress.message}</Notice>}
 
       <section className="si-runs-block si-runs-execution">
-        <div className="si-runs-block-heading"><div><h2>立即执行</h2><p>手动启动任务，查看当前步骤与进度。</p></div>
+        <div className="si-runs-block-heading"><div><h2>任务状态</h2></div>
           <div className="si-runs-device-inline">
             {runnerQuery.isLoading ? <span className="si-muted">正在读取执行设备…</span> : runnerQuery.isError || !runnerState ? <ApiErrorNotice className="si-runs-inline-error" label="执行设备信息加载失败。" error={runnerQuery.error} onRetry={() => void runnerQuery.refetch()} /> : <>
               <Activity size={16} aria-hidden="true" /><span>计划执行设备：<strong>{runnerState.runner?.device_name ?? "尚未指定"}{runnerState.is_this_device ? "（本机）" : ""}</strong></span>
@@ -291,12 +292,12 @@ export function RunsPage() {
             </>}
           </div>
         </div>
-        <div className="si-runs-job-grid" aria-label="手动运行任务">{jobCards.map(({ job, title, description, icon: Icon }) => {
+        <div className="si-runs-job-grid" aria-label="任务概览">{jobCards.map(({ job, title, description, icon: Icon }) => {
           const last = lastByJob.get(job);
-          return <button type="button" key={job} className="si-run-job-card" disabled={Boolean(activeRun) || startingJob} onClick={() => void startJob(job)}>
+          return <div key={job} className="si-run-job-card">
             <span className="si-run-job-heading"><strong>{title}</strong><Icon size={16} aria-hidden="true" /></span><span>{description}</span>
             <small>{last ? `上次运行：${statusLabel(last.status)}` : "尚未运行"}</small>
-          </button>;
+          </div>;
         })}</div>
         <div className={`si-run-state${activeRun || startingJob ? " is-running" : runResult?.status === "failed" ? " is-failed" : ""}`} aria-live="polite">
           <div className="si-run-state-heading"><div><span className="si-run-state-eyebrow">当前运行状态</span><strong>{activeRun ? jobLabels[activeRun.job] : startingJob ? "正在启动任务…" : runResult ? jobLabels[runResult.job] : "当前没有任务运行"}</strong></div>
@@ -307,14 +308,14 @@ export function RunsPage() {
             <div className="si-run-state-progress-label"><span>{progress?.step ? `第 ${Math.max(1, [...new Set(logs.map((item) => item.step).filter((step): step is string => Boolean(step) && step !== "启动"))].indexOf(progress.step) + 1)} 步 · ${stepLabel(progress.step, 0)}` : "正在等待步骤进度"}</span><strong>{progress?.pct == null ? "进度计算中" : `${progress.pct}%`}</strong></div>
             <div className={`si-run-state-progress${progress?.pct == null ? " is-indeterminate" : ""}`} role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress?.pct ?? undefined}><span style={{ width: progress?.pct == null ? undefined : `${Math.max(0, Math.min(100, progress.pct))}%` }} /></div>
             <p className="si-run-state-message">{progress?.message ?? "任务已启动，正在等待执行设备反馈。"}</p>
-          </> : startingJob ? <><div className="si-run-state-progress-label"><span>正在连接执行设备</span><strong>启动中</strong></div><div className="si-run-state-progress is-indeterminate" role="progressbar" aria-label="正在启动任务"><span /></div></> : <p className="si-run-state-message">{runResult?.summary ?? (runningQuery.isError ? "运行状态暂时无法确认。" : "选择上方任务卡片即可立即运行。")}</p>}
+          </> : startingJob ? <><div className="si-run-state-progress-label"><span>正在连接执行设备</span><strong>启动中</strong></div><div className="si-run-state-progress is-indeterminate" role="progressbar" aria-label="正在启动任务"><span /></div></> : <p className="si-run-state-message">{runResult?.summary ?? (runningQuery.isError ? "运行状态暂时无法确认。" : "从页头选择任务并立即运行。")}</p>}
           {runningQuery.isError && <ApiErrorNotice className="si-runs-inline-error" label="当前运行状态读取失败。" error={runningQuery.error} onRetry={() => void runningQuery.refetch()} />}
           {logs.length > 0 && <div className="si-run-recent-log">{logs.slice(-3).map((event, index) => <div key={`${event.runId}-${index}`} className={`si-run-log si-run-log-${event.level}`}><code>{new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(event.at))}</code><span>{event.message}</span>{event.step && <small>{stepLabel(event.step, index)}</small>}</div>)}</div>}
         </div>
       </section>
 
       <section className="si-runs-block si-runs-schedule">
-        <div className="si-runs-block-heading"><div><h2>定时计划</h2><p>任务逐项展示下次运行时间；编辑窗口中设置星期和时间并一次保存。</p></div>
+        <div className="si-runs-block-heading"><div><h2>定时计划</h2></div>
           <div className="si-schedule-mode"><span>运行模式</span>{scheduleRuntimeQuery.isLoading ? <span className="si-muted">正在读取…</span> : scheduleRuntimeQuery.isError ? <ApiErrorNotice className="si-schedule-runtime-error" label="运行模式读取失败。" error={scheduleRuntimeQuery.error} onRetry={() => void scheduleRuntimeQuery.refetch()} /> : <Chip tone={scheduleRuntimeQuery.data?.mode === "system" ? "ok" : "neutral"}>{scheduleRuntimeQuery.data?.mode === "system" ? "系统计划任务" : scheduleRuntimeQuery.data?.mode === "resident" ? "软件常驻（关闭后不执行）" : "不可用"}</Chip>}</div>
         </div>
         {scheduleRuntimeQuery.data?.authorization_required && <div className="si-schedule-auth-banner"><span>需要授权才能注册系统计划任务。</span><Button size="small" disabled={!api.schedule.reauthorize || reauthorizingSchedule} onClick={() => void reauthorizeSchedule()}>{reauthorizingSchedule ? "授权中…" : "重新授权注册"}</Button></div>}
@@ -335,7 +336,7 @@ export function RunsPage() {
       </section>
 
       <section className="si-runs-block si-runs-history">
-        <div className="si-runs-block-heading"><div><h2>运行历史</h2><p>最近 30 次任务执行记录；展开记录查看步骤结果和失败原因。</p></div><Button size="small" onClick={() => void historyQuery.refetch()}>刷新</Button></div>
+        <div className="si-runs-block-heading"><div><h2>运行历史</h2></div><Button size="small" onClick={() => void historyQuery.refetch()}>刷新</Button></div>
         {historyQuery.isLoading ? <div className="si-query-loading" role="status">正在加载运行历史…</div> : historyQuery.isError ? <ApiErrorNotice label="运行历史加载失败。" error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /> : history.length ? <div className="si-run-history-list">
           {history.map((run) => <details className="si-run-history-item" key={run.run_id}>
             <summary><span className="si-run-history-time">{formatDateTime(run.started_at)}</span><strong>{jobLabels[run.job]}</strong><span className="si-run-history-trigger">{triggerLabel(run.trigger)}</span><Chip tone={statusTone(run.status)}>{statusLabel(run.status)}</Chip><span className="si-run-history-duration">{runDuration(run)}</span><span className="si-run-history-summary">{runSummary(run)}</span></summary>

@@ -472,31 +472,16 @@ export function SeoPage() {
         <Button disabled={busy} icon={<Globe2 size={14} />} onClick={() => void checkIndex()}>{runKind === "index-check" ? "检查中…" : "重新检查收录"}</Button>
         <Button icon={<FileDown size={14} />} onClick={() => void exportIssues()}>导出</Button>
       </>}
-      overflow={[{ label: runKind === "crawl" ? "正在重新抓取…" : "重新抓取 SEO 数据", onSelect: () => void recrawl(), disabled: busy, icon: <RefreshCw size={14} /> }]}
+      overflow={[
+        { label: runKind === "crawl" ? "正在重新抓取…" : "重新抓取 SEO 数据", onSelect: () => void recrawl(), disabled: busy, icon: <RefreshCw size={14} /> },
+        ...(setIssueStatus && issueQuery.filters?.status === "open" ? [{ label: `批量处理当前筛选结果（${filteredIssueCount} 条）`, onSelect: () => void handleBulkResolve(), disabled: busy || filteredIssueCount === 0 }] : []),
+      ]}
     />
     <ProjectTabPanel projectId={project.id} tab="seo">
       <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
       {summary?.crawled_at && <p className="si-seo-data-date">SEO 抓取数据截至 {formatDateTime(summary.crawled_at)}</p>}
-      <div className="si-seo-controls" data-view={view}>
+      <div className="si-seo-view-switch">
         <Segmented value={view} options={views} onChange={changeView} ariaLabel="SEO 视图" />
-        {view !== "links" && <FilterBar className="si-seo-filterbar">
-          {view === "issues" ? <>
-            <SeoSingleFilter label="严重级别" value={issueQuery.filters?.severity ?? "all"} options={severityOptions} onChange={setSeverity} />
-            <SeoSingleFilter label="状态" value={issueQuery.filters?.status ?? "all"} options={[
-              { value: "all", label: "全部状态" }, { value: "open", label: "待处理" }, { value: "fixed", label: "已处理" }, { value: "ignored", label: "已忽略" },
-            ]} onChange={setStatusFilter} />
-            <SeoMultiFilter label="问题类型" values={selectedRules} options={ruleFilters.map(({ rule, label, count }) => ({ value: rule, label, count }))} onChange={setRules} />
-            {setIssueStatus && issueQuery.filters?.status === "open" && <Button size="small" className="si-seo-bulk-resolve" disabled={filteredIssueCount === 0} onClick={() => void handleBulkResolve()}>
-              批量处理当前筛选结果（{filteredIssueCount} 条）
-            </Button>}
-          </> : <>
-            <SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} />
-            <SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[
-              { value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" },
-            ]} onChange={setIndexed} />
-          </>}
-        </FilterBar>}
-        <SearchInput value={(view === "issues" ? issueQuery : view === "pages" ? pageQuery : linkQuery).search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" />
       </div>
       {selectedConditions.length > 0 && <div className="si-seo-selected-filters" aria-label="已选筛选条件">
         {selectedConditions.map((condition) => <SeoFilterChip key={condition.label} label={condition.label} onRemove={condition.onRemove} />)}
@@ -513,11 +498,17 @@ export function SeoPage() {
           toolbar={selectedIssues.length > 0 ? <div className="si-seo-selection-toolbar"><span>已选择 {selectedIssues.length} 条待处理问题</span>
             <Button size="small" onClick={() => void handleSelectedIssues("fixed")}>标记已处理</Button>
             <Button size="small" onClick={() => void handleSelectedIssues("ignored")}>忽略所选</Button>
-          </div> : <div className="si-seo-length-legend"><span>Title / Description 长度：</span><LengthBadge length={50} kind="title" range={titleRange} /><span>最佳</span><LengthBadge length={25} kind="title" range={titleRange} /><span>可接受</span><LengthBadge length={10} kind="title" range={titleRange} /><span>需修改</span></div>}
+          </div> : <div className="si-seo-table-toolbar"><SearchInput value={issueQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" /><FilterBar className="si-seo-filterbar">
+            <SeoSingleFilter label="严重级别" value={issueQuery.filters?.severity ?? "all"} options={severityOptions} onChange={setSeverity} />
+            <SeoSingleFilter label="状态" value={issueQuery.filters?.status ?? "all"} options={[
+              { value: "all", label: "全部状态" }, { value: "open", label: "待处理" }, { value: "fixed", label: "已处理" }, { value: "ignored", label: "已忽略" },
+            ]} onChange={setStatusFilter} />
+            <SeoMultiFilter label="问题类型" values={selectedRules} options={ruleFilters.map(({ rule, label, count }) => ({ value: rule, label, count }))} onChange={setRules} />
+          </FilterBar><span className="si-seo-result-count">显示 {issueList?.rows.length ?? 0} / {issueList?.total ?? 0} 条</span></div>}
           emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。"
         />}
-        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={52} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" />}
-        {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" />}
+        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={52} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" toolbar={<div className="si-seo-table-toolbar"><SearchInput value={pageQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" /><FilterBar className="si-seo-filterbar"><SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} /><SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[{ value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" }]} onChange={setIndexed} /></FilterBar><span className="si-seo-result-count">显示 {pageList?.rows.length ?? 0} / {pageList?.total ?? 0} 条</span></div>} />}
+        {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" toolbar={<div className="si-seo-table-toolbar"><SearchInput value={linkQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" /><span className="si-seo-result-count">显示 {linkList?.rows.length ?? 0} / {linkList?.total ?? 0} 条</span></div>} />}
       </>}
       {view === "links" && <details className="si-seo-orphans">
         <summary><AlertTriangle size={14} />孤立页面 {orphansQuery.data?.length ?? "—"} 个</summary>
@@ -525,7 +516,7 @@ export function SeoPage() {
           {orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}
         </div>
       </details>}
-      <p className="si-seo-disclaimer">Google site: 检查结果仅供参考，以 Search Console 为准。</p>
+      <p className="si-seo-disclaimer">收录检查仅供参考，以 Search Console 为准。</p>
     </ProjectTabPanel>
     <Drawer open={Boolean(selectedUrl)} onOpenChange={(open) => { if (!open) { setSelectedUrl(null); setSelectedLink(null); } }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
       {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}

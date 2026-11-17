@@ -8,20 +8,15 @@
   padding: var(--space-4);
 }
 
-.si-todo-filter-bar {
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.si-todo-search {
-  min-width: min(100%, 260px);
-  width: min(100%, 340px);
-}
+.si-todo-toolbar { display: flex; width: 100%; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.si-todo-toolbar-left { display: flex; min-width: 0; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.si-todo-toolbar-left .si-search-input { width: min(100%, 340px); }
+.si-todo-filter-bar { min-width: 0; flex: 1 1 180px; }
 
 .si-todo-result-count {
   color: var(--color-muted);
   font-size: var(--fs-caption);
-  margin-inline-start: auto;
+  margin-left: auto;
   white-space: nowrap;
 }
 

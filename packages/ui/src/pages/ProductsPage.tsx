@@ -437,15 +437,15 @@ export function ProductsPage() {
       {productListQuery.isLoading || inventoryListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载产品与库存数据…</div> : <div className="si-products-table-frame">
         <DataTable tableId="products.merged" scopeId={id} rows={tableRows} total={sortedRows.length} columns={columns} query={query} onQueryChange={onTableQueryChange} onRowClick={(row) => { setSelectedRow(row); setDrawerSegment("overview"); }} getRowId={(row) => row.id} height="fill" rowHeight={52} emptyTitle="没有匹配的产品或 SKU" emptyDescription={query.filters?.watched_only ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或筛选条件。"}
           toolbar={<div className="si-products-toolbar">
-            <div className="si-products-toolbar-top"><SearchInput value={query.search ?? ""} onSearch={onSearch} label="搜索产品与 SKU" placeholder="搜索 SKU、产品、变体、分类或标签" /><span className="si-products-result-count">显示 {tableRows.length} / {sortedRows.length} 条</span></div>
+            <SearchInput value={query.search ?? ""} onSearch={onSearch} label="搜索产品与 SKU" placeholder="搜索 SKU、产品、变体、分类或标签" />
             <FilterBar className="si-products-filter-conditions">
               <Select ariaLabel="库存状态筛选" value={query.filters?.status ?? "all"} onValueChange={(value) => onFilter("status", !value || value === "all" ? undefined : value as SkuStockFilters["status"])} options={stockOptions} />
               <Select ariaLabel="分类筛选" value={query.filters?.category ?? "all"} onValueChange={(value) => onFilter("category", !value || value === "all" ? undefined : value)} options={[{ value: "all", label: "全部分类" }, ...categoryOptions.map((value) => ({ value, label: value }))]} />
               <Select ariaLabel="价格变动筛选" value={query.filters?.price_changed_within?.toString() ?? "none"} onValueChange={(value) => onFilter("price_changed_within", value === "none" ? undefined : value === "all" ? "all" : Number(value) as 30 | 60 | 90)} options={priceOptions} />
               <Select ariaLabel="标签筛选" value={query.filters?.tag ?? "all"} onValueChange={(value) => onFilter("tag", !value || value === "all" ? undefined : value)} options={[{ value: "all", label: "全部标签" }, ...(tagsQuery.data ?? []).map((item) => ({ value: item.tag, label: item.tag }))]} />
               <label className="si-inventory-parent-toggle"><input type="checkbox" aria-label="仅关注分类" checked={Boolean(query.filters?.watched_only)} onChange={(event) => onFilter("watched_only", event.target.checked || undefined)} /><span>仅关注分类</span></label>
-              <Segmented value={parentOnly ? "parent" : "child"} options={[{ value: "parent", label: "仅父 SKU" }, { value: "child", label: "显示子 SKU" }]} onChange={onViewChange} ariaLabel="SKU 展示模式" />
             </FilterBar>
+            <div className="si-products-toolbar-right"><Segmented value={parentOnly ? "parent" : "child"} options={[{ value: "parent", label: "仅父 SKU" }, { value: "child", label: "显示子 SKU" }]} onChange={onViewChange} ariaLabel="SKU 展示模式" /><span className="si-products-result-count">显示 {tableRows.length} / {sortedRows.length} 条</span></div>
             {tagsQuery.isError && <ApiErrorNotice label="标签筛选加载失败。" error={tagsQuery.error} onRetry={() => void tagsQuery.refetch()} />}
           </div>}
         />
