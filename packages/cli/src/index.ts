@@ -4,11 +4,11 @@
  * 命令表见 docs/ARCHITECTURE.md §6；退出码见 @siteindex/shared EXIT。
  */
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { access, cp, link, mkdir, open, readFile, readdir, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   atomicWrite,
   assertProjectStorageLocal,
@@ -903,8 +903,8 @@ function runtimeIO(): CliIO {
   };
 }
 
-const scriptPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : "";
-if (import.meta.url === scriptPath) {
+const scriptPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+if (scriptPath && realpathSync(scriptPath) === realpathSync(fileURLToPath(import.meta.url))) {
   void main(process.argv.slice(2), runtimeIO()).then((exitCode) => { process.exitCode = exitCode; }).catch((error: unknown) => {
     process.stderr.write(errorMessage(error) + "\n");
     process.exitCode = EXIT.SOURCE_FAILED;
