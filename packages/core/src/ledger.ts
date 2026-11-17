@@ -5,6 +5,7 @@ import { parseCsv, writeCsv } from "./io/csv";
 import { readJsonl, type JsonRecord, writeJsonl } from "./io/jsonl";
 import { resolveProjectLayout } from "./io/project-layout";
 import { assertProjectStorageLocal } from "./io/project-storage";
+import { readSchemaFile } from "./io/schema-file";
 
 export type LedgerName = keyof typeof LEDGER_PATHS;
 export type LedgerKey = string | readonly string[];
@@ -64,7 +65,7 @@ const schemaCache = new Map<string, Promise<LedgerSchema>>();
 async function readLedgerSchema(name: string): Promise<LedgerSchema> {
   let schema = schemaCache.get(name);
   if (!schema) {
-    schema = readFile(new URL(`../../../schemas/${name}.schema.json`, import.meta.url), "utf8")
+    schema = readSchemaFile(name, import.meta.url, "../../../schemas")
       .then((text) => JSON.parse(text) as LedgerSchema);
     schemaCache.set(name, schema);
   }

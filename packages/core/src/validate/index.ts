@@ -11,6 +11,7 @@ import { parseCsv, readCsv, writeCsv } from "../io/csv";
 import { parseJsonl, readJsonl, writeJsonl } from "../io/jsonl";
 import { resolveProjectLayout } from "../io/project-layout";
 import { findConflictCopies, isConflictCopy } from "../io/runner-lock";
+import { readSchemaFile } from "../io/schema-file";
 
 type Format = "json" | "jsonl" | "csv" | "text";
 interface FileSpec {
@@ -71,7 +72,7 @@ const schemaCache = new Map<string, Promise<{ schema: AnySchema; validate: Retur
 async function getSchema(name: string) {
   let pending = schemaCache.get(name);
   if (!pending) {
-    pending = readFile(new URL("../../../../schemas/" + name + ".schema.json", import.meta.url), "utf8")
+    pending = readSchemaFile(name, import.meta.url, "../../../../schemas")
       .then((source) => {
         const schema = JSON.parse(source) as AnySchema;
         return { schema, validate: ajv.compile(schema) };

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { atomicWrite } from "./atomic-write";
 import { compareKeys } from "./compare";
+import { readSchemaFile } from "./schema-file";
 
 export type JsonRecord = Record<string, unknown>;
 export interface JsonlOptions {
@@ -20,7 +21,7 @@ async function loadSchema(name: string): Promise<JsonSchema> {
   if (!/^[a-z0-9_]+$/i.test(name)) throw new Error(`无效 schema 名称: ${name}`);
   let schema = schemaCache.get(name);
   if (!schema) {
-    schema = readFile(new URL(`../../../../schemas/${name}.schema.json`, import.meta.url), "utf8")
+    schema = readSchemaFile(name, import.meta.url, "../../../../schemas")
       .then((text) => JSON.parse(text) as JsonSchema);
     schemaCache.set(name, schema);
   }
