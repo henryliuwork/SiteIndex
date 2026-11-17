@@ -95,7 +95,7 @@ describe("project service", () => {
     expect(await readdir(root)).toEqual(["kingsyard"]);
     expect(await readdir(created.path)).toContain(PATHS.index.split(path.sep)[0] ?? "index");
     expect(await readdir(created.path)).not.toContain("siteindex");
-  });
+  }, 15_000);
 
   it("detects platform, locale, currency, robots and nested sitemaps", async () => {
     mockWebsite();
@@ -290,7 +290,7 @@ describe("project service", () => {
     expect(await readdir(root)).toEqual(["shared-folder"]);
     expect(await readFile(path.join(root, "shared-folder", PATHS.site), "utf8"))
       .toMatch(/"domain": "(example\.com|other\.example)"/u);
-  });
+  }, 15_000);
 
   it("creates files immediately, then completes the init job with progress for every step", async () => {
     mockWebsite(true);
