@@ -158,6 +158,7 @@ const report = {
   candidateInstallerSha256: null,
   installerStartedAppBeforeHarness: null,
   packagedFonts: null,
+  packagedCli: null,
   cloudRunJob: null,
   windows: {
     version: process.env.SITEINDEX_WINDOWS_VERSION || os.version(),
@@ -1295,6 +1296,51 @@ async function verifyCloudRunJobBlocked(executablePath) {
   assert(!result.error && result.status !== null && result.status !== 0
     && report.cloudRunJob.structuredErrorCode && lockAbsent && historyUnchanged && projectUnchanged,
   "installed --run-job rejects a synthetic known-cloud project before lock or run-history writes", report.cloudRunJob);
+}
+
+async function verifyInstalledCli(executablePath) {
+  const cliPath = path.join(INSTALL_DIR, "resources", "cli.js");
+  const cliCheck = await inspectContainedPath(TEST_ROOT, cliPath);
+  assert(cliCheck.withinRoot && cliCheck.noReparse && await exists(cliPath),
+    "installed CLI bundle is present inside the isolated candidate installation");
+
+  const invokeCli = (args) => spawnSync(executablePath, [cliPath, ...args], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 45_000,
+    cwd: TEST_ROOT,
+    env: isolatedProcessEnvironment({ ELECTRON_RUN_AS_NODE: "1" }),
+  });
+  const help = invokeCli(["--help"]);
+  const helpPassed = !help.error && help.status === 0
+    && help.stdout.includes("用法: siteindex") && help.stdout.includes("query")
+    && help.stderr.trim() === "";
+  assert(helpPassed, "installed CLI --help starts through the packaged Electron executable", {
+    exitCode: help.status,
+    spawnError: Boolean(help.error),
+    hasUsage: help.stdout.includes("用法: siteindex"),
+    hasQuery: help.stdout.includes("query"),
+    stderrEmpty: help.stderr.trim() === "",
+  });
+
+  const before = await snapshotTree(W2_PROJECT_DIRECTORY);
+  const query = invokeCli(["query", W2_PROJECT_ID, "products", "--json", "--size", "1"]);
+  let payload = null;
+  try { payload = JSON.parse(query.stdout.trim()); } catch { /* Invalid output fails below. */ }
+  const projectUnchanged = JSON.stringify(await snapshotTree(W2_PROJECT_DIRECTORY)) === JSON.stringify(before);
+  const queryPassed = !query.error && query.status === 0 && query.stderr.trim() === ""
+    && payload?.ok === true && payload?.exit_code === 0
+    && payload?.data?.total === W2_EXPECTED.products && payload?.data?.rows?.length === 1
+    && projectUnchanged;
+  report.packagedCli = {
+    helpExitCode: help.status,
+    queryExitCode: query.status,
+    queryParsed: payload !== null,
+    queryTotal: payload?.data?.total ?? null,
+    queryRows: payload?.data?.rows?.length ?? null,
+    projectUnchanged,
+  };
+  assert(queryPassed, "installed CLI query reads synthetic products without changing project files", report.packagedCli);
 }
 
 async function waitForHostedUpdatedApp() {
@@ -3675,6 +3721,8 @@ async function main() {
   }
   const syntheticSite = await startSyntheticSite();
   report.w2Acceptance.seed = await makeW2SyntheticProject(path.join(PROJECTS_ROOT, W2_PROJECT_ID), syntheticSite.origin);
+  currentStage = "installed CLI --help and read-only query acceptance";
+  await verifyInstalledCli(path.join(INSTALL_DIR, "SiteIndex.exe"));
   const candidateState = await appState(page);
   assert(candidateState.version === CANDIDATE_VERSION, "upgraded packaged app reports candidate version through preload IPC", { version: candidateState.version });
   const candidateProfileIsolated = candidateState.settings.projects_root === PROJECTS_ROOT;
