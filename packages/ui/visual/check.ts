@@ -586,6 +586,7 @@ async function main(): Promise<void> {
             await page.getByRole("list", { name: "Sitemap 类型" }).waitFor({ state: "visible", timeout: 20_000 });
             if (route.name === "new-project-woo-source") {
               await page.getByRole("button", { name: "下一步：数据源" }).click();
+              if (!await page.getByRole("checkbox", { name: "自动采集商品" }).isChecked()) throw new Error("WooCommerce 无 Feed 时应默认启用商品采集。");
               await page.getByRole("button", { name: "使用 /shop/{slug}" }).click();
               await page.waitForFunction(() => document.querySelector<HTMLInputElement>(".si-wizard-category-rules input")?.value.includes("/shop/{slug}"), undefined, { timeout: 5_000 });
               await page.getByRole("button", { name: "使用 /product-category/{slug}" }).click();
@@ -593,6 +594,7 @@ async function main(): Promise<void> {
                 const value = document.querySelector<HTMLInputElement>(".si-wizard-category-rules input")?.value ?? "";
                 return value.includes("/shop/{slug}") && value.includes("/product-category/{slug}");
               }, undefined, { timeout: 5_000 });
+              await page.getByText("将保存：/shop/{slug}，/product-category/{slug}").waitFor({ state: "visible", timeout: 5_000 });
             }
             await page.getByText("网站检测完成。").waitFor({ state: "visible", timeout: 5_000 });
             for (const close of await page.getByRole("button", { name: "关闭通知" }).all()) await close.click();

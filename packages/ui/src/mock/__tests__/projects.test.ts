@@ -23,14 +23,15 @@ describe("projects mock summary updates", () => {
     expect(detected.category_prefix_candidates).toEqual(["/shop/{slug}", "/product-category/{slug}"]);
   });
 
-  it("keeps a newly created project's category rules in its own config", async () => {
+  it("applies a new project's category rules before init and enables no-Feed collection", async () => {
     const api = createProjectsMock();
     const created = await api.create({
       url: "https://woo.example.test", feed_urls: [], sku_field: "id", category_depth: 2,
       missing_as: "out_of_stock", brand: { name: "Fixture Shop" }, markets: ["US"],
       projects_root: "D:/SiteIndex/projects", folder_name: "fixture-shop", workspace_folders: [],
+      categories: { mode: "url_rule", url_pattern: "/shop/{slug}, /product-category/{slug}" },
+      auto_collect_products: true,
     });
-    await api.updateConfig(created.id, { categories: { mode: "url_rule", url_pattern: "/shop/{slug}, /product-category/{slug}" } });
     expect((await api.get(created.id)).config.categories).toMatchObject({
       mode: "url_rule", url_pattern: "/shop/{slug}, /product-category/{slug}",
     });

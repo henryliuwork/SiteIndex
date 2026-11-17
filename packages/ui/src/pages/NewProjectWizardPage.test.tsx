@@ -38,9 +38,10 @@ function LocationProbe() {
 }
 
 describe("NewProjectWizardPage workspace step", () => {
-  it("shows Woo sitemap roles, saves edited multi-prefix rules, and continues without a Feed", async () => {
+  it("sends Woo multi-prefix rules and no-Feed collection in the create request", async () => {
     const mockApi = createMockApi();
     mockApi.workspace = undefined;
+    const createProject = vi.spyOn(mockApi.projects, "create");
     const updateConfig = vi.spyOn(mockApi.projects, "updateConfig");
     vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
     const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
@@ -58,6 +59,12 @@ describe("NewProjectWizardPage workspace step", () => {
     fireEvent.click(screen.getByRole("button", { name: "下一步：数据源" }));
     expect(await screen.findByText("未发现 GMC Feed，可直接继续")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "跳过 Feed，稍后配置" })).toBeNull();
+    const autoCollect = screen.getByRole("checkbox", { name: "自动采集商品" }) as HTMLInputElement;
+    expect(autoCollect.checked).toBe(true);
+    fireEvent.click(autoCollect);
+    expect(autoCollect.checked).toBe(false);
+    fireEvent.click(autoCollect);
+    expect(autoCollect.checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "使用 /shop/{slug}" }));
     fireEvent.click(screen.getByRole("button", { name: "使用 /product-category/{slug}" }));
     const rules = screen.getByRole("textbox", { name: "分类前缀（逗号分隔）" }) as HTMLInputElement;
@@ -66,11 +73,17 @@ describe("NewProjectWizardPage workspace step", () => {
     expect(screen.getByText("将保存：/shop/{slug}，/custom/{slug}")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "下一步：品牌配置" }));
     fireEvent.click(await screen.findByRole("button", { name: "创建项目" }));
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("woo", {
+    await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({
       categories: { mode: "url_rule", url_pattern: "/shop/{slug}, /custom/{slug}" },
-    }));
+      auto_collect_products: true,
+      feed_urls: [],
+    })));
+    expect(updateConfig).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/new/done"));
     expect((await mockApi.projects.get("woo")).config.categories.url_pattern).toBe("/shop/{slug}, /custom/{slug}");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "项目创建完成", level: 1 })).toBeTruthy(), { timeout: 10_000 });
+    const dailyStep = screen.getByText("首次每日同步").closest(".si-wizard-progress-row") as HTMLElement;
+    expect(within(dailyStep).getByText("完成")).toBeTruthy();
   }, 30_000);
 
   it("checks the selected destination and sends the workspace options with project creation", async () => {
@@ -132,6 +145,7 @@ describe("NewProjectWizardPage workspace step", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
     await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({
       feed_urls: ["https://shop.example.test/products.json"],
+      auto_collect_products: false,
       workspace: { enabled: true, platform: "shopify", esp_presets: ["mailchimp"] },
     })));
     await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/new/done"));
@@ -179,7 +193,7 @@ describe("NewProjectWizardPage workspace step", () => {
       expect((screen.getByLabelText("项目文件夹名") as HTMLInputElement).value).toBe("shop");
     });
     fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
-    await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({ feed_urls: [] })));
+    await waitFor(() => expect(createProject).toHaveBeenCalledWith(expect.objectContaining({ feed_urls: [], auto_collect_products: false })));
     expect(inspectFeed).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByTestId("current-route").textContent).toBe("/new/done"));
     expect(await screen.findByText(feedSkippedNotice + "完成页会显示每一步的实际结果。")).toBeTruthy();
