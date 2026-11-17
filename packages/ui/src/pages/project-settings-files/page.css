@@ -32,5 +32,4 @@
 .si-files-actions { display: flex; align-items: center; gap: var(--space-1); }
 .si-files-actions .si-button { flex: none; }
 .si-files-actions .si-button-danger:not(:disabled) { color: var(--color-danger); }
-.si-files-note { margin: 0; color: var(--color-muted); font-size: var(--fs-caption); line-height: 1.6; }
 @media (max-width: 900px) { .si-files-summary { gap: var(--space-3); } .si-files-summary small { flex-basis: 100%; margin-left: 0; } }

@@ -11,6 +11,7 @@ display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-conte
 }
 
 .si-content-data-date { color: var(--color-muted); font-size: var(--fs-micro); }
+.si-content-recognition-copy { display: inline-flex; align-items: center; gap: var(--space-1); }
 
 .si-content-recognition-summary a, .si-content-blog-empty a {
 color: var(--color-brand); font-weight: 600; text-decoration: none;

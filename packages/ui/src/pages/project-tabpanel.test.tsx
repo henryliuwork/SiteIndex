@@ -28,7 +28,7 @@ const pageCases = [
     file: "EdmPage.tsx",
     tab: "edm",
     projectIdExpression: "project.id",
-    normal: "si-edm-rule-note",
+    normal: "si-edm-kpis",
     loading: "listQuery.isLoading",
     error: "listQuery.isError",
     empty: 'emptyTitle="没有 SKU 图片记录"',

@@ -7,7 +7,7 @@ import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, 
 import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, formatDateTime as formatSharedDateTime, Notice, Popover, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, formatDateTime as formatSharedDateTime, InfoTooltip, Notice, Popover, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { getMediaRecoveryDisplay } from "./edm/media-recovery";
 import "./runs/page.css";
 
@@ -295,7 +295,7 @@ export function RunsPage() {
         <div className="si-runs-job-grid" aria-label="任务概览">{jobCards.map(({ job, title, description, icon: Icon }) => {
           const last = lastByJob.get(job);
           return <div key={job} className="si-run-job-card">
-            <span className="si-run-job-heading"><strong>{title}</strong><Icon size={16} aria-hidden="true" /></span><span>{description}</span>
+            <span className="si-run-job-heading"><strong>{title}</strong><span className="si-run-job-help"><Icon size={16} aria-hidden="true" /><InfoTooltip label={`${title}说明`} content={description} /></span></span>
             <small>{last ? `上次运行：${statusLabel(last.status)}` : "尚未运行"}</small>
           </div>;
         })}</div>
@@ -315,7 +315,7 @@ export function RunsPage() {
       </section>
 
       <section className="si-runs-block si-runs-schedule">
-        <div className="si-runs-block-heading"><div><h2>定时计划</h2></div>
+        <div className="si-runs-block-heading"><div className="si-runs-heading-with-info"><h2>定时计划</h2><InfoTooltip label="定时计划编辑说明" content="点击任务行的“编辑”调整执行时间；唤醒、补跑和失败通知在高级计划选项中设置。" /></div>
           <div className="si-schedule-mode"><span>运行模式</span>{scheduleRuntimeQuery.isLoading ? <span className="si-muted">正在读取…</span> : scheduleRuntimeQuery.isError ? <ApiErrorNotice className="si-schedule-runtime-error" label="运行模式读取失败。" error={scheduleRuntimeQuery.error} onRetry={() => void scheduleRuntimeQuery.refetch()} /> : <Chip tone={scheduleRuntimeQuery.data?.mode === "system" ? "ok" : "neutral"}>{scheduleRuntimeQuery.data?.mode === "system" ? "系统计划任务" : scheduleRuntimeQuery.data?.mode === "resident" ? "软件常驻（关闭后不执行）" : "不可用"}</Chip>}</div>
         </div>
         {scheduleRuntimeQuery.data?.authorization_required && <div className="si-schedule-auth-banner"><span>需要授权才能注册系统计划任务。</span><Button size="small" disabled={!api.schedule.reauthorize || reauthorizingSchedule} onClick={() => void reauthorizeSchedule()}>{reauthorizingSchedule ? "授权中…" : "重新授权注册"}</Button></div>}

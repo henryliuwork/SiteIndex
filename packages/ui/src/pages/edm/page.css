@@ -345,20 +345,6 @@
   overflow-wrap: anywhere;
 }
 
-.si-edm-rule-note {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-warn-soft);
-  border-radius: 6px;
-  background: var(--color-warn-soft);
-  color: var(--color-warn);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-}
-
 .si-edm-detail {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

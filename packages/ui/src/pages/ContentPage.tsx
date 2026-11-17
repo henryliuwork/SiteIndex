@@ -6,7 +6,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, JobProgress, JobResult, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, InfoTooltip, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
 import { blogIndexNotice, blogRecognitionCounts, blogRecognitionNeedsRecrawl, getBlogRecognitionConfigUpdatedAt, hasBlogRecognitionConfig } from "./content/blog-recognition";
 
 type ContentView = "blog" | "keywords";
@@ -194,8 +194,8 @@ export function ContentPage() {
     <ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button size="small" variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button><Button size="small" onClick={() => navigate(`/p/${id}/settings/config?section=blog-recognition`)}>识别设置</Button><Button size="small" onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button></>} overflow={[{ label: "打开项目文件夹", onSelect: () => void openProjectFolder() }]} />
     <ProjectTabPanel projectId={project.id} tab="content">
     <div className="si-content-recognition-summary" role="status">
-      <span>博客识别配置：Sitemap {blogConfigCounts.sitemaps} 条 · URL 规则 {blogConfigCounts.rules} 条</span>
-      <small className="si-content-data-date">博客识别数据来源：SEO 抓取 · {seoSummaryQuery.isLoading ? "正在读取日期" : seoSummaryQuery.isError ? "日期读取失败" : lastRecognizedAt ? `数据截至 ${formatDateTime(lastRecognizedAt)}` : "尚无抓取日期"}</small>
+      <span className="si-content-recognition-copy">博客识别：Sitemap {blogConfigCounts.sitemaps} 条 · URL 规则 {blogConfigCounts.rules} 条 <InfoTooltip label="博客识别来源说明" content="配置来自项目设置；最近识别时间来自 SEO 抓取。修改配置后需重新抓取才会更新文章列表。" /></span>
+      <small className="si-content-data-date">最近识别：{seoSummaryQuery.isLoading ? "正在读取日期" : seoSummaryQuery.isError ? "日期读取失败" : lastRecognizedAt ? formatDateTime(lastRecognizedAt) : "尚无抓取日期"}</small>
     </div>
     {recrawlProgress && <Notice tone="info" title="博客抓取进行中">{recrawlProgress}</Notice>}
     {view === "blog" && blogListNotice && <p className="si-content-blog-notice" role="status">{blogListNotice}</p>}
