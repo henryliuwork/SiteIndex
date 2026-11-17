@@ -699,7 +699,9 @@ function projectSummary(
   const onlineRate = activeSkus.length
     ? activeSkus.filter((row) => latestBySku.get(row.sku)?.stock_status === "in_stock").length / activeSkus.length
     : null;
-  const latestRun = [...snapshot.runs].sort((a, b) => codeUnitCompare(b.started_at, a.started_at))[0];
+  const syncJobs = new Set(["init", "daily", "weekly", "monthly", "index-check", "design"]);
+  const latestRun = snapshot.runs.filter((run) => syncJobs.has(run.job))
+    .sort((a, b) => codeUnitCompare(b.started_at, a.started_at))[0];
   const warnings = feedUrlsFromConfig(snapshot.config).length ? [] : ["尚未填写 GMC feed"];
   if (storageLocation.status === "known-cloud") {
     warnings.push("此项目位于已知云同步目录，当前仅支持只读查看。请手动复制到本机目录后重新添加。");
