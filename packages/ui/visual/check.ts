@@ -317,6 +317,16 @@ async function inspectPage(page: Page): Promise<{
     }
     const clippedActiveTabs: string[] = [];
     const headerScrollbars: string[] = [];
+    const verticallyScrollableTablists: string[] = [];
+    for (const tablist of Array.from(document.querySelectorAll<HTMLElement>('[role="tablist"]'))) {
+      if (tablist.scrollHeight > tablist.clientHeight) {
+        verticallyScrollableTablists.push(tablist.getAttribute("aria-label") || tablist.className || "tablist");
+      }
+    }
+    const settingInputHeights = Array.from(document.querySelectorAll<HTMLElement>(".si-app-settings-page .si-setting-input"))
+      .map((element) => Math.round(element.getBoundingClientRect().height));
+    const skillTargetButtonHeights = Array.from(document.querySelectorAll<HTMLElement>(".si-skills-page .si-skill-target > .si-button"))
+      .map((element) => Math.round(element.getBoundingClientRect().height));
     for (const selector of [".si-project-header .si-tabs", ".si-project-header-actions"]) {
       for (const element of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
         const style = getComputedStyle(element);
@@ -488,6 +498,9 @@ async function inspectPage(page: Page): Promise<{
         clippedHeaderActions,
         clippedActiveTabs,
         headerScrollbars,
+        verticallyScrollableTablists,
+        settingInputHeights,
+        skillTargetButtonHeights,
         tableCount: tables.length,
         emptySurface,
         contentSurface,
@@ -566,6 +579,10 @@ async function main(): Promise<void> {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
           await page.goto(`${baseUrl}${mockQuery}#${route.path}`, { waitUntil: "commit", timeout: 20_000 });
           const dataSurfaceState = await waitForRoute(page, route);
+          if (route.path === "/skills") {
+            await page.locator(".si-skill-choice").filter({ hasText: "stock-report" }).click();
+            await page.locator(".si-skill-target > .si-button").first().waitFor({ state: "visible", timeout: 10_000 });
+          }
           await scrollCheckViewportTableIntoContent(page);
           const inspection = await inspectPage(page);
           heading = inspection.heading;
@@ -584,6 +601,9 @@ async function main(): Promise<void> {
             clippedHeaderActions: string[];
             clippedActiveTabs: string[];
             headerScrollbars: string[];
+            verticallyScrollableTablists: string[];
+            settingInputHeights: number[];
+            skillTargetButtonHeights: number[];
             tableCount: number;
             emptySurface: boolean;
             contentSurface: boolean;
@@ -621,6 +641,9 @@ async function main(): Promise<void> {
           if (values.clippedHeaderActions.length) failures.push({ rule: "project-header-actions", message: `页头操作按钮未完整显示：${values.clippedHeaderActions.join("；")}` });
           if (values.clippedActiveTabs.length) failures.push({ rule: "project-header-tabs", message: `当前项目标签未完整显示：${values.clippedActiveTabs.join("；")}` });
           if (values.headerScrollbars.length) failures.push({ rule: "project-header-scrollbar", message: `项目导航或页头操作区存在横向滚动：${values.headerScrollbars.join("；")}` });
+          if (values.verticallyScrollableTablists.length) failures.push({ rule: "tablist-vertical-scrollbar", message: `标签栏存在纵向滚动：${values.verticallyScrollableTablists.join("；")}` });
+          if (route.path === "/settings" && (!values.settingInputHeights.length || values.settingInputHeights.some((height) => height !== 32))) failures.push({ rule: "setting-input-height", message: `设置输入框高度应为 32px，实际 ${values.settingInputHeights.join("、") || "未渲染"}。` });
+          if (route.path === "/skills" && (!values.skillTargetButtonHeights.length || values.skillTargetButtonHeights.some((height) => height !== 32))) failures.push({ rule: "skill-target-button-height", message: `Skill 安装按钮高度应为 32px，实际 ${values.skillTargetButtonHeights.join("、") || "未渲染"}。` });
           if (values.clippedCells.length) failures.push({ rule: "table-cell-clipping", message: `表格文字被裁切且没有完整文本提示：${values.clippedCells.join("；")}` });
           if (values.scheduleTableMissingStandardScroll) failures.push({ rule: "table-scroll", message: "定时任务表格尚未接入 DataTable 的内部滚动区。" });
           if (values.tableCount && values.tables.some((table) => table.overflowY !== "auto" && table.overflowY !== "scroll")) {

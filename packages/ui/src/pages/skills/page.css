@@ -22,17 +22,17 @@
 .si-skill-body { max-height: 260px; min-height: 160px; overflow: auto; margin:0; padding:var(--space-3) var(--space-4); border-radius: 8px; background: var(--color-ink); color: var(--color-surface); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .si-skills-targets { overflow: hidden; padding:0; }
 .si-skills-target-empty { margin:var(--space-3); }
-.si-skills-targets > header { padding:var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink); font-size: var(--fs-sub-title); }
+.si-skills-targets > header { display:flex; align-items:center; gap:var(--space-2); padding:var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink); font-size: var(--fs-sub-title); }
 .si-skill-target-list { overflow-x: auto; }
 .si-skill-target { display: grid; min-width: 680px; grid-template-columns: 138px minmax(220px,1fr) 90px 112px; align-items: center; gap:var(--space-2); padding:var(--space-2) var(--space-4); border-bottom: 1px solid var(--color-line-soft); }
 .si-skill-target > strong { color: var(--color-ink); font-size: var(--fs-body); font-weight: 500; }
 .si-skill-target > code { overflow-wrap: anywhere; color: var(--color-muted); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); }
 .si-skill-target > .si-chip { justify-self: start; }
-.si-skill-target > .si-button { justify-self: start; min-height: 34px; }
-.si-skills-targets > footer { display: flex; align-items: center; justify-content: space-between; gap:var(--space-3); padding:var(--space-3) var(--space-4) var(--space-4); }
+.si-skill-target > .si-button { justify-self: start; min-height: var(--control-height); }
+.si-skills-targets > footer { display: flex; align-items: center; justify-content: flex-end; gap:var(--space-3); padding:var(--space-3) var(--space-4) var(--space-4); }
 .si-skills-targets > footer span { color: var(--color-muted); font-size: var(--fs-body); line-height: 1.5; }
 .si-skills-targets > footer code { font-family: var(--font-mono); }
-.si-skills-targets > footer .si-button { flex: none; min-height: 34px; }
+.si-skills-targets > footer .si-button { flex: none; min-height: var(--control-height); }
 .si-skills-inline-state, .si-skills-inline-error { margin:0; padding:var(--space-4) var(--space-5); color: var(--color-muted); font-size: var(--fs-body); }
 .si-skills-inline-error { color: var(--color-danger); }
 .si-skills-inline-error button { margin-left:var(--space-2); border: 0; background: transparent; color: var(--color-brand); text-decoration: underline; cursor: pointer; }

@@ -5,13 +5,7 @@ import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, formatDateTime, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
-const autoDescriptions: Record<string, string> = {
-  "task-routing": "7 个任务 → _agent/skills/",
-  "data-guide": "index/ 各表说明与写入规则",
-  "design-summary": "",
-  changelog: "最近 10 条",
-};
+import { ApiErrorNotice, Button, Card, formatDateTime, InfoTooltip, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 const blockTitles: Record<string, string> = {
   "index-summary": "网站数据速览",
   "task-routing": "任务路由",
@@ -43,7 +37,7 @@ function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving
     { key: "rules", label: "工作规则与偏好", rows: 4 },
   ];
   return <Card className="si-readme-card si-readme-user-card" label="README 用户区块">
-    <div className="si-readme-card-heading"><h2>用户区块</h2><Chip tone="info">你和 agent 编辑</Chip></div>
+    <div className="si-readme-card-heading"><h2>用户区块</h2><InfoTooltip label="用户区块说明" content="由你和 Agent 编辑，SiteIndex 不会自动覆盖。" /></div>
     {fields.map(({ key, label, rows }) => key === "rules" ? <div className="si-readme-field" key={key}>
       <span>{label}</span>
       {editingRules ? <>
@@ -66,18 +60,17 @@ function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving
 
 function AutoBlocksCard({ data }: { data: ReadmeData }) {
   return <Card className="si-readme-card si-readme-auto-card" label="README 自动区块">
-    <div className="si-readme-card-heading"><h2>自动区块</h2><Chip tone="ok">SiteIndex 生成 · 只读</Chip></div>
+    <div className="si-readme-card-heading"><h2>自动区块</h2><InfoTooltip label="自动区块说明" content="由 SiteIndex 生成；删除标记后不会自动恢复。" /></div>
     <p className="si-readme-auto-updated">{latestUpdate(data)}</p>
     {data.auto_blocks.map((block) => <div className="si-readme-auto-row" key={block.id}>
-        <div className="si-readme-auto-label"><strong>{block.title || blockTitles[block.id] || block.id}</strong><code>{block.id}</code>{autoDescriptions[block.id] && <span>· {autoDescriptions[block.id]}</span>}</div>
+        <div className="si-readme-auto-label"><strong>{block.title || blockTitles[block.id] || block.id}</strong><code>{block.id}</code></div>
         <span>{block.schedule}</span>
       </div>)}
-    <p className="si-readme-auto-note">删除某个自动区块的标记后，SiteIndex 不会再把它加回来。</p>
   </Card>;
 }
 
 export function ReadmePage() {
-  const { id = "kingsyard" } = useParams();
+  const { id = "demo" } = useParams();
   const queryClient = useQueryClient();
   const toast = useToast();
   const [draft, setDraft] = useState<ReadmeData["user_blocks"]>({ overview: "", focus: "", rules: "" });

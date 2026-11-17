@@ -21,7 +21,7 @@ export interface WizardDraft {
 }
 
 const initialDraft: WizardDraft = {
-  url: "kingsyard.com",
+  url: "shop.example.test",
   detect: null,
   feedUrls: [],
   feedResult: null,

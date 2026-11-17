@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Check, Copy, RefreshCw } from "lucide-react";
 import type { SkillInfo, SkillTargetStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Card, Chip, EmptyState, Notice, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, EmptyState, InfoTooltip, Notice, PageHeader, useToast } from "../components";
 import "./skills/page.css";
 
 function statusLabel(status: SkillTargetStatus["status"], localNewer = false): string {
@@ -106,7 +106,7 @@ export function SkillsPage() {
 
   return (
     <div className="si-page si-skills-page">
-      <PageHeader title="Skill 中心" meta={<>内置 {skillsQuery.data.length} 个 Skill · 版本随 SiteIndex 更新 · {skillsQuery.data.filter((skill) => skill.has_update).length} 个有更新未同步到项目</>} actions={<Button variant="primary" disabled={syncing} icon={syncing ? <RefreshCw size={15} className="si-skills-spin" /> : undefined} onClick={() => void handleSyncAll()}>
+      <PageHeader title="Skill 中心" meta={<>内置 {skillsQuery.data.length} 个 · {skillsQuery.data.filter((skill) => skill.has_update).length} 个待同步</>} actions={<Button variant="primary" disabled={syncing} icon={syncing ? <RefreshCw size={15} className="si-skills-spin" /> : undefined} onClick={() => void handleSyncAll()}>
           {syncing ? "同步中…" : "同步到所有项目"}
         </Button>} />
 
@@ -127,7 +127,6 @@ export function SkillsPage() {
             <header className="si-skill-detail-heading">
               <div>
                 <div className="si-skill-title"><code>{detail.info.name}</code><Chip tone={versionTone(activeSkill)}>{activeSkill.retired ? "已退役" : detail.info.version}</Chip></div>
-                <p>{detail.info.description}</p>
               </div>
               <div className="si-skill-copy-actions">
                 <Button icon={<Copy size={14} />} onClick={() => void handleCopy(detail.body, "已复制全文")}>复制全文</Button>
@@ -143,7 +142,7 @@ export function SkillsPage() {
           </Card>}
 
           <Card className="si-skills-targets" label="Skill 安装位置">
-            <header><strong>安装位置 · {detail?.info.name ?? activeName}</strong></header>
+            <header><strong>安装位置 · {detail?.info.name ?? activeName}</strong><InfoTooltip label="Skill 安装位置说明" content="工作区目录为 _site-index/skills/；传统项目为 _agent/skills/。" /></header>
             {targetsQuery.isLoading && <p className="si-skills-inline-state" role="status">正在检查安装位置…</p>}
             {targetsQuery.isError && <ApiErrorNotice className="si-skills-inline-error" label="安装位置加载失败。" error={targetsQuery.error} onRetry={() => void targetsQuery.refetch()} />}
             {targetsQuery.data?.length ? <div className="si-skill-target-list">
@@ -158,7 +157,7 @@ export function SkillsPage() {
                 </div>;
               })}
             </div> : !targetsQuery.isLoading && !targetsQuery.isError && isRetired ? <Notice tone="info" className="si-skills-target-empty">没有发现已安装副本。</Notice> : !targetsQuery.isLoading && !targetsQuery.isError && <Notice tone="info" className="si-skills-target-empty" action={<Button onClick={() => navigate("/settings")}>管理平台目录</Button>}>尚未检测到安装位置，可在软件设置中添加平台目录。</Notice>}
-            <footer><span>项目 Skill 目录随项目布局变化：工作区使用 <code>_site-index/skills/</code>，传统项目使用 <code>_agent/skills/</code>；README 的任务路由会指向对应目录。</span><Button onClick={() => navigate("/settings")}>管理平台目录</Button></footer>
+            <footer><Button onClick={() => navigate("/settings")}>管理平台目录</Button></footer>
           </Card>
         </div>
       </div>

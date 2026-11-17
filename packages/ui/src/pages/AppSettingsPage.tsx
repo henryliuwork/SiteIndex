@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Card, Chip, Input, InputWithAction, Notice, PageHeader, TabPanel, Tabs, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, InfoTooltip, Input, InputWithAction, Notice, PageHeader, TabPanel, Tabs, useToast } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
 import { WordPressCredentialsCard } from "./app-settings/wordpress-credentials";
 import "./app-settings/page.css";
@@ -170,7 +170,7 @@ export function AppSettingsPage() {
 
   return (
     <div className="si-page si-app-settings-page">
-      <PageHeader title="设置" meta={<code>{settingsPath} · 只对本机生效</code>} />
+      <PageHeader title="设置" meta={<InfoTooltip label="设置文件位置" content={<><code>{settingsPath}</code>，只对本机生效。</>} />} />
       <Tabs value={activeTab} options={settingsTabs} onChange={setActiveTab} ariaLabel="软件设置分区" tabIdPrefix="app-settings-tab" panelIdPrefix="app-settings-panel" />
       {platformQuery.isError && <ApiErrorNotice label="系统平台信息读取失败。" error={platformQuery.error} onRetry={() => void platformQuery.refetch()} />}
 
@@ -178,23 +178,22 @@ export function AppSettingsPage() {
       {activeTab === "basic" && <Card className="si-app-settings-card">
         <h2>常规</h2>
         <div className="si-app-setting-row si-project-root-row">
-          <label htmlFor="si-projects-root">项目根目录</label>
+          <div><label htmlFor="si-projects-root">项目根目录</label><InfoTooltip label="项目根目录说明" content="自动扫描此目录中的项目，也是新建项目的默认位置；其他项目可单独添加。" /></div>
           <div className="si-project-root-field">
             <InputWithAction action={<Button onClick={() => void chooseProjectsRoot()}>选择…</Button>}>
               <Input id="si-projects-root" className="si-setting-input si-setting-mono" value={draft.projects_root} onChange={(event) => setDraft({ ...draft, projects_root: event.target.value })} onBlur={() => void saveSettings({ projects_root: draft.projects_root })} />
             </InputWithAction>
-            <small className="si-setting-hint">软件会自动扫描这个目录里的项目；也是新建项目的默认位置。不在此目录的项目请用“添加已有项目”。项目需保存在本机非同步目录；不同设备分别存放，不支持云盘同步同一项目。</small>
           </div>
         </div>
         <div className="si-app-setting-row">
           <label htmlFor="si-device-name">本机设备名</label>
           <input id="si-device-name" className="si-setting-input" value={draft.device_name} onChange={(event) => setDraft({ ...draft, device_name: event.target.value })} onBlur={() => void saveSettings({ device_name: draft.device_name })} />
-          <span className="si-setting-hint">执行设备按此名称识别</span>
+          <span />
         </div>
         <div className="si-app-setting-row">
           <label htmlFor="si-cache-dir">本机缓存目录</label>
           <input id="si-cache-dir" className="si-setting-input si-setting-mono" value={draft.cache_dir} onChange={(event) => setDraft({ ...draft, cache_dir: event.target.value })} onBlur={() => void saveSettings({ cache_dir: draft.cache_dir })} />
-          <span className="si-setting-hint">数据库等缓存只保存在本机</span>
+          <span />
         </div>
       </Card>}
 
@@ -203,12 +202,12 @@ export function AppSettingsPage() {
         <h2>启动与关闭</h2>
         {typeof draft.close_to_tray === "boolean" && <div className="si-app-setting-row">
           <label><input type="checkbox" checked={draft.close_to_tray} disabled={saving} onChange={(event) => void saveSettings({ close_to_tray: event.target.checked })} />关闭窗口时最小化到托盘</label>
-          <span className="si-setting-hint">关闭主窗口后，SiteIndex 继续在后台运行；关闭此选项后，点击关闭将退出软件。</span>
+          <InfoTooltip label="关闭窗口行为" content="启用后关闭窗口会在后台运行；关闭此选项则退出软件。" />
           <span />
         </div>}
         {typeof draft.launch_at_login === "boolean" && <div className="si-app-setting-row">
           <label><input type="checkbox" checked={draft.launch_at_login} disabled={saving} onChange={(event) => void saveSettings({ launch_at_login: event.target.checked })} />开机时启动 SiteIndex</label>
-          <span className="si-setting-hint">登录电脑后自动启动 SiteIndex。</span>
+          <span />
           <span />
         </div>}
       </Card>}

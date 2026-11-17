@@ -180,6 +180,9 @@ export function ProjectHeader({
   const selectedTab = activeTab;
   const syncAt = project.sync?.at ?? null;
   const formattedSyncTime = formatDateTime(syncAt);
+  const syncJob = project.sync?.job;
+  const recentJobLabel = !syncAt || !syncJob || syncJob === "daily" || syncJob === "weekly"
+    ? "最近同步" : syncJob === "validate" ? "最近校验" : "最近运行";
   const projectStatus = removeDuplicateSyncTime(status, formattedSyncTime);
   const normalizedPageMeta = activeTab === "products" ? labelInventoryDataSource(pageMeta) : pageMeta;
 
@@ -188,7 +191,7 @@ export function ProjectHeader({
       <div className="si-project-header-identity">
         <h1 title={project.name}>{project.name}</h1>
         <code title={projectSubtitle}>{projectSubtitle}</code>
-        <div className="si-project-header-sync">最近同步 <time dateTime={syncAt ?? undefined}>{formattedSyncTime}</time></div>
+        <div className="si-project-header-sync">{recentJobLabel} <time dateTime={syncAt ?? undefined}>{formattedSyncTime}</time></div>
         {projectStatus && <div className="si-project-header-status">{projectStatus}</div>}
         {project.storage_location === "known_cloud_sync" && <span
           className="si-project-header-storage-warning"
