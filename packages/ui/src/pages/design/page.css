@@ -2,6 +2,8 @@
   gap: var(--space-4);
 }
 
+.si-design-data-date { margin: 0; color: var(--color-muted); font-size: var(--fs-micro); }
+
 .si-design-layout {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);

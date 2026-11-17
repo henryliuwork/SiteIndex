@@ -101,6 +101,16 @@ async function renderDesignPage(api: SiteIndexApi) {
 }
 
 describe("DesignPage Token v2", () => {
+  it("将设计提取时间标注来源并放在区块说明行", async () => {
+    const { api } = createDesignApi();
+    await renderDesignPage(api);
+
+    const dateNote = await screen.findByText(/设计规范提取任务：/);
+    expect(dateNote.classList.contains("si-design-data-date")).toBe(true);
+    expect(dateNote.closest(".si-tab-panel")).toBeTruthy();
+    expect(screen.queryByText(/提取于/)).toBeNull();
+  });
+
   it("展示颜色角色来源与置信度、完整字号层级、按钮规范和可折叠 CSS 变量", async () => {
     const { api } = createDesignApi();
     await renderDesignPage(api);

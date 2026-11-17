@@ -70,6 +70,16 @@ async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = 
 }
 
 describe("SeoPage 问题处理", () => {
+  it("SEO 抓取日期只显示在数据说明行，项目头和页底不重复", async () => {
+    await renderSeoPage(createMockApi());
+
+    const dateNote = await screen.findByText(/SEO 抓取数据截至/);
+    expect(dateNote.classList.contains("si-seo-data-date")).toBe(true);
+    expect(dateNote.closest(".si-tab-panel")).toBeTruthy();
+    expect(screen.queryByText(/最近抓取：|收录数据最后检查/)).toBeNull();
+    expect(screen.queryByText(/周一 03:00/)).toBeNull();
+  });
+
   it("setIssueStatus 缺失时不渲染处理操作，也不报错", async () => {
     const mockApi = createMockApi();
     delete mockApi.seo.setRuleIgnored;

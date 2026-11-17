@@ -10,6 +10,8 @@ display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(-
 display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-subtle); color: var(--color-ink-2); font-size: var(--fs-caption);
 }
 
+.si-content-data-date { color: var(--color-muted); font-size: var(--fs-micro); }
+
 .si-content-recognition-summary a, .si-content-blog-empty a {
 color: var(--color-brand); font-weight: 600; text-decoration: none;
 }
