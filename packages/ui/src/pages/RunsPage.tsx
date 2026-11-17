@@ -295,7 +295,7 @@ export function RunsPage() {
           const last = lastByJob.get(job);
           return <button type="button" key={job} className="si-run-job-card" disabled={Boolean(activeRun) || startingJob} onClick={() => void startJob(job)}>
             <span className="si-run-job-heading"><strong>{title}</strong><Icon size={16} aria-hidden="true" /></span><span>{description}</span>
-            <small>{last ? `上次 ${formatDateTime(last.started_at)} · ${statusLabel(last.status)}` : "尚未运行"}</small>
+            <small>{last ? `上次运行：${statusLabel(last.status)}` : "尚未运行"}</small>
           </button>;
         })}</div>
         <div className={`si-run-state${activeRun || startingJob ? " is-running" : runResult?.status === "failed" ? " is-failed" : ""}`} aria-live="polite">
@@ -339,7 +339,7 @@ export function RunsPage() {
         {historyQuery.isLoading ? <div className="si-query-loading" role="status">正在加载运行历史…</div> : historyQuery.isError ? <ApiErrorNotice label="运行历史加载失败。" error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /> : history.length ? <div className="si-run-history-list">
           {history.map((run) => <details className="si-run-history-item" key={run.run_id}>
             <summary><span className="si-run-history-time">{formatDateTime(run.started_at)}</span><strong>{jobLabels[run.job]}</strong><span className="si-run-history-trigger">{triggerLabel(run.trigger)}</span><Chip tone={statusTone(run.status)}>{statusLabel(run.status)}</Chip><span className="si-run-history-duration">{runDuration(run)}</span><span className="si-run-history-summary">{runSummary(run)}</span></summary>
-            <div className="si-run-history-detail"><div className="si-run-history-context"><span>执行设备：{run.device_name ?? "—"}</span><span>开始：{formatDateTime(run.started_at)}</span><span>结束：{run.finished_at ? formatDateTime(run.finished_at) : "进行中"}</span></div>
+            <div className="si-run-history-detail"><div className="si-run-history-context"><span>执行设备：{run.device_name ?? "—"}</span><span>结束：{run.finished_at ? formatDateTime(run.finished_at) : "进行中"}</span></div>
               {run.steps?.length ? <ol className="si-run-history-steps">{run.steps.map((step, index) => <li key={`${step.key}-${index}`} className={`is-${step.status}`}><span className="si-run-step-number">{index + 1}</span><div><strong>{stepLabel(step.key, index)}</strong>{step.message && <p>{step.message}</p>}</div><Chip tone={stepStatusTone(step.status)}>{stepStatusLabel(step.status)}</Chip></li>)}</ol> : <p className="si-run-history-empty">这条记录没有返回分步结果。</p>}
               {run.errors?.length ? <div className="si-run-history-errors"><strong>失败原因</strong>{run.errors.map((error, index) => <p key={index}>{error}</p>)}</div> : null}
             </div>

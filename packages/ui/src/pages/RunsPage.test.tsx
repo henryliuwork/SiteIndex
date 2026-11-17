@@ -32,6 +32,23 @@ async function renderRunsPage(history: RunLog[]) {
 }
 
 describe("RunsPage 媒体任务历史", () => {
+  it("任务卡片与展开详情不重复显示历史列表的开始时间", async () => {
+    await renderRunsPage([{
+      run_id: "demo-daily-history",
+      job: "daily",
+      started_at: "2025-01-02T03:04:00.000Z",
+      finished_at: "2025-01-02T03:05:00.000Z",
+      status: "ok",
+    }]);
+
+    expect(await screen.findByText("上次运行：成功")).toBeTruthy();
+    const historyEntry = document.querySelector<HTMLElement>(".si-run-history-item")!;
+    const started = historyEntry.querySelector(".si-run-history-time")?.textContent;
+    expect(started).toBeTruthy();
+    expect(document.querySelector(".si-runs-page")?.textContent?.split(started!)).toHaveLength(2);
+    expect(within(historyEntry).queryByText(/^开始：/)).toBeNull();
+  });
+
   it("用逐 SKU 持久化结果生成媒体历史摘要", async () => {
     await renderRunsPage([{
       run_id: "demo-media-history",
