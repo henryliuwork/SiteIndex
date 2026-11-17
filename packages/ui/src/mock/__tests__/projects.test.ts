@@ -15,6 +15,17 @@ afterEach(() => {
 });
 
 describe("projects mock summary updates", () => {
+  it("无 Feed 自动采集开关移除来源阻断提醒，关闭后恢复", async () => {
+    const api = createProjectsMock();
+    const project = await api.get("demo2");
+    expect(project.summary.platform).toBe("woocommerce");
+    await api.updateConfig("demo2", { crawl: { ...project.config.crawl, auto_collect_products: true } });
+    expect((await api.list()).find(({ id }) => id === "demo2")?.warnings).toEqual(["无 Feed 商品采集已配置；采集能力待 Core 接入。"]);
+    expect((await api.get("demo2")).config.crawl.auto_collect_products).toBe(true);
+    await api.updateConfig("demo2", { crawl: { ...project.config.crawl, auto_collect_products: false } });
+    expect((await api.list()).find(({ id }) => id === "demo2")?.warnings).toHaveLength(1);
+  });
+
   it("returns synthetic WooCommerce sitemap roles and category candidates", async () => {
     const api = createProjectsMock();
     const detected = await api.detect("woo.example.test");

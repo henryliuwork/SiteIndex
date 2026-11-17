@@ -13,7 +13,7 @@ const pageCases = [
     normal: "si-overview-kpis",
     loading: "overviewQuery.isLoading",
     error: "overviewQuery.isError",
-    empty: "overview.attention.length ?",
+    empty: "attention?.length ?",
   },
   {
     file: "ProductsPage.tsx",

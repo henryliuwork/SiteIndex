@@ -238,7 +238,8 @@ export function createProjectsMock(
       const feedUrl = updatedConfig.crawl.feed_url;
       const hasFeed = hasConfiguredFeed(feedUrl);
       const feedWarning = "尚未填写 GMC feed 地址，每日库存同步未启用。";
-      const warnings = [...(added ? [] : mockProjectNonFeedWarnings[key]), ...(hasFeed ? [] : [feedWarning])];
+      const pendingWarning = "无 Feed 商品采集已配置；采集能力待 Core 接入。";
+      const warnings = [...(added ? [] : mockProjectNonFeedWarnings[key]), ...(hasFeed ? [] : [updatedConfig.crawl.auto_collect_products ? pendingWarning : feedWarning])];
       const attention = hasFeed && !hadFeed ? Math.max(0, summary.attention - 1)
         : !hasFeed && hadFeed ? summary.attention + 1 : summary.attention;
       const updatedSummary = {
