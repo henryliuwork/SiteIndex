@@ -691,7 +691,7 @@ async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
     if (option(parsed.options, "folders") !== undefined) throw new CliError("BAD_ARGS", "--folders 已停用，请自行管理工作文件夹。");
     const created = await runtime.service.projects.create(input);
     if (!autoCollect) return success(created, "项目已创建。");
-    const init = await runtime.service.runJob({ projectPath: targetPath, job: "init", trigger: "cli" }, (progress) => {
+    const init = await runtime.service.runJob({ projectPath: path.join(input.projects_root, input.folder_name), job: "init", trigger: "cli" }, (progress) => {
       runtime.io.err(progress.message + (progress.pct === null ? "" : ` ${progress.pct}%`));
     });
     if (init.exitCode !== EXIT.OK) return failure(asExitCode(init.exitCode), "JOB_FAILED", init.summary, { ...created, init });

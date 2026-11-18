@@ -223,6 +223,12 @@ describe("siteindex CLI", () => {
     }));
     expect(methods.runJob).toHaveBeenCalledWith(expect.objectContaining({ job: "init", trigger: "cli",
       projectPath: path.join(tempRoot, "auto-shop") }), expect.any(Function));
+    const alternateRoot = path.join(tempRoot, "projects");
+    const alternate = collect(service, { settings: { projects_root: alternateRoot, cache_dir: path.join(tempRoot, "cache") } });
+    expect(await main(["init", "another-shop", "--url", "https://example.test", "--auto-collect"], alternate.io)).toBe(EXIT.OK);
+    expect(methods.runJob).toHaveBeenLastCalledWith(expect.objectContaining({
+      projectPath: path.join(alternateRoot, "another-shop"), job: "init",
+    }), expect.any(Function));
     const missing = collect(service);
     expect(await main(["init", "no-feed", "--url", "https://example.test", "--json"], missing.io)).toBe(EXIT.BAD_ARGS);
     expect(parseEnvelope(missing.stdout[0]!).error?.message).toContain("--feed 或 --auto-collect");
