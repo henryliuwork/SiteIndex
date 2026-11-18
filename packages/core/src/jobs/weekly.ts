@@ -23,7 +23,8 @@ function cleanUrl(value: string, base?: string): string | null {
   try {
     const url = base ? new URL(value.trim(), base) : new URL(value.trim());
     if (!["http:", "https:"].includes(url.protocol)) return null;
-    const pairs = [...url.searchParams.entries()].filter(([key, val]) => val && !TRACKING.test(key));
+    const pairs = [...url.searchParams.entries()].filter(([key, val]) => val && !TRACKING.test(key)
+      && !key.toLowerCase().startsWith("attribute_pa_"));
     url.search = "";
     for (const [key, val] of pairs) url.searchParams.append(key, val);
     url.hash = "";
@@ -226,7 +227,7 @@ function isBlogPostPath(pathname: string): boolean {
 function urlSlug(url: string): string {
   return new URL(url).pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(?:html?|php)$/i, "") ?? "";
 }
-function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), categoryPattern?: string, categorySlugs: ReadonlySet<string> = new Set(), doc?: HtmlNode, blog: BlogRecognition = { sitemapUrls: new Set(), urlPatterns: [], legacyUrlPatterns: [] }): SeoPage["page_type"] {
+function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), categoryPattern?: string, categorySlugs: ReadonlySet<string> = new Set(), doc?: HtmlNode, blog: BlogRecognition = { sitemapUrls: new Set(), urlPatterns: [], legacyUrlPatterns: [] }, categoryUrls: ReadonlySet<string> = new Set()): SeoPage["page_type"] {
   const pathname = new URL(url).pathname;
   const clean = cleanUrl(url);
   if (clean && productUrls.has(clean)) return "product";
@@ -236,15 +237,17 @@ function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), cat
   const encodedLeaf = pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(?:html?|php)$/i, "").toLowerCase() ?? "";
   let leaf = encodedLeaf;
   try { leaf = decodeURIComponent(encodedLeaf); } catch { /* malformed segment stays encoded */ }
-  if (/\/collections?\//i.test(pathname) || /collection|category|catalog/i.test(pathname) || categorySlugs.has(leaf) || categorySlugForUrl(url, categoryPattern)) return "collection";
+  if (categoryUrls.has(clean ?? url) || /\/collections?\//i.test(pathname) || /collection|category|catalog/i.test(pathname) || categorySlugs.has(leaf) || categorySlugForUrl(url, categoryPattern)) return "collection";
   if (isConfiguredBlogUrl(url, blog) || (doc && hasBlogDocument(doc)) || isBlogPostPath(pathname)) return "blog";
   if (/\/pages?\//i.test(pathname) || pathname.split("/").filter(Boolean).length === 1) return "page";
   return "other";
 }
 
-async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<string>, categorySlugs: ReadonlySet<string>): Promise<{ rows: Parsed[]; errors: string[]; attempts: number; blogUrls: Set<string> }> {
+async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<string>, categorySlugs: ReadonlySet<string>,
+  wooCategories: readonly JsonObject[] = []): Promise<{ rows: Parsed[]; errors: string[]; attempts: number; blogUrls: Set<string>; categoryUrls: Set<string> }> {
   const urls = new Map<string, string>();
   const blogUrls = new Set<string>();
+  const categoryUrls = new Set<string>();
   const seen = new Set<string>();
   const seenBlog = new Set<string>();
   const errors: string[] = [];
@@ -292,8 +295,11 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     if (!response) throw new Error("fetch returned no response");
     return { status: response.status, body: await response.text(), url: target, redirects, ms: Date.now() - started, xRobotsTag: response.headers.get("x-robots-tag") };
   };
-  const sitemap = async (input: string, depth = 0, isBlogSitemap = false): Promise<void> => {
+  const sitemap = async (input: string, depth = 0, isBlogSitemap = false, isCategorySitemap = false): Promise<void> => {
     const url = cleanUrl(input);
+    const pathname = url ? new URL(url).pathname : "";
+    isBlogSitemap ||= /(?:^|\/)(?:post-sitemap|wp-sitemap-posts-post-)/iu.test(pathname);
+    isCategorySitemap ||= /(?:^|\/)(?:product_cat|product-category|wp-sitemap-taxonomies-product_cat)/iu.test(pathname);
     const visited = isBlogSitemap ? seenBlog : seen;
     if (!url || visited.has(url) || depth > 5) return;
     visited.add(url);
@@ -302,12 +308,13 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
       if (result.status < 200 || result.status >= 400) throw new Error("HTTP " + result.status);
       const tree = XML.parse(result.body);
       const nested = locs(tree, "sitemap");
-      if (nested.length) for (const row of nested) await sitemap(row.loc, depth + 1, isBlogSitemap);
+      if (nested.length) for (const row of nested) await sitemap(row.loc, depth + 1, isBlogSitemap, isCategorySitemap);
       else for (const row of locs(tree, "url")) {
         const page = cleanUrl(row.loc);
         if (page && !pattern(page, config.crawl.exclude_url_patterns)) {
           urls.set(page, row.lastmod ?? urls.get(page) ?? "");
           if (isBlogSitemap) blogUrls.add(page);
+          if (isCategorySitemap) categoryUrls.add(page);
         }
       }
     } catch (error) { errors.push(url + ": " + (error instanceof Error ? error.message : String(error))); }
@@ -319,8 +326,14 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
   };
   for (const url of config.content?.blog_sitemaps ?? []) await sitemap(url, 0, true);
   for (const url of config.sitemaps ?? []) await sitemap(url);
-  const maximum = Math.max(1, Number(config.crawl.max_pages ?? 2000));
   const origin = new URL(config.base_url).origin;
+  for (const item of wooCategories) {
+    const page = typeof item.permalink === "string" ? cleanUrl(item.permalink) : null;
+    if (!page || new URL(page).origin !== origin || pattern(page, config.crawl.exclude_url_patterns)) continue;
+    urls.set(page, urls.get(page) ?? "");
+    categoryUrls.add(page);
+  }
+  const maximum = Math.max(1, Number(config.crawl.max_pages ?? 2000));
   const rows: Parsed[] = [];
   for (const [url, lastmod] of [...urls.entries()].slice(0, maximum)) {
     try {
@@ -346,7 +359,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
       const links = contentLinks(doc, response.url, origin);
       const hreflang = hreflangData(doc, response.url);
       const page: SeoPage = {
-        url, page_type: pageType(url, productUrls, config.categories.url_pattern, categorySlugs, doc, blog), status_code: response.status, ...(response.url !== url ? { final_url: response.url } : {}),
+        url, page_type: pageType(url, productUrls, config.categories.url_pattern, categorySlugs, doc, blog, categoryUrls), status_code: response.status, ...(response.url !== url ? { final_url: response.url } : {}),
         ...(response.redirects.length ? { redirect_chain: response.redirects } : {}), response_ms: response.ms,
         title, title_length: title ? [...title].length : 0, meta_description: description, description_length: description ? [...description].length : 0,
         meta_keywords: meta(doc, "keywords"), h1: headings[0] ?? null, h1_count: headings.length,
@@ -368,7 +381,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     } catch (error) { errors.push(url + ": " + (error instanceof Error ? error.message : String(error))); }
   }
   if (!urls.size) errors.push("sitemap has no crawlable URLs");
-  return { rows, errors, attempts, blogUrls };
+  return { rows, errors, attempts, blogUrls, categoryUrls };
 }
 
 function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, date: string): SeoIssue[] {
@@ -571,6 +584,109 @@ function categories(config: SiteConfig, rows: Parsed[], skus: JsonObject[], date
   }
   return [...result.values()].sort((a, b) => compareKeys(a.slug, b.slug));
 }
+async function wooCategoryApi(config: SiteConfig): Promise<JsonObject[]> {
+  const rows: JsonObject[] = [];
+  for (let page = 1; page <= 50; page += 1) {
+    const url = new URL("wp-json/wc/store/v1/products/categories", config.base_url.replace(/\/$/u, "") + "/");
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("per_page", "100");
+    try {
+      const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(12_000) });
+      if (!response.ok) return [];
+      const payload: unknown = await response.json();
+      if (!Array.isArray(payload)) return [];
+      rows.push(...asObjects(payload));
+      const total = Number(response.headers.get("x-wp-totalpages"));
+      if (Number.isInteger(total) && total > 0 ? page >= total : payload.length < 100) return rows;
+    } catch { return []; }
+  }
+  return [];
+}
+function wooCategories(config: SiteConfig, rows: Parsed[], skus: JsonObject[], stock: JsonObject[], date: string,
+  sitemapUrls: ReadonlySet<string>, api: readonly JsonObject[]): Category[] {
+  const result = new Map(categories(config, rows, skus, date).map((item) => [item.slug, item]));
+  if (!skus.length) for (const [slug, item] of result) {
+    const unknownCounts = { ...item };
+    delete unknownCounts.product_count;
+    delete unknownCounts.sku_count;
+    delete unknownCounts.in_stock_count;
+    result.set(slug, unknownCounts);
+  }
+  const base = new URL(config.base_url);
+  const localUrl = (value: unknown, relative = config.base_url): string => {
+    const url = typeof value === "string" ? cleanUrl(value, relative) : null;
+    return url && new URL(url).origin === base.origin ? url : "";
+  };
+  const stockBySku = new Map(stock.map((item) => [item.sku, item.stock_status]));
+  const counts = (slug: string) => {
+    const matched = skus.filter((item) => item.category === slug || (Array.isArray(item.categories) && item.categories.includes(slug)));
+    return { ...(skus.length ? { sku_count: matched.length,
+      product_count: new Set(matched.map((item) => String(item.product_id ?? item.handle))).size } : {}),
+      ...(skus.length && stock.length ? { in_stock_count: matched.filter((item) => stockBySku.get(item.sku) === "in_stock").length } : {}) };
+  };
+  const idSlug = new Map(api.flatMap((item) => {
+    const id = Number(item.id);
+    const slug = typeof item.slug === "string" && item.slug.trim() ? categorySlug(item.slug) : "";
+    return Number.isSafeInteger(id) && id > 0 && slug ? [[id, slug] as const] : [];
+  }));
+  for (const item of api) {
+    const slug = idSlug.get(Number(item.id));
+    if (!slug) continue;
+    const previous = result.get(slug);
+    const known = counts(slug);
+    const apiCount = typeof item.count === "number" || (typeof item.count === "string" && item.count.trim())
+      ? Number(item.count) : Number.NaN;
+    result.set(slug, { slug, name: previous?.source === "manual" ? previous.name : String(item.name ?? slug),
+      url: previous?.source === "manual" ? previous.url : localUrl(item.permalink) || previous?.url || "",
+      parent: idSlug.get(Number(item.parent)) ?? previous?.parent ?? null,
+      source: previous?.source === "manual" ? "manual" : "feed",
+      ...(Number.isSafeInteger(apiCount) && apiCount >= 0 ? { product_count: apiCount }
+        : "product_count" in known ? { product_count: known.product_count } : {}),
+      ...("sku_count" in known ? { sku_count: known.sku_count } : {}),
+      ...("in_stock_count" in known ? { in_stock_count: known.in_stock_count } : {}), last_seen: date });
+  }
+  const slugByUrl = new Map([...result.values()].filter((item) => item.url).map((item) => [item.url, item.slug]));
+  const ensure = (slug: string, name: string, url: string, parent: string | null, words?: number | null) => {
+    const existing = result.get(slug);
+    if (existing) {
+      result.set(slug, { ...existing, url: existing.url || url, parent: existing.parent ?? parent,
+        ...(words === undefined ? {} : { intro_text_words: words }) });
+      return;
+    }
+    result.set(slug, { slug, name: name || slug, url, parent, source: config.categories.mode === "url_rule" ? "url_rule" : "feed",
+      ...counts(slug), ...(words === undefined ? {} : { intro_text_words: words }), last_seen: date });
+    if (url) slugByUrl.set(url, slug);
+  };
+  for (const row of rows) {
+    if (row.page.page_type !== "collection" && row.page.page_type !== "product" && !sitemapUrls.has(row.page.url)) continue;
+    const breadcrumb = walk(row.doc, (node) => classTokens(node).includes("woocommerce-breadcrumb"), OMIT)[0];
+    let crumbParent: string | null = null;
+    for (const link of breadcrumb ? walk(breadcrumb, (node) => node.name === "a") : []) {
+      const url = localUrl(attr(link, "href"), row.page.url);
+      if (!url || new URL(url).pathname === "/") continue;
+      const name = text(link);
+      const slug = slugByUrl.get(url) ?? categorySlug(name);
+      if (!slug || slug === "uncategorized") continue;
+      ensure(slug, name, url, crumbParent);
+      crumbParent = slug;
+    }
+    if (row.page.page_type === "collection" || sitemapUrls.has(row.page.url)) {
+      let leaf = urlSlug(row.page.url);
+      try { leaf = decodeURIComponent(leaf); } catch { /* retain malformed encoding */ }
+      const slug = slugByUrl.get(row.page.url) ?? categorySlugForUrl(row.page.url, config.categories.url_pattern) ?? categorySlug(leaf);
+      if (slug && slug !== "uncategorized") ensure(slug, row.page.h1 ?? row.page.title ?? slug, row.page.url,
+        crumbParent === slug ? null : crumbParent, row.page.word_count);
+    }
+    if (row.page.page_type === "product") for (const node of walk(row.doc, (item) =>
+      classTokens(item).some((token) => token.startsWith("product_cat-")), OMIT)) {
+      for (const token of classTokens(node).filter((value) => value.startsWith("product_cat-"))) {
+        const slug = categorySlug(token.slice("product_cat-".length));
+        if (slug !== "uncategorized") ensure(slug, slug, "", null);
+      }
+    }
+  }
+  return [...result.values()].sort((left, right) => compareKeys(left.slug, right.slug));
+}
 function linkRows(rows: Parsed[], productUrls: ReadonlySet<string>, blog: BlogRecognition): SeoLink[] {
   const pageTypes = new Map(rows.map((row) => [row.page.url, row.page.page_type]));
   const result = new Map<string, SeoLink>();
@@ -590,7 +706,8 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
   const skuRows = await readJsonl(path.join(projectPath, paths.skus));
   const productUrls = new Set(skuRows.map((row) => cleanUrl(String(row.url ?? ""))).filter((url): url is string => !!url));
   const categorySlugs = new Set(skuRows.flatMap((row) => [row.category, ...(Array.isArray(row.categories) ? row.categories : [])]).map(String));
-  const crawlResult = await crawl(config, date, productUrls, categorySlugs);
+  const wooApi = config.platform === "woocommerce" ? await wooCategoryApi(config) : [];
+  const crawlResult = await crawl(config, date, productUrls, categorySlugs, wooApi);
   const rows = crawlResult.rows;
   const blog: BlogRecognition = {
     sitemapUrls: crawlResult.blogUrls,
@@ -599,7 +716,8 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
   };
   const errors = [...crawlResult.errors];
   const denominator = rows.length + errors.length;
-  if (!rows.length || (denominator > 0 && errors.length / denominator > 0.2)) return { status: "failed", counts: {}, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
+  if (!rows.length || (denominator > 0 && errors.length / denominator > 0.2 && !wooApi.length))
+    return { status: "failed", counts: {}, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
   const oldIssues = selected.includes("issues") ? await readJsonl(path.join(projectPath, paths.seoIssues)) as unknown as SeoIssue[] : [];
   const issues = selected.includes("issues") ? makeIssues(rows, oldIssues, config, date) : [];
   const output = async (step: WeeklyStep, relative: string, data: object[], schema: string, counts: Record<string, number>) => {
@@ -617,11 +735,14 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
   await output("product_details", paths.productDetails, productDetails(rows, date), "product_details", counts);
   if (selected.includes("categories")) {
     options.onProgress?.("categories", "正在生成 categories");
-    const data = categories(config, rows, skuRows, date);
+    const stock = config.platform === "woocommerce" ? await readJsonl(path.join(projectPath, paths.inventoryLatest)) : [];
+    const data = config.platform === "woocommerce"
+      ? wooCategories(config, rows, skuRows, stock, date, crawlResult.categoryUrls, wooApi)
+      : categories(config, rows, skuRows, date);
     if (!data.length) errors.push("categories 结果为空，未覆盖现有数据。");
     else { await atomicWrite(path.join(projectPath, paths.categories), JSON.stringify(data, null, 2) + "\n"); counts.categories = data.length; }
   }
   const failed = crawlResult.attempts > 0 && errors.filter((error) => !error.endsWith("结果为空，未覆盖现有数据。")).length / Math.max(1, denominator) > 0.2;
-  if (failed) return { status: "failed", counts: {}, errors };
+  if (failed && !counts.categories) return { status: "failed", counts: {}, errors };
   return { status: errors.length ? Object.keys(counts).length ? "partial" : "failed" : "ok", counts, errors };
 }
