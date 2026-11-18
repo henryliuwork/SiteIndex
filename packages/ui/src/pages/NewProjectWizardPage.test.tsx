@@ -86,6 +86,28 @@ describe("NewProjectWizardPage workspace step", () => {
     expect(within(dailyStep).getByText("完成")).toBeTruthy();
   }, 30_000);
 
+  it("explains the supported no-Feed collection path in the Woo tooltip", async () => {
+    const mockApi = createMockApi();
+    mockApi.workspace = undefined;
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ NewProjectWizardPage }, { WizardDraftProvider }, { ToastProvider }] = await Promise.all([
+      import("./NewProjectWizardPage"), import("./wizard-state"), import("../components/overlays"),
+    ]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><WizardDraftProvider>
+      <MemoryRouter initialEntries={["/new/url"]}><Routes><Route path="/new/*" element={<NewProjectWizardPage />} /></Routes></MemoryRouter>
+    </WizardDraftProvider></QueryClientProvider></ToastProvider>);
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "网站地址" }), { target: { value: "woo.example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "检测" }));
+    const next = await screen.findByRole("button", { name: "下一步：数据源" });
+    await waitFor(() => expect((next as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(next);
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    fireEvent.focus(await screen.findByRole("button", { name: "无 Feed 时的商品采集" }));
+    expect((await screen.findByRole("tooltip")).textContent).toContain("首次同步会抓取商品：优先 Store API，不可用时回退 Sitemap/HTML；关闭则跳过商品同步。");
+  });
+
   it("checks the selected destination and sends the workspace options with project creation", async () => {
     const mockApi = createMockApi();
     const createProject = vi.spyOn(mockApi.projects, "create");
