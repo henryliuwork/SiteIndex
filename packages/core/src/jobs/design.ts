@@ -49,6 +49,15 @@ function chooseRole(samples: PageDesign[], role: DesignColorRole): DesignColorRo
     || compareKeys(left.source, right.source) || compareKeys(left.value, right.value))[0] ?? null;
 }
 
+function wordpressRole(samples: PageDesign[], role: DesignColorRole): DesignColorRoleValue | null {
+  const suffix = role === "text" ? "contrast" : role === "background" ? "base" : role === "primary" ? "primary" : null;
+  if (!suffix) return null;
+  const source = `--wp--preset--color--${suffix}`;
+  const value = samples.map((sample) => sample.variables[source]).find((candidate) =>
+    typeof candidate === "string" && /^(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla)\([^)]*\))$/iu.test(candidate.trim()));
+  return value ? { value, source, confidence: 0.95 } : null;
+}
+
 function chooseFrequency(samples: PageDesign[], key: "spacing" | "radius" | "shadow"): string[] {
   const counts = new Map<string, number>();
   for (const sample of samples) {
@@ -153,9 +162,9 @@ async function inspectPage(page: BrowserPage): Promise<PageDesign> {
     const roleVariables: Record<DesignColorRole, RegExp> = {
       primary: /(?:^|[-_])(?:primary|brand-primary|brand|accent)(?:$|[-_])/i,
       secondary: /(?:^|[-_])secondary(?:$|[-_])/i,
-      text: /(?:^|[-_])(?:text|foreground)(?:$|[-_])/i,
+      text: /(?:^|[-_])(?:text|foreground|contrast)(?:$|[-_])/i,
       text_muted: /(?:^|[-_])(?:text-muted|muted|subtle)(?:$|[-_])/i,
-      background: /(?:^|[-_])(?:background|bg)(?:$|[-_])/i,
+      background: /(?:^|[-_])(?:background|bg|base)(?:$|[-_])/i,
       surface: /(?:^|[-_])(?:surface|card)(?:$|[-_])/i,
       border: /(?:^|[-_])border(?:$|[-_])/i,
       sale: /(?:^|[-_])(?:sale|discount|price-sale)(?:$|[-_])/i,
@@ -264,9 +273,9 @@ async function inspectPage(page: BrowserPage): Promise<PageDesign> {
     };
     const buttons: PageDesign["buttons"] = { primary: null, secondary: null, outline: null };
     const buttonSelectors: Record<DesignButtonVariant, string> = {
-      primary: "button.primary, [role=button].primary, [data-variant=primary], button[type=submit], input[type=submit]",
+      primary: "button.primary, [role=button].primary, [data-variant=primary], button[type=submit], input[type=submit], .wp-element-button, .single_add_to_cart_button",
       secondary: "button.secondary, [role=button].secondary, [data-variant=secondary]",
-      outline: "button.outline, [role=button].outline, [data-variant=outline]",
+      outline: "button.outline, [role=button].outline, [data-variant=outline], .wp-block-button.is-style-outline .wp-block-button__link",
     };
     const buttonVariantKeys: DesignButtonVariant[] = ["primary", "secondary", "outline"];
     for (const variant of buttonVariantKeys) {
@@ -330,7 +339,8 @@ function makeTokens(samples: PageDesign[], targets: DesignTarget[], extractedAt:
   }
   const palette = [...counts].map(([value, count]) => ({ value, count }))
     .sort((a, b) => b.count - a.count || compareKeys(a.value, b.value)).slice(0, 12);
-  const colorRoles = Object.fromEntries(COLOR_ROLES.map((role) => [role, chooseRole(samples, role)])) as DesignColorRoles;
+  const colorRoles = Object.fromEntries(COLOR_ROLES.map((role) => [role,
+    chooseRole(samples, role) ?? wordpressRole(samples, role)])) as DesignColorRoles;
   const roleColor = (role: DesignColorRole) => colorRoles[role]?.value ?? null;
   const primary = roleColor("primary");
   const secondary = roleColor("secondary");
