@@ -492,6 +492,8 @@ export interface SkuImageRow {
   stock_status: StockStatus;
   feed_image_url: string | null;
   manual_image_url: string | null;
+  /** 商品页或 Store API 抓取的完整图集；旧项目可省略。 */
+  gallery_urls?: string[];
   used: "feed" | "manual" | "none";
   /** 已配置且有效的折扣百分比；未配置、未选择或旧台账缺列时为空。 */
   discount_tier?: number | null;
