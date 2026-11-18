@@ -922,6 +922,9 @@ async function startSyntheticSite() {
       response.end(LOOPBACK_MEDIA_WEBP);
       return;
     }
+    if (pathname === "/wp-json/wc/store/v1/products" || pathname === "/wp-json/wc/store/v1/products/categories") {
+      return send(response, 200, "application/json", "[]");
+    }
     if (/^\/products\/[A-Z0-9-]+\.html$/u.test(pathname)) {
       return send(response, 200, "text/html", "<!doctype html><html><body><main><h1>Synthetic product</h1></main></body></html>");
     }
