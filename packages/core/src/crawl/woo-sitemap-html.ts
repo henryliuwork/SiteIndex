@@ -62,18 +62,18 @@ function stock(value: unknown): StockStatus {
   return "unknown";
 }
 
-function productNodes(html: string): { root: Node; products: Row[] } {
+function productNodes(html: string): { root: Node; products: { product: Row; group: Row }[] } {
   const root = parseDocument(html) as unknown as Node;
-  const products: Row[] = [];
+  const products: { product: Row; group: Row }[] = [];
   for (const script of nodes(root, (node) => node.name === "script" && node.attribs?.type?.toLowerCase() === "application/ld+json")) {
     try {
-      const visit = (value: unknown) => {
+      const visit = (value: unknown, group: Row = {}) => {
         for (const item of list(value)) {
           if (!item || typeof item !== "object" || Array.isArray(item)) continue;
           const row = record(item);
-          if (schemaType(row["@type"], "Product")) products.push(row);
+          if (schemaType(row["@type"], "Product")) products.push({ product: row, group });
           visit(row["@graph"]);
-          visit(row.hasVariant);
+          visit(row.hasVariant, schemaType(row["@type"], "ProductGroup") ? row : group);
         }
       };
       visit(JSON.parse(text(script)));
@@ -95,19 +95,15 @@ function pageStock(root: Node, product: Row): StockStatus | undefined {
 
 export function wooPageStockStatus(html: string): StockStatus | undefined {
   const { root, products } = productNodes(html);
-  return pageStock(root, products[0] ?? {});
+  return pageStock(root, products[0]?.product ?? {});
 }
 
-function pageProduct(html: string, url: string, site: WooSite): PageProduct | null {
+function pageProducts(html: string, url: string, site: WooSite): PageProduct[] {
   const { root, products } = productNodes(html);
   const named = (name: string) => nodes(root, (node) => node.name === name);
   const withClass = (name: string) => nodes(root, (node) => (node.attribs?.class ?? "").split(/\s+/u).includes(name));
-  const product = products[0] ?? {};
   const titleNode = withClass("product_title")[0];
-  if (!products.length && !titleNode) return null;
-  const offer = record(list(product.offers)[0]);
-  const sku = string(product.sku) || text(withClass("sku")[0] ?? { type: "text", data: "" }).trim();
-  const name = string(product.name) || text(titleNode ?? named("h1")[0] ?? { type: "text", data: "" }).trim();
+  if (!products.length && !titleNode) return [];
   const priceNode = withClass("price")[0];
   const amounts = priceNode ? nodes(priceNode, (node) => (node.attribs?.class ?? "").split(/\s+/u).includes("amount")) : [];
   const saleNode = priceNode ? nodes(priceNode, (node) => node.name === "ins")[0] : undefined;
@@ -116,30 +112,34 @@ function pageProduct(html: string, url: string, site: WooSite): PageProduct | nu
     amounts.length ? "" : text(priceNode ?? { type: "text", data: "" });
   const tokens = priceText.match(/\d[\d,.]*/gu) ?? [];
   const domPrice = tokens.length === 1 ? tokens[0] : "";
-  const current = price(offer.price ?? record(offer.priceSpecification).price ?? domPrice);
-  const available = pageStock(root, product) ?? "unknown";
   const categoryLink = withClass("posted_in")[0];
   const categoryName = categoryLink ? nodes(categoryLink, (node) => node.name === "a").map(text)[0] : "";
-  const category = categorySlug(string(product.category) || categoryName || "");
-  const image = list(product.image)[0];
   const gallery = withClass("woocommerce-product-gallery")[0];
   const galleryImage = gallery ? nodes(gallery, (node) => node.name === "img")[0] : undefined;
-  const mainImage = imageUrl(galleryImage?.attribs?.["data-large_image"]
-    || galleryImage?.attribs?.["data-large-image"] || galleryImage?.attribs?.src
-    || (typeof image === "string" ? image : record(image).url)
-    || withClass("wp-post-image")[0]?.attribs?.src, new URL(site.base_url));
-  const group = record(product.isVariantOf);
-  const parentSku = string(group.sku);
-  return {
-    sku, product_id: string(product.productID) || string(product.productGroupID) || sku,
-    handle: new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? sku,
-    title: name || sku, variant_title: null, url,
-    category: category || "uncategorized", categories: category ? [category] : [],
-    price: current, compare_at_price: null,
-    currency: string(offer.priceCurrency) || site.currency,
-    image_url: mainImage, stock_status: available, qty: null,
-    ...(parentSku ? { parent_sku: parentSku } : {}),
-  };
+  return (products.length ? products : [{ product: {}, group: {} }]).map(({ product, group }) => {
+    const offer = record(list(product.offers)[0]);
+    const sku = string(product.sku) || (products.length ? "" : text(withClass("sku")[0] ?? { type: "text", data: "" }).trim());
+    const name = string(group.name) || string(product.name) || text(titleNode ?? named("h1")[0] ?? { type: "text", data: "" }).trim();
+    const current = price(offer.price ?? record(offer.priceSpecification).price ?? (products.length ? "" : domPrice));
+    const category = categorySlug(string(product.category) || string(group.category) || categoryName || "");
+    const image = list(product.image)[0] ?? list(group.image)[0];
+    const mainImage = imageUrl(galleryImage?.attribs?.["data-large_image"]
+      || galleryImage?.attribs?.["data-large-image"] || galleryImage?.attribs?.src
+      || (typeof image === "string" ? image : record(image).url)
+      || withClass("wp-post-image")[0]?.attribs?.src, new URL(site.base_url));
+    const parent = record(product.isVariantOf);
+    const parentSku = string(group.sku) || string(group.productGroupID) || string(parent.sku);
+    return {
+      sku, product_id: string(group.productGroupID) || string(group.productID) || string(product.productID) || sku,
+      handle: new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? sku,
+      title: name || sku, variant_title: parentSku && string(product.name) !== name ? string(product.name) || null : null, url,
+      category: category || "uncategorized", categories: category ? [category] : [],
+      price: current, compare_at_price: null,
+      currency: string(offer.priceCurrency) || site.currency,
+      image_url: mainImage, stock_status: pageStock(root, product) ?? "unknown", qty: null,
+      ...(parentSku ? { parent_sku: parentSku } : {}),
+    };
+  });
 }
 
 async function textResponse(url: string, accept: string): Promise<string> {
@@ -185,7 +185,11 @@ async function productUrls(site: WooSite): Promise<string[]> {
   if (queue.length) throw new FeedError("FEED_FETCH_FAILED", "商品 Sitemap 数量超过安全上限，未写入不完整快照。");
   const productMaps = maps.filter((map) => /product(?![-_]?cat)/iu.test(new URL(map.url).pathname));
   const source = productMaps.length ? productMaps : maps;
-  const urls = [...new Set(source.flatMap((map) => map.locations))].sort(compareKeys);
+  const urls = [...new Set(source.flatMap((map) => map.locations).map((value) => {
+    const url = new URL(value);
+    for (const key of [...url.searchParams.keys()]) if (key.toLowerCase().startsWith("attribute_pa_")) url.searchParams.delete(key);
+    return url.href;
+  }))].sort(compareKeys);
   const limit = Math.max(1, Math.floor(site.crawl.max_pages ?? 2_000));
   if (urls.length > limit) throw new FeedError("FEED_FETCH_FAILED", "商品页面超过配置抓取上限，未写入不完整快照。");
   return urls;
@@ -203,14 +207,14 @@ export async function collectWooSitemapHtml(site: WooSite): Promise<WooHtmlSnaps
     if (delay && index > 0) await new Promise<void>((resolve) => setTimeout(resolve, delay));
     const html = await textResponse(url, "text/html");
     if (!html) continue;
-    const row = pageProduct(html, url, site);
-    if (!row) continue;
-    if (!row.sku) { filtered.no_id += 1; continue; }
-    if (row.price === null) { filtered.missing_price_or_link += 1; continue; }
-    if (seen.has(row.sku)) { filtered.duplicate += 1; continue; }
-    seen.add(row.sku);
-    stats[row.stock_status] = (stats[row.stock_status] ?? 0) + 1;
-    rows.push({ ...row, price: row.price });
+    for (const row of pageProducts(html, url, site)) {
+      if (!row.sku) { filtered.no_id += 1; continue; }
+      if (row.price === null) { filtered.missing_price_or_link += 1; continue; }
+      if (seen.has(row.sku)) { filtered.duplicate += 1; continue; }
+      seen.add(row.sku);
+      stats[row.stock_status] = (stats[row.stock_status] ?? 0) + 1;
+      rows.push({ ...row, price: row.price });
+    }
   }
   rows.sort((left, right) => compareKeys(left.sku, right.sku));
   Object.assign(stats, filtered);

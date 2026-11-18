@@ -14,6 +14,49 @@ afterEach(async () => {
 });
 
 describe("WooCommerce automatic daily", () => {
+  it.each([403, 404])("keeps both ProductGroup variants when Store API returns %i", async (apiStatus) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-woo-group-fallback-"));
+    roots.push(root);
+    const base = "https://shop.example.test";
+    const fixture = path.resolve("fixtures/woocommerce-v065");
+    const detected: DetectResult = { input: base, final_url: `${base}/`, redirect_status: null,
+      robots: { found: true, disallow_count: 0, sitemaps: [`${base}/sitemap_index.xml`] },
+      sitemaps: [], total_urls: 0, platform: "woocommerce", platform_evidence: "test",
+      frontend: null, locale: "en-US", currency: "USD", feed_candidates: [] };
+    const created = await createProjectFiles({ url: base, feed_urls: [], sku_field: "id", category_depth: 1,
+      missing_as: "out_of_stock", brand: { name: "Demo Shop" }, markets: ["US"], projects_root: root,
+      folder_name: "demo", workspace_folders: [], auto_collect_products: true }, detected);
+    const configPath = path.join(created.path, PATHS.site);
+    const config = JSON.parse(await readFile(configPath, "utf8")) as SiteConfig;
+    config.sitemaps = [`${base}/sitemap_index.xml`];
+    config.crawl.rate_limit_ms = 200;
+    await writeFile(configPath, JSON.stringify(config));
+    vi.stubGlobal("fetch", vi.fn(async (request: string | URL | Request) => {
+      const url = new URL(typeof request === "string" ? request : request instanceof URL ? request.href : request.url);
+      if (url.pathname.startsWith("/wp-json/")) return new Response("unavailable", { status: apiStatus });
+      const files: Record<string, string> = {
+        "/sitemap_index.xml": "sitemap-index.xml", "/product-sitemap.xml": "product-sitemap.xml",
+        "/product/sample-lamp/": "product-page.html",
+      };
+      if (files[url.pathname]) return new Response(await readFile(path.join(fixture, files[url.pathname]!), "utf8"));
+      if (url.pathname === "/product/sample-kit/") return new Response(`<html><h1 class="product_title">Sample kit</h1>
+        <span class="sku">DEMO-WC-KIT</span><span class="price">$25.00</span><p class="stock out-of-stock">Sold out</p></html>`);
+      return new Response("missing", { status: 404 });
+    }));
+    const api = createCoreService({ resolveProject: () => created.path, deviceId: "test-device", cacheDir: path.join(root, "cache") });
+    const daily = await api.runJob({ projectPath: created.path, job: "daily", trigger: "manual", date: "2026-11-18" }, () => undefined);
+    expect(daily.status, JSON.stringify(daily)).toBe("ok");
+    const skus = await readJsonl(path.join(created.path, PATHS.skus));
+    expect(skus.map((row) => [row.sku, row.parent_sku ?? null])).toEqual([
+      ["DEMO-WC-KIT", null], ["DEMO-WC-LAMP-BLUE", "DEMO-WC-LAMP"],
+      ["DEMO-WC-LAMP-WHITE", "DEMO-WC-LAMP"],
+    ]);
+    const parent = await api.inventory.listSkus("demo", { page: 1, pageSize: 20, filters: { parent_only: true } });
+    expect(parent.rows.find((row) => row.sku === "DEMO-WC-LAMP")).toMatchObject({
+      is_parent: true, children_count: 2, in_stock_children_count: 1,
+    });
+  }, 60_000);
+
   it("runs init and daily without a Feed, preserves variant relationships and writes real stock/price changes", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-woo-auto-"));
     roots.push(root);
