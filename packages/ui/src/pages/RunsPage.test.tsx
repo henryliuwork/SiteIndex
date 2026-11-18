@@ -42,16 +42,22 @@ async function renderRunsPage(history: RunLog[]) {
   return { mockApi };
 }
 
-async function renderRunsPageWithRecentLog() {
+async function renderRunsPageWithLogState(status: "running" | "ok" | "failed") {
   const mockApi = createMockApi();
   const project = await mockApi.projects.get("demo");
   mockApi.projects.get = vi.fn(async (id) => ({ ...project, summary: { ...project.summary, id } }));
   mockApi.jobs.running = vi.fn(async () => ({ runId: "demo-active-run", job: "daily" }));
   mockApi.jobs.onProgress = vi.fn((callback) => {
-    queueMicrotask(() => callback({
-      runId: "demo-active-run", projectPath: project.summary.path, job: "daily", pct: 25,
-      step: "fetch_feed", level: "info", message: "正在读取演示 Feed", at: "2026-11-17T00:00:00.000Z",
-    }));
+    queueMicrotask(() => {
+      for (const [level, message] of [["info", "读取演示 Feed"], ["warn", "跳过演示记录"], ["error", "演示步骤失败"]] as const) {
+        callback({ runId: "demo-active-run", projectPath: project.summary.path, job: "daily", pct: 25,
+          step: "fetch_feed", level, message, at: "2026-11-17T00:00:00.000Z" });
+      }
+    });
+    return () => {};
+  });
+  mockApi.jobs.onFinished = vi.fn((callback) => {
+    if (status !== "running") queueMicrotask(() => callback({ runId: "demo-active-run", job: "daily", status, exitCode: status === "ok" ? 0 : 1, summary: status === "ok" ? "演示任务完成" : "演示任务失败" }));
     return () => {};
   });
   vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
@@ -63,17 +69,46 @@ async function renderRunsPageWithRecentLog() {
 }
 
 describe("RunsPage 媒体任务历史", () => {
-  it("近期日志使用浅色卡片可读文字，深色控制台保留原有配色", async () => {
-    await renderRunsPageWithRecentLog();
-    await waitFor(() => expect(document.querySelector(".si-run-recent-log .si-run-log-info span")?.textContent).toBe("正在读取演示 Feed"));
+  it.each(["running", "ok", "failed"] as const)("%s 状态在深色控制台展示 info、warn、error 日志", async (status) => {
+    await renderRunsPageWithLogState(status);
+    const console = await screen.findByRole("log", { name: "运行日志" });
+    expect(console.closest(".si-run-console")).toBeTruthy();
+    await waitFor(() => expect(console.querySelectorAll(".si-run-log")).toHaveLength(3));
+    for (const level of ["info", "warn", "error"]) expect(console.querySelector(`.si-run-log-${level} span`)?.textContent).toBeTruthy();
+    if (status === "running") {
+      expect(screen.getByRole("progressbar", { name: "任务进度" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "停止" })).toBeTruthy();
+    } else {
+      await waitFor(() => expect(document.querySelector(".si-run-state")?.textContent).toContain(status === "ok" ? "成功" : "失败"));
+    }
+  }, 15000);
 
+  it("深色日志的三级文字使用足够对比度的语义 token", () => {
     const workspaceCssPath = resolve(process.cwd(), "packages/ui/src/pages/runs/page.css");
     const css = readFileSync(existsSync(workspaceCssPath) ? workspaceCssPath : resolve(process.cwd(), "src/pages/runs/page.css"), "utf8");
+    const workspaceTokensPath = resolve(process.cwd(), "packages/ui/src/styles/tokens.css");
+    const tokens = readFileSync(existsSync(workspaceTokensPath) ? workspaceTokensPath : resolve(process.cwd(), "src/styles/tokens.css"), "utf8");
+    const token = (name: string) => {
+      const match = tokens.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`));
+      if (!match) throw new Error(`缺少颜色 token：${name}`);
+      return match[1]!;
+    };
+    const luminance = (hex: string) => {
+      const channels = hex.slice(1).match(/../g)!.map((part) => parseInt(part, 16) / 255);
+      const [red, green, blue] = channels.map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+      return red! * 0.2126 + green! * 0.7152 + blue! * 0.0722;
+    };
+    const background = luminance(token("--color-ink"));
+    for (const name of ["--color-surface", "--color-line-strong", "--color-stock-preorder", "--color-danger-soft"]) {
+      const foreground = luminance(token(name));
+      expect((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(css).toMatch(/\.si-run-console\s*\{[^}]*background:\s*var\(--color-ink\)/);
+    expect(css).toMatch(/\.si-run-log code\s*\{\s*color:\s*var\(--color-line-strong\)/);
     expect(css).toMatch(/\.si-run-log span\s*\{\s*color:\s*var\(--color-surface\)/);
-    expect(css).toMatch(/\.si-run-recent-log \.si-run-log span\s*\{\s*color:\s*var\(--color-ink-2\)/);
-    expect(css).toMatch(/\.si-run-recent-log \.si-run-log small\s*\{\s*color:\s*var\(--color-muted\)/);
-    expect(css).toMatch(/\.si-run-recent-log \.si-run-log-warn span\s*\{\s*color:\s*var\(--color-warn\)/);
-    expect(css).toMatch(/\.si-run-recent-log \.si-run-log-error span\s*\{\s*color:\s*var\(--color-danger\)/);
+    expect(css).toMatch(/\.si-run-log small\s*\{\s*color:\s*var\(--color-line-strong\)/);
+    expect(css).toMatch(/\.si-run-log-warn span\s*\{\s*color:\s*var\(--color-stock-preorder\)/);
+    expect(css).toMatch(/\.si-run-log-error span\s*\{\s*color:\s*var\(--color-danger-soft\)/);
   });
 
   it("从页头选择任务运行，概览卡片只展示状态", async () => {
