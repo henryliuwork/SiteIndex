@@ -149,7 +149,7 @@ export function OverviewPage() {
     />
     <ProjectTabPanel projectId={summary.id} tab="overview">
     <div className="si-overview-content">
-    {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 商品采集已配置">当前展示最近一次同步的数据；自动采集功能待 Core 接入后生效。</Notice>}
+    {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 自动采集已启用">首次及每日同步优先使用 WooCommerce Store API；失败时回退商品 Sitemap/HTML。</Notice>}
     {running && <Notice tone="info" title="每日同步进行中">{syncMessage || "正在同步项目数据…"}</Notice>}
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
     <section className="si-overview-kpis" aria-label="项目指标">

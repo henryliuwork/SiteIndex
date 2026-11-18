@@ -50,7 +50,8 @@ describe("OverviewPage 布局和操作", () => {
       ...overview.attention,
     ] }));
     await renderOverview(mockApi);
-    expect(await screen.findByText("无 Feed 商品采集已配置")).toBeTruthy();
+    expect(await screen.findByText("无 Feed 自动采集已启用")).toBeTruthy();
+    expect(screen.getByText("首次及每日同步优先使用 WooCommerce Store API；失败时回退商品 Sitemap/HTML。")).toBeTruthy();
     expect(screen.queryByText("尚未填写 GMC feed")).toBeNull();
     expect(screen.queryByText(/未配置商品来源|每日库存同步未启用/)).toBeNull();
   });
