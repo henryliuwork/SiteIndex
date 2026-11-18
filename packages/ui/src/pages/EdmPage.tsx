@@ -296,6 +296,22 @@ export function EdmPage() {
   );
   const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 50, filters: {} });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
+  const galleryImageMutation = useMutation({
+    mutationFn: ({ projectId, sku, url }: { projectId: string; sku: string; url: string }) => api.edm.setManualImage(projectId, sku, url),
+    onSuccess: async (updated, { projectId, sku }) => {
+      if (currentProjectIdRef.current === projectId) {
+        setSelected((current) => current?.sku === sku ? { ...current, ...updated, gallery_urls: updated.gallery_urls ?? current.gallery_urls } : current);
+        toast.success("手动首图已保存。");
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["edm", "images", projectId] }),
+        queryClient.invalidateQueries({ queryKey: ["edm", "summary", projectId] }),
+      ]);
+    },
+    onError: (cause, { projectId }) => {
+      if (currentProjectIdRef.current === projectId) toast.error(apiErrorMessage(cause, "手动首图保存失败。"));
+    },
+  });
   const [selectedRows, setSelectedRows] = useState<SkuImageRow[]>([]);
   const [mediaDemoStatuses, setMediaDemoStatuses] = useState<Record<string, MediaDemoRowState>>({});
   const [mediaDemoOutcome, setMediaDemoOutcome] = useState<MediaDemoOutcome>("complete");
@@ -704,7 +720,18 @@ export function EdmPage() {
     />}
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.title ?? "SKU 图片详情"}>
       {selected && <div className="si-edm-detail">
-        <ImageThumbnail src={selected.manual_image_url || selected.feed_image_url} label={selected.sku + " 当前使用图片"} />
+        {selected.gallery_urls?.length ? <section className="si-edm-gallery full" aria-label="已抓取图片">
+          <h3>已抓取图片</h3>
+          <ul>{selected.gallery_urls.map((url, index) => <li key={`${url}-${index}`}>
+            <ImageThumbnail src={url} label={`${selected.sku} 图片 ${index + 1}`} />
+            <code title={url}>{feedImageLabel(url)}</code>
+            {selected.manual_image_url === url
+              ? <Chip tone="info">当前手动首图</Chip>
+              : <Button disabled={galleryImageMutation.isPending} onClick={() => galleryImageMutation.mutate({ projectId: id, sku: selected.sku, url })}>
+                {galleryImageMutation.isPending && galleryImageMutation.variables?.url === url ? "保存中…" : "设为手动首图"}
+              </Button>}
+          </li>)}</ul>
+        </section> : <ImageThumbnail src={selected.manual_image_url || selected.feed_image_url} label={selected.sku + " 当前使用图片"} />}
         <div><span>SKU</span><code>{selected.sku}</code></div><div><span>变体</span>{selected.variant_title || "默认款"}</div>
         <div><span>库存状态</span><Chip tone={stockTone[selected.stock_status]}>{stockLabels[selected.stock_status]}</Chip></div>
         <div><span>agent 使用</span>{selected.used === "manual" ? "手动首图" : selected.used === "feed" ? "抓取首图" : "缺图"}</div>
