@@ -71,7 +71,6 @@ const LOOPBACK_MEDIA_PROJECT_ID = "synthetic-media-job";
 const LOOPBACK_MEDIA_SKU = "SYN-MEDIA-001";
 const WOO_STORE_PROJECT_ID = "synthetic-woo-store";
 const WOO_FALLBACK_PROJECT_ID = "synthetic-woo-fallback";
-const WOO_CLI_PROJECT_ID = "synthetic-woo-cli";
 const WOO_CATEGORY_RULE = "/shop/{slug},/gear/{slug}";
 const LOOPBACK_MEDIA_WEBP = Buffer.from("UklGRi4AAABXRUJQVlA4TCEAAAAvAUAAEB8w/wKCIv9HCwFB0XXLBXwU1LRtwOI36YjofxwA", "base64");
 const HOSTED_WINDOWS_ACCEPTANCE_ARGUMENT = "--siteindex-hosted-acceptance";
@@ -3682,14 +3681,44 @@ async function testInstalledWooLoopback(page) {
     for (const [mode, projectId] of [["store_api", WOO_STORE_PROJECT_ID], ["api_forbidden", WOO_FALLBACK_PROJECT_ID]]) {
       await loopback.setMode(mode);
       const before = await loopback.metrics();
-      const projectPath = path.join(PROJECTS_ROOT, projectId);
-      const created = await runInstalledJob(page, {
-        job: "create", createInput: makeCreateInput(projectId), disabledSchedule: disabledSchedule(),
-      });
+      const projectPath = mode === "store_api"
+        ? path.join(PROJECTS_ROOT, projectId)
+        : path.join(TEST_ROOT, "woo-cli-projects", projectId);
+      let created;
+      if (mode === "store_api") {
+        created = await runInstalledJob(page, {
+          job: "create", createInput: makeCreateInput(projectId), disabledSchedule: disabledSchedule(),
+        });
+      } else {
+        await mkdir(path.dirname(projectPath), { recursive: true });
+        const cliPath = path.join(INSTALL_DIR, "resources", "cli.js");
+        const cli = spawnSync(path.join(INSTALL_DIR, "SiteIndex.exe"), [cliPath, "init", projectPath,
+          "--url", loopback.origin, "--auto-collect", "--category-rule", WOO_CATEGORY_RULE, "--json"], {
+          encoding: "utf8", windowsHide: true, timeout: 180_000, cwd: TEST_ROOT,
+          env: isolatedProcessEnvironment({ ELECTRON_RUN_AS_NODE: "1" }),
+        });
+        let output = null;
+        try { output = JSON.parse(cli.stdout.trim()); } catch { /* Invalid output fails below. */ }
+        report.installedLoopbackJobs.woo.cliExitCode = cli.status;
+        assert(!cli.error && cli.status === 0 && output?.ok === true && output?.data?.init?.status === "ok",
+          "installed CLI --auto-collect initializes a synthetic no-Feed WooCommerce project", {
+            exitCode: cli.status, parsed: output !== null, initStatus: output?.data?.init?.status ?? null,
+          });
+        const sitePath = path.join(projectPath, "index/site.json");
+        const cliConfig = JSON.parse(await readFile(sitePath, "utf8"));
+        cliConfig.schedule = disabledSchedule();
+        await writeFile(sitePath, `${JSON.stringify(cliConfig, null, 2)}\n`, "utf8");
+        const registered = await page.evaluate((target) => window.siteindex.projects.addExisting(target), projectPath);
+        assert(registered.id === projectId, "installed Desktop registers the CLI-created synthetic WooCommerce project");
+        created = {
+          createdId: output.data.id, job: output.data.init.job, status: output.data.init.status,
+          exitCode: output.data.init.exitCode, progressEvents: 0, steps: output.data.init.steps ?? [],
+        };
+      }
       const config = JSON.parse(await readFile(path.join(projectPath, "index/site.json"), "utf8"));
       const initSteps = Object.fromEntries(created.steps.map((step) => [step.key, step.status]));
       assert(created.createdId === projectId && created.job === "init" && created.status === "ok"
-        && created.exitCode === 0 && created.progressEvents > 0
+        && created.exitCode === 0 && (mode !== "store_api" || created.progressEvents > 0)
         && ["daily", "weekly", "views"].every((key) => initSteps[key] === "ok")
         && initSteps.schedule === "skipped"
         && config.crawl.auto_collect_products === true && config.crawl.feed_url.length === 0
@@ -3728,26 +3757,9 @@ async function testInstalledWooLoopback(page) {
       report.installedLoopbackJobs.woo[mode] = { ...data, apiRequests, sitemapRequests, jobs };
     }
 
-    await loopback.setMode("store_api");
-    const cliPath = path.join(INSTALL_DIR, "resources", "cli.js");
-    const cliProjectPath = path.join(PROJECTS_ROOT, WOO_CLI_PROJECT_ID);
-    const cli = spawnSync(path.join(INSTALL_DIR, "SiteIndex.exe"), [cliPath, "init", cliProjectPath,
-      "--url", loopback.origin, "--auto-collect", "--category-rule", WOO_CATEGORY_RULE, "--json"], {
-      encoding: "utf8", windowsHide: true, timeout: 180_000, cwd: TEST_ROOT,
-      env: isolatedProcessEnvironment({ ELECTRON_RUN_AS_NODE: "1" }),
-    });
-    let output = null;
-    try { output = JSON.parse(cli.stdout.trim()); } catch { /* Invalid output fails below. */ }
-    const cliSkus = await readWooRows(cliProjectPath, "index/catalog/skus.jsonl");
     report.installedLoopbackJobs.woo = {
-      ...report.installedLoopbackJobs.woo, status: "ok", cliExitCode: cli.status,
+      ...report.installedLoopbackJobs.woo, status: "ok",
     };
-    assert(!cli.error && cli.status === 0 && output?.ok === true && output?.data?.init?.status === "ok"
-      && cliSkus.length === 3 && cliSkus.filter((row) => row.parent_sku === "DEMO-WC-LAMP").length === 2,
-    "installed CLI --auto-collect initializes a synthetic no-Feed WooCommerce project", {
-      exitCode: cli.status, parsed: output !== null, initStatus: output?.data?.init?.status ?? null,
-      skuCount: cliSkus.length,
-    });
   } finally {
     await loopback.close();
   }
