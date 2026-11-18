@@ -111,15 +111,25 @@ function parentProductRow(
 }
 
 /** Adds query-only product parent rows without changing the persisted products view. */
-export function groupProductRows(
+function groupedProductRows(
   products: readonly ProductView[],
   skus: readonly SkuRecord[],
   stockRows: readonly SkuStockView[],
-  rule: SkuGroupingRule,
+  rule: SkuGroupingRule | undefined,
   parentOnly: boolean,
 ): ProductView[] {
   const activeSkus = skus.filter((sku) => sku.status === "active");
-  const grouping = groupSkuIds(activeSkus.map((sku) => sku.sku), rule);
+  const explicit = new Map<string, string[]>();
+  if (!rule) for (const row of stockRows) {
+    if (!row.parent_sku || row.parent_sku === row.sku) continue;
+    const children = explicit.get(row.parent_sku) ?? [];
+    children.push(row.sku);
+    explicit.set(row.parent_sku, children);
+  }
+  const groups = rule ? groupSkuIds(activeSkus.map((sku) => sku.sku), rule).groups
+    : [...explicit].map(([parent, children]) => ({ parent, children: children.sort(compareKeys) }))
+      .sort((left, right) => compareKeys(left.parent, right.parent));
+  const parentByChild = new Map(groups.flatMap(({ parent, children }) => children.map((child) => [child, parent] as const)));
   const skuById = new Map(activeSkus.map((sku) => [sku.sku, sku]));
   const stockBySku = new Map(stockRows.map((row) => [row.sku, row]));
   const productBySku = new Map<string, ProductView>();
@@ -130,28 +140,38 @@ export function groupProductRows(
   if (!parentOnly) {
     return products.map((row) => {
       const parents = [...new Set(row.skus.flatMap((sku) => {
-        const parent = grouping.parentByChild.get(sku);
+        const parent = parentByChild.get(sku);
         return parent ? [parent] : [];
       }))];
-      if (row.skus.length > 0 && parents.length === 1 && row.skus.every((sku) => grouping.parentByChild.get(sku) === parents[0])) {
+      if (row.skus.length > 0 && parents.length === 1 && row.skus.every((sku) => parentByChild.get(sku) === parents[0])) {
         return { ...row, row_kind: "child", parent_sku: parents[0]!, variant_count: null, in_stock_variants: null };
       }
       return { ...row, row_kind: "single", parent_sku: null };
     });
   }
 
-  const feedMode = rule.type === "regex" && rule.parent_source === "feed";
-  const parentRows = grouping.groups.flatMap(({ parent, children }) => {
+  const feedMode = rule?.type === "regex" && rule.parent_source === "feed";
+  const parentRows = groups.flatMap(({ parent, children }) => {
     const members = feedMode ? [parent, ...children] : children;
     const row = parentProductRow(parent, members, productBySku, skuById, stockBySku);
     const parentStock = feedMode ? stockBySku.get(parent) : undefined;
     return row ? [{ ...row, ...(feedMode ? { stock_status: parentStock?.stock_status ?? "unknown", stock_since: parentStock?.since ?? null } : {}) }] : [];
   });
-  const groupedParents = new Set(feedMode ? grouping.groups.map((group) => group.parent) : []);
+  const groupedParents = new Set(feedMode ? groups.map((group) => group.parent) : []);
   const singles: ProductView[] = [];
   for (const row of products) {
-    const ungrouped = row.skus.filter((sku) => !grouping.parentByChild.has(sku) && !groupedParents.has(sku));
+    const ungrouped = row.skus.filter((sku) => !parentByChild.has(sku) && !groupedParents.has(sku));
     if (ungrouped.length > 0) singles.push(subsetProductRow(row, ungrouped, skuById, stockBySku));
   }
   return [...parentRows, ...singles].sort((left, right) => compareKeys(left.handle, right.handle));
+}
+
+export function groupProductRows(products: readonly ProductView[], skus: readonly SkuRecord[],
+  stockRows: readonly SkuStockView[], rule: SkuGroupingRule, parentOnly: boolean): ProductView[] {
+  return groupedProductRows(products, skus, stockRows, rule, parentOnly);
+}
+
+export function groupExplicitProductRows(products: readonly ProductView[], skus: readonly SkuRecord[],
+  stockRows: readonly SkuStockView[], parentOnly: boolean): ProductView[] {
+  return groupedProductRows(products, skus, stockRows, undefined, parentOnly);
 }

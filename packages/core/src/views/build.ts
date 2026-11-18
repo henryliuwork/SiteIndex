@@ -290,7 +290,9 @@ export function buildSkuStockViews(
       changes_30d: events.length,
       last_change: lastEvent?.type ?? null,
       last_change_at: lastEvent?.date ?? null,
-      ...(parentByChild?.has(sku.sku) ? { parent_sku: parentByChild.get(sku.sku) ?? null } : {}),
+      ...("parent_sku" in sku && typeof sku.parent_sku === "string" && sku.parent_sku
+        ? { parent_sku: sku.parent_sku }
+        : parentByChild?.has(sku.sku) ? { parent_sku: parentByChild.get(sku.sku) ?? null } : {}),
       ...(priceHistoryBySku.has(sku.sku) ? { price_history: priceHistoryBySku.get(sku.sku)! } : {}),
     });
   }

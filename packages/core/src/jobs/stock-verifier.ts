@@ -1,6 +1,7 @@
 import { parseDocument } from "htmlparser2";
 import type { StockStatus } from "@siteindex/shared";
 import { compareKeys } from "../io/compare";
+import { wooPageStockStatus } from "../crawl/woo-sitemap-html";
 
 export interface StockRules {
   in_stock: string[];
@@ -10,6 +11,7 @@ export interface StockRules {
 
 export interface StockVerificationSite {
   base_url?: string;
+  platform?: string;
   crawl?: {
     rate_limit_ms?: number;
     stock_verify?: { enabled: boolean; graphql_url?: string; max_per_run?: number };
@@ -151,6 +153,16 @@ function responseStatus(response: Response): "ok" | "not_found" | "unavailable" 
   return response.status >= 200 && response.status < 300 ? "ok" : "unavailable";
 }
 
+function wooStoreStatus(payload: unknown, sku: string): StockStatus | undefined {
+  if (!Array.isArray(payload)) return undefined;
+  const product = payload.find((item) => isRecord(item) && item.sku === sku);
+  if (!isRecord(product)) return undefined;
+  if (product.is_on_backorder === true) return "preorder";
+  if (product.is_in_stock === false) return "out_of_stock";
+  if (product.is_in_stock === true && product.is_purchasable !== false) return "in_stock";
+  return undefined;
+}
+
 /** 核验 feed 缺席的 SKU。按 SKU 确定性轮转、串行限速；结果不包含 URL 或响应正文。 */
 export async function verifyMissingStock(
   candidates: readonly { sku: string; url: string }[],
@@ -251,6 +263,20 @@ export async function verifyMissingStock(
       results.set(candidate.sku, { kind: "unavailable" });
       unavailable += 1;
       continue;
+    }
+
+    if (site.platform === "woocommerce") {
+      const store = new URL("wp-json/wc/store/v1/products", `${base.href.replace(/\/$/u, "")}/`);
+      store.searchParams.set("sku", candidate.sku);
+      store.searchParams.set("per_page", "1");
+      try {
+        const response = await request(store, { method: "GET", headers: { accept: "application/json" } });
+        const status = responseStatus(response) === "ok"
+          ? wooStoreStatus(await response.json().catch(() => null), candidate.sku) : undefined;
+        if (status) { results.set(candidate.sku, { kind: "status", status }); continue; }
+      } catch { /* 页面 JSON-LD 与文案仍可独立核验 */ }
+      const pageStatus = wooPageStockStatus(html);
+      if (pageStatus) { results.set(candidate.sku, { kind: "status", status: pageStatus }); continue; }
     }
 
     let graphqlBusinessUnknown = false;
