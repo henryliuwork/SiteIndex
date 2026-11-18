@@ -122,7 +122,11 @@ function pageProduct(html: string, url: string, site: WooSite): PageProduct | nu
   const categoryName = categoryLink ? nodes(categoryLink, (node) => node.name === "a").map(text)[0] : "";
   const category = categorySlug(string(product.category) || categoryName || "");
   const image = list(product.image)[0];
-  const mainImage = imageUrl(typeof image === "string" ? image : record(image).url
+  const gallery = withClass("woocommerce-product-gallery")[0];
+  const galleryImage = gallery ? nodes(gallery, (node) => node.name === "img")[0] : undefined;
+  const mainImage = imageUrl(galleryImage?.attribs?.["data-large_image"]
+    || galleryImage?.attribs?.["data-large-image"] || galleryImage?.attribs?.src
+    || (typeof image === "string" ? image : record(image).url)
     || withClass("wp-post-image")[0]?.attribs?.src, new URL(site.base_url));
   const group = record(product.isVariantOf);
   const parentSku = string(group.sku);

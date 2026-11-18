@@ -177,7 +177,7 @@ function isConfiguredBlogUrl(url: string, recognition: BlogRecognition): boolean
 function dateDiff(newer: string, older: string): number { return Math.floor((Date.parse(newer + "T00:00:00Z") - Date.parse(older + "T00:00:00Z")) / 86400000); }
 
 interface Parsed { page: SeoPage; doc: HtmlNode; links: { url: string; anchor: string; nofollow: boolean }[]; hreflangProblems: string[]; lastmod?: string }
-interface FetchData { status: number; body: string; url: string; redirects: string[]; ms: number; xRobotsTag: string | null }
+interface FetchData { status: number; body: string; url: string; redirects: string[]; ms: number; xRobotsTag: string | null; totalPages: number | null }
 
 function schemaTypeName(value: unknown): string {
   return typeof value === "string" ? value.toLowerCase().split(/[\/#:]/).filter(Boolean).at(-1) ?? "" : "";
@@ -197,7 +197,7 @@ function hasProductDocument(root: HtmlNode): boolean {
   const headings = [...walk(root, (node) => node.name === "h1" || node.name === "title", OMIT).map((node) => text(node).toLowerCase().trim())];
   const schemaNamesMatch = ld.some((item) => typeof item.name === "string" && headings.includes(item.name.toLowerCase().trim()));
   const productMain = hasClass(root, /^(product-info-main|product-view)$/);
-  const productMedia = hasClass(root, /^(gallery-placeholder|fotorama|product-gallery)$/)
+  const productMedia = hasClass(root, /^(gallery-placeholder|fotorama|product-gallery|woocommerce-product-gallery)$/)
     || walk(root, (node) => classTokens(node).includes("product") && classTokens(node).includes("media"), OMIT).length > 0;
   const productPrice = hasClass(root, /^(price-box|product-info-price)$/)
     || walk(root, (node) => !!attr(node, "data-role")?.toLowerCase().includes("pricebox"), OMIT).length > 0;
@@ -213,6 +213,7 @@ function hasBlogDocument(root: HtmlNode): boolean {
   if (articles.some((item) => typeof item.headline === "string" && headings.includes(item.headline.toLowerCase().trim()))) return true;
   const hasPostClass = hasClass(root, /^(amblog-post|post-view|blog-post|post-content)$/);
   if (hasPostClass && walk(root, (node) => node.name === "h1", OMIT).length > 0) return true;
+  if (hasClass(root, /^(single-post|type-post)$/) && walk(root, (node) => node.name === "h1", OMIT).length > 0) return true;
   return walk(root, (node) => node.name === "article", OMIT).length > 0
     && (meta(root, "article:published_time") !== null || articles.length > 0);
 }
@@ -293,7 +294,9 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
       target = next;
     }
     if (!response) throw new Error("fetch returned no response");
-    return { status: response.status, body: await response.text(), url: target, redirects, ms: Date.now() - started, xRobotsTag: response.headers.get("x-robots-tag") };
+    const pages = Number(response.headers.get("x-wp-totalpages"));
+    return { status: response.status, body: await response.text(), url: target, redirects, ms: Date.now() - started,
+      xRobotsTag: response.headers.get("x-robots-tag"), totalPages: Number.isInteger(pages) && pages > 0 ? pages : null };
   };
   const sitemap = async (input: string, depth = 0, isBlogSitemap = false, isCategorySitemap = false): Promise<void> => {
     const url = cleanUrl(input);
@@ -327,13 +330,36 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
   for (const url of config.content?.blog_sitemaps ?? []) await sitemap(url, 0, true);
   for (const url of config.sitemaps ?? []) await sitemap(url);
   const origin = new URL(config.base_url).origin;
+  const maximum = Math.max(1, Number(config.crawl.max_pages ?? 2000));
+  if ((config.platform === "wordpress" || config.platform === "woocommerce")
+    && !config.content?.blog_sitemaps?.length && !blogUrls.size) {
+    for (let page = 1; page <= Math.min(20, maximum); page += 1) {
+      const endpoint = new URL("wp-json/wp/v2/posts", config.base_url.replace(/\/$/u, "") + "/");
+      endpoint.searchParams.set("per_page", "100");
+      endpoint.searchParams.set("page", String(page));
+      endpoint.searchParams.set("_fields", "link");
+      try {
+        const response = await request(endpoint.href);
+        if (response.status < 200 || response.status >= 300) break;
+        const posts: unknown = JSON.parse(response.body);
+        if (!Array.isArray(posts)) break;
+        for (const post of asObjects(posts)) {
+          const url = typeof post.link === "string" ? cleanUrl(post.link) : null;
+          if (!url || new URL(url).origin !== origin || pattern(url, config.crawl.exclude_url_patterns)) continue;
+          urls.set(url, urls.get(url) ?? "");
+          blogUrls.add(url);
+          if (blogUrls.size >= maximum) break;
+        }
+        if (blogUrls.size >= maximum || (response.totalPages ? page >= response.totalPages : posts.length < 100)) break;
+      } catch { break; /* REST is an optional fallback; Sitemap and DOM results remain usable. */ }
+    }
+  }
   for (const item of wooCategories) {
     const page = typeof item.permalink === "string" ? cleanUrl(item.permalink) : null;
     if (!page || new URL(page).origin !== origin || pattern(page, config.crawl.exclude_url_patterns)) continue;
     urls.set(page, urls.get(page) ?? "");
     categoryUrls.add(page);
   }
-  const maximum = Math.max(1, Number(config.crawl.max_pages ?? 2000));
   const rows: Parsed[] = [];
   for (const [url, lastmod] of [...urls.entries()].slice(0, maximum)) {
     try {
@@ -451,7 +477,7 @@ function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, d
   return result;
 }
 
-function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, skus: JsonObject[]): BlogPost[] {
+function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, skus: JsonObject[], outOfStockUrls: ReadonlySet<string>): BlogPost[] {
   return rows.flatMap(({ page, doc, links, lastmod }) => {
     if (page.page_type !== "blog" || page.status_code >= 400) return [];
     const ld = jsonLd(doc);
@@ -465,6 +491,8 @@ function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, s
     const tags = walk(doc, (n) => n.name === "meta" && attr(n, "property")?.toLowerCase() === "article:tag")
       .map((n) => attr(n, "content")).filter((value): value is string => !!value).sort(compareKeys);
     const productHandles = new Map(skus.map((sku) => [cleanUrl(String(sku.url ?? "")) ?? "", String(sku.handle ?? "")]));
+    const outOfStock = [...new Set(productLinks.filter((url) => outOfStockUrls.has(url))
+      .map((url) => productHandles.get(url) ?? urlSlug(url)))].sort(compareKeys);
     const publishedDay = isoDay(published, date);
     const wordCount = page.word_count;
     return [{
@@ -478,11 +506,12 @@ function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, s
       featured_image: cleanUrl(meta(doc, "og:image") ?? "", page.url), primary_keyword: meta(doc, "keywords"),
       links_internal: [...new Set(internal)].sort(compareKeys),
       links_products: [...new Set(productLinks.map((url) => productHandles.get(cleanUrl(url) ?? "") ?? urlSlug(url)))].sort(compareKeys),
+      ...(outOfStock.length ? { linked_out_of_stock: outOfStock } : {}),
       links_in: rows.filter((row) => row.links.some((link) => link.url === page.url)).length, last_crawled: date,
     }];
   });
 }
-function productDetails(rows: Parsed[], date: string): ProductDetails[] {
+function productDetails(rows: Parsed[], date: string, storeGalleries: ReadonlyMap<string, string[]> = new Map()): ProductDetails[] {
   const result = rows.flatMap(({ page, doc, links }) => {
     if (page.page_type !== "product") return [];
     const ld = jsonLd(doc);
@@ -499,16 +528,17 @@ function productDetails(rows: Parsed[], date: string): ProductDetails[] {
     const crumbs = jsonCrumbs.length ? jsonCrumbs : htmlCrumbs;
     const galleryRoot = walk(doc, (node) => {
       const classes = classTokens(node);
-      return classes.some((name) => /^(gallery-placeholder|fotorama|product-gallery)$/.test(name))
+      return classes.some((name) => /^(gallery-placeholder|fotorama|product-gallery|woocommerce-product-gallery)$/.test(name))
         || (classes.includes("product") && classes.includes("media"));
     }, OMIT)[0] ?? doc;
     const htmlImages = walk(galleryRoot, (node) => node.name === "img", OMIT).flatMap((node) => {
-      const source = attr(node, "data-zoom-image") ?? attr(node, "data-large-image") ?? attr(node, "data-src")
+      const source = attr(node, "data-zoom-image") ?? attr(node, "data-large_image") ?? attr(node, "data-large-image") ?? attr(node, "data-src")
         ?? attr(node, "data-original") ?? attr(node, "src") ?? attr(node, "srcset")?.split(/\s|,/)[0] ?? null;
       return source ? [source] : [];
     });
     const imageValues = [
       ...htmlImages,
+      ...(storeGalleries.get(page.url) ?? []),
       ...asList(product.image).flatMap((value) => {
         if (typeof value === "string") return [value];
         if (value && typeof value === "object") {
@@ -601,6 +631,32 @@ async function wooCategoryApi(config: SiteConfig): Promise<JsonObject[]> {
     } catch { return []; }
   }
   return [];
+}
+async function wooProductGalleries(config: SiteConfig): Promise<Map<string, string[]>> {
+  const galleries = new Map<string, string[]>();
+  const origin = new URL(config.base_url).origin;
+  for (let page = 1; page <= 50; page += 1) {
+    const url = new URL("wp-json/wc/store/v1/products", config.base_url.replace(/\/$/u, "") + "/");
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("per_page", "100");
+    try {
+      const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(12_000) });
+      if (!response.ok) break;
+      const payload: unknown = await response.json();
+      if (!Array.isArray(payload)) break;
+      for (const item of asObjects(payload)) {
+        const permalink = typeof item.permalink === "string" ? cleanUrl(item.permalink) : null;
+        if (!permalink || new URL(permalink).origin !== origin) continue;
+        const images = asObjects(item.images).flatMap((image) => typeof image.src === "string"
+          ? [cleanUrl(image.src)].filter((source): source is string => !!source) : []);
+        const existing = galleries.get(permalink) ?? [];
+        galleries.set(permalink, [...new Set([...existing, ...images])]);
+      }
+      const total = Number(response.headers.get("x-wp-totalpages"));
+      if (Number.isInteger(total) && total > 0 ? page >= total : payload.length < 100) break;
+    } catch { break; /* Page gallery remains the fallback when Store API is unavailable. */ }
+  }
+  return galleries;
 }
 function wooCategories(config: SiteConfig, rows: Parsed[], skus: JsonObject[], stock: JsonObject[], date: string,
   sitemapUrls: ReadonlySet<string>, api: readonly JsonObject[]): Category[] {
@@ -720,6 +776,18 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     return { status: "failed", counts: {}, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
   const oldIssues = selected.includes("issues") ? await readJsonl(path.join(projectPath, paths.seoIssues)) as unknown as SeoIssue[] : [];
   const issues = selected.includes("issues") ? makeIssues(rows, oldIssues, config, date) : [];
+  const stock = config.platform === "woocommerce" ? await readJsonl(path.join(projectPath, paths.inventoryLatest)) : [];
+  const stockBySku = new Map(stock.map((item) => [item.sku, item.stock_status]));
+  const productStocks = new Map<string, unknown[]>();
+  for (const sku of skuRows) {
+    const url = cleanUrl(String(sku.url ?? ""));
+    const status = stockBySku.get(sku.sku);
+    if (url) productStocks.set(url, [...(productStocks.get(url) ?? []), status ?? "unknown"]);
+  }
+  const outOfStockUrls = new Set([...productStocks].filter(([, statuses]) =>
+    statuses.length && statuses.every((status) => status === "out_of_stock")).map(([url]) => url));
+  const storeGalleries = config.platform === "woocommerce" && selected.includes("product_details")
+    ? await wooProductGalleries(config) : new Map<string, string[]>();
   const output = async (step: WeeklyStep, relative: string, data: object[], schema: string, counts: Record<string, number>) => {
     if (!selected.includes(step)) return;
     options.onProgress?.(step, "正在生成 " + step);
@@ -731,11 +799,10 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
   await output("pages", paths.seoPages, rows.map((row) => ({ ...row.page, links_internal_in: rows.reduce((n, candidate) => n + candidate.links.filter((link) => link.url === row.page.url).length, 0) })), "seo_page", counts);
   await output("issues", paths.seoIssues, issues, "seo_issue", counts);
   await output("links", paths.seoLinks, linkRows(rows, productUrls, blog), "seo_link", counts);
-  await output("blog", paths.blogIndex, blogs(rows, date, productUrls, skuRows), "blog_post", counts);
-  await output("product_details", paths.productDetails, productDetails(rows, date), "product_details", counts);
+  await output("blog", paths.blogIndex, blogs(rows, date, productUrls, skuRows, outOfStockUrls), "blog_post", counts);
+  await output("product_details", paths.productDetails, productDetails(rows, date, storeGalleries), "product_details", counts);
   if (selected.includes("categories")) {
     options.onProgress?.("categories", "正在生成 categories");
-    const stock = config.platform === "woocommerce" ? await readJsonl(path.join(projectPath, paths.inventoryLatest)) : [];
     const data = config.platform === "woocommerce"
       ? wooCategories(config, rows, skuRows, stock, date, crawlResult.categoryUrls, wooApi)
       : categories(config, rows, skuRows, date);

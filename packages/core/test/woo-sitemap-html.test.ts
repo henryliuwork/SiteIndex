@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import type { SiteConfig } from "@siteindex/shared";
 import { collectWooSitemapHtml } from "../src/crawl/woo-sitemap-html";
 
@@ -9,6 +11,23 @@ const site: Pick<SiteConfig, "base_url" | "currency" | "sitemaps" | "crawl"> = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("WooCommerce Sitemap and HTML fallback", () => {
+  it("uses the full Woo gallery image as the fallback snapshot main image", async () => {
+    const fixture = path.resolve("fixtures/woocommerce-v065");
+    const html = (await readFile(path.join(fixture, "product-page.html"), "utf8"))
+      .replace('src="https://shop.example.test/media/sample-lamp.jpg"',
+        'data-large_image="https://shop.example.test/media/sample-lamp-full.jpg" src="https://shop.example.test/media/sample-lamp-thumb.jpg"');
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.pathname === "/sitemap_index.xml")
+        return new Response(`<sitemapindex><sitemap><loc>https://shop.example.test/product-sitemap.xml</loc></sitemap></sitemapindex>`);
+      if (url.pathname === "/product-sitemap.xml")
+        return new Response(`<urlset><url><loc>https://shop.example.test/product/sample-lamp/</loc></url></urlset>`);
+      return new Response(html);
+    }));
+    const result = await collectWooSitemapHtml(site);
+    expect(result.rows[0]).toMatchObject({ image_url: "https://shop.example.test/media/sample-lamp-full.jpg" });
+  });
+
   it("uses the product child sitemap, Product JSON-LD and WooCommerce DOM while skipping unpriced products", async () => {
     const requested: string[] = [];
     const pages: Record<string, string> = {
