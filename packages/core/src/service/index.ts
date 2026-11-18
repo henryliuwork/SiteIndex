@@ -2738,11 +2738,25 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       } else {
         sourceRows = activeSkus.map((sku) => imageRowForSku(sku, latestBySku, manualBySku, priority));
       }
+      const galleries = new Map(snapshot.productDetails.map((detail) => [detail.handle, detail.gallery]));
+      const validImage = (value: string | null): string | null => {
+        if (!value) return null;
+        try {
+          const url = new URL(value);
+          return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+        } catch { return null; }
+      };
       const tagsBySku = latestLedgerRows(snapshot.skuTags, "sku");
       const tiers = configuredDiscountTiers(snapshot.config.edm?.discount_tiers);
-      const rows = sourceRows.map((row) => ({
-        ...row, discount_tier: selectedTier(tagsBySku.get(row.sku)?.discount_tier, tiers),
-      })).filter((row) => {
+      const rows = sourceRows.map((row) => {
+        const handle = skuById.get(row.sku)?.handle
+          ?? childrenByParent.get(row.sku)?.map((child) => skuById.get(child)?.handle).find((value) => !!value);
+        const first = row.used === "feed" ? row.feed_image_url : row.used === "manual" ? row.manual_image_url : null;
+        const gallery = [...new Set([first, ...(handle ? galleries.get(handle) ?? [] : [])]
+          .map(validImage).filter((url): url is string => !!url))];
+        return { ...row, discount_tier: selectedTier(tagsBySku.get(row.sku)?.discount_tier, tiers),
+          ...(gallery.length > 1 ? { gallery_urls: gallery } : {}) };
+      }).filter((row) => {
         if (query.filters?.view === "in_stock") return row.stock_status === "in_stock";
         if (query.filters?.view === "no_feed") return row.feed_image_url === null;
         if (query.filters?.view === "has_manual") return row.manual_image_url !== null;
