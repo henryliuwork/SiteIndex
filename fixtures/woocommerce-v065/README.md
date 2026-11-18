@@ -18,3 +18,12 @@ server return each payload with its declared status and content type.
 
 `routes.json` records synthetic GET responses, including status codes. The
 403/404 responses are intentional test cases. No external requests are needed.
+
+For a local precheck, run `node fixtures/woocommerce-v065/loopback-server.mjs <work-dir>`
+from the repository root after creating `<work-dir>` outside the repository.
+The server binds only `127.0.0.1`, writes its random port to `port.txt`, and
+records request totals by path in `requests.json`. It serves GET requests only
+and rewrites the fixture's invented shop origin to its loopback origin in memory.
+Write `store_api`, `api_forbidden`, or `api_missing` to `mode.txt` to select the
+public product endpoint response. Stop the server after the precheck. The
+`product-kit-page.html` route gives the Sitemap fallback a second product page.
