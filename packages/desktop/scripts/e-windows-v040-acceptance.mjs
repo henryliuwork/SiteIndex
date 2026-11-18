@@ -69,6 +69,10 @@ const LOOPBACK_DAILY_ABSENT_SKU = "SYN-DAILY-ABSENT";
 const LOOPBACK_DAILY_FEED_SKU = "SYN-DAILY-FEED";
 const LOOPBACK_MEDIA_PROJECT_ID = "synthetic-media-job";
 const LOOPBACK_MEDIA_SKU = "SYN-MEDIA-001";
+const WOO_STORE_PROJECT_ID = "synthetic-woo-store";
+const WOO_FALLBACK_PROJECT_ID = "synthetic-woo-fallback";
+const WOO_CLI_PROJECT_ID = "synthetic-woo-cli";
+const WOO_CATEGORY_RULE = "/shop/{slug},/gear/{slug}";
 const LOOPBACK_MEDIA_WEBP = Buffer.from("UklGRi4AAABXRUJQVlA4TCEAAAAvAUAAEB8w/wKCIv9HCwFB0XXLBXwU1LRtwOI36YjofxwA", "base64");
 const HOSTED_WINDOWS_ACCEPTANCE_ARGUMENT = "--siteindex-hosted-acceptance";
 const W2_EXPECTED = W2_SYNTHETIC_EXPECTED;
@@ -207,6 +211,7 @@ const report = {
   installedLoopbackJobs: {
     daily: { status: "not-run", feedRequests: 0, graphqlRequests: 0, progressEvents: 0 },
     media: { status: "not-run", sourceImageRequests: 0, wordpressMediaLookups: 0, wordpressUploads: 0, progressEvents: 0 },
+    woo: { status: "not-run", storeApiRequests: 0, fallbackSitemapRequests: 0, cliExitCode: null },
   },
   traceEnvironmentPassedToSpawn: false,
   visualEvidence: null,
@@ -3469,10 +3474,13 @@ async function runInstalledJob(page, request) {
     const onProgress = api.jobs.onProgress((event) => progress.push(event.runId));
     let timeout;
     try {
-      const started = input.job === "media"
-        ? await api.media.prepare({ project: input.projectId, skus: [input.sku] })
-        : await api.jobs.run({ projectPath: input.projectPath, job: input.job, date: "2026-11-12" });
+      const started = input.job === "create"
+        ? await api.projects.create(input.createInput)
+        : input.job === "media"
+          ? await api.media.prepare({ project: input.projectId, skus: [input.sku] })
+          : await api.jobs.run({ projectPath: input.projectPath, job: input.job, date: input.date ?? "2026-11-12" });
       expectedRunId = started.runId;
+      if (input.job === "create") await api.projects.updateConfig(started.id, { schedule: input.disabledSchedule });
       const alreadyFinished = completed.find((result) => result.runId === expectedRunId);
       const result = alreadyFinished ?? await new Promise((resolve, reject) => {
         resolveExpected = resolve;
@@ -3480,9 +3488,11 @@ async function runInstalledJob(page, request) {
       });
       return {
         job: result.job,
+        createdId: "id" in started ? started.id : null,
         status: result.status,
         exitCode: result.exitCode,
         counts: result.counts ?? {},
+        steps: Array.isArray(result.steps) ? result.steps.map((step) => ({ key: step.key, status: step.status })) : [],
         mediaStatuses: Array.isArray(result.media_results) ? result.media_results.map((item) => item.status) : [],
         progressEvents: progress.filter((runId) => runId === expectedRunId).length,
       };
@@ -3571,6 +3581,175 @@ async function testInstalledLoopbackJobs(page, syntheticSite) {
       await page.evaluate((origin) => window.siteindexWindow.wordpressCredentials.clear(origin), fakeWordPress.origin).catch(() => undefined);
     }
     await Promise.allSettled([dailyGraphql.close(), fakeWordPress.close()]);
+  }
+}
+
+async function startWooLoopback() {
+  const workDir = path.join(TEST_ROOT, "synthetic-woo-loopback");
+  await mkdir(workDir, { recursive: true });
+  const modeFile = path.join(workDir, "mode.txt");
+  await writeFile(modeFile, "store_api", "utf8");
+  const fixtureScript = path.resolve("fixtures", "woocommerce-v065", "loopback-server.mjs");
+  const child = spawn(process.execPath, [fixtureScript, workDir], {
+    cwd: path.resolve("."), env: isolatedProcessEnvironment(), windowsHide: true, stdio: "ignore",
+  });
+  let launchError = null;
+  child.once("error", (error) => { launchError = error; });
+  const portFile = path.join(workDir, "port.txt");
+  let port = 0;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (launchError || child.exitCode !== null) break;
+    if (await exists(portFile)) {
+      port = Number((await readFile(portFile, "utf8")).trim());
+      if (Number.isInteger(port) && port > 0) break;
+    }
+    await delay(100);
+  }
+  if (!port) {
+    child.kill();
+    throw new Error(`Synthetic WooCommerce loopback did not start (${launchError ? "spawn error" : "no port"}).`);
+  }
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    setMode: (mode) => writeFile(modeFile, mode, "utf8"),
+    metrics: async () => {
+      const metricsFile = path.join(workDir, "requests.json");
+      return await exists(metricsFile) ? JSON.parse(await readFile(metricsFile, "utf8")) : { total: 0, byPath: {} };
+    },
+    close: async () => {
+      if (child.exitCode !== null) return;
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 5_000);
+        child.once("exit", () => { clearTimeout(timeout); resolve(); });
+        child.kill();
+      });
+    },
+  };
+}
+
+async function readWooRows(projectPath, relativePath) {
+  const content = await readFile(path.join(projectPath, relativePath), "utf8");
+  return content.trim() ? content.trim().split(/\r?\n/u).map((line) => JSON.parse(line)) : [];
+}
+
+async function inspectWooProject(page, projectId, projectPath) {
+  const [skus, stockView, productsView, categories, blog, seo] = await Promise.all([
+    readWooRows(projectPath, "index/catalog/skus.jsonl"),
+    readWooRows(projectPath, "index/views/sku_stock.jsonl"),
+    readWooRows(projectPath, "index/views/products.jsonl"),
+    readFile(path.join(projectPath, "index/catalog/categories.json"), "utf8").then(JSON.parse),
+    readWooRows(projectPath, "index/content/blog_index.jsonl"),
+    readWooRows(projectPath, "index/seo/pages.jsonl"),
+  ]);
+  const ipc = await page.evaluate(async (id) => {
+    const api = window.siteindex;
+    const query = { page: 1, pageSize: 20, filters: {} };
+    const [products, stock, content, seoPages, design] = await Promise.all([
+      api.products.list(id, query), api.inventory.listSkus(id, query),
+      api.content.listBlog(id, query), api.seo.listPages(id, query), api.design.get(id),
+    ]);
+    return {
+      products: products.total, stock: stock.total, blog: content.total, seo: seoPages.total,
+      designLoaded: design.tokens !== null,
+    };
+  }, projectId);
+  return {
+    skuCount: skus.length,
+    variants: skus.filter((row) => row.parent_sku === "DEMO-WC-LAMP").length,
+    stockRows: stockView.length,
+    productRows: productsView.length,
+    categorySlugs: categories.map((row) => row.slug),
+    blogRows: blog.length,
+    seoRows: seo.length,
+    ipc,
+  };
+}
+
+async function testInstalledWooLoopback(page) {
+  currentStage = "installed WooCommerce no-Feed IPC and CLI loopback acceptance";
+  const loopback = await startWooLoopback();
+  const jobDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const makeCreateInput = (folderName) => ({
+    url: loopback.origin,
+    feed_urls: [],
+    auto_collect_products: true,
+    categories: { mode: "url_rule", url_pattern: WOO_CATEGORY_RULE },
+    sku_field: "id", category_depth: 2, missing_as: "out_of_stock",
+    brand: { name: "Synthetic WooCommerce shop" }, markets: ["US"],
+    projects_root: PROJECTS_ROOT, folder_name: folderName, workspace_folders: [],
+  });
+  try {
+    for (const [mode, projectId] of [["store_api", WOO_STORE_PROJECT_ID], ["api_forbidden", WOO_FALLBACK_PROJECT_ID]]) {
+      await loopback.setMode(mode);
+      const before = await loopback.metrics();
+      const projectPath = path.join(PROJECTS_ROOT, projectId);
+      const created = await runInstalledJob(page, {
+        job: "create", createInput: makeCreateInput(projectId), disabledSchedule: disabledSchedule(),
+      });
+      const config = JSON.parse(await readFile(path.join(projectPath, "index/site.json"), "utf8"));
+      const initSteps = Object.fromEntries(created.steps.map((step) => [step.key, step.status]));
+      assert(created.createdId === projectId && created.job === "init" && created.status === "ok"
+        && created.exitCode === 0 && created.progressEvents > 0
+        && ["daily", "weekly", "views"].every((key) => initSteps[key] === "ok")
+        && initSteps.schedule === "skipped"
+        && config.crawl.auto_collect_products === true && config.crawl.feed_url.length === 0
+        && config.categories.url_pattern === WOO_CATEGORY_RULE,
+      `installed projects.create initializes no-Feed WooCommerce through packaged IPC (${mode})`, {
+        status: created.status, exitCode: created.exitCode, progressEvents: created.progressEvents, initSteps,
+        autoCollect: config.crawl.auto_collect_products, feedCount: config.crawl.feed_url.length,
+        multiPrefixCategories: config.categories.url_pattern === WOO_CATEGORY_RULE,
+      });
+
+      const jobs = {};
+      for (const job of ["daily", "weekly", "design", "views"]) {
+        const result = await runInstalledJob(page, { job, projectPath, date: jobDate });
+        jobs[job] = result.status;
+        assert(result.job === job && result.status === "ok" && result.exitCode === 0 && result.progressEvents > 0,
+          `installed WooCommerce ${job} Job finishes through packaged IPC (${mode})`, {
+            status: result.status, exitCode: result.exitCode, progressEvents: result.progressEvents,
+          });
+      }
+      const data = await inspectWooProject(page, projectId, projectPath);
+      const traffic = await loopback.metrics();
+      const apiRequests = (traffic.byPath["/wp-json/wc/store/v1/products"] ?? 0)
+        - (before.byPath["/wp-json/wc/store/v1/products"] ?? 0);
+      const sitemapRequests = (traffic.byPath["/product-sitemap.xml"] ?? 0)
+        - (before.byPath["/product-sitemap.xml"] ?? 0);
+      assert(apiRequests > 0 && (mode === "store_api" || sitemapRequests > 0)
+        && data.skuCount === 3 && data.variants === 2
+        && data.stockRows >= 3 && data.productRows >= 2
+        && data.categorySlugs.includes("lighting") && data.categorySlugs.includes("outdoor")
+        && data.blogRows > 0 && data.seoRows > 0
+        && data.ipc.products > 0 && data.ipc.stock > 0 && data.ipc.blog > 0
+        && data.ipc.seo > 0 && data.ipc.designLoaded,
+      `installed WooCommerce ${mode} produces catalog, inventory, categories, content, SEO and design data`, {
+        ...data, apiRequests, sitemapRequests, jobs,
+      });
+      report.installedLoopbackJobs.woo[mode] = { ...data, apiRequests, sitemapRequests, jobs };
+    }
+
+    await loopback.setMode("store_api");
+    const cliPath = path.join(INSTALL_DIR, "resources", "cli.js");
+    const cliProjectPath = path.join(PROJECTS_ROOT, WOO_CLI_PROJECT_ID);
+    const cli = spawnSync(path.join(INSTALL_DIR, "SiteIndex.exe"), [cliPath, "init", cliProjectPath,
+      "--url", loopback.origin, "--auto-collect", "--category-rule", WOO_CATEGORY_RULE, "--json"], {
+      encoding: "utf8", windowsHide: true, timeout: 180_000, cwd: TEST_ROOT,
+      env: isolatedProcessEnvironment({ ELECTRON_RUN_AS_NODE: "1" }),
+    });
+    let output = null;
+    try { output = JSON.parse(cli.stdout.trim()); } catch { /* Invalid output fails below. */ }
+    const cliSkus = await readWooRows(cliProjectPath, "index/catalog/skus.jsonl");
+    report.installedLoopbackJobs.woo = {
+      ...report.installedLoopbackJobs.woo, status: "ok", cliExitCode: cli.status,
+    };
+    assert(!cli.error && cli.status === 0 && output?.ok === true && output?.data?.init?.status === "ok"
+      && cliSkus.length === 3 && cliSkus.filter((row) => row.parent_sku === "DEMO-WC-LAMP").length === 2,
+    "installed CLI --auto-collect initializes a synthetic no-Feed WooCommerce project", {
+      exitCode: cli.status, parsed: output !== null, initStatus: output?.data?.init?.status ?? null,
+      skuCount: cliSkus.length,
+    });
+  } finally {
+    await loopback.close();
   }
 }
 
@@ -3797,6 +3976,7 @@ async function main() {
   });
   page = await testWordPressCredentialIsolation(page);
   await testInstalledLoopbackJobs(page, syntheticSite);
+  await testInstalledWooLoopback(page);
   await safeCandidateScreenshot(page);
 }
 
@@ -3867,6 +4047,7 @@ async function writeReport() {
     `- Offline packaged fonts: ${report.packagedFonts ? JSON.stringify(report.packagedFonts) : "not checked"}`,
     `- Known-cloud --run-job: ${report.cloudRunJob ? JSON.stringify(report.cloudRunJob) : "not checked"}`,
     `- Installed loopback Jobs: daily ${report.installedLoopbackJobs.daily.status} (${report.installedLoopbackJobs.daily.feedRequests} feed, ${report.installedLoopbackJobs.daily.graphqlRequests} GraphQL); media ${report.installedLoopbackJobs.media.status} (${report.installedLoopbackJobs.media.wordpressUploads} upload)`,
+    `- Installed WooCommerce no-Feed loopback: ${report.installedLoopbackJobs.woo.status}; CLI exit ${report.installedLoopbackJobs.woo.cliExitCode ?? "not run"}`,
     `- Screenshot: ${report.visualEvidence?.screenshotCreated ? "created" : report.visualEvidence?.reason ?? "not available"}`,
     "- Data: synthetic runner-only project; no real project or customer data used.",
     "",
