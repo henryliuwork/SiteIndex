@@ -192,7 +192,8 @@ function findCell(row: HTMLElement, headerName: string): string | undefined {
 describe("合并后的产品管理表", () => {
   it("无 Feed 自动采集已配置时不提示商品来源未配置", async () => {
     await renderProductsPage({ feedlessCollection: true });
-    expect(await screen.findByText("无 Feed 商品采集已配置")).toBeTruthy();
+    expect(await screen.findByText("无 Feed 自动采集已启用")).toBeTruthy();
+    expect(screen.getByText("首次及每日同步优先使用 WooCommerce Store API；失败时回退商品 Sitemap/HTML。")).toBeTruthy();
     expect(screen.queryByText(/未配置商品来源|每日库存同步未启用/)).toBeNull();
   }, 15_000);
 

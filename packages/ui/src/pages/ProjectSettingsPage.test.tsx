@@ -83,7 +83,8 @@ describe("项目设置单页区块", () => {
     const { updateConfig } = await renderSettings("/p/demo2/settings/config?section=crawl");
     const toggle = await screen.findByRole("checkbox", { name: "无 Feed 时自动采集商品" }) as HTMLInputElement;
     expect(toggle.checked).toBe(false);
-    expect(screen.getByRole("button", { name: "自动采集商品说明" })).toBeTruthy();
+    fireEvent.focus(screen.getByRole("button", { name: "自动采集商品说明" }));
+    expect((await screen.findByRole("tooltip")).textContent).toContain("无 Feed 同步优先使用 WooCommerce Store API；不可用时回退商品 Sitemap/HTML。");
     fireEvent.click(toggle);
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
     await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", expect.objectContaining({

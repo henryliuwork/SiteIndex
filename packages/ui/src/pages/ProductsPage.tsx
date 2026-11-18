@@ -431,7 +431,7 @@ export function ProductsPage() {
     />
     <ProjectTabPanel projectId={project.id} tab="products">
       {syncMessage && <Notice tone="info" title="库存同步进行中">{syncMessage}</Notice>}
-      {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 商品采集已配置">当前展示最近一次同步的数据；自动采集功能待 Core 接入后生效。</Notice>}
+      {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 自动采集已启用">首次及每日同步优先使用 WooCommerce Store API；失败时回退商品 Sitemap/HTML。</Notice>}
       {!groupingEnabled && <Notice tone="warn" title="父 SKU 分组尚未启用">当前按 Core 返回的独立 SKU 展示。启用规则后，产品表会显示父 SKU 汇总。<Button size="small" onClick={() => setGroupingDrawerOpen(true)}>查看规则预览</Button></Notice>}
       {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <div className="si-inventory-kpis">{summary.kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>}
       {productListQuery.isFetching && productListQuery.data && <div className="si-inventory-query-state" role="status">正在更新产品列表…</div>}
