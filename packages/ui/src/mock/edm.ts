@@ -1,5 +1,5 @@
 import type { EdmCommandInput, ListQuery, SkuImageFilters, SiteIndexApi } from "@siteindex/shared";
-import { edmImageRows, fixtures, manualImages, mockFeedImageUrl, projectConfigs, projectKey, recordsByProject, reply, rowsByProject, selectRows } from "./context";
+import { edmImageRows, fixtures, manualImages, mockFeedImageUrl, mockGalleryUrls, projectConfigs, projectKey, recordsByProject, reply, rowsByProject, selectRows } from "./context";
 
 function imageRowsForQuery(id: Parameters<SiteIndexApi["edm"]["listImages"]>[0], parentOnly: boolean) {
   const rows = edmImageRows(id);
@@ -75,7 +75,8 @@ export function createEdmMock(): SiteIndexApi["edm"] {
       return {
         sku, title: currentRecord?.title ?? sku, variant_title: currentRecord?.variant_title ?? null,
         stock_status: stock?.stock_status ?? "unknown", feed_image_url: feed,
-        manual_image_url: url, used: url ? "manual" : feed ? "feed" : "none",
+        manual_image_url: url, gallery_urls: mockGalleryUrls(sku, index),
+        used: url ? "manual" : feed ? "feed" : "none",
       };
     }),
     buildCommand: (_id, input: EdmCommandInput) => reply("edm-builder --theme \"" + input.theme + "\" --count " + input.count + (input.promo_code ? " --promo-code \"" + input.promo_code + "\"" : "")),

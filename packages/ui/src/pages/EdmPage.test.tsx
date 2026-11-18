@@ -188,6 +188,52 @@ function mediaImageRow(sku: string, feedImageUrl: string | null, manualImageUrl:
   };
 }
 
+function enableTableRows(): void {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element): void {
+      this.callback([{ target, contentRect: { width: 800, height: 400 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  });
+}
+
+describe("EdmPage SKU 图集", () => {
+  it("在行详情展示图集，选中图片后保存为手动首图并刷新缓存", async () => {
+    enableTableRows();
+    const sku = "DEMO-GALLERY-001";
+    const urls = ["https://images.example.test/demo/front.webp", "https://images.example.test/demo/detail.webp"];
+    const row = { ...mediaImageRow(sku, null), gallery_urls: urls };
+    const { setManualImage, invalidateQueries } = await renderEdmPage(false, true, [row]);
+    fireEvent.click(await screen.findByText(row.title));
+
+    const dialog = screen.getByRole("dialog");
+    const gallery = within(dialog).getByRole("region", { name: "已抓取图片" });
+    expect(within(gallery).getAllByRole("img")).toHaveLength(2);
+    expect(within(gallery).getAllByRole("button", { name: "设为手动首图" })).toHaveLength(2);
+    fireEvent.click(within(gallery).getAllByRole("button", { name: "设为手动首图" })[1]!);
+
+    await waitFor(() => expect(setManualImage).toHaveBeenCalledWith("demo", sku, urls[1]));
+    await waitFor(() => expect(within(gallery).getByText("当前手动首图")).toBeTruthy());
+    expect(within(dialog).getByText(urls[1]!)).toBeTruthy();
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "images", "demo"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["edm", "summary", "demo"] });
+  }, 30_000);
+
+  it("旧记录没有图集时仍展示单张当前图片", async () => {
+    enableTableRows();
+    const row = mediaImageRow("DEMO-LEGACY-001", "https://images.example.test/demo/legacy.webp");
+    await renderEdmPage(false, true, [row]);
+    fireEvent.click(await screen.findByText(row.title));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("region", { name: "已抓取图片" })).toBeNull();
+    expect(within(dialog).getByRole("img", { name: row.sku + " 当前使用图片" })).toBeTruthy();
+  }, 30_000);
+});
+
 describe("EdmPage D-5", () => {
   it("显示标准 DataTable 分页与父 SKU 筛选，并向 IPC 传入 parent_only", async () => {
     const { listImages } = await renderEdmPage(true);

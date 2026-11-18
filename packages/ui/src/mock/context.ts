@@ -451,6 +451,12 @@ export function mockFeedImageUrl(record: SkuRecord): string | null {
   try { return "https://demo-store.example.test" + new URL(record.image_url).pathname; }
   catch { return record.image_url; }
 }
+export function mockGalleryUrls(sku: string, index: number): string[] | undefined {
+  return index === 0 ? [
+    `https://images.example.test/demo/${encodeURIComponent(sku)}-front.webp`,
+    `https://images.example.test/demo/${encodeURIComponent(sku)}-detail.webp`,
+  ] : undefined;
+}
 export function edmImageRows(id: ProjectId): SkuImageRow[] {
   const key = projectKey(id);
   const records = recordsByProject[key].slice(0, fixtures.skus.length);
@@ -465,7 +471,8 @@ export function edmImageRows(id: ProjectId): SkuImageRow[] {
     return {
       sku: record.sku, title: record.title, variant_title: record.variant_title,
       stock_status: stockBySku.get(record.sku) ?? "unknown", feed_image_url: feed,
-      manual_image_url: manual, used: manual ? "manual" : feed ? "feed" : "none",
+      manual_image_url: manual, gallery_urls: mockGalleryUrls(record.sku, index),
+      used: manual ? "manual" : feed ? "feed" : "none",
     };
   });
 }
