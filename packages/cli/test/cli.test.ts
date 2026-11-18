@@ -241,6 +241,39 @@ describe("siteindex CLI", () => {
     expect(methods.runJob).toHaveBeenLastCalledWith(expect.objectContaining({ job: "weekly", trigger: "cli", date: "2026-10-25", force: true, only: "links" }), expect.any(Function));
   });
 
+  it("runs a real feedless init through daily with synthetic Woo pages", async () => {
+    const base = "https://shop.example.test";
+    vi.stubGlobal("fetch", vi.fn(async (request: string | URL | Request) => {
+      const url = new URL(typeof request === "string" ? request : request instanceof URL ? request.href : request.url);
+      if (url.pathname.startsWith("/wp-json/")) return new Response("unavailable", { status: 404 });
+      if (url.pathname === "/") return new Response('<html><body class="woocommerce">Sample shop</body></html>');
+      if (url.pathname === "/robots.txt") return new Response(`Sitemap: ${base}/sitemap_index.xml`);
+      if (url.pathname === "/sitemap_index.xml")
+        return new Response(`<sitemapindex><sitemap><loc>${base}/product-sitemap.xml</loc></sitemap>
+          <sitemap><loc>${base}/post-sitemap.xml</loc></sitemap></sitemapindex>`);
+      if (url.pathname === "/product-sitemap.xml")
+        return new Response(`<urlset><url><loc>${base}/product/demo-item/</loc></url></urlset>`);
+      if (url.pathname === "/post-sitemap.xml")
+        return new Response(`<urlset><url><loc>${base}/journal/demo-post/</loc></url></urlset>`);
+      if (url.pathname === "/product/demo-item/") return new Response(`<html><head><title>Demo item</title>
+        <script type="application/ld+json">{"@type":"Product","sku":"DEMO-CLI-01","name":"Demo item",
+        "offers":{"price":"12.50","priceCurrency":"USD","availability":"InStock"}}</script></head>
+        <body class="woocommerce"><h1>Demo item</h1><a href="/journal/demo-post/">Article</a></body></html>`);
+      if (url.pathname === "/journal/demo-post/") return new Response(`<html><title>Demo post</title>
+        <script type="application/ld+json">{"@type":"BlogPosting","headline":"Demo post"}</script>
+        <body class="single-post"><article><h1>Demo post</h1><a href="/product/demo-item/">Product</a></article></body></html>`);
+      return new Response("missing", { status: 404 });
+    }));
+    const t = collect();
+    const result = await main(["init", "feedless", "--url", base, "--auto-collect", "--json"], t.io);
+    expect(result, t.stdout.at(-1)).toBe(EXIT.OK);
+    const config = JSON.parse(await readFile(path.join(tempRoot, "feedless", PATHS.site), "utf8")) as SiteConfig;
+    expect(config.crawl.feed_url).toEqual([]);
+    expect(config.crawl.auto_collect_products).toBe(true);
+    const skus = await readFile(path.join(tempRoot, "feedless", PATHS.skus), "utf8");
+    expect(skus).toContain("DEMO-CLI-01");
+  }, 60_000);
+
   it("passes a caller-selected browser path to design and index-check jobs", async () => {
     await copyFixtureProject();
     const seoPagesPath = path.join(projectPath, PATHS.seoPages);
