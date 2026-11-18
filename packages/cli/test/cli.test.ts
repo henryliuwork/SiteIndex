@@ -216,6 +216,16 @@ describe("siteindex CLI", () => {
     const input = methods.projects.create.mock.calls[0]?.[0] as CreateProjectInput;
     expect(input.folder_name).toBe("new-shop");
     expect(input.workspace_folders).toEqual([]);
+    expect(await main(["init", "auto-shop", "--url", "https://example.test", "--auto-collect",
+      "--category-rule", "/shop/{slug}", "--json"], t.io)).toBe(EXIT.OK);
+    expect(methods.projects.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      feed_urls: [], auto_collect_products: true, categories: { mode: "url_rule", url_pattern: "/shop/{slug}" },
+    }));
+    expect(methods.runJob).toHaveBeenCalledWith(expect.objectContaining({ job: "init", trigger: "cli",
+      projectPath: path.join(tempRoot, "auto-shop") }), expect.any(Function));
+    const missing = collect(service);
+    expect(await main(["init", "no-feed", "--url", "https://example.test", "--json"], missing.io)).toBe(EXIT.BAD_ARGS);
+    expect(parseEnvelope(missing.stdout[0]!).error?.message).toContain("--feed 或 --auto-collect");
     expect(await main(["init", "new-shop", "--url", "https://example.test", "--feed", "https://example.test/feed.xml", "--folders", "seo", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
 
     expect(await main(["feed", "inspect", "kingsyard", "--json"], t.io)).toBe(EXIT.OK);

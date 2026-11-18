@@ -154,7 +154,7 @@ async function writeEdmIndexNoClobber(outputPath: string, content: string): Prom
   }
 }
 
-const BOOLEAN_OPTIONS = new Set(["allow-oos", "force", "json", "repair", "parent-only", "include-excluded"]);
+const BOOLEAN_OPTIONS = new Set(["allow-oos", "force", "json", "repair", "parent-only", "include-excluded", "auto-collect"]);
 const QUERY_CONTROL_OPTIONS = new Set(["page", "size", "search", "sort", "order"]);
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -374,6 +374,7 @@ async function createRuntime(io: CliIO, browserExecutablePath?: string, projectP
 
 function outputHelp(): string {
   return "用法: " + CLI_BIN + " <命令> [参数]\n命令: " + [...CLI_COMMANDS.filter((command) => command !== "folders"), "mcp"].join(", ")
+    + "\ninit <dir> --url <url> (--feed <url> | --auto-collect) [--category-rule <pattern>]"
     + "\n运行 design / index-check 时使用 --browser <Chrome/Edge 可执行文件路径>。";
 }
 
@@ -662,17 +663,22 @@ async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
   }
 
   if (command === "init") {
-    const dir = requiredArg(rest, 0, "init <dir> --url <url> --feed <url>");
+    const dir = requiredArg(rest, 0, "init <dir> --url <url> (--feed <url> | --auto-collect)");
     const url = option(parsed.options, "url");
     const feed = option(parsed.options, "feed");
-    if (!url || !feed) throw new CliError("BAD_ARGS", "init 必须提供 --url 和 --feed。");
+    const autoCollect = booleanOption(parsed.options, "auto-collect");
+    if (!url || (!feed && !autoCollect)) throw new CliError("BAD_ARGS", "init 必须提供 --url，并提供 --feed 或 --auto-collect。");
+    const categoryRule = option(parsed.options, "category-rule");
+    if (parsed.options.has("category-rule") && !categoryRule?.trim()) throw new CliError("BAD_ARGS", "--category-rule 不能为空。");
     const simpleName = !path.isAbsolute(dir) && !dir.includes("/") && !dir.includes("\\") && dir !== "." && dir !== "..";
     const targetPath = path.resolve(runtime.cwd, dir);
     const folderName = path.basename(targetPath);
     const missingAs = option(parsed.options, "missing-as") || "out_of_stock";
     if (missingAs !== "out_of_stock" && missingAs !== "removed") throw new CliError("BAD_ARGS", "--missing-as 只能是 out_of_stock 或 removed。");
     const input: CreateProjectInput = {
-      url, feed_urls: feed.split(",").map((item) => item.trim()).filter(Boolean),
+      url, feed_urls: feed ? feed.split(",").map((item) => item.trim()).filter(Boolean) : [],
+      ...(autoCollect ? { auto_collect_products: true } : {}),
+      ...(categoryRule ? { categories: { mode: "url_rule" as const, url_pattern: categoryRule } } : {}),
       sku_field: option(parsed.options, "sku-field") || "id",
       category_depth: parseInteger(option(parsed.options, "category-depth"), 1, "--category-depth", 1),
       missing_as: missingAs,
@@ -683,7 +689,13 @@ async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
       workspace_folders: [], // shared 的旧字段仍必填，core 不再使用。
     };
     if (option(parsed.options, "folders") !== undefined) throw new CliError("BAD_ARGS", "--folders 已停用，请自行管理工作文件夹。");
-    return success(await runtime.service.projects.create(input), "项目已创建。");
+    const created = await runtime.service.projects.create(input);
+    if (!autoCollect) return success(created, "项目已创建。");
+    const init = await runtime.service.runJob({ projectPath: targetPath, job: "init", trigger: "cli" }, (progress) => {
+      runtime.io.err(progress.message + (progress.pct === null ? "" : ` ${progress.pct}%`));
+    });
+    if (init.exitCode !== EXIT.OK) return failure(asExitCode(init.exitCode), "JOB_FAILED", init.summary, { ...created, init });
+    return success({ ...created, init }, init.summary);
   }
 
   if (command === "feed") {
