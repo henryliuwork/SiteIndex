@@ -310,7 +310,11 @@ export function RunsPage() {
             <p className="si-run-state-message">{progress?.message ?? "任务已启动，正在等待执行设备反馈。"}</p>
           </> : startingJob ? <><div className="si-run-state-progress-label"><span>正在连接执行设备</span><strong>启动中</strong></div><div className="si-run-state-progress is-indeterminate" role="progressbar" aria-label="正在启动任务"><span /></div></> : <p className="si-run-state-message">{runResult?.summary ?? (runningQuery.isError ? "运行状态暂时无法确认。" : "从页头选择任务并立即运行。")}</p>}
           {runningQuery.isError && <ApiErrorNotice className="si-runs-inline-error" label="当前运行状态读取失败。" error={runningQuery.error} onRetry={() => void runningQuery.refetch()} />}
-          {logs.length > 0 && <div className="si-run-recent-log">{logs.slice(-3).map((event, index) => <div key={`${event.runId}-${index}`} className={`si-run-log si-run-log-${event.level}`}><code>{new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(event.at))}</code><span>{event.message}</span>{event.step && <small>{stepLabel(event.step, index)}</small>}</div>)}</div>}
+        </div>
+        <div className="si-run-console">
+          <div className="si-run-log-list" role="log" aria-label="运行日志" aria-live="polite" aria-relevant="additions text">
+            {logs.length ? logs.map((event, index) => <div key={`${event.runId}-${index}`} className={`si-run-log si-run-log-${event.level}`}><code>{new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(event.at))}</code><span>{event.message}</span>{event.step && <small>{stepLabel(event.step, index)}</small>}</div>) : <p>暂无运行日志</p>}
+          </div>
         </div>
       </section>
 

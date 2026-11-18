@@ -12,11 +12,6 @@
 .si-run-job-card > span:nth-child(2) { font-size: var(--fs-caption); line-height: 1.45; }
 .si-run-job-card small { color: var(--color-muted); font-size: var(--fs-caption); }
 .si-run-console { overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-ink); color: var(--color-surface); }
-.si-run-console > header { display: flex; min-height: 56px; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-4); background: var(--color-surface); color: var(--color-ink); }
-.si-run-console > header > div { display: flex; align-items: center; gap: var(--space-3); }
-.si-run-console > header strong { font-size: var(--fs-body); }
-.si-run-progress { height: 4px; background: var(--color-ink-2); }
-.si-run-progress span { display: block; height: 100%; background: var(--color-brand); transition: width .2s ease; }
 .si-run-log-list { display: grid; max-height: 250px; min-height: 160px; align-content: start; gap: var(--space-2); overflow: auto; padding: var(--space-4) var(--space-4); font-family: var(--font-mono); font-size: var(--fs-mono); }
 .si-run-log-list > p { align-self: center; justify-self: center; max-width: 380px; color: var(--color-line-strong); font-family: var(--font-sans); font-size: var(--fs-caption); text-align: center; }
 .si-run-log { display: grid; grid-template-columns: 66px minmax(0,1fr) auto; align-items: baseline; gap: var(--space-3); }
@@ -24,7 +19,7 @@
 .si-run-log span { color: var(--color-surface); }
 .si-run-log small { color: var(--color-line-strong); }
 .si-run-log-warn span { color: var(--color-stock-preorder); }
-.si-run-log-error span { color: var(--color-stock-out); }
+.si-run-log-error span { color: var(--color-danger-soft); }
 .si-runs-history, .si-runner-card, .si-schedule-card { min-width: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
 .si-runs-section-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
 .si-runs-section-heading h2, .si-schedule-heading h2 { margin: 0; color: var(--color-ink); font-size: var(--fs-section-title); }
@@ -96,13 +91,6 @@
 .si-run-state-progress.is-indeterminate > span { width: 35%; animation: si-run-progress-slide 1.25s ease-in-out infinite alternate; }
 @keyframes si-run-progress-slide { from { transform: translateX(0); } to { transform: translateX(185%); } }
 .si-run-state-message { margin: 0; color: var(--color-muted); font-size: var(--fs-caption); line-height: 1.5; }
-.si-run-recent-log { display: grid; gap: var(--space-1); max-height: 112px; overflow: auto; padding-top: var(--space-2); border-top: 1px solid var(--color-line-soft); }
-.si-run-recent-log .si-run-log { grid-template-columns: 62px minmax(0,1fr) auto; min-height: 25px; padding: var(--space-1) 0; color: var(--color-ink-2); }
-.si-run-recent-log .si-run-log code { color: var(--color-muted); }
-.si-run-recent-log .si-run-log span { color: var(--color-ink-2); }
-.si-run-recent-log .si-run-log small { color: var(--color-muted); }
-.si-run-recent-log .si-run-log-warn span { color: var(--color-warn); }
-.si-run-recent-log .si-run-log-error span { color: var(--color-danger); }
 .si-runs-schedule { gap: var(--space-3); }
 .si-schedule-mode { display: flex; align-items: center; gap: var(--space-2); color: var(--color-muted); font-size: var(--fs-caption); }
 .si-schedule-mode .si-schedule-runtime-error { margin: 0; }
