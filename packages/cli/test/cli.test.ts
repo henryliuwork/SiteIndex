@@ -216,6 +216,22 @@ describe("siteindex CLI", () => {
     const input = methods.projects.create.mock.calls[0]?.[0] as CreateProjectInput;
     expect(input.folder_name).toBe("new-shop");
     expect(input.workspace_folders).toEqual([]);
+    expect(await main(["init", "auto-shop", "--url", "https://example.test", "--auto-collect",
+      "--category-rule", "/shop/{slug}", "--json"], t.io)).toBe(EXIT.OK);
+    expect(methods.projects.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      feed_urls: [], auto_collect_products: true, categories: { mode: "url_rule", url_pattern: "/shop/{slug}" },
+    }));
+    expect(methods.runJob).toHaveBeenCalledWith(expect.objectContaining({ job: "init", trigger: "cli",
+      projectPath: path.join(tempRoot, "auto-shop") }), expect.any(Function));
+    const alternateRoot = path.join(tempRoot, "projects");
+    const alternate = collect(service, { settings: { projects_root: alternateRoot, cache_dir: path.join(tempRoot, "cache") } });
+    expect(await main(["init", "another-shop", "--url", "https://example.test", "--auto-collect"], alternate.io)).toBe(EXIT.OK);
+    expect(methods.runJob).toHaveBeenLastCalledWith(expect.objectContaining({
+      projectPath: path.join(alternateRoot, "another-shop"), job: "init",
+    }), expect.any(Function));
+    const missing = collect(service);
+    expect(await main(["init", "no-feed", "--url", "https://example.test", "--json"], missing.io)).toBe(EXIT.BAD_ARGS);
+    expect(parseEnvelope(missing.stdout[0]!).error?.message).toContain("--feed 或 --auto-collect");
     expect(await main(["init", "new-shop", "--url", "https://example.test", "--feed", "https://example.test/feed.xml", "--folders", "seo", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
 
     expect(await main(["feed", "inspect", "kingsyard", "--json"], t.io)).toBe(EXIT.OK);
@@ -224,6 +240,39 @@ describe("siteindex CLI", () => {
     expect(await main(["run", "kingsyard", "weekly", "--date", "2026-10-25", "--force", "--only", "links", "--json"], t.io)).toBe(EXIT.OK);
     expect(methods.runJob).toHaveBeenLastCalledWith(expect.objectContaining({ job: "weekly", trigger: "cli", date: "2026-10-25", force: true, only: "links" }), expect.any(Function));
   });
+
+  it("runs a real feedless init through daily with synthetic Woo pages", async () => {
+    const base = "https://shop.example.test";
+    vi.stubGlobal("fetch", vi.fn(async (request: string | URL | Request) => {
+      const url = new URL(typeof request === "string" ? request : request instanceof URL ? request.href : request.url);
+      if (url.pathname.startsWith("/wp-json/")) return new Response("unavailable", { status: 404 });
+      if (url.pathname === "/") return new Response('<html><body class="woocommerce">Sample shop</body></html>');
+      if (url.pathname === "/robots.txt") return new Response(`Sitemap: ${base}/sitemap_index.xml`);
+      if (url.pathname === "/sitemap_index.xml")
+        return new Response(`<sitemapindex><sitemap><loc>${base}/product-sitemap.xml</loc></sitemap>
+          <sitemap><loc>${base}/post-sitemap.xml</loc></sitemap></sitemapindex>`);
+      if (url.pathname === "/product-sitemap.xml")
+        return new Response(`<urlset><url><loc>${base}/product/demo-item/</loc></url></urlset>`);
+      if (url.pathname === "/post-sitemap.xml")
+        return new Response(`<urlset><url><loc>${base}/journal/demo-post/</loc></url></urlset>`);
+      if (url.pathname === "/product/demo-item/") return new Response(`<html><head><title>Demo item</title>
+        <script type="application/ld+json">{"@type":"Product","sku":"DEMO-CLI-01","name":"Demo item",
+        "offers":{"price":"12.50","priceCurrency":"USD","availability":"InStock"}}</script></head>
+        <body class="woocommerce"><h1>Demo item</h1><a href="/journal/demo-post/">Article</a></body></html>`);
+      if (url.pathname === "/journal/demo-post/") return new Response(`<html><title>Demo post</title>
+        <script type="application/ld+json">{"@type":"BlogPosting","headline":"Demo post"}</script>
+        <body class="single-post"><article><h1>Demo post</h1><a href="/product/demo-item/">Product</a></article></body></html>`);
+      return new Response("missing", { status: 404 });
+    }));
+    const t = collect();
+    const result = await main(["init", "feedless", "--url", base, "--auto-collect", "--json"], t.io);
+    expect(result, t.stdout.at(-1)).toBe(EXIT.OK);
+    const config = JSON.parse(await readFile(path.join(tempRoot, "feedless", PATHS.site), "utf8")) as SiteConfig;
+    expect(config.crawl.feed_url).toEqual([]);
+    expect(config.crawl.auto_collect_products).toBe(true);
+    const skus = await readFile(path.join(tempRoot, "feedless", PATHS.skus), "utf8");
+    expect(skus).toContain("DEMO-CLI-01");
+  }, 60_000);
 
   it("passes a caller-selected browser path to design and index-check jobs", async () => {
     await copyFixtureProject();
