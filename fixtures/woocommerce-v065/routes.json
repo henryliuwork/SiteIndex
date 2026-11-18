@@ -15,6 +15,7 @@
   { "scenario": "site", "method": "GET", "path": "/product_cat-sitemap.xml", "status": 200, "content_type": "application/xml", "body": "category-sitemap.xml" },
   { "scenario": "site", "method": "GET", "path": "/post-sitemap.xml", "status": 200, "content_type": "application/xml", "body": "post-sitemap.xml" },
   { "scenario": "site", "method": "GET", "path": "/product/sample-lamp/", "status": 200, "content_type": "text/html", "body": "product-page.html" },
+  { "scenario": "site", "method": "GET", "path": "/product/sample-kit/", "status": 200, "content_type": "text/html", "body": "product-kit-page.html" },
   { "scenario": "site", "method": "GET", "path": "/shop/lighting/", "status": 200, "content_type": "text/html", "body": "category-page.html" },
   { "scenario": "site", "method": "GET", "path": "/gear/outdoor/", "status": 200, "content_type": "text/html", "body": "category-page.html" },
   { "scenario": "site", "method": "GET", "path": "/journal/sample-post/", "status": 200, "content_type": "text/html", "body": "blog-page.html" }
