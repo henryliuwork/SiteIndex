@@ -2,6 +2,7 @@ import type { HistoryRange, InventorySummary, ListQuery, ProjectId, SkuStockFilt
 import { FIXED_TODAY, fixtures, inventorySummary, projectConfigs, projectKey, projectSummaries, reply, rowsByProject, selectRows, todaySkus } from "./context";
 
 type MockSkuRow = SkuStockView;
+type SummaryMetric = NonNullable<SkuStockFilters["summary_metric"]>;
 type MockHistoryRange = 14 | HistoryRange;
 type MockInventoryApi = Omit<SiteIndexApi["inventory"], "summary"> & {
   summary(id: ProjectId, range?: MockHistoryRange): Promise<InventorySummary>;
@@ -97,6 +98,37 @@ function priceChangedWithin(row: SkuStockView, range: HistoryRange): boolean {
     && Date.parse(event.date) >= cutoff);
 }
 
+function productManagementMock(id: ProjectId) {
+  const key = projectKey(id);
+  const rows = projectConfigs[key].sku_grouping?.enabled ? parentRows(rowsByProject[key]) : rowsByProject[key];
+  const children = new Map<string, SkuStockView[]>();
+  for (const row of rowsByProject[key]) if (row.parent_sku) {
+    const members = children.get(row.parent_sku) ?? [];
+    members.push(row);
+    children.set(row.parent_sku, members);
+  }
+  const selected: Record<SummaryMetric, Set<string>> = {
+    in_stock: new Set(), changed: new Set(), out_of_stock_7d: new Set(), fluctuating_30d: new Set(),
+  };
+  const changedSkus = new Set(fixtures.events.filter((event) => event.date === FIXED_TODAY && event.type === "stock_change").map((event) => event.sku));
+  for (const row of rows) {
+    const members = row.is_parent && children.has(row.sku) ? children.get(row.sku)! : [row];
+    if (row.stock_status === "in_stock") selected.in_stock.add(row.sku);
+    if (members.some((member) => changedSkus.has(member.sku))) selected.changed.add(row.sku);
+    if (row.stock_status === "out_of_stock" && members.every((member) => member.days_in_status >= 7)) selected.out_of_stock_7d.add(row.sku);
+    const history = row.history_30d;
+    const flips = [...history].slice(1).filter((state, index) =>
+      (state === "i" && history[index] === "o") || (state === "o" && history[index] === "i")).length;
+    if (flips >= 2) selected.fluctuating_30d.add(row.sku);
+  }
+  return { rows, selected, summary: {
+    as_of: FIXED_TODAY, total_rows: rows.length, in_stock_rows: selected.in_stock.size,
+    online_rate: rows.length ? selected.in_stock.size / rows.length : null,
+    changed_rows: selected.changed.size, out_of_stock_7d_rows: selected.out_of_stock_7d.size,
+    fluctuating_30d_rows: selected.fluctuating_30d.size,
+  } };
+}
+
 export function createInventoryMock(): MockInventoryApi {
   return {
     summary: (id, range = 30) => reply(() => {
@@ -104,6 +136,7 @@ export function createInventoryMock(): MockInventoryApi {
       if (projectKey(id) !== "demo") return summary;
       return {
         ...summary,
+        product_management: productManagementMock(id).summary,
         today: [
           { type: "feed_anomaly", sku: "DEMO-ANOMALY-01", title: "演示有货商品", detail: "模拟：页面显示有货，但 Feed 未包含此 SKU" },
           { type: "removed", sku: "DEMO-REMOVED-01", title: "演示下架商品", detail: "模拟：连续多次同步未见于 Feed" },
@@ -116,8 +149,9 @@ export function createInventoryMock(): MockInventoryApi {
       const filters = query.filters ?? {};
       const watchedCategories = projectConfigs[key].categories.watched ?? [];
       const watchedCategoryKeys = new Set(watchedCategories.flatMap((item) => [item.slug, item.name]).map((value) => value?.trim()).filter((value): value is string => Boolean(value)));
-      const parentView = Boolean(filters.parent_only && projectConfigs[key].sku_grouping?.enabled);
+      const parentView = Boolean((filters.parent_only || filters.summary_metric) && projectConfigs[key].sku_grouping?.enabled);
       const source: MockSkuRow[] = parentView ? parentRows(rowsByProject[key]) : rowsByProject[key];
+      const metricSelection = filters.summary_metric ? productManagementMock(id).selected[filters.summary_metric] : null;
       const childrenByParent = new Map<string, SkuStockView[]>();
       if (parentView) for (const row of rowsByProject[key]) {
         if (!row.parent_sku) continue;
@@ -134,7 +168,8 @@ export function createInventoryMock(): MockInventoryApi {
         const status = filters.status as SkuStockFilters["status"];
         const category = filters.category as string | undefined;
         const priceRange = filters.price_changed_within as HistoryRange | undefined;
-        return (!status || (status === "today" ? relatedRows(row).some((child) => todaySkus[key].has(child.sku)) : row.stock_status === status))
+        return (!metricSelection || metricSelection.has(row.sku))
+          && (!status || (status === "today" ? relatedRows(row).some((child) => todaySkus[key].has(child.sku)) : row.stock_status === status))
           && (!category || row.category === category)
           && (!filters.watched_only || watchedCategoryKeys.has(row.category))
           && (!priceRange || relatedRows(row).some((child) => priceChangedWithin(child, priceRange)));

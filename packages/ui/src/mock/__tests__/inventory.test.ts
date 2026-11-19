@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { HistoryRange } from "@siteindex/shared";
+import type { HistoryRange, SkuStockFilters } from "@siteindex/shared";
 import { FIXED_TODAY, rowsByProject } from "../context";
 import { createInventoryMock } from "../inventory";
+import { createProductsMock } from "../products";
+import { matchesFilteredStockRows, mergeProductAndStockRows } from "../../pages/products/merged-rows";
 
 describe("inventory range mock", () => {
   it("accepts legacy and expanded ranges without inventing dates", async () => {
@@ -15,6 +17,29 @@ describe("inventory range mock", () => {
       for (const series of summary.trend.series) {
         expect(series.rates[0]).toBe(summary.category_rates.find((item) => item.category === series.category)?.rate);
       }
+    }
+  });
+});
+
+describe("product management summary mock", () => {
+  it("keeps each synthetic summary count aligned with its parent-view filter", async () => {
+    const api = createInventoryMock();
+    const summary = (await api.summary("demo", 30)).product_management!;
+    const all = await api.listSkus("demo", { page: 1, pageSize: 0, filters: { parent_only: true } });
+    const products = await createProductsMock().list("demo", { page: 1, pageSize: 0, filters: { parent_only: true } });
+    expect(summary.total_rows).toBe(all.total);
+    expect(matchesFilteredStockRows(mergeProductAndStockRows(products.rows, all.rows, true), all.rows)).toBe(true);
+    expect(summary.online_rate).toBe(summary.in_stock_rows / summary.total_rows);
+    const counts = {
+      in_stock: summary.in_stock_rows,
+      changed: summary.changed_rows,
+      out_of_stock_7d: summary.out_of_stock_7d_rows,
+      fluctuating_30d: summary.fluctuating_30d_rows,
+    };
+    for (const metric of Object.keys(counts) as NonNullable<SkuStockFilters["summary_metric"]>[]) {
+      const filtered = await api.listSkus("demo", { page: 1, pageSize: 0, filters: { summary_metric: metric } });
+      expect(filtered.total).toBe(counts[metric]);
+      expect(matchesFilteredStockRows(mergeProductAndStockRows(products.rows, filtered.rows, true), filtered.rows)).toBe(true);
     }
   });
 });

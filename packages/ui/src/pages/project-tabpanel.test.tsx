@@ -22,7 +22,7 @@ const pageCases = [
     normal: "si-products-table-frame",
     loading: "productListQuery.isLoading || inventoryListQuery.isLoading",
     error: "productListQuery.isError",
-    empty: 'emptyTitle="没有匹配的产品或 SKU"',
+    empty: "没有匹配的产品或 SKU",
   },
   {
     file: "EdmPage.tsx",

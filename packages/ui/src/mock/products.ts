@@ -1,4 +1,4 @@
-import type { InventoryEvent, ListQuery, ProductFilters, ProductFull, SiteIndexApi } from "@siteindex/shared";
+import type { InventoryEvent, ListQuery, ProductFilters, ProductFull, ProductView, SiteIndexApi } from "@siteindex/shared";
 import { fixtures, productRows, productsByProject, projectKey, recordsByProject, reply, rowsByProject, seoPages, selectRows, tagNamesByProject, tagsByHandle } from "./context";
 
 const scenarioMetadata = (missing_fields: string[] = []) => ({
@@ -6,10 +6,35 @@ const scenarioMetadata = (missing_fields: string[] = []) => ({
   quality: missing_fields.length ? "partial" as const : "complete" as const, anomalies: [],
 });
 
+function mockProductRows(id: string): ProductView[] {
+  const base = productRows(id);
+  const template = base[0];
+  if (!template) return base;
+  const key = projectKey(id);
+  const covered = new Set(base.flatMap((product) => product.skus));
+  const records = new Map(recordsByProject[key].map((record) => [record.sku, record]));
+  const generated = rowsByProject[key].filter((stock) => !covered.has(stock.sku)).map((stock): ProductView => {
+    const record = records.get(stock.sku);
+    const handle = record?.handle ?? stock.sku.toLowerCase();
+    return {
+      ...template, handle, product_id: record?.product_id ?? stock.sku,
+      title: stock.title, url: record?.url ?? `https://demo-store.example.test/products/${handle}`,
+      category: stock.category, categories: [stock.category], skus: [stock.sku],
+      price_min: stock.price, price_max: stock.price, compare_at_max: null,
+      variant_count: 1, in_stock_variants: stock.stock_status === "in_stock" ? 1 : 0,
+      row_kind: "single", parent_sku: null, stock_status: stock.stock_status, stock_since: stock.since,
+      tags: tagsByHandle.get(id + ":" + handle) ?? [], rating: null, review_count: null,
+      on_sale: false, is_new: false,
+      restocked_at: null, price_dropped_at: null, first_seen: record?.first_seen ?? template.first_seen,
+    };
+  });
+  return [...base, ...generated];
+}
+
 export function createProductsMock(): SiteIndexApi["products"] {
   return {
     list: (id, query: ListQuery<ProductFilters>) => reply(() => selectRows(
-      productRows(id), query,
+      mockProductRows(id), query,
       (row) => [row.handle, row.title, row.product_id, row.skus, row.category, row.categories, row.tags].join(" "),
       (row, filters) => {
         const stock = filters.stock as ProductFilters["stock"];
@@ -22,7 +47,7 @@ export function createProductsMock(): SiteIndexApi["products"] {
       "handle", (row) => row.handle,
     )),
     get: (id, handle) => reply<ProductFull>(() => {
-      const rows = productRows(id);
+      const rows = mockProductRows(id);
       const product = rows.find((row) => row.handle === handle);
       if (!product) throw { code: "UNKNOWN", message: "找不到指定产品", detail: handle };
       const key = projectKey(id);
@@ -71,15 +96,15 @@ export function createProductsMock(): SiteIndexApi["products"] {
       tags.forEach((tag) => tagNamesByProject[projectKey(id)].add(tag));
       return tagsByHandle.get(id + ":" + handle) ?? [];
     }),
-    listTags: (id) => reply(() => [...tagNamesByProject[projectKey(id)]].sort().map((tag) => ({ tag, products: productRows(id).filter((row) => row.tags.includes(tag)).length }))),
-    createTag: (id, tag) => reply(() => { tagNamesByProject[projectKey(id)].add(tag); return [...tagNamesByProject[projectKey(id)]].sort().map((item) => ({ tag: item, products: productRows(id).filter((row) => row.tags.includes(item)).length })); }),
+    listTags: (id) => reply(() => [...tagNamesByProject[projectKey(id)]].sort().map((tag) => ({ tag, products: mockProductRows(id).filter((row) => row.tags.includes(tag)).length }))),
+    createTag: (id, tag) => reply(() => { tagNamesByProject[projectKey(id)].add(tag); return [...tagNamesByProject[projectKey(id)]].sort().map((item) => ({ tag: item, products: mockProductRows(id).filter((row) => row.tags.includes(item)).length })); }),
     deleteTag: (id, tag) => reply(() => {
       tagNamesByProject[projectKey(id)].delete(tag);
-      for (const product of productsByProject[projectKey(id)]) {
+      for (const product of mockProductRows(id)) {
         const current = tagsByHandle.get(id + ":" + product.handle) ?? product.tags;
         tagsByHandle.set(id + ":" + product.handle, current.filter((item) => item !== tag));
       }
-      return [...tagNamesByProject[projectKey(id)]].sort().map((item) => ({ tag: item, products: productRows(id).filter((row) => row.tags.includes(item)).length }));
+      return [...tagNamesByProject[projectKey(id)]].sort().map((item) => ({ tag: item, products: mockProductRows(id).filter((row) => row.tags.includes(item)).length }));
     }),
     exportCsv: (id) => reply("mock:/exports/" + id + "-products.csv"),
   };

@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Download, ExternalLink, FileText, Image as ImageIcon, MoreHorizontal, Plus, RefreshCw, Settings2, Tag, Trash2, TrendingUp, X } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Download, ExternalLink, FileText, Filter, Image as ImageIcon, MoreHorizontal, Plus, RefreshCw, Settings2, Tag, Trash2, TrendingUp, X } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { HistoryRange, InventorySummary, ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, SkuRecord, SkuStockFilters, SkuStockView, StockStatus, TagStat } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, formatDateTime, Input, InputWithAction, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, useToast, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, formatDateTime, Input, InputWithAction, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, SummaryLine, useToast, stockTone } from "../components";
 import { formatInventoryDetailDuration, formatInventoryTableDuration, InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
 import { CategoryPanel, GroupingPreview, historyRanges, requestInventorySummary, stockNames, TrendChart } from "./products/inventory-widgets";
-import { formatInStockVariants, formatProductPrice, matchesProductManagementSearch, mergeProductAndStockRows, type ProductManagementRow } from "./products/merged-rows";
+import { formatInStockVariants, formatProductPrice, matchesFilteredStockRows, matchesProductManagementSearch, mergeProductAndStockRows, type ProductManagementRow } from "./products/merged-rows";
 import { ProductScenarioSection, productScenarioOptions, type ProductScenarioTab } from "./products/drawer/scenario-sections";
 
 const stockOptions = [
@@ -27,6 +28,12 @@ type ProductManagementFilters = ProductFilters & Pick<SkuStockFilters, "status" 
 type ProductManagementQuery = ListQuery<ProductManagementFilters>;
 type DrawerSegment = "overview" | "variants" | "history" | ProductScenarioTab;
 type DrawerVariant = { sku: string; title: string; stock: SkuStockView | null; record: SkuRecord | null; variant: ProductVariantStock | null };
+type SummaryMetric = NonNullable<SkuStockFilters["summary_metric"]>;
+const summaryMetrics: readonly SummaryMetric[] = ["in_stock", "changed", "out_of_stock_7d", "fluctuating_30d"];
+
+function parseSummaryMetric(value: string | null): SummaryMetric | null {
+  return summaryMetrics.find((metric) => metric === value) ?? null;
+}
 
 function initialQuery(): ProductManagementQuery { return { page: 1, pageSize: 50, filters: { parent_only: true } }; }
 
@@ -54,15 +61,15 @@ function productColumns(onOpen: (row: ProductManagementRow) => void, onOpenUrl: 
       const status = row.original.stock?.stock_status ?? row.original.product.stock_status;
       return <Chip tone={stockTone[status]}>{stockNames[status]}</Chip>;
     }, enableSorting: true },
-    { id: "days_in_status", accessorFn: (row) => row.stock?.days_in_status ?? null, header: "持续", meta: { width: 88, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ row }) => row.original.stock ? formatInventoryTableDuration(row.original.stock) : "—", enableSorting: true },
+    { id: "days_in_status", accessorFn: (row) => row.stock?.days_in_status ?? null, header: "持续", meta: { defaultHidden: true, width: 88, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ row }) => row.original.stock ? formatInventoryTableDuration(row.original.stock) : "—", enableSorting: true },
     { id: "online_rate_30d", accessorFn: (row) => row.stock?.online_rate_30d ?? null, header: "30 天在线率", meta: { width: 132, grow: 0, minWidth: 120, align: "end", text: "single" }, cell: ({ row }) => <InventoryRateCell value={row.original.stock?.online_rate_30d} />, enableSorting: true },
-    { id: "history_30d", accessorFn: (row) => row.stock?.history_30d ?? "", header: "近 30 天趋势", meta: { width: 176, grow: 0, minWidth: 160, text: "single" }, cell: ({ row }) => row.original.stock ? <InventoryHistoryCell row={row.original.stock} /> : "—", enableSorting: false },
+    { id: "history_30d", accessorFn: (row) => row.stock?.history_30d ?? "", header: "近 30 天趋势", meta: { defaultHidden: true, width: 176, grow: 0, minWidth: 160, text: "single" }, cell: ({ row }) => row.original.stock ? <InventoryHistoryCell row={row.original.stock} /> : "—", enableSorting: false },
     { id: "in_stock_variants", accessorFn: (row) => row.product.in_stock_variants, header: "有货变体", meta: { width: 104, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => formatInStockVariants(row.original), enableSorting: true },
     { id: "price", accessorFn: (row) => row.kind === "parent" ? row.product.price_min : row.stock?.price ?? row.product.price_min, header: "价格", meta: { width: 112, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => <span className="si-mono">{formatProductPrice(row.original)}</span>, enableSorting: true },
-    { id: "category", accessorFn: (row) => row.stock?.category ?? row.product.category, header: "分类", meta: { width: 142, grow: 1, minWidth: 120, text: "single" }, cell: ({ row }) => <code className="si-mono">{(row.original.stock?.category ?? row.original.product.category) || "—"}</code>, enableSorting: true },
-    { id: "last_change", accessorFn: (row) => row.stock?.last_change_at ?? null, header: "最近变化", meta: { width: 158, grow: 1, minWidth: 140, text: "clamp2" }, cell: ({ row }) => row.original.stock?.last_change ? <span className="si-products-last-change"><strong>{row.original.stock.last_change_at ?? "近期"}</strong><small>{row.original.stock.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
-    { id: "rating", accessorFn: (row) => row.product.rating ?? null, header: "评分 / 评价数", meta: { width: 126, grow: 0, minWidth: 116, align: "end", text: "single" }, cell: ({ row }) => row.original.product.rating == null && row.original.product.review_count == null ? "—" : `${row.original.product.rating == null ? "—" : row.original.product.rating.toFixed(1)} · ${row.original.product.review_count ?? "—"}`, enableSorting: true },
-    { id: "link", accessorFn: (row) => row.product.url, header: "链接", meta: { width: 76, grow: 0, minWidth: 72, text: "single" }, cell: ({ row }) => <Button size="small" variant="quiet" icon={<ExternalLink size={13} />} aria-label={`打开 ${row.original.product.title} 商品页`} onClick={(event) => { event.stopPropagation(); onOpenUrl(row.original.product.url); }}>打开</Button>, enableSorting: false },
+    { id: "category", accessorFn: (row) => row.stock?.category ?? row.product.category, header: "分类", meta: { defaultHidden: true, width: 142, grow: 1, minWidth: 120, text: "single" }, cell: ({ row }) => <code className="si-mono">{(row.original.stock?.category ?? row.original.product.category) || "—"}</code>, enableSorting: true },
+    { id: "last_change", accessorFn: (row) => row.stock?.last_change_at ?? null, header: "最近变化", meta: { defaultHidden: true, width: 158, grow: 1, minWidth: 140, text: "clamp2" }, cell: ({ row }) => row.original.stock?.last_change ? <span className="si-products-last-change"><strong>{row.original.stock.last_change_at ?? "近期"}</strong><small>{row.original.stock.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
+    { id: "rating", accessorFn: (row) => row.product.rating ?? null, header: "评分 / 评价数", meta: { defaultHidden: true, width: 126, grow: 0, minWidth: 116, align: "end", text: "single" }, cell: ({ row }) => row.original.product.rating == null && row.original.product.review_count == null ? "—" : `${row.original.product.rating == null ? "—" : row.original.product.rating.toFixed(1)} · ${row.original.product.review_count ?? "—"}`, enableSorting: true },
+    { id: "link", accessorFn: (row) => row.product.url, header: "链接", meta: { defaultHidden: true, width: 76, grow: 0, minWidth: 72, text: "single" }, cell: ({ row }) => <Button size="small" variant="quiet" icon={<ExternalLink size={13} />} aria-label={`打开 ${row.original.product.title} 商品页`} onClick={(event) => { event.stopPropagation(); onOpenUrl(row.original.product.url); }}>打开</Button>, enableSorting: false },
     { id: "actions", header: "操作", meta: { width: 56, grow: 0, minWidth: 56, sticky: "right", text: "single" }, cell: ({ row }) => <Button size="small" variant="quiet" icon={<MoreHorizontal size={15} />} aria-label={`查看 ${row.original.sku ?? row.original.product.title} 详情`} onClick={(event) => { event.stopPropagation(); onOpen(row.original); }} />, enableSorting: false },
   ];
 }
@@ -229,6 +236,8 @@ function ProductTagManager({ tagsQuery, newTag, setNewTag, onCreate, onDelete }:
 export function ProductsPage() {
   const { id = "demo" } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const summaryMetric = parseSummaryMetric(searchParams.get("summary_metric"));
   const queryClient = useQueryClient();
   const toast = useToast();
   const [query, setQuery] = useState<ProductManagementQuery>(initialQuery);
@@ -260,12 +269,13 @@ export function ProductsPage() {
     placeholderData: (previous) => previous,
   });
   const inventoryListQuery = useQuery({
-    queryKey: ["inventory-skus-merged", id, parentOnly, query.filters?.status, query.filters?.watched_only, query.filters?.price_changed_within],
+    queryKey: ["inventory-skus-merged", id, parentOnly, query.filters?.status, query.filters?.watched_only, query.filters?.price_changed_within, summaryMetric],
     queryFn: () => api.inventory.listSkus(id, { page: 1, pageSize: 0, filters: {
       parent_only: parentOnly || undefined,
       status: query.filters?.status,
       watched_only: query.filters?.watched_only,
       price_changed_within: query.filters?.price_changed_within,
+      summary_metric: summaryMetric ?? undefined,
     } }),
     placeholderData: (previous) => previous,
   });
@@ -289,11 +299,15 @@ export function ProductsPage() {
   const summary = summaryQuery.data;
   const allStockRows = inventoryListQuery.data?.rows ?? [];
   const productRows = productListQuery.data?.rows ?? [];
-  const needsInventoryMatch = Boolean(query.filters?.status || query.filters?.watched_only || query.filters?.price_changed_within);
+  const needsInventoryMatch = Boolean(query.filters?.status || query.filters?.watched_only || query.filters?.price_changed_within || summaryMetric);
   const mergedRows = useMemo(() => mergeProductAndStockRows(productRows, allStockRows, needsInventoryMatch)
     .filter((row) => !query.filters?.category || row.product.categories.includes(query.filters.category) || row.product.category === query.filters.category || row.stock?.category === query.filters.category)
     .filter((row) => matchesProductManagementSearch(row, query.search ?? "")),
   [allStockRows, needsInventoryMatch, productRows, query.filters?.category, query.search]);
+  const filteredStockMismatch = Boolean(summaryMetric && !query.search && !query.filters?.category && !query.filters?.tag
+    && productListQuery.data && inventoryListQuery.data
+    && !productListQuery.isFetching && !inventoryListQuery.isFetching
+    && !matchesFilteredStockRows(mergedRows, allStockRows));
   const sortedRows = useMemo(() => {
     const sort = query.sort;
     if (!sort) return mergedRows;
@@ -319,7 +333,7 @@ export function ProductsPage() {
     }).map(({ row }) => row);
   }, [mergedRows, query.sort]);
   const start = query.pageSize === 0 ? 0 : (query.page - 1) * query.pageSize;
-  const tableRows = query.pageSize === 0 ? sortedRows : sortedRows.slice(start, start + query.pageSize);
+  const tableRows = filteredStockMismatch ? [] : query.pageSize === 0 ? sortedRows : sortedRows.slice(start, start + query.pageSize);
   const categoryOptions = [...new Set(productRows.flatMap((row) => [...row.categories, row.category]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
   const detail = detailQuery.data;
   const scenarioOptions = productScenarioOptions(api.products, Boolean(isMockApi), selectedRow?.sku ?? null);
@@ -349,7 +363,28 @@ export function ProductsPage() {
   const onSearch = (search: string) => setQuery((current) => ({ ...current, page: 1, search: search || undefined }));
   const onFilter = <K extends keyof ProductManagementFilters>(key: K, value: ProductManagementFilters[K] | undefined) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, [key]: value } }));
   const onTableQueryChange = (next: ProductManagementQuery) => setQuery((current) => ({ ...next, search: current.search, filters: current.filters }));
-  const onViewChange = (value: "parent" | "child") => onFilter("parent_only", value === "parent");
+  const onViewChange = (value: "parent" | "child") => {
+    if (summaryMetric) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("summary_metric");
+      setSearchParams(next);
+    }
+    onFilter("parent_only", value === "parent");
+  };
+  const onSummaryToggle = (metric: SummaryMetric) => {
+    setQuery(initialQuery());
+    const next = new URLSearchParams(searchParams);
+    if (summaryMetric === metric) next.delete("summary_metric");
+    else next.set("summary_metric", metric);
+    setSearchParams(next);
+  };
+  const productManagement = summary?.product_management;
+  const summaryItems = productManagement?.as_of ? [
+    productManagement.online_rate == null ? null : { id: "in_stock", label: "在线率（%）", value: Math.round(productManagement.online_rate * 100), active: summaryMetric === "in_stock", onToggle: () => onSummaryToggle("in_stock") },
+    productManagement.changed_rows == null ? null : { id: "changed", label: "今日变化", value: productManagement.changed_rows, active: summaryMetric === "changed", onToggle: () => onSummaryToggle("changed") },
+    productManagement.out_of_stock_7d_rows == null ? null : { id: "out_of_stock_7d", label: "长期缺货", value: productManagement.out_of_stock_7d_rows, active: summaryMetric === "out_of_stock_7d", onToggle: () => onSummaryToggle("out_of_stock_7d") },
+    productManagement.fluctuating_30d_rows == null ? null : { id: "fluctuating_30d", label: "状态波动", value: productManagement.fluctuating_30d_rows, active: summaryMetric === "fluctuating_30d", onToggle: () => onSummaryToggle("fluctuating_30d") },
+  ].filter((item): item is NonNullable<typeof item> => item !== null) : [];
 
   const exportCsv = () => {
     try {
@@ -424,8 +459,10 @@ export function ProductsPage() {
 
   return <div className="si-page si-products-page">
     <ProjectHeader project={project} activeTab="products" hasTabPanel status={syncStatus}
-      actions={<><Button variant="primary" icon={<RefreshCw size={14} />} disabled={Boolean(activeRunId)} onClick={() => void runSync()}>{activeRunId ? "同步中…" : "立即同步"}</Button><Button icon={<TrendingUp size={14} />} onClick={() => setTrendDrawerOpen(true)}>趋势与分类在线率</Button><Button icon={<Download size={14} />} onClick={exportCsv}>导出 CSV</Button></>}
+       actions={<Button variant="primary" icon={<RefreshCw size={14} />} disabled={Boolean(activeRunId)} onClick={() => void runSync()}>{activeRunId ? "同步中…" : "立即同步"}</Button>}
       overflow={[
+         { label: "趋势与分类在线率", onSelect: () => setTrendDrawerOpen(true), icon: <TrendingUp size={14} /> },
+         { label: "导出 CSV", onSelect: exportCsv, icon: <Download size={14} /> },
         { label: "查看今日日报", onSelect: () => void openReport(), icon: <FileText size={14} /> },
         { label: "标签管理", onSelect: () => setTagDialogOpen(true), icon: <Tag size={14} /> },
         { label: "SKU 父子规则预览与设置", onSelect: () => setGroupingDrawerOpen(true), icon: <Settings2 size={14} /> },
@@ -435,21 +472,23 @@ export function ProductsPage() {
       {syncMessage && <Notice tone="info" title="库存同步进行中">{syncMessage}</Notice>}
       {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 自动采集已启用">首次及每日同步优先使用 WooCommerce Store API；失败时回退商品 Sitemap/HTML。</Notice>}
       {!groupingEnabled && <Notice tone="warn" title="父 SKU 分组尚未启用">当前按 Core 返回的独立 SKU 展示。启用规则后，产品表会显示父 SKU 汇总。<Button size="small" onClick={() => setGroupingDrawerOpen(true)}>查看规则预览</Button></Notice>}
-      {summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载库存概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="库存概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : <div className="si-inventory-kpis">{summary.kpis.slice(0, 5).map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>}
       {productListQuery.isFetching && productListQuery.data && <div className="si-inventory-query-state" role="status">正在更新产品列表…</div>}
       {productListQuery.isError && <ApiErrorNotice className="si-inventory-query-state" label="产品列表更新失败。" error={productListQuery.error} onRetry={() => void productListQuery.refetch()} />}
       {inventoryListQuery.isError && <ApiErrorNotice className="si-inventory-query-state" label="库存指标加载失败。" error={inventoryListQuery.error} onRetry={() => void inventoryListQuery.refetch()} />}
+      {filteredStockMismatch && <Notice tone="warn" title="筛选结果暂不可显示">产品行与库存筛选结果不一致，请同步后重试。</Notice>}
       {productListQuery.isLoading || inventoryListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载产品与库存数据…</div> : <div className="si-products-table-frame">
-        <DataTable tableId="products.merged" scopeId={id} rows={tableRows} total={sortedRows.length} columns={columns} query={query} onQueryChange={onTableQueryChange} onRowClick={(row) => { setSelectedRow(row); setDrawerSegment("overview"); }} getRowId={(row) => row.id} height="fill" rowHeight={52} emptyTitle="没有匹配的产品或 SKU" emptyDescription={query.filters?.watched_only ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或筛选条件。"}
+        <DataTable tableId="products.merged" scopeId={id} rows={tableRows} total={filteredStockMismatch ? 0 : sortedRows.length} columns={columns} query={query} onQueryChange={onTableQueryChange} onRowClick={(row) => { setSelectedRow(row); setDrawerSegment("overview"); }} getRowId={(row) => row.id} height="fill" rowHeight={52} emptyTitle={filteredStockMismatch ? "产品与库存行尚未对齐" : "没有匹配的产品或 SKU"} emptyDescription={filteredStockMismatch ? "请同步后重试；当前不展示不准确的筛选结果。" : query.filters?.watched_only ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或筛选条件。"}
           toolbar={<div className="si-products-toolbar">
+            <div className="si-products-summary-inline">{summaryQuery.isLoading ? <span className="si-products-summary-state" role="status">正在加载产品管理摘要…</span> : summaryQuery.isError || !summary ? <ApiErrorNotice label="产品管理摘要加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summaryItems.length ? <><SummaryLine items={summaryItems} ariaLabel="产品管理摘要" />
+              {summaryItems.length < 4 && <span className="si-products-summary-state" role="status">历史数据不足，部分摘要指标暂不可用。</span>}</> : <span className="si-products-summary-state" role="status">{!productManagement ? "当前运行环境未提供产品管理摘要。" : productManagement.as_of ? "历史数据不足，产品管理摘要暂不可用。" : "尚无产品管理业务日期，摘要暂不可用。"}</span>}</div>
             <SearchInput value={query.search ?? ""} onSearch={onSearch} label="搜索产品与 SKU" placeholder="搜索 SKU、产品、变体、分类或标签" />
-            <FilterBar className="si-products-filter-conditions">
+            <FilterBar className="si-products-filter-conditions"><PopoverPrimitive.Root><PopoverPrimitive.Trigger asChild><Button icon={<Filter size={14} />}>筛选</Button></PopoverPrimitive.Trigger><PopoverPrimitive.Portal><PopoverPrimitive.Content className="si-popover-content si-products-filter-popover" align="start" sideOffset={4} aria-label="产品筛选">
               <Select ariaLabel="库存状态筛选" value={query.filters?.status ?? "all"} onValueChange={(value) => onFilter("status", !value || value === "all" ? undefined : value as SkuStockFilters["status"])} options={stockOptions} />
               <Select ariaLabel="分类筛选" value={query.filters?.category ?? "all"} onValueChange={(value) => onFilter("category", !value || value === "all" ? undefined : value)} options={[{ value: "all", label: "全部分类" }, ...categoryOptions.map((value) => ({ value, label: value }))]} />
               <Select ariaLabel="价格变动筛选" value={query.filters?.price_changed_within?.toString() ?? "none"} onValueChange={(value) => onFilter("price_changed_within", value === "none" ? undefined : value === "all" ? "all" : Number(value) as 30 | 60 | 90)} options={priceOptions} />
               <Select ariaLabel="标签筛选" value={query.filters?.tag ?? "all"} onValueChange={(value) => onFilter("tag", !value || value === "all" ? undefined : value)} options={[{ value: "all", label: "全部标签" }, ...(tagsQuery.data ?? []).map((item) => ({ value: item.tag, label: item.tag }))]} />
               <label className="si-inventory-parent-toggle"><input type="checkbox" aria-label="仅关注分类" checked={Boolean(query.filters?.watched_only)} onChange={(event) => onFilter("watched_only", event.target.checked || undefined)} /><span>仅关注分类</span></label>
-            </FilterBar>
+            </PopoverPrimitive.Content></PopoverPrimitive.Portal></PopoverPrimitive.Root></FilterBar>
             <div className="si-products-toolbar-right"><Segmented value={parentOnly ? "parent" : "child"} options={[{ value: "parent", label: "仅父 SKU" }, { value: "child", label: "显示子 SKU" }]} onChange={onViewChange} ariaLabel="SKU 展示模式" /><span className="si-products-result-count">显示 {tableRows.length} / {sortedRows.length} 条</span></div>
             {tagsQuery.isError && <ApiErrorNotice label="标签筛选加载失败。" error={tagsQuery.error} onRetry={() => void tagsQuery.refetch()} />}
           </div>}

@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import type { ListQuery, ProductFilters, ProductFull, ProductView, SkuStockView } from "@siteindex/shared";
+import type { InventorySummary, ListQuery, ProductFilters, ProductFull, ProductView, SkuStockFilters, SkuStockView } from "@siteindex/shared";
 import { createMockApi } from "../mock";
-import { formatInStockVariants } from "./products/merged-rows";
+import { formatInStockVariants, matchesFilteredStockRows, mergeProductAndStockRows } from "./products/merged-rows";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -14,7 +14,7 @@ beforeEach(() => {
     return this.classList.contains("si-table-scroll") ? 400 : 0;
   });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
-    return this.classList.contains("si-table-scroll") ? 1200 : 0;
+    return this.classList.contains("si-table-scroll") || this.classList.contains("si-summary-line") ? 1200 : 0;
   });
 });
 
@@ -121,6 +121,10 @@ const childStocks = [
   makeStock("DEMO001A01", 27, { parent_sku: "DEMO001A", variant_title: "蓝色款" }),
   makeStock("DEMO001A02", 40, { parent_sku: "DEMO001A", stock_status: "out_of_stock", online_rate_30d: null, variant_title: "绿色款" }),
 ];
+const productManagement: NonNullable<InventorySummary["product_management"]> = {
+  as_of: "2026-11-12", total_rows: 1, in_stock_rows: 1, online_rate: 1,
+  changed_rows: 1, out_of_stock_7d_rows: 0, fluctuating_30d_rows: 0,
+};
 
 async function renderProductsPage(options: {
   products?: ProductView[];
@@ -131,12 +135,16 @@ async function renderProductsPage(options: {
   feedlessCollection?: boolean;
   syncAt?: string;
   initialPath?: string;
+  productManagement?: InventorySummary["product_management"];
+  metricRows?: Partial<Record<NonNullable<SkuStockFilters["summary_metric"]>, SkuStockView[]>>;
 } = {}) {
   const products = options.products ?? [parent, child];
   const parentStocks = options.parentStocks ?? [parentStock];
   const stockRows = options.stockRows ?? [parentStock, ...childStocks];
   const mockApi = createMockApi();
   const project = await mockApi.projects.get("demo");
+  const originalSummary = mockApi.inventory.summary;
+  mockApi.inventory.summary = vi.fn(async (id, range) => ({ ...await originalSummary(id, range), product_management: options.productManagement }));
   mockApi.projects.get = vi.fn(async () => ({
     ...project,
     summary: options.syncAt
@@ -154,8 +162,8 @@ async function renderProductsPage(options: {
       : products.filter((product) => product.row_kind !== "parent");
     return { rows, total: rows.length };
   });
-  mockApi.inventory.listSkus = vi.fn(async (_id, query) => {
-    const rows = query.filters?.parent_only ? parentStocks : stockRows;
+  mockApi.inventory.listSkus = vi.fn(async (_id: string, query: ListQuery<SkuStockFilters>) => {
+    const rows = query.filters?.summary_metric ? options.metricRows?.[query.filters.summary_metric] ?? [] : query.filters?.parent_only ? parentStocks : stockRows;
     return { rows, total: rows.length };
   });
   if (options.detail) mockApi.products.get = vi.fn(async () => options.detail!);
@@ -190,6 +198,53 @@ function findCell(row: HTMLElement, headerName: string): string | undefined {
 }
 
 describe("合并后的产品管理表", () => {
+  it("摘要只使用真实契约字段；字段缺失或无业务日时显示明确空态", async () => {
+    await renderProductsPage();
+    expect(await screen.findByText("当前运行环境未提供产品管理摘要。")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "产品管理摘要" })).toBeNull();
+  });
+
+  it("没有业务日期时不展示摘要计数", async () => {
+    await renderProductsPage({ productManagement: { ...productManagement, as_of: null } });
+    expect(await screen.findByText("尚无产品管理业务日期，摘要暂不可用。")).toBeTruthy();
+  });
+
+  it("摘要点击请求 Core 同语义库存行、清理旧筛选，再点取消并同步 URL", async () => {
+    const mockApi = await renderProductsPage({ productManagement, metricRows: { changed: [parentStock] } });
+    expect(await screen.findByRole("group", { name: "产品管理摘要" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /今日变化/ }));
+    await waitFor(() => expect(mockApi.inventory.listSkus).toHaveBeenLastCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: true, summary_metric: "changed", status: undefined }) })));
+    expect(screen.getByTestId("current-location").textContent).toContain("summary_metric=changed");
+    expect(within(screen.getByRole("group", { name: "产品管理摘要" })).getByRole("button", { name: /今日变化/ }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(screen.getByRole("group", { name: "产品管理摘要" })).getByRole("button", { name: /今日变化/ }));
+    await waitFor(() => expect(screen.getByTestId("current-location").textContent).toBe("/p/demo/products"));
+  });
+
+  it("摘要深链刷新后恢复筛选，缺失或重复产品行时不显示错误结果", async () => {
+    const mockApi = await renderProductsPage({ productManagement, metricRows: { in_stock: [parentStock] }, initialPath: "/p/demo/products?summary_metric=in_stock" });
+    await waitFor(() => expect(mockApi.inventory.listSkus).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: true, summary_metric: "in_stock" }) })));
+    expect(within(await screen.findByRole("group", { name: "产品管理摘要" })).getByRole("button", { name: /在线率/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(matchesFilteredStockRows(mergeProductAndStockRows([parent, parent], [parentStock], true), [parentStock])).toBe(false);
+  });
+
+  it("缺失产品行时不展示错误的库存筛选结果", async () => {
+    await renderProductsPage({ productManagement, metricRows: { in_stock: [parentStock, makeStock("DEMO-MISSING", 18)] }, initialPath: "/p/demo/products?summary_metric=in_stock" });
+    expect(await screen.findByText("产品与库存行尚未对齐")).toBeTruthy();
+  });
+
+  it("从摘要进入后搜索时不把本地搜索结果误报为库存行不一致", async () => {
+    await renderProductsPage({ productManagement, metricRows: { in_stock: [parentStock] }, initialPath: "/p/demo/products?summary_metric=in_stock" });
+    await screen.findByRole("group", { name: "产品管理摘要" });
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索产品与 SKU" }), { target: { value: "不存在的虚构商品" } });
+    expect(await screen.findByText("没有匹配的产品或 SKU")).toBeTruthy();
+    expect(screen.queryByText("产品与库存行尚未对齐")).toBeNull();
+  });
+
+  it("历史不足的摘要项不显示虚构 0", async () => {
+    await renderProductsPage({ productManagement: { ...productManagement, out_of_stock_7d_rows: null, fluctuating_30d_rows: null } });
+    expect(await screen.findByText("历史数据不足，部分摘要指标暂不可用。")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /长期缺货/ })).toBeNull();
+  });
   it("无 Feed 自动采集已配置时不提示商品来源未配置", async () => {
     await renderProductsPage({ feedlessCollection: true });
     expect(await screen.findByText("无 Feed 自动采集已启用")).toBeTruthy();
@@ -233,7 +288,11 @@ describe("合并后的产品管理表", () => {
     const parentRow = (await within(table).findByText("虚构组合商品", { selector: "strong" })).closest("tr")!;
     expect(findCell(parentRow, "价格")).toBe("20.00–40.00");
     expect(findCell(parentRow, "有货变体")).toBe("1/2");
-    expect(findCell(parentRow, "评分 / 评价数")).toBe("4.8 · 23");
+    expect(findCell(parentRow, "评分 / 评价数")).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "评分 / 评价数" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "最近变化" }));
+    await waitFor(() => expect(findCell(parentRow, "评分 / 评价数")).toBe("4.8 · 23"));
     expect(findCell(parentRow, "最近变化")).toContain("stock_change");
     expect(within(table).queryByText("30 天销量")).toBeNull();
     expect(within(table).queryByText("30 天销售额")).toBeNull();
@@ -283,8 +342,9 @@ describe("合并后的产品管理表", () => {
 
   it("保留趋势抽屉，并把今日日报与标签管理收在更多菜单", async () => {
     await renderProductsPage();
-    expect(await screen.findByRole("button", { name: "趋势与分类在线率" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    expect(await screen.findByRole("menuitem", { name: "趋势与分类在线率" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "导出 CSV" })).toBeTruthy();
     expect(await screen.findByRole("menuitem", { name: "查看今日日报" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "标签管理" })).toBeTruthy();
   });
