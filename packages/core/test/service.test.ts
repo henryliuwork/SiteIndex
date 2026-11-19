@@ -1002,6 +1002,35 @@ describe("createCoreService initial namespaces", () => {
     expect(seoAttention.some((item) => item.text.includes("Title 重复"))).toBe(false);
   }, 20_000);
 
+  it("exposes the SEO page table through the Core service without changing legacy listPages", async () => {
+    const { projectPath } = await makeProject();
+    const target = "https://demo-shop.test/item";
+    await mkdir(path.dirname(path.join(projectPath, PATHS.seoPages)), { recursive: true });
+    await writeJsonl(path.join(projectPath, PATHS.seoPages), [{
+      url: target, page_type: "product", status_code: 200, title: "Demo item", title_length: 9,
+      meta_description: null, description_length: 0, h1: "Demo item", h1_count: 1,
+      canonical: null, canonical_status: "missing", robots_meta: null, x_robots_tag: null,
+      indexable: true, in_sitemap: true, schema_types: [], word_count: null, last_crawled: "2026-11-19",
+    }], "seo_page");
+    await writeJsonl(path.join(projectPath, PATHS.seoIssues), [{
+      url: target, rule: "desc_missing", severity: "high", detail: "虚构问题",
+      status: "open", first_seen: "2026-11-19", last_seen: "2026-11-19",
+    }], "seo_issue");
+    const api = service(projectPath);
+    const before = await api.seo.listPages("fixture", { page: 1, pageSize: 0 });
+    const result = await api.seo.listPageRows("fixture", {
+      page: 1, pageSize: 50, filters: { rules: ["desc_missing"], severity: "high", status: "open" },
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.rows[0]).toMatchObject({
+      url: target, open_issue_counts: { high: 1, mid: 0, low: 0 }, matching_issue_count: 1,
+      open_issue_targets: [{ url: target, rule: "desc_missing" }],
+    });
+    expect(result.summary.open_pages).toBe(1);
+    expect((await api.seo.listPages("fixture", { page: 1, pageSize: 0 })).rows).toEqual(before.rows);
+  }, 30_000);
+
   it("updates SEO issue statuses, persists per-page ignores, and counts only open issues", async () => {
     const { projectPath } = await makeProject();
     const makeIssue = (url: string, rule: SeoIssue["rule"], status: SeoIssue["status"]): SeoIssue => ({
@@ -1034,6 +1063,13 @@ describe("createCoreService initial namespaces", () => {
     const savedIssues = await readJsonl(path.join(projectPath, PATHS.seoIssues));
     expect(savedIssues.find((row) => row.url === urlA)).toMatchObject({ status: "ignored" });
     expect(savedIssues.find((row) => row.url === urlC)).toMatchObject({ status: "fixed" });
+    expect(savedIssues.find((row) => row.url === urlA)?.handled_at).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect(savedIssues.find((row) => row.url === urlC)?.handled_at).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect((await api.files.validate("fixture", PATHS.seoIssues)).files.find((file) => file.path === PATHS.seoIssues)?.status).toBe("ok");
+    await expect(api.seo.setIssueStatus("fixture", { targets: [{ url: urlA, rule: "desc_missing" }], status: "ignored" }))
+      .resolves.toEqual({ updated: 0 });
+    expect((await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === urlA)?.handled_at)
+      .toBe(savedIssues.find((row) => row.url === urlA)?.handled_at);
     const config = JSON.parse(await readFile(path.join(projectPath, PATHS.site), "utf8")) as {
       seo?: { ignore_rules?: { url?: string; rule: string }[] };
     };
@@ -1084,6 +1120,7 @@ describe("createCoreService initial namespaces", () => {
     await expect(api.seo.setRuleIgnored("fixture", "desc_missing", true)).resolves.toEqual({ updated: 2 });
     let savedIssues = await readJsonl(path.join(projectPath, PATHS.seoIssues));
     expect(savedIssues.find((row) => row.url === "https://shop.example.test/global-one")).toMatchObject({ status: "ignored" });
+    expect(savedIssues.find((row) => row.url === "https://shop.example.test/global-one")?.handled_at).toMatch(/^\d{4}-\d\d-\d\dT/);
     expect(savedIssues.find((row) => row.url === scopedUrl)).toMatchObject({ status: "ignored" });
     expect(savedIssues.find((row) => row.url === "https://shop.example.test/fixed-history")).toMatchObject({ status: "fixed" });
     expect(savedIssues.find((row) => row.url === "https://shop.example.test/other-rule")).toMatchObject({ status: "open" });
@@ -1099,6 +1136,7 @@ describe("createCoreService initial namespaces", () => {
     await expect(api.seo.setRuleIgnored("fixture", "desc_missing", false)).resolves.toEqual({ updated: 1 });
     savedIssues = await readJsonl(path.join(projectPath, PATHS.seoIssues));
     expect(savedIssues.find((row) => row.url === "https://shop.example.test/global-one")).toMatchObject({ status: "open" });
+    expect(savedIssues.find((row) => row.url === "https://shop.example.test/global-one")?.handled_at).toMatch(/^\d{4}-\d\d-\d\dT/);
     expect(savedIssues.find((row) => row.url === scopedUrl)).toMatchObject({ status: "ignored" });
     expect(savedIssues.find((row) => row.url === "https://shop.example.test/fixed-history")).toMatchObject({ status: "fixed" });
     const unignoredConfig = JSON.parse(await readFile(configPath, "utf8")) as {
@@ -1122,6 +1160,7 @@ describe("createCoreService initial namespaces", () => {
     config.categories = { mode: "url_rule", url_pattern: "/collections/{slug}" };
     config.seo = { ...config.seo, ignore_rules: [] };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    let hasDescription = false;
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       if (url.pathname === "/sitemap.xml") {
@@ -1129,9 +1168,10 @@ describe("createCoreService initial namespaces", () => {
           headers: { "content-type": "application/xml" },
         });
       }
+      const description = hasDescription ? '<meta name="description" content="A fictional page description for the automatic SEO state transition test.">' : "";
       const body = url.pathname === "/"
-        ? '<html><head><title>Fixture home</title></head><body><main><h1>Fixture home</h1><a href="/collections/fixture">Fixture collection</a></main></body></html>'
-        : '<html><head><title>Fixture collection</title></head><body><main><h1>Fixture collection</h1><p>Fictional collection text.</p></main></body></html>';
+        ? `<html><head><title>Fixture home</title>${description}</head><body><main><h1>Fixture home</h1><a href="/collections/fixture">Fixture collection</a></main></body></html>`
+        : `<html><head><title>Fixture collection</title>${description}</head><body><main><h1>Fixture collection</h1><p>Fictional collection text.</p></main></body></html>`;
       return new Response(body, { headers: { "content-type": "text/html" } });
     }));
     const api = service(projectPath);
@@ -1141,22 +1181,29 @@ describe("createCoreService initial namespaces", () => {
     expect(initialWeekly.status).not.toBe("failed");
     let issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
     expect(issue).toMatchObject({ status: "open" });
+    expect(issue?.auto_status_changed_on).toBeUndefined();
 
     await api.seo.setIssueStatus("fixture", { targets: [target], status: "ignored" });
+    const ignoredAt = (await readJsonl(path.join(projectPath, PATHS.seoIssues)))
+      .find((row) => row.url === target.url && row.rule === target.rule)?.handled_at;
+    expect(ignoredAt).toMatch(/^\d{4}-\d\d-\d\dT/);
     await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-02" }, () => undefined);
     issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
-    expect(issue).toMatchObject({ status: "ignored" });
+    expect(issue).toMatchObject({ status: "ignored", handled_at: ignoredAt });
+    expect(issue?.auto_status_changed_on).toBeUndefined();
 
     await api.seo.setIssueStatus("fixture", { targets: [target], status: "fixed" });
+    const fixedAt = (await readJsonl(path.join(projectPath, PATHS.seoIssues)))
+      .find((row) => row.url === target.url && row.rule === target.rule)?.handled_at;
     await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-03" }, () => undefined);
     issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
-    expect(issue).toMatchObject({ status: "open" });
+    expect(issue).toMatchObject({ status: "open", handled_at: fixedAt, auto_status_changed_on: "2026-11-03" });
 
     await api.seo.setRuleIgnored("fixture", "desc_missing", true);
     await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-04" }, () => undefined);
     const globallyIgnored = await readJsonl(path.join(projectPath, PATHS.seoIssues));
     issue = globallyIgnored.find((row) => row.url === target.url && row.rule === target.rule);
-    expect(issue).toMatchObject({ status: "ignored" });
+    expect(issue).toMatchObject({ status: "ignored", auto_status_changed_on: "2026-11-03" });
     expect(globallyIgnored.find((row) => row.url === `${base}/collections/fixture` && row.rule === "desc_missing"))
       .toMatchObject({ status: "ignored" });
     await api.seo.setRuleIgnored("fixture", "desc_missing", false);
@@ -1165,6 +1212,22 @@ describe("createCoreService initial namespaces", () => {
     expect(issue).toMatchObject({ status: "open" });
     expect(globallyReopened.find((row) => row.url === `${base}/collections/fixture` && row.rule === "desc_missing"))
       .toMatchObject({ status: "open" });
+
+    hasDescription = true;
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-05" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "fixed", auto_status_changed_on: "2026-11-05" });
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-06" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "fixed", auto_status_changed_on: "2026-11-05" });
+    hasDescription = false;
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-07" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "open", auto_status_changed_on: "2026-11-07" });
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-08" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "open", auto_status_changed_on: "2026-11-07" });
+    expect((await api.files.validate("fixture", PATHS.seoIssues)).files.find((file) => file.path === PATHS.seoIssues)?.status).toBe("ok");
   }, 45_000);
 
   it("writes a feed and refreshes the project summary without a missing-feed warning", async () => {

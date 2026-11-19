@@ -466,13 +466,18 @@ function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, d
   const result: SeoIssue[] = [];
   for (const [key, item] of issues) {
     const old = previous.get(key);
-    result.push({ ...item, status: ignore.some((rule) => rule.rule === item.rule && (!rule.url || rule.url === item.url)) ? "ignored" : "open", first_seen: old?.first_seen ?? date, last_seen: date });
+    const status = ignore.some((rule) => rule.rule === item.rule && (!rule.url || rule.url === item.url)) ? "ignored" : "open";
+    const autoChangedOn = old?.status === "fixed" && status === "open" ? date : old?.auto_status_changed_on;
+    result.push({ ...item, status, first_seen: old?.first_seen ?? date, last_seen: date,
+      ...(old?.handled_at === undefined ? {} : { handled_at: old.handled_at }),
+      ...(autoChangedOn === undefined ? {} : { auto_status_changed_on: autoChangedOn }) });
   }
   for (const [key, old] of previous) {
     if (issues.has(key)) continue;
     if (old.status === "fixed") {
       if (dateDiff(date, old.last_seen) <= 30) result.push(old);
-    } else result.push({ ...old, status: "fixed", last_seen: date });
+    } else result.push({ ...old, status: "fixed", last_seen: date,
+      ...(old.status === "open" ? { auto_status_changed_on: date } : {}) });
   }
   return result;
 }
