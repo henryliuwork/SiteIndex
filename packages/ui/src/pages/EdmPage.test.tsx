@@ -54,6 +54,8 @@ type EdmPageTestOptions = {
   queryStaleTime?: number;
   summaryImplementation?: SiteIndexApi["edm"]["summary"];
   listImagesImplementation?: SiteIndexApi["edm"]["listImages"];
+  scenarioMissing?: boolean;
+  candidatesImplementation?: NonNullable<SiteIndexApi["edm"]["candidates"]>;
 };
 
 async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[], mediaReady = false, deferredMediaPrepare = false, options: EdmPageTestOptions = {}) {
@@ -78,6 +80,12 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   if (imageRows) listImages.mockImplementation(async () => ({ rows: imageRows, total: imageRows.length }));
   if (options.listImagesImplementation) listImages.mockImplementation(options.listImagesImplementation);
   mockApi.edm.listImages = listImages;
+  if (options.scenarioMissing) {
+    mockApi.edm.candidates = undefined;
+    mockApi.edm.mediaGaps = undefined;
+    mockApi.edm.campaignSafety = undefined;
+  }
+  if (options.candidatesImplementation) mockApi.edm.candidates = options.candidatesImplementation;
   const setManualImage = vi.fn(mockApi.edm.setManualImage);
   mockApi.edm.setManualImage = setManualImage;
   mockApi.jobs.history = vi.fn(async (projectId) => options.historyByProject?.[projectId] ?? options.history ?? []);
@@ -139,6 +147,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
       typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
         ? error.message
         : fallback,
+    apiErrorDetails: () => null,
   }));
   const [{ EdmPage }, { ToastProvider }] = await Promise.all([import("./EdmPage"), import("../components")]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: options.queryStaleTime ?? 0 } } });
@@ -200,6 +209,50 @@ function enableTableRows(): void {
     disconnect(): void {}
   });
 }
+
+describe("EdmPage D-3 只读检查", () => {
+  it("能力缺失或仍待接线时隐藏整个页头入口", async () => {
+    await renderEdmPage(false, false, undefined, false, false, { scenarioMissing: true, pendingHandlers: [] });
+    await screen.findByRole("button", { name: "打开项目文件夹" });
+    expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+    cleanup();
+    await renderEdmPage(false, false, undefined, false, false, {
+      pendingHandlers: ["edm.candidates", "edm.mediaGaps", "edm.campaignSafety"],
+    });
+    await screen.findByRole("button", { name: "打开项目文件夹" });
+    expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+  });
+
+  it("在页头更多打开三个只读分段，并展示候选清单", async () => {
+    await renderEdmPage(false);
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "EDM 只读检查" }));
+    const dialog = screen.getByRole("dialog", { name: "EDM 只读检查" });
+    expect(within(dialog).getByRole("button", { name: "候选清单" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "缺图清单" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "发送前安全检查" })).toBeTruthy();
+    expect(await within(dialog).findByText(/按 SKU 顺序排列，不代表推荐排名/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "发送前安全检查" }));
+    expect(within(dialog).getByText("请先在图片表勾选 SKU 并选择活动日期。")).toBeTruthy();
+  });
+
+  it("候选查询失败可重试，空结果显示空状态", async () => {
+    let calls = 0;
+    const candidatesImplementation: NonNullable<SiteIndexApi["edm"]["candidates"]> = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("演示查询失败");
+      return { data: { rows: [], total: 0 }, metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete", anomalies: [] } };
+    };
+    await renderEdmPage(false, true, undefined, false, false, { candidatesImplementation });
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "EDM 只读检查" }));
+    const dialog = screen.getByRole("dialog", { name: "EDM 只读检查" });
+    expect(await within(dialog).findByText("候选清单加载失败。")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "重试" }));
+    expect(await within(dialog).findByText("暂无符合条件的候选 SKU。")).toBeTruthy();
+    expect(calls).toBe(2);
+  });
+});
 
 describe("EdmPage SKU 图集", () => {
   it("在行详情展示图集，选中图片后保存为手动首图并刷新缓存", async () => {

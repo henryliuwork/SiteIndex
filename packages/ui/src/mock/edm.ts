@@ -1,4 +1,4 @@
-import type { EdmCommandInput, ListQuery, SkuImageFilters, SiteIndexApi } from "@siteindex/shared";
+import type { EdmCommandInput, EdmCampaignSafetyFinding, ListQuery, SkuImageFilters, SiteIndexApi } from "@siteindex/shared";
 import { edmImageRows, fixtures, manualImages, mockFeedImageUrl, mockGalleryUrls, projectConfigs, projectKey, recordsByProject, reply, rowsByProject, selectRows } from "./context";
 
 function imageRowsForQuery(id: Parameters<SiteIndexApi["edm"]["listImages"]>[0], parentOnly: boolean) {
@@ -46,6 +46,7 @@ function imageRowsForQuery(id: Parameters<SiteIndexApi["edm"]["listImages"]>[0],
 }
 
 export function createEdmMock(): SiteIndexApi["edm"] {
+  const metadata = { sources: [{ kind: "mock", label: "虚构示例" }], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] };
   return {
     summary: (id) => reply(() => {
       const rows = edmImageRows(id);
@@ -80,5 +81,48 @@ export function createEdmMock(): SiteIndexApi["edm"] {
       };
     }),
     buildCommand: (_id, input: EdmCommandInput) => reply("edm-builder --theme \"" + input.theme + "\" --count " + input.count + (input.promo_code ? " --promo-code \"" + input.promo_code + "\"" : "")),
+    candidates: (id, query) => reply(() => {
+      const key = projectKey(id);
+      const records = new Map(recordsByProject[key].map((row) => [row.sku, row]));
+      const rows = imageRowsForQuery(id, Boolean(query.parent_only)).rows
+        .filter((row) => (query.stock === "any" || row.stock_status === "in_stock")
+          && (!query.category || records.get(row.sku)?.category === query.category)
+          && !query.tag)
+        .map((row) => {
+          const record = records.get(row.sku);
+          return { sku: row.sku, title: row.title, category: record?.category ?? null, tags: [], stock_status: row.stock_status,
+            price: record?.price ?? null, compare_at_price: record?.compare_at_price ?? null, currency: record?.currency ?? null,
+            image_url: row.manual_image_url ?? row.feed_image_url,
+            image_source: row.manual_image_url ? "manual" as const : row.feed_image_url ? "feed" as const : "none" as const,
+            priority: null, last_featured: null, exclude_edm: false, discount_tier: null };
+        });
+      return { data: { rows: rows.slice(0, query.limit ?? rows.length), total: rows.length }, metadata };
+    }),
+    mediaGaps: (id, query) => reply(() => {
+      const rows = imageRowsForQuery(id, Boolean(query.parent_only)).rows
+        .filter((row) => (query.stock === "any" || row.stock_status === "in_stock")
+          && (!query.skus || query.skus.includes(row.sku))
+          && !row.feed_image_url && !row.manual_image_url)
+        .map((row) => ({ sku: row.sku, title: row.title, stock_status: row.stock_status,
+          reason: "missing" as const, feed_image_url: row.feed_image_url, manual_image_url: row.manual_image_url }));
+      return { data: { rows: rows.slice(0, query.limit ?? rows.length), total: rows.length }, metadata };
+    }),
+    campaignSafety: (id, query) => reply(() => {
+      const images = new Map(imageRowsForQuery(id, true).rows.concat(edmImageRows(id)).map((row) => [row.sku, row]));
+      const seen = new Set<string>();
+      const findings: EdmCampaignSafetyFinding[] = [];
+      for (const sku of query.skus) {
+        if (seen.has(sku)) findings.push({ code: "duplicate_sku", severity: "warning", sku, message: "SKU 重复选择。" });
+        seen.add(sku);
+        const row = images.get(sku);
+        if (!row) findings.push({ code: "sku_not_found", severity: "blocker", sku, message: "项目中找不到该 SKU。" });
+        else {
+          if (row.stock_status === "out_of_stock") findings.push({ code: "out_of_stock", severity: "blocker", sku, message: "当前缺货。" });
+          if (!row.feed_image_url && !row.manual_image_url) findings.push({ code: "missing_image", severity: "blocker", sku, message: "没有 EDM 可用图片。" });
+        }
+      }
+      return { data: { scope: "local_product_data" as const, status: findings.some((row) => row.severity === "blocker") ? "blocked" as const : findings.length ? "needs_review" as const : "clear" as const,
+        checked_skus: [...seen], findings }, metadata };
+    }),
   };
 }
