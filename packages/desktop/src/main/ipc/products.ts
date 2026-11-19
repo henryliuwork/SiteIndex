@@ -8,6 +8,12 @@ export function createProductsHandlers(context: IpcContext): IpcHandlerImplement
     "products.list": (...args) =>
       context.withProject(args[0], (id) => context.core.products.list(id, args[1] as ListQuery<ProductFilters>)),
     "products.get": (...args) => context.withProject(args[0], (id) => context.core.products.get(id, args[1] as string)),
+    "products.skuBrief": (...args) =>
+      context.withProject(args[0], (id) => context.core.products.skuBrief(id, args[1] as string)),
+    "products.changes": (...args) =>
+      context.withProject(args[0], (id) => context.core.products.changes(id, args[1] as string | undefined)),
+    "products.groupFamily": (...args) =>
+      context.withProject(args[0], (id) => context.core.products.groupFamily(id, args[1] as string)),
     "products.setTags": (...args) =>
       context.withProject(args[0], (id) => context.core.products.setTags(id, args[1] as string, args[2] as string[])),
     "products.listTags": (id) => context.withProject(id, (projectId) => context.core.products.listTags(projectId)),
