@@ -310,7 +310,7 @@ export const StatusCells = memo(function StatusCells({ history, label = "近 30 
   const summary = cells.map((cell) => statuses[cell]?.label ?? "未知").join("、");
   const colors: Record<string, string> = {
     in: "var(--color-stock-in)", out: "var(--color-stock-out)", preorder: "var(--color-stock-preorder)",
-    unknown: "var(--color-stock-unknown)", "not-listed": "#E9EBEE",
+    unknown: "var(--color-stock-unknown)", "not-listed": "var(--color-stock-not-listed)",
   };
   const unit = 100 / cells.length;
   const gradient = cells.map((cell, index) => {
@@ -325,8 +325,7 @@ export const StatusCells = memo(function StatusCells({ history, label = "近 30 
 });
 
 function dateLabel(index: number, length: number): string {
-  const daysAgo = length - index - 1;
-  return daysAgo === 0 ? "今天" : daysAgo + " 天前";
+  return `近 ${length} 日第 ${index + 1} 日`;
 }
 
 export function SearchInput({ value, onSearch, label = "搜索", placeholder = "搜索" }: { value: string; onSearch: (value: string) => void; label?: string; placeholder?: string }) {

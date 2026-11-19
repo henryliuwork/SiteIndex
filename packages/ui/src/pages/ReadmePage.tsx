@@ -60,8 +60,7 @@ function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving
 
 function AutoBlocksCard({ data }: { data: ReadmeData }) {
   return <Card className="si-readme-card si-readme-auto-card" label="README 自动区块">
-    <div className="si-readme-card-heading"><h2>自动区块</h2><InfoTooltip label="自动区块说明" content="由 SiteIndex 生成；删除标记后不会自动恢复。" /></div>
-    <p className="si-readme-auto-updated">{latestUpdate(data)}</p>
+    <div className="si-readme-card-heading"><h2>自动区块</h2><InfoTooltip label="自动区块说明" content={`由 SiteIndex 生成；删除标记后不会自动恢复。${latestUpdate(data)}`} /></div>
     {data.auto_blocks.map((block) => <div className="si-readme-auto-row" key={block.id}>
         <div className="si-readme-auto-label"><strong>{block.title || blockTitles[block.id] || block.id}</strong><code>{block.id}</code></div>
         <span>{block.schedule}</span>
