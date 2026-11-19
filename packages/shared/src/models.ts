@@ -338,6 +338,8 @@ export interface SeoIssue {
   last_seen: ISODate;
   /** 最近一次人工状态变更时间；旧记录可以缺失，weekly 重建时应保留。 */
   handled_at?: ISODateTime | null;
+  /** 今后 weekly 自动改变问题状态的业务日期；普通重抓不更新，旧记录可缺失。 */
+  auto_status_changed_on?: ISODate;
 }
 
 export interface SeoRuleSetting {
