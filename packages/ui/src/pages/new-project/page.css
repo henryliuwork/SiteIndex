@@ -11,7 +11,7 @@ display:flex; flex-wrap:wrap; gap:var(--space-2); margin:0; padding:0; list-styl
 }
 
 .si-wizard-steps li,.si-wizard-steps a,.si-wizard-steps li>span {
-display:inline-flex; min-height:36px; align-items:center; gap:var(--space-2); padding:0 var(--space-3); border-radius:999px; background:var(--color-neutral-soft); color:var(--color-ink-2); font-size: var(--fs-sub-title); text-decoration:none;
+display:inline-flex; min-height:var(--control-height); align-items:center; gap:var(--space-2); padding:0 var(--space-3); border-radius:999px; background:var(--color-neutral-soft); color:var(--color-ink-2); font-size: var(--fs-sub-title); text-decoration:none;
 }
 
 .si-wizard-steps li.active {

@@ -154,6 +154,7 @@
 
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。
+- [x] v0.7.5 G7.5-4（B 范围）：README 来源时间移入说明，状态格移除相对日期，控件高度与库存颜色使用现有 token；其余 B 页面时间显示已核对 — 本 PR。
 
 - 给 C：`packages/ui/dist/`（`index.html` + 静态资源）；`useColumnPrefs` 可替换的存储适配点
 - 不需要 A 的任何代码
