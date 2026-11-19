@@ -18,6 +18,7 @@ import { beginEdmExportAttempt, getEdmExportSafetyState, keepEdmExportAttemptBlo
 import { getMediaRecoveryDisplay, getMediaRetryReviewSkus, mediaRecoveryErrorMessage, type MediaRecoveryDisplay, type MediaRecoveryRowStatus } from "./edm/media-recovery";
 import { EDM_MEDIA_HISTORY_LIMIT, selectEdmMediaDisplay } from "./edm/media-history";
 import { EdmWorkflowPrototype } from "./edm/workflow-prototype";
+import { availableEdmScenarioTabs, EdmScenarioSections } from "./edm/drawer/scenario-sections";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
@@ -335,6 +336,7 @@ export function EdmPage() {
   };
   const [exportSafetyUnavailableProjectId, setExportSafetyUnavailableProjectId] = useState<string | null>(null);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
+  const [scenarioDrawerOpen, setScenarioDrawerOpen] = useState(false);
   const summaryQueryKey = ["edm", "summary", id] as const;
   const imageQueryKey = ["edm", "images", id, query] as const;
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
@@ -626,7 +628,7 @@ export function EdmPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-edm-page">
-    <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></>} />
+    <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></>} overflow={availableEdmScenarioTabs().length ? [{ label: "EDM 只读检查", onSelect: () => setScenarioDrawerOpen(true) }] : undefined} />
     <ProjectTabPanel projectId={project.id} tab="edm">
     <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
     <div className="si-edm-status-area" role="region" aria-label="EDM 任务与提示" tabIndex={0}>
@@ -743,6 +745,9 @@ export function EdmPage() {
     <Drawer open={groupingDrawerOpen} onOpenChange={setGroupingDrawerOpen} title="配置父子 SKU 规则" description="仅当项目启用分组后，EDM 图片列表才会筛选父 SKU。预览由 Core 计算。" footer={<div className="si-edm-drawer-actions"><Button onClick={() => setGroupingDrawerOpen(false)}>关闭</Button><Button variant="primary" onClick={openGroupingSettings}>前往项目设置</Button></div>}>
       <Notice tone="warn" title="当前未启用父子 SKU 分组">“仅展示父 SKU”暂时不会改变 EDM 图片列表。先在项目设置中启用规则，再返回这里筛选。</Notice>
       <EdmGroupingPreview projectId={id} rule={groupingRule} enabled={groupingDrawerOpen} />
+    </Drawer>
+    <Drawer open={scenarioDrawerOpen} onOpenChange={setScenarioDrawerOpen} title="EDM 只读检查" width="wide">
+      {scenarioDrawerOpen && <EdmScenarioSections projectId={id} selectedSkus={selectedRows.map((row) => row.sku)} />}
     </Drawer>
     <ConfirmDialog
       open={Boolean(pendingMediaPrepare)}
