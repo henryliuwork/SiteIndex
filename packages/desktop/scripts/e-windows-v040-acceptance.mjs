@@ -1399,6 +1399,10 @@ async function verifyPackagedScenarioQueries(page, origin) {
 async function verifyLocalRunJob(executablePath, origin) {
   const projectPath = path.join(TEST_ROOT, "scenario-run-job-project");
   await makeW2SyntheticProject(projectPath, origin);
+  const { device_id, device_name } = JSON.parse(await readFile(SETTINGS_FILE, "utf8"));
+  await writeFile(path.join(projectPath, "index", ".runner.json"), `${JSON.stringify({
+    device_id, device_name, claimed_at: new Date().toISOString(),
+  }, null, 2)}\n`);
   const historyPath = path.join(projectPath, "index", "logs", "runs.jsonl");
   const beforeRuns = await readWooRows(projectPath, "index/logs/runs.jsonl");
   const result = spawnSync(executablePath, ["--run-job", projectPath, "views"], {
