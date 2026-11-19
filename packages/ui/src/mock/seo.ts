@@ -1,6 +1,7 @@
 import { beginRun, delay, orphanSeoPages, projectConfigs, projectKey, reply, seoIssuesForProject, seoLinks, seoPages, selectRows, syncProjectSeoAttention } from "./context";
 import type { ListQuery, SeoIssue, SeoPageFilters, SeoRule, SeoRuleSetting, SiteIndexApi } from "@siteindex/shared";
 import { googleSiteSearchUrl, SEO_RULE_LABELS } from "@siteindex/shared";
+import { mockSeoPageRows } from "./seo-page-table";
 
 const ruleSeverities: Record<SeoRule, SeoIssue["severity"]> = {
   http_4xx: "high", http_5xx: "high", redirect_chain: "mid", noindex: "low", canonical_other: "mid", canonical_missing: "low",
@@ -133,6 +134,7 @@ export function createSeoMock(): SiteIndexApi["seo"] {
       (row, filters) => (!filters.page_type || row.page_type === filters.page_type) && (!filters.indexed || (filters.indexed === "yes" ? row.google_indexed === true : filters.indexed === "no" ? row.google_indexed === false : row.google_indexed == null)),
       "url", (row) => row.url,
     )),
+    listPageRows: (id, query) => reply(() => mockSeoPageRows(id, query)),
     listLinks: (_id, query) => reply(() => selectRows(
       seoLinks, query, (row) => [row.from, row.to, row.anchor, row.to_type].join(" "), () => true,
       "from", (row) => `${row.from}\u0000${row.to}\u0000${row.anchor}`,

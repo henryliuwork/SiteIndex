@@ -14,6 +14,7 @@ import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, InfoTooltip, KpiCard, LengthBadge, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./seo/filters";
 import { SeoScenarioSections } from "./seo/drawer/scenario-sections";
+import { SeoPageTable } from "./seo/page-table";
 import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams, type SeoSearchParamPatch, type SeoView } from "./seo/query-params";
 
 const pageTypes: { value: PageType | "all"; label: string }[] = [
@@ -249,6 +250,7 @@ export function SeoPage() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
+      queryClient.invalidateQueries({ queryKey: ["seo", "pageRows", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "pageBrief", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "issueCandidates", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "rule-settings", id] }),
@@ -371,6 +373,7 @@ export function SeoPage() {
         queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "rule-settings", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "pages", id] }),
+        queryClient.invalidateQueries({ queryKey: ["seo", "pageRows", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "links", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "orphans", id] }),
       ]);
@@ -469,7 +472,6 @@ export function SeoPage() {
       project={project}
       activeTab="seo"
       hasTabPanel
-      status={<Chip tone="neutral">SEO 页面：{pageList?.total ?? 0} 个</Chip>}
       actions={<>
         <Button variant="primary" icon={<Settings2 size={14} />} onClick={() => setRuleSettingsOpen(true)}>规则设置</Button>
         <Button disabled={busy} icon={<Globe2 size={14} />} onClick={() => void checkIndex()}>{runKind === "index-check" ? "检查中…" : "重新检查收录"}</Button>
@@ -481,15 +483,18 @@ export function SeoPage() {
       ]}
     />
     <ProjectTabPanel projectId={project.id} tab="seo">
-      <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-      {summary?.crawled_at && <p className="si-seo-data-date">SEO 抓取数据截至 {formatDateTime(summary.crawled_at)}</p>}
+      {!api.seo.listPageRows && <>
+        <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
+        {summary?.crawled_at && <p className="si-seo-data-date">SEO 抓取数据截至 {formatDateTime(summary.crawled_at)}</p>}
+      </>}
+      {progressText && <Notice className="si-seo-progress" tone="info">{progressText}{progressPct != null && ` · ${progressPct}%`}</Notice>}
+      {api.seo.listPageRows ? <SeoPageTable id={id} summary={summary} onOpen={showPageDetail} /> : <>
       <div className="si-seo-view-switch">
         <Segmented value={view} options={views} onChange={changeView} ariaLabel="SEO 视图" />
       </div>
       {selectedConditions.length > 0 && <div className="si-seo-selected-filters" aria-label="已选筛选条件">
         {selectedConditions.map((condition) => <SeoFilterChip key={condition.label} label={condition.label} onRemove={condition.onRemove} />)}
       </div>}
-      {progressText && <Notice className="si-seo-progress" tone="info">{progressText}{progressPct != null && ` · ${progressPct}%`}</Notice>}
       {activeListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "issues" ? "问题清单" : view === "pages" ? "页面列表" : "内链列表"}…</div> : activeListQuery.isError ? <ApiErrorNotice label={`${view === "issues" ? "SEO 问题清单" : view === "pages" ? "SEO 页面列表" : "SEO 内链列表"}加载失败。`} error={activeListQuery.error} onRetry={() => void activeListQuery.refetch()} /> : <>
         {view === "issues" && <DataTable
           key={selectionReset}
@@ -519,6 +524,7 @@ export function SeoPage() {
           {orphansQuery.isLoading ? <span role="status">正在加载孤立页面…</span> : orphansQuery.isError ? <ApiErrorNotice label="孤立页面加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} /> : orphansQuery.data?.length ? orphansQuery.data.map((url) => <button type="button" key={url} onClick={() => showPageDetail(url)}><code>{displayPath(url)}</code><span>查看详情</span></button>) : <span>没有孤立页面。</span>}
         </div>
       </details>}
+      </>}
     </ProjectTabPanel>
     <Drawer open={Boolean(selectedUrl)} onOpenChange={(open) => { if (!open) { setSelectedUrl(null); setSelectedLink(null); } }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
       {selectedUrl && <SeoScenarioSections key={selectedUrl} id={id} url={selectedUrl} issueActions={issueActionHandlers} overview={<>

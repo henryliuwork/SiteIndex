@@ -28,7 +28,8 @@ function SearchProbe() {
   return <output data-testid="search-params">{location.search}</output>;
 }
 
-async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = "/p/demo/seo") {
+async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = "/p/demo/seo", pageTable = false) {
+  if (!pageTable) delete mockApi.seo.listPageRows;
   vi.doMock("../api", () => ({
     api: mockApi,
     apiErrorMessage: (error: unknown, fallback: string) =>
@@ -237,6 +238,38 @@ describe("SeoPage 问题处理", () => {
     expect(await screen.findByText("已选择 1 条待处理问题")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "标记已处理" }));
     await waitFor(() => expect(setIssueStatus).toHaveBeenCalledWith("demo", expect.objectContaining({ status: "fixed", targets: expect.any(Array) })));
+    expect(await screen.findByText("已更新 1 条")).toBeTruthy();
+  });
+});
+
+describe("SeoPage 单页面表", () => {
+  it("用真实页面聚合查询代替问题与内链视图，并恢复旧深链", async () => {
+    const mockApi = createMockApi();
+    const listPageRows = vi.spyOn(mockApi.seo, "listPageRows");
+    await renderSeoPage(mockApi, "/p/demo/seo?view=issues&rule=desc_missing&status=open", true);
+    expect(await screen.findByRole("table", { name: "seo.pageRows 数据表" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "SEO 视图" })).toBeNull();
+    expect(screen.queryByRole("table", { name: "seo.issues.v2 数据表" })).toBeNull();
+    await waitFor(() => expect(listPageRows).toHaveBeenCalledWith("demo", expect.objectContaining({
+      filters: expect.objectContaining({ rules: ["desc_missing"], status: "open" }),
+    })));
+    expect(screen.getByText("问题类型 · Meta description 缺失")).toBeTruthy();
+  });
+
+  it("勾选页面后按实际待处理问题数确认批量处理", async () => {
+    const mockApi = createMockApi();
+    const setIssueStatus = vi.fn(async (_id: string, input: { targets: unknown[] }) => ({ updated: input.targets.length }));
+    mockApi.seo.setIssueStatus = setIssueStatus;
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await renderSeoPage(mockApi, "/p/demo/seo", true);
+    expect(await screen.findByRole("table", { name: "seo.pageRows 数据表" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择第 1 行" }));
+    expect(screen.getByText(/已选 1 页 · 待处理问题 1 条/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "标记所选页面的待处理问题" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("所选 1 个页面的 1 条待处理问题"));
+    await waitFor(() => expect(setIssueStatus).toHaveBeenCalledWith("demo", expect.objectContaining({
+      status: "fixed", targets: [expect.objectContaining({ rule: "http_4xx" })],
+    })));
     expect(await screen.findByText("已更新 1 条")).toBeTruthy();
   });
 });
