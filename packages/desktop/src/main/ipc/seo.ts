@@ -28,6 +28,10 @@ export function createSeoHandlers(context: IpcContext): IpcHandlerImplementation
       context.withProject(args[0], (id) =>
         context.core.seo.listPages(id, args[1] as Parameters<typeof context.core.seo.listPages>[1]),
       ),
+    "seo.listPageRows": (...args) =>
+      context.withProject(args[0], (id) =>
+        context.core.seo.listPageRows(id, args[1] as Parameters<typeof context.core.seo.listPageRows>[1]),
+      ),
     "seo.listLinks": (...args) =>
       context.withProject(args[0], (id) =>
         context.core.seo.listLinks(id, args[1] as Parameters<typeof context.core.seo.listLinks>[1]),
