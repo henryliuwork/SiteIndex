@@ -37,7 +37,7 @@ async function renderOverview(mockApi: ReturnType<typeof createMockApi>) {
 }
 
 describe("OverviewPage 布局和操作", () => {
-  it("无 Feed 自动采集已配置时显示配置状态而非阻断提示", async () => {
+  it("无 Feed 自动采集已配置时不显示阻断提示或常驻横幅", async () => {
     const mockApi = createMockApi();
     const project = await mockApi.projects.get("demo");
     const overview = await mockApi.overview.get("demo");
@@ -50,10 +50,48 @@ describe("OverviewPage 布局和操作", () => {
       ...overview.attention,
     ] }));
     await renderOverview(mockApi);
-    expect(await screen.findByText("无 Feed 自动采集已启用")).toBeTruthy();
-    expect(screen.getByText("首次及每日同步优先使用 WooCommerce Store API；失败时回退商品 Sitemap/HTML。")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "需要关注" })).toBeTruthy();
+    expect(screen.queryByText("无 Feed 自动采集已启用")).toBeNull();
     expect(screen.queryByText("尚未填写 GMC feed")).toBeNull();
     expect(screen.queryByText(/未配置商品来源|每日库存同步未启用/)).toBeNull();
+  });
+
+  it("五张概览卡使用真实查询计数并链接到同口径筛选", async () => {
+    const mockApi = createMockApi();
+    const originalSeoRows = mockApi.seo.listPageRows!;
+    mockApi.seo.listPageRows = vi.fn(async (id, query) => ({ ...await originalSeoRows(id, query),
+      summary: { latest_crawl_date: null, open_pages: 9, new_pages: 4, unindexed_pages: 3, fixed_pages: 2 } }));
+    mockApi.content.summary = vi.fn(async () => ({ kpis: [
+      { key: "no_schema", label: "缺少 Schema", value: "6" },
+      { key: "no_links", label: "无站内链接", value: "5" },
+    ], uncovered_core_keywords: [] }));
+    mockApi.edm.listImages = vi.fn(async () => ({ rows: [], total: 7 }));
+    const overview = await mockApi.overview.get("demo");
+    mockApi.overview.get = vi.fn(async () => ({ ...overview, kpis: [{ key: "sales", label: "30 天销量", value: "999" }] }));
+    await renderOverview(mockApi);
+
+    const cards = await screen.findByRole("region", { name: "项目指标" });
+    await waitFor(() => expect(cards.querySelectorAll("a.si-kpi-card")).toHaveLength(5));
+    expect([...cards.querySelectorAll("a.si-kpi-card")].map((item) => [item.textContent, item.getAttribute("href")])).toEqual([
+      ["本次新增问题页4", "/p/demo/seo?summary=new"],
+      ["未收录页面3", "/p/demo/seo?summary=unindexed"],
+      ["博客缺少 Schema6", "/p/demo/content?issue=no_schema"],
+      ["博客无站内链接5", "/p/demo/content?issue=no_links"],
+      ["EDM 缺图 SKU7", "/p/demo/edm?view=none"],
+    ]);
+    expect(mockApi.seo.listPageRows).toHaveBeenCalledWith("demo", { page: 1, pageSize: 1, filters: {} });
+    expect(mockApi.edm.listImages).toHaveBeenCalledWith("demo", { page: 1, pageSize: 1, filters: { view: "none" } });
+    expect(screen.queryByText("30 天销量")).toBeNull();
+  });
+
+  it("旧 bridge 缺少 SEO 页面聚合时隐藏对应卡并明确说明", async () => {
+    const mockApi = createMockApi();
+    delete mockApi.seo.listPageRows;
+    await renderOverview(mockApi);
+    expect(await screen.findByText("当前版本暂不支持 SEO 页面指标。")).toBeTruthy();
+    expect(screen.queryByText("本次新增问题页")).toBeNull();
+    expect(screen.queryByText("未收录页面")).toBeNull();
+    expect(await screen.findByText("博客缺少 Schema")).toBeTruthy();
   });
 
   it("按 KPI、关注、README 摘要、变更记录排列，并把快捷操作放进页面操作区", async () => {
@@ -146,6 +184,9 @@ describe("OverviewPage 布局和操作", () => {
 
     expect(await screen.findByText("每日同步已完成。")).toBeTruthy();
     await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["overview", "demo"] })));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["seo", "pageRows", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["content", "summary", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["edm", "images", "demo"] }));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["projects", "demo"], exact: true }));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["projects"], exact: true }));
   });

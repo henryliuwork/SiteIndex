@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, FileDown } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, JobProgress, JobResult, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
@@ -16,6 +16,10 @@ type RoleFilter = KeywordFilters["role"] | "all";
 type StatusFilter = KeywordFilters["status"] | "all";
 const initialBlogQuery: ListQuery<BlogFilters> = { page: 1, pageSize: 20, filters: {} };
 const initialKeywordQuery: ListQuery<KeywordFilters> = { page: 1, pageSize: 20, filters: {} };
+function issueFromUrl(params: URLSearchParams): BlogFilters["issue"] | undefined {
+  const issue = params.get("issue");
+  return issue === "no_links" || issue === "no_schema" || issue === "links_oos" ? issue : undefined;
+}
 const blogIssues: { value: IssueFilter; label: string }[] = [
   { value: "all", label: "全部" }, { value: "no_links", label: "无站内链接" },
   { value: "no_schema", label: "缺 schema" }, { value: "links_oos", label: "链接缺货产品" },
@@ -72,13 +76,26 @@ function keywordColumns(): ColumnDef<Keyword, unknown>[] {
 export function ContentPage() {
   const { id = "demo" } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<ContentView>("blog");
-  const [blogQuery, setBlogQuery] = useState(initialBlogQuery);
+  const [blogQuery, setBlogQuery] = useState<ListQuery<BlogFilters>>(() => ({ ...initialBlogQuery, filters: { issue: issueFromUrl(searchParams) } }));
   const [keywordQuery, setKeywordQuery] = useState(initialKeywordQuery);
   const [selected, setSelected] = useState<BlogPost | Keyword | null>(null);
   const [recrawlRunId, setRecrawlRunId] = useState<string | null>(null);
   const [recrawlStarting, setRecrawlStarting] = useState(false);
   const [recrawlProgress, setRecrawlProgress] = useState("");
+  useEffect(() => {
+    const issue = issueFromUrl(searchParams);
+    setBlogQuery((current) => current.filters?.issue === issue ? current : { ...current, page: 1, filters: { ...current.filters, issue } });
+  }, [searchParams]);
+  const setBlogIssue = (issue: BlogFilters["issue"] | undefined) => {
+    setBlogQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, issue } }));
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (issue) next.set("issue", issue); else next.delete("issue");
+      return next;
+    }, { replace: true });
+  };
   const queryClient = useQueryClient();
   const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
@@ -111,8 +128,7 @@ export function ContentPage() {
     const value = summary?.kpis.find((item) => item.key === key)?.value;
     if (value === undefined || !/^\d+$/.test(value)) return [];
     return [{ id: key, label, value: Number(value), active: blogQuery.filters?.issue === key,
-      onToggle: () => setBlogQuery((current) => ({ ...current, page: 1,
-        filters: { ...current.filters, issue: current.filters?.issue === key ? undefined : key } })) }];
+      onToggle: () => setBlogIssue(blogQuery.filters?.issue === key ? undefined : key) }];
   });
   const viewOptions: { value: ContentView; label: string }[] = [
     { value: "blog" as const, label: "博客文章" },
@@ -192,7 +208,7 @@ export function ContentPage() {
 
   const tableToolbar = <div className="si-content-toolbar si-content-toolbar-table">
     <SearchInput value={(view === "blog" ? blogQuery : keywordQuery).search ?? ""} onSearch={setSearch} label="搜索内容" placeholder={view === "keywords" ? "搜索关键词或主题簇" : "搜索标题或关键词"} />
-    {view === "blog" && <FilterBar className="si-content-filterbar">{blogIssues.map((item) => <FilterPill key={item.value} currentValue={blogQuery.filters?.issue ?? "all"} value={item.value} onValueChange={(value) => setBlogQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, issue: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}</FilterBar>}
+    {view === "blog" && <FilterBar className="si-content-filterbar">{blogIssues.map((item) => <FilterPill key={item.value} currentValue={blogQuery.filters?.issue ?? "all"} value={item.value} onValueChange={(value) => setBlogIssue(!value || value === "all" ? undefined : value)}>{item.label}</FilterPill>)}</FilterBar>}
     {view === "keywords" && <FilterBar className="si-content-filterbar">{roleOptions.map((item) => <FilterPill key={item.value} currentValue={keywordQuery.filters?.role ?? "all"} value={item.value} onValueChange={(value) => setKeywordQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, role: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}{statusOptions.map((item) => <FilterPill key={item.value} currentValue={keywordQuery.filters?.status ?? "all"} value={item.value} onValueChange={(value) => setKeywordQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}</FilterBar>}
     <span className="si-content-total">显示 {view === "blog" ? blogs?.rows.length ?? 0 : keywords?.rows.length ?? 0} / {view === "blog" ? blogs?.total ?? 0 : keywords?.total ?? 0} 条</span>
   </div>;

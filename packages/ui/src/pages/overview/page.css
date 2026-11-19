@@ -10,6 +10,16 @@
   gap: var(--space-4);
 }
 
+.si-overview-content > .si-notice,
+.si-overview-metric-errors {
+  grid-column: 1 / -1;
+}
+
+.si-overview-metric-errors {
+  display: grid;
+  gap: var(--space-2);
+}
+
 .si-overview-kpis {
   display: grid;
   grid-column: 1 / -1;
@@ -20,20 +30,6 @@
 .si-overview-kpis .si-kpi-card {
   min-height: 0;
   padding: var(--space-3) var(--space-4);
-}
-
-.si-overview-kpis .si-kpi-card:last-child .si-kpi-value {
-  font-size: var(--fs-sub-title);
-}
-
-.si-overview-kpis .si-kpi-card:last-child .si-kpi-hint {
-  width: fit-content;
-  padding: var(--space-1) var(--space-2);
-  border-radius: 999px;
-  background: var(--color-neutral-soft);
-  color: var(--color-ink-2);
-  font-size: var(--fs-caption);
-  font-weight: 600;
 }
 
 .si-overview-attention,
