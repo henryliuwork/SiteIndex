@@ -12,3 +12,4 @@
 .si-seo-scenario-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .si-seo-scenario-list li { display: grid; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--color-line-soft); border-radius: var(--radius-card); }
 .si-seo-scenario-list li > span { overflow-wrap: anywhere; }
+.si-seo-scenario-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

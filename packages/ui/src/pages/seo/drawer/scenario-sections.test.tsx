@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ScenarioQueryResult, SeoPageBrief } from "@siteindex/shared";
+import type { ScenarioQueryResult, SeoPageBrief, SeoIssue } from "@siteindex/shared";
 import { createMockApi } from "../../../mock";
 
 vi.setConfig({ testTimeout: 15_000 });
@@ -12,6 +12,7 @@ async function renderSections(options: {
   mock?: boolean;
   pending?: string[];
   pageBrief?: (id: string, url: string) => Promise<ScenarioQueryResult<SeoPageBrief>>;
+  issueActions?: { markFixed?: (issue: SeoIssue) => void };
 } = {}) {
   const mockApi = createMockApi();
   const pages = await mockApi.seo.listPages("demo", { page: 1, pageSize: 1 });
@@ -24,7 +25,7 @@ async function renderSections(options: {
   });
   const { SeoScenarioSections, seoScenarioTabs } = await import("./scenario-sections");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={queryClient}><SeoScenarioSections id="demo" url={url} overview={<div>原页面概况</div>} /></QueryClientProvider>);
+  render(<QueryClientProvider client={queryClient}><SeoScenarioSections id="demo" url={url} overview={<div>原页面概况</div>} issueActions={options.issueActions} /></QueryClientProvider>);
   return { mockApi, url, seoScenarioTabs };
 }
 
@@ -33,35 +34,47 @@ describe("SEO 行抽屉只读场景", () => {
     const { mockApi, seoScenarioTabs } = await renderSections({ mock: false, pending: ["seo.pageBrief", "seo.issueCandidates", "seo.internalLinkContext"] });
     expect(screen.getByText("原页面概况")).toBeTruthy();
     expect(screen.queryByRole("group", { name: "页面详情分段" })).toBeNull();
-    expect(seoScenarioTabs(mockApi.seo, false, ["seo.pageBrief", "seo.issueCandidates", "seo.internalLinkContext"])).toEqual(["overview"]);
+    expect(seoScenarioTabs(mockApi.seo, false, ["seo.pageBrief", "seo.issueCandidates", "seo.internalLinkContext"])).toEqual(["index"]);
     delete mockApi.seo.pageBrief;
-    expect(seoScenarioTabs(mockApi.seo, false, [])).not.toContain("brief");
+    expect(seoScenarioTabs(mockApi.seo, false, [])).not.toContain("issues");
   });
 
-  it("页面简报调用只读 IPC 并显示数据", async () => {
+  it("问题分段调用页面简报 IPC 并显示该页问题", async () => {
     const { mockApi, url } = await renderSections();
     const pageBrief = vi.spyOn(mockApi.seo, "pageBrief");
-    fireEvent.click(screen.getByRole("button", { name: "页面简报" }));
+    fireEvent.click(screen.getByRole("button", { name: "问题" }));
     await waitFor(() => expect(pageBrief).toHaveBeenCalledWith("demo", url));
-    expect(await screen.findByText("相关问题")).toBeTruthy();
+    expect(await screen.findByText(/SEO 问题|缺少/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "内链" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "收录" })).toBeTruthy();
+  });
+
+  it("问题操作只调用传入处理器，缺少方法时不出现按钮", async () => {
+    const markFixed = vi.fn();
+    await renderSections({ issueActions: { markFixed } });
+    fireEvent.click(screen.getByRole("button", { name: "问题" }));
+    const buttons = await screen.findAllByRole("button", { name: "标记已处理" });
+    fireEvent.click(buttons[0]!);
+    expect(markFixed).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "忽略此页面此问题" })).toBeNull();
   });
 
   it("加载、空数据、错误和重试均有明确反馈", async () => {
     let finish!: (value: ScenarioQueryResult<SeoPageBrief>) => void;
     const deferred = new Promise<ScenarioQueryResult<SeoPageBrief>>((resolve) => { finish = resolve; });
     const { mockApi, url } = await renderSections({ pageBrief: vi.fn(() => deferred) });
-    fireEvent.click(screen.getByRole("button", { name: "页面简报" }));
+    fireEvent.click(screen.getByRole("button", { name: "问题" }));
     expect(screen.getByRole("status").textContent).toContain("正在加载");
     const page = await mockApi.seo.getPage("demo", url);
     finish({ data: null, metadata: { sources: [], collected_at: null, missing_fields: [], quality: "partial", anomalies: [] } });
-    expect(await screen.findByText("没有这张页面的简报。")).toBeTruthy();
+    expect(await screen.findByText("没有这张页面的问题数据。")).toBeTruthy();
     expect(page).toBeTruthy();
   });
 
   it("查询失败显示可重试的 ApiErrorNotice", async () => {
     const pageBrief = vi.fn().mockRejectedValueOnce(new Error("演示查询失败"));
     await renderSections({ pageBrief });
-    fireEvent.click(screen.getByRole("button", { name: "页面简报" }));
+    fireEvent.click(screen.getByRole("button", { name: "问题" }));
     expect(await screen.findByText("查询失败。")).toBeTruthy();
     expect(screen.getByRole("button", { name: /重试/ })).toBeTruthy();
   });

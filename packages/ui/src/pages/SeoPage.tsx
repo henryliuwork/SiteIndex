@@ -249,6 +249,7 @@ export function SeoPage() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
+      queryClient.invalidateQueries({ queryKey: ["seo", "pageBrief", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "rule-settings", id] }),
       queryClient.invalidateQueries({ queryKey: ["overview", id] }),
     ]);
@@ -519,7 +520,7 @@ export function SeoPage() {
       </details>}
     </ProjectTabPanel>
     <Drawer open={Boolean(selectedUrl)} onOpenChange={(open) => { if (!open) { setSelectedUrl(null); setSelectedLink(null); } }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
-      {selectedUrl && <SeoScenarioSections key={selectedUrl} id={id} url={selectedUrl} overview={<>
+      {selectedUrl && <SeoScenarioSections key={selectedUrl} id={id} url={selectedUrl} issueActions={issueActionHandlers} overview={<>
         {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}
         {detailQuery.isLoading ? <div className="si-query-loading" role="status">正在加载页面详情…</div> : detailQuery.isError ? <ApiErrorNotice label="页面详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : detailQuery.data ? <SeoDetail
           page={detailQuery.data} titleRange={titleRange} descriptionRange={descriptionRange}
