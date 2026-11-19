@@ -30,6 +30,15 @@ export function mergeProductAndStockRows(
   });
 }
 
+/** A filtered stock view is only usable when every canonical row appears exactly once. */
+export function matchesFilteredStockRows(rows: readonly ProductManagementRow[], stockRows: readonly SkuStockView[]): boolean {
+  const expected = new Set(stockRows.map((row) => row.sku));
+  const actual = rows.map((row) => row.stock?.sku).filter((sku): sku is string => Boolean(sku));
+  return expected.size === stockRows.length && actual.length === rows.length
+    && actual.length === expected.size && new Set(actual).size === actual.length
+    && actual.every((sku) => expected.has(sku));
+}
+
 export function matchesProductManagementSearch(row: ProductManagementRow, search: string): boolean {
   const needle = search.trim().toLocaleLowerCase("zh-CN");
   if (!needle) return true;
