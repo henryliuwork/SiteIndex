@@ -363,6 +363,21 @@ export interface InventorySummary {
   timezone?: string;
   uncategorized: number;
   today: { type: "restock" | "oos" | "price" | "new" | "removed" | "feed_anomaly"; sku: string; title: string; detail?: string }[];
+  /** 默认父商品/独立 SKU 行的摘要；父组只计子 SKU，独立 SKU 计自身。旧 bridge 可省略。 */
+  product_management?: {
+    /** 最近真实业务日；null 表示尚无业务核验，其他计数为 0 也不能解读为已核验。 */
+    as_of: ISODate | null;
+    total_rows: number;
+    in_stock_rows: number;
+    /** 0–1 比率；例如 0.25 在界面显示为 25%。 */
+    online_rate: number | null;
+    /** 最近业务日发生库存变化的去重行数；没有业务日时为 null。 */
+    changed_rows: number | null;
+    /** 整组连续缺货至少 7 个日历日的行数；无可用历史时为 null。 */
+    out_of_stock_7d_rows: number | null;
+    /** 近 30 天有货/无货直接切换至少 2 次的行数；无可用历史时为 null。 */
+    fluctuating_30d_rows: number | null;
+  };
 }
 
 export interface SkuStockFilters {
@@ -371,6 +386,8 @@ export interface SkuStockFilters {
   parent_only?: boolean;
   watched_only?: boolean;
   price_changed_within?: HistoryRange;
+  /** 摘要点击筛选；隐含默认父商品/独立 SKU 行视图，并与其他条件取交集。 */
+  summary_metric?: "in_stock" | "changed" | "out_of_stock_7d" | "fluctuating_30d";
 }
 
 // ---------- 产品 ----------
