@@ -45,3 +45,7 @@ Kingsyard 风格喂鸟器站点，16 个产品（2 个带颜色变体），见 `
 ## Design Token v2 fixture
 - `www/design-v2/` 是纯虚构的本地静态站点，覆盖颜色角色 CSS 变量、h1–h6/body/small/caption 字号、等宽字体、三类按钮与高频 spacing/radius/shadow。
 - Core 的浏览器测试只通过本地静态服务访问此目录；不会请求真实站点。设置 `SITEINDEX_TEST_BROWSER` 可启用真实浏览器回归测试。
+
+## v0.7.0 场景查询 fixture
+
+- `scenarios-v070/golden.jsonl` 为九个只读查询的完整返回 envelope，每行一种方法；测试以 `compareKeys` 排序对象键并逐字节比对。输入全部由 `packages/core/test/scenario-golden.test.ts` 在临时目录合成，不访问网络。
