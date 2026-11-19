@@ -118,6 +118,12 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
     products: {
       list: (...args) => invoke<SiteIndexApi["products"]["list"]>("products.list", ...args),
       get: (...args) => invoke<SiteIndexApi["products"]["get"]>("products.get", ...args),
+      skuBrief: (...args) =>
+        invoke<NonNullable<SiteIndexApi["products"]["skuBrief"]>>("products.skuBrief", ...args),
+      changes: (...args) =>
+        invoke<NonNullable<SiteIndexApi["products"]["changes"]>>("products.changes", ...args),
+      groupFamily: (...args) =>
+        invoke<NonNullable<SiteIndexApi["products"]["groupFamily"]>>("products.groupFamily", ...args),
       setTags: (...args) => invoke<SiteIndexApi["products"]["setTags"]>("products.setTags", ...args),
       listTags: (...args) => invoke<SiteIndexApi["products"]["listTags"]>("products.listTags", ...args),
       createTag: (...args) => invoke<SiteIndexApi["products"]["createTag"]>("products.createTag", ...args),
@@ -129,6 +135,11 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
     },
     seo: {
       summary: (...args) => invoke<SiteIndexApi["seo"]["summary"]>("seo.summary", ...args),
+      pageBrief: (...args) => invoke<NonNullable<SiteIndexApi["seo"]["pageBrief"]>>("seo.pageBrief", ...args),
+      issueCandidates: (...args) =>
+        invoke<NonNullable<SiteIndexApi["seo"]["issueCandidates"]>>("seo.issueCandidates", ...args),
+      internalLinkContext: (...args) =>
+        invoke<NonNullable<SiteIndexApi["seo"]["internalLinkContext"]>>("seo.internalLinkContext", ...args),
       listIssues: (...args) => invoke<SiteIndexApi["seo"]["listIssues"]>("seo.listIssues", ...args),
       setIssueStatus: (...args) =>
         invoke<NonNullable<SiteIndexApi["seo"]["setIssueStatus"]>>("seo.setIssueStatus", ...args),
@@ -151,6 +162,12 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
     },
     edm: {
       summary: (...args) => invoke<SiteIndexApi["edm"]["summary"]>("edm.summary", ...args),
+      candidates: (...args) =>
+        invoke<NonNullable<SiteIndexApi["edm"]["candidates"]>>("edm.candidates", ...args),
+      mediaGaps: (...args) =>
+        invoke<NonNullable<SiteIndexApi["edm"]["mediaGaps"]>>("edm.mediaGaps", ...args),
+      campaignSafety: (...args) =>
+        invoke<NonNullable<SiteIndexApi["edm"]["campaignSafety"]>>("edm.campaignSafety", ...args),
       listImages: (...args) => invoke<SiteIndexApi["edm"]["listImages"]>("edm.listImages", ...args),
       setManualImage: (...args) => invoke<SiteIndexApi["edm"]["setManualImage"]>("edm.setManualImage", ...args),
       setDiscountTier: (...args) =>

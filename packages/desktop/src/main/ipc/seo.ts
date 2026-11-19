@@ -4,6 +4,12 @@ import type { IpcContext } from "./context.js";
 export function createSeoHandlers(context: IpcContext): IpcHandlerImplementations {
   return {
     "seo.summary": (id) => context.withProject(id, (projectId) => context.core.seo.summary(projectId)),
+    "seo.pageBrief": (...args) =>
+      context.withProject(args[0], (id) => context.core.seo.pageBrief!(id, args[1] as string)),
+    "seo.issueCandidates": (...args) =>
+      context.withProject(args[0], (id) => context.core.seo.issueCandidates!(id, args[1] as string | undefined)),
+    "seo.internalLinkContext": (...args) =>
+      context.withProject(args[0], (id) => context.core.seo.internalLinkContext!(id, args[1] as string)),
     "seo.listIssues": (...args) =>
       context.withProject(args[0], (id) =>
         context.core.seo.listIssues(id, args[1] as Parameters<typeof context.core.seo.listIssues>[1]),

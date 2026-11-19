@@ -4,6 +4,18 @@ import type { IpcContext } from "./context.js";
 export function createEdmHandlers(context: IpcContext): IpcHandlerImplementations {
   return {
     "edm.summary": (id) => context.withProject(id, (projectId) => context.core.edm.summary(projectId)),
+    "edm.candidates": (...args) =>
+      context.withProject(args[0], (id) =>
+        context.core.edm.candidates(id, args[1] as Parameters<typeof context.core.edm.candidates>[1]),
+      ),
+    "edm.mediaGaps": (...args) =>
+      context.withProject(args[0], (id) =>
+        context.core.edm.mediaGaps(id, args[1] as Parameters<typeof context.core.edm.mediaGaps>[1]),
+      ),
+    "edm.campaignSafety": (...args) =>
+      context.withProject(args[0], (id) =>
+        context.core.edm.campaignSafety(id, args[1] as Parameters<typeof context.core.edm.campaignSafety>[1]),
+      ),
     "edm.listImages": (...args) =>
       context.withProject(args[0], (id) =>
         context.core.edm.listImages(id, args[1] as Parameters<typeof context.core.edm.listImages>[1]),
