@@ -9,12 +9,12 @@ import type {
 import { API_INVOKE_METHODS, PENDING_HANDLERS } from "../src";
 
 describe("SEO page table additive contract", () => {
-  it("leaves older SEO bridges valid while registering the pending invoke method", () => {
+  it("leaves older SEO bridges valid after registering the implemented invoke method", () => {
     const oldSeoBridge: Pick<SiteIndexApi["seo"], "listPageRows"> = {};
 
     expect(oldSeoBridge.listPageRows).toBeUndefined();
     expect(API_INVOKE_METHODS.filter((method) => method === "seo.listPageRows")).toHaveLength(1);
-    expect(PENDING_HANDLERS).toContain("seo.listPageRows");
+    expect(PENDING_HANDLERS).not.toContain("seo.listPageRows");
   });
 
   it("types page-level issue filters, summary links, and server-side sort without changing old queries", () => {
