@@ -163,6 +163,8 @@ const report = {
   packagedFonts: null,
   packagedCli: null,
   cloudRunJob: null,
+  scenarioQueries: null,
+  localRunJob: null,
   windows: {
     version: process.env.SITEINDEX_WINDOWS_VERSION || os.version(),
     build: process.env.SITEINDEX_WINDOWS_BUILD || null,
@@ -1348,6 +1350,76 @@ async function verifyInstalledCli(executablePath) {
     projectUnchanged,
   };
   assert(queryPassed, "installed CLI query reads synthetic products without changing project files", report.packagedCli);
+}
+
+async function verifyPackagedScenarioQueries(page, origin) {
+  const before = await snapshotTree(W2_PROJECT_DIRECTORY);
+  const results = await page.evaluate(async ({ id, url, sku }) => {
+    const api = window.siteindex;
+    const calls = [
+      ["seo.pageBrief", () => api.seo.pageBrief(id, url), (data) => data.page?.url === url],
+      ["seo.issueCandidates", () => api.seo.issueCandidates(id, url), (data) => Array.isArray(data) && data.length > 0 && data.every((row) => row.url === url)],
+      ["seo.internalLinkContext", () => api.seo.internalLinkContext(id, url), (data) => data.page?.url === url && Array.isArray(data.outgoing_links)],
+      ["products.skuBrief", () => api.products.skuBrief(id, sku), (data) => data.sku?.sku === sku],
+      ["products.changes", () => api.products.changes(id, sku), (data) => Array.isArray(data) && data.some((row) => row.sku === sku)],
+      ["products.groupFamily", () => api.products.groupFamily(id, sku), (data) => data.sku === sku && Array.isArray(data.members) && data.members.length > 0],
+      ["edm.candidates", () => api.edm.candidates(id, { limit: 1 }), (data) => data.total > 0 && data.rows?.length === 1],
+      ["edm.mediaGaps", () => api.edm.mediaGaps(id, { skus: [sku] }), (data) => data.total > 0 && data.rows?.some((row) => row.sku === sku)],
+      ["edm.campaignSafety", () => api.edm.campaignSafety(id, { campaign_date: "2026-11-11", skus: [sku] }),
+        (data) => data.status === "blocked" && Array.isArray(data.findings) && data.findings.length > 0],
+    ];
+    const checks = [];
+    for (const [method, invoke, validData] of calls) {
+      try {
+        const response = await invoke();
+        const metadata = response?.metadata;
+        checks.push({
+          method,
+          dataValid: response?.data !== null && typeof response?.data === "object" && validData(response.data),
+          metadataValid: Array.isArray(metadata?.sources) && metadata.sources.length > 0
+            && metadata.sources.every((source) => typeof source?.kind === "string")
+            && (metadata.collected_at === null || typeof metadata.collected_at === "string")
+            && Array.isArray(metadata.missing_fields) && Array.isArray(metadata.anomalies)
+            && ["complete", "partial", "unreliable"].includes(metadata.quality),
+          quality: metadata?.quality ?? null,
+        });
+      } catch (error) {
+        checks.push({ method, dataValid: false, metadataValid: false,
+          errorCode: error && typeof error === "object" && "code" in error ? String(error.code) : "UNKNOWN" });
+      }
+    }
+    return checks;
+  }, { id: W2_PROJECT_ID, url: `${origin}/products/group-000`, sku: "SYN-P001-CH-02" });
+  const projectUnchanged = JSON.stringify(await snapshotTree(W2_PROJECT_DIRECTORY)) === JSON.stringify(before);
+  report.scenarioQueries = { results, projectUnchanged };
+  assert(results.length === 9 && results.every((item) => item.dataValid && item.metadataValid) && projectUnchanged,
+    "installed candidate returns nine valid read-only scenario IPC results", report.scenarioQueries);
+}
+
+async function verifyLocalRunJob(executablePath, origin) {
+  const projectPath = path.join(TEST_ROOT, "scenario-run-job-project");
+  await makeW2SyntheticProject(projectPath, origin);
+  const historyPath = path.join(projectPath, "index", "logs", "runs.jsonl");
+  const beforeRuns = await readWooRows(projectPath, "index/logs/runs.jsonl");
+  const result = spawnSync(executablePath, ["--run-job", projectPath, "views"], {
+    encoding: "utf8", windowsHide: true, timeout: 120_000, cwd: TEST_ROOT,
+    env: isolatedProcessEnvironment(),
+  });
+  const runs = await readWooRows(projectPath, "index/logs/runs.jsonl");
+  const newRuns = runs.slice(beforeRuns.length);
+  const lockAbsent = !(await exists(path.join(projectPath, "index", ".lock")))
+    && !(await exists(path.join(projectPath, "_site-index", ".lock")));
+  report.localRunJob = {
+    exitCode: result.status,
+    spawnError: Boolean(result.error),
+    newRunCount: newRuns.length,
+    successfulViewsRun: newRuns.some((row) => row.job === "views" && row.status === "ok"),
+    lockAbsent,
+    historyPresent: await exists(historyPath),
+  };
+  assert(!result.error && result.status === 0 && report.localRunJob.successfulViewsRun
+    && report.localRunJob.historyPresent && lockAbsent,
+  "installed --run-job views completes on an independent synthetic local project", report.localRunJob);
 }
 
 async function waitForHostedUpdatedApp() {
@@ -3942,6 +4014,8 @@ async function main() {
     legacyProjectFound: candidateState.projectIds.includes("synthetic-legacy-project"),
     w2SyntheticProjectFound: candidateState.projectIds.includes(W2_PROJECT_ID),
   });
+  currentStage = "packaged nine scenario IPC query acceptance";
+  await verifyPackagedScenarioQueries(page, syntheticSite.origin);
   const legacyRead = await page.evaluate(async () => {
     const detail = await window.siteindex.projects.get("synthetic-legacy-project");
     return {
@@ -3992,6 +4066,8 @@ async function main() {
   page = await testWordPressCredentialIsolation(page);
   await testInstalledLoopbackJobs(page, syntheticSite);
   await testInstalledWooLoopback(page);
+  currentStage = "packaged local --run-job views acceptance";
+  await verifyLocalRunJob(path.join(INSTALL_DIR, "SiteIndex.exe"), syntheticSite.origin);
   await safeCandidateScreenshot(page);
 }
 
@@ -4061,6 +4137,8 @@ async function writeReport() {
     `- Add-existing handler total: ${report.addExistingTrace?.handlerTotalMs ?? "not measured"} ms (target < 5000 ms)`,
     `- Offline packaged fonts: ${report.packagedFonts ? JSON.stringify(report.packagedFonts) : "not checked"}`,
     `- Known-cloud --run-job: ${report.cloudRunJob ? JSON.stringify(report.cloudRunJob) : "not checked"}`,
+    `- Nine packaged scenario IPC queries: ${report.scenarioQueries ? JSON.stringify(report.scenarioQueries) : "not checked"}`,
+    `- Local synthetic --run-job views: ${report.localRunJob ? JSON.stringify(report.localRunJob) : "not checked"}`,
     `- Installed loopback Jobs: daily ${report.installedLoopbackJobs.daily.status} (${report.installedLoopbackJobs.daily.feedRequests} feed, ${report.installedLoopbackJobs.daily.graphqlRequests} GraphQL); media ${report.installedLoopbackJobs.media.status} (${report.installedLoopbackJobs.media.wordpressUploads} upload)`,
     `- Installed WooCommerce no-Feed loopback: ${report.installedLoopbackJobs.woo.status}; CLI exit ${report.installedLoopbackJobs.woo.cliExitCode ?? "not run"}`,
     `- Screenshot: ${report.visualEvidence?.screenshotCreated ? "created" : report.visualEvidence?.reason ?? "not available"}`,
