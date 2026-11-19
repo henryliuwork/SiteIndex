@@ -13,6 +13,7 @@ import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, InfoTooltip, KpiCard, LengthBadge, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./seo/filters";
+import { SeoScenarioSections } from "./seo/drawer/scenario-sections";
 import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams, type SeoSearchParamPatch, type SeoView } from "./seo/query-params";
 
 const pageTypes: { value: PageType | "all"; label: string }[] = [
@@ -518,11 +519,13 @@ export function SeoPage() {
       </details>}
     </ProjectTabPanel>
     <Drawer open={Boolean(selectedUrl)} onOpenChange={(open) => { if (!open) { setSelectedUrl(null); setSelectedLink(null); } }} title={detailQuery.data?.title || (selectedUrl ? displayPath(selectedUrl) : "页面详情")}>
-      {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}
-      {detailQuery.isLoading ? <div className="si-query-loading" role="status">正在加载页面详情…</div> : detailQuery.isError ? <ApiErrorNotice label="页面详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : detailQuery.data ? <SeoDetail
-        page={detailQuery.data} titleRange={titleRange} descriptionRange={descriptionRange}
-        onOpen={() => void openPage(detailQuery.data!.url)} onCheckIndex={() => void checkSingleIndex(detailQuery.data!.url)}
-      /> : selectedUrl ? <EmptyState>没有找到该页面的 SEO 数据。</EmptyState> : null}
+      {selectedUrl && <SeoScenarioSections key={selectedUrl} id={id} url={selectedUrl} overview={<>
+        {selectedLink && <div className="si-seo-selected-link"><strong>内链关系</strong><span>来源：{displayPath(selectedLink.from)}</span><span>锚文本：{selectedLink.anchor || "（空锚文本）"}</span><span>目标类型：{pageTypeLabels[selectedLink.to_type]}</span>{selectedLink.nofollow && <Chip tone="warn">nofollow</Chip>}</div>}
+        {detailQuery.isLoading ? <div className="si-query-loading" role="status">正在加载页面详情…</div> : detailQuery.isError ? <ApiErrorNotice label="页面详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : detailQuery.data ? <SeoDetail
+          page={detailQuery.data} titleRange={titleRange} descriptionRange={descriptionRange}
+          onOpen={() => void openPage(detailQuery.data!.url)} onCheckIndex={() => void checkSingleIndex(detailQuery.data!.url)}
+        /> : <EmptyState>没有找到该页面的 SEO 数据。</EmptyState>}
+      </>} />}
     </Drawer>
     <Drawer open={ruleSettingsOpen} onOpenChange={setRuleSettingsOpen} title="SEO 规则设置" description="查看规则说明与待处理数量，并设置全站规则忽略。">
       {!getRuleSettings ? <Notice tone="warn" title="当前环境暂不支持规则设置">当前桌面版本尚未接入 seo.getRuleSettings，请更新后重试。</Notice>
