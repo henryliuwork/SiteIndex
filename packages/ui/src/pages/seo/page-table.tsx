@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useSearchParams } from "react-router-dom";
 import { SEO_RULE_LABELS } from "@siteindex/shared";
 import type { ListQuery, PageType, SeoPageTableFilters, SeoPageTableQuery, SeoPageTableRow, SeoSummary, Severity } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../../api";
-import { ApiErrorNotice, Button, Chip, DataTable, FilterBar, SearchInput, useToast } from "../../components";
+import { ApiErrorNotice, Button, Chip, DataTable, FilterBar, SearchInput, SummaryLine, formatDateTime, useToast } from "../../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./filters";
 import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams } from "./query-params";
 
@@ -20,6 +20,7 @@ const indexOptions = [
   { value: "all", label: "全部" }, { value: "yes", label: "已收录" },
   { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" },
 ] as const;
+const summaryFilters = new Set(["open", "new", "unindexed", "fixed"]);
 
 function path(url: string) {
   try { const value = new URL(url); return value.pathname + value.search; }
@@ -45,8 +46,10 @@ function columns(): ColumnDef<SeoPageTableRow, unknown>[] {
 
 function queryFromUrl(params: URLSearchParams): ListQuery<SeoPageTableFilters> {
   const route = seoRouteFiltersFromSearchParams(params);
+  const summary = params.get("summary");
   return { page: 1, pageSize: 50, search: searchTextFromSearchParams(params) || undefined,
-    filters: { ...route.issues, ...route.pages } };
+    filters: { ...route.issues, ...route.pages,
+      ...(summary && summaryFilters.has(summary) ? { summary: summary as NonNullable<SeoPageTableFilters["summary"]> } : {}) } };
 }
 
 export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: SeoSummary; onOpen: (url: string) => void }) {
@@ -59,7 +62,7 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
   const [updating, setUpdating] = useState(false);
   useEffect(() => { setQuery((current) => ({ ...current, ...queryFromUrl(searchParams) })); }, [searchParams]);
   useEffect(() => { setSelectedPages([]); setSelectionReset((value) => value + 1); }, [query]);
-  const pageRows = useQuery({ queryKey: ["seo", "pageRows", id, query], queryFn: () => api.seo.listPageRows!(id, query as SeoPageTableQuery) });
+  const pageRows = useQuery({ queryKey: ["seo", "pageRows", id, query], queryFn: () => api.seo.listPageRows!(id, query as SeoPageTableQuery), placeholderData: keepPreviousData });
   const defs = useMemo(columns, []);
   const filters = query.filters ?? {};
   const write = (patch: Record<string, string | string[] | null>) =>
@@ -70,6 +73,14 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
   };
   const selectedRules = filters.rules ?? [];
   const targets = selectedPages.flatMap((page) => page.open_issue_targets);
+  const pageSummary = pageRows.data?.summary;
+  const summaryItems = pageSummary ? ([
+    { id: "open", label: "待处理问题页", value: pageSummary.open_pages },
+    { id: "new", label: "本次新增", value: pageSummary.new_pages },
+    { id: "unindexed", label: "未收录", value: pageSummary.unindexed_pages },
+    { id: "fixed", label: "已修复", value: pageSummary.fixed_pages },
+  ] as const).map((item) => ({ ...item, active: filters.summary === item.id,
+    onToggle: () => setFilter("summary", filters.summary === item.id ? undefined : item.id) })) : [];
   const ruleOptions = (summary?.issue_counts ?? []).map((item) => ({ value: item.rule, label: item.label || ruleLabels[item.rule] || item.rule, count: item.count }));
   const selected = [
     ...(filters.severity ? [{ label: `严重级别 · ${severityLabels[filters.severity]}`, remove: () => setFilter("severity", undefined) }] : []),
@@ -95,6 +106,8 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
   };
 
   return <>
+    {pageSummary && <SummaryLine items={summaryItems} ariaLabel="SEO 摘要"
+      timeNote={summary?.crawled_at ? `SEO 抓取于 ${formatDateTime(summary.crawled_at)}` : undefined} />}
     {selected.length > 0 && <div className="si-seo-selected-filters" aria-label="已选筛选条件">{selected.map((item) => <SeoFilterChip key={item.label} label={item.label} onRemove={item.remove} />)}</div>}
     {pageRows.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 页面…</div>
       : pageRows.isError ? <ApiErrorNotice label="SEO 页面列表加载失败。" error={pageRows.error} onRetry={() => void pageRows.refetch()} />

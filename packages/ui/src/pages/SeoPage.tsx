@@ -467,7 +467,7 @@ export function SeoPage() {
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 SEO 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
-  return <div className="si-page si-seo-page">
+  return <div className={`si-page si-seo-page${api.seo.listPageRows ? " has-page-table" : ""}`}>
     <ProjectHeader
       project={project}
       activeTab="seo"
