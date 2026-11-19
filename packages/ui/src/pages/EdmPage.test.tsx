@@ -180,13 +180,18 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
 }
 
 async function openMediaDemo() {
-  fireEvent.click(await screen.findByRole("button", { name: "交互模拟（仅本地演示，不会上传或写入台账）" }));
+  fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "交互模拟（仅本地演示，不会上传或写入台账）" }));
+}
+
+async function openMediaHistory() {
+  fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "最近图片任务结果" }));
 }
 
 function exportControlFor(button: HTMLElement): HTMLElement {
-  const control = button.closest(".si-edm-export-control");
-  if (!(control instanceof HTMLElement)) throw new Error("导出控制区未渲染");
-  return control;
+  const page = button.closest(".si-edm-page") as HTMLElement;
+  return page.querySelector<HTMLElement>(".si-edm-export-control") ?? page;
 }
 
 function mediaImageRow(sku: string, feedImageUrl: string | null, manualImageUrl: string | null = null): SkuImageRow {
@@ -213,14 +218,14 @@ function enableTableRows(): void {
 describe("EdmPage D-3 只读检查", () => {
   it("能力缺失或仍待接线时隐藏整个页头入口", async () => {
     await renderEdmPage(false, false, undefined, false, false, { scenarioMissing: true, pendingHandlers: [] });
-    await screen.findByRole("button", { name: "打开项目文件夹" });
-    expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    expect(screen.queryByRole("menuitem", { name: "EDM 只读检查" })).toBeNull();
     cleanup();
     await renderEdmPage(false, false, undefined, false, false, {
       pendingHandlers: ["edm.candidates", "edm.mediaGaps", "edm.campaignSafety"],
     });
-    await screen.findByRole("button", { name: "打开项目文件夹" });
-    expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    expect(screen.queryByRole("menuitem", { name: "EDM 只读检查" })).toBeNull();
   });
 
   it("在页头更多打开三个只读分段，并展示候选清单", async () => {
@@ -288,17 +293,32 @@ describe("EdmPage SKU 图集", () => {
 });
 
 describe("EdmPage D-5", () => {
+  it("默认只显示可操作缺图摘要，页头更多收纳整页操作", async () => {
+    await renderEdmPage(true);
+    expect(await screen.findByRole("group", { name: "EDM 可处理摘要" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "EDM 任务与提示" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    expect(screen.getByRole("menuitem", { name: "打开项目文件夹" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "复制 edm-builder 指令" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "交互模拟（仅本地演示，不会上传或写入台账）" })).toBeTruthy();
+  });
+
   it("显示标准 DataTable 分页与父 SKU 筛选，并向 IPC 传入 parent_only", async () => {
     const { listImages } = await renderEdmPage(true);
-    const parentOnly = await screen.findByRole("checkbox", { name: "仅展示父 SKU" });
+    await screen.findByRole("checkbox", { name: "仅展示父 SKU" });
     expect(screen.getByRole("combobox", { name: "每页条数" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "50" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "100" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "200" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "全部" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "缺图" })).toBeTruthy();
+    const missing = await screen.findByRole("button", { name: /缺图/ });
+    fireEvent.click(missing);
+    await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({
+      filters: expect.objectContaining({ view: "none" }),
+    })));
 
-    fireEvent.click(parentOnly);
+    await screen.findByRole("button", { name: "列设置" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "仅展示父 SKU" }));
     await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({
       filters: expect.objectContaining({ parent_only: true }),
     })));
@@ -307,19 +327,20 @@ describe("EdmPage D-5", () => {
   it("SKU 清单导出契约和后端未就绪时不显示导出入口", async () => {
     await renderEdmPage(true);
 
-    expect(await screen.findByRole("button", { name: "复制 edm-builder 指令" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    expect(screen.getByRole("menuitem", { name: "复制 edm-builder 指令" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /导出.*清单/ })).toBeNull();
   }, 15_000);
 
   it("折扣档位列显示，未配置档位时明确说明不会自动选择", async () => {
     await renderEdmPage(true, false, undefined, false, false, { discountTiers: [] });
-    expect(await screen.findByRole("columnheader", { name: "折扣档位" })).toBeTruthy();
-    expect(await screen.findByText(/当前项目未配置折扣档位/)).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "折扣档位说明" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "列设置" })).toBeTruthy();
   }, 15_000);
 
   it("折扣档位配置已有值但保存 IPC 未就绪时显示只读提示", async () => {
     await renderEdmPage(true, false, undefined, false, false, { discountTiers: [10, 20] });
-    expect(await screen.findByText(/折扣档位暂时只读/)).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "折扣档位说明" })).toBeTruthy();
   }, 15_000);
 
   it("未启用分组时点击父 SKU 筛选展示 Core 预览并引导到项目设置", async () => {
@@ -424,13 +445,11 @@ describe("EdmPage media preparation prototype", () => {
       mediaImageRow("DEMO-FEED-WEBP-001", "https://demo-store.example.test/demo/main.webp"),
     ];
     const { mockApi, setManualImage } = await renderEdmPage(true, true, rows);
-    const toggle = await screen.findByRole("button", { name: "交互模拟（仅本地演示，不会上传或写入台账）" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle.getAttribute("aria-controls")).toBe("si-edm-media-demo-panel");
-    expect(document.getElementById("si-edm-media-demo-panel")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "更多操作" })).toBeTruthy();
+    expect(document.getElementById("si-edm-media-demo-panel")).toBeNull();
     expect("media" in mockApi).toBe(false);
     await openMediaDemo();
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("si-edm-media-demo-panel")).toBeTruthy();
     expect(await screen.findByText("选择表格行后可预览逐 SKU 结果；该演示不调用 media.prepare、Job 或外部服务。")).toBeTruthy();
     fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
 
@@ -500,10 +519,9 @@ describe("EdmPage media preparation prototype", () => {
     expect(page.rows.some((row) => row.feed_image_url?.endsWith(".webp"))).toBe(true);
   });
 
-  it("图片准备被版本门禁关闭时说明暂未开放，不渲染可执行按钮", async () => {
+  it("图片准备被版本门禁关闭时不渲染可执行按钮", async () => {
     await renderEdmPage(true, false, undefined, true, false, { pendingHandlers: ["media.prepare"] });
-    expect(await screen.findByText(/当前版本暂未开放图片准备功能/)).toBeTruthy();
-    expect(screen.getByText("图片准备暂未开放", { selector: "strong" })).toBeTruthy();
+    await screen.findByRole("button", { name: "更多操作" });
     expect(screen.queryByText("展开 EDM 导出与重启恢复原型（仅本地 mock）")).toBeNull();
     expect(screen.queryByRole("button", { name: /模拟获取图片 URL|获取图片 URL/ })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: "选择当前页全部行" })).toBeNull();
@@ -569,7 +587,7 @@ describe("EdmPage media preparation prototype", () => {
   it("真实模式在 Desktop 另存门禁仍关闭时不渲染可执行清单按钮", async () => {
     await renderEdmPage(true, false);
 
-    expect(await screen.findByText(/全项目 SKU 清单另存尚未就绪/)).toBeTruthy();
+    await screen.findByRole("button", { name: "更多操作" });
     expect(screen.queryByRole("button", { name: "另存全项目 SKU 清单" })).toBeNull();
   });
 
@@ -880,6 +898,7 @@ describe("EdmPage media preparation prototype", () => {
     };
     const { mockApi } = await renderEdmPage(true, false, undefined, false, false, { history: [legacyRun] });
 
+    await openMediaHistory();
     expect(await screen.findByText(/旧版任务记录没有逐 SKU 恢复字段/)).toBeTruthy();
     expect(screen.getByText(/WordPress 认证失败（401），媒体批次已停止/)).toBeTruthy();
     expect(screen.queryByRole("list", { name: "最近任务逐 SKU 恢复结果" })).toBeNull();
@@ -900,6 +919,7 @@ describe("EdmPage media preparation prototype", () => {
     };
     await renderEdmPage(true, false, undefined, false, false, { history: [interruptedRun] });
 
+    await openMediaHistory();
     expect(await screen.findByText(/WordPress 权限不足（403），媒体批次已停止/)).toBeTruthy();
     const results = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
     expect(within(results).getByText("结果未知")).toBeTruthy();
@@ -919,6 +939,7 @@ describe("EdmPage media preparation prototype", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "选择当前页全部行" }));
     fireEvent.click(await screen.findByRole("button", { name: "获取图片 URL（1）" }));
 
+    await openMediaHistory();
     expect(await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" })).toBeTruthy();
     expect(screen.getByText("DEMO-PERSISTED-HISTORY-001")).toBeTruthy();
     expect(screen.getByText("虚构 IPC 启动失败")).toBeTruthy();
@@ -931,7 +952,9 @@ describe("EdmPage media preparation prototype", () => {
       media_results: [{ sku: "DEMO-ONLY-001", status: "uploaded" }], media_unknown_skus: [], media_not_started_skus: [],
     };
     const { mockApi } = await renderEdmPage(true, false, undefined, false, false, { historyByProject: { demo: [demoRun], other: [] } });
+    await openMediaHistory();
     expect(await screen.findByText("DEMO-ONLY-001")).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "最近图片任务结果" })).getByRole("button", { name: "关闭抽屉" }));
 
     fireEvent.click(screen.getByRole("button", { name: "切换项目" }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/p/other/edm"));
@@ -1132,6 +1155,7 @@ describe("EdmPage media preparation prototype", () => {
     queryClient.setQueryData(["edm", "images", "other", { page: 1, pageSize: 50, filters: {} }], { rows: [], total: 0 });
 
     fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
+    await openMediaHistory();
     const recovered = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
     expect(within(recovered).getByText("原图 URL 已记录")).toBeTruthy();
     expect(within(recovered).getByText("结果未知")).toBeTruthy();
@@ -1292,6 +1316,7 @@ describe("EdmPage media preparation prototype", () => {
     }];
 
     fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
+    await openMediaHistory();
     const results = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
     expect(within(results).getByText("DEMO-EXTERNAL-NEWER-001")).toBeTruthy();
     expect(within(results).queryByText("DEMO-OLD-SNAPSHOT-001")).toBeNull();
@@ -1315,6 +1340,7 @@ describe("EdmPage media preparation prototype", () => {
       media_results: [{ sku: "DEMO-OTHER-WINDOW-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
     });
 
+    await openMediaHistory();
     const historyResults = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
     expect(within(historyResults).getByText("DEMO-OTHER-WINDOW-001")).toBeTruthy();
     await waitFor(() => {
@@ -1341,6 +1367,7 @@ describe("EdmPage media preparation prototype", () => {
       media_results: [{ sku: "DEMO-EXTERNAL-NEWER-001", status: "recorded" }], media_unknown_skus: [], media_not_started_skus: [],
     }]);
 
+    await openMediaHistory();
     const historyResults = await screen.findByRole("list", { name: "最近任务逐 SKU 恢复结果" });
     expect(within(historyResults).getByText("DEMO-EXTERNAL-NEWER-001")).toBeTruthy();
     expect(await screen.findByText(/已完成 40%.*活动任务仍在处理虚构 SKU/)).toBeTruthy();

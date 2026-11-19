@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Copy, ExternalLink, Image as ImageIcon } from "lucide-react";
+import { ExternalLink, Image as ImageIcon } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, Kpi, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
+import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, InfoTooltip, Input, InputWithAction, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, InfoTooltip, Input, InputWithAction, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, SummaryLine, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { getEdmDiscountTierCapability, type EdmDiscountTierCapability } from "./edm/discount-tier-capability";
@@ -25,7 +25,7 @@ const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_st
 const EMPTY_DISCOUNT_TIERS: number[] = [];
 const viewOptions: { value: ImageView; label: string }[] = [
   { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "no_feed", label: "未抓取到首图" },
-  { value: "has_manual", label: "已填手动图" }, { value: "none", label: "缺图" },
+  { value: "has_manual", label: "已填手动图" },
 ];
 
 type MediaDemoStatus = "queued" | MediaPrepareSkuResult["status"] | "unresolved" | MediaRecoveryRowStatus;
@@ -264,13 +264,13 @@ function feedImageLabel(url: string | null): string {
 
 function imageColumns(projectId: string, discountTiers: readonly number[], discountTierCapability: EdmDiscountTierCapability): ColumnDef<SkuImageRow, unknown>[] {
   return [
-    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 130, text: "single" }, cell: ({ row }) => <code className="si-edm-sku">{row.original.sku}</code>, enableSorting: true },
-    { id: "product", accessorKey: "title", header: "产品 / 变体", meta: { width: 280, grow: 2, minWidth: 200, text: "single" }, cell: ({ row }) => <span className="si-edm-product"><strong>{row.original.title}</strong><small>{row.original.variant_title || "默认款"}</small></span>, enableSorting: true },
-    { id: "stock_status", accessorKey: "stock_status", header: "库存", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockLabels[row.original.stock_status]}</Chip>, enableSorting: true },
-    { id: "discount_tier", accessorKey: "discount_tier", header: "折扣档位", meta: { width: 148, grow: 0, minWidth: 136, text: "single" }, cell: ({ row }) => <EdmDiscountTierCell projectId={projectId} row={row.original} tiers={discountTiers} capability={discountTierCapability} /> },
-    { id: "feed_image_url", accessorKey: "feed_image_url", header: "抓取到的首图 URL", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-edm-feed-cell"><ImageThumbnail src={row.original.feed_image_url} label={row.original.sku + " Feed 首图"} /><code title={row.original.feed_image_url ?? undefined}>{feedImageLabel(row.original.feed_image_url)}</code></span> },
-    { id: "manual_image_url", accessorKey: "manual_image_url", header: "手动输入的首图 URL", meta: { width: 340, grow: 2, minWidth: 280, text: "single" }, cell: ({ row }) => <ManualImageCell projectId={projectId} row={row.original} /> },
-    { id: "used", accessorKey: "used", header: "agent 使用", meta: { width: 128, grow: 0, minWidth: 120, text: "single" }, cell: ({ row }) => <Chip tone={row.original.used === "manual" ? "info" : row.original.used === "feed" ? "ok" : "danger"}>{row.original.used === "manual" ? "手动首图" : row.original.used === "feed" ? "抓取首图" : "缺图"}</Chip>, enableSorting: true },
+    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, text: "single" }, cell: ({ row }) => <code className="si-edm-sku">{row.original.sku}</code>, enableSorting: true },
+    { id: "product", accessorKey: "title", header: "产品 / 变体", meta: { width: 270, grow: 2, minWidth: 200, text: "single" }, cell: ({ row }) => <span className="si-edm-product"><strong>{row.original.title}</strong><small>{row.original.variant_title || "默认款"}</small></span>, enableSorting: true },
+    { id: "stock_status", accessorKey: "stock_status", header: "库存", meta: { width: 88, grow: 0, minWidth: 88, text: "single", defaultHidden: true }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockLabels[row.original.stock_status]}</Chip>, enableSorting: true },
+    { id: "discount_tier", accessorKey: "discount_tier", header: "折扣档位", meta: { width: 148, grow: 0, minWidth: 136, text: "single", defaultHidden: true }, cell: ({ row }) => <EdmDiscountTierCell projectId={projectId} row={row.original} tiers={discountTiers} capability={discountTierCapability} /> },
+    { id: "feed_image_url", accessorKey: "feed_image_url", header: "抓取到的首图 URL", meta: { width: 320, grow: 2, minWidth: 220, text: "single", defaultHidden: true }, cell: ({ row }) => <span className="si-edm-feed-cell"><ImageThumbnail src={row.original.feed_image_url} label={row.original.sku + " Feed 首图"} /><code title={row.original.feed_image_url ?? undefined}>{feedImageLabel(row.original.feed_image_url)}</code></span> },
+    { id: "manual_image_url", accessorKey: "manual_image_url", header: "手动输入的首图 URL", meta: { width: 320, grow: 2, minWidth: 280, text: "single" }, cell: ({ row }) => <ManualImageCell projectId={projectId} row={row.original} /> },
+    { id: "used", accessorKey: "used", header: "agent 使用", meta: { width: 112, grow: 0, minWidth: 100, text: "single" }, cell: ({ row }) => <Chip tone={row.original.used === "manual" ? "info" : row.original.used === "feed" ? "ok" : "danger"}>{row.original.used === "manual" ? "手动首图" : row.original.used === "feed" ? "抓取首图" : "缺图"}</Chip>, enableSorting: true },
   ];
 }
 
@@ -337,6 +337,7 @@ export function EdmPage() {
   const [exportSafetyUnavailableProjectId, setExportSafetyUnavailableProjectId] = useState<string | null>(null);
   const [groupingDrawerOpen, setGroupingDrawerOpen] = useState(false);
   const [scenarioDrawerOpen, setScenarioDrawerOpen] = useState(false);
+  const [mediaHistoryDrawerOpen, setMediaHistoryDrawerOpen] = useState(false);
   const summaryQueryKey = ["edm", "summary", id] as const;
   const imageQueryKey = ["edm", "images", id, query] as const;
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
@@ -444,6 +445,11 @@ export function EdmPage() {
     mediaRunSnapshot?.result ? { skus: mediaRunSnapshot.skus, result: mediaRunSnapshot.result } : undefined,
   );
   const mediaHistoryMayBeTruncated = (mediaHistoryQuery.data?.length ?? 0) >= EDM_MEDIA_HISTORY_LIMIT;
+  const showStatusArea = (exportCapability.available && (exportSafetyBlocked || Boolean(currentExportFeedback)))
+    || (mediaHistoryQuery.isError && !mediaSnapshotActive)
+    || mediaDisplaySelection.kind === "history-truncated"
+    || (mediaDisplaySelection.kind === "history" && mediaRunSnapshot?.state === "failed" && !mediaRunSnapshot.runId)
+    || (isMockApi ? mediaDemoOpen : mediaCapability.available && (selectedRows.length > 0 || mediaRunBusy || Boolean(mediaRunMessage)));
   const groupingEnabled = skuGrouping?.enabled === true;
   const groupingRule: SkuGroupingRule = skuGrouping?.rule ?? { type: "separator", value: "-" };
   const summary = summaryQuery.data;
@@ -493,15 +499,10 @@ export function EdmPage() {
     setMediaDemoStatuses({});
     setMediaDemoRunning(false);
     setMediaDemoMessage("");
+    setMediaHistoryDrawerOpen(false);
   }, [id]);
-  const metrics: Kpi[] = summary ? [
-    { key: "total", label: "SKU", value: String(summary.total) },
-    { key: "feed", label: "有抓取首图", value: String(summary.feed), hint: "来自商品 Feed" },
-    { key: "manual", label: "有手动首图", value: String(summary.manual), hint: "保存到本机 EDM 图片表" },
-    { key: "none", label: "缺图（两者都没有）", value: String(summary.none), tone: summary.none ? "warn" : "default" },
-  ] : [];
-
   const setSearch = (search: string) => setQuery((current) => ({ ...current, page: 1, search: search || undefined }));
+  const setView = (view: ImageView) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, view: view === "all" ? undefined : view } }));
   const onParentOnlyChange = (checked: boolean) => {
     if (!groupingEnabled) {
       setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: undefined } }));
@@ -628,15 +629,18 @@ export function EdmPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return <div className="si-page si-edm-page">
-    <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={<><Button onClick={() => void openProjectFolder()}>打开项目文件夹</Button><Button onClick={() => void copyCommand()}><Copy size={14} />复制 edm-builder 指令</Button></>} overflow={availableEdmScenarioTabs().length ? [{ label: "EDM 只读检查", onSelect: () => setScenarioDrawerOpen(true) }] : undefined} />
+    <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={!isMockApi && exportCapability.available ? <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>{exportMutation.isPending ? "正在准备 SKU 清单…" : "另存全项目 SKU 清单"}</Button> : undefined} overflow={[
+      { label: "打开项目文件夹", onSelect: () => void openProjectFolder() },
+      { label: "复制 edm-builder 指令", onSelect: () => void copyCommand() },
+      ...(availableEdmScenarioTabs().length ? [{ label: "EDM 只读检查", onSelect: () => setScenarioDrawerOpen(true) }] : []),
+      ...(isMockApi ? [{ label: "交互模拟（仅本地演示，不会上传或写入台账）", onSelect: () => setMediaDemoOpen(true) }] : []),
+      ...(!isMockApi && recoveredMediaRun ? [{ label: "最近图片任务结果", onSelect: () => setMediaHistoryDrawerOpen(true) }] : []),
+    ]} />
     <ProjectTabPanel projectId={project.id} tab="edm">
-    <div className="si-edm-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 EDM 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : metrics.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-    <div className="si-edm-status-area" role="region" aria-label="EDM 任务与提示" tabIndex={0}>
+    {summaryQuery.isError && <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} />}
+    {showStatusArea && <div className="si-edm-status-area" role="region" aria-label="EDM 任务与提示" tabIndex={0}>
     {!isMockApi && <div className="si-edm-live-workflows">
-      {exportCapability.available ? <div className="si-edm-export-control">
-        <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>
-          {exportMutation.isPending ? "正在准备 SKU 清单…" : "另存全项目 SKU 清单"}
-        </Button>
+      {exportCapability.available && <div className="si-edm-export-control">
         {exportSafetyBlocked && !exportMutation.isPending && exportSafetyState === "blocked"
           && !(currentExportFeedback && "localWarning" in currentExportFeedback) && <Notice tone="warn" title="另存操作已暂停">
           本机仍保留未清除的另存状态，可能来自上次操作中断或状态无法同步。为避免重复写入，此项目的另存已暂停；请先检查所选保存位置和本机状态。
@@ -653,21 +657,15 @@ export function EdmPage() {
         {currentExportFeedback && "error" in currentExportFeedback && <Notice tone={currentExportFeedback.error.tone} title={exportSafetyUnavailableProjectId === id ? "另存请求未发送" : currentExportFeedback.error.tone === "warn" ? "保存结果尚未确认" : "清单保存失败"}>
           {currentExportFeedback.error.message}
         </Notice>}
-      </div> : <Notice tone="info" title="全项目 SKU 清单另存尚未就绪">
-        Desktop 原生保存能力尚未开放前，不显示可执行的另存操作。
-      </Notice>}
-      {mediaDisplaySelection.kind === "loading" && <div className="si-query-loading" role="status">正在核对最近 {EDM_MEDIA_HISTORY_LIMIT} 条任务记录（包含所有任务类型）…</div>}
+      </div>}
       {mediaHistoryQuery.isError && !mediaSnapshotActive && <ApiErrorNotice label="最近 100 条任务记录加载失败，无法核对最新媒体任务。" error={mediaHistoryQuery.error} onRetry={() => void mediaHistoryQuery.refetch()} />}
-      {mediaDisplaySelection.kind === "history" && <MediaHistoryRecovery run={mediaDisplaySelection.run} stale={mediaHistoryQuery.isError} />}
       {mediaDisplaySelection.kind === "history" && mediaRunSnapshot?.state === "failed" && !mediaRunSnapshot.runId && <Notice tone="error" title="最近一次图片任务启动失败">{mediaRunSnapshot.error ?? "任务未能启动。"}</Notice>}
-      {mediaDisplaySelection.kind === "empty" && <Notice tone="info" title="最近任务记录中没有媒体任务">最近 100 条任务记录（包含所有任务类型）没有媒体任务；更早的记录不在本次查询范围内。</Notice>}
       {mediaDisplaySelection.kind === "history-truncated" && <Notice tone="warn" title="无法确认最近媒体任务">
         页面保留的媒体快照早于最近 100 条任务记录范围；为避免显示过期结果，此处不展示它。请在运行页查找更早记录。
       </Notice>}
     </div>}
-    {isMockApi ? <div className="si-edm-media-demo">
-      <Button type="button" variant="ghost" size="small" className="si-edm-media-demo-toggle" aria-expanded={mediaDemoOpen} aria-controls="si-edm-media-demo-panel" onClick={() => setMediaDemoOpen((open) => !open)}>交互模拟（仅本地演示，不会上传或写入台账）</Button>
-      <div id="si-edm-media-demo-panel" className="si-edm-media-demo-panel" hidden={!mediaDemoOpen}>
+    {isMockApi && mediaDemoOpen ? <div id="si-edm-media-demo-panel" className="si-edm-media-demo-panel">
+      <Button type="button" variant="ghost" size="small" className="si-edm-media-demo-toggle" onClick={() => setMediaDemoOpen(false)}>收起交互模拟（仅本地演示）</Button>
       <Notice tone="info" title="不会上传，也不会写入项目台账。">选择表格行后可预览逐 SKU 结果；该演示不调用 media.prepare、Job 或外部服务。</Notice>
       <div className="si-edm-media-demo-actions">
         <Select ariaLabel="模拟媒体准备结果" value={mediaDemoOutcome} onValueChange={(value) => setMediaDemoOutcome(value === "WP_AUTH_FAILED" || value === "WP_FORBIDDEN" ? value : "complete")} options={[
@@ -686,9 +684,7 @@ export function EdmPage() {
         })}
       </ul>}
       <EdmWorkflowPrototype key={id} projectName={project.name} projectSkuCount={summary?.total ?? 0} selectedSkus={selectedRows.map((row) => row.sku)} />
-      </div>
-    </div> : mediaCapability.available ? <div className="si-edm-media-demo">
-      <Notice tone="info" title="图片 URL 准备将由 Core 逐 SKU 处理。">已选择 {selectedRows.length} 个 SKU；台账已有 URL、Feed JPG/PNG 及其他图片格式会按 Core 返回的逐 SKU 结果显示。</Notice>
+    </div> : !isMockApi && mediaCapability.available && (selectedRows.length > 0 || mediaRunBusy || Boolean(mediaRunMessage)) ? <div className="si-edm-media-demo">
       <div className="si-edm-media-demo-actions">
         <Button variant="primary" disabled={selectedRows.length === 0 || mediaRunBusy || mediaHistoryCheckPending} onClick={requestMediaPreparation}>{mediaRunBusy ? "图片处理中…" : `获取图片 URL（${selectedRows.length}）`}</Button>
       </div>
@@ -699,11 +695,8 @@ export function EdmPage() {
           return <li key={sku}><code>{sku}</code><Chip tone={mediaStatusTones[state.status]}>{mediaStatusLabels[state.status]}</Chip>{state.reason && <small>{state.reason}</small>}</li>;
         })}
       </ul>}
-    </div> : <Notice tone="warn" title="图片准备暂未开放">{mediaCapability.message} 既有 URL 编辑与保存功能仍可使用。</Notice>}
-    {discountTiers.length === 0
-      ? <Notice tone="info" title="当前项目未配置折扣档位">SKU 折扣档位保持未选择；配置可选百分比后即可逐行选择。</Notice>
-      : !discountTierCapability.available && <Notice tone="info" title="折扣档位暂时只读">{discountTierCapability.message} 现有选择仍会按读取结果显示。</Notice>}
-    </div>
+    </div> : null}
+    </div>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
@@ -711,11 +704,11 @@ export function EdmPage() {
       emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-left"><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />
-          <FilterBar className="si-edm-filterbar">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, view: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}</FilterBar>
+          {summary && <div className="si-edm-summary"><SummaryLine ariaLabel="EDM 可处理摘要" items={[{ id: "missing-image", label: "缺图", value: summary.none, active: currentView === "none", onToggle: () => setView(currentView === "none" ? "all" : "none") }]} /><InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />{(discountTiers.length === 0 || !discountTierCapability.available) && <InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} />}</div>}
+          <FilterBar className="si-edm-filterbar">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setView(value || "all")}>{item.label}</FilterPill>)}</FilterBar>
         </div>
         <div className="si-edm-toolbar-right">
           <label className="si-edm-parent-toggle"><input type="checkbox" aria-label="仅展示父 SKU" checked={Boolean(query.filters?.parent_only && groupingEnabled)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>
-          <InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />
           <span className="si-content-total">显示 {listQuery.data?.rows.length ?? 0} / {listQuery.data?.total ?? 0} 条</span>
         </div>
       </div>}
@@ -748,6 +741,9 @@ export function EdmPage() {
     </Drawer>
     <Drawer open={scenarioDrawerOpen} onOpenChange={setScenarioDrawerOpen} title="EDM 只读检查" width="wide">
       {scenarioDrawerOpen && <EdmScenarioSections projectId={id} selectedSkus={selectedRows.map((row) => row.sku)} />}
+    </Drawer>
+    <Drawer open={mediaHistoryDrawerOpen} onOpenChange={setMediaHistoryDrawerOpen} title="最近图片任务结果">
+      {recoveredMediaRun ? <MediaHistoryRecovery run={recoveredMediaRun} stale={mediaHistoryQuery.isError} /> : <p>暂无可显示的图片任务结果。</p>}
     </Drawer>
     <ConfirmDialog
       open={Boolean(pendingMediaPrepare)}
