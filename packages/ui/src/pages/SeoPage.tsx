@@ -250,6 +250,7 @@ export function SeoPage() {
       queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "issues", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "pageBrief", id] }),
+      queryClient.invalidateQueries({ queryKey: ["seo", "issueCandidates", id] }),
       queryClient.invalidateQueries({ queryKey: ["seo", "rule-settings", id] }),
       queryClient.invalidateQueries({ queryKey: ["overview", id] }),
     ]);

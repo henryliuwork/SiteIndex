@@ -13,11 +13,13 @@ async function renderSections(options: {
   pending?: string[];
   pageBrief?: (id: string, url: string) => Promise<ScenarioQueryResult<SeoPageBrief>>;
   issueActions?: { markFixed?: (issue: SeoIssue) => void };
+  omitCandidates?: boolean;
 } = {}) {
   const mockApi = createMockApi();
   const pages = await mockApi.seo.listPages("demo", { page: 1, pageSize: 1 });
   const url = pages.rows[0]!.url;
   if (options.pageBrief) mockApi.seo.pageBrief = options.pageBrief;
+  if (options.omitCandidates) delete mockApi.seo.issueCandidates;
   vi.doMock("../../../api", () => ({ api: mockApi, isMockApi: options.mock ?? true, apiErrorDetails: () => null }));
   if (options.pending) vi.doMock("@siteindex/shared", async (original) => {
     const actual = await original<typeof import("@siteindex/shared")>();
@@ -36,6 +38,8 @@ describe("SEO 行抽屉只读场景", () => {
     expect(screen.queryByRole("group", { name: "页面详情分段" })).toBeNull();
     expect(seoScenarioTabs(mockApi.seo, false, ["seo.pageBrief", "seo.issueCandidates", "seo.internalLinkContext"])).toEqual(["index"]);
     delete mockApi.seo.pageBrief;
+    expect(seoScenarioTabs(mockApi.seo, false, [])).toContain("issues");
+    delete mockApi.seo.issueCandidates;
     expect(seoScenarioTabs(mockApi.seo, false, [])).not.toContain("issues");
   });
 
@@ -57,6 +61,21 @@ describe("SEO 行抽屉只读场景", () => {
     fireEvent.click(buttons[0]!);
     expect(markFixed).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "忽略此页面此问题" })).toBeNull();
+  });
+
+  it("同一问题分段保留只读问题候选查询", async () => {
+    const { mockApi, url } = await renderSections();
+    const candidates = vi.spyOn(mockApi.seo, "issueCandidates");
+    fireEvent.click(screen.getByRole("button", { name: "问题" }));
+    expect(candidates).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "待处理问题候选" }));
+    await waitFor(() => expect(candidates).toHaveBeenCalledWith("demo", url));
+  });
+
+  it("问题候选接口缺失时隐藏入口", async () => {
+    await renderSections({ omitCandidates: true });
+    fireEvent.click(screen.getByRole("button", { name: "问题" }));
+    expect(screen.queryByRole("button", { name: "待处理问题候选" })).toBeNull();
   });
 
   it("加载、空数据、错误和重试均有明确反馈", async () => {

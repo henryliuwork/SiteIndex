@@ -14,14 +14,17 @@ export interface SeoDrawerIssueActions {
   restore?: (issue: SeoIssue) => void;
 }
 
+function scenarioAvailable(seo: SiteIndexApi["seo"], mock: boolean, pending: readonly string[], method: "pageBrief" | "issueCandidates" | "internalLinkContext") {
+  return typeof seo[method] === "function" && (mock || !pending.includes(`seo.${method}`));
+}
+
 export function seoScenarioTabs(
   seo: SiteIndexApi["seo"],
   mock: boolean,
   pending: readonly string[] = PENDING_HANDLERS,
 ): ScenarioTab[] {
-  const available = (method: "pageBrief" | "internalLinkContext") =>
-    typeof seo[method] === "function" && (mock || !pending.includes(`seo.${method}`));
-  return ["index", ...(available("pageBrief") ? ["issues"] : []),
+  const available = (method: "pageBrief" | "issueCandidates" | "internalLinkContext") => scenarioAvailable(seo, mock, pending, method);
+  return ["index", ...(available("pageBrief") || available("issueCandidates") ? ["issues"] : []),
     ...(available("internalLinkContext") ? ["links"] : [])] as ScenarioTab[];
 }
 
@@ -34,14 +37,28 @@ function QueryState({ loading, error, data, onRetry, empty, children }: {
   return <>{children}</>;
 }
 
-function PageIssues({ id, url, actions }: { id: string; url: string; actions: SeoDrawerIssueActions }) {
-  const query = useQuery({ queryKey: ["seo", "pageBrief", id, url], queryFn: () => api.seo.pageBrief!(id, url) });
-  const result = query.data;
-  return <QueryState loading={query.isLoading} error={query.error} data={result?.data} onRetry={() => void query.refetch()} empty="没有这张页面的问题数据。">
-    {result?.data?.issues.length ? <ul className="si-seo-scenario-list">{result.data.issues.map((issue) =>
-      <IssueRow key={`${issue.url}:${issue.rule}`} issue={issue} actions={actions} />)}</ul>
-      : <EmptyState>这张页面没有 SEO 问题。</EmptyState>}
+function CandidateIssues({ id, url }: { id: string; url: string }) {
+  const query = useQuery({ queryKey: ["seo", "issueCandidates", id, url], queryFn: () => api.seo.issueCandidates!(id, url) });
+  return <QueryState loading={query.isLoading} error={query.error} data={query.data?.data} onRetry={() => void query.refetch()} empty="没有可用的问题候选数据。">
+    {query.data?.data?.length ? <ul className="si-seo-scenario-list">{query.data.data.map((issue) =>
+      <IssueRow key={`${issue.url}:${issue.rule}`} issue={issue} actions={{}} />)}</ul>
+      : <EmptyState>这张页面没有待处理问题候选。</EmptyState>}
   </QueryState>;
+}
+
+function PageIssues({ id, url, actions, hasBrief, hasCandidates }: { id: string; url: string; actions: SeoDrawerIssueActions; hasBrief: boolean; hasCandidates: boolean }) {
+  const [showCandidates, setShowCandidates] = useState(false);
+  const query = useQuery({ queryKey: ["seo", "pageBrief", id, url], queryFn: () => api.seo.pageBrief!(id, url), enabled: hasBrief });
+  const result = query.data;
+  return <div className="si-seo-scenario">
+    {hasBrief && <QueryState loading={query.isLoading} error={query.error} data={result?.data} onRetry={() => void query.refetch()} empty="没有这张页面的问题数据。">
+      {result?.data?.issues.length ? <ul className="si-seo-scenario-list">{result.data.issues.map((issue) =>
+      <IssueRow key={`${issue.url}:${issue.rule}`} issue={issue} actions={actions} />)}</ul>
+        : <EmptyState>这张页面没有 SEO 问题。</EmptyState>}
+    </QueryState>}
+    {hasCandidates && <section><Button size="small" variant="quiet" aria-expanded={showCandidates} onClick={() => setShowCandidates((value) => !value)}>待处理问题候选</Button>
+      {showCandidates && <CandidateIssues id={id} url={url} />}</section>}
+  </div>;
 }
 
 function IssueRow({ issue, actions }: { issue: SeoIssue; actions: SeoDrawerIssueActions }) {
@@ -69,12 +86,15 @@ function LinkContext({ id, url }: { id: string; url: string }) {
 }
 
 export function SeoScenarioSections({ id, url, overview, issueActions = {} }: { id: string; url: string; overview: ReactNode; issueActions?: SeoDrawerIssueActions }) {
-  const tabs = seoScenarioTabs(api.seo, Boolean(isMockApi));
+  const mock = Boolean(isMockApi);
+  const tabs = seoScenarioTabs(api.seo, mock);
+  const hasBrief = scenarioAvailable(api.seo, mock, PENDING_HANDLERS, "pageBrief");
+  const hasCandidates = scenarioAvailable(api.seo, mock, PENDING_HANDLERS, "issueCandidates");
   const [tab, setTab] = useState<ScenarioTab>("index");
   if (tabs.length === 1) return <>{overview}</>;
   const labels: Record<ScenarioTab, string> = { index: "收录", issues: "问题", links: "内链" };
   return <div className="si-seo-scenario-sections">
     <Segmented value={tab} options={tabs.map((value) => ({ value, label: labels[value] }))} onChange={setTab} ariaLabel="页面详情分段" />
-    {tab === "index" ? overview : tab === "issues" ? <PageIssues id={id} url={url} actions={issueActions} /> : <LinkContext id={id} url={url} />}
+    {tab === "index" ? overview : tab === "issues" ? <PageIssues id={id} url={url} actions={issueActions} hasBrief={hasBrief} hasCandidates={hasCandidates} /> : <LinkContext id={id} url={url} />}
   </div>;
 }
