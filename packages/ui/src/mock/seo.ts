@@ -139,7 +139,29 @@ export function createSeoMock(): SiteIndexApi["seo"] {
     )),
     orphanPages: () => reply([...orphanSeoPages]),
     getPage: (_id, url) => reply(seoPages.find((page) => page.url === url) ?? null),
+    pageBrief: (id, url) => reply(() => {
+      const page = seoPages.find((item) => item.url === url);
+      return { data: page ? {
+        page, issues: seoIssuesForProject(id).filter((item) => item.url === url),
+        incoming_links: seoLinks.filter((item) => item.to === url), outgoing_links: seoLinks.filter((item) => item.from === url),
+      } : null, metadata: scenarioMetadata() };
+    }),
+    issueCandidates: (id, url) => reply(() => ({
+      data: seoIssuesForProject(id).filter((item) => !url || item.url === url), metadata: scenarioMetadata(),
+    })),
+    internalLinkContext: (_id, url) => reply(() => {
+      const page = seoPages.find((item) => item.url === url);
+      return { data: page ? {
+        page,
+        incoming_links: seoLinks.filter((item) => item.to === url).map((link) => ({ link, source_page: seoPages.find((item) => item.url === link.from) ?? null })),
+        outgoing_links: seoLinks.filter((item) => item.from === url).map((link) => ({ link, target_page: seoPages.find((item) => item.url === link.to) ?? null })),
+      } : null, metadata: scenarioMetadata() };
+    }),
     googleSiteUrl: (url) => reply(googleSiteSearchUrl(url)),
     checkIndex: async (id, _urls) => { await delay(); return { runId: beginRun("C:/SiteIndex/Projects/" + id, "index-check") }; },
   };
+}
+
+function scenarioMetadata() {
+  return { sources: [{ kind: "mock-index" }], collected_at: "2026-10-22T10:00:00+08:00", missing_fields: [], quality: "complete" as const, anomalies: [] };
 }

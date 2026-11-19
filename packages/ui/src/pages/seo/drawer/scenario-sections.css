@@ -1,0 +1,14 @@
+.si-seo-scenario-sections, .si-seo-scenario { display: grid; align-content: start; gap: var(--space-4); }
+.si-seo-scenario-sections > .si-segmented { justify-self: start; }
+.si-seo-scenario { color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-seo-scenario > strong, .si-seo-scenario-list strong { color: var(--color-ink); }
+.si-seo-scenario-url { overflow-wrap: anywhere; color: var(--color-muted); font-family: var(--font-mono); font-size: var(--fs-mono); }
+.si-seo-scenario dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: 0; }
+.si-seo-scenario dl > div { display: grid; gap: var(--space-1); }
+.si-seo-scenario dt, .si-seo-scenario small, .si-seo-scenario-list small { color: var(--color-muted); font-size: var(--fs-caption); }
+.si-seo-scenario dd { margin: 0; }
+.si-seo-scenario section { display: grid; gap: var(--space-2); }
+.si-seo-scenario section h4 { margin: 0; color: var(--color-ink); font-size: var(--fs-body); }
+.si-seo-scenario-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.si-seo-scenario-list li { display: grid; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--color-line-soft); border-radius: var(--radius-card); }
+.si-seo-scenario-list li > span { overflow-wrap: anywhere; }
