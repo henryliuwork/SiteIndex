@@ -444,6 +444,54 @@ export interface SeoPageFilters {
   indexed?: "yes" | "no" | "unchecked";
 }
 
+/** SEO 单表筛选。问题条件必须命中同一条问题；各条件之间取交集。 */
+export interface SeoPageTableFilters extends SeoPageFilters, SeoIssueFilters {
+  /** true/false 分别表示该 URL 有/没有任意 open 问题，与问题条件独立。 */
+  has_open_issues?: boolean;
+  /** 摘要点击筛选的是页面集合，不能把问题条数当成页面数。 */
+  summary?: "open" | "new" | "unindexed" | "fixed";
+}
+
+/** 显式排序在全量筛选后、分页前执行；open_* 对应 open_issue_counts，new_open_issues 对应 new_open_issue_count；并列按 URL 的 compareKeys 顺序。 */
+export type SeoPageTableSortField = "url" | "title" | "page_type" | "google_indexed"
+  | "open_high" | "open_mid" | "open_low" | "new_open_issues"
+  | "links_internal_in" | "links_internal_out" | "last_issue_change_date";
+
+export interface SeoPageTableQuery extends Omit<ListQuery<SeoPageTableFilters>, "sort"> {
+  sort?: { field: SeoPageTableSortField; dir: "asc" | "desc" };
+}
+
+/** SEO 单表行是读取时聚合的视图，不写回 seo/pages.jsonl。 */
+export interface SeoPageTableRow extends SeoPage {
+  /** 此 URL 的全部 open 问题数，不随问题筛选条件改变。 */
+  open_issue_counts: { high: number; mid: number; low: number };
+  /** 同一 URL 中，first_seen 等于最近一次 SEO 抓取日期的 open 问题数。 */
+  new_open_issue_count: number;
+  /** 命中 rules/severity/status 的问题条数；未给问题条件时是该 URL 的全部问题数。 */
+  matching_issue_count: number;
+  /** 所选页面批量处理所需的实际 open 目标；不受表格问题筛选条件影响。 */
+  open_issue_targets: { url: SeoIssue["url"]; rule: SeoIssue["rule"] }[];
+  /** 最近可证实的问题首次发现、自动修复或人工处理日期；旧记录无法确定时为 null。不是页面内容变化时间。 */
+  last_issue_change_date: ISODate | null;
+  /** 最近可证实的人工处理时间；旧记录缺失 handled_at 时为 null。 */
+  last_issue_handled_at: ISODateTime | null;
+}
+
+export interface SeoPageTableSummary {
+  /** 最后一次 SEO 抓取日期，取已有 SeoPage.last_crawled 的最大值。 */
+  latest_crawl_date: ISODate | null;
+  /** 以下均为全站去重页面数，不受当前查询筛选/分页影响。 */
+  open_pages: number;
+  new_pages: number;
+  unindexed_pages: number;
+  fixed_pages: number;
+}
+
+export interface SeoPageTableResult extends PageResult<SeoPageTableRow> {
+  /** total 是当前筛选后的页面数；summary 是全站摘要。 */
+  summary: SeoPageTableSummary;
+}
+
 /** Existing index records returned for one SEO page; absent information stays absent in `page`. */
 export interface SeoPageBrief {
   page: SeoPage;
@@ -834,6 +882,16 @@ export interface SiteIndexApi {
     /** 返回 SEO 规则说明、严重级别、待处理数及忽略状态。 */
     getRuleSettings?(id: ProjectId): Promise<SeoRuleSetting[]>;
     listPages(id: ProjectId, q: ListQuery<SeoPageFilters>): Promise<PageResult<SeoPage>>;
+    /**
+     * 可选的 SEO 单表查询，旧 bridge 和旧 listPages/listIssues 不变。
+     * summary=open/new/unindexed/fixed 分别选有 open 问题、有本次新增 open 问题、
+     * google_indexed=false、有 fixed 问题的 URL；“本次”是最近一次 SEO 抓取日期，
+     * 同一天多次抓取视为同一天。默认排序：open high 数降序 → 本次新增 open 数降序 → URL。
+     * 先在全量页面上合并问题、筛选、搜索和排序，最后按 page/pageSize 分页；pageSize=0 不分页。
+     * 旧 ?rule=…&status=…&severity=… 深链由 UI 映射为 filters.rules/status/severity；
+     * 旧 view=issues|pages|links 均落在本页面表，q/page_type/indexed 继续恢复。
+     */
+    listPageRows?(id: ProjectId, q: SeoPageTableQuery): Promise<SeoPageTableResult>;
     listLinks(id: ProjectId, q: ListQuery): Promise<PageResult<SeoLink>>;
     orphanPages(id: ProjectId): Promise<string[]>;
     getPage(id: ProjectId, url: string): Promise<SeoPage | null>;

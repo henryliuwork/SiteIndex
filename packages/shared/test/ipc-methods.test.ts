@@ -6,8 +6,9 @@ import { API_INVOKE_METHODS, PENDING_HANDLERS } from "../src/ipc-methods";
 import { CSV_HEADERS, pathsFor } from "../src/paths";
 
 describe("shared IPC method contract", () => {
-  it("keeps only the six GSC methods pending after scenario handlers are registered", () => {
+  it("keeps the SEO page table and six GSC methods pending until handlers exist", () => {
     expect(PENDING_HANDLERS).toEqual([
+      "seo.listPageRows",
       "gsc.status", "gsc.connect", "gsc.disconnect", "gsc.listProperties", "gsc.selectProperty", "gsc.sync",
     ]);
   });
