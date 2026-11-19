@@ -1,5 +1,10 @@
-import type { ListQuery, ProductFilters, ProductFull, SiteIndexApi } from "@siteindex/shared";
-import { productRows, productsByProject, projectKey, recordsByProject, reply, rowsByProject, seoPages, selectRows, tagNamesByProject, tagsByHandle } from "./context";
+import type { InventoryEvent, ListQuery, ProductFilters, ProductFull, SiteIndexApi } from "@siteindex/shared";
+import { fixtures, productRows, productsByProject, projectKey, recordsByProject, reply, rowsByProject, seoPages, selectRows, tagNamesByProject, tagsByHandle } from "./context";
+
+const scenarioMetadata = (missing_fields: string[] = []) => ({
+  sources: [{ kind: "mock-index" }], collected_at: null, missing_fields,
+  quality: missing_fields.length ? "partial" as const : "complete" as const, anomalies: [],
+});
 
 export function createProductsMock(): SiteIndexApi["products"] {
   return {
@@ -40,6 +45,26 @@ export function createProductsMock(): SiteIndexApi["products"] {
           ? { url: seoPage.url, title: seoPage.title, robots_meta: seoPage.robots_meta, schema_types: seoPage.schema_types, google_indexed: seoPage.google_indexed ?? null }
           : null,
       };
+    }),
+    skuBrief: (id, sku) => reply(() => {
+      const record = recordsByProject[projectKey(id)].find((item) => item.sku === sku);
+      const stock = rowsByProject[projectKey(id)].find((item) => item.sku === sku) ?? null;
+      return { data: record ? { sku: record, stock } : null, metadata: scenarioMetadata(record ? stock ? [] : ["stock"] : ["sku"]) };
+    }),
+    changes: (_id, sku) => reply(() => ({
+      data: fixtures.events.filter((event) => !sku || event.sku === sku).map((event): InventoryEvent => ({ ...event, type: event.type as InventoryEvent["type"] })),
+      metadata: scenarioMetadata(),
+    })),
+    groupFamily: (id, sku) => reply(() => {
+      const records = recordsByProject[projectKey(id)];
+      const record = records.find((item) => item.sku === sku);
+      const rows = rowsByProject[projectKey(id)];
+      const stock = rows.find((item) => item.sku === sku);
+      const child_skus = rows.filter((item) => item.parent_sku === sku).map((item) => item.sku).sort();
+      return { data: record ? {
+        sku, role: stock?.parent_sku ? "child" as const : child_skus.length ? "parent" as const : "single" as const,
+        parent_sku: stock?.parent_sku ?? null, child_skus, collision: null,
+      } : null, metadata: scenarioMetadata(record ? [] : ["sku"]) };
     }),
     setTags: (id, handle, tags) => reply(() => {
       tagsByHandle.set(id + ":" + handle, [...new Set(tags)]);
