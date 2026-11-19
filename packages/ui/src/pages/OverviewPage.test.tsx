@@ -98,6 +98,8 @@ describe("OverviewPage 布局和操作", () => {
     await renderOverview(createMockApi());
 
     expect(await screen.findByRole("heading", { name: "需要关注" })).toBeTruthy();
+    const cards = await screen.findByRole("region", { name: "项目指标" });
+    await waitFor(() => expect(cards.querySelectorAll("a.si-kpi-card")).toHaveLength(5));
     expect(screen.queryByRole("heading", { name: "快捷操作" })).toBeNull();
     expect(screen.getByRole("button", { name: "立即同步" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "打开项目文件夹" })).toBeTruthy();
