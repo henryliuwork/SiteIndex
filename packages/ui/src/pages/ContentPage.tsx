@@ -6,7 +6,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, JobProgress, JobResult, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, InfoTooltip, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, SummaryLine, formatDateTime, useToast } from "../components";
 import { blogIndexNotice, blogRecognitionCounts, blogRecognitionNeedsRecrawl, getBlogRecognitionConfigUpdatedAt, hasBlogRecognitionConfig } from "./content/blog-recognition";
 
 type ContentView = "blog" | "keywords";
@@ -26,6 +26,11 @@ const roleOptions: { value: RoleFilter; label: string }[] = [
 const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "全部状态" }, { value: "live", label: "已上线" }, { value: "planned", label: "计划" }, { value: "drafting", label: "撰写中" },
 ];
+const blogSummaryMetrics = [
+  { key: "no_links", label: "无站内链接" },
+  { key: "no_schema", label: "缺少 Schema" },
+  { key: "links_oos", label: "链接缺货产品" },
+] as const;
 const intentLabels: Record<Keyword["intent"], string> = { informational: "信息型", commercial: "商业调研", transactional: "交易型", navigational: "导航型" };
 const keywordStatusLabels: Record<Keyword["status"], string> = { planned: "计划", drafting: "撰写中", live: "已上线" };
 
@@ -43,12 +48,12 @@ function blogColumns(): ColumnDef<BlogPost, unknown>[] {
     { id: "title", accessorKey: "title", header: "标题", meta: { width: 320, grow: 2, minWidth: 220, text: "clamp2" }, cell: ({ row }) => <span className="si-content-title-cell"><strong>{row.original.title}</strong><code>{row.original.slug}</code></span>, enableSorting: true },
     { id: "published_at", accessorKey: "published_at", header: "发布", meta: { width: 112, grow: 0, minWidth: 100, text: "single" }, cell: ({ row }) => <code className="si-content-date">{row.original.published_at}</code>, enableSorting: true },
     { id: "word_count", accessorKey: "word_count", header: "字数", meta: { width: 76, grow: 0, minWidth: 68, align: "end", text: "single" }, cell: ({ row }) => row.original.word_count ?? "—", enableSorting: true },
-    { id: "primary_keyword", accessorKey: "primary_keyword", header: "主关键词", meta: { width: 180, grow: 1, minWidth: 140, text: "single" }, cell: ({ row }) => row.original.primary_keyword || <span className="si-muted">未登记</span>, enableSorting: true },
+    { id: "primary_keyword", accessorKey: "primary_keyword", header: "主关键词", meta: { width: 180, grow: 1, minWidth: 140, text: "single", defaultHidden: true }, cell: ({ row }) => row.original.primary_keyword || <span className="si-muted">未登记</span>, enableSorting: true },
     { id: "links_internal", accessorKey: "links_internal", header: "内链 出/入", meta: { width: 104, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => (row.original.links_internal.length + " / " + (row.original.links_in ?? 0)), enableSorting: false },
     { id: "links_products", accessorKey: "links_products", header: "链接产品", meta: { width: 108, grow: 0, minWidth: 96, text: "single" }, cell: ({ row }) => row.original.linked_out_of_stock?.length ? <Chip tone="warn">{row.original.linked_out_of_stock.length} · 含缺货</Chip> : <Chip tone="neutral">{row.original.links_products.length}</Chip>, enableSorting: false },
-    { id: "schema", accessorKey: "has_faq", header: "Schema", meta: { width: 128, grow: 0, minWidth: 116, text: "single" }, cell: ({ row }) => row.original.has_faq ? <Chip tone="ok">BlogPosting · FAQ</Chip> : <Chip tone="danger">缺失</Chip>, enableSorting: true },
-    { id: "impressions", header: "展现", meta: { width: 88, grow: 0, minWidth: 80, reserved: true, text: "single" }, cell: () => "—" },
-    { id: "clicks", header: "点击", meta: { width: 88, grow: 0, minWidth: 80, reserved: true, text: "single" }, cell: () => "—" },
+    { id: "schema", accessorKey: "has_faq", header: "Schema", meta: { width: 144, grow: 0, minWidth: 132, text: "single" }, cell: ({ row }) => row.original.has_faq ? <Chip tone="ok">BlogPosting · FAQ</Chip> : <Chip tone="danger">缺失</Chip>, enableSorting: true },
+    { id: "impressions", header: "展现", meta: { width: 88, grow: 0, minWidth: 80, defaultHidden: true, text: "single" }, cell: () => "—" },
+    { id: "clicks", header: "点击", meta: { width: 88, grow: 0, minWidth: 80, defaultHidden: true, text: "single" }, cell: () => "—" },
   ];
 }
 
@@ -102,14 +107,16 @@ export function ContentPage() {
   const showBlogRecognitionEmpty = view === "blog" && blogs?.total === 0 && !hasBlogFilters;
   const lastRecognizedAt = seoSummaryQuery.data?.crawled_at ?? null;
   const blogListNotice = blogIndexNotice(blogConfig, blogConfigUpdatedAt, latestSuccessfulWeeklyStartedAt, blogs?.total ?? 0);
-  const issueCounts = useMemo(() => ({
-    noLinks: summary?.kpis.find((item) => item.key === "no_links")?.value ?? "0",
-    noSchema: summary?.kpis.find((item) => item.key === "no_schema")?.value ?? "0",
-    oos: summary?.kpis.find((item) => item.key === "links_oos")?.value ?? "0",
-  }), [summary]);
+  const summaryItems = blogSummaryMetrics.flatMap(({ key, label }) => {
+    const value = summary?.kpis.find((item) => item.key === key)?.value;
+    if (value === undefined || !/^\d+$/.test(value)) return [];
+    return [{ id: key, label, value: Number(value), active: blogQuery.filters?.issue === key,
+      onToggle: () => setBlogQuery((current) => ({ ...current, page: 1,
+        filters: { ...current.filters, issue: current.filters?.issue === key ? undefined : key } })) }];
+  });
   const viewOptions: { value: ContentView; label: string }[] = [
-    { value: "blog" as const, label: "博客文章 " + (blogs?.total ?? 0) },
-    ...(SHOW_KEYWORD_MAPPING ? [{ value: "keywords" as const, label: "关键词映射 " + (keywords?.total ?? 0) }] : []),
+    { value: "blog" as const, label: "博客文章" },
+    ...(SHOW_KEYWORD_MAPPING ? [{ value: "keywords" as const, label: "关键词映射" }] : []),
   ];
   const activeQuery = view === "blog" ? blogListQuery : keywordListQuery;
   const blogColumnDefs = useMemo(blogColumns, []);
@@ -185,24 +192,22 @@ export function ContentPage() {
 
   const tableToolbar = <div className="si-content-toolbar si-content-toolbar-table">
     <SearchInput value={(view === "blog" ? blogQuery : keywordQuery).search ?? ""} onSearch={setSearch} label="搜索内容" placeholder={view === "keywords" ? "搜索关键词或主题簇" : "搜索标题或关键词"} />
-    {view === "blog" && <FilterBar className="si-content-filterbar">{blogIssues.map((item) => <FilterPill key={item.value} currentValue={blogQuery.filters?.issue ?? "all"} value={item.value} onValueChange={(value) => setBlogQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, issue: !value || value === "all" ? undefined : value } }))}>{item.label}{item.value === "no_links" ? " " + issueCounts.noLinks : item.value === "no_schema" ? " " + issueCounts.noSchema : item.value === "links_oos" ? " " + issueCounts.oos : ""}</FilterPill>)}</FilterBar>}
+    {view === "blog" && <FilterBar className="si-content-filterbar">{blogIssues.map((item) => <FilterPill key={item.value} currentValue={blogQuery.filters?.issue ?? "all"} value={item.value} onValueChange={(value) => setBlogQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, issue: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}</FilterBar>}
     {view === "keywords" && <FilterBar className="si-content-filterbar">{roleOptions.map((item) => <FilterPill key={item.value} currentValue={keywordQuery.filters?.role ?? "all"} value={item.value} onValueChange={(value) => setKeywordQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, role: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}{statusOptions.map((item) => <FilterPill key={item.value} currentValue={keywordQuery.filters?.status ?? "all"} value={item.value} onValueChange={(value) => setKeywordQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, status: !value || value === "all" ? undefined : value } }))}>{item.label}</FilterPill>)}</FilterBar>}
     <span className="si-content-total">显示 {view === "blog" ? blogs?.rows.length ?? 0 : keywords?.rows.length ?? 0} / {view === "blog" ? blogs?.total ?? 0 : keywords?.total ?? 0} 条</span>
   </div>;
 
   return <div className="si-page si-content-page">
-    <ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button size="small" variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button><Button size="small" onClick={() => navigate(`/p/${id}/settings/config?section=blog-recognition`)}>识别设置</Button><Button size="small" onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button></>} overflow={[{ label: "打开项目文件夹", onSelect: () => void openProjectFolder() }]} />
+    <ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button size="small" variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button><Button size="small" onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button></>} overflow={[{ label: "博客识别设置", onSelect: () => navigate(`/p/${id}/settings/config?section=blog-recognition`) }, { label: "打开项目文件夹", onSelect: () => void openProjectFolder() }]} />
     <ProjectTabPanel projectId={project.id} tab="content">
-    <div className="si-content-recognition-summary" role="status">
-      <span className="si-content-recognition-copy">博客识别：Sitemap {blogConfigCounts.sitemaps} 条 · URL 规则 {blogConfigCounts.rules} 条 <InfoTooltip label="博客识别来源说明" content="配置来自项目设置；最近识别时间来自 SEO 抓取。修改配置后需重新抓取才会更新文章列表。" /></span>
-      <small className="si-content-data-date">最近识别：{seoSummaryQuery.isLoading ? "正在读取日期" : seoSummaryQuery.isError ? "日期读取失败" : lastRecognizedAt ? formatDateTime(lastRecognizedAt) : "尚无抓取日期"}</small>
-    </div>
+    {summaryItems.length > 0 && <SummaryLine items={summaryItems} ariaLabel="内容摘要"
+      timeNote={`博客识别配置：Sitemap ${blogConfigCounts.sitemaps} 条、URL 规则 ${blogConfigCounts.rules} 条；最近识别${seoSummaryQuery.isLoading ? "时间读取中" : seoSummaryQuery.isError ? "时间读取失败" : lastRecognizedAt ? `于 ${formatDateTime(lastRecognizedAt)}` : "时间未知"}`} />}
     {recrawlProgress && <Notice tone="info" title="博客抓取进行中">{recrawlProgress}</Notice>}
-    {view === "blog" && blogListNotice && <p className="si-content-blog-notice" role="status">{blogListNotice}</p>}
-    <div className="si-content-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载内容概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="内容概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
-    <div className="si-content-view-switch">
+    {view === "blog" && blogListNotice && <Notice tone="warn">{blogListNotice}</Notice>}
+    {summaryQuery.isError && <ApiErrorNotice label="内容概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} />}
+    {SHOW_KEYWORD_MAPPING && <div className="si-content-view-switch">
       <Segmented value={view} options={viewOptions} onChange={setView} ariaLabel="内容视图" />
-    </div>
+    </div>}
     {view === "blog" && showBlogRecognitionEmpty && <div className="si-content-empty-toolbar">{tableToolbar}</div>}
     <div className="si-content-table-frame">
       {activeQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "blog" ? "博客文章" : "关键词映射"}…</div> : activeQuery.isError ? <ApiErrorNotice label={`${view === "blog" ? "博客文章" : "关键词映射"}加载失败。`} error={activeQuery.error} onRetry={() => void activeQuery.refetch()} /> : <>
