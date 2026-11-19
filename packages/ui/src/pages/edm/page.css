@@ -1,10 +1,11 @@
 .si-edm-page {
-  --si-table-min-h: 360px;
+  --si-table-min-h: 320px;
   display: flex;
   min-height: 0;
-  height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2 - var(--space-3));
+  height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) + var(--space-1));
+  margin-top: calc(-1 * (var(--si-content-top-padding) + var(--space-1)));
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-1);
 }
 
 .si-edm-page > .si-tab-panel {
@@ -12,7 +13,7 @@
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-1);
 }
 
 .si-edm-page > .si-tab-panel > .si-data-table.is-fill {
@@ -24,16 +25,15 @@
   min-height: 0;
 }
 
-.si-edm-kpis {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
+.si-edm-summary {
+  display: flex;
+  min-height: var(--control-height-compact);
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.si-edm-kpis .si-kpi-card {
-  min-height: 90px;
-  padding: var(--space-3) var(--space-4);
-}
+.si-edm-summary .si-summary-line { width: calc(var(--space-6) * 4); flex: none; }
 
 .si-edm-status-area {
   display: grid;
@@ -76,10 +76,15 @@
 }
 
 .si-edm-toolbar-left .si-search-input {
-  width: min(260px, 100%);
+  width: min(196px, 100%);
 }
 
-.si-edm-filterbar { min-width: 0; flex: 1 1 360px; }
+.si-edm-filterbar { min-width: 0; flex: 1 1 auto; }
+
+@media (min-width: 1101px) {
+  .si-edm-toolbar,
+  .si-edm-toolbar-left { flex-wrap: nowrap; }
+}
 
 .si-edm-media-demo {
   display: grid;
@@ -113,10 +118,6 @@
 .si-edm-media-demo-panel {
   display: grid;
   gap: var(--space-2);
-}
-
-.si-edm-media-demo-panel[hidden] {
-  display: none;
 }
 
 .si-edm-media-demo-actions {
@@ -493,10 +494,6 @@
 }
 
 @media (max-width: 900px) {
-  .si-edm-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .si-edm-toolbar-left .si-search-input {
     width: min(100%, 360px);
   }
@@ -512,19 +509,11 @@
     gap: var(--space-2);
   }
 
-  .si-edm-kpis .si-kpi-card {
-    min-height: 72px;
-    padding: var(--space-2) var(--space-3);
-  }
-
   .si-edm-status-area {
     max-height: calc(var(--space-6) * 5 + var(--space-4));
     overflow: auto;
   }
 
-  .si-edm-rule-note {
-    padding: var(--space-2) var(--space-3);
-  }
 }
 
 @media (max-width: 760px) {
