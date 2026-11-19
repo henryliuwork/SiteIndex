@@ -3,7 +3,7 @@
 你是 SiteIndex 的并行工作流之一（A / B / C / D / E）。开始任何工作前：
 
 1. 读 `docs/WORKSTREAMS.md` §1，确认你是 **A（Core）/ B（UI 共享层）/ C（Desktop）/ D（UI 项目页面）/ E（真实项目验收）** 中的哪一个，以及你**只能修改的目录**
-2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
+2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；**当前执行计划 v0.7.0 / v0.7.5 以 `docs/plan/2026-11-18-v070-v075-roadmap.md` 为准，目标模式运行手册（lead、汇报、缺陷流程）见 `docs/plan/2026-11-18-v07-lead-playbook.md`**；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
@@ -22,6 +22,7 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 - 小步提交，PR ≤ 600 行改动为宜；开工前 `git pull --rebase origin main`
 - **仓库公开**：禁止提交密钥、token、Webhook、真实客户或订单数据
 - 界面文案为中文；代码注释中文或英文均可
+- **缺陷修复范围（v0.7.x 起）**：只修三类——本版本新引入的回归、数据错误或丢失、阻断安装与启动；且须先由 lead 归类并打 `v07-fix`。其余一律进 backlog，不得顺手修复；每个缺陷最多修 2 轮，修复 PR ≤ 200 行。详见 v0.7 手册 §5
 
 ## UI/UX 硬性规则
 - 字体只用 `tokens.css` 中的 `--font-sans` / `--font-mono`；Source Han Sans SC 必须随 UI 打包，不能依赖联网或用户系统字体。
