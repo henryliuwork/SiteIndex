@@ -74,12 +74,14 @@ function commonCategory(children: readonly SkuStockView[]): string {
   return [...counts].sort((a, b) => b[1] - a[1] || compareKeys(a[0], b[0]))[0]?.[0] ?? "";
 }
 
-/** Builds query-only parent rows; explicit feed parents retain their own stock values. */
-export function parentStockRows(rows: readonly SkuStockView[], asOf: ISODate, feedParents = false): ParentStockRows {
+/** Builds query-only parent rows; a real feed parent is a display key, not a stock member. */
+export function parentStockRows(rows: readonly SkuStockView[], asOf: ISODate,
+  parentSource: "derived" | "feed" | "explicit" = "derived"): ParentStockRows {
   const existingSkus = new Set(rows.map((row) => row.sku));
   const childrenByParent = new Map<string, SkuStockView[]>();
   for (const row of rows) {
-    if (!row.parent_sku || (feedParents ? !existingSkus.has(row.parent_sku) : existingSkus.has(row.parent_sku))) continue;
+    if (!row.parent_sku || (parentSource === "feed" && !existingSkus.has(row.parent_sku))
+      || (parentSource === "derived" && existingSkus.has(row.parent_sku))) continue;
     const children = childrenByParent.get(row.parent_sku) ?? [];
     children.push(row);
     childrenByParent.set(row.parent_sku, children);
@@ -89,21 +91,22 @@ export function parentStockRows(rows: readonly SkuStockView[], asOf: ISODate, fe
     children.sort((a, b) => compareKeys(a.sku, b.sku));
     const first = children[0]!;
     const realParent = existingSkus.has(sku) ? rows.find((row) => row.sku === sku) : undefined;
-    if (realParent) return {
-      ...realParent, is_parent: true, children_count: children.length,
-      in_stock_children_count: children.filter((child) => child.stock_status === "in_stock").length,
-    } satisfies SkuStockView;
     const history = parentHistory(children);
     const changes = recentStockChanges(history, asOf);
+    const status = parentStatus(children);
+    const since = status === "out_of_stock" && children.every((child) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(child.since) && child.since <= asOf)
+      ? children.map((child) => child.since).sort(compareKeys).at(-1)! : asOf;
     return {
-      ...first,
+      ...(realParent ?? first),
       sku,
       variant_title: null,
-      category: commonCategory(children),
-      price: Math.min(...children.map((child) => child.price)),
-      stock_status: parentStatus(children),
-      since: asOf,
-      days_in_status: 0,
+      category: realParent?.category ?? commonCategory(children),
+      price: realParent?.price ?? Math.min(...children.map((child) => child.price)),
+      stock_status: status,
+      since,
+      days_in_status: status === "out_of_stock" ? Math.max(0, Math.round(
+        (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${since}T00:00:00Z`)) / 86_400_000) + 1) : 0,
       online_rate_7d: onlineRate(history, 7),
       online_rate_30d: onlineRate(history, 30),
       history_30d: history,
@@ -111,7 +114,7 @@ export function parentStockRows(rows: readonly SkuStockView[], asOf: ISODate, fe
       last_change: changes.lastChangedAt ? "stock_change" : null,
       last_change_at: changes.lastChangedAt,
       parent_sku: null,
-      price_history: [],
+      price_history: realParent?.price_history ?? [],
       is_parent: true,
       children_count: children.length,
       in_stock_children_count: children.filter((child) => child.stock_status === "in_stock").length,
