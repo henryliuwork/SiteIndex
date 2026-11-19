@@ -91,6 +91,7 @@ export function listSeoPageRows(
       open_issue_targets: [...targets.values()].sort((left, right) => compareKeys(left.rule, right.rule)),
       // Legacy fixed rows do not say whether last_seen was an automatic or manual transition.
       last_issue_change_date: latestDate(pageIssues.flatMap((issue) => [issue.first_seen,
+        issue.auto_status_changed_on,
         ...(issue.handled_at ? [dateInTimezone(issue.handled_at, dateFormatter)] : [])])),
       last_issue_handled_at: handledAt,
     });

@@ -1160,6 +1160,7 @@ describe("createCoreService initial namespaces", () => {
     config.categories = { mode: "url_rule", url_pattern: "/collections/{slug}" };
     config.seo = { ...config.seo, ignore_rules: [] };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    let hasDescription = false;
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       if (url.pathname === "/sitemap.xml") {
@@ -1167,9 +1168,10 @@ describe("createCoreService initial namespaces", () => {
           headers: { "content-type": "application/xml" },
         });
       }
+      const description = hasDescription ? '<meta name="description" content="A fictional page description for the automatic SEO state transition test.">' : "";
       const body = url.pathname === "/"
-        ? '<html><head><title>Fixture home</title></head><body><main><h1>Fixture home</h1><a href="/collections/fixture">Fixture collection</a></main></body></html>'
-        : '<html><head><title>Fixture collection</title></head><body><main><h1>Fixture collection</h1><p>Fictional collection text.</p></main></body></html>';
+        ? `<html><head><title>Fixture home</title>${description}</head><body><main><h1>Fixture home</h1><a href="/collections/fixture">Fixture collection</a></main></body></html>`
+        : `<html><head><title>Fixture collection</title>${description}</head><body><main><h1>Fixture collection</h1><p>Fictional collection text.</p></main></body></html>`;
       return new Response(body, { headers: { "content-type": "text/html" } });
     }));
     const api = service(projectPath);
@@ -1179,6 +1181,7 @@ describe("createCoreService initial namespaces", () => {
     expect(initialWeekly.status).not.toBe("failed");
     let issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
     expect(issue).toMatchObject({ status: "open" });
+    expect(issue?.auto_status_changed_on).toBeUndefined();
 
     await api.seo.setIssueStatus("fixture", { targets: [target], status: "ignored" });
     const ignoredAt = (await readJsonl(path.join(projectPath, PATHS.seoIssues)))
@@ -1187,19 +1190,20 @@ describe("createCoreService initial namespaces", () => {
     await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-02" }, () => undefined);
     issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
     expect(issue).toMatchObject({ status: "ignored", handled_at: ignoredAt });
+    expect(issue?.auto_status_changed_on).toBeUndefined();
 
     await api.seo.setIssueStatus("fixture", { targets: [target], status: "fixed" });
     const fixedAt = (await readJsonl(path.join(projectPath, PATHS.seoIssues)))
       .find((row) => row.url === target.url && row.rule === target.rule)?.handled_at;
     await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-03" }, () => undefined);
     issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
-    expect(issue).toMatchObject({ status: "open", handled_at: fixedAt });
+    expect(issue).toMatchObject({ status: "open", handled_at: fixedAt, auto_status_changed_on: "2026-11-03" });
 
     await api.seo.setRuleIgnored("fixture", "desc_missing", true);
     await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-04" }, () => undefined);
     const globallyIgnored = await readJsonl(path.join(projectPath, PATHS.seoIssues));
     issue = globallyIgnored.find((row) => row.url === target.url && row.rule === target.rule);
-    expect(issue).toMatchObject({ status: "ignored" });
+    expect(issue).toMatchObject({ status: "ignored", auto_status_changed_on: "2026-11-03" });
     expect(globallyIgnored.find((row) => row.url === `${base}/collections/fixture` && row.rule === "desc_missing"))
       .toMatchObject({ status: "ignored" });
     await api.seo.setRuleIgnored("fixture", "desc_missing", false);
@@ -1208,6 +1212,22 @@ describe("createCoreService initial namespaces", () => {
     expect(issue).toMatchObject({ status: "open" });
     expect(globallyReopened.find((row) => row.url === `${base}/collections/fixture` && row.rule === "desc_missing"))
       .toMatchObject({ status: "open" });
+
+    hasDescription = true;
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-05" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "fixed", auto_status_changed_on: "2026-11-05" });
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-06" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "fixed", auto_status_changed_on: "2026-11-05" });
+    hasDescription = false;
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-07" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "open", auto_status_changed_on: "2026-11-07" });
+    await api.runJob({ projectPath, job: "weekly", trigger: "manual", date: "2026-11-08" }, () => undefined);
+    issue = (await readJsonl(path.join(projectPath, PATHS.seoIssues))).find((row) => row.url === target.url && row.rule === target.rule);
+    expect(issue).toMatchObject({ status: "open", auto_status_changed_on: "2026-11-07" });
+    expect((await api.files.validate("fixture", PATHS.seoIssues)).files.find((file) => file.path === PATHS.seoIssues)?.status).toBe("ok");
   }, 45_000);
 
   it("writes a feed and refreshes the project summary without a missing-feed warning", async () => {

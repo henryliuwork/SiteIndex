@@ -104,6 +104,10 @@ describe("SEO page table aggregation", () => {
       last_seen: "2026-11-19",
     })], { page: 1, pageSize: 0 });
     expect(oldFixed.rows[0]).toMatchObject({ last_issue_change_date: "2026-11-01", last_issue_handled_at: null });
+    const autoFixed = listSeoPageRows([page("auto")], [issue("auto", "orphan", "low", "fixed", "2026-11-01", {
+      auto_status_changed_on: "2026-11-18", last_seen: "2026-11-19",
+    })], { page: 1, pageSize: 0 });
+    expect(autoFixed.rows[0]).toMatchObject({ last_issue_change_date: "2026-11-18", last_issue_handled_at: null });
   });
 
   it("supports explicit numeric and nullable sorts and empty projects", () => {
