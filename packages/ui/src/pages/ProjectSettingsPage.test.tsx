@@ -179,7 +179,7 @@ describe("项目设置单页区块", () => {
   it("旧 Desktop bridge 缺少 GSC 方法时仍能编辑并保存本地项目配置", async () => {
     const { updateConfig } = await renderSettings("/p/demo/settings/config", true);
 
-    expect(await screen.findByText(/不影响本页其他项目设置/)).toBeTruthy();
+    expect(await screen.findByText("暂未开放")).toBeTruthy();
     fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "本地设置仍可使用" } });
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
 
@@ -188,7 +188,7 @@ describe("项目设置单页区块", () => {
     })));
   }, 20_000);
 
-  it("选择 GSC 属性 B 后保存其他设置时保留 B 和其他未保存草稿", async () => {
+  it("GSC 尚未开放时保存其他设置仍保留已有属性与未保存草稿", async () => {
     const { updateConfig } = await renderSettings(
       "/p/demo/settings/config",
       false,
@@ -196,37 +196,34 @@ describe("项目设置单页区块", () => {
     );
     updateConfig.mockImplementation(async (_id, config) => config as SiteConfig);
 
-    const propertySelect = await screen.findByRole("combobox", { name: "Search Console 属性" });
-    fireEvent.click(propertySelect);
-    fireEvent.click(await screen.findByRole("option", { name: "https://store.demo.example.test/ · 完全用户" }));
+    expect(await screen.findByText("暂未开放")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "Search Console 属性" })).toBeNull();
     fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "保留的未保存草稿" } });
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
 
     await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({
       brand: expect.objectContaining({ tagline: "保留的未保存草稿" }),
       integrations: expect.objectContaining({
-        gsc: expect.objectContaining({ property_site_url: "https://store.demo.example.test/", keep_fixture_value: true }),
+        gsc: expect.objectContaining({ property_site_url: "sc-domain:demo.example.test", keep_fixture_value: true }),
       }),
     })));
   }, 20_000);
 
-  it("清除 GSC 属性后保存其他设置时不把旧属性写回去", async () => {
+  it("缺少 GSC bridge 时保存其他设置也不清除原有 GSC 配置", async () => {
     const { updateConfig } = await renderSettings(
       "/p/demo/settings/config",
-      false,
+      true,
       "sc-domain:demo.example.test",
     );
     updateConfig.mockImplementation(async (_id, config) => config as SiteConfig);
 
-    const propertySelect = await screen.findByRole("combobox", { name: "Search Console 属性" });
-    fireEvent.click(propertySelect);
-    fireEvent.click(await screen.findByRole("option", { name: "清除当前属性选择" }));
+    expect(await screen.findByText("暂未开放")).toBeTruthy();
     fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "清除后保留的草稿" } });
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
 
     await waitFor(() => expect(updateConfig).toHaveBeenCalledOnce());
     const savedConfig = updateConfig.mock.calls[0]?.[1];
     expect(savedConfig?.brand?.tagline).toBe("清除后保留的草稿");
-    expect(savedConfig?.integrations?.gsc).toEqual({ keep_fixture_value: true });
+    expect(savedConfig?.integrations?.gsc).toEqual({ property_site_url: "sc-domain:demo.example.test", keep_fixture_value: true });
   }, 20_000);
 });
