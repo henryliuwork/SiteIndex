@@ -2,21 +2,16 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, FolderOpen, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AttentionItem, OverviewData, ProjectDetail, SeoIssue, SyncState } from "@siteindex/shared";
+import type { AttentionItem, Kpi, OverviewData, SeoIssue, SyncState } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, formatDateTime, KpiCard, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, KpiCard, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
 import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
 const syncLabels: Record<SyncState, string> = {
   ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
 };
-
-function syncLabel(project: ProjectDetail["summary"]): string {
-  if (!project.sync.at) return project.sync.state === "ok" ? "同步成功 · 时间未知" : syncLabels[project.sync.state];
-  return `${formatDateTime(project.sync.at)} · ${syncLabels[project.sync.state]}`;
-}
 
 function severityTone(severity: AttentionItem["severity"]): "danger" | "warn" | "neutral" {
   return severity === "high" ? "danger" : severity === "mid" ? "warn" : "neutral";
@@ -48,6 +43,12 @@ export function OverviewPage() {
   const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const overviewQuery = useQuery({ queryKey: ["overview", id], queryFn: () => api.overview.get(id) });
+  const listPageRows = api.seo.listPageRows;
+  const seoCardsQuery = useQuery({ queryKey: ["seo", "pageRows", id, "overview-cards"],
+    queryFn: () => listPageRows!(id, { page: 1, pageSize: 1, filters: {} }), enabled: Boolean(listPageRows) });
+  const contentCardsQuery = useQuery({ queryKey: ["content", "summary", id], queryFn: () => api.content.summary(id) });
+  const edmCardsQuery = useQuery({ queryKey: ["edm", "images", id, "overview-missing"],
+    queryFn: () => api.edm.listImages(id, { page: 1, pageSize: 1, filters: { view: "none" } }) });
   const [running, setRunning] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
@@ -68,6 +69,9 @@ export function OverviewPage() {
       else toast.error(result.summary);
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["overview", id] }),
+        queryClient.invalidateQueries({ queryKey: ["seo", "pageRows", id] }),
+        queryClient.invalidateQueries({ queryKey: ["content", "summary", id] }),
+        queryClient.invalidateQueries({ queryKey: ["edm", "images", id] }),
         invalidateProjectSummary(queryClient, id),
       ]);
     });
@@ -131,12 +135,28 @@ export function OverviewPage() {
     ? overview?.attention.filter((item) => item.text.toLowerCase() !== "尚未填写 gmc feed")
     : overview?.attention;
   const canIgnoreAttention = typeof api.seo.setRuleIgnored === "function";
+  const seoSummary = seoCardsQuery.data?.summary;
+  const contentKpis = contentCardsQuery.data?.kpis ?? [];
+  const blogMetric = (key: string, label: string): Kpi | null => {
+    const value = contentKpis.find((item) => item.key === key)?.value;
+    return value !== undefined && /^\d+$/.test(value)
+      ? { key, label, value, link: `/p/${encodeURIComponent(id)}/content?issue=${key}` } : null;
+  };
+  const cards: Kpi[] = [
+    ...(seoSummary ? [
+      { key: "seo-new", label: "本次新增问题页", value: String(seoSummary.new_pages), link: `/p/${encodeURIComponent(id)}/seo?summary=new` },
+      { key: "seo-unindexed", label: "未收录页面", value: String(seoSummary.unindexed_pages), link: `/p/${encodeURIComponent(id)}/seo?summary=unindexed` },
+    ] : []),
+    blogMetric("no_schema", "博客缺少 Schema"),
+    blogMetric("no_links", "博客无站内链接"),
+    ...(edmCardsQuery.data ? [{ key: "edm-missing", label: "EDM 缺图 SKU", value: String(edmCardsQuery.data.total), link: `/p/${encodeURIComponent(id)}/edm?view=none` }] : []),
+  ].filter((item): item is Kpi => item !== null);
   return <div className="si-page si-overview-page">
     <ProjectHeader
       project={summary}
       activeTab="overview"
       hasTabPanel
-      status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabel(summary)}</Chip>}
+      status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabels[summary.sync.state]}</Chip>}
       actions={<>
         <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={running} onClick={() => void runSync()}>{running ? "同步中…" : "立即同步"}</Button>
@@ -149,12 +169,18 @@ export function OverviewPage() {
     />
     <ProjectTabPanel projectId={summary.id} tab="overview">
     <div className="si-overview-content">
-    {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 自动采集已启用">首次及每日同步优先使用 WooCommerce Store API；失败时回退商品 Sitemap/HTML。</Notice>}
     {running && <Notice tone="info" title="每日同步进行中">{syncMessage || "正在同步项目数据…"}</Notice>}
+    {summary.sync.state === "failed" && !running && <Notice tone="error" title="最近一次同步失败">请查看运行记录中的原因，或重新同步。</Notice>}
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
-    <section className="si-overview-kpis" aria-label="项目指标">
-      {overview.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}
-    </section>
+    {(seoCardsQuery.isError || contentCardsQuery.isError || edmCardsQuery.isError || !listPageRows) && <div className="si-overview-metric-errors">
+      {!listPageRows && <Notice tone="warn">当前版本暂不支持 SEO 页面指标。</Notice>}
+      {seoCardsQuery.isError && <ApiErrorNotice label="SEO 页面指标加载失败。" error={seoCardsQuery.error} onRetry={() => void seoCardsQuery.refetch()} />}
+      {contentCardsQuery.isError && <ApiErrorNotice label="博客指标加载失败。" error={contentCardsQuery.error} onRetry={() => void contentCardsQuery.refetch()} />}
+      {edmCardsQuery.isError && <ApiErrorNotice label="EDM 缺图指标加载失败。" error={edmCardsQuery.error} onRetry={() => void edmCardsQuery.refetch()} />}
+    </div>}
+    {cards.length > 0 && <section className="si-overview-kpis" aria-label="项目指标">
+      {cards.map((metric) => <KpiCard key={metric.key} metric={metric} />)}
+    </section>}
 
     <section className="si-overview-attention si-panel">
       <div className="si-panel-heading"><h2>需要关注</h2><span>来自今日同步与数据检查</span></div>

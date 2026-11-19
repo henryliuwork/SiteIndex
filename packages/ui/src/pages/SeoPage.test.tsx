@@ -243,6 +243,16 @@ describe("SeoPage 问题处理", () => {
 });
 
 describe("SeoPage 单页面表", () => {
+  it.each(["new", "unindexed"] as const)("从概览恢复 %s 页面摘要筛选", async (summary) => {
+    const mockApi = createMockApi();
+    const listPageRows = vi.spyOn(mockApi.seo, "listPageRows");
+    await renderSeoPage(mockApi, `/p/demo/seo?summary=${summary}`, true);
+    await waitFor(() => expect(listPageRows).toHaveBeenCalledWith("demo", expect.objectContaining({
+      filters: expect.objectContaining({ summary }),
+    })));
+    expect(screen.getByTestId("search-params").textContent).toBe(`?summary=${summary}`);
+  });
+
   it("用真实页面聚合查询代替问题与内链视图，并恢复旧深链", async () => {
     const mockApi = createMockApi();
     const listPageRows = vi.spyOn(mockApi.seo, "listPageRows");

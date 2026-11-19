@@ -56,6 +56,7 @@ type EdmPageTestOptions = {
   listImagesImplementation?: SiteIndexApi["edm"]["listImages"];
   scenarioMissing?: boolean;
   candidatesImplementation?: NonNullable<SiteIndexApi["edm"]["candidates"]>;
+  initialPath?: string;
 };
 
 async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRows?: SkuImageRow[], mediaReady = false, deferredMediaPrepare = false, options: EdmPageTestOptions = {}) {
@@ -154,7 +155,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
   render(
     <ToastProvider>
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/p/demo/edm"]}>
+      <MemoryRouter initialEntries={[options.initialPath ?? "/p/demo/edm"]}>
         <Routes>
           <Route path="/p/:id/edm" element={<EdmPage />} />
           <Route path="/p/:id/runs" element={<div>运行页面</div>} />
@@ -216,6 +217,20 @@ function enableTableRows(): void {
 }
 
 describe("EdmPage D-3 只读检查", () => {
+  it("从概览深链恢复缺图 SKU 筛选，并同步后续视图切换到 URL", async () => {
+    const { listImages } = await renderEdmPage(false, true, undefined, false, false, {
+      initialPath: "/p/demo/edm?view=none",
+      summaryImplementation: async () => ({ total: 99, feed: 0, manual: 0, none: 99 }),
+      listImagesImplementation: async (_id, query) => ({ rows: [], total: query.filters?.view === "none" ? 7 : 20 }),
+    });
+    await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: { view: "none" } })));
+    expect(screen.getByTestId("location").textContent).toBe("/p/demo/edm?view=none");
+    expect(await screen.findByRole("button", { name: /缺图.*7/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /缺图.*99/ })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "全部" }));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/p/demo/edm"));
+  });
+
   it("能力缺失或仍待接线时隐藏整个页头入口", async () => {
     await renderEdmPage(false, false, undefined, false, false, { scenarioMissing: true, pendingHandlers: [] });
     fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));

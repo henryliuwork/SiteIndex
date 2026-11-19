@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { JobProgress, JobResult } from "@siteindex/shared";
 import { createMockApi } from "../../mock";
-import { ToastProvider } from "../../components";
 
 function SettingsRouteMarker() {
   const location = useLocation();
@@ -20,6 +19,26 @@ afterEach(() => {
 });
 
 describe("ContentPage 博客重新抓取", () => {
+  it("从概览深链恢复博客问题筛选，并同步后续切换到 URL", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const mockApi = createMockApi();
+    const listBlog = vi.spyOn(mockApi.content, "listBlog");
+    vi.doMock("../../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ ContentPage }, { ToastProvider }] = await Promise.all([import("../ContentPage"), import("../../components")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ToastProvider>
+      <MemoryRouter initialEntries={["/p/demo/content?issue=no_schema"]}>
+        <Routes><Route path="/p/:id/content" element={<><ContentPage /><SettingsRouteMarker /></>} /></Routes>
+      </MemoryRouter>
+    </ToastProvider></QueryClientProvider>);
+    await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: { issue: "no_schema" } })));
+    expect(screen.getByTestId("settings-location").textContent).toBe("/p/demo/content?issue=no_schema");
+    const summary = await screen.findByRole("group", { name: "内容摘要" });
+    fireEvent.click(within(summary).getByRole("button", { name: /无站内链接/ }));
+    await waitFor(() => expect(screen.getByTestId("settings-location").textContent).toBe("/p/demo/content?issue=no_links"));
+    await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: { issue: "no_links" } })));
+  });
+
   it("常驻按钮在非空博客列表中可用，运行时禁用并在完成后刷新博客数据", async () => {
     vi.stubGlobal("ResizeObserver", class {
       observe(): void {}
@@ -41,7 +60,7 @@ describe("ContentPage 博客重新抓取", () => {
       api: mockApi,
       apiErrorMessage: (_error: unknown, fallback: string) => fallback,
     }));
-    const { ContentPage } = await import("../ContentPage");
+    const [{ ContentPage }, { ToastProvider }] = await Promise.all([import("../ContentPage"), import("../../components")]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
 

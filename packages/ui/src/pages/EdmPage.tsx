@@ -3,7 +3,7 @@ import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/
 import type { QueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, Image as ImageIcon } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
@@ -21,6 +21,10 @@ import { EdmWorkflowPrototype } from "./edm/workflow-prototype";
 import { availableEdmScenarioTabs, EdmScenarioSections } from "./edm/drawer/scenario-sections";
 
 type ImageView = NonNullable<SkuImageFilters["view"]> | "all";
+function viewFromUrl(params: URLSearchParams): ImageView {
+  const view = params.get("view");
+  return view === "none" || view === "in_stock" || view === "no_feed" || view === "has_manual" ? view : "all";
+}
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
 const EMPTY_DISCOUNT_TIERS: number[] = [];
 const viewOptions: { value: ImageView; label: string }[] = [
@@ -282,6 +286,7 @@ export function EdmPage() {
   const mediaPageVisitRef = useRef({ projectId: id, startedAt: Date.now() });
   if (mediaPageVisitRef.current.projectId !== id) mediaPageVisitRef.current = { projectId: id, startedAt: Date.now() };
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
   const queryClient = useQueryClient();
   const mediaRunSnapshot = useSyncExternalStore(
@@ -295,7 +300,10 @@ export function EdmPage() {
     () => getEdmExportSafetyState(id),
     () => "unavailable" as const,
   );
-  const [query, setQuery] = useState<ListQuery<SkuImageFilters>>({ page: 1, pageSize: 50, filters: {} });
+  const [query, setQuery] = useState<ListQuery<SkuImageFilters>>(() => {
+    const view = viewFromUrl(searchParams);
+    return { page: 1, pageSize: 50, filters: { view: view === "all" ? undefined : view } };
+  });
   const [selected, setSelected] = useState<SkuImageRow | null>(null);
   const galleryImageMutation = useMutation({
     mutationFn: ({ projectId, sku, url }: { projectId: string; sku: string; url: string }) => api.edm.setManualImage(projectId, sku, url),
@@ -455,6 +463,7 @@ export function EdmPage() {
   const summary = summaryQuery.data;
   const columns = useMemo(() => imageColumns(id, discountTiers, discountTierCapability), [id, discountTiers, discountTierCapability.available, discountTierCapability.message]);
   const currentView: ImageView = query.filters?.view ?? "all";
+  const missingImageCount = currentView === "none" ? listQuery.data?.total : summary?.none;
   const imageQueriesFetching = useIsFetching({ queryKey: ["edm", "images", id] });
 
   useEffect(() => {
@@ -501,8 +510,20 @@ export function EdmPage() {
     setMediaDemoMessage("");
     setMediaHistoryDrawerOpen(false);
   }, [id]);
+  useEffect(() => {
+    const view = viewFromUrl(searchParams);
+    const next = view === "all" ? undefined : view;
+    setQuery((current) => current.filters?.view === next ? current : { ...current, page: 1, filters: { ...current.filters, view: next } });
+  }, [searchParams]);
   const setSearch = (search: string) => setQuery((current) => ({ ...current, page: 1, search: search || undefined }));
-  const setView = (view: ImageView) => setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, view: view === "all" ? undefined : view } }));
+  const setView = (view: ImageView) => {
+    setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, view: view === "all" ? undefined : view } }));
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (view === "all") next.delete("view"); else next.set("view", view);
+      return next;
+    }, { replace: true });
+  };
   const onParentOnlyChange = (checked: boolean) => {
     if (!groupingEnabled) {
       setQuery((current) => ({ ...current, page: 1, filters: { ...current.filters, parent_only: undefined } }));
@@ -704,7 +725,7 @@ export function EdmPage() {
       emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-left"><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />
-          {summary && <div className="si-edm-summary"><SummaryLine ariaLabel="EDM 可处理摘要" items={[{ id: "missing-image", label: "缺图", value: summary.none, active: currentView === "none", onToggle: () => setView(currentView === "none" ? "all" : "none") }]} /><InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />{(discountTiers.length === 0 || !discountTierCapability.available) && <InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} />}</div>}
+          {missingImageCount !== undefined && <div className="si-edm-summary"><SummaryLine ariaLabel="EDM 可处理摘要" items={[{ id: "missing-image", label: currentView === "none" ? "缺图 SKU" : "缺图产品", value: missingImageCount, active: currentView === "none", onToggle: () => setView(currentView === "none" ? "all" : "none") }]} /><InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />{(discountTiers.length === 0 || !discountTierCapability.available) && <InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} />}</div>}
           <FilterBar className="si-edm-filterbar">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setView(value || "all")}>{item.label}</FilterPill>)}</FilterBar>
         </div>
         <div className="si-edm-toolbar-right">
