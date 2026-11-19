@@ -117,6 +117,7 @@ import { checkWorkspaceImport } from "../workspace/import-check";
 import { detectSite } from "../projects/detect";
 import { runWeekly } from "../jobs/weekly";
 import { buildSeoIssueCounts, buildSeoRuleSettings } from "../seo/rules";
+import { listSeoPageRows } from "../seo/page-table";
 import { readProductChanges, readProductGroupFamily, readProductSkuBrief } from "../products/scenario-queries";
 import { readSeoInternalLinkContext, readSeoIssueCandidates, readSeoPageBrief } from "../seo/scenario-queries";
 import { readEdmCampaignSafety, readEdmCandidates, readEdmMediaGaps } from "../edm/scenario-queries";
@@ -180,10 +181,11 @@ export interface CoreService {
     changes: NonNullable<SiteIndexApi["products"]["changes"]>;
     groupFamily: NonNullable<SiteIndexApi["products"]["groupFamily"]>;
   };
-  seo: Omit<SiteIndexApi["seo"], "checkIndex" | "setIssueStatus" | "setRuleIgnored" | "getRuleSettings"> & {
+  seo: Omit<SiteIndexApi["seo"], "checkIndex" | "setIssueStatus" | "setRuleIgnored" | "getRuleSettings" | "listPageRows"> & {
     setIssueStatus: NonNullable<SiteIndexApi["seo"]["setIssueStatus"]>;
     setRuleIgnored: NonNullable<SiteIndexApi["seo"]["setRuleIgnored"]>;
     getRuleSettings: NonNullable<SiteIndexApi["seo"]["getRuleSettings"]>;
+    listPageRows: NonNullable<SiteIndexApi["seo"]["listPageRows"]>;
   };
   content: SiteIndexApi["content"];
   edm: Omit<SiteIndexApi["edm"], "setDiscountTier" | "candidates" | "mediaGaps" | "campaignSafety"> & {
@@ -2518,9 +2520,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             : currentIgnoreRules.filter((entry) => !entry.url || !targetKeys.has(`${entry.url}\n${entry.rule}`));
           const nextIgnoreRules = normalizeSeoIgnoreRules(ignoreRules);
           const rulesChanged = JSON.stringify(currentIgnoreRules) !== JSON.stringify(nextIgnoreRules);
+          const handledAt = new Date().toISOString();
           const nextIssues = issues.map((issue) => {
             if (!targetKeys.has(`${issue.url}\n${issue.rule}`) || issue.status === input.status) return issue;
-            return { ...issue, status: input.status };
+            return { ...issue, status: input.status, handled_at: handledAt };
           });
           const updated = issues.reduce((count, issue, index) => count + (issue.status !== nextIssues[index]?.status ? 1 : 0), 0);
           if (rulesChanged) {
@@ -2550,12 +2553,13 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             : currentIgnoreRules.filter((entry) => entry.rule !== rule || !!entry.url);
           const nextIgnoreRules = normalizeSeoIgnoreRules(ignoreRules);
           const rulesChanged = JSON.stringify(currentIgnoreRules) !== JSON.stringify(nextIgnoreRules);
+          const handledAt = new Date().toISOString();
           const nextIssues = issues.map((issue) => {
             if (issue.rule !== rule) return issue;
-            if (ignored && issue.status === "open") return { ...issue, status: "ignored" as const };
+            if (ignored && issue.status === "open") return { ...issue, status: "ignored" as const, handled_at: handledAt };
             if (!ignored && issue.status === "ignored"
               && !nextIgnoreRules.some((entry) => entry.rule === rule && entry.url === issue.url)) {
-              return { ...issue, status: "open" as const };
+              return { ...issue, status: "open" as const, handled_at: handledAt };
             }
             return issue;
           });
@@ -2583,6 +2587,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         return true;
       });
       return paginate(rows, query, (row) => [row.url, row.title, row.meta_description, row.page_type], "url", (row) => row.url);
+    },
+    listPageRows: async (id, query) => {
+      const snapshot = await load(resolve(id));
+      return listSeoPageRows(snapshot.seoPages, snapshot.seoIssues, query, snapshot.config.timezone);
     },
     listLinks: async (id, query) => {
       const snapshot = await load(resolve(id));
