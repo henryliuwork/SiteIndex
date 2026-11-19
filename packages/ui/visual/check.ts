@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
 import { classifyDataSurface, classifyPageSurface, getVerticalScrollDelta, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
-import { isDataTableRoute } from "./routes";
+import { isDataTableRoute, routeCaseUrl } from "./routes";
 import { checkSectionPageMetrics, SECTION_PAGE_NAMES, type SectionPageBaseline, type SectionPageMetrics } from "./section-page-policy";
 import { compareStyleFindings, scanUiStyles, timeDisplayPatternSource, type StyleBaseline } from "./style-policy";
 
@@ -636,7 +636,7 @@ async function main(): Promise<void> {
         currentConsoleErrors = consoleErrors;
         try {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
-          await page.goto(`${baseUrl}${mockQuery}#${route.path}`, { waitUntil: "commit", timeout: 20_000 });
+          await page.goto(routeCaseUrl(baseUrl, mockQuery, route.path, route.name), { waitUntil: "domcontentloaded", timeout: 20_000 });
           if (route.name.startsWith("new-project-woo-")) {
             await page.getByRole("textbox", { name: "网站地址" }).fill("woo.example.test");
             await page.getByRole("button", { name: "检测", exact: true }).click();
