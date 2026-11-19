@@ -5,6 +5,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 import { createServer, type ViteDevServer } from "vite";
 import { classifyDataSurface, classifyPageSurface, getVerticalScrollDelta, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
 import { isDataTableRoute } from "./routes";
+import { checkSectionPageMetrics, SECTION_PAGE_NAMES, type SectionPageBaseline, type SectionPageMetrics } from "./section-page-policy";
 import { compareStyleFindings, scanUiStyles, timeDisplayPatternSource, type StyleBaseline } from "./style-policy";
 
 type BrowserChannel = "msedge" | "chrome";
@@ -35,6 +36,7 @@ interface CheckReport {
   failures: CheckFailure[];
   consoleErrors: string[];
   timeWarnings: string[];
+  sectionPageFindings?: ReturnType<typeof checkSectionPageMetrics>;
 }
 
 const uiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -481,6 +483,51 @@ async function inspectPage(page: Page): Promise<{
     const timeDisplayCount = (timeRoot?.innerText.match(new RegExp(timePattern, "g")) ?? []).length;
     const timeWarnings = timeDisplayCount > 1 ? [`页面主体含 ${timeDisplayCount} 处日期或时间展示，需人工确认是否重复。`] : [];
 
+    const pageRoot = document.querySelector<HTMLElement>("main .si-page");
+    const pageTexts: string[] = [];
+    if (pageRoot) {
+      const walker = document.createTreeWalker(pageRoot, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const parent = node.parentElement;
+        if (!parent || parent.closest(".si-data-table, table, [aria-hidden='true'], [role='dialog'], .si-detail-panel, .si-drawer, .si-popover-content")) continue;
+        const rect = parent.getBoundingClientRect();
+        const style = getComputedStyle(parent);
+        if (rect.width <= 0 || rect.height <= 0 || style.display === "none" || style.visibility === "hidden") continue;
+        pageTexts.push(node.textContent ?? "");
+      }
+    }
+    const visiblePageText = pageTexts.join(" ");
+    const visibleTimes = visiblePageText.match(new RegExp(timePattern, "g")) ?? [];
+    const segments = pageRoot ? Array.from(pageRoot.querySelectorAll<HTMLElement>(".si-segmented"))
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && !element.closest("[role='dialog'], .si-detail-panel, .si-drawer");
+      }) : [];
+    const firstTable = tables[0];
+    const headerRect = firstTable?.querySelector("thead th")?.getBoundingClientRect();
+    const scrollRect = firstTable?.getBoundingClientRect();
+    const sectionPage: SectionPageMetrics = {
+      conditionalBannerVisible: Boolean(pageRoot && Array.from(pageRoot.querySelectorAll<HTMLElement>(".si-notice"))
+        .some((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && !element.closest("[role='dialog'], .si-detail-panel, .si-drawer");
+        })),
+      tableHeaderTop: headerRect ? Math.round(headerRect.top) : null,
+      visibleRowCapacity: headerRect && scrollRect ? Math.max(0, Math.floor((Math.min(scrollRect.bottom, innerHeight) - headerRect.bottom) / 52)) : null,
+      visibleTimeCount: visibleTimes.length,
+      segmentGroupCount: segments.length,
+      segmentCountBadgeCount: segments.reduce((count, segment) => count + Array.from(segment.querySelectorAll<HTMLElement>("button"))
+        .filter((button) => /\d/.test(button.innerText) || Boolean(button.querySelector(".si-chip, [class*='badge']"))).length, 0),
+      relativeTimeCount: (pageRoot?.innerText.match(/今天|昨天/g) ?? []).length,
+      horizontalScrollerCount: pageRoot ? Array.from(pageRoot.querySelectorAll<HTMLElement>("*"))
+        .filter((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && !element.closest("[role='dialog'], .si-detail-panel, .si-drawer")
+            && ["auto", "scroll"].includes(getComputedStyle(element).overflowX)
+            && element.scrollWidth > element.clientWidth + 1;
+        }).length : 0,
+    };
+
     return {
       heading: document.querySelector("main h1")?.textContent?.trim() ?? null,
       metrics: {
@@ -512,6 +559,7 @@ async function inspectPage(page: Page): Promise<{
         clippedCells: clippedCells.slice(0, 12),
         inlineClickTargetCount: clickTargets.length,
         inlineClickMisses: clickMisses,
+        sectionPage,
       },
       timeWarnings,
     };
@@ -531,6 +579,8 @@ async function main(): Promise<void> {
   const styleFindings = await scanUiStyles(path.join(uiRoot, "src"));
   const baselinePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "style-baseline.json");
   const styleBaselineFile = JSON.parse(await readFile(baselinePath, "utf8")) as { version: number; counts: StyleBaseline };
+  const sectionBaselinePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "section-page-baseline.json");
+  const sectionBaseline = JSON.parse(await readFile(sectionBaselinePath, "utf8")) as SectionPageBaseline;
   const stylePolicy = compareStyleFindings(styleFindings, styleBaselineFile.counts);
 
   try {
@@ -576,6 +626,7 @@ async function main(): Promise<void> {
         let heading: string | null = null;
         let metrics: Record<string, unknown> = {};
         let timeWarnings: string[] = [];
+        let sectionPageFindings: ReturnType<typeof checkSectionPageMetrics> | undefined;
         currentConsoleErrors = consoleErrors;
         try {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
@@ -605,10 +656,13 @@ async function main(): Promise<void> {
             await page.locator(".si-skill-choice").filter({ hasText: "stock-report" }).click();
             await page.locator(".si-skill-target > .si-button").first().waitFor({ state: "visible", timeout: 10_000 });
           }
+          // Section-page gates measure the first screen, before legacy table-visibility scrolling.
+          const firstScreenSectionPage = SECTION_PAGE_NAMES.some((name) => name === route.name)
+            ? (await inspectPage(page)).metrics.sectionPage as SectionPageMetrics : undefined;
           await scrollCheckViewportTableIntoContent(page);
           const inspection = await inspectPage(page);
           heading = inspection.heading;
-          metrics = { ...inspection.metrics, dataSurfaceState };
+          metrics = { ...inspection.metrics, sectionPage: firstScreenSectionPage ?? inspection.metrics.sectionPage, dataSurfaceState };
           timeWarnings = inspection.timeWarnings;
           for (const warning of timeWarnings) allTimeWarnings.add(`${route.path} @ ${viewport.width}: ${warning}`);
 
@@ -634,8 +688,15 @@ async function main(): Promise<void> {
             tables: Array<{ overflowY: string; bottomInViewport: boolean; checkViewport: boolean; hasPagination: boolean; paginationBottom: number | null; paginationInViewport: boolean; hasPageSizeControl: boolean }>;
             clippedCells: string[];
             inlineClickMisses: string[];
+            sectionPage: SectionPageMetrics;
             dataSurfaceState?: DataSurfaceState;
           };
+          if (SECTION_PAGE_NAMES.some((name) => name === route.name)) {
+            sectionPageFindings = checkSectionPageMetrics(values.sectionPage, viewport.width, sectionBaseline.checks[`${route.name}@${viewport.width}`]);
+            for (const finding of sectionPageFindings.filter((item) => !item.legacy)) {
+              failures.push({ rule: finding.rule, message: `板块页指标 ${finding.actual}，目标 ${finding.limit}。` });
+            }
+          }
           if (route.waitForDataSurface && values.dataSurfaceState === "table" && !values.tableCount) {
             failures.push({ rule: "table-readiness-mismatch", message: "就绪判定为表格已加载，但截图测量没有可见表格滚动区。" });
           }
@@ -688,7 +749,7 @@ async function main(): Promise<void> {
         await page.screenshot({ path: path.join(shotsDir, fileName), fullPage: false }).catch((error: unknown) => {
           failures.push({ rule: "screenshot", message: asErrorMessage(error) });
         });
-        reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors, timeWarnings });
+        reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors, timeWarnings, sectionPageFindings });
         const state = failures.length ? `FAIL ${failures.length}` : "PASS";
         const terminalState = typeof metrics.dataSurfaceState === "string" ? ` (${metrics.dataSurfaceState})` : "";
         console.log(`[${state}] ${route.path} @ ${viewport.width}×${viewport.height}${terminalState}`);
@@ -713,11 +774,13 @@ async function main(): Promise<void> {
       failures: stylePolicy.introduced,
     },
     timeWarnings: [...allTimeWarnings].sort(),
+    sectionPageBaselineVersion: sectionBaseline.version,
+    sectionPageLegacyFindingCount: reports.reduce((count, item) => count + (item.sectionPageFindings?.filter((finding) => finding.legacy).length ?? 0), 0),
     checks: reports,
   };
   await writeFile(path.join(shotsDir, "report.json"), JSON.stringify(report, null, 2) + "\n", "utf8");
   const failures = reports.flatMap((item) => item.failures.map((failure) => ({ route: item.route, viewport: item.viewport.width, ...failure })));
-  console.log(`ui:check complete: ${reports.length} route/viewport checks, ${failures.length} UI failures, ${stylePolicy.introduced.length} new style failure(s), ${stylePolicy.legacyCount} legacy baseline finding(s), ${allTimeWarnings.size} time warning(s).`);
+  console.log(`ui:check complete: ${reports.length} route/viewport checks, ${failures.length} UI failures, ${stylePolicy.introduced.length} new style failure(s), ${stylePolicy.legacyCount} legacy style finding(s), ${report.sectionPageLegacyFindingCount} section-page baseline finding(s), ${allTimeWarnings.size} time warning(s).`);
   console.log(`Report: ${path.relative(uiRoot, path.join(shotsDir, "report.json"))}`);
   for (const failure of failures) console.error(`- ${failure.route} @ ${failure.viewport}: [${failure.rule}] ${failure.message}`);
   for (const finding of stylePolicy.introduced) console.error(`- ${finding.source}:${finding.line}: [${finding.rule}] ${finding.signature}`);

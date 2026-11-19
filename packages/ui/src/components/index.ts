@@ -8,5 +8,6 @@ export * from "./overlays";
 export * from "./project-header";
 export * from "./primitives";
 export * from "./shell";
+export * from "./summary-line";
 export * from "./table";
 export * from "./utils";
