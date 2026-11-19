@@ -129,7 +129,6 @@ export const API_EVENT_METHODS = [
 ] as const;
 
 export const PENDING_HANDLERS: readonly string[] = [
-  "seo.listPageRows",
   "gsc.status",
   "gsc.connect",
   "gsc.disconnect",
