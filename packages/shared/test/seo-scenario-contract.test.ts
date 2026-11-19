@@ -20,10 +20,10 @@ describe("SEO scenario query contract", () => {
     expect(oldBridgeSeo.internalLinkContext).toBeUndefined();
   });
 
-  it("registers all three API methods and CLI targets as pending", () => {
+  it("registers all three implemented API methods and CLI targets", () => {
     for (const method of ["seo.pageBrief", "seo.issueCandidates", "seo.internalLinkContext"]) {
       expect(API_INVOKE_METHODS).toContain(method);
-      expect(PENDING_HANDLERS).toContain(method);
+      expect(PENDING_HANDLERS).not.toContain(method);
     }
     expect(QUERY_TARGETS).toContain("seo-page-brief");
     expect(QUERY_TARGETS).toContain("seo-issue-candidates");

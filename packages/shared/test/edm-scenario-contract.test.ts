@@ -19,7 +19,7 @@ describe("EDM scenario query contract", () => {
     expect(oldBridgeEdm).toEqual({});
     for (const method of methods) {
       expect(API_INVOKE_METHODS.filter((entry) => entry === method)).toHaveLength(1);
-      expect(PENDING_HANDLERS).toContain(method);
+      expect(PENDING_HANDLERS).not.toContain(method);
     }
     expect(QUERY_TARGETS).toContain("edm-candidates");
     expect(QUERY_TARGETS).toContain("edm-media-gaps");
