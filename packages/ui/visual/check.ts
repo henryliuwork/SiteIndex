@@ -489,15 +489,21 @@ async function inspectPage(page: Page): Promise<{
       const walker = document.createTreeWalker(pageRoot, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         const parent = node.parentElement;
-        if (!parent || parent.closest(".si-data-table, table, [aria-hidden='true'], [role='dialog'], .si-detail-panel, .si-drawer, .si-popover-content")) continue;
+        if (!parent || parent.closest("[aria-hidden='true'], [role='dialog'], .si-detail-panel, .si-drawer, .si-popover-content")) continue;
         const rect = parent.getBoundingClientRect();
         const style = getComputedStyle(parent);
-        if (rect.width <= 0 || rect.height <= 0 || style.display === "none" || style.visibility === "hidden") continue;
+        if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= innerHeight
+          || rect.right <= 0 || rect.left >= innerWidth || style.display === "none" || style.visibility === "hidden") continue;
+        const scrollArea = parent.closest<HTMLElement>(".si-table-scroll");
+        if (scrollArea) {
+          const scrollRect = scrollArea.getBoundingClientRect();
+          if (rect.bottom <= scrollRect.top || rect.top >= scrollRect.bottom) continue;
+        }
         pageTexts.push(node.textContent ?? "");
       }
     }
     const visiblePageText = pageTexts.join(" ");
-    const visibleTimes = visiblePageText.match(new RegExp(timePattern, "g")) ?? [];
+    const visibleTimes = visiblePageText.match(/\b(?:20\d{2}-)?\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}\b/g) ?? [];
     const segments = pageRoot ? Array.from(pageRoot.querySelectorAll<HTMLElement>(".si-segmented"))
       .filter((element) => {
         const rect = element.getBoundingClientRect();
@@ -518,7 +524,7 @@ async function inspectPage(page: Page): Promise<{
       segmentGroupCount: segments.length,
       segmentCountBadgeCount: segments.reduce((count, segment) => count + Array.from(segment.querySelectorAll<HTMLElement>("button"))
         .filter((button) => /\d/.test(button.innerText) || Boolean(button.querySelector(".si-chip, [class*='badge']"))).length, 0),
-      relativeTimeCount: (pageRoot?.innerText.match(/今天|昨天/g) ?? []).length,
+      relativeTimeCount: (visiblePageText.match(/今天|昨天/g) ?? []).length,
       horizontalScrollerCount: pageRoot ? Array.from(pageRoot.querySelectorAll<HTMLElement>("*"))
         .filter((element) => {
           const rect = element.getBoundingClientRect();

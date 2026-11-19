@@ -9,14 +9,11 @@
     "edm@1024": {
       "horizontalScrollerCount": 1
     },
-    "overview@1024": {
-      "visibleTimeCount": 5
-    },
     "products@1024": {
       "horizontalScrollerCount": 1
     },
     "seo@1024": {
-      "visibleTimeCount": 3,
+      "visibleTimeCount": 2,
       "segmentCountBadgeCount": 2
     },
     "content@1280": {
@@ -29,9 +26,6 @@
     "edm@1280": {
       "horizontalScrollerCount": 1
     },
-    "overview@1280": {
-      "visibleTimeCount": 5
-    },
     "products@1280": {
       "tableHeaderTop": 391,
       "visibleRowCapacity": 5,
@@ -40,7 +34,7 @@
     "seo@1280": {
       "tableHeaderTop": 551,
       "visibleRowCapacity": 2,
-      "visibleTimeCount": 3,
+      "visibleTimeCount": 2,
       "segmentCountBadgeCount": 2
     },
     "content@1440": {
@@ -51,25 +45,19 @@
     "edm@1440": {
       "horizontalScrollerCount": 1
     },
-    "overview@1440": {
-      "visibleTimeCount": 5
-    },
     "products@1440": {
       "horizontalScrollerCount": 1
     },
     "seo@1440": {
-      "visibleTimeCount": 3,
+      "visibleTimeCount": 2,
       "segmentCountBadgeCount": 2
     },
     "content@1920": {
       "visibleTimeCount": 2,
       "segmentCountBadgeCount": 1
     },
-    "overview@1920": {
-      "visibleTimeCount": 5
-    },
     "seo@1920": {
-      "visibleTimeCount": 3,
+      "visibleTimeCount": 2,
       "segmentCountBadgeCount": 2
     }
   }
