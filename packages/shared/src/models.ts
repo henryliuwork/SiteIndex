@@ -336,6 +336,7 @@ export interface SeoIssue {
   status: "open" | "fixed" | "ignored";
   first_seen: ISODate;
   last_seen: ISODate;
+  /** 最近一次人工状态变更时间；旧记录可以缺失，weekly 重建时应保留。 */
   handled_at?: ISODateTime | null;
 }
 

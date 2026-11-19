@@ -55,6 +55,7 @@ export const API_INVOKE_METHODS = [
   "seo.setIssueStatus",
   "seo.setRuleIgnored",
   "seo.listPages",
+  "seo.listPageRows",
   "seo.listLinks",
   "seo.orphanPages",
   "seo.getPage",
@@ -128,6 +129,7 @@ export const API_EVENT_METHODS = [
 ] as const;
 
 export const PENDING_HANDLERS: readonly string[] = [
+  "seo.listPageRows",
   "gsc.status",
   "gsc.connect",
   "gsc.disconnect",
