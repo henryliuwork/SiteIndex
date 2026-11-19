@@ -7,7 +7,7 @@ import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, 
 import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, formatDateTime as formatSharedDateTime, InfoTooltip, Notice, Popover, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, formatDateTime, InfoTooltip, Notice, Popover, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { getMediaRecoveryDisplay } from "./edm/media-recovery";
 import "./runs/page.css";
 
@@ -43,11 +43,6 @@ const optionLabels: { key: keyof ScheduleConfig["options"]; label: string }[] = 
 type ActiveRun = { runId: string; job: JobName };
 type ScheduleDraft = JobSchedule;
 const cloneSchedule = (schedule: ScheduleConfig): ScheduleConfig => JSON.parse(JSON.stringify(schedule)) as ScheduleConfig;
-
-function formatDateTime(value: string | null): string {
-  if (!value) return "进行中";
-  return formatSharedDateTime(value);
-}
 
 function runDuration(run: RunLog): string {
   if (!run.finished_at) return "运行中";
@@ -313,7 +308,7 @@ export function RunsPage() {
         </div>
         <div className="si-run-console">
           <div className="si-run-log-list" role="log" aria-label="运行日志" aria-live="polite" aria-relevant="additions text">
-            {logs.length ? logs.map((event, index) => <div key={`${event.runId}-${index}`} className={`si-run-log si-run-log-${event.level}`}><code>{new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(event.at))}</code><span>{event.message}</span>{event.step && <small>{stepLabel(event.step, index)}</small>}</div>) : <p>暂无运行日志</p>}
+            {logs.length ? logs.map((event, index) => <div key={`${event.runId}-${index}`} className={`si-run-log si-run-log-${event.level}`}><code>{formatDateTime(event.at)}</code><span>{event.message}</span>{event.step && <small>{stepLabel(event.step, index)}</small>}</div>) : <p>暂无运行日志</p>}
           </div>
         </div>
       </section>
