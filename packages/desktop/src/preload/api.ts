@@ -148,6 +148,8 @@ export function createApiBridge(transport: IpcTransport): SiteIndexApi {
       getRuleSettings: (...args) =>
         invoke<NonNullable<SiteIndexApi["seo"]["getRuleSettings"]>>("seo.getRuleSettings", ...args),
       listPages: (...args) => invoke<SiteIndexApi["seo"]["listPages"]>("seo.listPages", ...args),
+      listPageRows: (...args) =>
+        invoke<NonNullable<SiteIndexApi["seo"]["listPageRows"]>>("seo.listPageRows", ...args),
       listLinks: (...args) => invoke<SiteIndexApi["seo"]["listLinks"]>("seo.listLinks", ...args),
       orphanPages: (...args) => invoke<SiteIndexApi["seo"]["orphanPages"]>("seo.orphanPages", ...args),
       getPage: (...args) => invoke<SiteIndexApi["seo"]["getPage"]>("seo.getPage", ...args),
