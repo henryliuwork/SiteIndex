@@ -159,7 +159,7 @@ async function renderProductsPage(options: {
     return { rows, total: rows.length };
   });
   if (options.detail) mockApi.products.get = vi.fn(async () => options.detail!);
-  vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+  vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback, apiErrorDetails: () => null }));
   const [{ ToastProvider }, { ProductsPage }] = await Promise.all([import("../components"), import("./ProductsPage")]);
   const { route: inventoryRoute } = await import("./inventory/route");
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -297,4 +297,43 @@ describe("合并后的产品管理表", () => {
     expect(await screen.findByRole("dialog", { name: "SKU 父子规则预览" })).toBeTruthy();
     expect(screen.getAllByText("父 SKU 分组尚未启用")).toHaveLength(1);
   });
+
+  it("只读场景在方法缺失或待接线时隐藏入口", async () => {
+    const detail: ProductFull = { product: parent, skus: [], details: null, seo: null, variants: [] };
+    const mockApi = await renderProductsPage({ detail });
+    const { productScenarioOptions } = await import("./products/drawer/scenario-sections");
+    expect(productScenarioOptions(mockApi.products, false, "DEMO001A", ["products.changes", "products.skuBrief", "products.groupFamily"])).toEqual([]);
+    expect(productScenarioOptions(mockApi.products, false, null, [])).toEqual([]);
+    delete mockApi.products.groupFamily;
+    fireEvent.click(await screen.findByRole("button", { name: "查看 DEMO001A 详情" }));
+    const drawer = await screen.findByRole("dialog");
+    expect(await within(drawer).findByRole("button", { name: "变更记录" })).toBeTruthy();
+    expect(within(drawer).queryByRole("button", { name: "父子归并建议" })).toBeNull();
+  }, 15_000);
+
+  it("变更记录加载与空态、SKU 简报错误重试可用", async () => {
+    const detail: ProductFull = { product: parent, skus: [], details: null, seo: null, variants: [] };
+    const mockApi = await renderProductsPage({ detail });
+    let finish!: (value: Awaited<ReturnType<NonNullable<typeof mockApi.products.changes>>>) => void;
+    mockApi.products.changes = vi.fn(() => new Promise<Awaited<ReturnType<NonNullable<typeof mockApi.products.changes>>>>((resolve) => { finish = resolve; }));
+    mockApi.products.skuBrief = vi.fn().mockRejectedValueOnce(new Error("演示查询失败")).mockResolvedValue({
+      data: null, metadata: { sources: [], collected_at: null, missing_fields: ["sku"], quality: "partial", anomalies: [] },
+    });
+    mockApi.products.groupFamily = vi.fn(async () => ({
+      data: { sku: "DEMO001A", role: "parent" as const, parent_sku: null, child_skus: ["DEMO001A01"], collision: null },
+      metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
+    }));
+    fireEvent.click(await screen.findByRole("button", { name: "查看 DEMO001A 详情" }));
+    const drawer = await screen.findByRole("dialog");
+    fireEvent.click(await within(drawer).findByRole("button", { name: "变更记录" }));
+    expect(within(drawer).getByRole("status").textContent).toContain("正在加载查询结果");
+    finish({ data: [], metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete", anomalies: [] } });
+    expect(await within(drawer).findByText("此 SKU 暂无变更记录。")).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole("button", { name: "SKU 简报" }));
+    expect(await within(drawer).findByText("查询失败。")).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole("button", { name: "重试" }));
+    expect(await within(drawer).findByText("没有这条 SKU 的简报。")).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole("button", { name: "父子归并建议" }));
+    expect(await within(drawer).findByText("关联子 SKU：1 个")).toBeTruthy();
+  }, 15_000);
 });

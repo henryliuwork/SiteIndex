@@ -5,7 +5,7 @@ import { Download, ExternalLink, FileText, Image as ImageIcon, MoreHorizontal, P
 import { useNavigate, useParams } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { HistoryRange, InventorySummary, ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, SkuRecord, SkuStockFilters, SkuStockView, StockStatus, TagStat } from "@siteindex/shared";
-import { api, apiErrorMessage } from "../api";
+import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, formatDateTime, Input, InputWithAction, KpiCard, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, useToast, stockTone } from "../components";
 import { formatInventoryDetailDuration, formatInventoryTableDuration, InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
@@ -13,6 +13,7 @@ import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-s
 import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
 import { CategoryPanel, GroupingPreview, historyRanges, requestInventorySummary, stockNames, TrendChart } from "./products/inventory-widgets";
 import { formatInStockVariants, formatProductPrice, matchesProductManagementSearch, mergeProductAndStockRows, type ProductManagementRow } from "./products/merged-rows";
+import { ProductScenarioSection, productScenarioOptions, type ProductScenarioTab } from "./products/drawer/scenario-sections";
 
 const stockOptions = [
   { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "out_of_stock", label: "缺货" },
@@ -24,7 +25,7 @@ const priceOptions = [
 ] as const;
 type ProductManagementFilters = ProductFilters & Pick<SkuStockFilters, "status" | "watched_only" | "price_changed_within">;
 type ProductManagementQuery = ListQuery<ProductManagementFilters>;
-type DrawerSegment = "overview" | "variants" | "history";
+type DrawerSegment = "overview" | "variants" | "history" | ProductScenarioTab;
 type DrawerVariant = { sku: string; title: string; stock: SkuStockView | null; record: SkuRecord | null; variant: ProductVariantStock | null };
 
 function initialQuery(): ProductManagementQuery { return { page: 1, pageSize: 50, filters: { parent_only: true } }; }
@@ -321,6 +322,7 @@ export function ProductsPage() {
   const tableRows = query.pageSize === 0 ? sortedRows : sortedRows.slice(start, start + query.pageSize);
   const categoryOptions = [...new Set(productRows.flatMap((row) => [...row.categories, row.category]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
   const detail = detailQuery.data;
+  const scenarioOptions = productScenarioOptions(api.products, Boolean(isMockApi), selectedRow?.sku ?? null);
   const drawerVariants = useMemo(() => detail ? buildDrawerVariants(detail, detailStockQuery.data?.rows ?? []) : [], [detail, detailStockQuery.data?.rows]);
 
   useEffect(() => {
@@ -457,7 +459,7 @@ export function ProductsPage() {
 
     <Drawer open={Boolean(selectedRow)} onOpenChange={(open) => { if (!open) setSelectedRow(null); }} title={selectedRow?.product.title ?? "产品详情"} description={selectedRow?.sku ? `SKU ${selectedRow.sku}` : undefined} width="wide">
       {detailQuery.isLoading ? <div className="si-query-loading" role="status">正在加载产品详情…</div> : detailQuery.isError ? <ApiErrorNotice label="产品详情加载失败。" error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : detail && selectedRow ? <>
-        <Segmented value={drawerSegment} options={[{ value: "overview", label: "概况" }, { value: "variants", label: "变体库存" }, { value: "history", label: "历史" }]} onChange={(value) => setDrawerSegment(value)} ariaLabel="产品详情分段" />
+        <Segmented value={drawerSegment} options={[{ value: "overview", label: "概况" }, { value: "variants", label: "变体库存" }, { value: "history", label: "历史" }, ...scenarioOptions]} onChange={(value) => setDrawerSegment(value)} ariaLabel="产品详情分段" />
         {drawerSegment === "overview" && <ProductOverview detail={detail} row={selectedRow} tags={(tagsQuery.data ?? []).map((item) => item.tag)} isSaving={isSavingTags}
           onAddTag={(name) => void updateTags([...detail.product.tags, name])}
           onCreateAndAddTag={(name) => void createAndAddTag(name)}
@@ -468,6 +470,7 @@ export function ProductsPage() {
           {detail.variants === undefined ? <Notice tone="warn" title="当前运行环境未提供变体库存">请更新桌面应用后重试。</Notice> : drawerVariants.length ? <ProductVariantInventory variants={drawerVariants} /> : <p className="si-muted">暂无变体库存数据。</p>}
         </section>}
         {drawerSegment === "history" && <HistoryContent row={selectedRow} variants={drawerVariants} selectedSku={selectedHistorySku || drawerVariants[0]?.sku || ""} onSelectedSkuChange={setSelectedHistorySku} loading={detailStockQuery.isLoading} error={detailStockQuery.error} onRetry={() => void detailStockQuery.refetch()} />}
+        {selectedRow.sku && (drawerSegment === "changes" || drawerSegment === "skuBrief" || drawerSegment === "groupFamily") && <ProductScenarioSection id={id} sku={selectedRow.sku} tab={drawerSegment} />}
       </> : <div className="si-empty-state">没有找到该产品的详情。</div>}
     </Drawer>
 
