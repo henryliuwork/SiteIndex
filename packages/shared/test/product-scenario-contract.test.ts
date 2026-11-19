@@ -12,14 +12,14 @@ import type {
 import { API_INVOKE_METHODS, PENDING_HANDLERS, QUERY_TARGETS } from "../src";
 
 describe("product scenario query contract", () => {
-  it("keeps scenario methods optional for older product bridges and registers pending routes", () => {
+  it("keeps scenario methods optional for older product bridges and registers implemented routes", () => {
     const legacyMethods: Pick<SiteIndexApi["products"], "skuBrief" | "changes" | "groupFamily"> = {};
     const methods = ["products.skuBrief", "products.changes", "products.groupFamily"] as const;
 
     expect(legacyMethods).toEqual({});
     for (const method of methods) {
       expect(API_INVOKE_METHODS.filter((entry) => entry === method)).toHaveLength(1);
-      expect(PENDING_HANDLERS).toContain(method);
+      expect(PENDING_HANDLERS).not.toContain(method);
     }
     expect(QUERY_TARGETS).toContain("product-sku-brief");
     expect(QUERY_TARGETS).toContain("product-changes");

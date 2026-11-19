@@ -6,6 +6,12 @@ import { API_INVOKE_METHODS, PENDING_HANDLERS } from "../src/ipc-methods";
 import { CSV_HEADERS, pathsFor } from "../src/paths";
 
 describe("shared IPC method contract", () => {
+  it("keeps only the six GSC methods pending after scenario handlers are registered", () => {
+    expect(PENDING_HANDLERS).toEqual([
+      "gsc.status", "gsc.connect", "gsc.disconnect", "gsc.listProperties", "gsc.selectProperty", "gsc.sync",
+    ]);
+  });
+
   it("marks project todo methods as implemented while keeping the namespace optional for older bridges", () => {
     const legacyApi: Pick<SiteIndexApi, "todos"> = {};
 

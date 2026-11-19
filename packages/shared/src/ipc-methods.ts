@@ -128,15 +128,6 @@ export const API_EVENT_METHODS = [
 ] as const;
 
 export const PENDING_HANDLERS: readonly string[] = [
-  "seo.pageBrief",
-  "seo.issueCandidates",
-  "seo.internalLinkContext",
-  "products.skuBrief",
-  "products.changes",
-  "products.groupFamily",
-  "edm.candidates",
-  "edm.mediaGaps",
-  "edm.campaignSafety",
   "gsc.status",
   "gsc.connect",
   "gsc.disconnect",
