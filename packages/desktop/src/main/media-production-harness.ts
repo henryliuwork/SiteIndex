@@ -412,8 +412,8 @@ async function startProductionPackagedWindow(
   const target = `#/p/${encodeURIComponent(projectId)}/edm`;
   await window.webContents.executeJavaScript(`location.hash = ${JSON.stringify(target)}`);
   await waitFor(
-    () => window.webContents.executeJavaScript("document.body.innerText"),
-    (text) => typeof text === "string" && text.includes("SKU 宣传图") && !text.includes("正在加载项目信息"),
+    () => window.webContents.executeJavaScript("document.querySelector('.si-edm-page')?.innerText ?? ''"),
+    (text) => typeof text === "string" && text.length > 0 && !text.includes("正在加载项目信息"),
     30_000,
     "edm-page-ready",
   );
@@ -890,10 +890,9 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     const edmHash = `#/p/${encodeURIComponent(fixture.projectId)}/edm`;
     await window.webContents.executeJavaScript(`location.hash = ${JSON.stringify(edmHash)}`);
     settledRendererText = await waitFor(
-      () => window.webContents.executeJavaScript("document.body.innerText"),
+      () => window.webContents.executeJavaScript("document.querySelector('.si-edm-page')?.innerText ?? ''"),
       (text) =>
         typeof text === "string" &&
-        text.includes("SKU 宣传图") &&
         expectedVisibleResultLabels(fixture.expected).some((label) => text.includes(label)),
       30_000,
       "edm-outcome-unknown",
@@ -901,7 +900,7 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     crossPageRecovery =
       jobCompletedAwayFromEdm &&
       typeof settledRendererText === "string" &&
-      settledRendererText.includes("SKU 宣传图") &&
+      Boolean(await window.webContents.executeJavaScript("document.querySelector('.si-edm-page') !== null")) &&
       settledRendererText.includes("结果未知");
   } else {
     settledRendererText = await waitFor(
@@ -939,7 +938,7 @@ async function executeMediaUiPhase(phase: ProductionPhase): Promise<PhaseReport>
     status: "passed",
     phase,
     checks: {
-      packagedUiLoaded: rendererText.includes("SKU 宣传图"),
+      packagedUiLoaded: Boolean(await window.webContents.executeJavaScript("document.querySelector('.si-edm-page') !== null")),
       actualEdmUiInvokedMediaPrepare: actualHandlerPath,
       utilityProcessProgressForwarded: progressCount > 0,
       rendererReceivedUtilityProcessProgress: rendererProgressCount > 0,
