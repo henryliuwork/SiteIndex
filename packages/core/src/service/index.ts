@@ -105,6 +105,7 @@ import {
 } from "../projects/create-guard";
 import { hasPriceChangeWithin } from "../inventory/price-history";
 import { parentStockRows } from "../inventory/parent-stock-view";
+import { productManagementSummary } from "../inventory/product-management-summary";
 import { groupExplicitProductRows, groupProductRows } from "../products/parent-view";
 import { runDaily } from "../jobs/daily";
 import { readDailyOutputTransactionOverlay, recoverDailyOutputTransaction } from "../jobs/daily-output-transaction";
@@ -215,6 +216,9 @@ interface ProjectSnapshot {
   latest: InventoryLatest[];
   dailySummary: DailySummaryRow[];
   events: InventoryEvent[];
+  historyEvents: InventoryEvent[];
+  historyComplete: boolean;
+  todayEventsComplete: boolean;
   products: ProductView[];
   skuStock: SkuStockView[];
   productDetails: ProductDetails[];
@@ -308,6 +312,12 @@ function localDate(timezone: string, now = new Date()): ISODate {
 
 function monthFor(date: ISODate): string {
   return date.slice(0, 7);
+}
+
+function recentEventMonths(date: ISODate): string[] {
+  const last = Date.parse(`${date}T00:00:00.000Z`);
+  return [...new Set(Array.from({ length: 30 }, (_, offset) =>
+    new Date(last - offset * 86_400_000).toISOString().slice(0, 7)))].sort(compareKeys);
 }
 
 function numberValue(value: string | null | undefined): number {
@@ -601,7 +611,20 @@ async function loadSnapshot(projectPath: string, overlay?: SnapshotReadOverlay):
     ]);
     const dailySummary = parseDailySummary(dailyCsv);
     const asOf = dailySummary.map((row) => row.date).sort(codeUnitCompare).at(-1) ?? localDate(config.timezone);
-    const events = parseEvents(await readJsonlAs<InventoryEvent>(projectPath, `${PATHS.eventsDir}/${monthFor(asOf)}.jsonl`, paths, overlay) as unknown as JsonRecord[]);
+    const months = recentEventMonths(asOf);
+    const monthAvailable = await Promise.all(months.map(async (month) => {
+      const absolute = path.resolve(absoluteProjectPath(projectPath, `${PATHS.eventsDir}/${month}.jsonl`, paths));
+      if (overlay?.has(absolute)) return overlay.get(absolute) !== null;
+      try { await access(absolute); return true; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    }));
+    const monthRows = await Promise.all(months.map((month) =>
+      readJsonlAs<InventoryEvent>(projectPath, `${PATHS.eventsDir}/${month}.jsonl`, paths, overlay)));
+    const events = monthRows[months.indexOf(monthFor(asOf))] ?? [];
+    const historyEvents = monthRows.flat();
     return {
       projectPath,
       config,
@@ -610,6 +633,9 @@ async function loadSnapshot(projectPath: string, overlay?: SnapshotReadOverlay):
       latest,
       dailySummary,
       events,
+      historyEvents,
+      historyComplete: monthAvailable.every(Boolean),
+      todayEventsComplete: monthAvailable[months.indexOf(monthFor(asOf))] ?? false,
       products,
       skuStock,
       productDetails,
@@ -946,6 +972,31 @@ function mergedCategoryRates(snapshot: ProjectSnapshot): MergedCategoryRate[] {
   }).sort((left, right) => codeUnitCompare(left.category, right.category));
 }
 
+function defaultProductStockRows(snapshot: ProjectSnapshot) {
+  const grouped = snapshot.config.sku_grouping?.enabled
+    || (snapshot.config.crawl.auto_collect_products && snapshot.skuStock.some((row) => row.parent_sku))
+    ? parentStockRows(snapshot.skuStock, snapshot.asOf,
+      snapshot.config.sku_grouping?.enabled
+        ? snapshot.config.sku_grouping.rule.type === "regex"
+          && snapshot.config.sku_grouping.rule.parent_source === "feed" ? "feed" : "derived"
+        : "explicit")
+    : null;
+  return { grouped, rows: grouped?.rows ?? snapshot.skuStock };
+}
+
+function productManagementForSnapshot(snapshot: ProjectSnapshot, rows: ReturnType<typeof defaultProductStockRows>) {
+  return productManagementSummary({
+    rows: rows.rows,
+    childrenByParent: rows.grouped?.childrenByParent ?? new Map(),
+    skus: snapshot.skus,
+    latest: snapshot.latest,
+    events: snapshot.historyEvents,
+    asOf: snapshot.dailySummary.length ? snapshot.asOf : null,
+    historyComplete: snapshot.historyComplete,
+    todayEventsComplete: snapshot.todayEventsComplete,
+  });
+}
+
 function inventorySummary(snapshot: ProjectSnapshot, range: InventorySummaryRange): InventorySummary {
   const dates = selectInventoryDates(snapshot.dailySummary, range);
   const categories = [...new Set(snapshot.dailySummary.map((row) => row.category).filter((category) => category !== "_all"))].sort(codeUnitCompare);
@@ -970,6 +1021,7 @@ function inventorySummary(snapshot: ProjectSnapshot, range: InventorySummaryRang
       watched: row.watched,
       manual: row.manual,
     }));
+  const productRows = defaultProductStockRows(snapshot);
   return {
     as_of: snapshot.asOf,
     kpis: [
@@ -984,6 +1036,7 @@ function inventorySummary(snapshot: ProjectSnapshot, range: InventorySummaryRang
     timezone: snapshot.config.timezone,
     uncategorized: snapshot.skus.filter((row) => row.status === "active" && row.category === "uncategorized").length,
     today: inventoryEvents(snapshot),
+    product_management: productManagementForSnapshot(snapshot, productRows).summary,
   };
 }
 
@@ -2212,12 +2265,13 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const snapshot = await load(resolve(id));
       const filters = query.filters;
       const priceRange = filters?.price_changed_within;
-      const parentView = Boolean(filters?.parent_only && (snapshot.config.sku_grouping?.enabled
-        || (snapshot.config.crawl.auto_collect_products && snapshot.skuStock.some((row) => row.parent_sku))));
+      const parentRows = filters?.parent_only || filters?.summary_metric ? defaultProductStockRows(snapshot) : null;
+      const metrics = filters?.summary_metric
+        ? productManagementForSnapshot(snapshot, parentRows ?? defaultProductStockRows(snapshot)) : null;
       const rule = snapshot.config.sku_grouping?.rule;
       const feedParents = rule?.type === "regex" && rule.parent_source === "feed";
-      const grouped = parentView ? parentStockRows(snapshot.skuStock, snapshot.asOf, feedParents) : null;
-      const source = grouped?.rows ?? snapshot.skuStock;
+      const grouped = parentRows?.grouped;
+      const source = parentRows?.rows ?? snapshot.skuStock;
       const relatedRows = (row: SkuStockView): readonly SkuStockView[] =>
         row.is_parent ? [...(feedParents ? [row] : []), ...(grouped?.childrenByParent.get(row.sku) ?? [])] : [row];
       const todaySkus = new Set(snapshot.events.filter((event) => event.date === snapshot.asOf).map((event) => event.sku));
@@ -2225,6 +2279,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         ? new Set(mergedCategoryRates(snapshot).filter((category) => category.watched).flatMap((category) => [...category.tokens]))
         : null;
       const rows = source.filter((row) => {
+        if (filters?.summary_metric && !metrics?.matches(row.sku, filters.summary_metric)) return false;
         if (filters?.status === "today" && !relatedRows(row).some((child) => todaySkus.has(child.sku))) return false;
         if (filters?.status && filters.status !== "today" && row.stock_status !== filters.status) return false;
         if (filters?.category && row.category !== filters.category) return false;

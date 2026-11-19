@@ -768,9 +768,8 @@ describe("createCoreService initial namespaces", () => {
       expect(details.variants?.map((row) => row.sku)).toEqual(["DEMO003C", "DEMO003C01", "DEMO003C02"]);
     }
     const feedInventory = await api.inventory.listSkus("fixture", { page: 1, pageSize: 0, filters: { parent_only: true } });
-    const parentStock = feedStocks.find((row) => row.sku === "DEMO003C")!;
     expect(feedInventory.rows.filter((row) => row.sku === "DEMO003C")).toEqual([
-      expect.objectContaining({ stock_status: parentStock.stock_status, history_30d: parentStock.history_30d, is_parent: true }),
+      expect.objectContaining({ stock_status: "in_stock", history_30d: "i".repeat(30), is_parent: true }),
     ]);
     expect(await readFile(productViewPath)).toEqual(persistedBefore);
 

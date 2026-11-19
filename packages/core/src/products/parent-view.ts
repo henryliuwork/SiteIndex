@@ -152,12 +152,22 @@ function groupedProductRows(
 
   const feedMode = rule?.type === "regex" && rule.parent_source === "feed";
   const parentRows = groups.flatMap(({ parent, children }) => {
-    const members = feedMode ? [parent, ...children] : children;
+    const hasRealParent = feedMode || (!rule && skuById.has(parent));
+    const members = hasRealParent ? [parent, ...children] : children;
     const row = parentProductRow(parent, members, productBySku, skuById, stockBySku);
-    const parentStock = feedMode ? stockBySku.get(parent) : undefined;
-    return row ? [{ ...row, ...(feedMode ? { stock_status: parentStock?.stock_status ?? "unknown", stock_since: parentStock?.since ?? null } : {}) }] : [];
+    if (!row || !hasRealParent) return row ? [row] : [];
+    const childStocks = children.map((sku) => stockBySku.get(sku));
+    const status = groupedStockStatus(childStocks.map((stock) => stock?.stock_status ?? "unknown"));
+    return [{ ...row,
+      stock_status: status,
+      stock_since: status === "out_of_stock" && childStocks.every((stock) => stock)
+        ? childStocks.map((stock) => stock!.since).sort(compareKeys).at(-1) ?? null : null,
+      variant_count: children.length,
+      in_stock_variants: childStocks.filter((stock) => stock?.stock_status === "in_stock").length,
+    }];
   });
-  const groupedParents = new Set(feedMode ? groups.map((group) => group.parent) : []);
+  const groupedParents = new Set(groups.filter((group) => feedMode || (!rule && skuById.has(group.parent)))
+    .map((group) => group.parent));
   const singles: ProductView[] = [];
   for (const row of products) {
     const ungrouped = row.skus.filter((sku) => !parentByChild.has(sku) && !groupedParents.has(sku));
