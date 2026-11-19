@@ -53,12 +53,6 @@ function formatSize(size?: number | null): string {
   return `${(size / 1024).toFixed(1)} KB`;
 }
 
-function formatModified(value?: string | null): string {
-  if (!value) return "—";
-  const [date = "", time = ""] = value.split("T");
-  return date.length >= 10 ? `${date.slice(5)} ${time.slice(0, 5)}` : "—";
-}
-
 function formatCheckedAt(value: string, trigger: ValidationReport["trigger"]): string {
   const source = trigger === "schedule" ? "定时任务" : trigger === "after_sync" ? "同步后" : trigger === "cli" ? "CLI" : "手动";
   return `${formatDateTime(value)}（${source}）`;
@@ -157,7 +151,7 @@ export function ProjectSettingsFilesPage({ embedded = false }: { embedded?: bool
     { id: "kind", header: "类型", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => row.original.rowType === "group" ? null : <Chip tone={row.original.file.kind === "sync" || row.original.file.kind === "view" ? "ok" : "neutral"}>{kindLabels[row.original.file.kind]}</Chip> },
     { id: "records", header: "记录", meta: { width: 96, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ row }) => row.original.rowType === "group" ? null : <span className="si-files-number">{row.original.file.records == null ? "—" : `${row.original.file.records.toLocaleString("zh-CN")}${row.original.file.kind === "doc" ? "" : " 行"}`}</span> },
     { id: "size", header: "大小", meta: { width: 96, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ row }) => row.original.rowType === "group" ? null : <span className="si-files-number">{formatSize(row.original.file.size)}</span> },
-    { id: "modified", header: "最近修改", meta: { width: 100, grow: 0, minWidth: 92, text: "single" }, cell: ({ row }) => row.original.rowType === "group" ? null : <code className="si-files-date">{formatModified(row.original.file.modified_at)}</code> },
+    { id: "modified", header: "最近修改", meta: { width: 140, grow: 0, minWidth: 128, text: "single" }, cell: ({ row }) => row.original.rowType === "group" ? null : <code className="si-files-date">{formatDateTime(row.original.file.modified_at)}</code> },
     { id: "status", header: "状态", meta: { width: 220, grow: 1, minWidth: 160, text: "single" }, cell: ({ row }) => row.original.rowType === "group" ? null : <div className="si-files-status"><Chip tone={statusTones[row.original.file.status]}>{statusLabels[row.original.file.status]}</Chip>{row.original.file.message && <span>{row.original.file.message}</span>}</div> },
     { id: "actions", header: "操作", meta: { width: 170, grow: 0, minWidth: 160, text: "single" }, cell: ({ row }) => {
       if (row.original.rowType === "group") return null;
@@ -176,7 +170,7 @@ export function ProjectSettingsFilesPage({ embedded = false }: { embedded?: bool
       <section className="si-files-summary" aria-label="文件校验统计"><div><span>文件</span><strong>{summary.total}</strong></div><div><span>正常</span><strong className="is-ok">{summary.ok}</strong></div><div><span>错误</span><strong className="is-error">{summary.error}</strong></div><div><span>缺失</span><strong className="is-warn">{summary.missing}</strong></div><div><span>冲突副本</span><strong className="is-warn">{summary.conflict_copy}</strong></div><small>{report ? `上次全部校验：${formatCheckedAt(report.checked_at, report.trigger)}` : "尚无校验记录"}</small><InfoTooltip label="文件修复方式说明" content="重新生成只重建可抓取文件；台账可从归档恢复，其他可修复项依校验报告执行自动修复。" /></section>
       <section className="si-files-table-card"><DataTable<FileTableRow> tableId="settings.files" scopeId={id} rows={rows} total={rows.length} columns={columns} query={tableQuery} onQueryChange={setTableQuery} onRowClick={(row) => { if (row.rowType === "file") setSelected(row.file); }} getRowId={(row) => row.rowId} height={610} rowHeight={48} showPagination={false} emptyTitle="还没有本地文件记录" emptyDescription="点击「一键校验全部」读取项目中的文件与数据状态。" /></section>
     </>}
-    <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.path ?? "文件详情"}>{selected && <dl className="si-detail-list"><div><dt>类型</dt><dd>{kindLabels[selected.kind]}</dd></div><div><dt>记录数</dt><dd>{selected.records == null ? "—" : selected.records.toLocaleString("zh-CN")}</dd></div><div><dt>大小</dt><dd>{formatSize(selected.size)}</dd></div><div><dt>最近修改</dt><dd>{formatModified(selected.modified_at)}</dd></div><div><dt>状态</dt><dd><Chip tone={statusTones[selected.status]}>{statusLabels[selected.status]}</Chip></dd></div>{selected.rule && <div><dt>校验规则</dt><dd>{selected.rule}</dd></div>}{selected.message && <div><dt>原因</dt><dd>{selected.message}</dd></div>}{selected.line != null && <div><dt>行号</dt><dd>{selected.line.toLocaleString("zh-CN")}</dd></div>}{selected.repair && <div><dt>可用操作</dt><dd>{repairLabel(selected.repair)}</dd></div>}</dl>}</DetailPanel>
+    <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.path ?? "文件详情"}>{selected && <dl className="si-detail-list"><div><dt>类型</dt><dd>{kindLabels[selected.kind]}</dd></div><div><dt>记录数</dt><dd>{selected.records == null ? "—" : selected.records.toLocaleString("zh-CN")}</dd></div><div><dt>大小</dt><dd>{formatSize(selected.size)}</dd></div><div><dt>最近修改</dt><dd>{formatDateTime(selected.modified_at)}</dd></div><div><dt>状态</dt><dd><Chip tone={statusTones[selected.status]}>{statusLabels[selected.status]}</Chip></dd></div>{selected.rule && <div><dt>校验规则</dt><dd>{selected.rule}</dd></div>}{selected.message && <div><dt>原因</dt><dd>{selected.message}</dd></div>}{selected.line != null && <div><dt>行号</dt><dd>{selected.line.toLocaleString("zh-CN")}</dd></div>}{selected.repair && <div><dt>可用操作</dt><dd>{repairLabel(selected.repair)}</dd></div>}</dl>}</DetailPanel>
     <ConfirmDialog open={Boolean(pendingRepair)} onOpenChange={(open) => { if (!open) setPendingRepair(null); }} title="删除冲突副本？" description={`「${pendingRepair?.path ?? ""}」将移入系统回收站，可以恢复。`} confirmLabel={repairingPath ? "处理中…" : "移入回收站"} onConfirm={() => pendingRepair?.repair ? runRepair(pendingRepair, pendingRepair.repair) : undefined} />
   </>;
 

@@ -74,6 +74,8 @@ describe("RunsPage 媒体任务历史", () => {
     const console = await screen.findByRole("log", { name: "运行日志" });
     expect(console.closest(".si-run-console")).toBeTruthy();
     await waitFor(() => expect(console.querySelectorAll(".si-run-log")).toHaveLength(3));
+    const { formatDateTime } = await import("../components");
+    expect(console.querySelector(".si-run-log code")?.textContent).toBe(formatDateTime("2026-11-17T00:00:00.000Z"));
     for (const level of ["info", "warn", "error"]) expect(console.querySelector(`.si-run-log-${level} span`)?.textContent).toBeTruthy();
     if (status === "running") {
       expect(screen.getByRole("progressbar", { name: "任务进度" })).toBeTruthy();
