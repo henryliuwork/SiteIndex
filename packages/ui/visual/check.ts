@@ -2,6 +2,9 @@ import { mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
+import { inspectFrame } from "./frame-inspect";
+import { checkFrameMetrics, checkSkuTables, type FrameBaseline } from "./frame-policy";
+import { inspectTooltips } from "./tooltip-inspect";
 import { createServer, type ViteDevServer } from "vite";
 import { classifyDataSurface, classifyPageSurface, getVerticalScrollDelta, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
 import { isDataTableRoute, routeCaseUrl } from "./routes";
@@ -37,6 +40,7 @@ interface CheckReport {
   consoleErrors: string[];
   timeWarnings: string[];
   sectionPageFindings?: ReturnType<typeof checkSectionPageMetrics>;
+  frameStatus?: "strict" | "legacy";
 }
 
 const uiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -112,7 +116,7 @@ async function launchLocalBrowser(): Promise<Browser> {
   if (configured && configured !== "msedge" && configured !== "chrome") {
     throw new Error("SITEINDEX_BROWSER_CHANNEL 只能是 msedge 或 chrome。");
   }
-  const channels: BrowserChannel[] = configured
+  const channels: BrowserChannel[] = configured === "msedge" || configured === "chrome"
     ? [configured]
     : process.platform === "win32" ? ["msedge", "chrome"] : ["chrome", "msedge"];
   const errors: string[] = [];
@@ -213,7 +217,7 @@ async function readSurfaceSnapshot(page: Page): Promise<PageSurfaceSnapshot> {
       empty: emptyElementVisible && !hasVisibleRows,
       pageEmpty: pageEmptyElementVisible && !hasVisibleRows,
       error,
-      loading: (window.__siteindexMockPendingRequests ?? 0) > 0 || loadingElementVisible,
+      loading: Number(Reflect.get(window, "__siteindexMockPendingRequests") ?? 0) > 0 || loadingElementVisible,
       // PageHeader and ProjectHeader can render before their queries complete.
       // Require a visible body surface; explicit loading/error/empty states are handled separately.
       content,
@@ -578,6 +582,21 @@ function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "route";
 }
 
+async function inspectProductVariantSku(page: Page): Promise<CheckFailure[]> {
+  const firstRow = page.locator('[aria-label="products.merged 数据表"] tbody tr[data-row-id]').first();
+  if (!await firstRow.count()) return [];
+  try {
+    await firstRow.click();
+    await page.getByRole("button", { name: "变体库存", exact: true }).click({ timeout: 10_000 });
+    await page.locator('[aria-label="products.variant-stock 数据表"]').waitFor({ state: "visible", timeout: 10_000 });
+    const variant = (await inspectFrame(page)).tables.filter((table) => table.id === "products.variant-stock");
+    return variant.length ? checkSkuTables("variant", variant)
+      : [{ rule: "sku-variant-missing", message: "变体库存表已打开，但无法读取其列。" }];
+  } catch (error) {
+    return [{ rule: "sku-variant-check", message: `无法验证可触达的变体库存表：${asErrorMessage(error)}` }];
+  }
+}
+
 async function main(): Promise<void> {
   await mkdir(shotsDir, { recursive: true });
   let server: ViteDevServer | undefined;
@@ -589,6 +608,8 @@ async function main(): Promise<void> {
   const styleBaselineFile = JSON.parse(await readFile(baselinePath, "utf8")) as { version: number; counts: StyleBaseline };
   const sectionBaselinePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "section-page-baseline.json");
   const sectionBaseline = JSON.parse(await readFile(sectionBaselinePath, "utf8")) as SectionPageBaseline;
+  const frameBaselinePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "frame-baseline.json");
+  const frameBaseline = JSON.parse(await readFile(frameBaselinePath, "utf8")) as FrameBaseline;
   const stylePolicy = compareStyleFindings(styleFindings, styleBaselineFile.counts);
 
   try {
@@ -616,6 +637,8 @@ async function main(): Promise<void> {
     browser = await launchLocalBrowser();
     const projectId = await discoverMockProjectId(server);
     const routes = await discoverRoutes(server, projectId);
+    const unknownBaselineRoutes = Object.keys(frameBaseline.legacyRoutes).filter((name) => !routes.some((route) => route.name === name));
+    if (unknownBaselineRoutes.length) throw new Error(`外框基线包含已不存在的路由：${unknownBaselineRoutes.join("、")}`);
 
     console.log(`ui:check: ${routes.length} routes × ${viewports.length} viewports; project=${projectId}`);
     if (mockModeOverride) console.log(`ui:check mock override: ${mockModeOverride} on ${mockModeRoute}`);
@@ -635,6 +658,7 @@ async function main(): Promise<void> {
         let metrics: Record<string, unknown> = {};
         let timeWarnings: string[] = [];
         let sectionPageFindings: ReturnType<typeof checkSectionPageMetrics> | undefined;
+        let frameStatus: "strict" | "legacy" | undefined;
         currentConsoleErrors = consoleErrors;
         try {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
@@ -674,6 +698,11 @@ async function main(): Promise<void> {
           const inspection = await inspectPage(page);
           heading = inspection.heading;
           metrics = { ...inspection.metrics, sectionPage: firstScreenSectionPage ?? inspection.metrics.sectionPage, dataSurfaceState };
+          const frame = await inspectFrame(page);
+          metrics.frame = frame;
+          const frameCheck = checkFrameMetrics(route.name, route.path.startsWith("/p/") ? "project" : "global", Number(inspection.metrics.tableCount) > 0, frame, frameBaseline);
+          frameStatus = frameCheck.status;
+          failures.push(...frameCheck.findings);
           timeWarnings = inspection.timeWarnings;
           for (const warning of timeWarnings) allTimeWarnings.add(`${route.path} @ ${viewport.width}: ${warning}`);
 
@@ -681,6 +710,7 @@ async function main(): Promise<void> {
             verticalOverflow: boolean;
             horizontalOverflow: boolean;
             bodyFontSize: string;
+            bodyFontFamily: string;
             bodyFirstFontIsGeist: boolean;
             geistFontLoaded: boolean;
             sourceHanFontLoaded: boolean;
@@ -752,16 +782,17 @@ async function main(): Promise<void> {
         } catch (error) {
           failures.push({ rule: "route-load", message: asErrorMessage(error) });
         }
-        if (consoleErrors.length) {
-          for (const error of consoleErrors) failures.push({ rule: "console-error", message: error });
-        }
-
         const fileName = `${slug(route.name)}-${viewport.width}.png`;
         await page.screenshot({ path: path.join(shotsDir, fileName), fullPage: false }).catch((error: unknown) => {
           failures.push({ rule: "screenshot", message: asErrorMessage(error) });
         });
-        reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors, timeWarnings, sectionPageFindings });
-        const state = failures.length ? `FAIL ${failures.length}` : "PASS";
+        if (!failures.some((failure) => failure.rule === "route-load")) failures.push(...await inspectTooltips(page));
+        if (route.name === "products" && frameStatus === "strict" && metrics.dataSurfaceState === "table") {
+          failures.push(...await inspectProductVariantSku(page));
+        }
+        for (const error of consoleErrors) failures.push({ rule: "console-error", message: error });
+        reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors, timeWarnings, sectionPageFindings, frameStatus });
+        const state = failures.length ? `FAIL ${failures.length}` : frameStatus === "legacy" ? "LEGACY FRAME" : "PASS";
         const terminalState = typeof metrics.dataSurfaceState === "string" ? ` (${metrics.dataSurfaceState})` : "";
         console.log(`[${state}] ${route.path} @ ${viewport.width}×${viewport.height}${terminalState}`);
       }
@@ -787,11 +818,14 @@ async function main(): Promise<void> {
     timeWarnings: [...allTimeWarnings].sort(),
     sectionPageBaselineVersion: sectionBaseline.version,
     sectionPageLegacyFindingCount: reports.reduce((count, item) => count + (item.sectionPageFindings?.filter((finding) => finding.legacy).length ?? 0), 0),
+    frameBaselineVersion: frameBaseline.version,
+    legacyFrameCheckCount: reports.filter((item) => item.frameStatus === "legacy").length,
+    strictFrameCheckCount: reports.filter((item) => item.frameStatus === "strict").length,
     checks: reports,
   };
   await writeFile(path.join(shotsDir, "report.json"), JSON.stringify(report, null, 2) + "\n", "utf8");
   const failures = reports.flatMap((item) => item.failures.map((failure) => ({ route: item.route, viewport: item.viewport.width, ...failure })));
-  console.log(`ui:check complete: ${reports.length} route/viewport checks, ${failures.length} UI failures, ${stylePolicy.introduced.length} new style failure(s), ${stylePolicy.legacyCount} legacy style finding(s), ${report.sectionPageLegacyFindingCount} section-page baseline finding(s), ${allTimeWarnings.size} time warning(s).`);
+  console.log(`ui:check complete: ${reports.length} route/viewport checks, ${report.strictFrameCheckCount} strict / ${report.legacyFrameCheckCount} legacy frame checks, ${failures.length} UI failures, ${stylePolicy.introduced.length} new style failure(s), ${stylePolicy.legacyCount} legacy style finding(s), ${report.sectionPageLegacyFindingCount} section-page baseline finding(s), ${allTimeWarnings.size} time warning(s).`);
   console.log(`Report: ${path.relative(uiRoot, path.join(shotsDir, "report.json"))}`);
   for (const failure of failures) console.error(`- ${failure.route} @ ${failure.viewport}: [${failure.rule}] ${failure.message}`);
   for (const finding of stylePolicy.introduced) console.error(`- ${finding.source}:${finding.line}: [${finding.rule}] ${finding.signature}`);

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "legacyRoutes": {
+    "app-settings": "global",
+    "content": "project",
+    "design": "project",
+    "edm": "project",
+    "inventory": "project",
+    "new-project-url": "global",
+    "new-project-source": "global",
+    "new-project-brand": "global",
+    "new-project-done": "global",
+    "new-project-woo-detect": "global",
+    "new-project-woo-source": "global",
+    "overview": "project",
+    "not-found": "global",
+    "products": "project",
+    "project-center": "global",
+    "project-settings-categories": "project",
+    "project-settings-config": "project",
+    "project-settings-files": "project",
+    "project-todos": "project",
+    "readme": "project",
+    "runs": "project",
+    "schedules": "global",
+    "seo": "project",
+    "skills": "global"
+  }
+}
