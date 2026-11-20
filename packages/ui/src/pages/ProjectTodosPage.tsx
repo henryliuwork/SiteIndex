@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { ListQuery, PathKey, ProjectTodo, TodoManualHistoryEntry, TodoManualStatus, UpdateTodoManualInput } from "@siteindex/shared";
 import { useParams } from "react-router-dom";
 import { AlertCircle, CheckCircle2, ClipboardList, Clock3, FileSearch, MinusCircle } from "lucide-react";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageFrame, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, useToast } from "../components";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import "./project-todos/page.css";
@@ -223,22 +223,19 @@ export function ProjectTodosPage() {
     <ApiErrorNotice page label="无法读取项目信息" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />
   </div>;
 
-  if (!hasListApi) return <div className="si-page si-project-todos-page">
-    {pageHeader}
+  if (!hasListApi) return <PageFrame kind="project" scroll="content" header={pageHeader}><div className="si-page si-project-todos-page">
     <ProjectTabPanel projectId={project.id} tab="todos"><Notice tone="warn" title="当前运行环境尚未接入项目待办">
       待办页面和规则数据契约已准备好，但当前桌面桥接没有提供读取方法。请升级到包含 Core 与 Desktop 待办接线的版本后重试。
     </Notice></ProjectTabPanel>
-  </div>;
+  </div></PageFrame>;
 
-  if (todosQuery.isPending) return <div className="si-page si-project-todos-page">
-    {pageHeader}
+  if (todosQuery.isPending) return <PageFrame kind="project" scroll="content" header={pageHeader}><div className="si-page si-project-todos-page">
     <ProjectTabPanel projectId={project.id} tab="todos"><div className="si-todo-loading" role="status">正在读取项目待办…</div></ProjectTabPanel>
-  </div>;
+  </div></PageFrame>;
 
-  if (todosQuery.isError || !todosQuery.data) return <div className="si-page si-project-todos-page">
-    {pageHeader}
+  if (todosQuery.isError || !todosQuery.data) return <PageFrame kind="project" scroll="content" header={pageHeader}><div className="si-page si-project-todos-page">
     <ProjectTabPanel projectId={project.id} tab="todos"><ApiErrorNotice page label="项目待办读取失败" error={todosQuery.error} detail="未将读取失败解释为“没有待办”。" onRetry={() => void todosQuery.refetch()} /></ProjectTabPanel>
-  </div>;
+  </div></PageFrame>;
 
   const emptyTitle = allItems.length > 0 ? "没有匹配的待办"
     : scan?.status === "complete" ? "当前没有待办"
@@ -250,8 +247,7 @@ export function ProjectTodosPage() {
         : scan?.status === "failed" ? "请稍后重试，或检查失败的来源文件。"
           : "运行一次规则检查后，可信的结果会显示在这里。";
 
-  return <div className="si-page si-project-todos-page">
-    {pageHeader}
+  return <PageFrame kind="project" scroll="table" header={pageHeader}><div className="si-page si-project-todos-page">
     <ProjectTabPanel projectId={project.id} tab="todos">
     {isMockApi && <Notice tone="info" title="虚构演示数据">当前待办与来源记录均为本地合成样例，不对应真实项目检查结果。</Notice>}
     {scanStatus?.tone && <Notice tone={scanStatus.tone} title={scanStatus.title}>{scanStatus.message}</Notice>}
@@ -383,5 +379,5 @@ export function ProjectTodosPage() {
         </section>
       </div>}
     </Drawer>
-  </div>;
+  </div></PageFrame>;
 }
