@@ -2,17 +2,13 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, FolderOpen, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AttentionItem, Kpi, OverviewData, SeoIssue, SyncState } from "@siteindex/shared";
+import type { AttentionItem, Kpi, OverviewData, SeoIssue } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, KpiCard, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, KpiCard, Notice, PageFrame, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
 import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
-const syncLabels: Record<SyncState, string> = {
-  ok: "同步成功", partial: "部分完成", failed: "同步失败", never: "尚未同步", running: "同步中",
-};
-
 function severityTone(severity: AttentionItem["severity"]): "danger" | "warn" | "neutral" {
   return severity === "high" ? "danger" : severity === "mid" ? "warn" : "neutral";
 }
@@ -151,12 +147,10 @@ export function OverviewPage() {
     blogMetric("no_links", "博客无站内链接"),
     ...(edmCardsQuery.data ? [{ key: "edm-missing", label: "EDM 缺图 SKU", value: String(edmCardsQuery.data.total), link: `/p/${encodeURIComponent(id)}/edm?view=none` }] : []),
   ].filter((item): item is Kpi => item !== null);
-  return <div className="si-page si-overview-page">
-    <ProjectHeader
+  return <PageFrame kind="project" header={<ProjectHeader
       project={summary}
       activeTab="overview"
       hasTabPanel
-      status={<Chip tone={summary.sync.state === "ok" ? "ok" : summary.sync.state === "failed" ? "danger" : "warn"}>{syncLabels[summary.sync.state]}</Chip>}
       actions={<>
         <Button icon={<FolderOpen size={15} />} onClick={() => void openProjectFolder()}>打开项目文件夹</Button>
         <Button variant="primary" icon={<RefreshCw size={15} />} disabled={running} onClick={() => void runSync()}>{running ? "同步中…" : "立即同步"}</Button>
@@ -166,7 +160,8 @@ export function OverviewPage() {
         { label: "复制 agent 接入指令", onSelect: () => void copyInstruction(), disabled: !overview?.agent_instruction, icon: <Clipboard size={14} /> },
         { label: "打开 README", onSelect: () => void openReadme(), icon: <FileText size={14} /> },
       ]}
-    />
+    />}>
+    <div className="si-page si-overview-page">
     <ProjectTabPanel projectId={summary.id} tab="overview">
     <div className="si-overview-content">
     {running && <Notice tone="info" title="每日同步进行中">{syncMessage || "正在同步项目数据…"}</Notice>}
@@ -213,6 +208,7 @@ export function OverviewPage() {
     </>}
     </div>
     </ProjectTabPanel>
-  </div>;
+    </div>
+  </PageFrame>;
 }
 import "./overview/page.css";

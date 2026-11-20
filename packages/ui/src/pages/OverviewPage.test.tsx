@@ -118,7 +118,7 @@ describe("OverviewPage 布局和操作", () => {
     expect(screen.getByRole("menuitem", { name: "打开 README" })).toBeTruthy();
   }, 10_000);
 
-  it("项目同步状态使用具体月日与时间，不使用‘今天’", async () => {
+  it("项目头不重复展示同步时间和状态", async () => {
     const mockApi = createMockApi();
     const project = await mockApi.projects.get("demo");
     mockApi.projects.get = vi.fn(async () => ({
@@ -127,10 +127,10 @@ describe("OverviewPage 布局和操作", () => {
     }));
     await renderOverview(mockApi);
 
-    expect(await screen.findByText(/最近同步/)).toBeTruthy();
-    expect(document.querySelector(".si-project-header-sync")?.textContent).toContain("11-08 17:00");
-    expect(await screen.findByText("同步成功")).toBeTruthy();
-    expect(screen.queryByText(/11-08 17:00 · 同步成功/)).toBeNull();
+    expect(await screen.findByRole("heading", { name: "需要关注" })).toBeTruthy();
+    expect(document.querySelector(".si-page-frame-project .si-project-header")).toBeTruthy();
+    expect(document.querySelector(".si-project-header-sync")).toBeNull();
+    expect(screen.queryByText("同步成功")).toBeNull();
     expect(screen.queryByText(/今天/)).toBeNull();
   });
 
