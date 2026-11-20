@@ -43,6 +43,7 @@ function renderTable(props: {
   onSelectionChange?: (selected: Row[]) => void;
   onRowClick?: (row: Row) => void;
   onQueryChange?: (query: ListQuery) => void;
+  columns?: ColumnDef<Row, unknown>[];
 } = {}) {
   const onQueryChange = props.onQueryChange ?? vi.fn();
   const tableRows = props.rows ?? rows;
@@ -51,7 +52,7 @@ function renderTable(props: {
     scopeId={props.scopeId}
     rows={tableRows}
     total={tableRows.length}
-    columns={columns}
+    columns={props.columns ?? columns}
     query={{ page: 1, pageSize: props.pageSize ?? 50, filters: {} }}
     onQueryChange={onQueryChange}
     selectable={props.selectable}
@@ -95,6 +96,35 @@ describe("DataTable v2", () => {
     expect(actionCell).toBeTruthy();
     expect(actionCell?.getAttribute("style")).toContain("right: 0");
     expect(actionCell?.querySelector(".si-cell-1")?.classList.contains("si-cell-1")).toBe(true);
+  });
+
+  it("keeps left-pinned columns after the selection cell and recalculates offsets when one is hidden", async () => {
+    const pinnedColumns: ColumnDef<Row, unknown>[] = [
+      { accessorKey: "label", header: "SKU", meta: { width: 150, sticky: "left" } },
+      { accessorKey: "kind", header: "类别", meta: { width: 110, sticky: "left" } },
+      { id: "actions", header: "操作", meta: { width: 68, sticky: "right" } },
+    ];
+    renderTable({ selectable: true, columns: pinnedColumns });
+    const selectionHeader = screen.getByRole("columnheader", { name: "选择行" });
+    const skuHeader = screen.getByRole("columnheader", { name: "SKU" });
+    const kindHeader = screen.getByRole("columnheader", { name: "类别" });
+    expect(selectionHeader.classList.contains("is-sticky-left")).toBe(true);
+    expect(selectionHeader.style.left).toBe("0px");
+    expect(skuHeader.style.left).toBe("40px");
+    expect(kindHeader.style.left).toBe("190px");
+    expect(document.querySelector("tbody td.is-sticky-left:not(.si-table-selection-cell)")?.getAttribute("style")).toContain("left: 40px");
+    expect(screen.getByRole("columnheader", { name: "操作" }).style.right).toBe("0px");
+
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "SKU" }));
+    await waitFor(() => expect(screen.queryByRole("columnheader", { name: "SKU" })).toBeNull());
+    expect(screen.getByRole("columnheader", { name: "类别" }).style.left).toBe("40px");
+    expect(document.querySelector("tbody td.is-sticky-left:not(.si-table-selection-cell)")?.getAttribute("style")).toContain("left: 40px");
+  });
+
+  it("pins the first data column to left zero without selection", () => {
+    renderTable({ columns: [{ accessorKey: "label", header: "SKU", meta: { width: 150, sticky: "left" } }] });
+    expect(screen.getByRole("columnheader", { name: "SKU" }).style.left).toBe("0px");
   });
 
   it("recalculates the visible colgroup after a column is hidden", async () => {

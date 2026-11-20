@@ -32,8 +32,8 @@ declare module "@tanstack/react-table" {
     align?: "start" | "end";
     /** single 单行省略，clamp2 两行省略，wrap 自由换行。 */
     text?: "single" | "clamp2" | "wrap";
-    /** 操作列固定在滚动区右侧；旧的 actions 列 ID 也会自动固定。 */
-    sticky?: "right";
+    /** 标识列可固定在左侧，操作列可固定在右侧；actions 列 ID 仍会自动固定在右侧。 */
+    sticky?: "left" | "right";
   }
 }
 
@@ -112,6 +112,13 @@ export function DataTable<T, F = Record<string, unknown>>({
   const selectionWidth = selectable ? 40 : 0;
   const columnWidths = calculateColumnWidths(visibleColumns.map((column) => column.columnDef.meta ?? {}), Math.max(0, availableWidth - selectionWidth));
   const tableWidth = columnWidths.reduce((totalWidth, width) => totalWidth + width, selectionWidth);
+  const stickyLeftOffsets = new Map<string, number>();
+  let leftOffset = selectionWidth;
+  visibleColumns.forEach((column, index) => {
+    if (column.columnDef.meta?.sticky !== "left" || column.id === "actions") return;
+    stickyLeftOffsets.set(column.id, leftOffset);
+    leftOffset += columnWidths[index] ?? 0;
+  });
   const stickyRightOffsets = new Map<string, number>();
   let stickyOffset = 0;
   for (const { index, column } of visibleColumns.map((column, index) => ({ column, index })).reverse()) {
@@ -323,16 +330,17 @@ export function DataTable<T, F = Record<string, unknown>>({
           }
         }}
       >
-        {selectable && <td className="si-table-selection-cell"><input type="checkbox" checked={selected} aria-label={`选择第 ${virtualRow.index + 1} 行`} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleVisibleSelection(row.id, event.currentTarget.checked)} /></td>}
+        {selectable && <td className="si-table-selection-cell is-sticky-left" style={{ left: 0 }}><input type="checkbox" checked={selected} aria-label={`选择第 ${virtualRow.index + 1} 行`} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleVisibleSelection(row.id, event.currentTarget.checked)} /></td>}
         {row.getVisibleCells().map((cell) => {
           const meta = cell.column.columnDef.meta;
           const text = meta?.text ?? "single";
           const titleValue = cell.getValue();
           const title = typeof titleValue === "string" || typeof titleValue === "number" ? String(titleValue) : undefined;
           const textClass = text === "clamp2" ? "si-cell-2" : text === "wrap" ? "si-cell-wrap" : "si-cell-1";
-          const sticky = meta?.sticky === "right" || cell.column.id === "actions";
-          const className = [meta?.reserved && "is-reserved", sticky && "is-sticky-right"].filter(Boolean).join(" ");
-          const style = { ...(meta?.align ? { textAlign: meta.align === "end" ? "right" as const : "left" as const } : {}), ...(sticky ? { right: stickyRightOffsets.get(cell.column.id) ?? 0 } : {}) };
+          const stickyRight = meta?.sticky === "right" || cell.column.id === "actions";
+          const stickyLeft = meta?.sticky === "left" && !stickyRight;
+          const className = [meta?.reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
+          const style = { ...(meta?.align ? { textAlign: meta.align === "end" ? "right" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(cell.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(cell.column.id) ?? 0 } : {}) };
           return (
             <td key={cell.id} className={className} style={style}>
               <div className={textClass} title={title}>
@@ -374,14 +382,15 @@ export function DataTable<T, F = Record<string, unknown>>({
           {showHeader && <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {selectable && <th className="si-table-selection-cell" aria-label="选择行"><input ref={headerSelectionRef} type="checkbox" checked={allVisibleSelected} aria-label="选择当前页全部行" onClick={(event) => event.stopPropagation()} onChange={(event) => toggleAllVisibleSelection(event.currentTarget.checked)} /></th>}
+                {selectable && <th className="si-table-selection-cell is-sticky-left" style={{ left: 0 }} aria-label="选择行"><input ref={headerSelectionRef} type="checkbox" checked={allVisibleSelected} aria-label="选择当前页全部行" onClick={(event) => event.stopPropagation()} onChange={(event) => toggleAllVisibleSelection(event.currentTarget.checked)} /></th>}
                 {headerGroup.headers.map((header) => {
                   const sorted = header.column.getIsSorted();
                   const reserved = Boolean(header.column.columnDef.meta?.reserved);
                   const align = header.column.columnDef.meta?.align;
-                  const sticky = header.column.columnDef.meta?.sticky === "right" || header.column.id === "actions";
-                  const className = [reserved && "is-reserved", sticky && "is-sticky-right"].filter(Boolean).join(" ");
-                  const style = { ...(align ? { textAlign: align === "end" ? "right" as const : "left" as const } : {}), ...(sticky ? { right: stickyRightOffsets.get(header.column.id) ?? 0 } : {}) };
+                  const stickyRight = header.column.columnDef.meta?.sticky === "right" || header.column.id === "actions";
+                  const stickyLeft = header.column.columnDef.meta?.sticky === "left" && !stickyRight;
+                  const className = [reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
+                  const style = { ...(align ? { textAlign: align === "end" ? "right" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(header.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(header.column.id) ?? 0 } : {}) };
                   return (
                     <th key={header.id} className={className} style={style} aria-sort={sorted ? sorted === "asc" ? "ascending" : "descending" : "none"}>
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (

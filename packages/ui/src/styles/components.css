@@ -145,15 +145,19 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-table-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .si-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; text-align: left; }
 .si-table th { position: sticky; z-index: 2; top: 0; height: 40px; padding: 0 var(--space-3); border-bottom: 1px solid var(--color-line); background: var(--color-subtle); color: var(--color-ink-2); font-size: var(--fs-body); font-weight: 600; white-space: nowrap; }
+.si-table th.is-sticky-left { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-sticky-right { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-reserved { background: var(--color-neutral-reserved); color: var(--color-faint); }
 .si-sort-button { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0; border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
 .si-sort-indicator { display: inline-grid; width: 12px; place-items: center; color: var(--color-faint); }
 .si-table td { height: 40px; padding: 0 var(--space-3); border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: var(--fs-body); white-space: nowrap; }
+.si-table td.is-sticky-left { position: sticky; z-index: 4; background: var(--color-surface); }
 .si-table td.is-sticky-right { position: sticky; z-index: 4; background: var(--color-surface); }
 .si-table tbody tr:has(td.is-sticky-right details[open]) td.is-sticky-right { z-index: 7; }
 .si-table td.is-sticky-right > div { overflow: visible; }
 .si-table-selection-cell { width: 40px; padding: 0 !important; text-align: center; }
+.si-table th.si-table-selection-cell.is-sticky-left { z-index: 6; }
+.si-table td.si-table-selection-cell.is-sticky-left { z-index: 5; }
 .si-table-selection-cell input { width: 14px; height: 14px; margin: 0; accent-color: var(--color-brand); vertical-align: middle; }
 .si-cell-1, .si-cell-2, .si-cell-wrap { min-width: 0; max-width: 100%; overflow: hidden; }
 .si-cell-1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
