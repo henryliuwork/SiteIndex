@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
-import { EXIT, type SiteIndexErrorCode, type StockStatus } from "@siteindex/shared";
+import { EXIT, type SiteIndexErrorCode, type SkuAttributes, type StockStatus } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 
 export type { StockStatus };
@@ -17,6 +17,11 @@ export type FeedSnapshot = Record<string, unknown> & {
   url: string;
   category: string;
   categories: string[];
+  product_type_raw?: string | null;
+  description?: string | null;
+  highlights?: string[];
+  attributes?: SkuAttributes;
+  custom_labels?: (string | null)[];
   price: number;
   compare_at_price: number | null;
   currency: string;
@@ -112,7 +117,7 @@ function xmlRecord(value: unknown): FeedItem {
       continue;
     }
     const values = Array.isArray(raw) ? raw.map(nodeText) : [nodeText(raw)];
-    if (key === "additional_image_link" || key === "product_type") {
+    if (key === "additional_image_link" || key === "product_type" || key === "product_highlight") {
       const nonempty = values.filter(Boolean);
       if (!nonempty.length) continue;
       row[key] = nonempty[0];
@@ -337,7 +342,79 @@ export function applyFeedOverrides(
   return rows.map((row) => ({ ...row, ...overrides[row.sku] }) as FeedSnapshot);
 }
 
-/** 按 reference/scripts/crawl/gmc_feed.py 生成同字段、同顺序的每日快照。 */
+const SNAPSHOT_CANONICAL_KEYS = [
+  "sku",
+  "product_id",
+  "handle",
+  "title",
+  "variant_title",
+  "url",
+  "category",
+  "categories",
+  "price",
+  "compare_at_price",
+  "currency",
+  "image_url",
+  "stock_status",
+  "qty",
+] as const;
+
+const ATTRIBUTE_KEYS = [
+  "color",
+  "size",
+  "material",
+  "pattern",
+  "gender",
+  "age_group",
+  "condition",
+  "shipping_weight",
+] as const;
+
+function cleanPlainText(raw: unknown, maxLen: number): string | null {
+  if (typeof raw !== "string") return null;
+  const stripped = raw
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!stripped) return null;
+  return stripped.length > maxLen ? `${stripped.slice(0, maxLen - 1).trimEnd()}…` : stripped;
+}
+
+function extractFeedHighlights(item: FeedItem): string[] | undefined {
+  const rawList = Array.isArray(item.product_highlight_all)
+    ? item.product_highlight_all
+    : typeof item.product_highlight === "string" && item.product_highlight.trim()
+      ? [item.product_highlight]
+      : [];
+  const cleaned = [...new Set(rawList.map((entry) => cleanPlainText(entry, 160)).filter((entry): entry is string => Boolean(entry)))].slice(0, 8);
+  return cleaned.length ? cleaned : undefined;
+}
+
+function extractFeedAttributes(item: FeedItem): SkuAttributes | undefined {
+  const attrs: SkuAttributes = {};
+  let hasAny = false;
+  for (const key of ATTRIBUTE_KEYS) {
+    const val = cleanPlainText(item[key], 80);
+    if (val) {
+      attrs[key] = val;
+      hasAny = true;
+    }
+  }
+  return hasAny ? attrs : undefined;
+}
+
+function extractCustomLabels(item: FeedItem): string[] | undefined {
+  const labels: string[] = [];
+  for (let i = 0; i <= 4; i += 1) {
+    const val = cleanPlainText(item[`custom_label_${i}`], 80);
+    if (val && !labels.includes(val)) labels.push(val);
+  }
+  return labels.length ? labels : undefined;
+}
+
+/** 按 reference/scripts/crawl/gmc_feed.py 生成同字段、同顺序的每日快照，并附带深度可选字段供 catalog/skus 消费。 */
 export function toSnapshot(items: readonly FeedItem[], site: FeedSiteConfig, today = localDate(site.timezone)): SnapshotResult {
   const cfg = site.crawl ?? {};
   const skuField = cfg.sku_field ?? "id";
@@ -369,6 +446,11 @@ export function toSnapshot(items: readonly FeedItem[], site: FeedSiteConfig, tod
     const qtyText = String(item.quantity || item.sell_on_google_quantity || "");
     const qty = /^\d+$/.test(qtyText) ? Number.parseInt(qtyText, 10) : null;
     const groupId = String(item.item_group_id ?? "");
+    const productTypeRaw = cleanPlainText(item.product_type ?? item.google_product_category, 200);
+    const description = cleanPlainText(item.description ?? item.short_description, 300);
+    const highlights = extractFeedHighlights(item);
+    const attributes = extractFeedAttributes(item);
+    const customLabels = extractCustomLabels(item);
     const row: FeedSnapshot = {
       sku,
       product_id: groupId || String(item.id ?? ""),
@@ -378,6 +460,11 @@ export function toSnapshot(items: readonly FeedItem[], site: FeedSiteConfig, tod
       url,
       category,
       categories,
+      ...(productTypeRaw ? { product_type_raw: productTypeRaw } : {}),
+      ...(description ? { description } : {}),
+      ...(highlights ? { highlights } : {}),
+      ...(attributes ? { attributes } : {}),
+      ...(customLabels ? { custom_labels: customLabels } : {}),
       price,
       compare_at_price: compareAt,
       currency: baseCurrency ?? saleCurrency ?? site.currency ?? "",
@@ -411,9 +498,13 @@ export function toSnapshot(items: readonly FeedItem[], site: FeedSiteConfig, tod
   } };
 }
 
-/** 快照文件的格式按 gmc_feed.py 的 json.dumps 默认空格输出。 */
+/** 快照文件的格式按 gmc_feed.py 的 json.dumps 默认空格输出（仅输出 14 个基准字段以保持快照兼容性）。 */
 export async function writeSnapshot(filePath: string, rows: readonly FeedSnapshot[]): Promise<void> {
-  const lines = rows.map((row) => pythonJson(row));
+  const lines = rows.map((row) => {
+    const canonical: Record<string, unknown> = {};
+    for (const key of SNAPSHOT_CANONICAL_KEYS) canonical[key] = row[key] ?? null;
+    return pythonJson(canonical);
+  });
   await atomicWrite(filePath, lines.length ? `${lines.join("\n")}\n` : "");
 }
 

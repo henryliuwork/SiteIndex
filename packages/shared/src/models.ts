@@ -72,6 +72,44 @@ export interface WorkspaceFolder {
   default: boolean;
 }
 
+export type SiteKeyPageType = "about" | "contact" | "shipping" | "returns" | "warranty" | "faq" | "privacy" | "terms";
+
+export interface SitePoliciesConfig {
+  free_shipping_threshold?: string | null;
+  shipping_summary?: string | null;
+  return_summary?: string | null;
+  warranty_summary?: string | null;
+  support_email?: string | null;
+  support_phone?: string | null;
+  social_links?: Record<string, Url>;
+  key_pages?: Partial<Record<SiteKeyPageType, Url>>;
+}
+
+export interface SitePolicyFact {
+  value: string;
+  source: "config" | "extracted";
+  source_url?: Url | null;
+}
+
+export interface SiteTechProfile {
+  platform: Platform;
+  frontend?: string | null;
+  key_pages: Partial<Record<SiteKeyPageType, Url>>;
+  policies: {
+    free_shipping_threshold?: SitePolicyFact | null;
+    shipping_summary?: SitePolicyFact | null;
+    return_summary?: SitePolicyFact | null;
+    warranty_summary?: SitePolicyFact | null;
+  };
+  contact: {
+    email?: SitePolicyFact | null;
+    phone?: SitePolicyFact | null;
+  };
+  social_links: Record<string, Url>;
+  trust_badges: string[];
+  updated_at: ISODate;
+}
+
 export interface SiteConfig {
   schema_version: string;
   domain: string;
@@ -82,6 +120,7 @@ export interface SiteConfig {
   timezone: string;
   markets?: string[];
   brand: { name: string; tagline?: string; voice?: string; audience?: string; usp?: string[] };
+  policies?: SitePoliciesConfig;
   sitemaps: Url[];
   content?: {
     blog_sitemaps?: Url[];
@@ -172,9 +211,21 @@ export interface LockInfo extends Omit<RunnerInfo, "claimed_at"> {
 
 export type CategorySource = "url_rule" | "feed" | "manual" | "none";
 
+export interface SkuAttributes {
+  color?: string | null;
+  size?: string | null;
+  material?: string | null;
+  pattern?: string | null;
+  gender?: string | null;
+  age_group?: string | null;
+  condition?: string | null;
+  shipping_weight?: string | null;
+}
+
 export interface SkuRecord {
   sku: string;
   product_id: string;
+  parent_sku?: string | null;
   handle: string;
   title: string;
   variant_title: string | null;
@@ -182,6 +233,11 @@ export interface SkuRecord {
   category: string;
   categories?: string[];
   category_source: CategorySource;
+  product_type_raw?: string | null;
+  description?: string | null;
+  highlights?: string[];
+  attributes?: SkuAttributes;
+  custom_labels?: (string | null)[];
   price: number;
   compare_at_price: number | null;
   currency: string;
@@ -197,9 +253,18 @@ export interface SkuRecord {
   updated_at: ISODate;
 }
 
+export interface ProductFaqItem {
+  question: string;
+  answer: string;
+}
+
 export interface ProductDetails {
   handle: string;
   short_description: string | null;
+  highlights?: string[];
+  specs?: Record<string, string>;
+  faqs?: ProductFaqItem[];
+  warranty_note?: string | null;
   rating: number | null;
   review_count: number | null;
   breadcrumbs: string[];
@@ -216,6 +281,12 @@ export interface Category {
   url: string;
   parent: string | null;
   source: CategorySource;
+  title?: string | null;
+  meta_description?: string | null;
+  intro_excerpt?: string | null;
+  price_min?: number | null;
+  price_max?: number | null;
+  top_handles?: string[];
   product_count?: number;
   sku_count?: number;
   in_stock_count?: number;
@@ -372,10 +443,12 @@ export interface BlogPost {
   author: string | null;
   tags: string[];
   meta_description: string | null;
+  excerpt?: string | null;
   word_count: number | null;
   reading_minutes?: number | null;
   outline?: string[];
   has_faq?: boolean;
+  faq_questions?: string[];
   featured_image?: Url | null;
   primary_keyword?: string | null;
   links_internal: Url[];
@@ -510,6 +583,10 @@ export interface ProductView {
   restocked_at?: ISODate | null;
   price_dropped_at?: ISODate | null;
   short_description?: string | null;
+  highlights?: string[];
+  specs?: Record<string, string>;
+  attributes_summary?: Record<string, string[]>;
+  custom_labels?: string[];
   rating?: number | null;
   review_count?: number | null;
   seo_issue_count?: number;

@@ -4,7 +4,9 @@ version: 1.1.0
 description: 基于项目品牌、关键词映射、博客索引与产品数据规划或撰写 SEO 博客，并在需要时登记关键词映射。
 reads:
   - README.md
+  - index/context-brief.md
   - index/site.json
+  - index/site/tech.json
   - index/content/keywords.jsonl
   - index/content/blog_index.jsonl
   - index/seo/pages.jsonl
@@ -19,7 +21,7 @@ writes:
 
 ## 读哪些数据
 
-读取 README 的品牌语气与工作规则；index/site.json 的 brand、locale、seo.core_keywords；index/content/keywords.jsonl、index/content/blog_index.jsonl、index/seo/pages.jsonl、index/views/products.jsonl。只在选题涉及分类或产品时读取 index/catalog/categories.json 或相应产品数据。
+先读 README 与 `index/context-brief.md` 掌握品牌定位、分类价格带、全站政策与现有博客资产；再读 `index/site.json` 的 brand、locale、seo.core_keywords；`index/content/keywords.jsonl`、`index/content/blog_index.jsonl`（含 `excerpt` 首段摘要与 `faq_questions` 已覆盖的 FAQ 问题）、`index/seo/pages.jsonl`、`index/views/products.jsonl`（含商品 `short_description`、`highlights` 卖点与 `specs` 规格表）。涉及分类导购时读取 `index/catalog/categories.json`（含 `intro_excerpt`、`price_min/max`、`top_handles`）。
 
 ## 如何筛选判断
 

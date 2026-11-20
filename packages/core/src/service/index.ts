@@ -65,6 +65,7 @@ import {
   type SeoPageFilters,
   type SeoSummary,
   type SiteConfig,
+  type SiteTechProfile,
   type SiteIndexApi,
   type SkuGroupingPreview,
   type SkuGroupingRule,
@@ -132,11 +133,13 @@ import { runIndexCheck } from "../jobs/index-check";
 import { runMediaJob, type WordPressCredential } from "../jobs/media";
 import { configuredDiscountTiers, latestLedgerRows, renderEdmSkuIndex, selectedTier } from "../edm/sku-index";
 import {
+  buildContextBriefMarkdown,
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,
   README_AUTO_BLOCK_TITLES,
   replaceAutoBlocks,
   replaceReadmeAutoBlocks,
+  scanWorkspaceAssets,
 } from "../readme";
 
 export interface CoreServiceContext {
@@ -287,7 +290,9 @@ const PRODUCT_FIELDS = [
   "handle", "product_id", "title", "url", "category", "categories", "price_min", "price_max",
   "compare_at_max", "currency", "on_sale", "image_url", "image_source", "feed_image_url",
   "manual_image_url", "variant_count", "skus", "in_stock_variants", "stock_status", "stock_since",
-  "tags", "priority", "exclude_edm", "email_blurb", "last_featured", "days_since_featured", "first_seen", "status",
+  "tags", "priority", "exclude_edm", "email_blurb", "last_featured", "days_since_featured",
+  "short_description", "highlights", "specs", "attributes_summary", "custom_labels",
+  "rating", "review_count", "first_seen", "status",
 ] as const;
 
 const STOCK_STATUSES: readonly StockStatus[] = ["in_stock", "out_of_stock", "preorder", "unknown"];
@@ -1508,11 +1513,17 @@ function applyCategoryConfig(skus: SkuRecord[], config: CategoriesConfig): SkuRe
   });
 }
 
-async function readmeAutoContent(snapshot: ProjectSnapshot) {
+async function buildReadmeAndBriefContent(snapshot: ProjectSnapshot) {
   const layout = await resolveProjectLayout(snapshot.projectPath);
   const paths = pathsFor(layout);
-  const designTokens = await readJsonAs<DesignTokens | null>(snapshot.projectPath, paths.designTokens, null);
-  return buildReadmeAutoContent({
+  const [designTokens, techProfile, workspaceAssets] = await Promise.all([
+    readJsonAs<DesignTokens | null>(snapshot.projectPath, paths.designTokens, null, paths),
+    readJsonAs<SiteTechProfile | null>(snapshot.projectPath, paths.tech, null, paths),
+    layout === "workspace"
+      ? scanWorkspaceAssets(snapshot.projectPath, snapshot.config.workspace?.sections)
+      : Promise.resolve(undefined),
+  ]);
+  const input = {
     site: snapshot.config,
     layout,
     asOf: snapshot.asOf,
@@ -1524,7 +1535,17 @@ async function readmeAutoContent(snapshot: ProjectSnapshot) {
     events: snapshot.events,
     designTokens,
     runs: snapshot.runs,
-  });
+    categoryRows: snapshot.categories,
+    productRows: snapshot.products,
+    techProfile,
+    seoIssues: snapshot.seoIssues,
+    edmCampaigns: snapshot.campaigns,
+    workspaceAssets,
+  };
+  return {
+    blocks: buildReadmeAutoContent(input),
+    briefMarkdown: buildContextBriefMarkdown(input),
+  };
 }
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
@@ -1570,7 +1591,11 @@ function installedSkills(value: unknown): string {
     .map((skill) => "- " + skill.name + " · " + skill.version).join("\n") || "暂无技能。";
 }
 
-async function workspaceReadmeBlocks(projectPath: string, snapshot: ProjectSnapshot, blocks: Awaited<ReturnType<typeof readmeAutoContent>>) {
+async function workspaceReadmeBlocks(
+  projectPath: string,
+  snapshot: ProjectSnapshot,
+  blocks: Awaited<ReturnType<typeof buildReadmeAndBriefContent>>["blocks"],
+) {
   const paths = pathsFor("workspace");
   const manifest = await readJsonAs<unknown>(projectPath, path.posix.join(PATHS.index, "workspace.json"), null, paths);
   const skills = await readJsonAs<unknown>(projectPath, paths.skillsManifest, null, paths);
@@ -1583,7 +1608,7 @@ async function workspaceReadmeBlocks(projectPath: string, snapshot: ProjectSnaps
     },
     agents: {
       "agents-core": "项目：" + snapshot.config.brand.name + "（" + snapshot.config.domain + "）。SiteIndex 数据统一位于 "
-        + paths.index + "/。不要读取或输出根目录 .env 内容。",
+        + paths.index + "/（首次接入请先读 `" + paths.contextBrief + "` 5分钟掌握全貌）。不要读取或输出根目录 .env 内容。",
       "task-routing": blocks["task-routing"],
       "data-guide": blocks["data-guide"],
       "design-summary": blocks["design-summary"],
@@ -1603,7 +1628,7 @@ async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot)
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     markdown = "# 项目说明\n";
   }
-  const blocks = await readmeAutoContent(snapshot);
+  const { blocks, briefMarkdown } = await buildReadmeAndBriefContent(snapshot);
   const disabled = new Set<string>(snapshot.config.readme?.disabled_blocks ?? []);
   if (layout === "workspace") {
     const generated = await workspaceReadmeBlocks(projectPath, snapshot, blocks);
@@ -1620,6 +1645,9 @@ async function refreshReadmeFile(projectPath: string, snapshot: ProjectSnapshot)
     markdown = replaceReadmeAutoBlocks(markdown, blocks, disabled);
   }
   await atomicWrite(readmePath, markdown);
+  const briefPath = path.join(projectPath, paths.contextBrief);
+  await mkdir(path.dirname(briefPath), { recursive: true });
+  await atomicWrite(briefPath, briefMarkdown);
 }
 
 export function createCoreService(ctx: CoreServiceContext): CoreService {

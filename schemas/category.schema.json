@@ -22,6 +22,12 @@
     "source": {
       "enum": ["url_rule", "feed", "manual", "none"]
     },
+    "title": { "type": ["string", "null"] },
+    "meta_description": { "type": ["string", "null"] },
+    "intro_excerpt": { "type": ["string", "null"] },
+    "price_min": { "type": ["number", "null"], "minimum": 0 },
+    "price_max": { "type": ["number", "null"], "minimum": 0 },
+    "top_handles": { "type": "array", "items": { "type": "string" } },
     "product_count": {
       "type": [
         "integer",

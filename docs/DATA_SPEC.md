@@ -15,6 +15,7 @@
 ├── _agent/skills/{name}/SKILL.md 软件分发的 skill + _agent/skills/manifest.json
 ├── index/                        ← 网站数据（软件维护，台账除外）
 │   ├── site.json                 站点配置
+│   ├── context-brief.md          面向 AI Agent 的 5 分钟全局认知简报（含工作区资产只读索引）
 │   ├── .runner.json              执行设备
 │   ├── .lock                     运行锁（仅运行中存在）
 │   ├── site/        robots.txt · sitemaps.json · tech.json
@@ -94,6 +95,7 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 | `currency` `locale` `timezone` | string | ✓ | |
 | `markets` | string[] | | |
 | `brand` | object | ✓ | `name`✓ `tagline` `voice` `audience` `usp[]` |
+| `policies` | object | | `free_shipping_threshold` `shipping_summary` `return_summary` `warranty_summary` `support_email` `support_phone` `social_links` `key_pages`（人工覆盖优先于自动提取） |
 | `sitemaps` | string[] | ✓ | |
 | `crawl.adapter` | string | ✓ | `gmc_feed` |
 | `crawl.feed_url` | string \| string[] | ✓ | |
@@ -149,16 +151,19 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 主键 ★；必填 ✓。
 
 ### 5.1 `catalog/skus.jsonl`（★sku · 每日 · feed）
-`sku`★ `product_id`✓ `handle`✓ `title`✓ `variant_title` `url`✓ `category`✓ `categories` `category_source`✓(`url_rule`/`feed`/`manual`/`none`) `price`✓ `compare_at_price` `currency`✓ `image_url` `additional_images` `gtin` `mpn` `brand` `status`✓(`active`/`removed`) `first_seen`✓ `last_seen`✓ `updated_at`✓
+`sku`★ `product_id`✓ `parent_sku` `handle`✓ `title`✓ `variant_title` `url`✓ `category`✓ `categories` `category_source`✓(`url_rule`/`feed`/`manual`/`none`) `product_type_raw` `description` `highlights` `attributes` `custom_labels` `price`✓ `compare_at_price` `currency`✓ `image_url` `additional_images` `gtin` `mpn` `brand` `status`✓(`active`/`removed`) `removed_reason` `first_seen`✓ `last_seen`✓ `updated_at`✓
 
 - `category`：按 `categories.mode` 计算；manual 模式按规则顺序匹配第一个命中；未命中为 `uncategorized`
 - `image_url`：feed `image_link`（**抓取首图**）
+- `product_type_raw`、`description`（≤300 字纯文本）、`highlights`（≤8 条）、`attributes`（color/size/material/pattern/gender/age_group/condition/shipping_weight）、`custom_labels`（custom_label_0..4）为可选增强字段
 
 ### 5.2 `catalog/product_details.jsonl`（★handle · 每周 · 产品页）
-`handle`★ `short_description` `rating` `review_count` `breadcrumbs` `gallery` `related_handles` `badges` `shipping_note` `last_crawled`✓
+`handle`★ `short_description` `highlights` `specs` `faqs` `warranty_note` `rating` `review_count` `breadcrumbs` `gallery` `related_handles` `badges` `shipping_note` `last_crawled`✓
+- `short_description`：优先提取产品页短描述容器（≤300 字），其次 JSON-LD `Product.description`，最后回退 `meta_description`
+- `highlights`（核心卖点 bullets ≤8 条）、`specs`（规格参数字典 ≤20 项，按键名 `compareKeys` 排序）、`faqs`（页面问答 ≤10 条）、`warranty_note` 为可选增强字段
 
 ### 5.3 `catalog/categories.json`（★slug · 每周）
-数组：`slug`★ `name`✓ `url`✓(未匹配为 `""`) `parent` `source`✓ `product_count` `sku_count` `in_stock_count` `intro_text_words` `last_seen`✓
+数组：`slug`★ `name`✓ `url`✓(未匹配为 `""`) `parent` `source`✓ `title` `meta_description` `intro_excerpt` `price_min` `price_max` `top_handles` `product_count` `sku_count` `in_stock_count` `intro_text_words` `last_seen`✓
 
 ### 5.4 `inventory/latest.jsonl`（★sku · 每日）
 `sku`★ `stock_status`✓(`in_stock`/`out_of_stock`/`preorder`/`unknown`) `qty` `since`✓ `checked_at`✓
@@ -202,7 +207,7 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 `from`★ `to`★ `anchor`★ `to_type`✓(`product`/`collection`/`blog`/`page`) `nofollow`；只记正文区域（排除 header/nav/footer/aside）
 
 ### 5.10 `content/blog_index.jsonl`（★url · 每周）
-`url`★ `slug`✓ `title`✓ `published_at`✓ `updated_at` `category` `author` `tags` `meta_description` `word_count` `reading_minutes` `outline` `has_faq` `featured_image` `primary_keyword` `links_internal` `links_products` `links_in` `linked_out_of_stock` `last_crawled`✓
+`url`★ `slug`✓ `title`✓ `published_at`✓ `updated_at` `category` `author` `tags` `meta_description` `excerpt` `word_count` `reading_minutes` `outline` `has_faq` `faq_questions` `featured_image` `primary_keyword` `links_internal` `links_products` `links_in` `linked_out_of_stock` `last_crawled`✓
 
 ### 5.11 `content/keywords.jsonl`（★keyword · 台账）
 `keyword`★(小写) `target_url`✓(可 null) `role`✓(`primary`/`secondary`) `intent`✓ `cluster`✓ `status`✓(`planned`/`drafting`/`live`) `priority` `source` `note` `search_volume`(预留) `difficulty`(预留) `current_rank`(预留) `rank_checked_at`(预留) `updated_at`✓
@@ -226,7 +231,7 @@ workspace 布局使用 `_site-index/` 替代上图的 `index/`；`_site-index/ed
 `domain`★ `added_at`✓ `status`✓ `linkflow_id` `topic` `note` `target_url` `live_link`
 
 ### 5.16 `views/products.jsonl`（★handle · 每日 · 生成）
-`handle`★ `product_id` `title` `url` `category` `categories` `price_min` `price_max` `compare_at_max` `currency` `on_sale` `image_url` `image_source`(`feed`/`manual`/`none`) `feed_image_url` `manual_image_url` `variant_count` `skus` `in_stock_variants` `stock_status` `stock_since` `tags` `priority` `exclude_edm` `email_blurb` `last_featured` `days_since_featured` `is_new` `restocked_at` `price_dropped_at` `short_description` `rating` `review_count` `seo_issue_count` `units_30d`(预留) `revenue_30d`(预留) `sales_rank`(预留) `first_seen` `status`
+`handle`★ `product_id` `title` `url` `category` `categories` `price_min` `price_max` `compare_at_max` `currency` `on_sale` `image_url` `image_source`(`feed`/`manual`/`none`) `feed_image_url` `manual_image_url` `variant_count` `skus` `in_stock_variants` `stock_status` `stock_since` `tags` `priority` `exclude_edm` `email_blurb` `last_featured` `days_since_featured` `is_new` `restocked_at` `price_dropped_at` `short_description` `highlights` `specs` `attributes_summary` `custom_labels` `rating` `review_count` `seo_issue_count` `units_30d`(预留) `revenue_30d`(预留) `sales_rank`(预留) `first_seen` `status`
 
 **图片规则**（按 `edm.image_priority`，默认 feed → manual）：取产品第一个 active 变体的 feed `image_url`；为空则取任一变体的手动首图；都没有为 `none`。
 **库存聚合**：任一变体有货即 `in_stock`，否则 `preorder` > `out_of_stock` > `unknown`。

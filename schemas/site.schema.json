@@ -23,6 +23,19 @@
       },
       "required": ["name"]
     },
+    "policies": {
+      "type": "object",
+      "properties": {
+        "free_shipping_threshold": { "type": ["string", "null"] },
+        "shipping_summary": { "type": ["string", "null"] },
+        "return_summary": { "type": ["string", "null"] },
+        "warranty_summary": { "type": ["string", "null"] },
+        "support_email": { "type": ["string", "null"] },
+        "support_phone": { "type": ["string", "null"] },
+        "social_links": { "type": "object", "additionalProperties": { "type": "string" } },
+        "key_pages": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
     "sitemaps": { "type": "array", "items": { "type": "string", "format": "uri" } },
     "crawl": {
       "type": "object",

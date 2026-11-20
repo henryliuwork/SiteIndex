@@ -1,7 +1,8 @@
 import path from "node:path";
+import { mkdir } from "node:fs/promises";
 import { XMLParser } from "fast-xml-parser";
 import { parseDocument } from "htmlparser2";
-import { DEFAULT_DESCRIPTION_RANGE, DEFAULT_TITLE_RANGE, pathsFor, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig } from "@siteindex/shared";
+import { DEFAULT_DESCRIPTION_RANGE, DEFAULT_TITLE_RANGE, pathsFor, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type ProductFaqItem, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig, type SiteKeyPageType, type SitePolicyFact, type SiteTechProfile } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { readJsonl, writeJsonl } from "../io/jsonl";
@@ -22,7 +23,7 @@ const STEPS: readonly WeeklyStep[] = ["pages", "issues", "links", "blog", "produ
 function cleanUrl(value: string, base?: string): string | null {
   try {
     const url = base ? new URL(value.trim(), base) : new URL(value.trim());
-    if (!["http:", "https:"].includes(url.protocol)) return null;
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
     const pairs = [...url.searchParams.entries()].filter(([key, val]) => val && !TRACKING.test(key)
       && !key.toLowerCase().startsWith("attribute_pa_"));
     url.search = "";
@@ -482,6 +483,71 @@ function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, d
   return result;
 }
 
+function clipText(value: string | null | undefined, maxLen: number): string | null {
+  if (!value) return null;
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen - 1).trimEnd()}…` : cleaned;
+}
+
+function extractFaqItemsFromDoc(doc: HtmlNode, ld: JsonObject[]): ProductFaqItem[] {
+  const faqs: ProductFaqItem[] = [];
+  const seen = new Set<string>();
+  const pushFaq = (rawQ: unknown, rawA: unknown) => {
+    const question = clipText(typeof rawQ === "string" ? rawQ : null, 160);
+    const answer = clipText(typeof rawA === "string" ? rawA.replace(/<[^>]+>/g, " ") : null, 240);
+    if (!question || !answer) return;
+    const key = question.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    faqs.push({ question, answer });
+  };
+
+  for (const item of ld) {
+    if (asList(item["@type"]).some((type) => /faqpage/i.test(String(type)))) {
+      for (const entity of asObjects(item.mainEntity)) {
+        const accepted = entity.acceptedAnswer && typeof entity.acceptedAnswer === "object"
+          ? (entity.acceptedAnswer as JsonObject).text
+          : undefined;
+        pushFaq(entity.name, accepted);
+      }
+    } else if (asList(item["@type"]).some((type) => /^question$/i.test(String(type)))) {
+      const accepted = item.acceptedAnswer && typeof item.acceptedAnswer === "object"
+        ? (item.acceptedAnswer as JsonObject).text
+        : undefined;
+      pushFaq(item.name, accepted);
+    }
+  }
+
+  for (const detailsNode of walk(area(doc), (n) => n.name === "details", OMIT)) {
+    const summaryNode = (detailsNode.children ?? []).find((child) => child.name === "summary");
+    if (!summaryNode) continue;
+    const q = text(summaryNode);
+    const restText = (detailsNode.children ?? [])
+      .filter((child) => child !== summaryNode)
+      .map((child) => text(child))
+      .join(" ");
+    pushFaq(q, restText);
+  }
+  return faqs.slice(0, 10);
+}
+
+function extractMatchingSentence(root: HtmlNode, pattern: RegExp, maxLen = 160): string | null {
+  const candidates = walk(root, (n) => n.name === "p" || n.name === "li", OMIT).map((n) => text(n));
+  for (const block of [...candidates, text(root)]) {
+    const match = block.match(pattern)?.[0]?.trim();
+    if (match) return clipText(match, maxLen);
+  }
+  return null;
+}
+
+function extractFirstParagraphExcerpt(doc: HtmlNode, maxLen = 240): string | null {
+  const paragraphs = walk(area(doc), (n) => n.name === "p", OMIT)
+    .map((n) => text(n))
+    .filter((p) => p.length >= 20);
+  return clipText(paragraphs[0] ?? null, maxLen);
+}
+
 function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, skus: JsonObject[], outOfStockUrls: ReadonlySet<string>): BlogPost[] {
   return rows.flatMap(({ page, doc, links, lastmod }) => {
     if (page.page_type !== "blog" || page.status_code >= 400) return [];
@@ -500,14 +566,22 @@ function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, s
       .map((url) => productHandles.get(url) ?? urlSlug(url)))].sort(compareKeys);
     const publishedDay = isoDay(published, date);
     const wordCount = page.word_count;
+    const excerpt = extractFirstParagraphExcerpt(doc, 240);
+    const faqItems = extractFaqItemsFromDoc(doc, ld);
+    const headingQuestions = outline.filter((heading) => /[?？]$/.test(heading.trim()));
+    const faqQuestions = [...new Set([...faqItems.map((item) => item.question), ...headingQuestions])].slice(0, 10);
+    const hasFaq = ld.some((item) => asList(item["@type"]).some((type) => /faqpage/i.test(String(type)))) || faqItems.length > 0;
     return [{
       url: page.url, slug: urlSlug(page.url),
       title: page.h1 ?? page.title ?? "", published_at: publishedDay,
       updated_at: (typeof article.dateModified === "string" ? article.dateModified : undefined) || meta(doc, "article:modified_time") || lastmod
         ? isoDay((typeof article.dateModified === "string" ? article.dateModified : undefined) ?? meta(doc, "article:modified_time") ?? lastmod, publishedDay) : null,
       category: meta(doc, "article:section"), author: typeof author === "string" ? author : meta(doc, "author"), tags,
-      meta_description: page.meta_description, word_count: wordCount, reading_minutes: wordCount === null ? null : Math.max(1, Math.ceil(wordCount / 200)),
-      outline, has_faq: ld.some((item) => asList(item["@type"]).some((type) => /faqpage/i.test(String(type)))),
+      meta_description: page.meta_description,
+      ...(excerpt ? { excerpt } : {}),
+      word_count: wordCount, reading_minutes: wordCount === null ? null : Math.max(1, Math.ceil(wordCount / 200)),
+      outline, has_faq: hasFaq,
+      ...(faqQuestions.length ? { faq_questions: faqQuestions } : {}),
       featured_image: cleanUrl(meta(doc, "og:image") ?? "", page.url), primary_keyword: meta(doc, "keywords"),
       links_internal: [...new Set(internal)].sort(compareKeys),
       links_products: [...new Set(productLinks.map((url) => productHandles.get(cleanUrl(url) ?? "") ?? urlSlug(url)))].sort(compareKeys),
@@ -516,6 +590,97 @@ function blogs(rows: Parsed[], date: string, productUrls: ReadonlySet<string>, s
     }];
   });
 }
+function extractProductShortDescription(doc: HtmlNode, productLd: JsonObject, metaDesc: string | null): string | null {
+  const shortNodes = walk(area(doc), (node) => {
+    if (node.name === "meta") return false;
+    const classes = classTokens(node);
+    if (classes.some((c) => /^(woocommerce-product-details__short-description|product-short-description|short-description|product-overview)$/.test(c))) return true;
+    if (classes.includes("overview") && (classes.includes("product") || classes.includes("attribute"))) return true;
+    return attr(node, "itemprop")?.toLowerCase() === "description";
+  }, OMIT);
+  for (const node of shortNodes) {
+    const candidate = clipText(text(node), 300);
+    if (candidate && candidate.length >= 10) return candidate;
+  }
+  if (typeof productLd.description === "string") {
+    const ldDesc = clipText(productLd.description.replace(/<[^>]+>/g, " "), 300);
+    if (ldDesc) return ldDesc;
+  }
+  return clipText(metaDesc, 300);
+}
+
+function extractProductHighlights(doc: HtmlNode): string[] {
+  const highlightContainers = walk(area(doc), (node) => {
+    const classes = classTokens(node);
+    return classes.some((c) =>
+      /^(woocommerce-product-details__short-description|product-short-description|product-highlights|product-features|product-info-main|summary|entry-summary)$/.test(c),
+    ) || (classes.includes("overview") && classes.includes("attribute"));
+  }, OMIT);
+  const rootsToScan = highlightContainers.length ? highlightContainers : [area(doc)];
+  const items: string[] = [];
+  const seen = new Set<string>();
+  for (const container of rootsToScan) {
+    for (const ul of walk(container, (node) => node.name === "ul", OMIT)) {
+      const ulClasses = classTokens(ul);
+      if (ulClasses.some((c) => /breadcrumb|tabs|gallery|slides|social|share|menu|nav|pagination|related|upsell/i.test(c))) continue;
+      for (const li of (ul.children ?? []).filter((child) => child.name === "li")) {
+        const liClasses = classTokens(li);
+        if (liClasses.some((c) => /breadcrumb|tab|gallery|slide|social|share|menu|nav/i.test(c))) continue;
+        const val = clipText(text(li), 160);
+        if (!val || val.length < 8) continue;
+        const key = val.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(val);
+        if (items.length >= 8) return items;
+      }
+    }
+  }
+  return items;
+}
+
+function extractProductSpecs(doc: HtmlNode, productLd: JsonObject): Record<string, string> {
+  const rawSpecs = new Map<string, string>();
+  const addSpec = (rawKey: unknown, rawVal: unknown) => {
+    if (typeof rawKey !== "string" || (typeof rawVal !== "string" && typeof rawVal !== "number")) return;
+    const key = rawKey.replace(/\s+/g, " ").replace(/[:：]+$/, "").trim();
+    const val = String(rawVal).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    if (!key || !val || key.length > 60 || val.length > 160) return;
+    if (/^(sku|price|qty|quantity|rating|reviews?|share|tags?|category|categories)$/i.test(key)) return;
+    if (!rawSpecs.has(key)) rawSpecs.set(key, val);
+  };
+
+  for (const prop of asObjects(productLd.additionalProperty)) {
+    addSpec(prop.name ?? prop.propertyID, prop.value);
+  }
+  for (const key of ["material", "color", "size", "pattern", "weight", "width", "height", "depth"] as const) {
+    if (typeof productLd[key] === "string" || typeof productLd[key] === "number") {
+      addSpec(key.charAt(0).toUpperCase() + key.slice(1), productLd[key]);
+    }
+  }
+
+  for (const tr of walk(area(doc), (node) => node.name === "tr", OMIT)) {
+    const cells = (tr.children ?? []).filter((child) => child.name === "th" || child.name === "td");
+    if (cells.length === 2) {
+      addSpec(text(cells[0]!), text(cells[1]!));
+    }
+  }
+
+  for (const dl of walk(area(doc), (node) => node.name === "dl", OMIT)) {
+    const children = (dl.children ?? []).filter((child) => child.name === "dt" || child.name === "dd");
+    for (let i = 0; i < children.length - 1; i += 1) {
+      if (children[i]?.name === "dt" && children[i + 1]?.name === "dd") {
+        addSpec(text(children[i]!), text(children[i + 1]!));
+      }
+    }
+  }
+
+  const sortedKeys = [...rawSpecs.keys()].sort(compareKeys).slice(0, 20);
+  const result: Record<string, string> = {};
+  for (const key of sortedKeys) result[key] = rawSpecs.get(key)!;
+  return result;
+}
+
 function productDetails(rows: Parsed[], date: string, storeGalleries: ReadonlyMap<string, string[]> = new Map()): ProductDetails[] {
   const result = rows.flatMap(({ page, doc, links }) => {
     if (page.page_type !== "product") return [];
@@ -558,6 +723,11 @@ function productDetails(rows: Parsed[], date: string, storeGalleries: ReadonlyMa
       .map((link) => urlSlug(link.url));
     const body = text(area(doc));
     const shipping = body.match(/[^.!?。！？]*(?:free\s+shipping|shipping[^.!?。！？]{0,60}|配送[^。！？]{0,60})[^.!?。！？]*/i)?.[0]?.trim() ?? null;
+    const warranty = extractMatchingSentence(
+      area(doc),
+      /[^.!?。！？]*(?:warranty|money[-\s]back|day\s+returns?|guarantee|质保|保修|退换)[^.!?。！？]*/i,
+      160,
+    );
     const badges = walk(area(doc), (node) => /badge|label/i.test(attr(node, "class") ?? ""), OMIT).map((node) => text(node)).filter(Boolean);
     let ratingValue = finiteNumber(rating.ratingValue);
     if (ratingValue === null) {
@@ -577,9 +747,17 @@ function productDetails(rows: Parsed[], date: string, storeGalleries: ReadonlyMa
     const reviewText = reviewNode ? attr(reviewNode, "content") ?? text(reviewNode) : "";
     const reviewMatch = body.match(/([\d,]+)\s*(?:reviews?|ratings?)/i) ?? body.match(/(?:reviews?|ratings?)\s*\(([\d,]+)\)/i);
     const reviewCount = finiteNumber(rating.reviewCount ?? rating.ratingCount) ?? finiteNumber(reviewText) ?? (reviewMatch ? finiteNumber(reviewMatch[1]?.replace(/,/g, "")) : null);
+    const shortDescription = extractProductShortDescription(doc, product, page.meta_description);
+    const highlights = extractProductHighlights(doc);
+    const specs = extractProductSpecs(doc, product);
+    const faqs = extractFaqItemsFromDoc(doc, ld);
     return [{
       handle: urlSlug(page.url),
-      short_description: page.meta_description ?? (typeof product.description === "string" ? product.description : null),
+      short_description: shortDescription,
+      ...(highlights.length ? { highlights } : {}),
+      ...(Object.keys(specs).length ? { specs } : {}),
+      ...(faqs.length ? { faqs } : {}),
+      ...(warranty ? { warranty_note: warranty } : {}),
       rating: ratingValue,
       review_count: reviewCount !== null && Number.isInteger(reviewCount) ? reviewCount : null,
       breadcrumbs: crumbs, gallery: images, related_handles: [...new Set(related)], badges: [...new Set(badges)], shipping_note: shipping, last_crawled: date,
@@ -587,20 +765,76 @@ function productDetails(rows: Parsed[], date: string, storeGalleries: ReadonlyMa
   });
   return [...new Map(result.map((item) => [item.handle, item])).values()];
 }
+function categoryMetadataFromRow(row: Parsed | undefined): Partial<Pick<Category, "title" | "meta_description" | "intro_excerpt">> {
+  if (!row) return {};
+  const intro = extractFirstParagraphExcerpt(row.doc, 240);
+  return {
+    ...(row.page.title ? { title: row.page.title } : {}),
+    ...(row.page.meta_description ? { meta_description: row.page.meta_description } : {}),
+    ...(intro ? { intro_excerpt: intro } : {}),
+  };
+}
+
+function categoryPriceAndHandles(matches: JsonObject[]): Partial<Pick<Category, "price_min" | "price_max" | "top_handles">> {
+  const activeMatches = matches.filter((row) => row.status !== "removed");
+  const prices = activeMatches
+    .map((row) => finiteNumber(row.price))
+    .filter((price): price is number => price !== null && price >= 0);
+  const byHandle = new Map<string, boolean>();
+  for (const row of activeMatches) {
+    const handle = typeof row.handle === "string" ? row.handle.trim() : "";
+    if (!handle) continue;
+    const inStock = row.stock_status === "in_stock" || row.status === "active";
+    byHandle.set(handle, Boolean(byHandle.get(handle) || inStock));
+  }
+  const topHandles = [...byHandle.entries()]
+    .sort((a, b) => Number(b[1]) - Number(a[1]) || compareKeys(a[0], b[0]))
+    .slice(0, 5)
+    .map(([handle]) => handle);
+  return {
+    ...(prices.length ? { price_min: Math.min(...prices), price_max: Math.max(...prices) } : {}),
+    ...(topHandles.length ? { top_handles: topHandles } : {}),
+  };
+}
+
 function categories(config: SiteConfig, rows: Parsed[], skus: JsonObject[], date: string): Category[] {
   const result = new Map<string, Category>();
   const counts = (slug: string) => {
     const matches = skus.filter((row) => row.category === slug || (Array.isArray(row.categories) && row.categories.includes(slug)));
-    return { sku_count: matches.length, product_count: new Set(matches.map((row) => String(row.handle))).size, in_stock_count: matches.filter((row) => row.stock_status === "in_stock").length };
+    return {
+      ...categoryPriceAndHandles(matches),
+      sku_count: matches.length,
+      product_count: new Set(matches.map((row) => String(row.handle))).size,
+      in_stock_count: matches.filter((row) => row.stock_status === "in_stock").length,
+    };
   };
   if (config.categories.mode === "manual") for (const item of config.categories.manual ?? []) {
-    result.set(item.slug, { slug: item.slug, name: item.name, url: item.url, parent: null, source: "manual", ...counts(item.slug), last_seen: date });
+    const collection = rows.find((row) => row.page.url === cleanUrl(item.url, config.base_url));
+    result.set(item.slug, {
+      slug: item.slug,
+      name: item.name,
+      url: item.url,
+      parent: null,
+      source: "manual",
+      ...categoryMetadataFromRow(collection),
+      ...counts(item.slug),
+      last_seen: date,
+    });
   } else if (config.categories.mode === "feed") {
     const slugs = new Set(skus.flatMap((row) => [row.category, ...(Array.isArray(row.categories) ? row.categories : [])]).map(String).filter(Boolean));
     for (const slug of slugs) {
       const collection = rows.find((row) => row.page.page_type === "collection" && new URL(row.page.url).pathname.split("/").filter(Boolean).at(-1)?.replace(/\.(html?|php)$/i, "").toLowerCase() === slug.toLowerCase());
       const name = collection?.page.h1 ?? collection?.page.title ?? slug.replace(/[-_]+/g, " ").replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
-      result.set(slug, { slug, name, url: collection?.page.url ?? "", parent: null, source: "feed", ...counts(slug), last_seen: date });
+      result.set(slug, {
+        slug,
+        name,
+        url: collection?.page.url ?? "",
+        parent: null,
+        source: "feed",
+        ...categoryMetadataFromRow(collection),
+        ...counts(slug),
+        last_seen: date,
+      });
     }
   } else for (const row of rows) {
     const matchedSlug = categorySlugForUrl(row.page.url, config.categories.url_pattern);
@@ -615,7 +849,17 @@ function categories(config: SiteConfig, rows: Parsed[], skus: JsonObject[], date
       try { parent = decodeURIComponent(parent); } catch { /* malformed segment stays encoded */ }
       parent = categorySlug(parent);
     }
-    result.set(slug, { slug, name: row.page.h1 ?? row.page.title ?? slug, url: row.page.url, parent, source: "url_rule", ...counts(slug), intro_text_words: row.page.word_count, last_seen: date });
+    result.set(slug, {
+      slug,
+      name: row.page.h1 ?? row.page.title ?? slug,
+      url: row.page.url,
+      parent,
+      source: "url_rule",
+      ...categoryMetadataFromRow(row),
+      ...counts(slug),
+      intro_text_words: row.page.word_count,
+      last_seen: date,
+    });
   }
   return [...result.values()].sort((a, b) => compareKeys(a.slug, b.slug));
 }
@@ -681,7 +925,7 @@ function wooCategories(config: SiteConfig, rows: Parsed[], skus: JsonObject[], s
   const stockBySku = new Map(stock.map((item) => [item.sku, item.stock_status]));
   const counts = (slug: string) => {
     const matched = skus.filter((item) => item.category === slug || (Array.isArray(item.categories) && item.categories.includes(slug)));
-    return { ...(skus.length ? { sku_count: matched.length,
+    return { ...(skus.length ? { ...categoryPriceAndHandles(matched), sku_count: matched.length,
       product_count: new Set(matched.map((item) => String(item.product_id ?? item.handle))).size } : {}),
       ...(skus.length && stock.length ? { in_stock_count: matched.filter((item) => stockBySku.get(item.sku) === "in_stock").length } : {}) };
   };
@@ -759,6 +1003,200 @@ function linkRows(rows: Parsed[], productUrls: ReadonlySet<string>, blog: BlogRe
   return [...result.values()];
 }
 
+const KEY_PAGE_PATTERNS: readonly [SiteKeyPageType, RegExp][] = [
+  ["shipping", /(?:^|\/)(?:shipping|delivery)(?:[-_]?policy|[-_]?info)?(?:\/|\.html?)?$/i],
+  ["returns", /(?:^|\/)(?:returns?|refunds?)(?:[-_]?policy)?(?:\/|\.html?)?$/i],
+  ["warranty", /(?:^|\/)(?:warranty|guarantee)(?:[-_]?policy)?(?:\/|\.html?)?$/i],
+  ["faq", /(?:^|\/)(?:faqs?|help|frequently-asked-questions)(?:\/|\.html?)?$/i],
+  ["about", /(?:^|\/)about(?:[-_]?us)?(?:\/|\.html?)?$/i],
+  ["contact", /(?:^|\/)contact(?:[-_]?us)?(?:\/|\.html?)?$/i],
+  ["privacy", /(?:^|\/)privacy(?:[-_]?policy)?(?:\/|\.html?)?$/i],
+  ["terms", /(?:^|\/)terms(?:[-_]?of[-_]?service|[-_]?and[-_]?conditions)?(?:\/|\.html?)?$/i],
+];
+
+const SOCIAL_DOMAINS: readonly [string, RegExp][] = [
+  ["facebook", /(?:^|\.)facebook\.com$/i],
+  ["instagram", /(?:^|\.)instagram\.com$/i],
+  ["youtube", /(?:^|\.)youtube\.com$/i],
+  ["tiktok", /(?:^|\.)tiktok\.com$/i],
+  ["pinterest", /(?:^|\.)pinterest\.com$/i],
+  ["x", /(?:^|\.)(?:x\.com|twitter\.com)$/i],
+  ["linkedin", /(?:^|\.)linkedin\.com$/i],
+];
+
+export function buildSiteTechProfile(config: SiteConfig, rows: readonly Parsed[], date: string): SiteTechProfile {
+  const keyPages: Partial<Record<SiteKeyPageType, string>> = {};
+  for (const row of rows) {
+    if (row.page.status_code >= 400) continue;
+    let pathname = "";
+    try { pathname = new URL(row.page.url).pathname; } catch { continue; }
+    for (const [kind, regex] of KEY_PAGE_PATTERNS) {
+      if (!keyPages[kind] && regex.test(pathname)) {
+        keyPages[kind] = row.page.url;
+      }
+    }
+  }
+  for (const [kind, configuredUrl] of Object.entries(config.policies?.key_pages ?? {}) as [SiteKeyPageType, string | undefined][]) {
+    const cleaned = configuredUrl ? cleanUrl(configuredUrl, config.base_url) : null;
+    if (cleaned) keyPages[kind] = cleaned;
+  }
+
+  const homeRow = rows.find((row) => row.page.page_type === "home") ?? rows[0];
+  const fullHomeText = homeRow ? text(homeRow.doc, new Set(["script", "style", "noscript", "template", "svg"])) : "";
+  const pageByUrl = new Map(rows.map((row) => [row.page.url, row]));
+
+  const extractPolicySentence = (pageUrl: string | undefined, pattern: RegExp): SitePolicyFact | null => {
+    const targetRow = pageUrl ? pageByUrl.get(pageUrl) : undefined;
+    if (targetRow) {
+      const matched = extractMatchingSentence(area(targetRow.doc), pattern, 200)
+        ?? extractFirstParagraphExcerpt(targetRow.doc, 200);
+      if (matched) return { value: matched, source: "extracted", source_url: targetRow.page.url };
+    }
+    if (homeRow && fullHomeText) {
+      const homeMatched = extractMatchingSentence(
+        homeRow.doc,
+        pattern,
+        200,
+      ) ?? clipText(fullHomeText.match(pattern)?.[0] ?? null, 200);
+      if (homeMatched) return { value: homeMatched, source: "extracted", source_url: homeRow.page.url };
+    }
+    return null;
+  };
+
+  const resolvePolicy = (
+    configured: string | null | undefined,
+    pageUrl: string | undefined,
+    pattern: RegExp,
+  ): SitePolicyFact | null => {
+    if (typeof configured === "string" && configured.trim()) {
+      return { value: configured.trim(), source: "config", source_url: null };
+    }
+    return extractPolicySentence(pageUrl, pattern);
+  };
+
+  const freeShippingThreshold = resolvePolicy(
+    config.policies?.free_shipping_threshold,
+    keyPages.shipping,
+    /[^.!?。！？]*free\s+(?:standard\s+)?shipping\s+(?:on\s+(?:all\s+)?orders?\s+(?:over|above)\s+[$€£¥]?\s*\d+(?:\.\d+)?|[^.!?。！？]{0,60})[^.!?。！？]*/i,
+  );
+  const shippingSummary = resolvePolicy(
+    config.policies?.shipping_summary,
+    keyPages.shipping,
+    /[^.!?。！？]*(?:free\s+shipping|orders?\s+ship\s+within|shipping\s+takes|delivery\s+within)[^.!?。！？]*/i,
+  );
+  const returnSummary = resolvePolicy(
+    config.policies?.return_summary,
+    keyPages.returns,
+    /[^.!?。！？]*(?:\d+[-\s]day\s+(?:free\s+)?(?:returns?|money[-\s]back|refund)|hassle[-\s]free\s+returns?)[^.!?。！？]*/i,
+  );
+  const warrantySummary = resolvePolicy(
+    config.policies?.warranty_summary,
+    keyPages.warranty,
+    /[^.!?。！？]*(?:(?:\d+[-\s]year|lifetime)\s+(?:limited\s+)?warranty|satisfaction\s+guarantee)[^.!?。！？]*/i,
+  );
+
+  let extractedEmail: SitePolicyFact | null = null;
+  let extractedPhone: SitePolicyFact | null = null;
+  const socialLinks: Record<string, string> = {};
+
+  const scanCandidateDocs = [homeRow, keyPages.contact ? pageByUrl.get(keyPages.contact) : undefined, keyPages.about ? pageByUrl.get(keyPages.about) : undefined]
+    .filter((item): item is Parsed => Boolean(item));
+
+  for (const candidate of scanCandidateDocs) {
+    for (const item of jsonLd(candidate.doc)) {
+      if (typeof item.email === "string" && item.email.trim() && !extractedEmail) {
+        extractedEmail = { value: item.email.replace(/^mailto:/i, "").trim(), source: "extracted", source_url: candidate.page.url };
+      }
+      if (typeof item.telephone === "string" && item.telephone.trim() && !extractedPhone) {
+        extractedPhone = { value: item.telephone.replace(/^tel:/i, "").trim(), source: "extracted", source_url: candidate.page.url };
+      }
+      for (const cp of asObjects(item.contactPoint)) {
+        if (typeof cp.email === "string" && cp.email.trim() && !extractedEmail) {
+          extractedEmail = { value: cp.email.replace(/^mailto:/i, "").trim(), source: "extracted", source_url: candidate.page.url };
+        }
+        if (typeof cp.telephone === "string" && cp.telephone.trim() && !extractedPhone) {
+          extractedPhone = { value: cp.telephone.replace(/^tel:/i, "").trim(), source: "extracted", source_url: candidate.page.url };
+        }
+      }
+      for (const sameAs of asList(item.sameAs)) {
+        if (typeof sameAs !== "string") continue;
+        const cleaned = cleanUrl(sameAs);
+        if (!cleaned) continue;
+        try {
+          const host = new URL(cleaned).hostname;
+          const matchedSocial = SOCIAL_DOMAINS.find(([, regex]) => regex.test(host));
+          if (matchedSocial && !socialLinks[matchedSocial[0]]) {
+            socialLinks[matchedSocial[0]] = cleaned;
+          }
+        } catch { /* ignore invalid URL */ }
+      }
+    }
+
+    for (const anchor of walk(candidate.doc, (n) => n.name === "a")) {
+      const href = attr(anchor, "href");
+      if (!href) continue;
+      if (/^mailto:/i.test(href) && !extractedEmail) {
+        const email = href.replace(/^mailto:/i, "").split("?")[0]?.trim();
+        if (email) extractedEmail = { value: email, source: "extracted", source_url: candidate.page.url };
+      } else if (/^tel:/i.test(href) && !extractedPhone) {
+        const phone = href.replace(/^tel:/i, "").split("?")[0]?.trim();
+        if (phone) extractedPhone = { value: phone, source: "extracted", source_url: candidate.page.url };
+      } else {
+        const cleaned = cleanUrl(href, candidate.page.url);
+        if (!cleaned) continue;
+        try {
+          const host = new URL(cleaned).hostname;
+          const matchedSocial = SOCIAL_DOMAINS.find(([, regex]) => regex.test(host));
+          if (matchedSocial && !socialLinks[matchedSocial[0]]) {
+            socialLinks[matchedSocial[0]] = cleaned;
+          }
+        } catch { /* ignore invalid URL */ }
+      }
+    }
+  }
+
+  for (const [platformKey, urlValue] of Object.entries(config.policies?.social_links ?? {})) {
+    const cleaned = cleanUrl(urlValue);
+    if (cleaned) socialLinks[platformKey.toLowerCase()] = cleaned;
+  }
+  const sortedSocial: Record<string, string> = {};
+  for (const key of Object.keys(socialLinks).sort(compareKeys)) {
+    sortedSocial[key] = socialLinks[key]!;
+  }
+
+  const emailFact: SitePolicyFact | null = config.policies?.support_email?.trim()
+    ? { value: config.policies.support_email.trim(), source: "config", source_url: null }
+    : extractedEmail;
+  const phoneFact: SitePolicyFact | null = config.policies?.support_phone?.trim()
+    ? { value: config.policies.support_phone.trim(), source: "config", source_url: null }
+    : extractedPhone;
+
+  const trustBadges = [
+    freeShippingThreshold?.value,
+    returnSummary?.value,
+    warrantySummary?.value,
+  ].filter((val): val is string => Boolean(val));
+
+  return {
+    platform: config.platform,
+    frontend: null,
+    key_pages: keyPages,
+    policies: {
+      ...(freeShippingThreshold ? { free_shipping_threshold: freeShippingThreshold } : {}),
+      ...(shippingSummary ? { shipping_summary: shippingSummary } : {}),
+      ...(returnSummary ? { return_summary: returnSummary } : {}),
+      ...(warrantySummary ? { warranty_summary: warrantySummary } : {}),
+    },
+    contact: {
+      ...(emailFact ? { email: emailFact } : {}),
+      ...(phoneFact ? { phone: phoneFact } : {}),
+    },
+    social_links: sortedSocial,
+    trust_badges: [...new Set(trustBadges)],
+    updated_at: date,
+  };
+}
+
 export async function runWeekly(projectPath: string, config: SiteConfig, options: WeeklyOptions = {}): Promise<WeeklyResult> {
   const paths = pathsFor(await resolveProjectLayoutOrLegacy(projectPath));
   const date = options.date ?? new Date().toISOString().slice(0, 10);
@@ -813,6 +1251,12 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
       : categories(config, rows, skuRows, date);
     if (!data.length) errors.push("categories 结果为空，未覆盖现有数据。");
     else { await atomicWrite(path.join(projectPath, paths.categories), JSON.stringify(data, null, 2) + "\n"); counts.categories = data.length; }
+  }
+  if (!options.only && rows.length > 0) {
+    const techProfile = buildSiteTechProfile(config, rows, date);
+    const techPath = path.join(projectPath, paths.tech);
+    await mkdir(path.dirname(techPath), { recursive: true });
+    await atomicWrite(techPath, JSON.stringify(techProfile, null, 2) + "\n");
   }
   const failed = crawlResult.attempts > 0 && errors.filter((error) => !error.endsWith("结果为空，未覆盖现有数据。")).length / Math.max(1, denominator) > 0.2;
   if (failed && !counts.categories) return { status: "failed", counts: {}, errors };

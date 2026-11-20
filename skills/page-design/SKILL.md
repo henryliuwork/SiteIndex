@@ -16,7 +16,7 @@ writes: []
 
 ## 读哪些数据
 
-读取 index/design/tokens.json 中颜色、字体、字号、间距、圆角、阴影与组件规范；读取 index/design/brand.md 和 index/design/screenshots/ 了解已有视觉风格。涉及产品时读取 index/views/products.jsonl，图像、价格、链接只引用对应数据字段。检查 extracted_at；超过 60 天时提醒用户规范可能过期。
+先读 `index/design/brand.md`（含品牌定位、色彩角色置信度表、字号阶梯、按钮三态规范与 **EDM 邮件安全内联样式速查**）与 `index/design/tokens.json`；查看 `index/design/screenshots/` 了解首页、分类页与产品页已有视觉风格。涉及产品时直接读取 `index/views/products.jsonl`（已合入 `short_description`、`highlights` 核心卖点、`specs` 规格与图片/价格/链接），涉及全站免邮/退换/保修等信任背书时读取 `index/site/tech.json` 或 `index/context-brief.md`。检查 `extracted_at`；超过 60 天时提醒用户规范可能过期。
 
 ## 如何筛选判断
 

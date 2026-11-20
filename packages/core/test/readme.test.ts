@@ -174,4 +174,42 @@ describe("README automatic blocks", () => {
     await api.projects.updateConfig("fixture", { brand: { ...before.config.brand, tagline: "workspace" } });
     expect((await api.projects.get("fixture")).config.brand.tagline).toBe("workspace");
   }, 15_000);
+
+  it("generates context-brief.md with read-only workspace asset inventory, category price bands and policies", async () => {
+    const projectPath = await makeProject("workspace");
+    const paths = pathsFor("workspace");
+    const sitePath = path.join(projectPath, paths.site);
+    const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
+    site.workspace = { version: "1.0", sections: ["01-brand", "04-edm", "07-reports"], esp_presets: ["mailchimp"] };
+    site.policies = { free_shipping_threshold: "Free shipping over $49", return_summary: "30-day free returns" };
+    await writeFile(sitePath, JSON.stringify(site, null, 2), "utf8");
+    await writeFile(path.join(projectPath, paths.index, "workspace.json"), JSON.stringify({
+      version: "1.0",
+      layout: "workspace",
+      sections: [{ id: "brand", dir: "01-brand" }, { id: "edm", dir: "04-edm" }, { id: "reports", dir: "07-reports" }],
+      paths: { "brand.facts": "01-brand" },
+      esp_presets: ["mailchimp"],
+    }), "utf8");
+    await mkdir(path.join(projectPath, "01-brand", "sops"), { recursive: true });
+    await mkdir(path.join(projectPath, "_outputs"), { recursive: true });
+    await writeFile(path.join(projectPath, "01-brand", "sops", "voice-guide.md"), "# Brand Voice SOP\n\nKeep sentences concise.\n", "utf8");
+    await writeFile(path.join(projectPath, "_outputs", "2026-10-21-fall-edm.draft.md"), "# Fall Birding Campaign Draft\n", "utf8");
+
+    const api = service(projectPath);
+    await api.readme.refresh("fixture");
+
+    const brief = await readFile(path.join(projectPath, paths.contextBrief), "utf8");
+    expect(brief).toContain("<!-- siteindex:generated:context-brief:v1 -->");
+    expect(brief).toContain("## 1. 站点与品牌核心档案");
+    expect(brief).toContain("Free shipping over $49 _[配置]_");
+    expect(brief).toContain("30-day free returns _[配置]_");
+    expect(brief).toContain("## 3. 工作区现有资产与待审清单（只读目录索引）");
+    expect(brief).toContain("`_outputs/2026-10-21-fall-edm.draft.md`");
+    expect(brief).toContain("Fall Birding Campaign Draft");
+    expect(brief).toContain("`01-brand/sops/voice-guide.md`");
+    expect(brief).toContain("Brand Voice SOP");
+    expect(brief).toContain("## 4. 全站分类目录、价格带与导语摘要");
+    expect(brief).toContain("## 5. 主推与代表性在售商品速查");
+    expect(brief).toContain("## 6. 近期 EDM 活动与推品冷却期");
+  }, 15_000);
 });
