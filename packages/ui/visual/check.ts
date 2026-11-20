@@ -289,7 +289,9 @@ async function inspectPage(page: Page): Promise<{
   metrics: Record<string, unknown>;
   timeWarnings: string[];
 }> {
-  return page.evaluate((timePattern) => {
+  return page.evaluate(async (timePattern) => {
+    // Force the packaged fallback to load even where a system Chinese font wins the stack.
+    await document.fonts.load('12px "Source Han Sans SC"', "中文");
     const root = document.scrollingElement ?? document.documentElement;
     const bodyStyle = getComputedStyle(document.body);
     const firstFont = bodyStyle.fontFamily.split(",")[0]?.trim().replace(/^['"]|['"]$/g, "") ?? "";
@@ -724,7 +726,7 @@ async function main(): Promise<void> {
           if (values.verticalOverflow) failures.push({ rule: "vertical-overflow", message: "窗口 document 有纵向滚动；内容应在应用内部滚动。" });
           if (values.horizontalOverflow) failures.push({ rule: "horizontal-overflow", message: "页面内容超出视口宽度。" });
           if (values.bodyFontSize !== "12px" || !values.bodyFirstFontIsGeist || !values.geistFontLoaded || !values.sourceHanFontLoaded) {
-            failures.push({ rule: "body-font", message: `正文要求本地 Geist Variable / Source Han Sans SC 12px，实际为 ${values.bodyFontFamily ?? "unknown"} / ${values.bodyFontSize ?? "unknown"}，字体加载=${values.geistFontLoaded ?? false}/${values.sourceHanFontLoaded ?? false}。` });
+            failures.push({ rule: "body-font", message: `正文要求 Geist Variable 12px 且随包 Source Han Sans SC 可离线加载，实际为 ${values.bodyFontFamily ?? "unknown"} / ${values.bodyFontSize ?? "unknown"}，字体加载=${values.geistFontLoaded ?? false}/${values.sourceHanFontLoaded ?? false}。` });
           }
           if (values.sharedTypographyElements.length) failures.push({ rule: "shared-min-font-size", message: `共享控件存在小于 10px 的文字：${values.sharedTypographyElements.join("；")}` });
           if (values.clippedHeaderActions.length) failures.push({ rule: "project-header-actions", message: `页头操作按钮未完整显示：${values.clippedHeaderActions.join("；")}` });
