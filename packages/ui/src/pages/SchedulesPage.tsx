@@ -5,7 +5,7 @@ import { RefreshCw } from "lucide-react";
 import type { ProjectSummary, RunLog, ScheduleState, SystemTaskRow } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, DataTable, EmptyState, formatDateTime, Notice, PageHeader, Select, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, DataTable, EmptyState, formatDateTime, Notice, PageFrame, PageHeader, Select, useToast } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./schedules/page.css";
 
@@ -101,8 +101,18 @@ function SystemTaskConsistency(task: SystemTaskRow) {
   return { label: "无关联配置", tone: "neutral" as const };
 }
 
+function TaskPager({ index, count, onChange, label }: { index: number; count: number; onChange: (index: number) => void; label: string }) {
+  if (count <= 1) return null;
+  return <div className="si-schedule-task-pager">
+    <span aria-live="polite">{label} {index + 1} / {count}</span>
+    <Button size="small" disabled={index === 0} onClick={() => onChange(index - 1)}>上一条</Button>
+    <Button size="small" disabled={index >= count - 1} onClick={() => onChange(index + 1)}>下一条</Button>
+  </div>;
+}
+
 function SystemTasksSection({ projects }: { projects: ProjectSummary[] }) {
   const toast = useToast();
+  const [taskIndex, setTaskIndex] = useState(0);
   const tasksQuery = useQuery({
     queryKey: ["schedule", "system-tasks"],
     queryFn: () => api.schedule.listSystemTasks!(),
@@ -115,6 +125,8 @@ function SystemTasksSection({ projects }: { projects: ProjectSummary[] }) {
   };
   if (typeof api.schedule.listSystemTasks !== "function") return null;
   const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+  const tasks = tasksQuery.data ?? [];
+  const visibleIndex = Math.min(taskIndex, Math.max(0, tasks.length - 1));
 
   return <Card className="si-system-tasks" label="系统计划任务">
     <div className="si-system-tasks-heading">
@@ -123,7 +135,7 @@ function SystemTasksSection({ projects }: { projects: ProjectSummary[] }) {
     </div>
     {tasksQuery.isLoading ? <p className="si-schedules-state" role="status">正在读取系统计划任务…</p>
       : tasksQuery.isError ? <ApiErrorNotice label="系统计划任务加载失败。" error={tasksQuery.error} onRetry={() => void tasksQuery.refetch()} />
-        : tasksQuery.data?.length ? <ul className="si-system-task-list">{tasksQuery.data.map((task) => {
+        : tasks.length ? <><ul className="si-system-task-list">{tasks.slice(visibleIndex, visibleIndex + 1).map((task) => {
           const status = SystemTaskStatus(task);
           const consistency = SystemTaskConsistency(task);
           const projectName = task.projectId ? projectNames.get(task.projectId) ?? task.projectId : "未登记项目";
@@ -138,7 +150,7 @@ function SystemTasksSection({ projects }: { projects: ProjectSummary[] }) {
               {task.differences.length > 0 ? <ul>{task.differences.map((difference, index) => <li key={`${task.taskName}-difference-${index}`}>{difference}</li>)}</ul> : task.configMatches === false ? <small>接口未返回差异说明。</small> : null}
             </div>
           </li>;
-        })}</ul> : <EmptyState title="没有系统计划任务">系统计划任务列表为空。</EmptyState>}
+        })}</ul><TaskPager index={visibleIndex} count={tasks.length} onChange={setTaskIndex} label="系统任务" /></> : <EmptyState title="没有系统计划任务">系统计划任务列表为空。</EmptyState>}
   </Card>;
 }
 
@@ -147,6 +159,7 @@ function OrphanScheduleTasks() {
   const toast = useToast();
   const [cleaningTask, setCleaningTask] = useState<string | null>(null);
   const [cleanupError, setCleanupError] = useState("");
+  const [taskIndex, setTaskIndex] = useState(0);
   const orphansQuery = useQuery({
     queryKey: ["schedule", "orphans"],
     queryFn: () => api.schedule.listOrphans!(),
@@ -174,16 +187,18 @@ function OrphanScheduleTasks() {
     }
   };
 
+  const tasks = orphansQuery.data ?? [];
+  const visibleIndex = Math.min(taskIndex, Math.max(0, tasks.length - 1));
   return <Card className="si-orphan-schedules" label="孤立任务">
     <div className="si-orphan-schedules-heading"><div><h2>孤立任务</h2><p>这些系统计划任务指向已不存在的项目目录。</p></div></div>
     {cleanupError && <Notice tone="error" className="si-schedule-cleanup-error">{cleanupError}</Notice>}
     {orphansQuery.isLoading ? <p className="si-schedules-state" role="status">正在读取孤立任务…</p>
       : orphansQuery.isError ? <ApiErrorNotice label="孤立任务加载失败。" error={orphansQuery.error} onRetry={() => void orphansQuery.refetch()} />
-        : (orphansQuery.data?.length ?? 0) === 0 ? <EmptyState title="没有孤立任务">当前没有指向已删除项目目录的计划任务。</EmptyState>
-          : <ul className="si-orphan-schedule-list">{orphansQuery.data!.map((task) => <li key={task.taskName}>
+        : tasks.length === 0 ? <EmptyState title="没有孤立任务">当前没有指向已删除项目目录的计划任务。</EmptyState>
+          : <><ul className="si-orphan-schedule-list">{tasks.slice(visibleIndex, visibleIndex + 1).map((task) => <li key={task.taskName}>
             <div><strong>{task.taskName}</strong><code>{task.path}</code><span>{task.reason}</span></div>
             {api.schedule.removeOrphan && <Button size="small" disabled={cleaningTask !== null} onClick={() => void cleanTask(task.taskName)}>{cleaningTask === task.taskName ? "清理中…" : "清理"}</Button>}
-          </li>)}</ul>}
+          </li>)}</ul><TaskPager index={visibleIndex} count={tasks.length} onChange={setTaskIndex} label="孤立任务" /></>}
   </Card>;
 }
 
@@ -194,6 +209,7 @@ export function SchedulesPage() {
   const [selectedProject, setSelectedProject] = useState("all");
   const [query, setQuery] = useState({ page: 1, pageSize: 50 });
   const [verificationByProject, setVerificationByProject] = useState<Record<string, ScheduleVerificationUiState>>({});
+  const [openUtility, setOpenUtility] = useState<"system" | "orphans" | null>(null);
   const projectsQuery = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const projects = projectsQuery.data ?? [];
   const scheduleQueries = useQueries({ queries: projects.map((project) => ({
@@ -272,9 +288,16 @@ export function SchedulesPage() {
   ];
 
   const openProjectRuns = (row: ScheduleProjectRow) => navigate(`/p/${row.project.id}/runs`);
-  return <div className="si-page si-schedules-page">
-    <PageHeader title="定时任务" meta={mode ? `当前模式：${mode}` : undefined} />
+  const hasSystemTasks = typeof api.schedule.listSystemTasks === "function";
+  const hasOrphans = typeof api.schedule.listOrphans === "function";
+  return <PageFrame kind="global" scroll="table" header={<PageHeader title="定时任务" meta={mode ? `当前模式：${mode}` : undefined} actions={<>
+    {hasSystemTasks && <Button aria-controls="si-schedule-system-panel" aria-expanded={openUtility === "system"} onClick={() => setOpenUtility((current) => current === "system" ? null : "system")}>系统计划任务</Button>}
+    {hasOrphans && <Button aria-controls="si-schedule-orphans-panel" aria-expanded={openUtility === "orphans"} onClick={() => setOpenUtility((current) => current === "orphans" ? null : "orphans")}>孤立任务</Button>}
+  </>} />}>
+    <div className="si-page si-schedules-page">
     {runtimeStatusQuery.isError && <Notice tone="error" title="计划任务运行模式读取失败。">{apiErrorMessage(runtimeStatusQuery.error, "请稍后重试。")}</Notice>}
+    {hasSystemTasks && <section id="si-schedule-system-panel" className="si-schedule-utility" hidden={openUtility !== "system"} aria-label="系统计划任务列表">{openUtility === "system" && <SystemTasksSection projects={projects} />}</section>}
+    {hasOrphans && <section id="si-schedule-orphans-panel" className="si-schedule-utility" hidden={openUtility !== "orphans"} aria-label="孤立任务列表">{openUtility === "orphans" && <OrphanScheduleTasks />}</section>}
     {projectsQuery.isLoading ? <EmptyState title="正在加载项目计划…">正在读取项目及其计划配置。</EmptyState>
       : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />
         : projects.length === 0 ? <EmptyState title="还没有项目">添加项目后会在这里汇总计划任务。</EmptyState>
@@ -293,7 +316,6 @@ export function SchedulesPage() {
             emptyTitle="没有找到所选项目"
             emptyDescription="请选择其他项目，或改为查看全部项目。"
           />}
-    <SystemTasksSection projects={projects} />
-    {typeof api.schedule.listOrphans === "function" && <OrphanScheduleTasks />}
-  </div>;
+    </div>
+  </PageFrame>;
 }

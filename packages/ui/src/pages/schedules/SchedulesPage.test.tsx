@@ -144,13 +144,15 @@ describe("SchedulesPage", () => {
 
   it("lists orphaned system tasks and cleans them up", async () => {
     const { removeOrphanSpy } = await renderSchedules();
+    fireEvent.click(screen.getByRole("button", { name: /^孤立任务$/ }));
     const region = await screen.findByRole("region", { name: "孤立任务" });
-    const systemTaskRegion = await screen.findByRole("region", { name: "系统计划任务" });
     expect(await within(region).findByText("SiteIndex-demo-orphan")).toBeTruthy();
 
     fireEvent.click(within(region).getByRole("button", { name: "清理" }));
 
     expect(await within(region).findByText("没有孤立任务")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^系统计划任务$/, expanded: false }));
+    const systemTaskRegion = await screen.findByRole("region", { name: "系统计划任务" });
     await waitFor(() => expect(within(systemTaskRegion).queryByText("SiteIndex-demo-orphan")).toBeNull());
     if (!removeOrphanSpy) throw new Error("orphan removal mock is missing");
     expect(removeOrphanSpy).toHaveBeenCalledWith("SiteIndex-demo-orphan");
@@ -161,6 +163,7 @@ describe("SchedulesPage", () => {
     await renderSchedules({ failProjectList: true });
 
     expect(await screen.findByText("项目列表加载失败。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^孤立任务$/ }));
     const region = await screen.findByRole("region", { name: "孤立任务" });
     expect(await within(region).findByText("SiteIndex-demo-orphan")).toBeTruthy();
   });
@@ -177,6 +180,13 @@ describe("SchedulesPage", () => {
 
   it("shows read-only system task state, next run, configuration differences, and refresh", async () => {
     const { listSystemTasksSpy } = await renderSchedules();
+    const toggle = screen.getByRole("button", { name: /^系统计划任务$/, expanded: false });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe("si-schedule-system-panel");
+    toggle.focus();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(toggle);
     const region = await screen.findByRole("region", { name: "系统计划任务" });
 
     expect(await within(region).findByText("SiteIndex-demo-daily")).toBeTruthy();
@@ -188,10 +198,14 @@ describe("SchedulesPage", () => {
 
     fireEvent.click(within(region).getByRole("button", { name: "刷新" }));
     await waitFor(() => expect(listSystemTasksSpy).toHaveBeenCalledTimes(2));
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("region", { name: "系统计划任务" })).toBeNull();
   });
 
   it("hides the cleanup button when optional orphan removal is unavailable", async () => {
     await renderSchedules({ withoutOrphanRemoval: true });
+    fireEvent.click(screen.getByRole("button", { name: /^孤立任务$/ }));
     const region = await screen.findByRole("region", { name: "孤立任务" });
     expect(await within(region).findByText("SiteIndex-demo-orphan")).toBeTruthy();
     expect(within(region).queryByRole("button", { name: "清理" })).toBeNull();
