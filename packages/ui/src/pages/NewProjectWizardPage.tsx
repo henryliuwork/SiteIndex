@@ -5,7 +5,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { INIT_STEPS, type DetectResult, type FeedInspectResult, type InitStepKey, type JobResult, type Platform } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, EmptyState, InfoTooltip, Input, InputWithAction, Notice, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, EmptyState, InfoTooltip, Input, InputWithAction, Notice, PageFrame, PageHeader, useToast } from "../components";
 import { useWizardDraft } from "./wizard-state";
 import { applyInitProgress, applyInitResult, finalInitProgressPercent, getInitCompletionStatus, nextInitProgressPercent, scheduleRetryFailure, unresolvedInitErrors, type InitStepState, type InitStepStates } from "./new-project/init-state";
 import { findExistingProject, type ExistingProject } from "./new-project/duplicate-check";
@@ -135,7 +135,11 @@ export function NewProjectWizardPage() {
   const projectRoot = draft.projectsRoot || settings.data?.projects_root || "";
   const targetWorkspacePath = workspacePathJoin(projectRoot, draft.folderName);
 
-  useEffect(() => { setError(""); setFeedError(""); setCanRetryFeed(false); }, [pathname]);
+  useEffect(() => {
+    setError(""); setFeedError(""); setCanRetryFeed(false);
+    const frameBody = document.querySelector<HTMLElement>(".si-page-frame-body");
+    if (frameBody) frameBody.scrollTop = 0;
+  }, [pathname]);
   useEffect(() => {
     if (settings.data?.projects_root && !draft.projectsRoot) update({ projectsRoot: settings.data.projects_root });
   }, [settings.data, draft.projectsRoot, update]);
@@ -365,8 +369,7 @@ export function NewProjectWizardPage() {
     ? remainingErrors.join("；") || (INIT_STEPS.some((key) => stateFor(key).status === "failed") ? "" : finished?.summary || "初始化未完成。")
     : completionStatus === "incomplete" ? finished?.errors?.join("；") || finished?.summary || "未收到全部步骤的完成结果。" : "";
 
-  return <div className="si-page si-wizard-page">
-    <PageHeader title="新建项目" />
+  return <PageFrame kind="global" scroll="content" header={<PageHeader title="新建项目" />}><div className="si-page si-wizard-page">
     <WizardSteps active={active} steps={steps} />
     {activeStepKey === "brand" && workspaceCapabilities.explainWizardUnavailable && <Notice tone="info" title="Agent 工作区暂不可用">桌面端尚未接入工作区检查和创建操作；仍可继续创建并初始化 SiteIndex 项目。</Notice>}
 
@@ -505,6 +508,6 @@ export function NewProjectWizardPage() {
       </section>
       <section className="si-wizard-card si-wizard-tree-card"><h2>已生成的项目文件</h2><code className="si-mono">{draft.created.path ?? "实际项目路径暂不可用"}</code><pre>{draft.folderName + "/\n├── README.md        项目说明\n├── AGENTS.md / CLAUDE.md\n├── _agent/skills/   内置 skill\n└── index/           网站数据（SiteIndex 维护）\n    ├── site.json\n    ├── catalog/  inventory/  seo/\n    ├── content/  ledgers/  design/\n    └── views/ reports/ logs/"}</pre></section>
     </div>}
-  </div>;
+  </div></PageFrame>;
 }
 import "./new-project/page.css";
