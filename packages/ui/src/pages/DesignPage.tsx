@@ -46,6 +46,19 @@ function projectArtifactPath(projectRoot: string, relativePath: string): string 
 const displayValue = (value: string | number | null | undefined): string =>
   value === null || value === undefined || value === "" ? "未识别" : String(value);
 
+function colorFormats(value: string): { hex: string; rgb: string } | null {
+  const hexMatch = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(value.trim());
+  const rgbMatch = /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i.exec(value.trim());
+  const rawHex = hexMatch?.[1];
+  if (!rawHex && !rgbMatch) return null;
+  const expandedHex = rawHex?.length === 3 ? [...rawHex].map((digit) => digit + digit).join("") : rawHex;
+  const channels = expandedHex
+    ? [0, 2, 4].map((offset) => parseInt(expandedHex.slice(offset, offset + 2), 16))
+    : rgbMatch!.slice(1).map(Number);
+  if (channels.some((channel) => channel > 255)) return null;
+  return { hex: `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase()}`, rgb: `rgb(${channels.join(", ")})` };
+}
+
 function ColorRolesCard({ tokens, onCopy, copied }: { tokens: DesignTokens | null; onCopy: (value: string) => void; copied: string }) {
   const roles = tokens?.color.roles;
   return (
@@ -54,17 +67,27 @@ function ColorRolesCard({ tokens, onCopy, copied }: { tokens: DesignTokens | nul
       {roles ? <div className="si-design-role-grid">
         {colorRoles.map(({ key, label }) => {
           const role = roles[key];
+          const formats = role ? colorFormats(role.value) : null;
           return <article className="si-design-role" key={key}>
             <div className="si-design-role-swatch" aria-hidden="true" style={role ? { backgroundColor: role.value } : undefined} />
             <div className="si-design-role-content">
               <strong>{label}</strong>
-              <span className="si-design-role-value">{role?.value ?? "未识别"}</span>
+              {role ? <div className="si-design-role-formats">
+                <span className="si-design-role-value">HEX {formats?.hex ?? "未识别"}</span>
+                <span className="si-design-role-value">RGB {formats?.rgb ?? "未识别"}</span>
+              </div> : <span className="si-design-role-value">未识别</span>}
               {role ? <>
+                {!formats && <span className="si-design-role-meta">原值：{role.value}</span>}
                 <span className="si-design-role-meta">来源：<code>{role.source || "未提供"}</code></span>
                 <span className="si-design-role-meta">置信度：{Math.round(role.confidence * 100)}%</span>
-                <Button variant="ghost" size="small" className="si-design-copy-color" onClick={() => onCopy(role.value)}>
-                  {copied === role.value ? "已复制" : "复制色值"}<Copy size={12} aria-hidden="true" />
-                </Button>
+                {formats && <div className="si-design-copy-actions">
+                  <Button variant="ghost" size="small" className="si-design-copy-color" onClick={() => onCopy(formats.hex)}>
+                    {copied === formats.hex ? "已复制 HEX" : "复制 HEX"}<Copy size={12} aria-hidden="true" />
+                  </Button>
+                  <Button variant="ghost" size="small" className="si-design-copy-color" onClick={() => onCopy(formats.rgb)}>
+                    {copied === formats.rgb ? "已复制 RGB" : "复制 RGB"}<Copy size={12} aria-hidden="true" />
+                  </Button>
+                </div>}
               </> : <span className="si-design-role-meta">当前页面未识别此颜色角色。</span>}
             </div>
           </article>;
@@ -124,7 +147,7 @@ function ButtonsCard({ tokens }: { tokens: DesignTokens | null }) {
         {buttonVariants.map(({ key, label, sample }) => {
           const button = buttons[key];
           if (!button) return <article className="si-design-button-variant" key={key}>
-            <h3>{label}</h3><EmptyState title="未识别此按钮变体">Core 没有返回可用的样式数据。</EmptyState>
+            <div className="si-design-button-heading"><h3>{label}</h3><span className="si-design-button-missing">未识别此按钮变体</span></div>
           </article>;
           const hasVisualStyle = [button.background, button.text_color, button.border]
             .some((value) => typeof value === "string" && value.trim().length > 0);
@@ -145,9 +168,10 @@ function ButtonsCard({ tokens }: { tokens: DesignTokens | null }) {
           return <article className="si-design-button-variant" key={key}>
             <div className="si-design-button-heading">
               <h3>{label}</h3>
-              {hasVisualStyle && <span className="si-design-button-sample" style={previewStyle}>{sample}</span>}
+              {hasVisualStyle
+                ? <span className="si-design-button-sample" style={previewStyle}>{sample}</span>
+                : <span className="si-design-button-missing">未识别此按钮变体</span>}
             </div>
-            {!hasVisualStyle && <EmptyState title="未识别此按钮变体">Core 未返回背景、文字颜色或边框，无法绘制可靠预览。</EmptyState>}
             <dl className="si-design-button-properties">
               {properties.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{displayValue(value)}</dd></div>)}
             </dl>
