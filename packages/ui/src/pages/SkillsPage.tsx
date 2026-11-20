@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Check, Copy, RefreshCw } from "lucide-react";
 import type { SkillInfo, SkillTargetStatus } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Card, Chip, EmptyState, InfoTooltip, Notice, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, EmptyState, InfoTooltip, Notice, PageFrame, PageHeader, useToast } from "../components";
 import "./skills/page.css";
 
 function statusLabel(status: SkillTargetStatus["status"], localNewer = false): string {
@@ -94,9 +94,10 @@ export function SkillsPage() {
     }
   };
 
-  if (skillsQuery.isLoading) return <div className="si-page-loading" role="status">正在加载 Skill…</div>;
-  if (skillsQuery.isError) return <ApiErrorNotice page label="Skill 列表加载失败。" error={skillsQuery.error} onRetry={() => void skillsQuery.refetch()} />;
-  if (!skillsQuery.data?.length) return <EmptyState title="当前没有可用的 Skill" action={<Button onClick={() => void skillsQuery.refetch()}>重新检查</Button>}>检查软件 Skill 清单或安装目录后重试。</EmptyState>;
+  const stateHeader = <PageHeader title="Skill 中心" />;
+  if (skillsQuery.isLoading) return <PageFrame kind="global" scroll="content" header={stateHeader}><div className="si-page-loading" role="status">正在加载 Skill…</div></PageFrame>;
+  if (skillsQuery.isError) return <PageFrame kind="global" scroll="content" header={stateHeader}><ApiErrorNotice page label="Skill 列表加载失败。" error={skillsQuery.error} onRetry={() => void skillsQuery.refetch()} /></PageFrame>;
+  if (!skillsQuery.data?.length) return <PageFrame kind="global" scroll="content" header={stateHeader}><EmptyState title="当前没有可用的 Skill" action={<Button onClick={() => void skillsQuery.refetch()}>重新检查</Button>}>检查软件 Skill 清单或安装目录后重试。</EmptyState></PageFrame>;
 
   const detail = detailQuery.data;
   const installText = detail && !activeSkill?.retired
@@ -105,10 +106,10 @@ export function SkillsPage() {
   const isRetired = Boolean(activeSkill?.retired || detail?.info.retired);
 
   return (
-    <div className="si-page si-skills-page">
-      <PageHeader title="Skill 中心" meta={<>内置 {skillsQuery.data.length} 个 · {skillsQuery.data.filter((skill) => skill.has_update).length} 个待同步</>} actions={<Button variant="primary" disabled={syncing} icon={syncing ? <RefreshCw size={15} className="si-skills-spin" /> : undefined} onClick={() => void handleSyncAll()}>
+    <PageFrame kind="global" scroll="content" header={<PageHeader title="Skill 中心" meta={<>内置 {skillsQuery.data.length} 个 · {skillsQuery.data.filter((skill) => skill.has_update).length} 个待同步</>} actions={<Button variant="primary" disabled={syncing} icon={syncing ? <RefreshCw size={15} className="si-skills-spin" /> : undefined} onClick={() => void handleSyncAll()}>
           {syncing ? "同步中…" : "同步到所有项目"}
-        </Button>} />
+        </Button>} />}>
+    <div className="si-page si-skills-page">
 
       <div className="si-skills-layout">
         <Card className="si-skills-list" label="Skill 列表">
@@ -162,5 +163,6 @@ export function SkillsPage() {
         </div>
       </div>
     </div>
+    </PageFrame>
   );
 }

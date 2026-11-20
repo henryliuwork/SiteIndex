@@ -18,7 +18,6 @@
     "project-settings-files": "project",
     "project-todos": "project",
     "readme": "project",
-    "schedules": "global",
-    "skills": "global"
+    "schedules": "global"
   }
 }

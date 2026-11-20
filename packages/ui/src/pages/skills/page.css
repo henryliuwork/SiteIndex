@@ -1,4 +1,5 @@
-.si-skills-page { gap:var(--space-5); }
+.si-page-frame .si-skills-page { padding: 0; gap:var(--space-5); }
+.si-page-frame:has(.si-skills-page) .si-page-header-copy { display: flex; align-items: center; gap: var(--space-3); }
 .si-skills-layout { display: grid; grid-template-columns: minmax(285px, .9fr) minmax(0, 2.1fr); align-items: start; gap:var(--space-5); }
 .si-skills-list { display: grid; gap:var(--space-1); padding:var(--space-2); }
 .si-skill-choice { display: grid; width: 100%; min-height: 62px; gap:var(--space-1); padding:var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--color-ink); font: inherit; text-align: left; cursor: pointer; }
