@@ -62,6 +62,9 @@ describe("ProjectTodosPage", () => {
     const history = vi.spyOn(mockApi.todos!, "history");
     const todosTab = await screen.findByRole("tab", { name: "待办" });
     const todosPanel = await screen.findByRole("tabpanel");
+    const frame = document.querySelector(".si-page-frame-project.is-table");
+    expect(frame?.querySelector(".si-page-frame-header .si-project-header-single")).toBeTruthy();
+    expect(frame?.querySelector(".si-page-frame-body .si-project-todos-page .si-tab-panel")).toBeTruthy();
     expect(todosTab.getAttribute("aria-selected")).toBe("true");
     expect(todosPanel.getAttribute("aria-labelledby")).toBe(todosTab.id);
     expect(screen.queryByText("返回项目概览")).toBeNull();
@@ -124,6 +127,7 @@ describe("ProjectTodosPage", () => {
     await renderTodos(undefined, true);
 
     expect(await screen.findByText("当前运行环境尚未接入项目待办")).toBeTruthy();
+    expect(document.querySelector(".si-page-frame-project.is-content .si-project-todos-page")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
   });
 
@@ -235,6 +239,7 @@ describe("ProjectTodosPage", () => {
     });
 
     expect(await screen.findByText("项目待办读取失败")).toBeTruthy();
+    expect(document.querySelector(".si-page-frame-project.is-content .si-project-todos-page")).toBeTruthy();
     expect(screen.queryByText("当前没有待办")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(await screen.findByText("当前没有待办")).toBeTruthy();

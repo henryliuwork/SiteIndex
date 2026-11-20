@@ -1,5 +1,23 @@
 .si-project-todos-page {
-  gap: var(--space-4);
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-section-gap);
+}
+
+.si-project-todos-page > .si-tab-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-section-gap);
+}
+
+.si-project-todos-page > .si-tab-panel > .si-data-table.is-fill {
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .si-todo-loading,
@@ -9,7 +27,7 @@
 }
 
 .si-todo-toolbar { display: flex; width: 100%; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.si-todo-toolbar-left { display: flex; min-width: 0; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.si-todo-toolbar-left { display: flex; min-width: 0; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
 .si-todo-toolbar-left .si-search-input { width: min(100%, 340px); }
 .si-todo-filter-bar { min-width: 0; flex: 1 1 180px; }
 
