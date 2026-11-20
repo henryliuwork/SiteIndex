@@ -5,7 +5,7 @@ import type { ReadmeData } from "@siteindex/shared";
 import { PATHS } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, formatDateTime, InfoTooltip, Notice, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, formatDateTime, InfoTooltip, Notice, PageFrame, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 const blockTitles: Record<string, string> = {
   "index-summary": "网站数据速览",
   "task-routing": "任务路由",
@@ -131,11 +131,11 @@ export function ReadmePage() {
     finally { setSaving(false); }
   };
 
-  if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
-  if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 README 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
+  const stateHeader = <div className="si-project-header si-project-header-single">README</div>;
+  if (projectQuery.isLoading) return <PageFrame kind="project" scroll="content" header={stateHeader}><div className="si-page-loading" role="status">正在加载项目信息…</div></PageFrame>;
+  if (projectQuery.isError || !project) return <PageFrame kind="project" scroll="content" header={stateHeader}><ApiErrorNotice page label="项目 README 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} /></PageFrame>;
 
-  return <div className="si-page si-readme-page">
-    <ProjectHeader project={project} activeTab="readme" hasTabPanel actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />
+  return <PageFrame kind="project" scroll="content" header={<ProjectHeader project={project} activeTab="readme" hasTabPanel actions={<><Button onClick={() => void onOpen()}>在编辑器中打开</Button><Button onClick={() => void onCopy()}>复制 project-readme 指令</Button><Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void onRefresh()}>{activeRunId ? "刷新中…" : "刷新自动区块"}</Button></>} />}><div className="si-page si-readme-page">
     <ProjectTabPanel projectId={project.id} tab="readme">
     {runMessage && <Notice tone="info">{runMessage}</Notice>}
     {readmeQuery.isLoading ? <div className="si-page-loading" role="status">正在加载 README…</div> : readmeQuery.isError || !data ? <ApiErrorNotice label="README 内容加载失败。" error={readmeQuery.error} onRetry={() => void readmeQuery.refetch()} /> : <div className="si-readme-layout">
@@ -143,6 +143,6 @@ export function ReadmePage() {
       <AutoBlocksCard data={data} />
     </div>}
     </ProjectTabPanel>
-  </div>;
+  </div></PageFrame>;
 }
 import "./readme/page.css";

@@ -1,6 +1,5 @@
-.si-readme-page {
-gap: var(--space-5);
-}
+.si-page-frame .si-readme-page { padding: 0; }
+.si-page-frame .si-readme-page [role="tabpanel"] { display: grid; gap: var(--space-5); }
 
 .si-readme-title-line {
 flex-wrap: wrap;
