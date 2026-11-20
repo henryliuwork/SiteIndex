@@ -32,8 +32,11 @@ describe("ContentPage 博客重新抓取", () => {
       </MemoryRouter>
     </ToastProvider></QueryClientProvider>);
     await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: { issue: "no_schema" } })));
-    expect(screen.getByTestId("settings-location").textContent).toBe("/p/demo/content?issue=no_schema");
     const summary = await screen.findByRole("group", { name: "内容摘要" });
+    const frame = document.querySelector(".si-page-frame-project.is-table");
+    expect(frame?.querySelector(".si-page-frame-header .si-project-header-single")).toBeTruthy();
+    expect(frame?.querySelector(".si-page-frame-body .si-content-page .si-tab-panel")).toBeTruthy();
+    expect(screen.getByTestId("settings-location").textContent).toBe("/p/demo/content?issue=no_schema");
     fireEvent.click(within(summary).getByRole("button", { name: /无站内链接/ }));
     await waitFor(() => expect(screen.getByTestId("settings-location").textContent).toBe("/p/demo/content?issue=no_links"));
     await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: { issue: "no_links" } })));
