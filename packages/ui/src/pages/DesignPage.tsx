@@ -5,7 +5,7 @@ import { useParams } from "react-router-dom";
 import { PATHS, pathsFor, type DesignButtonVariant, type DesignColorRole, type DesignTokens, type DesignTypographyScaleKey } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, EmptyState, Notice, ProjectHeader, ProjectTabPanel, formatDateTime, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, EmptyState, Notice, PageFrame, ProjectHeader, ProjectTabPanel, formatDateTime, useToast } from "../components";
 
 const colorRoles: { key: DesignColorRole; label: string }[] = [
   { key: "primary", label: "主色" }, { key: "secondary", label: "辅助色" },
@@ -279,10 +279,7 @@ export function DesignPage() {
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目设计规范页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
   return (
-    <div className="si-page si-design-page">
-      <ProjectHeader project={project} activeTab="design" hasTabPanel status={tokens
-        ? <Chip tone="neutral">设计规范已提取 · {tokens.source_pages.length} 个页面{import.meta.env.DEV ? " · 示例数据" : ""}</Chip>
-        : <Chip tone="warn">尚未提取设计规范</Chip>} actions={
+    <PageFrame kind="project" header={<ProjectHeader project={project} activeTab="design" hasTabPanel actions={
           <>
             <Button variant="secondary" disabled={!tokens} onClick={() => void copyTokens()}>复制 Token（JSON）</Button>
             <Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void refresh()}>{activeRunId ? "提取中…" : "重新提取"}</Button>
@@ -290,7 +287,8 @@ export function DesignPage() {
         } overflow={[
           ...(safeArtifactPaths.tokens ? [{ label: "打开 tokens.json", onSelect: () => void openDesignArtifact("tokens") }] : []),
           ...(safeArtifactPaths.brand ? [{ label: "打开 brand.md", onSelect: () => void openDesignArtifact("brand") }] : []),
-        ]} />
+        ]} />}>
+    <div className="si-page si-design-page">
       <ProjectTabPanel projectId={project.id} tab="design">
         {tokens && <p className="si-design-data-date">设计规范提取任务：{formatDateTime(tokens.extracted_at)} · 来源页面 {tokens.source_pages.length} 个</p>}
         {runMessage && <Notice tone="info" title={activeRunId ? "设计规范提取进行中" : "正在启动设计规范提取"}>{runMessage}</Notice>}
@@ -312,6 +310,7 @@ export function DesignPage() {
             </div>}
       </ProjectTabPanel>
     </div>
+    </PageFrame>
   );
 }
 

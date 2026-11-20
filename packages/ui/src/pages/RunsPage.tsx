@@ -7,7 +7,7 @@ import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, 
 import { Activity, CalendarClock, ClipboardCheck, FileText, Palette, Pencil, RefreshCw, Square } from "lucide-react";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, formatDateTime, InfoTooltip, Notice, Popover, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, formatDateTime, InfoTooltip, Notice, PageFrame, Popover, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { getMediaRecoveryDisplay } from "./edm/media-recovery";
 import "./runs/page.css";
 
@@ -273,8 +273,8 @@ export function RunsPage() {
   const currentDevice = runnerState?.this_device.device_name ?? "本机";
 
   return <DialogPrimitive.Root open={Boolean(editingScheduleJob)} onOpenChange={(open) => { if (!open) { setEditingScheduleJob(null); setScheduleDialogDraft(null); } }}>
+    <PageFrame kind="project" header={<ProjectHeader project={project} activeTab="runs" hasTabPanel actions={<Popover align="end" trigger={<Button variant="primary" disabled={Boolean(activeRun) || startingJob}>立即运行</Button>}><div className="si-runs-job-menu">{jobCards.map(({ job, title }) => <PopoverPrimitive.Close asChild key={job}><Button variant="quiet" onClick={() => void startJob(job)}>{title}</Button></PopoverPrimitive.Close>)}</div></Popover>} />}>
     <div className="si-page si-runs-page si-runs-page-v2">
-      <ProjectHeader project={project} activeTab="runs" hasTabPanel actions={<Popover align="end" trigger={<Button variant="primary" disabled={Boolean(activeRun) || startingJob}>立即运行</Button>}><div className="si-runs-job-menu">{jobCards.map(({ job, title }) => <PopoverPrimitive.Close asChild key={job}><Button variant="quiet" onClick={() => void startJob(job)}>{title}</Button></PopoverPrimitive.Close>)}</div></Popover>} />
       <ProjectTabPanel projectId={project.id} tab="runs">
       {activeRun && progress && <Notice tone="info" title={`${jobLabels[activeRun.job]}进行中`}>{progress.pct}% · {progress.message}</Notice>}
 
@@ -362,5 +362,6 @@ export function RunsPage() {
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </div>
+    </PageFrame>
   </DialogPrimitive.Root>;
 }
