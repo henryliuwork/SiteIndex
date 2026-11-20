@@ -656,7 +656,10 @@ async function main(): Promise<void> {
               await page.getByText("将保存：/shop/{slug}，/product-category/{slug}").waitFor({ state: "visible", timeout: 15_000 });
             }
             await page.getByText("网站检测完成。").waitFor({ state: "visible", timeout: 5_000 });
-            for (const close of await page.getByRole("button", { name: "关闭通知" }).all()) await close.click();
+            // Auto-dismiss may detach a toast while Playwright waits for click stability.
+            await page.getByRole("button", { name: "关闭通知" }).evaluateAll((buttons) => {
+              for (const button of buttons) if (button.isConnected) (button as HTMLButtonElement).click();
+            });
             await page.getByText("网站检测完成。").waitFor({ state: "hidden", timeout: 5_000 });
           }
           const dataSurfaceState = await waitForRoute(page, route);

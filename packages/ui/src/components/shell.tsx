@@ -1,11 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, Boxes, FolderKanban, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
+import { Activity, Boxes, FolderKanban, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, TriangleAlert } from "lucide-react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { UpdateReminder } from "./update-reminder";
+import { formatDateTime, formatPlatformLabel } from "./utils";
 
 export interface SideNavProject {
   id: string;
   name: string;
+  domain?: string | null;
+  platform?: string | null;
+  syncAt?: string | null;
+  storageLocation?: string | null;
   state?: "ok" | "partial" | "failed" | "never" | "running";
 }
 
@@ -75,9 +80,13 @@ export function SideNav({ projects = [], deviceName, runnerProject }: SideNavPro
       <div className="si-nav-caption">项目</div>
       <div className="si-nav-projects">
         {projects.map((project) => (
-          <NavLink key={project.id} to={"/p/" + project.id} className={({ isActive }) => "si-nav-link" + (isActive || pathname === "/p/" + project.id || pathname.startsWith("/p/" + project.id + "/") ? " active" : "")} title={project.name}>
+          <NavLink key={project.id} to={"/p/" + project.id} className={({ isActive }) => "si-nav-link si-nav-project-link" + (isActive || pathname === "/p/" + project.id || pathname.startsWith("/p/" + project.id + "/") ? " active" : "")} title={project.domain || project.name}>
             <span className={"si-project-indicator si-project-indicator-" + (project.state ?? "ok")} aria-hidden="true" />
-            <span className="si-nav-label">{project.name}</span>
+            <span className="si-nav-project-copy">
+              <strong className="si-nav-project-name">{project.name}</strong>
+              <span className="si-nav-project-meta">{formatPlatformLabel(project.platform)} | {project.syncAt ? formatDateTime(project.syncAt) : "未运行"}</span>
+            </span>
+            {project.storageLocation === "known_cloud_sync" && <span className="si-nav-project-warning" role="img" aria-label="项目位于已识别的第三方同步目录，当前仅支持查看" title="项目位于已识别的第三方同步目录，当前仅支持查看"><TriangleAlert size={14} aria-hidden="true" /></span>}
           </NavLink>
         ))}
       </div>

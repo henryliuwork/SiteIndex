@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatDateTime, getLengthGrade, getPaginationModel, nextFilterValue, normalizeTablePageSize, readColumnPrefs, writeColumnPrefs } from "../utils";
+import { formatDateTime, formatPlatformLabel, getLengthGrade, getPaginationModel, nextFilterValue, normalizeTablePageSize, readColumnPrefs, writeColumnPrefs } from "../utils";
 
 describe("日期和时间格式", () => {
   const now = new Date(2026, 10, 9, 12, 0);
@@ -12,6 +12,13 @@ describe("日期和时间格式", () => {
     expect(formatDateTime(new Date(2025, 11, 31, 23, 5), now)).toBe("2025-12-31 23:05");
     expect(formatDateTime(null, now)).toBe("—");
     expect(formatDateTime("bad-date", now)).toBe("—");
+  });
+});
+
+describe("平台显示名", () => {
+  it("映射已知平台，未知平台保持原值", () => {
+    expect(formatPlatformLabel("magento")).toBe("Magento");
+    expect(formatPlatformLabel("custom-platform")).toBe("custom-platform");
   });
 });
 

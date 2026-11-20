@@ -19,6 +19,19 @@ export function formatDateTime(value: string | Date | null | undefined, now = ne
   return `${datePart} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+const platformLabels: Record<string, string> = {
+  magento: "Magento",
+  wordpress: "WordPress",
+  woocommerce: "WooCommerce",
+  shopify: "Shopify",
+  other: "其他平台",
+};
+
+export function formatPlatformLabel(platform: string | null | undefined): string {
+  if (!platform) return "未知平台";
+  return platformLabels[platform] ?? platform;
+}
+
 export interface PaginationModel {
   page: number;
   pageSize: TablePageSize;

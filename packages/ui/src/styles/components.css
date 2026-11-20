@@ -178,6 +178,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-project-indicator-failed { background: var(--color-danger); }
 .si-project-indicator-never { background: var(--color-faint); }
 .si-project-indicator-running { background: var(--color-info); }
+.si-nav-link.si-nav-project-link { gap: var(--space-2); padding-block: var(--space-2); }
+.si-nav-project-copy { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; }
+.si-nav-project-name, .si-nav-project-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-nav-project-name { color: var(--color-ink); font-size: var(--fs-body); font-weight: 600; line-height: var(--lh-body); }
+.si-nav-project-meta { color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.si-nav-project-warning { display: inline-flex; flex: none; color: var(--color-warn); }
 .si-runner { display: grid; gap: var(--space-1); margin-top: auto; padding: var(--space-3); border-top: 1px solid var(--color-line); }
 .si-runner span { color: var(--color-muted); font-size: var(--fs-body); }
 .si-runner strong { color: var(--color-ink); font-size: var(--fs-body); }
@@ -186,6 +192,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-side-nav.is-collapsed .si-brand-name, .si-side-nav.is-collapsed .si-nav-label, .si-side-nav.is-collapsed .si-nav-caption, .si-side-nav.is-collapsed .si-runner, .si-side-nav.is-collapsed .si-collapse-toggle span { display: none; }
 .si-side-nav.is-collapsed .si-collapse-toggle { justify-content: center; padding: 0; }
 .si-side-nav.is-collapsed .si-nav-link { justify-content: center; padding: 0; }
+.si-side-nav.is-collapsed .si-nav-project-copy { display: none; }
 
 @keyframes si-popover-in { from { opacity: 0; transform: translateY(-3px) scale(0.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes si-overlay-in { from { opacity: 0; } to { opacity: 1; } }
