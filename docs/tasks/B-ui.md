@@ -160,6 +160,7 @@
 - [x] G8.0-1 B-1c：ProjectHeader 在项目 PageFrame 内使用 48px 单行导航/操作；旧页面兼容至 G8.0-2 迁移 — 本 PR
 - [x] G8.0-1 B-1d：InfoTooltip 长串折行与视口宽度限制；共享 TableSection 固定摘要/已选标签/表格节奏，PageFrame 内工具栏控件按 32px 对齐 — 本 PR
 - [x] G8.0-1 B-3：`ui:check` §3.7 对已迁入 PageFrame 的路由执行硬断言；其余路由列入逐页旧外框基线并在迁入时强制移除；InfoTooltip 在所有路由上检查宽度和溢出 — 本 PR
+- [x] G8.0-2 B-2a：项目中心迁入全局 PageFrame，删除其旧外框基线 — 本 PR
 
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。

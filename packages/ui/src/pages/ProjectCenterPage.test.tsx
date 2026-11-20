@@ -247,6 +247,7 @@ describe("ProjectCenterPage attention list", () => {
     await expectToast("提醒已标记为已处理。", "success");
     expect(await within(panel).findByText(reminders[3]!)).toBeTruthy();
     expect(within(panel).queryByText(reminders[0]!)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
     await waitFor(() => expect(within(screen.getByRole("button", { name: /待处理提醒/ })).getByText("3")).toBeTruthy());
     expect(queryClient.getQueryState(["seo", "summary", "demo"])?.isInvalidated).toBe(true);
     expect(listIssues).toHaveBeenCalledTimes(2);

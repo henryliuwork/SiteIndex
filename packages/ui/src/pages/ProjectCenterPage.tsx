@@ -8,7 +8,7 @@ import { Link, useNavigate } from "react-router-dom";
 import type { CreateWorkspaceOnlyInput, Kpi, ListQuery, ProjectSummary, RunLog, SeoIssue, WorkspaceCreateInput } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, InfoTooltip, Input, InputWithAction, KpiCard, Notice, PageHeader, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, ConfirmDialog, DataTable, Drawer, EmptyState, formatDateTime, InfoTooltip, Input, InputWithAction, KpiCard, Notice, PageFrame, PageHeader, useToast } from "../components";
 import { feedConfigurationStatus, projectWarningAction } from "./project-center/feed-action";
 import { WorkspaceImportCheckDialog } from "./project-center/workspace-import-dialog";
 import { workspaceDirectoryTree, workspacePathJoin } from "./new-project/workspace-preview";
@@ -580,8 +580,7 @@ export function ProjectCenterPage() {
   ];
 
   return (
-    <div className="si-page si-project-center">
-      <PageHeader
+    <PageFrame kind="global" scroll="table" header={<PageHeader
         title="项目中心"
         meta={<div className="si-project-root-line"><span>项目根目录 <code>{projectRoot}</code></span><InfoTooltip label="项目存储规则" content="仅支持本机非同步目录；移动项目时请手动复制文件夹后重新添加。" />{needsRootSetup && <Button size="small" icon={<FolderOpen size={13} />} disabled={settingRoot} onClick={() => void chooseProjectsRoot()}>{settingRoot ? "正在选择…" : "设置项目根目录"}</Button>}</div>}
         actions={<>
@@ -589,7 +588,8 @@ export function ProjectCenterPage() {
           {workspaceCapabilities.emptyWorkspaceAvailable && <Button icon={<FolderOpen size={15} />} onClick={(event) => { dialogReturnFocusRef.current = event.currentTarget; setCreateWorkspaceOpen(true); }}>创建空工作区</Button>}
           <Link className="si-button si-button-primary" to="/new/url"><Plus size={15} />新建项目</Link>
         </>}
-      />
+      />}>
+    <div className="si-page si-project-center">
       {workspaceCapabilities.explainEmptyWorkspaceUnavailable && <Notice tone="info" title="Agent 工作区暂不可用">桌面端尚未接入空工作区创建和目录检查操作；现有项目添加与普通新建流程仍可使用。</Notice>}
       {settingsQuery.isError && <ApiErrorNotice className="si-center-query-error" label="项目根目录读取失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
       {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : <>
@@ -602,7 +602,6 @@ export function ProjectCenterPage() {
             {scheduleQuery.isError && <ApiErrorNotice className="si-center-query-error" label="定时计划加载失败。" error={scheduleQuery.error} onRetry={() => void scheduleQuery.refetch()} />}
           </div>
         </div>
-        {attentionExpanded && <AttentionList projects={projects} />}
         <section className="si-project-grid" aria-label="项目列表">
           {projects.length === 0 ? <div className="si-project-empty"><EmptyState icon={<FolderOpen size={22} />} title="还没有项目">新建项目，或添加本机存储中已有的 SiteIndex 项目文件夹。</EmptyState></div> : <>
             {projects.map((project) => <ProjectCard
@@ -646,6 +645,9 @@ export function ProjectCenterPage() {
           />}
         </section>
       </>}
+      <Drawer open={attentionExpanded} onOpenChange={setAttentionExpanded} title="待处理提醒">
+        <AttentionList projects={projects} />
+      </Drawer>
       <AddExistingDialog open={addExistingOpen} onOpenChange={setAddExistingOpen} onAdded={(project) => void handleAdded(project)} returnFocusRef={dialogReturnFocusRef} />
       {workspaceCapabilities.emptyWorkspaceAvailable && <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} defaultRoot={configuredRoot ?? ""} onCreated={(id) => void handleWorkspaceCreated(id)} returnFocusRef={dialogReturnFocusRef} />}
       {workspaceCapabilities.importCheckAvailable && <WorkspaceImportCheckDialog
@@ -666,6 +668,7 @@ export function ProjectCenterPage() {
         {selectedRun && <RunDetail run={selectedRun} />}
       </Drawer>
     </div>
+    </PageFrame>
   );
 }
 import "./project-center/page.css";
