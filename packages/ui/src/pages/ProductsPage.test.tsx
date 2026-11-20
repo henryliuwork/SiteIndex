@@ -274,10 +274,13 @@ describe("合并后的产品管理表", () => {
     const table = await screen.findByRole("table");
     const headers = within(table).getAllByRole("columnheader");
     expect(headers[0]?.textContent).toContain("SKU");
+    expect(headers[0]?.classList.contains("is-sticky-left")).toBe(true);
+    expect(headers[0]?.style.left).toBe("0px");
     expect(headers[1]?.textContent).toContain("产品名称");
     await within(table).findByText("虚构组合商品", { selector: "strong" });
     const parentRow = screen.getByText("虚构组合商品", { selector: "strong" }).closest("tr")!;
     expect(parentRow.querySelector(".si-product-sku")?.textContent).toBe("DEMO001A");
+    expect(parentRow.querySelector(".si-product-sku")?.closest("td")?.classList.contains("is-sticky-left")).toBe(true);
     expect(within(table).queryByText("虚构组合商品子款", { selector: "strong" })).toBeNull();
     expect(screen.getByRole("group", { name: "SKU 展示模式" })).toBeTruthy();
     expect(mockApi.products.list).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: true }) }));
@@ -342,6 +345,8 @@ describe("合并后的产品管理表", () => {
     expect(within(drawer).getByRole("group", { name: "产品详情分段" })).toBeTruthy();
     fireEvent.click(within(drawer).getByRole("button", { name: "变体库存" }));
     expect(await within(drawer).findByRole("heading", { name: "变体库存 · 2 个" })).toBeTruthy();
+    const variantTable = within(drawer).getByRole("table");
+    expect(within(variantTable).getAllByRole("columnheader")[0]?.classList.contains("is-sticky-left")).toBe(true);
     fireEvent.click(within(drawer).getByRole("button", { name: "历史" }));
     expect(await within(drawer).findByRole("heading", { name: "子 SKU 价格历史" })).toBeTruthy();
     expect(within(drawer).getByRole("combobox", { name: "价格历史 SKU" })).toBeTruthy();

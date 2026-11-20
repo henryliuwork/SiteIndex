@@ -29,18 +29,18 @@ function path(url: string) {
 
 function columns(): ColumnDef<SeoPageTableRow, unknown>[] {
   return [
-    { id: "url", accessorKey: "url", header: "页面", meta: { width: 280, grow: 2, minWidth: 170, text: "clamp2" }, cell: ({ row }) =>
+    { id: "url", accessorKey: "url", header: "页面", meta: { width: 280, grow: 2, minWidth: 170, text: "clamp2" }, enableHiding: false, cell: ({ row }) =>
       <span className="si-seo-page-cell"><strong>{row.original.title || "无 Title"}</strong><code title={row.original.url}>{path(row.original.url)}</code></span>, enableSorting: true },
     { id: "page_type", accessorKey: "page_type", header: "类型", meta: { width: 80, grow: 0, minWidth: 72, text: "single" }, cell: ({ row }) => pageTypeLabels[row.original.page_type], enableSorting: true },
     { id: "google_indexed", accessorKey: "google_indexed", header: "收录", meta: { width: 88, grow: 0, minWidth: 80, text: "single" }, cell: ({ row }) =>
       <Chip tone={row.original.google_indexed === true ? "ok" : row.original.google_indexed === false ? "danger" : "neutral"}>{row.original.google_indexed === true ? "已收录" : row.original.google_indexed === false ? "未收录" : "未检查"}</Chip>, enableSorting: true },
-    { id: "open_high", header: "待处理问题", meta: { width: 160, grow: 0, minWidth: 132, text: "single" }, cell: ({ row }) => {
+    { id: "open_high", header: "待处理问题", meta: { width: 132, grow: 0, minWidth: 132, text: "single" }, cell: ({ row }) => {
       const counts = row.original.open_issue_counts;
       return counts.high + counts.mid + counts.low ? <span>高 {counts.high} · 中 {counts.mid} · 低 {counts.low}</span> : "—";
     }, enableSorting: true },
     { id: "links_internal_in", accessorKey: "links_internal_in", header: "入链", meta: { width: 68, grow: 0, minWidth: 60, align: "end", text: "single" }, cell: ({ row }) => row.original.links_internal_in ?? "—", enableSorting: true },
     { id: "links_internal_out", accessorKey: "links_internal_out", header: "出链", meta: { width: 68, grow: 0, minWidth: 60, align: "end", text: "single" }, cell: ({ row }) => row.original.links_internal_out ?? "—", enableSorting: true },
-    { id: "last_issue_change_date", accessorKey: "last_issue_change_date", header: "最近问题变化", meta: { width: 108, grow: 0, minWidth: 94, text: "single" }, cell: ({ row }) => row.original.last_issue_change_date?.slice(5) ?? "—", enableSorting: true },
+    { id: "last_issue_change_date", accessorKey: "last_issue_change_date", header: "最近问题变化", meta: { width: 140, grow: 0, minWidth: 140, text: "single" }, cell: ({ row }) => row.original.last_issue_change_date?.slice(5) ?? "—", enableSorting: true },
   ];
 }
 

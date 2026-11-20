@@ -321,7 +321,10 @@ describe("EdmPage D-5", () => {
   it("显示标准 DataTable 分页与父 SKU 筛选，并向 IPC 传入 parent_only", async () => {
     const { listImages } = await renderEdmPage(true);
     await screen.findByRole("checkbox", { name: "仅展示父 SKU" });
-    expect(screen.getByRole("table").querySelector("thead th:nth-child(2)")?.textContent).toContain("SKU");
+    const skuHeader = screen.getByRole("table").querySelector<HTMLTableCellElement>("thead th:nth-child(2)");
+    expect(skuHeader?.textContent).toContain("SKU");
+    expect(skuHeader?.classList.contains("is-sticky-left")).toBe(true);
+    expect(skuHeader?.style.left).toBe("40px");
     expect(screen.getByRole("combobox", { name: "每页条数" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "50" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "100" })).toBeTruthy();

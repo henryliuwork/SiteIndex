@@ -268,7 +268,7 @@ function feedImageLabel(url: string | null): string {
 
 function imageColumns(projectId: string, discountTiers: readonly number[], discountTierCapability: EdmDiscountTierCapability): ColumnDef<SkuImageRow, unknown>[] {
   return [
-    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, text: "single" }, enableHiding: false, cell: ({ row }) => <code className="si-edm-sku">{row.original.sku}</code>, enableSorting: true },
+    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, sticky: "left", text: "single" }, enableHiding: false, cell: ({ row }) => <code className="si-edm-sku">{row.original.sku}</code>, enableSorting: true },
     { id: "product", accessorKey: "title", header: "产品 / 变体", meta: { width: 270, grow: 2, minWidth: 200, text: "single" }, cell: ({ row }) => <span className="si-edm-product"><strong>{row.original.title}</strong><small>{row.original.variant_title || "默认款"}</small></span>, enableSorting: true },
     { id: "stock_status", accessorKey: "stock_status", header: "库存", meta: { width: 88, grow: 0, minWidth: 88, text: "single", defaultHidden: true }, cell: ({ row }) => <Chip tone={stockTone[row.original.stock_status]}>{stockLabels[row.original.stock_status]}</Chip>, enableSorting: true },
     { id: "discount_tier", accessorKey: "discount_tier", header: "折扣档位", meta: { width: 148, grow: 0, minWidth: 136, text: "single", defaultHidden: true }, cell: ({ row }) => <EdmDiscountTierCell projectId={projectId} row={row.original} tiers={discountTiers} capability={discountTierCapability} /> },

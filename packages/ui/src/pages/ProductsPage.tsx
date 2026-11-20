@@ -39,7 +39,7 @@ function initialQuery(): ProductManagementQuery { return { page: 1, pageSize: 50
 
 function productColumns(onOpen: (row: ProductManagementRow) => void, onOpenUrl: (url: string) => void): ColumnDef<ProductManagementRow, unknown>[] {
   return [
-    { id: "sku", accessorFn: (row) => row.sku, header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, text: "single" }, enableHiding: false, cell: ({ row }) =>
+    { id: "sku", accessorFn: (row) => row.sku, header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, sticky: "left", text: "single" }, enableHiding: false, cell: ({ row }) =>
       <code className={`si-product-sku${row.original.kind === "child" ? " is-child" : ""}`} title={row.original.sku ?? undefined}>{row.original.sku ?? "—"}</code>, enableSorting: true },
     { id: "product", accessorFn: (row) => row.product.title, header: "产品名称", meta: { width: 270, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => {
       const item = row.original;
@@ -118,7 +118,7 @@ function buildDrawerVariants(detail: ProductFull, allStockRows: readonly SkuStoc
 
 function drawerVariantColumns(): ColumnDef<DrawerVariant, unknown>[] {
   return [
-    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, text: "single" }, enableHiding: false, cell: ({ row }) => <code>{row.original.sku}</code>, enableSorting: true },
+    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, sticky: "left", text: "single" }, enableHiding: false, cell: ({ row }) => <code>{row.original.sku}</code>, enableSorting: true },
     { id: "title", accessorKey: "title", header: "变体", meta: { width: 190, grow: 1, minWidth: 160, text: "clamp2" }, cell: ({ row }) => <span>{row.original.title}{removedSkuReason(row.original.record ?? ({ status: "active" } as SkuRecord)) && <small className="si-product-sku-reason">{removedSkuReason(row.original.record!)}</small>}</span>, enableSorting: true },
     { id: "stock_status", accessorFn: (row) => row.stock?.stock_status ?? row.variant?.stock_status ?? null, header: "库存", meta: { width: 92, grow: 0, minWidth: 84, text: "single" }, cell: ({ row }) => {
       const status = row.original.stock?.stock_status ?? row.original.variant?.stock_status;
