@@ -1,5 +1,5 @@
 .si-products-page {
-display: flex; min-height: 0; flex-direction: column; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); gap: 0;
+display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 0;
 }
 
 .si-products-page > .si-tab-panel {
@@ -31,7 +31,7 @@ flex: none; min-width: 0;
 }
 
 .si-products-filter-conditions .si-filter-bar-items {
-width: 100%; gap: var(--space-2);
+width: 100%; gap: var(--space-2); padding: 0;
 }
 
 .si-products-filter-popover {
@@ -76,7 +76,7 @@ color: var(--color-muted); font-size: var(--fs-caption);
 }
 
 .si-products-table-frame {
-display: flex; min-width: 0; min-height: var(--si-table-min-h, 320px); flex: 1 1 auto; flex-direction: column; overflow: visible; border: 1px solid var(--color-line); border-top: 0; border-radius: 10px; background: var(--color-surface);
+display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; flex-direction: column; overflow: hidden; border: 1px solid var(--color-line); border-top: 0; border-radius: 10px; background: var(--color-surface);
 }
 .si-products-table-frame .si-table-toolbar { display: grid; min-height: var(--control-height); grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 0 var(--space-2); }
 .si-products-table-frame .si-table-toolbar-settings { margin-left: 0; }
