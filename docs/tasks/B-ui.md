@@ -166,6 +166,7 @@
 - [x] G8.0-2 B-2c：软件设置迁入全局 PageFrame 内容滚动模式，加载/失败状态同样使用外框，删除旧外框基线 — 本 PR
 - [x] G8.0-2 B-2d：新建向导各步骤迁入全局 PageFrame 内容滚动模式，删除六个旧外框基线 — 本 PR
 - [x] G8.0-2 B-2e：README 迁入项目 PageFrame 内容滚动模式，加载/失败状态保持外框，删除旧外框基线 — 本 PR
+- [x] G8.0-2 产品页基线收敛：#720 已迁入 PageFrame，删除 `products` 与兼容路由 `inventory` 的旧外框基线 — 本 PR
 
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。

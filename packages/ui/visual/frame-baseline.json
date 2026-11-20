@@ -3,9 +3,7 @@
   "legacyRoutes": {
     "content": "project",
     "edm": "project",
-    "inventory": "project",
     "not-found": "global",
-    "products": "project",
     "project-settings-categories": "project",
     "project-settings-config": "project",
     "project-settings-files": "project",
