@@ -33,10 +33,10 @@
 
 ### 1.2 字体与字号
 
-正文与标题按 `--font-sans` 使用 Geist Variable（英文、数字）及 Source Han Sans SC（中文）；SKU、URL、路径等标识符使用 Geist Mono Variable。Noto Sans SC variable 以 SIL OFL-1.1 发布包随 UI 打包，并以 `Source Han Sans SC` CSS family 名称提供；这是思源黑体同设计的离线字体，不依赖网络或用户系统安装。保留 Microsoft YaHei UI、PingFang SC 作为后备字体。
+正文与标题按 `--font-sans` 使用 Geist Variable（英文、数字）；中文在 Windows 优先使用 Microsoft YaHei UI，在 macOS 优先使用 PingFang SC。Noto Sans SC variable 以 SIL OFL-1.1 发布包随 UI 打包，并以 `Source Han Sans SC` CSS family 名称提供，作为系统字体不可用时的离线兜底（包括 Linux），不依赖网络。SKU、URL、路径等标识符使用 Geist Mono Variable。
 
 ```css
---font-sans: "Geist Variable", "Source Han Sans SC", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+--font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", "Source Han Sans SC", sans-serif;
 --font-mono: "Geist Mono Variable", Consolas, monospace;
 ```
 
