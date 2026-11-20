@@ -89,6 +89,8 @@
   --project-tab-row-height: 44px;
   --project-header-height: 48px;
   --global-page-title-row-height: 56px;
+  --tooltip-max-width: 240px;
+  --table-search-width: 280px;
   --page-segment-height: 32px;
 
   --radius-control: 6px;

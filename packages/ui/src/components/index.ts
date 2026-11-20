@@ -11,4 +11,5 @@ export * from "./primitives";
 export * from "./shell";
 export * from "./summary-line";
 export * from "./table";
+export * from "./table-section";
 export * from "./utils";
