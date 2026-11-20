@@ -2638,8 +2638,8 @@ async function testW2Pages(page, syntheticSite) {
       ? await waitForW2SeoStateEvidence(page, "title_missing", targetRowIdentity, afterProcess, "fixed")
       : { passed: false };
     const afterFixed = await readW2SeoStatusCounts(page, "title_missing");
-    const filteredAfterProcess = await waitForW2TableTotal(page, "seo.pageRows", before.open - 1);
     await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
+    const filteredAfterProcess = await waitForW2TableTotal(page, "seo.pageRows", before.open - 1);
     const processedPagination = await exerciseW2Pagination(page, "seo.pageRows", before.open - 1);
     await goToW2Route(page, `/p/${W2_PROJECT_ID}/seo?rule=title_missing&status=fixed`);
     await waitForW2TableTotal(page, "seo.pageRows", 1);
