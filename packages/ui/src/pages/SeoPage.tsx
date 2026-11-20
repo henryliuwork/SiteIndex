@@ -11,7 +11,7 @@ import type {
 } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, InfoTooltip, KpiCard, LengthBadge, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, InfoTooltip, KpiCard, LengthBadge, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, formatDateTime, useToast } from "../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./seo/filters";
 import { SeoScenarioSections } from "./seo/drawer/scenario-sections";
 import { SeoPageTable } from "./seo/page-table";
@@ -467,8 +467,7 @@ export function SeoPage() {
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 SEO 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
-  return <div className={`si-page si-seo-page${api.seo.listPageRows ? " has-page-table" : ""}`}>
-    <ProjectHeader
+  return <PageFrame kind="project" scroll="table" header={<ProjectHeader
       project={project}
       activeTab="seo"
       hasTabPanel
@@ -481,7 +480,8 @@ export function SeoPage() {
         { label: runKind === "crawl" ? "正在重新抓取…" : "重新抓取 SEO 数据", onSelect: () => void recrawl(), disabled: busy, icon: <RefreshCw size={14} /> },
         ...(setIssueStatus && issueQuery.filters?.status === "open" ? [{ label: `批量处理当前筛选结果（${filteredIssueCount} 条）`, onSelect: () => void handleBulkResolve(), disabled: busy || filteredIssueCount === 0 }] : []),
       ]}
-    />
+    />}>
+    <div className={`si-page si-seo-page${api.seo.listPageRows ? " has-page-table" : ""}`}>
     <ProjectTabPanel projectId={project.id} tab="seo">
       {!api.seo.listPageRows && <>
         <div className="si-seo-kpis">{summaryQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 概览…</div> : summaryQuery.isError || !summary ? <ApiErrorNotice label="SEO 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summary.kpis.map((metric) => <KpiCard key={metric.key} metric={metric} />)}</div>
@@ -551,6 +551,7 @@ export function SeoPage() {
               </section>)}
             </div> : <EmptyState title="没有 SEO 规则">当前环境没有返回规则设置。</EmptyState>}
     </Drawer>
-  </div>;
+    </div>
+  </PageFrame>;
 }
 import "./seo/page.css";

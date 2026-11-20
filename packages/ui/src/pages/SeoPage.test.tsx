@@ -75,6 +75,10 @@ describe("SeoPage 问题处理", () => {
     await renderSeoPage(createMockApi());
 
     const dateNote = await screen.findByText(/SEO 抓取数据截至/);
+    const frame = document.querySelector(".si-page-frame-project.is-table");
+    expect(frame).toBeTruthy();
+    expect(frame?.querySelector(".si-page-frame-header .si-project-header")).toBeTruthy();
+    expect(frame?.querySelector(".si-page-frame-body .si-tab-panel")).toBeTruthy();
     expect(dateNote.classList.contains("si-seo-data-date")).toBe(true);
     expect(dateNote.closest(".si-tab-panel")).toBeTruthy();
     expect(screen.queryByText(/最近抓取：|收录数据最后检查/)).toBeNull();
