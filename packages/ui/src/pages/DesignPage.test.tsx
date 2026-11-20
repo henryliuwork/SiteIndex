@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { DesignTokens, SiteIndexApi } from "@siteindex/shared";
@@ -136,6 +136,38 @@ describe("DesignPage Token v2", () => {
     expect(screen.queryByRole("heading", { name: "间距 · 圆角 · 阴影" })).toBeNull();
   });
 
+  it("颜色角色同时展示并分别复制 HEX 与 RGB", async () => {
+    const { api, copyText } = createDesignApi();
+    await renderDesignPage(api);
+
+    const role = (await screen.findByText("主色")).closest(".si-design-role");
+    if (!role) throw new Error("缺少主色卡片");
+    expect(role.textContent).toContain("HEX #2F5D3A");
+    expect(role.textContent).toContain("RGB rgb(47, 93, 58)");
+    fireEvent.click(within(role as HTMLElement).getByRole("button", { name: /复制 HEX/ }));
+    await waitFor(() => expect(copyText).toHaveBeenCalledWith("#2F5D3A"));
+    fireEvent.click(within(role as HTMLElement).getByRole("button", { name: /复制 RGB/ }));
+    await waitFor(() => expect(copyText).toHaveBeenCalledWith("rgb(47, 93, 58)"));
+  });
+
+  it("短 HEX 可展开，不可识别的色值不伪造格式与复制操作", async () => {
+    const tokens = structuredClone(tokensFixture);
+    tokens.color.roles!.primary!.value = "#abc";
+    tokens.color.roles!.text!.value = "rgb(34, 34, 34)";
+    tokens.color.roles!.link!.value = "var(--link-color)";
+    const { api } = createDesignApi(tokens);
+    await renderDesignPage(api);
+
+    const primary = (await screen.findByText("主色")).closest(".si-design-role");
+    const text = screen.getByText("正文文字").closest(".si-design-role");
+    const link = screen.getByText("链接").closest(".si-design-role");
+    expect(primary?.textContent).toContain("HEX #AABBCC");
+    expect(primary?.textContent).toContain("RGB rgb(170, 187, 204)");
+    expect(text?.textContent).toContain("HEX #222222");
+    expect(link?.textContent).toContain("原值：var(--link-color)");
+    expect(link?.querySelectorAll("button")).toHaveLength(0);
+  });
+
   it("缺失的 Token v2 字段显示未识别状态，不用旧值补造", async () => {
     const tokens = structuredClone(tokensFixture);
     if (tokens.color.roles) tokens.color.roles.link = null;
@@ -149,6 +181,7 @@ describe("DesignPage Token v2", () => {
     expect(screen.getAllByText("当前页面未识别此颜色角色。").length).toBeGreaterThan(0);
     expect(screen.getByText("未识别此层级")).toBeTruthy();
     expect(screen.getByText("未识别此按钮变体")).toBeTruthy();
+    expect(screen.getByText("未识别此按钮变体").closest(".si-design-button-heading")).toBeTruthy();
     expect(screen.getByText("未识别网站字体，样例使用软件默认字体栈。SiteIndex 不下载网站字体，也无法确认本机已安装哪些字体。")).toBeTruthy();
     expect((screen.getByText("示例页面标题") as HTMLElement).dataset.fontStack).toBe("software-default");
     expect(screen.getAllByText("未识别", { selector: ".si-design-role-value" }).length).toBeGreaterThan(0);
@@ -169,7 +202,8 @@ describe("DesignPage Token v2", () => {
     expect(await screen.findByRole("heading", { name: "按钮规范" })).toBeTruthy();
     const card = screen.getByRole("heading", { name: "主要按钮" }).closest(".si-design-button-variant");
     expect(card?.querySelector(".si-design-button-sample")).toBeNull();
-    expect(card?.textContent).toContain("Core 未返回背景、文字颜色或边框，无法绘制可靠预览。");
+    expect(card?.textContent).toContain("未识别此按钮变体");
+    expect(card?.querySelector(".si-empty-state")).toBeNull();
     expect(card?.textContent).toContain("4px");
   });
 
