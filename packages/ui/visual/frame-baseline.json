@@ -5,7 +5,6 @@
     "project-settings-categories": "project",
     "project-settings-config": "project",
     "project-settings-files": "project",
-    "project-todos": "project",
-    "schedules": "global"
+    "project-todos": "project"
   }
 }

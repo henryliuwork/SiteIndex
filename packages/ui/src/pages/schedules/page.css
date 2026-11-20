@@ -1,6 +1,11 @@
-.si-schedules-page { width: min(100%,1320px); gap: var(--space-4); }
+.si-page-frame .si-schedules-page { display: flex; width: min(100%,1320px); min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--space-section-gap); padding: 0; }
+.si-schedules-page > .si-data-table { min-height: 0; flex: 1 1 auto; }
+.si-schedule-utility { min-width: 0; flex: none; }
+.si-schedule-utility[hidden] { display: none; }
+.si-schedule-utility .si-card { gap: var(--space-2); padding: var(--space-3); }
+.si-schedule-task-pager { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); color: var(--color-muted); font-size: var(--fs-caption); }
 .si-schedule-filter { display: flex; align-items: center; gap: var(--space-2); color: var(--color-ink-2); font-size: var(--fs-body); }
-.si-schedule-filter .si-select-trigger { min-width: 180px; height: 36px; }
+.si-schedule-filter .si-select-trigger { min-width: 180px; height: var(--control-height); }
 .si-schedule-project { display: grid; min-width: 0; gap: var(--space-1); }
 .si-schedule-project strong { overflow: hidden; color: var(--color-ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .si-schedule-project small { overflow: hidden; color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); text-overflow: ellipsis; white-space: nowrap; }

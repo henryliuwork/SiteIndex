@@ -94,6 +94,10 @@ async function discoverRoutes(server: ViteDevServer, projectId: string): Promise
     } else {
       const path = routePath.replaceAll(":id", encodeURIComponent(projectId));
       cases.push({ name, path, waitForDataSurface: isDataTableRoute(path) });
+      if (path === "/schedules") {
+        cases.push({ name: "schedules-system", path, waitForDataSurface: true });
+        cases.push({ name: "schedules-orphans", path, waitForDataSurface: true });
+      }
     }
   }
   return cases;
@@ -705,6 +709,13 @@ async function main(): Promise<void> {
           await page.goto(routeCaseUrl(baseUrl, mockQuery, route.name.startsWith("new-project-") ? "/new/url" : route.path, route.name), { waitUntil: "domcontentloaded", timeout: 20_000 });
           await advanceWizardCase(page, route);
           const dataSurfaceState = await waitForRoute(page, route);
+          if (route.name === "schedules-system" || route.name === "schedules-orphans") {
+            const system = route.name === "schedules-system";
+            await page.locator(".si-page-frame-header").getByRole("button", { name: system ? "系统计划任务" : "孤立任务", exact: true }).click();
+            const panel = page.locator(system ? "#si-schedule-system-panel" : "#si-schedule-orphans-panel");
+            await panel.waitFor({ state: "visible" });
+            await panel.locator(system ? ".si-system-task-row, .si-empty-state, .si-api-error-state" : ".si-orphan-schedule-list li, .si-empty-state, .si-api-error-state").first().waitFor({ state: "visible" });
+          }
           if (route.path === "/skills") {
             await page.locator(".si-skill-choice").filter({ hasText: "stock-report" }).click();
             await page.locator(".si-skill-target > .si-button").first().waitFor({ state: "visible", timeout: 10_000 });
