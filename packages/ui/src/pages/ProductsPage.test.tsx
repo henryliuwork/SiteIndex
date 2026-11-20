@@ -272,13 +272,20 @@ describe("合并后的产品管理表", () => {
   it("默认仅显示父 SKU，切换后显示子 SKU", async () => {
     const mockApi = await renderProductsPage();
     const table = await screen.findByRole("table");
+    const headers = within(table).getAllByRole("columnheader");
+    expect(headers[0]?.textContent).toContain("SKU");
+    expect(headers[1]?.textContent).toContain("产品名称");
     await within(table).findByText("虚构组合商品", { selector: "strong" });
+    const parentRow = screen.getByText("虚构组合商品", { selector: "strong" }).closest("tr")!;
+    expect(parentRow.querySelector(".si-product-sku")?.textContent).toBe("DEMO001A");
     expect(within(table).queryByText("虚构组合商品子款", { selector: "strong" })).toBeNull();
     expect(screen.getByRole("group", { name: "SKU 展示模式" })).toBeTruthy();
     expect(mockApi.products.list).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: true }) }));
 
     fireEvent.click(screen.getByRole("button", { name: "显示子 SKU" }));
     await within(table).findByText("虚构组合商品子款", { selector: "strong" });
+    const childRow = screen.getByText("虚构组合商品子款", { selector: "strong" }).closest("tr")!;
+    expect(childRow.querySelector(".si-product-sku.is-child")?.textContent).toBe("DEMO001A01");
     await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: undefined }) })));
   });
 
