@@ -7,7 +7,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, InfoTooltip, Input, InputWithAction, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Select, SummaryLine, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, InfoTooltip, Input, InputWithAction, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Select, SummaryLine, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { getEdmDiscountTierCapability, type EdmDiscountTierCapability } from "./edm/discount-tier-capability";
@@ -649,14 +649,14 @@ export function EdmPage() {
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
-  return <div className="si-page si-edm-page">
-    <ProjectHeader project={project} activeTab="edm" hasTabPanel actions={!isMockApi && exportCapability.available ? <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>{exportMutation.isPending ? "正在准备 SKU 清单…" : "另存全项目 SKU 清单"}</Button> : undefined} overflow={[
+  return <PageFrame kind="project" scroll="table" header={<ProjectHeader project={project} activeTab="edm" hasTabPanel actions={!isMockApi && exportCapability.available ? <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>{exportMutation.isPending ? "正在准备 SKU 清单…" : "另存全项目 SKU 清单"}</Button> : undefined} overflow={[
       { label: "打开项目文件夹", onSelect: () => void openProjectFolder() },
       { label: "复制 edm-builder 指令", onSelect: () => void copyCommand() },
       ...(availableEdmScenarioTabs().length ? [{ label: "EDM 只读检查", onSelect: () => setScenarioDrawerOpen(true) }] : []),
       ...(isMockApi ? [{ label: "交互模拟（仅本地演示，不会上传或写入台账）", onSelect: () => setMediaDemoOpen(true) }] : []),
       ...(!isMockApi && recoveredMediaRun ? [{ label: "最近图片任务结果", onSelect: () => setMediaHistoryDrawerOpen(true) }] : []),
-    ]} />
+    ]} />}>
+    <div className="si-page si-edm-page">
     <ProjectTabPanel projectId={project.id} tab="edm">
     {summaryQuery.isError && <ApiErrorNotice label="EDM 概览加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} />}
     {showStatusArea && <div className="si-edm-status-area" role="region" aria-label="EDM 任务与提示" tabIndex={0}>
@@ -718,6 +718,7 @@ export function EdmPage() {
       </ul>}
     </div> : null}
     </div>}
+    {missingImageCount !== undefined && <div className="si-edm-summary"><SummaryLine ariaLabel="EDM 可处理摘要" items={[{ id: "missing-image", label: currentView === "none" ? "缺图 SKU" : "缺图产品", value: missingImageCount, active: currentView === "none", onToggle: () => setView(currentView === "none" ? "all" : "none") }]} /><InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />{(discountTiers.length === 0 || !discountTierCapability.available) && <InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} />}</div>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
@@ -725,7 +726,6 @@ export function EdmPage() {
       emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-left"><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />
-          {missingImageCount !== undefined && <div className="si-edm-summary"><SummaryLine ariaLabel="EDM 可处理摘要" items={[{ id: "missing-image", label: currentView === "none" ? "缺图 SKU" : "缺图产品", value: missingImageCount, active: currentView === "none", onToggle: () => setView(currentView === "none" ? "all" : "none") }]} /><InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />{(discountTiers.length === 0 || !discountTierCapability.available) && <InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} />}</div>}
           <FilterBar className="si-edm-filterbar">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setView(value || "all")}>{item.label}</FilterPill>)}</FilterBar>
         </div>
         <div className="si-edm-toolbar-right">
@@ -777,6 +777,7 @@ export function EdmPage() {
       onConfirm={confirmMediaPreparation}
     />
     </ProjectTabPanel>
-  </div>;
+    </div>
+  </PageFrame>;
 }
 import "./edm/page.css";
