@@ -191,8 +191,8 @@ async function openMediaHistory() {
 }
 
 function exportControlFor(button: HTMLElement): HTMLElement {
-  const page = button.closest(".si-edm-page") as HTMLElement;
-  return page.querySelector<HTMLElement>(".si-edm-export-control") ?? page;
+  const frame = button.closest(".si-page-frame") as HTMLElement;
+  return frame.querySelector<HTMLElement>(".si-edm-export-control") ?? frame;
 }
 
 function mediaImageRow(sku: string, feedImageUrl: string | null, manualImageUrl: string | null = null): SkuImageRow {
@@ -308,6 +308,16 @@ describe("EdmPage SKU 图集", () => {
 });
 
 describe("EdmPage D-5", () => {
+  it("使用项目表格外框，项目头不重复显示站点信息", async () => {
+    await renderEdmPage(true);
+    expect(await screen.findByRole("table")).toBeTruthy();
+    const frame = document.querySelector(".si-page-frame-project.is-table");
+    const header = frame?.querySelector(".si-page-frame-header .si-project-header-single");
+    expect(header).toBeTruthy();
+    expect(header?.textContent).not.toContain("demo-store.example.test");
+    expect(frame?.querySelector(".si-page-frame-body .si-edm-page .si-tab-panel")).toBeTruthy();
+  });
+
   it("默认只显示可操作缺图摘要，页头更多收纳整页操作", async () => {
     await renderEdmPage(true);
     expect(await screen.findByRole("group", { name: "EDM 可处理摘要" })).toBeTruthy();
