@@ -86,6 +86,11 @@
   .si-edm-toolbar-left { flex-wrap: nowrap; }
 }
 
+@media (min-width: 1101px) and (max-width: 1399px) {
+  .si-edm-toolbar,
+  .si-edm-toolbar-left { gap: var(--space-1); }
+}
+
 .si-edm-media-demo {
   display: grid;
   gap: var(--space-2);
