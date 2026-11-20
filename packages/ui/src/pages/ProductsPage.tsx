@@ -8,7 +8,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import type { HistoryRange, InventorySummary, ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, SkuRecord, SkuStockFilters, SkuStockView, StockStatus, TagStat } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, formatDateTime, Input, InputWithAction, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, SummaryLine, useToast, stockTone } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, formatDateTime, Input, InputWithAction, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, SummaryLine, useToast, stockTone } from "../components";
 import { formatInventoryDetailDuration, formatInventoryTableDuration, InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
@@ -453,12 +453,7 @@ export function ProductsPage() {
 
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目产品管理页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
-  const syncStatus = project.sync.state === "ok"
-    ? <Chip tone="ok">{project.sync.at ? `${formatDateTime(project.sync.at)} · 同步成功` : "同步成功 · 时间未知"}</Chip>
-    : <Chip tone={project.sync.state === "failed" ? "danger" : "warn"}>{project.sync.state === "failed" ? "同步失败" : project.sync.state === "running" ? "同步中" : "待处理"}</Chip>;
-
-  return <div className="si-page si-products-page">
-    <ProjectHeader project={project} activeTab="products" hasTabPanel status={syncStatus}
+  return <PageFrame kind="project" scroll="table" header={<ProjectHeader project={project} activeTab="products" hasTabPanel
        actions={<Button variant="primary" icon={<RefreshCw size={14} />} disabled={Boolean(activeRunId)} onClick={() => void runSync()}>{activeRunId ? "同步中…" : "立即同步"}</Button>}
       overflow={[
          { label: "趋势与分类在线率", onSelect: () => setTrendDrawerOpen(true), icon: <TrendingUp size={14} /> },
@@ -467,7 +462,8 @@ export function ProductsPage() {
         { label: "标签管理", onSelect: () => setTagDialogOpen(true), icon: <Tag size={14} /> },
         { label: "SKU 父子规则预览与设置", onSelect: () => setGroupingDrawerOpen(true), icon: <Settings2 size={14} /> },
       ]}
-    />
+    />}>
+    <div className="si-page si-products-page">
     <ProjectTabPanel projectId={project.id} tab="products">
       {syncMessage && <Notice tone="info" title="库存同步进行中">{syncMessage}</Notice>}
       {feedlessCollectionConfigured && <Notice tone="info" title="无 Feed 自动采集已启用">首次及每日同步优先使用 WooCommerce Store API；失败时回退商品 Sitemap/HTML。</Notice>}
@@ -529,7 +525,8 @@ export function ProductsPage() {
     <Drawer open={reportOpen} onOpenChange={setReportOpen} title="今日日报" description="库存变化与需要关注的 SKU。">
       {reportLoading ? <div className="si-query-loading" role="status">正在读取今日日报…</div> : reportError ? <ApiErrorNotice label="今日日报读取失败。" error={reportError} onRetry={() => void loadReport()} /> : <pre className="si-inventory-report">{report || "暂无今日日报。"}</pre>}
     </Drawer>
-  </div>;
+    </div>
+  </PageFrame>;
 }
 
 import "./products/page.css";

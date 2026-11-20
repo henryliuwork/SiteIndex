@@ -198,6 +198,17 @@ function findCell(row: HTMLElement, headerName: string): string | undefined {
 }
 
 describe("合并后的产品管理表", () => {
+  it("使用项目表格外框，项目头不重复显示站点和同步时间", async () => {
+    await renderProductsPage({ syncAt: "2026-11-12T10:00:00Z" });
+    expect(await screen.findByRole("table")).toBeTruthy();
+    const frame = document.querySelector(".si-page-frame-project.is-table");
+    const header = frame?.querySelector(".si-page-frame-header .si-project-header-single");
+    expect(header).toBeTruthy();
+    expect(header?.textContent).not.toContain("demo-store.example.test");
+    expect(header?.textContent).not.toContain("2026-11-12");
+    expect(frame?.querySelector(".si-page-frame-body .si-products-page .si-tab-panel")).toBeTruthy();
+  });
+
   it("摘要只使用真实契约字段；字段缺失或无业务日时显示明确空态", async () => {
     await renderProductsPage();
     expect(await screen.findByText("当前运行环境未提供产品管理摘要。")).toBeTruthy();
@@ -252,13 +263,12 @@ describe("合并后的产品管理表", () => {
     expect(screen.queryByText(/未配置商品来源|每日库存同步未启用/)).toBeNull();
   }, 15_000);
 
-  it("保留 #574 的项目头同步时间展示且不重复显示", async () => {
+  it("项目头不重复显示侧栏已有的同步时间", async () => {
     await renderProductsPage({ syncAt: new Date(2026, 10, 8, 17, 0).toISOString() });
 
-    expect(await screen.findByText(/最近同步/)).toBeTruthy();
-    expect(document.querySelector(".si-project-header-sync")?.textContent).toContain("11-08 17:00");
-    expect(await screen.findByText("同步成功")).toBeTruthy();
-    expect(document.body.textContent?.match(/11-08 17:00/g)).toHaveLength(1);
+    expect(await screen.findByRole("table")).toBeTruthy();
+    expect(document.querySelector(".si-project-header-sync")).toBeNull();
+    expect(screen.queryByText(/最近同步|11-08 17:00/)).toBeNull();
     expect(screen.queryByText(/今天/)).toBeNull();
   }, 15_000);
 
