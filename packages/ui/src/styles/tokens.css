@@ -38,7 +38,7 @@
   --color-overlay-subtle: rgba(16, 22, 19, 0.12);
   --color-focus: rgba(30, 107, 82, 0.12);
 
-  --font-sans: "Geist Variable", "Source Han Sans SC", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --font-sans: "Geist Variable", "Microsoft YaHei UI", "PingFang SC", "Source Han Sans SC", sans-serif;
   --font-mono: "Geist Mono Variable", Consolas, monospace;
 
   --fs-page-title: 20px;
@@ -81,11 +81,14 @@
   --space-form-item: var(--space-3);
   --space-control-group: var(--space-2);
   --space-table-header-content: var(--space-2);
+  --space-section-gap: var(--space-3);
 
   --control-height: 32px;
   --control-height-compact: 28px;
   --input-with-action-gap: var(--space-2);
   --project-tab-row-height: 44px;
+  --project-header-height: 48px;
+  --global-page-title-row-height: 56px;
   --page-segment-height: 32px;
 
   --radius-control: 6px;
