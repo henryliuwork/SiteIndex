@@ -84,11 +84,11 @@ async function discoverRoutes(server: ViteDevServer, projectId: string): Promise
     if (typeof routePath !== "string") continue;
     const name = path.basename(path.dirname(file));
     if (routePath === "/new/*") {
-      for (const step of ["url", "source", "brand", "done"]) {
+      for (const step of ["url", "source", "brand", "agent-workspace", "done"]) {
         cases.push({ name: `new-project-${step}`, path: `/new/${step}` });
       }
       cases.push({ name: "new-project-woo-detect", path: "/new/url" });
-      cases.push({ name: "new-project-woo-source", path: "/new/url" });
+      cases.push({ name: "new-project-woo-source", path: "/new/source" });
     } else if (routePath === "*") {
       cases.push({ name: "not-found", path: "/__ui-check-not-found__" });
     } else {
@@ -97,6 +97,46 @@ async function discoverRoutes(server: ViteDevServer, projectId: string): Promise
     }
   }
   return cases;
+}
+
+async function advanceWizardCase(page: Page, route: RouteCase): Promise<void> {
+  if (!route.name.startsWith("new-project-")) return;
+  if (route.name !== "new-project-url") {
+    await page.getByRole("textbox", { name: "网站地址" }).fill("woo.example.test");
+    await page.getByRole("button", { name: "检测", exact: true }).click();
+    await page.getByRole("list", { name: "Sitemap 类型" }).waitFor({ state: "visible", timeout: 20_000 });
+    await page.getByText("网站检测完成。").waitFor({ state: "visible", timeout: 5_000 });
+    await page.getByRole("button", { name: "关闭通知" }).evaluateAll((buttons) => {
+      for (const button of buttons) if (button.isConnected) (button as HTMLButtonElement).click();
+    });
+    if (route.name !== "new-project-woo-detect") {
+      await page.getByRole("button", { name: "下一步：数据源" }).click();
+      if (route.name === "new-project-woo-source") {
+        const collect = page.getByRole("checkbox", { name: "自动采集商品" });
+        if (!await collect.isChecked()) throw new Error("WooCommerce 无 Feed 时应默认启用商品采集。");
+        await page.getByRole("button", { name: "使用 /shop/{slug}" }).click();
+        await page.getByRole("button", { name: "使用 /product-category/{slug}" }).click();
+        await page.getByText("将保存：/shop/{slug}，/product-category/{slug}").waitFor({ state: "visible", timeout: 15_000 });
+      } else if (route.name !== "new-project-source") {
+        await page.getByRole("button", { name: "下一步：品牌配置" }).click();
+        if (route.name !== "new-project-brand") {
+          await page.getByRole("button", { name: "下一步：Agent 工作区" }).click();
+          if (route.name === "new-project-done") {
+            await page.getByText("目标目录为空，可以继续。").waitFor({ state: "visible", timeout: 15_000 });
+            await page.getByRole("button", { name: "创建项目" }).click();
+          }
+        }
+      }
+    }
+  }
+  await page.waitForURL((url) => url.hash === `#${route.path}`, { timeout: 20_000 });
+  const surface = route.name === "new-project-done" ? ".si-wizard-progress-card"
+    : route.name === "new-project-agent-workspace" ? ".si-wizard-workspace-layout"
+    : route.path === "/new/brand" ? ".si-wizard-location-card"
+    : route.path === "/new/source" ? ".si-wizard-source-layout"
+    : ".si-wizard-url-card";
+  await page.locator(surface).waitFor({ state: "visible", timeout: 20_000 });
+  await page.waitForFunction(() => (document.querySelector(".si-page-frame-body")?.scrollTop ?? -1) === 0, undefined, { timeout: 5_000 });
 }
 
 async function discoverMockProjectId(server: ViteDevServer): Promise<string> {
@@ -662,30 +702,8 @@ async function main(): Promise<void> {
         currentConsoleErrors = consoleErrors;
         try {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
-          await page.goto(routeCaseUrl(baseUrl, mockQuery, route.path, route.name), { waitUntil: "domcontentloaded", timeout: 20_000 });
-          if (route.name.startsWith("new-project-woo-")) {
-            await page.getByRole("textbox", { name: "网站地址" }).fill("woo.example.test");
-            await page.getByRole("button", { name: "检测", exact: true }).click();
-            await page.getByRole("list", { name: "Sitemap 类型" }).waitFor({ state: "visible", timeout: 20_000 });
-            if (route.name === "new-project-woo-source") {
-              await page.getByRole("button", { name: "下一步：数据源" }).click();
-              if (!await page.getByRole("checkbox", { name: "自动采集商品" }).isChecked()) throw new Error("WooCommerce 无 Feed 时应默认启用商品采集。");
-              await page.getByRole("button", { name: "使用 /shop/{slug}" }).click();
-              await page.waitForFunction(() => document.querySelector<HTMLInputElement>(".si-wizard-category-rules input")?.value.includes("/shop/{slug}"), undefined, { timeout: 15_000 });
-              await page.getByRole("button", { name: "使用 /product-category/{slug}" }).click();
-              await page.waitForFunction(() => {
-                const value = document.querySelector<HTMLInputElement>(".si-wizard-category-rules input")?.value ?? "";
-                return value.includes("/shop/{slug}") && value.includes("/product-category/{slug}");
-              }, undefined, { timeout: 15_000 });
-              await page.getByText("将保存：/shop/{slug}，/product-category/{slug}").waitFor({ state: "visible", timeout: 15_000 });
-            }
-            await page.getByText("网站检测完成。").waitFor({ state: "visible", timeout: 5_000 });
-            // Auto-dismiss may detach a toast while Playwright waits for click stability.
-            await page.getByRole("button", { name: "关闭通知" }).evaluateAll((buttons) => {
-              for (const button of buttons) if (button.isConnected) (button as HTMLButtonElement).click();
-            });
-            await page.getByText("网站检测完成。").waitFor({ state: "hidden", timeout: 5_000 });
-          }
+          await page.goto(routeCaseUrl(baseUrl, mockQuery, route.name.startsWith("new-project-") ? "/new/url" : route.path, route.name), { waitUntil: "domcontentloaded", timeout: 20_000 });
+          await advanceWizardCase(page, route);
           const dataSurfaceState = await waitForRoute(page, route);
           if (route.path === "/skills") {
             await page.locator(".si-skill-choice").filter({ hasText: "stock-report" }).click();

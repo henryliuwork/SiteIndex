@@ -135,7 +135,11 @@ export function NewProjectWizardPage() {
   const projectRoot = draft.projectsRoot || settings.data?.projects_root || "";
   const targetWorkspacePath = workspacePathJoin(projectRoot, draft.folderName);
 
-  useEffect(() => { setError(""); setFeedError(""); setCanRetryFeed(false); }, [pathname]);
+  useEffect(() => {
+    setError(""); setFeedError(""); setCanRetryFeed(false);
+    const frameBody = document.querySelector<HTMLElement>(".si-page-frame-body");
+    if (frameBody) frameBody.scrollTop = 0;
+  }, [pathname]);
   useEffect(() => {
     if (settings.data?.projects_root && !draft.projectsRoot) update({ projectsRoot: settings.data.projects_root });
   }, [settings.data, draft.projectsRoot, update]);
