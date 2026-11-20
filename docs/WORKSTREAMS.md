@@ -1,6 +1,6 @@
 # SiteIndex · 并行开发分工（A / B / C / D / E）
 
-> 所有开发 agent 开工前必读：本文件 → `AGENTS.md` → 当前执行路线图 `docs/plan/2026-11-20-v076-ui-frame-spec-roadmap.md`（v0.7.6）→ `docs/plan/2026-11-18-v070-v075-roadmap.md`（目标模式运行手册 `docs/plan/2026-11-18-v07-lead-playbook.md`）→ 上一轮 `docs/plan/2026-11-17-v061-v065-roadmap.md`（及 v0.6.0 UI 规范 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`）→ v0.3 表格标准 `docs/plan/2026-11-05-v030-roadmap.md` → 历史快照 `docs/plan/2026-10-30-v020-wave2-execution.md` → 收敛总计划 `docs/plan/2026-10-29-v020-convergence.md` → A/B/C 各自任务清单（若适用）→ PRD / ARCHITECTURE / DATA_SPEC / DESIGN 中相关章节。
+> 所有开发 agent 开工前必读：本文件 → `AGENTS.md` → 当前执行路线图 `docs/plan/2026-11-20-v080-ui-frame-spec-roadmap.md`（v0.8.0）→ `docs/plan/2026-11-18-v070-v075-roadmap.md`（目标模式运行手册 `docs/plan/2026-11-18-v07-lead-playbook.md`）→ 上一轮 `docs/plan/2026-11-17-v061-v065-roadmap.md`（及 v0.6.0 UI 规范 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`）→ v0.3 表格标准 `docs/plan/2026-11-05-v030-roadmap.md` → 历史快照 `docs/plan/2026-10-30-v020-wave2-execution.md` → 收敛总计划 `docs/plan/2026-10-29-v020-convergence.md` → A/B/C 各自任务清单（若适用）→ PRD / ARCHITECTURE / DATA_SPEC / DESIGN 中相关章节。
 
 ## 1. 五个工作流
 
