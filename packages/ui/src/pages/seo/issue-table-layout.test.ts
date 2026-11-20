@@ -9,7 +9,7 @@ describe("SEO 问题表格行布局", () => {
     expect(pageStyles).not.toContain("nth-child");
     expect(pageSource).toContain('meta: { width: 320, grow: 2, minWidth: 220, text: "single" }');
     expect(pageSource).toContain('meta: { width: 220, grow: 1, minWidth: 160, text: "clamp2" }');
-    expect(pageSource).toContain('meta: { width: 100, grow: 0, minWidth: 92, text: "single" }');
+    expect(pageSource).toContain('id: "last_seen", accessorKey: "last_seen", header: "发现于", meta: { width: 140, grow: 0, minWidth: 140, text: "single" }');
     expect(pageStyles).toMatch(/\.si-seo-url\s*\{[^}]*width:\s*100%[^}]*max-width:\s*100%[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/s);
     expect(pageSource).toContain('title={row.original.url}');
   });
