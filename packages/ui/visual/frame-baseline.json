@@ -1,7 +1,6 @@
 {
   "version": 1,
   "legacyRoutes": {
-    "content": "project",
     "project-settings-categories": "project",
     "project-settings-config": "project",
     "project-settings-files": "project",
