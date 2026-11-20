@@ -1928,6 +1928,103 @@ async function captureW2InteractionScreenshot(page) {
   return captureW2FailureScreenshot(page, activeW2CheckNumber, "interaction");
 }
 
+async function readW2SectionPageMetrics(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector("main .si-page");
+    if (!root) return null;
+    const visible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight
+        && rect.right > 0 && rect.left < innerWidth && style.display !== "none" && style.visibility !== "hidden"
+        && !element.closest("[aria-hidden='true'], [role='dialog'], .si-detail-panel, .si-drawer, .si-popover-content");
+    };
+    const texts = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      if (!parent || !visible(parent)) continue;
+      const scroll = parent.closest(".si-table-scroll");
+      if (scroll) {
+        const textRect = parent.getBoundingClientRect();
+        const scrollRect = scroll.getBoundingClientRect();
+        if (textRect.bottom <= scrollRect.top || textRect.top >= scrollRect.bottom) continue;
+      }
+      texts.push(node.textContent ?? "");
+    }
+    const pageText = texts.join(" ");
+    const segments = [...root.querySelectorAll(".si-segmented")].filter(visible);
+    const table = [...root.querySelectorAll(".si-data-table")].find(visible);
+    const header = table?.querySelector("thead th")?.getBoundingClientRect();
+    const tableRect = table?.getBoundingClientRect();
+    const scrollbars = [...root.querySelectorAll("*")].filter((element) => visible(element)
+      && ["auto", "scroll"].includes(getComputedStyle(element).overflowX)
+      && element.scrollWidth > element.clientWidth + 1).length;
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      tableHeaderTop: header ? Math.round(header.top) : null,
+      visibleRowCapacity: header && tableRect ? Math.max(0, Math.floor((Math.min(tableRect.bottom, innerHeight) - header.bottom) / 52)) : null,
+      conditionalBannerVisible: [...root.querySelectorAll(".si-notice")].some(visible),
+      visibleTimeCount: (pageText.match(/\b(?:20\d{2}-)?\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}\b/gu) ?? []).length,
+      segmentGroupCount: segments.length,
+      segmentCountBadgeCount: segments.reduce((count, segment) => count + [...segment.querySelectorAll("button")]
+        .filter((button) => /\d/u.test(button.innerText) || Boolean(button.querySelector(".si-chip, [class*='badge']"))).length, 0),
+      relativeTimeCount: (pageText.match(/今天|昨天/gu) ?? []).length,
+      horizontalScrollerCount: scrollbars,
+      documentHorizontalOverflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > innerWidth + 1,
+      overviewCardCount: [...root.querySelectorAll(".si-overview-kpis .si-kpi-card")].filter(visible).length,
+      overviewClickableCardCount: [...root.querySelectorAll(".si-overview-kpis a.si-kpi-card[href]")].filter(visible).length,
+    };
+  });
+}
+
+async function runW2PackagedPageWalk(page) {
+  const originalViewport = page.viewportSize();
+  const pages = [
+    ["seo", "SEO", "seo.pageRows"],
+    ["content", "内容", "content.blog"],
+    ["edm", "EDM", "edm.images"],
+    ["products", "产品管理", "products.merged"],
+    ["overview", "概览", null],
+  ];
+  try {
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
+      for (const [route, label, tableId] of pages) {
+        await attemptW2(`Packaged ${label} page at ${viewport.width}×${viewport.height}`, "installed-ui", async () => {
+          await page.setViewportSize(viewport);
+          await goToW2Route(page, `/p/${W2_PROJECT_ID}${route === "overview" ? "" : `/${route}`}`);
+          if (tableId) await waitForW2Table(page, tableId);
+          else await page.locator(".si-overview-kpis .si-kpi-card").first().waitFor({ state: "visible", timeout: 20_000 });
+          const metrics = await readW2SectionPageMetrics(page);
+          const viewportApplied = metrics?.viewport.width === viewport.width && metrics?.viewport.height === viewport.height;
+          const visibleText = await page.locator("body").innerText();
+          const screenshotSafe = ![APP_DATA_ROOT, TEST_ROOT, ...CREDENTIAL_CANARY_VALUES]
+            .some((value) => value && visibleText.includes(value));
+          const screenshot = path.join("w2-page-walk", `${route}-${viewport.width}x${viewport.height}.png`);
+          let screenshotSaved = false;
+          if (screenshotSafe && OUTPUT_DIR) {
+            await mkdir(path.join(OUTPUT_DIR, "w2-page-walk"), { recursive: true });
+            screenshotSaved = (await page.screenshot({ path: path.join(OUTPUT_DIR, screenshot), fullPage: false })).byteLength > 0;
+          }
+          const tableGate = !tableId || (metrics?.tableHeaderTop != null && metrics.visibleRowCapacity != null
+            && (viewport.width !== 1280 || metrics.conditionalBannerVisible
+              || (metrics.tableHeaderTop <= 200 && metrics.visibleRowCapacity >= 9)));
+          const passed = viewportApplied && screenshotSafe && screenshotSaved && tableGate
+            && metrics.visibleTimeCount <= 1 && metrics.segmentGroupCount <= 1
+            && metrics.segmentCountBadgeCount === 0 && metrics.relativeTimeCount === 0
+            && metrics.horizontalScrollerCount === 0 && !metrics.documentHorizontalOverflow
+            && (route !== "overview" || (metrics.overviewCardCount >= 1 && metrics.overviewCardCount <= 6
+              && metrics.overviewClickableCardCount >= 1));
+          return { passed, evidence: { metrics, screenshot: screenshotSaved ? screenshot : null,
+            screenshotSafe, screenshotSaved, viewportApplied, tableGate } };
+        });
+      }
+    }
+  } finally {
+    if (originalViewport) await page.setViewportSize(originalViewport);
+  }
+}
+
 async function acceptNextW2Dialog(page, trigger) {
   let resolveDialogHandled;
   const dialogHandled = new Promise((resolve) => { resolveDialogHandled = resolve; });
@@ -2190,18 +2287,18 @@ async function waitForW2SeoRuleState(page, rule, expected) {
 
 async function readW2SeoOpenKpi(page) {
   return page.evaluate(() => {
-    const region = document.querySelector(".si-seo-kpis");
-    const text = region?.innerText ?? "";
-    const match = text.match(/开放问题\s*([\d,]+)/u);
-    return match ? Number(match[1].replaceAll(",", "")) : null;
+    const item = [...document.querySelectorAll('.si-summary-line[aria-label="SEO 摘要"] button')]
+      .find((button) => button.querySelector("span")?.textContent === "待处理问题页");
+    const value = item?.querySelector("strong")?.textContent;
+    return value ? Number(value.replaceAll(",", "")) : null;
   });
 }
 
 async function waitForW2SeoOpenKpi(page, expectedCount) {
   await page.waitForFunction((expected) => {
-    const region = document.querySelector(".si-seo-kpis");
-    const match = region?.innerText.match(/开放问题\s*([\d,]+)/u);
-    return Boolean(match && Number(match[1].replaceAll(",", "")) === expected);
+    const item = [...document.querySelectorAll('.si-summary-line[aria-label="SEO 摘要"] button')]
+      .find((button) => button.querySelector("span")?.textContent === "待处理问题页");
+    return Number(item?.querySelector("strong")?.textContent?.replaceAll(",", "")) === expected;
   }, expectedCount, { timeout: 15_000 });
 }
 
@@ -2209,15 +2306,42 @@ async function readW2SeoUiContext(page) {
   return page.evaluate(() => {
     const [, query = ""] = window.location.hash.split("?");
     const params = new URLSearchParams(query);
-    const statusControl = document.querySelector('.si-seo-dropdown-trigger[aria-label^="状态"]');
+    const statusControl = document.querySelector('.si-seo-dropdown-trigger[aria-label^="问题状态"]');
     return {
       onSeoRoute: /\/seo(?:\?|$)/u.test(window.location.hash),
       rule: params.get("rule"),
       status: params.get("status"),
-      issueRowCount: document.querySelector('.si-data-table[aria-label="seo.issues.v2 数据表"]')?.querySelectorAll("tbody tr[data-row-id]").length ?? 0,
+      pageRowCount: document.querySelector('.si-data-table[aria-label="seo.pageRows 数据表"]')?.querySelectorAll("tbody tr[data-row-id]").length ?? 0,
       statusLabelPresent: Boolean(statusControl),
     };
   });
+}
+
+async function openW2FirstPageIssue(page, rule) {
+  const row = page.locator(`${w2DataTableSelector("seo.pageRows")} tbody tr[data-row-id]`).first();
+  await row.waitFor({ state: "visible", timeout: 20_000 });
+  const url = await row.getAttribute("data-row-id");
+  if (!url) throw new Error("SEO 页面行缺少 URL 身份标识");
+  await row.click();
+  const drawer = page.locator(".si-drawer");
+  await drawer.waitFor({ state: "visible", timeout: 10_000 });
+  await drawer.getByRole("group", { name: "页面详情分段" }).getByRole("button", { name: "问题", exact: true }).click();
+  await drawer.locator(".si-seo-scenario-list li").filter({ hasText: "Title 缺失" }).first()
+    .waitFor({ state: "visible", timeout: 10_000 });
+  return `${url}:${rule}`;
+}
+
+async function clickW2DrawerIssueAction(page, label, rule, targetRowIdentity) {
+  const drawer = page.locator(".si-drawer");
+  const issue = drawer.locator(".si-seo-scenario-list li").filter({ hasText: "Title 缺失" }).first();
+  const action = issue.getByRole("button", { name: label, exact: true });
+  await action.waitFor({ state: "visible", timeout: 10_000 });
+  const actionButtonCount = await action.count();
+  const targetBeforeState = await readW2SeoSnapshotSerial(page, rule, targetRowIdentity);
+  const toastCountBefore = await page.locator(".si-toast-region .si-toast").count();
+  const confirmation = await acceptNextW2Dialog(page, () => action.click({ timeout: 5_000 }));
+  return { ...confirmation, actionButtonCount, targetBeforeState, targetRowIdentity,
+    targetRowIdentityFingerprint: fingerprintW2RowIdentity(targetRowIdentity), toastCountBefore };
 }
 
 async function clickW2IssueActionWithConfirmation(page, menuItemName, rule) {
@@ -2465,7 +2589,7 @@ async function testW2Pages(page, syntheticSite) {
     const link = page.getByRole("link", { name: "查看 SEO 问题" }).first();
     await link.waitFor({ state: "visible", timeout: 10_000 });
     await link.click();
-    await waitForW2Table(page, "seo.issues.v2");
+    await waitForW2TableTotal(page, "seo.pageRows", W2_EXPECTED.issues - 6);
     const selected = await page.evaluate(() => {
       const [, query = ""] = window.location.hash.split("?");
       const params = new URLSearchParams(query);
@@ -2476,180 +2600,95 @@ async function testW2Pages(page, syntheticSite) {
         selectedFilterText: document.querySelector(".si-seo-selected-filters")?.textContent?.trim() ?? "",
       };
     });
-    overviewRoutePass = selected.onSeoRoute && selected.rule === "title_missing" && selected.status === "open";
+    overviewRoutePass = selected.onSeoRoute && selected.rule === "title_missing" && selected.status === "open"
+      && selected.selectedFilterText.includes("问题类型") && selected.selectedFilterText.includes("待处理");
     return { passed: overviewRoutePass, evidence: selected };
   });
 
-  await attemptW2("SEO issues table renders real packaged rows and advances pagination", "ui", async () => {
-    await waitForW2Table(page, "seo.issues.v2");
-    const pagination = await exerciseW2Pagination(page, "seo.issues.v2", W2_EXPECTED.issues - 6);
-    const columnText = await page.locator('.si-data-table[aria-label="seo.issues.v2 数据表"] thead').innerText();
-    const statusColumn = columnText.includes("状态");
-    const statusFilterVisible = await page.locator('.si-seo-dropdown-trigger[aria-label^="状态"]').isVisible();
-    const passed = pagination.passed && statusColumn && statusFilterVisible;
-    return { passed, evidence: { ...pagination, statusColumn, statusFilterVisible } };
+  await attemptW2("SEO page table renders filtered packaged rows and advances pagination", "ui", async () => {
+    await waitForW2Table(page, "seo.pageRows");
+    const expected = await page.evaluate((projectId) => window.siteindex.seo.listPageRows(projectId, {
+      page: 1, pageSize: 0, filters: { rules: ["title_missing"], status: "open" },
+    }), W2_PROJECT_ID);
+    const pagination = await exerciseW2Pagination(page, "seo.pageRows", expected.total);
+    const columnText = await page.locator('.si-data-table[aria-label="seo.pageRows 数据表"] thead').innerText();
+    const expectedColumns = ["页面", "类型", "收录", "待处理问题", "入链", "出链", "最近问题变化"];
+    const columnsPresent = expectedColumns.every((column) => columnText.includes(column));
+    const statusFilterVisible = await page.locator('.si-seo-dropdown-trigger[aria-label^="问题状态"]').isVisible();
+    const passed = pagination.passed && expected.total === W2_EXPECTED.issues - 6 && columnsPresent && statusFilterVisible;
+    return { passed, evidence: { ...pagination, expectedPageCount: expected.total, columnsPresent, statusFilterVisible } };
   });
 
-  await attemptW2("SEO issue action marks a row processed and restores it through the UI", "ui", async () => {
-    await waitForW2Table(page, "seo.issues.v2");
+  await attemptW2("SEO page drawer processes and restores one issue through the UI", "ui", async () => {
+    await waitForW2Table(page, "seo.pageRows");
     const initialUi = await readW2SeoUiContext(page);
     const before = await readW2SeoStatusCounts(page, "title_missing");
     const routeAndFilterReady = initialUi.onSeoRoute && initialUi.rule === "title_missing"
-      && initialUi.status === "open" && initialUi.statusLabelPresent && initialUi.issueRowCount > 0;
-    const processedConfirmation = routeAndFilterReady
-      ? await clickW2IssueActionWithConfirmation(page, "标记已处理", "title_missing")
-      : {
-        confirmationType: "native-window.confirm",
-        actionCompleted: false,
-        actionError: "操作前的 SEO 页面或 open 筛选不符合预期",
-        dialogObserved: false,
-        dialogAccepted: false,
-        message: null,
-        dialogError: null,
-        rowCount: initialUi.issueRowCount,
-        targetRowIdentity: null,
-        targetRowIdentityFingerprint: null,
-        targetBeforeState: null,
-        toastCountBefore: 0,
-        actionButtonCount: 0,
-        menuItemCount: 0,
-        menuItemVisible: false,
-      };
-    const processedConfirmationMatches = processedConfirmation.dialogObserved
-      && processedConfirmation.dialogAccepted
-      && processedConfirmation.message?.includes("标记为已处理？")
-      && processedConfirmation.message?.includes("单条 SEO 问题");
-    const processedBeforeStateMatches = Boolean(processedConfirmation.targetBeforeState)
-      && w2SeoSnapshotMatches(processedConfirmation.targetBeforeState, before, "open");
-    const processedToast = processedConfirmation.dialogAccepted
-      ? await waitForW2UpdateResultToast(page, 1, processedConfirmation.toastCountBefore ?? 0)
-      : { observed: false, previousCount: processedConfirmation.toastCountBefore ?? 0, count: null, text: null, updated: null };
-    const expectedOpenAfterProcess = before.open - 1;
-    const expectedAfterProcess = { ...before, open: expectedOpenAfterProcess, fixed: before.fixed + 1 };
-    const processedStateEvidence = processedConfirmation.dialogAccepted && processedConfirmation.targetRowIdentity
-      ? await waitForW2SeoStateEvidence(page, "title_missing", processedConfirmation.targetRowIdentity, expectedAfterProcess, "fixed")
-      : { passed: false, reason: "processed action was not confirmed or target row identity was missing", samples: [] };
-    let processedWaitError = null;
-    if (processedConfirmation.dialogAccepted) {
-      try {
-        await waitForW2SeoCount(page, "title_missing", "fixed", before.fixed + 1);
-      } catch (error) {
-        processedWaitError = safeMessage(error);
-      }
-    }
-    let openPaginationWaitError = null;
-    try {
-      await page.waitForFunction((expected) => {
-        const table = document.querySelector('.si-data-table[aria-label="seo.issues.v2 数据表"]');
-        const count = table?.querySelector(".si-pagination-count")?.textContent ?? "";
-        return count.includes(`/ ${expected}`);
-      }, String(expectedOpenAfterProcess), { timeout: 10_000 });
-    } catch (error) {
-      openPaginationWaitError = safeMessage(error);
-    }
+      && initialUi.status === "open" && initialUi.statusLabelPresent && initialUi.pageRowCount > 0;
+    if (!routeAndFilterReady) return { passed: false, evidence: { initialUi, before } };
+
+    const targetRowIdentity = await openW2FirstPageIssue(page, "title_missing");
+    const processed = await clickW2DrawerIssueAction(page, "标记已处理", "title_missing", targetRowIdentity);
+    const processedMessageMatches = processed.dialogObserved && processed.dialogAccepted
+      && processed.message?.includes("标记为已处理？") && processed.message?.includes("单条 SEO 问题");
+    const afterProcess = { ...before, open: before.open - 1, fixed: before.fixed + 1 };
+    const processedToast = processed.dialogAccepted
+      ? await waitForW2UpdateResultToast(page, 1, processed.toastCountBefore) : { observed: false };
+    const processedState = processed.dialogAccepted
+      ? await waitForW2SeoStateEvidence(page, "title_missing", targetRowIdentity, afterProcess, "fixed")
+      : { passed: false };
     const afterFixed = await readW2SeoStatusCounts(page, "title_missing");
-    const statusFilter = page.locator('.si-seo-dropdown-trigger[aria-label^="状态"]');
-    let restoreFilterError = null;
-    let restoredUi = null;
-    try {
-      await statusFilter.click();
-      await page.getByRole("group", { name: "状态" }).getByRole("button", { name: "已处理", exact: true }).click();
-      await waitForW2Table(page, "seo.issues.v2");
-      restoredUi = await readW2SeoUiContext(page);
-    } catch (error) {
-      restoreFilterError = safeMessage(error);
-    }
-    const restoreActionButtonCount = await page.locator(`${w2DataTableSelector("seo.issues.v2")} tbody tr[data-row-id]`).locator("button.si-seo-row-action").count();
-    let restoreConfirmation = {
-      confirmationType: "native-window.confirm",
-      actionCompleted: false,
-      actionError: restoreFilterError ?? "没有可见的已处理行可恢复",
-      dialogObserved: false,
-      dialogAccepted: false,
-      message: null,
-      dialogError: null,
-      rowCount: 0,
-      targetRowIdentity: null,
-      targetRowIdentityFingerprint: null,
-      targetBeforeState: null,
-      toastCountBefore: 0,
-      actionButtonCount: 0,
-      menuItemCount: 0,
-      menuItemVisible: false,
-    };
-    if (restoreFilterError === null && restoreActionButtonCount > 0) {
-      restoreConfirmation = restoredUi?.onSeoRoute && restoredUi.rule === "title_missing" && restoredUi.status === "fixed"
-        ? await clickW2IssueActionWithConfirmation(page, "恢复为待处理", "title_missing")
-        : { ...restoreConfirmation, actionError: "恢复操作前的 SEO 页面或已处理筛选不符合预期" };
-    }
-    const restoreConfirmationMatches = restoreConfirmation.dialogObserved
-      && restoreConfirmation.dialogAccepted
-      && restoreConfirmation.message?.includes("恢复")
-      && restoreConfirmation.message?.includes("单条 SEO 问题");
-    const sameTargetRow = Boolean(processedConfirmation.targetRowIdentity)
-      && processedConfirmation.targetRowIdentity === restoreConfirmation.targetRowIdentity
-      && processedConfirmation.targetRowIdentityFingerprint === restoreConfirmation.targetRowIdentityFingerprint;
-    const restoreBeforeStateMatches = Boolean(restoreConfirmation.targetBeforeState)
-      && w2SeoSnapshotMatches(restoreConfirmation.targetBeforeState, expectedAfterProcess, "fixed");
-    const restoreToast = restoreConfirmation.dialogAccepted
-      ? await waitForW2UpdateResultToast(page, 1, restoreConfirmation.toastCountBefore ?? 0)
-      : { observed: false, previousCount: restoreConfirmation.toastCountBefore ?? 0, count: null, text: null, updated: null };
-    const restoreStateEvidence = restoreConfirmation.dialogAccepted && restoreConfirmation.targetRowIdentity
-      ? await waitForW2SeoStateEvidence(page, "title_missing", restoreConfirmation.targetRowIdentity, before, "open")
-      : { passed: false, reason: "restore action was not confirmed or target row identity was missing", samples: [] };
-    let restoreWaitError = null;
-    if (restoreConfirmation.dialogAccepted) {
-      try {
-        await waitForW2SeoCount(page, "title_missing", "open", before.open);
-      } catch (error) {
-        restoreWaitError = safeMessage(error);
-      }
-    }
-    const statusCounts = await readW2SeoStatusCounts(page, "title_missing");
-    const passed = processedConfirmation.actionCompleted
-      && processedConfirmation.actionButtonCount === 1 && processedConfirmation.menuItemCount === 1
-      && processedConfirmation.menuItemVisible
-      && restoreConfirmation.actionCompleted
-      && restoreConfirmation.actionButtonCount === 1 && restoreConfirmation.menuItemCount === 1
-      && restoreConfirmation.menuItemVisible
-      && routeAndFilterReady
-      && before.open === W2_EXPECTED.issues - 6
-      && processedConfirmationMatches && restoreConfirmationMatches
-      && processedBeforeStateMatches && restoreBeforeStateMatches && sameTargetRow
-      && processedToast.observed && processedToast.updated === 1
-      && restoreToast.observed && restoreToast.updated === 1
-      && processedStateEvidence.passed && restoreStateEvidence.passed
-      && afterFixed.fixed === before.fixed + 1
-      && afterFixed.open === expectedOpenAfterProcess
+    const filteredAfterProcess = await waitForW2TableTotal(page, "seo.pageRows", before.open - 1);
+    await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
+    const processedPagination = await exerciseW2Pagination(page, "seo.pageRows", before.open - 1);
+    await goToW2Route(page, `/p/${W2_PROJECT_ID}/seo?rule=title_missing&status=fixed`);
+    await waitForW2TableTotal(page, "seo.pageRows", 1);
+    const fixedRowIdentity = await openW2FirstPageIssue(page, "title_missing");
+
+    const restored = await clickW2DrawerIssueAction(page, "恢复为待处理", "title_missing", targetRowIdentity);
+    const restoredMessageMatches = restored.dialogObserved && restored.dialogAccepted
+      && restored.message?.includes("恢复") && restored.message?.includes("单条 SEO 问题");
+    const restoredToast = restored.dialogAccepted
+      ? await waitForW2UpdateResultToast(page, 1, restored.toastCountBefore) : { observed: false };
+    const restoredState = restored.dialogAccepted
+      ? await waitForW2SeoStateEvidence(page, "title_missing", targetRowIdentity, before, "open")
+      : { passed: false };
+    const afterRestore = await readW2SeoStatusCounts(page, "title_missing");
+    await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
+    await goToW2Route(page, `/p/${W2_PROJECT_ID}/seo?rule=title_missing&status=open`);
+    const filteredAfterRestore = await waitForW2TableTotal(page, "seo.pageRows", before.open);
+    const restoredPagination = await exerciseW2Pagination(page, "seo.pageRows", before.open);
+
+    const passed = before.open === W2_EXPECTED.issues - 6
+      && processed.actionCompleted && processed.actionButtonCount === 1 && processedMessageMatches
+      && w2SeoSnapshotMatches(processed.targetBeforeState, before, "open")
+      && processedToast.observed && processedToast.updated === 1 && processedState.passed
+      && afterFixed.open === afterProcess.open && afterFixed.fixed === afterProcess.fixed
       && afterFixed.all === before.all && afterFixed.ignored === before.ignored
-      && statusCounts.open === before.open
-      && statusCounts.fixed === before.fixed
-      && statusCounts.all === before.all && statusCounts.ignored === before.ignored
-      && openPaginationWaitError === null;
-    const processedActionEvidence = withoutW2RawRowIdentity(processedConfirmation);
-    const restoreActionEvidence = withoutW2RawRowIdentity(restoreConfirmation);
-    return {
-      passed,
-      evidence: {
-        confirmationType: "native-window.confirm",
-        initialUi,
-        before,
-        sameTargetRow,
-        processedAction: { ...processedActionEvidence, message: undefined, messageMatchesExpectedScope: Boolean(processedConfirmationMatches), beforeStateMatches: processedBeforeStateMatches, toast: processedToast, stableState: processedStateEvidence, stateWaitError: processedWaitError },
-        afterFixed,
-        openPaginationWaitError,
-        restoreFilterError,
-        restoredUi,
-        restoreAction: { ...restoreActionEvidence, message: undefined, messageMatchesExpectedScope: Boolean(restoreConfirmationMatches), beforeStateMatches: restoreBeforeStateMatches, toast: restoreToast, stableState: restoreStateEvidence, stateWaitError: restoreWaitError },
-        afterRestore: statusCounts,
-        restoredToOpen: statusCounts.open === before.open && statusCounts.fixed === before.fixed,
-      },
-    };
+      && filteredAfterProcess.total === afterProcess.open && processedPagination.passed
+      && fixedRowIdentity === targetRowIdentity
+      && restored.actionCompleted && restored.actionButtonCount === 1 && restoredMessageMatches
+      && w2SeoSnapshotMatches(restored.targetBeforeState, afterProcess, "fixed")
+      && restoredToast.observed && restoredToast.updated === 1 && restoredState.passed
+      && afterRestore.open === before.open && afterRestore.fixed === before.fixed
+      && afterRestore.all === before.all && afterRestore.ignored === before.ignored
+      && filteredAfterRestore.total === before.open && restoredPagination.passed;
+    return { passed, evidence: {
+      initialUi, before, targetFingerprint: fingerprintW2RowIdentity(targetRowIdentity),
+      processed: { dialogObserved: processed.dialogObserved, dialogAccepted: processed.dialogAccepted,
+        messageMatches: processedMessageMatches, actionButtonCount: processed.actionButtonCount,
+        toast: processedToast, state: processedState.passed, afterFixed, filteredPages: filteredAfterProcess.total,
+        pagination: processedPagination },
+      restored: { dialogObserved: restored.dialogObserved, dialogAccepted: restored.dialogAccepted,
+        messageMatches: restoredMessageMatches, actionButtonCount: restored.actionButtonCount,
+        toast: restoredToast, state: restoredState.passed, afterRestore, filteredPages: filteredAfterRestore.total,
+        pagination: restoredPagination },
+    } };
   });
 
   await attemptW2("SEO rules Drawer ignores and restores a rule class", "ui", async () => {
     await clickProjectTab(page, "SEO");
-    await waitForW2Table(page, "seo.issues.v2");
+    await waitForW2Table(page, "seo.pageRows");
     await page.getByRole("button", { name: "规则设置", exact: true }).click();
     let ruleSection = page.locator(".si-seo-rule-setting").filter({ hasText: "Title 缺失" }).first();
     await ruleSection.waitFor({ state: "visible", timeout: 15_000 });
@@ -2784,7 +2823,7 @@ async function testW2Pages(page, syntheticSite) {
     return { passed: selected === "true" && legacyTabCount === 0, evidence: { expectedHash, actualHash: await page.evaluate(() => window.location.hash), selected, legacyTabCount } };
   });
 
-  await attemptW2("Merged product management shows inventory KPIs, parent stock, and child pagination", "ui", async () => {
+  await attemptW2("Merged product management shows summary, parent history, and child pagination", "ui", async () => {
     await clickProjectTab(page, "产品管理");
     const tableId = "products.merged";
     const table = page.locator(w2DataTableSelector(tableId));
@@ -2794,22 +2833,39 @@ async function testW2Pages(page, syntheticSite) {
     const parentTotal = W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus;
     const initial = await waitForW2TableTotal(page, tableId, parentTotal);
     const defaultParentSelected = await parentButton.getAttribute("aria-pressed") === "true";
-    const kpis = await page.locator(".si-inventory-kpis .si-kpi-card").evaluateAll((cards) => Object.fromEntries(cards.map((card) => [
-      card.querySelector(".si-kpi-label")?.textContent?.trim() ?? "",
-      card.querySelector(".si-kpi-value")?.textContent?.trim() ?? "",
-    ])));
+    const summary = await page.evaluate(async (projectId) => {
+      const management = (await window.siteindex.inventory.summary(projectId, 30)).product_management;
+      const expected = management?.as_of ? [
+        ["在线率（%）", management.online_rate == null ? null : Math.round(management.online_rate * 100)],
+        ["今日变化", management.changed_rows],
+        ["长期缺货", management.out_of_stock_7d_rows],
+        ["状态波动", management.fluctuating_30d_rows],
+      ].filter(([, value]) => value !== null) : [];
+      const visible = [...document.querySelectorAll('.si-summary-line[aria-label="产品管理摘要"] > button.si-summary-line-item')]
+        .map((item) => [item.querySelector("span")?.textContent?.trim(), Number(item.querySelector("strong")?.textContent?.replaceAll(",", ""))]);
+      return { expected, visible, matched: visible.length >= 2 && visible.every(([label, value], index) =>
+        label === expected[index]?.[0] && value === expected[index]?.[1]) };
+    }, W2_PROJECT_ID);
     const rowIds = await readW2VisibleRowKeys(page, tableId);
     const childrenVisibleByDefault = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
     const variantRow = table.locator('tbody tr[data-row-id="group-000:SYN-P000"]');
     const threeOfThree = await variantRow.getByText("3/3", { exact: true }).isVisible();
     const trendRow = table.locator('tbody tr[data-row-id="group-001:SYN-P001"]');
-    const trendLabel = await trendRow.locator(".si-status-cells").getAttribute("aria-label") ?? "";
+    await trendRow.click();
+    const historyDrawer = page.locator(".si-drawer");
+    await historyDrawer.waitFor({ state: "visible", timeout: 10_000 });
+    await historyDrawer.getByRole("group", { name: "产品详情分段" }).getByRole("button", { name: "历史", exact: true }).click();
+    const history = historyDrawer.locator(".si-product-history-section").first();
+    await history.getByText("30 天在线率：50%", { exact: true }).waitFor({ state: "visible", timeout: 10_000 });
+    const trendLabel = await history.locator(".si-status-cells").getAttribute("aria-label") ?? "";
     const statuses = trendLabel.split("：")[1]?.split("、") ?? [];
     const trendCounts = statuses.reduce((counts, status) => {
       counts[status] = (counts[status] ?? 0) + 1;
       return counts;
     }, {});
-    const rate30d = await trendRow.locator(".si-rate-cell").innerText();
+    const rate30d = (await history.innerText()).includes("30 天在线率：50%");
+    await page.keyboard.press("Escape");
+    await historyDrawer.waitFor({ state: "hidden", timeout: 10_000 });
     const headers = await table.locator("thead th").allInnerTexts();
     const parentPagination = await exerciseW2Pagination(page, tableId, parentTotal);
 
@@ -2820,18 +2876,16 @@ async function testW2Pages(page, syntheticSite) {
     await parentButton.click();
     const restoredParent = await waitForW2TableTotal(page, tableId, parentTotal);
     const passed = initial.total === parentTotal && defaultParentSelected && !childrenVisibleByDefault
-      && kpis["在售 SKU"] === String(W2_EXPECTED.totalSkus)
-      && kpis["有货 SKU"] === String(W2_EXPECTED.inStock)
-      && kpis["缺货 SKU"] === String(W2_EXPECTED.outOfStock)
+      && summary.matched
       && threeOfThree && statuses.length === 30
       && trendCounts["缺货"] === 15 && trendCounts["有货"] === 15
-      && headers.some((header) => header.includes("30 天在线率")) && rate30d.trim() === "50%"
+      && headers.some((header) => header.includes("产品")) && rate30d
       && parentPagination.passed && allRows.total === W2_EXPECTED.totalSkus
       && childRowsVisible && childPagination.passed && restoredParent.total === parentTotal
       && await parentButton.getAttribute("aria-pressed") === "true";
     return { passed, evidence: {
-      kpis, defaultParentSelected, childrenVisibleByDefault, parentTotal: initial.total,
-      parentPagination, threeOfThree, parentTrend: { days: statuses.length, outOfStock: trendCounts["缺货"] ?? 0, inStock: trendCounts["有货"] ?? 0, rate30d: rate30d.trim() },
+      summary, defaultParentSelected, childrenVisibleByDefault, parentTotal: initial.total,
+      parentPagination, threeOfThree, parentTrend: { days: statuses.length, outOfStock: trendCounts["缺货"] ?? 0, inStock: trendCounts["有货"] ?? 0, rate30d },
       allRowsTotal: allRows.total, childRowsVisible, childPagination, restoredParentTotal: restoredParent.total,
     } };
   });
@@ -2887,7 +2941,7 @@ async function testW2Pages(page, syntheticSite) {
       evidence: { pagination, refreshButtonVisible: refreshVisible, keywordMappingVisible } };
   });
 
-  await attemptW2("Content refresh button runs against loopback-only synthetic pages and refreshes KPI/table", "ui", async () => {
+  await attemptW2("Content refresh button runs against loopback-only synthetic pages and refreshes summary/table", "ui", async () => {
     const refreshButton = page.getByRole("button", { name: "重新抓取", exact: true });
     await refreshButton.click();
     const busyStateObserved = await page.evaluate(() => {
@@ -2908,7 +2962,7 @@ async function testW2Pages(page, syntheticSite) {
       const table = document.querySelector('.si-data-table[aria-label="content.blog 数据表"]');
       return table?.querySelector(".si-pagination-count")?.textContent?.includes("/ 2") ?? false;
     }, null, { timeout: 20_000 });
-    const uiKpi = await page.locator(".si-content-kpis").innerText();
+    const uiSummary = await page.locator('.si-summary-line[aria-label="内容摘要"]').innerText();
     const schemaKpi = await page.evaluate(async (projectId) => {
       const summary = await window.siteindex.content.summary(projectId);
       return summary.kpis.find((item) => item.key === "no_schema")?.value ?? null;
@@ -2917,20 +2971,22 @@ async function testW2Pages(page, syntheticSite) {
     const requestStats = syntheticSite.metrics();
     const busyStateVisible = busyStateObserved === "正在启动…" || busyStateObserved === "抓取中…";
     const passed = table.total === W2_EXPECTED.blogsAfterRefresh
-      && uiKpi.includes("博客文章") && uiKpi.includes(String(W2_EXPECTED.blogsAfterRefresh))
+      && uiSummary.includes("缺少 Schema") && uiSummary.includes("0")
       && schemaKpi === "0"
       && requestStats.requestCount >= 4 && requestStats.failedRequestCount === 0;
     return { passed, evidence: {
       busyStateObserved,
       busyStateVisible,
       refreshedBlogCount: table.total,
-      kpiShowsRefreshedCount: uiKpi.includes(String(W2_EXPECTED.blogsAfterRefresh)),
+      summaryShowsSchemaCount: uiSummary.includes("缺少 Schema") && uiSummary.includes("0"),
       noSchemaKpi: schemaKpi,
       localRequestCount: requestStats.requestCount,
       failedLocalRequestCount: requestStats.failedRequestCount,
       originRedacted: true,
     } };
   });
+
+  await runW2PackagedPageWalk(page);
 
   report.w2Acceptance.checks.push({
     name: "Real project and real-site data behavior",
