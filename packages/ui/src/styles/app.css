@@ -60,7 +60,6 @@ a { color: var(--color-brand); }
   border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
   color: var(--color-muted); text-align: center;
 }
-.si-placeholder h1 { margin: 0; color: var(--color-ink); font-size: var(--fs-page-title); }
 .si-placeholder p { margin: 0; }
 @media (max-width: 1100px) { .si-content { --si-content-top-padding: var(--space-6); padding: var(--space-6); } }
 @media (max-width: 760px) {
