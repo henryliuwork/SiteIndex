@@ -1,7 +1,6 @@
 {
   "version": 1,
   "legacyRoutes": {
-    "app-settings": "global",
     "content": "project",
     "edm": "project",
     "inventory": "project",

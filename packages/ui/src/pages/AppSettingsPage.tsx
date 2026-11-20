@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { AppSettings, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
-import { ApiErrorNotice, Button, Card, Chip, InfoTooltip, Input, InputWithAction, Notice, PageHeader, TabPanel, Tabs, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, InfoTooltip, Input, InputWithAction, Notice, PageFrame, PageHeader, TabPanel, Tabs, useToast } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
 import { WordPressCredentialsCard } from "./app-settings/wordpress-credentials";
 import "./app-settings/page.css";
@@ -159,8 +159,9 @@ export function AppSettingsPage() {
     if (draft) void saveSettings({ skill_platforms: draft.skill_platforms });
   };
 
-  if (settingsQuery.isError) return <ApiErrorNotice page label="软件设置加载失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />;
-  if (settingsQuery.isLoading || !draft) return <div className="si-page-loading" role="status">正在加载软件设置…</div>;
+  const stateHeader = <PageHeader title="设置" />;
+  if (settingsQuery.isError) return <PageFrame kind="global" scroll="content" header={stateHeader}><ApiErrorNotice page label="软件设置加载失败。" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} /></PageFrame>;
+  if (settingsQuery.isLoading || !draft) return <PageFrame kind="global" scroll="content" header={stateHeader}><div className="si-page-loading" role="status">正在加载软件设置…</div></PageFrame>;
 
   const settingsPath = platformQuery.data === "darwin" ? "~/Library/Application Support/SiteIndex/settings.json" : "%APPDATA%\\SiteIndex\\settings.json";
   const logsPath = platformQuery.data === "darwin" ? "~/Library/Logs/SiteIndex" : "%APPDATA%\\SiteIndex\\logs";
@@ -169,8 +170,8 @@ export function AppSettingsPage() {
   const manualUpdateUrl = updates.status?.state === "unsupported" ? updates.status.manual_url : undefined;
 
   return (
+    <PageFrame kind="global" scroll="content" header={<PageHeader title="设置" meta={<InfoTooltip label="设置文件位置" content={<><code>{settingsPath}</code>，只对本机生效。</>} />} />}>
     <div className="si-page si-app-settings-page">
-      <PageHeader title="设置" meta={<InfoTooltip label="设置文件位置" content={<><code>{settingsPath}</code>，只对本机生效。</>} />} />
       <Tabs value={activeTab} options={settingsTabs} onChange={setActiveTab} ariaLabel="软件设置分区" tabIdPrefix="app-settings-tab" panelIdPrefix="app-settings-panel" />
       {platformQuery.isError && <ApiErrorNotice label="系统平台信息读取失败。" error={platformQuery.error} onRetry={() => void platformQuery.refetch()} />}
 
@@ -327,5 +328,6 @@ export function AppSettingsPage() {
       </TabPanel>
       {saving && <span className="si-sr-only" role="status">正在保存软件设置…</span>}
     </div>
+    </PageFrame>
   );
 }
