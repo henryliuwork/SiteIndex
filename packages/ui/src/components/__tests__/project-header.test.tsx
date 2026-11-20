@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ProjectSummary } from "@siteindex/shared";
 import { PROJECT_TABS, ProjectHeader, ProjectTabPanel, fitProjectTabs, projectPanelId, projectTabId } from "../project-header";
 import { Button } from "../primitives";
+import { PageFrame } from "../page-frame";
 import { formatDateTime } from "../utils";
 
 const project: Pick<ProjectSummary, "id" | "name" | "domain" | "platform" | "storage_location" | "sync"> = {
@@ -22,6 +23,23 @@ function CurrentPath() {
 }
 
 describe("ProjectHeader compact layout", () => {
+  it("uses one navigation/action row inside PageFrame without repeating project identity", () => {
+    const { container } = render(<MemoryRouter><PageFrame kind="project" header={<ProjectHeader
+      project={{ ...project, storage_location: "known_cloud_sync" }} activeTab="products" hasTabPanel
+      status={<span>同步完成</span>} pageTitle="产品" pageMeta="数据日期：11-08 17:00"
+      actions={<Button>导出 CSV</Button>}
+    />}><p>内容</p></PageFrame></MemoryRouter>);
+    const header = container.querySelector(".si-project-header-single");
+    expect(header).not.toBeNull();
+    expect(header?.querySelector(".si-project-header-row")).toBeNull();
+    expect(header?.textContent).toContain("产品管理");
+    expect(header?.textContent).toContain("导出 CSV");
+    expect(header?.textContent).not.toContain(project.domain);
+    expect(header?.textContent).not.toContain("同步完成");
+    expect(header?.textContent).not.toContain("11-08 17:00");
+    expect(header?.querySelector(`#${projectTabId(project.id, "products")}`)).not.toBeNull();
+  });
+
   it("keeps the shared project navigation order and all project destinations", () => {
     const { container } = render(<MemoryRouter initialEntries={["/p/demo-store/products"]}>
       <ProjectHeader project={project} activeTab="products" />
