@@ -1,0 +1,12 @@
+/* Opt-in until the G8.0-2 page migrations; legacy routes retain their current shell. */
+.si-content:has(> .si-page-frame) { padding: 0; overflow: hidden; }
+.si-page-frame { display: flex; width: 100%; height: 100%; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; }
+.si-page-frame-header { flex: none; min-width: 0; padding-inline: var(--space-6); }
+.si-page-frame-body { min-width: 0; min-height: 0; flex: 1 1 auto; padding-inline: var(--space-6); }
+.si-page-frame-global > .si-page-frame-header { height: var(--global-page-title-row-height); padding-top: var(--space-6); }
+.si-page-frame-global > .si-page-frame-header > .si-page-header { height: var(--control-height); min-height: 0; }
+.si-page-frame-global > .si-page-frame-body { padding-top: var(--space-4); }
+.si-page-frame-project > .si-page-frame-header { position: sticky; top: 0; z-index: 20; height: var(--project-header-height); background: var(--color-canvas); }
+.si-page-frame-project > .si-page-frame-body { padding-top: var(--space-4); }
+.si-page-frame.is-content > .si-page-frame-body { overflow-y: auto; overscroll-behavior: contain; }
+.si-page-frame.is-table > .si-page-frame-body { display: flex; flex-direction: column; overflow: hidden; }
