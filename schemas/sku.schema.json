@@ -48,6 +48,33 @@
         "none"
       ]
     },
+    "product_type_raw": {
+      "type": ["string", "null"]
+    },
+    "description": {
+      "type": ["string", "null"]
+    },
+    "highlights": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "attributes": {
+      "type": "object",
+      "properties": {
+        "color": { "type": ["string", "null"] },
+        "size": { "type": ["string", "null"] },
+        "material": { "type": ["string", "null"] },
+        "pattern": { "type": ["string", "null"] },
+        "gender": { "type": ["string", "null"] },
+        "age_group": { "type": ["string", "null"] },
+        "condition": { "type": ["string", "null"] },
+        "shipping_weight": { "type": ["string", "null"] }
+      }
+    },
+    "custom_labels": {
+      "type": "array",
+      "items": { "type": ["string", "null"] }
+    },
     "price": {
       "type": "number",
       "minimum": 0

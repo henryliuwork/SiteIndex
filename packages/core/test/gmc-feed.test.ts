@@ -110,4 +110,40 @@ describe("GMC feed parser", () => {
     expect(parseFeed(source)).toHaveLength(10_000);
     expect(performance.now() - startedAt).toBeLessThan(2_000);
   });
+
+  it("extracts rich product facts (description, highlights, attributes, custom_labels) for AI agents", () => {
+    const site: FeedSiteConfig = { base_url: "https://example.test", currency: "USD" };
+    const xml = `<rss xmlns:g="http://base.google.com/ns/1.0"><channel><item>
+      <g:id>FEEDER-PRO</g:id>
+      <g:title>Cedar Bird Feeder Pro</g:title>
+      <g:link>https://example.test/products/cedar-bird-feeder-pro</g:link>
+      <g:price>39.99 USD</g:price>
+      <g:availability>in stock</g:availability>
+      <g:product_type>Home &amp; Garden &gt; Bird Supplies &gt; Tube Feeders</g:product_type>
+      <g:description>&lt;p&gt;Weather-resistant western red cedar feeder with easy-clean removable tray.&lt;/p&gt;</g:description>
+      <g:product_highlight>100% Western Red Cedar construction</g:product_highlight>
+      <g:product_highlight>Holds up to 4 lbs of mixed seed</g:product_highlight>
+      <g:color>Natural Cedar</g:color>
+      <g:material>Cedar Wood</g:material>
+      <g:shipping_weight>2.5 lb</g:shipping_weight>
+      <g:custom_label_0>bestseller</g:custom_label_0>
+      <g:custom_label_2>high_margin</g:custom_label_2>
+    </item></channel></rss>`;
+    const { rows } = toSnapshot(parseFeed(xml), site, "2026-10-21");
+    expect(rows[0]).toMatchObject({
+      sku: "FEEDER-PRO",
+      product_type_raw: "Home & Garden > Bird Supplies > Tube Feeders",
+      description: "Weather-resistant western red cedar feeder with easy-clean removable tray.",
+      highlights: [
+        "100% Western Red Cedar construction",
+        "Holds up to 4 lbs of mixed seed",
+      ],
+      attributes: {
+        color: "Natural Cedar",
+        material: "Cedar Wood",
+        shipping_weight: "2.5 lb",
+      },
+      custom_labels: ["bestseller", "high_margin"],
+    });
+  });
 });

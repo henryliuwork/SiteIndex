@@ -6,6 +6,20 @@
   "properties": {
     "handle": { "type": "string" },
     "short_description": { "type": ["string", "null"] },
+    "highlights": { "type": "array", "items": { "type": "string" } },
+    "specs": { "type": "object", "additionalProperties": { "type": "string" } },
+    "faqs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": { "type": "string" },
+          "answer": { "type": "string" }
+        },
+        "required": ["question", "answer"]
+      }
+    },
+    "warranty_note": { "type": ["string", "null"] },
     "rating": { "type": ["number", "null"], "minimum": 0, "maximum": 5 },
     "review_count": { "type": ["integer", "null"], "minimum": 0 },
     "breadcrumbs": { "type": "array", "items": { "type": "string" } },

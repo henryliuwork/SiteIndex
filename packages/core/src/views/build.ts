@@ -6,6 +6,7 @@ import {
   type InventoryEvent,
   type InventoryLatest,
   type ISODate,
+  type ProductDetails,
   type ProductView,
   type SiteConfig,
   type SkuGroupingRule,
@@ -25,7 +26,9 @@ const PRODUCT_FIELDS = [
   "handle", "product_id", "title", "url", "category", "categories", "price_min", "price_max",
   "compare_at_max", "currency", "on_sale", "image_url", "image_source", "feed_image_url",
   "manual_image_url", "variant_count", "skus", "in_stock_variants", "stock_status", "stock_since",
-  "tags", "priority", "exclude_edm", "last_featured", "days_since_featured", "first_seen", "status",
+  "tags", "priority", "exclude_edm", "email_blurb", "last_featured", "days_since_featured",
+  "short_description", "highlights", "specs", "attributes_summary", "custom_labels",
+  "rating", "review_count", "first_seen", "status",
 ] as const;
 
 const SKU_STOCK_FIELDS = [
@@ -107,8 +110,10 @@ export function buildProductViews(
   tagRows: readonly CsvRow[],
   campaigns: readonly EdmCampaign[],
   today: ISODate,
+  detailRows: readonly ProductDetails[] = [],
 ): ProductView[] {
   const latest = new Map(latestRows.map((row) => [row.sku, row]));
+  const detailsByHandle = new Map(detailRows.map((row) => [row.handle, row]));
   const media = new Map<string, Map<string, CsvRow>>();
   for (const row of mediaRows) {
     const sku = csvString(row, "sku");
@@ -167,6 +172,7 @@ export function buildProductViews(
     const productTags = new Set<string>();
     let priority: number | null = null;
     let excludeEdm: 0 | 1 = 0;
+    let emailBlurb: string | null = null;
     for (const variant of selected) {
       const tagRow = tagsBySku.get(variant.sku);
       for (const tag of parseTags(csvString(tagRow, "tags"))) productTags.add(tag);
@@ -176,7 +182,47 @@ export function buildProductViews(
         if (Number.isFinite(parsed)) priority = Math.max(priority ?? 0, parsed);
       }
       if (csvString(tagRow, "exclude_edm") === "1") excludeEdm = 1;
+      if (!emailBlurb) {
+        const blurb = csvString(tagRow, "email_blurb")?.trim();
+        if (blurb) emailBlurb = blurb;
+      }
     }
+
+    const detail = detailsByHandle.get(handle);
+    const shortDescription = detail?.short_description?.trim()
+      || selected.map((v) => v.description?.trim()).find((d): d is string => Boolean(d))
+      || null;
+    const detailHighlights = Array.isArray(detail?.highlights) ? detail.highlights.filter(Boolean) : [];
+    const feedHighlights = [...new Set(selected.flatMap((v) => Array.isArray(v.highlights) ? v.highlights.filter(Boolean) : []))];
+    const highlights = (detailHighlights.length ? detailHighlights : feedHighlights).slice(0, 8);
+    const specs = detail?.specs && typeof detail.specs === "object" && Object.keys(detail.specs).length > 0
+      ? detail.specs
+      : undefined;
+
+    const attrBuckets = new Map<string, Set<string>>();
+    for (const variant of selected) {
+      if (!variant.attributes || typeof variant.attributes !== "object") continue;
+      for (const [k, v] of Object.entries(variant.attributes)) {
+        if (typeof v === "string" && v.trim()) {
+          const set = attrBuckets.get(k) ?? new Set<string>();
+          set.add(v.trim());
+          attrBuckets.set(k, set);
+        }
+      }
+    }
+    let attributesSummary: Record<string, string[]> | undefined;
+    if (attrBuckets.size > 0) {
+      attributesSummary = {};
+      for (const key of [...attrBuckets.keys()].sort(compareText)) {
+        attributesSummary[key] = [...attrBuckets.get(key)!].sort(compareText);
+      }
+    }
+
+    const customLabels = [...new Set(
+      selected.flatMap((v) => Array.isArray(v.custom_labels)
+        ? v.custom_labels.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : []),
+    )].sort(compareText);
 
     const lastFeatured = featured.get(handle) ?? null;
     products.push({
@@ -203,8 +249,16 @@ export function buildProductViews(
       tags: [...productTags].sort(compareText),
       priority,
       exclude_edm: excludeEdm,
+      ...(emailBlurb ? { email_blurb: emailBlurb } : {}),
       last_featured: lastFeatured,
       days_since_featured: lastFeatured ? daysBetween(lastFeatured, today) : null,
+      ...(shortDescription ? { short_description: shortDescription } : {}),
+      ...(highlights.length ? { highlights } : {}),
+      ...(specs ? { specs } : {}),
+      ...(attributesSummary ? { attributes_summary: attributesSummary } : {}),
+      ...(customLabels.length ? { custom_labels: customLabels } : {}),
+      ...(detail?.rating !== null && detail?.rating !== undefined ? { rating: detail.rating } : {}),
+      ...(detail?.review_count !== null && detail?.review_count !== undefined ? { review_count: detail.review_count } : {}),
       first_seen: allVariants.map((variant) => variant.first_seen).sort(compareText)[0]!,
       status: active.length ? "active" : "removed",
     });
@@ -308,12 +362,13 @@ export async function buildViews(projectPath: string, options: BuildViewsOptions
     const site = JSON.parse(await readFile(sitePath, "utf8")) as SiteConfig;
     const today = options.date ?? dateInTimezone(options.now ?? new Date(), site.timezone || "UTC");
 
-    const [skuRows, latestRows, mediaRows, tagRows, campaigns] = await Promise.all([
+    const [skuRows, latestRows, mediaRows, tagRows, campaigns, detailRows] = await Promise.all([
       readJsonl(path.join(projectPath, paths.skus)),
       readJsonl(path.join(projectPath, paths.inventoryLatest)),
       readCsv(path.join(projectPath, paths.skuMedia)),
       readCsv(path.join(projectPath, paths.skuTags)),
       readJsonl(path.join(projectPath, paths.edmCampaigns)),
+      readJsonl(path.join(projectPath, paths.productDetails)),
     ]);
     let eventFiles: string[] = [];
     try {
@@ -327,8 +382,9 @@ export async function buildViews(projectPath: string, options: BuildViewsOptions
     const skus = skuRows as unknown as SkuRecord[];
     const latest = latestRows as unknown as InventoryLatest[];
     const campaignRows = campaigns as unknown as EdmCampaign[];
+    const details = detailRows as unknown as ProductDetails[];
     const events = eventsByMonth.flat() as unknown as InventoryEvent[];
-    const products = buildProductViews(skus, latest, mediaRows, tagRows, campaignRows, today);
+    const products = buildProductViews(skus, latest, mediaRows, tagRows, campaignRows, today, details);
     const groupingRule = site.sku_grouping?.enabled ? site.sku_grouping.rule : undefined;
     const stock = buildSkuStockViews(skus, latest, events, today, groupingRule);
 

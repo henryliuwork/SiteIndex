@@ -265,13 +265,19 @@ function autoBlocks(manifest: WorkspaceManifest, config: SiteConfig, skills: rea
   const dataGuide = [
     "| 路径 | 内容 |",
     "|---|---|",
+    "| " + pathsFor("workspace").contextBrief + " | 5 分钟全局认知简报（品牌/分类价格带/政策/工作区资产/Top待办） |",
     "| " + pathsFor("workspace").site + " | 站点配置与抓取设置 |",
-    "| " + pathsFor("workspace").skus + " | SKU 主表 |",
+    "| " + pathsFor("workspace").tech + " | 全站政策（免邮/退换/保修）、关键页面 URL、客服与社媒 |",
+    "| " + pathsFor("workspace").skus + " | SKU 主表（含变体属性、custom_labels、Feed 卖点） |",
+    "| " + pathsFor("workspace").productDetails + " | 产品详情、真实短描述、核心卖点、规格表与 FAQ |",
+    "| " + pathsFor("workspace").categories + " | 分类树、价格区间、导语摘要与代表产品 |",
     "| " + pathsFor("workspace").inventoryLatest + " | 当前库存 |",
     "| " + pathsFor("workspace").dailySummary + " | 库存历史汇总 |",
     "| " + pathsFor("workspace").seoPages + " | SEO 页面 |",
     "| " + pathsFor("workspace").seoIssues + " | SEO 问题 |",
-    "| " + pathsFor("workspace").blogIndex + " | 博客索引 |",
+    "| " + pathsFor("workspace").blogIndex + " | 博客索引、正文首段摘要与 FAQ 问题列表 |",
+    "| " + pathsFor("workspace").productsView + " | 产品级合并视图（含卖点/规格/属性汇总），选品写稿一表直读 |",
+    "| " + pathsFor("workspace").designBrand + " | 品牌视觉与 EDM 邮件安全内联样式规范手册 |",
   ].join("\n");
   return {
     readme: {
@@ -280,8 +286,8 @@ function autoBlocks(manifest: WorkspaceManifest, config: SiteConfig, skills: rea
       changelog: "暂无同步记录。",
     },
     agents: {
-      "agents-core": "项目：" + config.brand.name + "（" + config.domain + "）。SiteIndex 数据统一位于 " + pathsFor("workspace").index + "/。不要读取或输出根目录 .env 内容。",
-      "task-routing": "开始任务前先读对应板块的 README.md；待审产物放入 _outputs/。",
+      "agents-core": "项目：" + config.brand.name + "（" + config.domain + "）。SiteIndex 数据统一位于 " + pathsFor("workspace").index + "/（首次接入请先读 `" + pathsFor("workspace").contextBrief + "` 5分钟掌握全貌）。不要读取或输出根目录 .env 内容。",
+      "task-routing": "开始任务前先读对应板块的 README.md 与 `" + pathsFor("workspace").contextBrief + "`；待审产物放入 _outputs/。",
       "data-guide": dataGuide,
       "design-summary": "尚未提取设计规范。",
       "skills-installed": skills.map((skill) => "- " + skill.name + " · " + skill.version).join("\n") || "暂无技能。",

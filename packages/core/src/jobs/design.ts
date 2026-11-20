@@ -384,7 +384,7 @@ function makeTokens(samples: PageDesign[], targets: DesignTarget[], extractedAt:
   };
 }
 
-function brandMarkdown(name: string, tokens: DesignTokens): string {
+function brandMarkdown(name: string, tokens: DesignTokens, config?: SiteConfig, screenshotsRelativeDir?: string): string {
   const roleLabels: Record<DesignColorRole, string> = {
     primary: "主色", secondary: "次色", text: "正文文字", text_muted: "弱化文字", background: "页面背景",
     surface: "表面", border: "边框", sale: "促销", link: "链接",
@@ -401,11 +401,28 @@ function brandMarkdown(name: string, tokens: DesignTokens): string {
   });
   const fonts = tokens.typography.font_families;
   const list = (values: string[]) => values.length ? values.map((value) => `\`${value}\``).join("、") : "未识别";
+  const brand = config?.brand;
+  const brandLines: string[] = [];
+  if (brand?.tagline) brandLines.push(`- 品牌标语：${brand.tagline}`);
+  if (brand?.audience) brandLines.push(`- 目标受众：${brand.audience}`);
+  if (brand?.voice) brandLines.push(`- 文案调性：${brand.voice}`);
+  if (brand?.usp?.length) brandLines.push(`- 核心卖点（USP）：${brand.usp.join(" · ")}`);
+
+  const emailFont = tokens.email_safe?.font_stack ?? fonts.body ?? "Arial, Helvetica, sans-serif";
+  const emailBtnBg = tokens.email_safe?.button_color ?? tokens.buttons?.primary?.background ?? tokens.color.primary ?? "#222222";
+  const emailBtnText = tokens.buttons?.primary?.text_color ?? "#ffffff";
+  const emailBtnRadius = tokens.buttons?.primary?.border_radius ?? tokens.radius[0] ?? "4px";
+  const emailBtnPadding = tokens.buttons?.primary?.padding ?? "12px 24px";
+  const emailText = tokens.color.text ?? "#222222";
+  const emailBg = tokens.color.background ?? "#ffffff";
+  const emailSale = tokens.color.sale ?? "#c0392b";
+
   return [
     `# ${name} 品牌视觉规范`,
     "",
     `提取时间：${tokens.extracted_at}`,
     `采样页面：${tokens.source_pages.length} 个`,
+    ...(brandLines.length ? ["", "## 品牌定位与调性", ...brandLines] : []),
     "",
     "## 色彩角色",
     "| 角色 | 颜色 | 来源 | 置信度 |",
@@ -430,6 +447,17 @@ function brandMarkdown(name: string, tokens: DesignTokens): string {
     `- 间距：${list(tokens.spacing)}`,
     `- 圆角：${list(tokens.radius)}`,
     `- 阴影：${list(tokens.shadow)}`,
+    "",
+    "## EDM 邮件安全内联样式速查",
+    `- 邮件安全字体栈：\`${emailFont}\``,
+    `- 页面底色 / 正文字色：\`${emailBg}\` / \`${emailText}\``,
+    `- 促销价高亮色：\`${emailSale}\``,
+    `- 主 CTA 按钮内联 CSS：\`background-color: ${emailBtnBg}; color: ${emailBtnText}; border-radius: ${emailBtnRadius}; padding: ${emailBtnPadding}; text-decoration: none; display: inline-block; font-weight: 600;\``,
+    "",
+    "## 视觉资产与参考截图",
+    `- Logo：${tokens.assets.logo ?? "未识别"}`,
+    `- Favicon：${tokens.assets.favicon ?? "未识别"}`,
+    ...(screenshotsRelativeDir ? [`- 页面截图目录：\`${screenshotsRelativeDir}/\`（含 home/category/product 的 1440px 与 390px 截图）`] : []),
     "",
     "## 设计提示",
     "以下数据由首页、分类页和产品页的浏览器样式采样生成，可在设计系统页人工校正。",
@@ -479,6 +507,6 @@ export async function runDesign(options: DesignJobOptions): Promise<{ targets: n
   const tokens = makeTokens(samples, targets, options.extractedAt ?? new Date().toISOString());
   const brandName = typeof options.config.brand?.name === "string" && options.config.brand.name ? options.config.brand.name : options.config.domain;
   await atomicWrite(path.join(options.projectPath, paths.designTokens), `${JSON.stringify(tokens, null, 2)}\n`);
-  await atomicWrite(path.join(options.projectPath, paths.designBrand), brandMarkdown(brandName, tokens));
+  await atomicWrite(path.join(options.projectPath, paths.designBrand), brandMarkdown(brandName, tokens, options.config, paths.designScreenshots));
   return { targets: targets.length, screenshots: screenshotCount, tokens };
 }

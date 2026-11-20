@@ -68,6 +68,15 @@ interface StockVerifyCursor {
 }
 const TRACKED = ["product_id", "handle", "title", "variant_title", "url", "category", "categories", "category_source",
   "price", "compare_at_price", "currency", "image_url", "parent_sku"] as const;
+const OPTIONAL_TRACKED = ["product_type_raw", "description", "highlights", "attributes", "custom_labels"] as const;
+
+function hasMeaningfulOptionalValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+}
 
 function nowDate(now: DailyOptions["now"]): Date {
   return now instanceof Date ? new Date(now) : typeof now === "function" ? now() : new Date();
@@ -348,6 +357,9 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
       if (key === "parent_sku" && (typeof row.parent_sku !== "string" || !row.parent_sku)) continue;
       rowForCatalog[key] = row[key] ?? null;
     }
+    for (const key of OPTIONAL_TRACKED) {
+      if (hasMeaningfulOptionalValue(row[key])) rowForCatalog[key] = row[key];
+    }
     rowForCatalog.categories = Array.isArray(rowForCatalog.categories) && rowForCatalog.categories.length
       ? rowForCatalog.categories : rowForCatalog.category ? [rowForCatalog.category] : [];
     if (!old) {
@@ -362,7 +374,9 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     if (old.price !== null && old.price !== undefined && old.price !== rowForCatalog.price) {
       addEvent(sku, "price_change", old.price, rowForCatalog.price, row);
     }
-    const changed = TRACKED.some((key) => key === "category_source" && !site.categories ? false : !equalValue(old[key], rowForCatalog[key])) || old.status !== "active";
+    const changed = TRACKED.some((key) => key === "category_source" && !site.categories ? false : !equalValue(old[key], rowForCatalog[key]))
+      || OPTIONAL_TRACKED.some((key) => Object.hasOwn(rowForCatalog, key) && !equalValue(old[key], rowForCatalog[key]))
+      || old.status !== "active";
     Object.assign(old, rowForCatalog, { status: "active", last_seen: day });
     if (!rowForCatalog.parent_sku) delete old.parent_sku;
     if (changed) old.updated_at = day;

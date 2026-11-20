@@ -219,4 +219,51 @@ describe("buildViews", () => {
       manual_image_url: null,
     });
   });
+
+  it("merges product details, variant attributes, custom labels and email blurb into ProductView for one-table agent reads", () => {
+    const sku1: SkuRecord = {
+      ...makeSku("CEDAR-G", "cedar-feeder", "https://cdn.example.com/cedar-g.jpg"),
+      attributes: { color: "Green", material: "Cedar" },
+      custom_labels: ["bestseller"],
+    };
+    const sku2: SkuRecord = {
+      ...makeSku("CEDAR-R", "cedar-feeder", "https://cdn.example.com/cedar-r.jpg"),
+      attributes: { color: "Red", material: "Cedar" },
+      custom_labels: ["seasonal", "bestseller"],
+    };
+    const views = buildProductViews(
+      [sku1, sku2],
+      [latest("CEDAR-G", "in_stock"), latest("CEDAR-R", "in_stock")],
+      [],
+      [{ sku: "CEDAR-G", tags: "gift;winter", priority: "5", exclude_edm: "0", email_blurb: "Top-rated cedar feeder for winter birds." }],
+      [],
+      "2026-10-21",
+      [{
+        handle: "cedar-feeder",
+        short_description: "Handcrafted cedar feeder with removable seed tray.",
+        highlights: ["Rust-proof hardware", "4 lb seed capacity"],
+        specs: { Capacity: "4 lbs", Material: "Western Red Cedar" },
+        rating: 4.8,
+        review_count: 42,
+        breadcrumbs: ["Home", "Feeders"],
+        gallery: ["https://cdn.example.com/cedar-g.jpg"],
+        related_handles: [],
+        badges: ["Best Seller"],
+        shipping_note: "Free shipping over $49",
+        last_crawled: "2026-10-21",
+      }],
+    );
+
+    expect(views[0]).toMatchObject({
+      handle: "cedar-feeder",
+      email_blurb: "Top-rated cedar feeder for winter birds.",
+      short_description: "Handcrafted cedar feeder with removable seed tray.",
+      highlights: ["Rust-proof hardware", "4 lb seed capacity"],
+      specs: { Capacity: "4 lbs", Material: "Western Red Cedar" },
+      attributes_summary: { color: ["Green", "Red"], material: ["Cedar"] },
+      custom_labels: ["bestseller", "seasonal"],
+      rating: 4.8,
+      review_count: 42,
+    });
+  });
 });

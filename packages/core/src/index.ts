@@ -13,12 +13,20 @@ export { readJsonl, writeJsonl } from "./io/jsonl";
 export { renderEdm } from "./edm-render";
 export type { EdmRenderOptions, EdmRenderResult } from "./edm-render";
 export {
+  buildContextBriefMarkdown,
   buildReadmeAutoContent,
   parseReadmeAutoBlocks,
   README_AUTO_BLOCK_TITLES,
   replaceReadmeAutoBlocks,
+  scanWorkspaceAssets,
 } from "./readme";
-export type { ReadmeAutoBlockId, ReadmeAutoContent, ReadmeAutoContentInput } from "./readme";
+export type {
+  ReadmeAutoBlockId,
+  ReadmeAutoContent,
+  ReadmeAutoContentInput,
+  WorkspaceAssetFile,
+  WorkspaceAssetSection,
+} from "./readme";
 export { deleteLedger, upsertLedger } from "./ledger";
 export type { LedgerKey, LedgerMutationOptions, LedgerMutationResult, LedgerName } from "./ledger";
 export { assertRunner, CoreIOError, findConflictCopies, isConflictCopy, readRunner, withLock, writeRunner } from "./io/runner-lock";

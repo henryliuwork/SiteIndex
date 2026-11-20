@@ -338,4 +338,160 @@ describe("weekly sync", () => {
     expect(validation).toMatchObject({ job: "validate", status: "failed", exitCode: 1 });
     expect(await readFile(path.join(project, PATHS.validation), "utf8")).toContain('"trigger": "manual"');
   }, 20_000);
+
+  it("extracts deep product specs, highlights, FAQs, category price bands, blog excerpts and site/tech.json policies", async () => {
+    const pages: Record<string, { type: string; body: string }> = {};
+    let base = "";
+    const server = createServer((req, res) => {
+      const current = pages[new URL(req.url ?? "/", "http://localhost").pathname];
+      if (!current) { res.writeHead(404, { "content-type": "text/html" }).end("<h1>Missing</h1>"); return; }
+      res.writeHead(200, { "content-type": current.type }).end(current.body);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    servers.push(server);
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("server did not bind");
+    base = `http://127.0.0.1:${addr.port}`;
+
+    pages["/sitemap.xml"] = {
+      type: "application/xml",
+      body: `<urlset>
+        <url><loc>${base}/</loc></url>
+        <url><loc>${base}/products/feeder</loc></url>
+        <url><loc>${base}/category/feeders</loc></url>
+        <url><loc>${base}/blog/feeding-guide</loc></url>
+        <url><loc>${base}/shipping-policy</loc></url>
+        <url><loc>${base}/returns-policy</loc></url>
+      </urlset>`,
+    };
+    pages["/"] = {
+      type: "text/html",
+      body: `<html><head><title>Brand Home</title>
+        <script type="application/ld+json">{"@type":"Organization","name":"Brand","email":"support@example.test","sameAs":["https://www.instagram.com/exampletest"]}</script>
+      </head><body>
+        <header><p>Free standard shipping on orders over $49 across the US.</p></header>
+        <main><h1>Welcome</h1><a href="/products/feeder">Feeder</a><a href="/category/feeders">Feeders</a><a href="/blog/feeding-guide">Guide</a></main>
+      </body></html>`,
+    };
+    pages["/products/feeder"] = {
+      type: "text/html",
+      body: `<html><head><title>Feeder SEO Title</title><meta name="description" content="SEO meta description fallback.">
+        <script type="application/ld+json">[
+          {"@type":"Product","name":"Feeder","additionalProperty":[{"name":"Capacity","value":"4 lbs"}]},
+          {"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is the tray removable?","acceptedAnswer":{"@type":"Answer","text":"Yes, the seed tray lifts out for quick rinsing."}}]}
+        ]</script>
+      </head><body><main>
+        <h1>Cedar Tube Feeder</h1>
+        <div class="product-short-description">
+          <p>Built from weather-resistant western red cedar for year-round backyard birding.</p>
+          <ul>
+            <li>Chew-resistant powder-coated metal ports</li>
+            <li>Tool-free twist-off lid for easy refilling</li>
+          </ul>
+        </div>
+        <table class="shop_attributes">
+          <tr><th>Material</th><td>Western Red Cedar</td></tr>
+          <tr><th>Dimensions</th><td>8 x 8 x 16 in</td></tr>
+        </table>
+        <p>Backed by our 2-year warranty and 30-day money-back guarantee.</p>
+      </main></body></html>`,
+    };
+    pages["/category/feeders"] = {
+      type: "text/html",
+      body: `<html><head><title>Bird Feeders Collection</title><meta name="description" content="Shop durable bird feeders."></head>
+        <body><main><h1>Bird Feeders</h1><p>Explore our handcrafted cedar and metal bird feeders designed to attract cardinals and finches.</p></main></body></html>`,
+    };
+    pages["/blog/feeding-guide"] = {
+      type: "text/html",
+      body: `<html><head><title>Winter Feeding Guide</title></head><body><main><article>
+        <h1>Winter Feeding Guide</h1>
+        <p>Winter bird feeding helps backyard songbirds survive freezing nights when natural seeds are scarce.</p>
+        <h2>What seeds attract cardinals in winter?</h2>
+        <p>Black oil sunflower seeds are the top choice.</p>
+      </article></main></body></html>`,
+    };
+    pages["/shipping-policy"] = {
+      type: "text/html",
+      body: `<html><head><title>Shipping Policy</title></head><body><main><h1>Shipping Policy</h1><p>Orders ship within 24 hours with free shipping on orders over $49.</p></main></body></html>`,
+    };
+    pages["/returns-policy"] = {
+      type: "text/html",
+      body: `<html><head><title>Returns Policy</title></head><body><main><h1>Returns Policy</h1><p>We offer a 30-day money-back return policy on all unused items.</p></main></body></html>`,
+    };
+
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-weekly-deep-"));
+    roots.push(root);
+    for (const relative of [PATHS.seoPages, PATHS.seoIssues, PATHS.seoLinks, PATHS.blogIndex, PATHS.productDetails, PATHS.skus, PATHS.categories]) {
+      await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    }
+    await writeJsonl(path.join(root, PATHS.skus), [sku(`${base}/products/feeder`) as unknown as Record<string, unknown>], "sku");
+    const source = JSON.parse(await readFile(path.join(process.cwd(), "fixtures/inputs/site.json"), "utf8")) as SiteConfig;
+    const config: SiteConfig = {
+      ...source,
+      base_url: base,
+      sitemaps: [`${base}/sitemap.xml`],
+      policies: { warranty_summary: "2-year replacement warranty" },
+      crawl: { ...source.crawl, rate_limit_ms: 0, max_pages: 20 },
+      categories: { mode: "url_rule", url_pattern: "/category/" },
+    };
+
+    const result = await runWeekly(root, config, { date: "2026-10-22" });
+    expect(result.status).toBe("ok");
+
+    const details = await readJsonl(path.join(root, PATHS.productDetails));
+    expect(details[0]).toMatchObject({
+      handle: "feeder",
+      short_description: expect.stringContaining("Built from weather-resistant western red cedar"),
+      highlights: [
+        "Chew-resistant powder-coated metal ports",
+        "Tool-free twist-off lid for easy refilling",
+      ],
+      specs: {
+        Capacity: "4 lbs",
+        Dimensions: "8 x 8 x 16 in",
+        Material: "Western Red Cedar",
+      },
+      faqs: [
+        { question: "Is the tray removable?", answer: "Yes, the seed tray lifts out for quick rinsing." },
+      ],
+      warranty_note: expect.stringContaining("2-year warranty"),
+    });
+
+    const categories = JSON.parse(await readFile(path.join(root, PATHS.categories), "utf8")) as Array<Record<string, unknown>>;
+    expect(categories[0]).toMatchObject({
+      slug: "feeders",
+      title: "Bird Feeders Collection",
+      meta_description: "Shop durable bird feeders.",
+      intro_excerpt: expect.stringContaining("Explore our handcrafted cedar and metal bird feeders"),
+      price_min: 10,
+      price_max: 10,
+      top_handles: ["feeder"],
+    });
+
+    const blogs = await readJsonl(path.join(root, PATHS.blogIndex));
+    expect(blogs[0]).toMatchObject({
+      slug: "feeding-guide",
+      excerpt: expect.stringContaining("Winter bird feeding helps backyard songbirds"),
+      faq_questions: ["What seeds attract cardinals in winter?"],
+    });
+
+    const tech = JSON.parse(await readFile(path.join(root, PATHS.tech), "utf8")) as Record<string, unknown>;
+    expect(tech).toMatchObject({
+      key_pages: {
+        shipping: `${base}/shipping-policy`,
+        returns: `${base}/returns-policy`,
+      },
+      policies: {
+        free_shipping_threshold: { value: expect.stringContaining("free shipping on orders over $49"), source: "extracted" },
+        return_summary: { value: expect.stringContaining("30-day money-back"), source: "extracted" },
+        warranty_summary: { value: "2-year replacement warranty", source: "config", source_url: null },
+      },
+      contact: {
+        email: { value: "support@example.test", source: "extracted" },
+      },
+      social_links: {
+        instagram: "https://www.instagram.com/exampletest",
+      },
+    });
+  }, 20_000);
 });

@@ -22,6 +22,7 @@ export const PATHS = {
 
   index: "index",
   site: "index/site.json",
+  contextBrief: "index/context-brief.md",
   runner: "index/.runner.json",
   lock: "index/.lock",
 
@@ -90,6 +91,7 @@ const WORKSPACE_PATHS: ProjectPaths = {
   skillsManifest: "_site-index/skills/manifest.json",
   index: "_site-index",
   site: "_site-index/site.json",
+  contextBrief: "_site-index/context-brief.md",
   runner: "_site-index/.runner.json",
   lock: "_site-index/.lock",
   robots: "_site-index/site/robots.txt",
