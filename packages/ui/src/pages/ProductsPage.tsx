@@ -39,14 +39,14 @@ function initialQuery(): ProductManagementQuery { return { page: 1, pageSize: 50
 
 function productColumns(onOpen: (row: ProductManagementRow) => void, onOpenUrl: (url: string) => void): ColumnDef<ProductManagementRow, unknown>[] {
   return [
-    { id: "product", accessorFn: (row) => row.product.title, header: "产品 / SKU", meta: { width: 290, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => {
+    { id: "sku", accessorFn: (row) => row.sku, header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, sticky: "left", text: "single" }, enableHiding: false, cell: ({ row }) =>
+      <code className={`si-product-sku${row.original.kind === "child" ? " is-child" : ""}`} title={row.original.sku ?? undefined}>{row.original.sku ?? "—"}</code>, enableSorting: true },
+    { id: "product", accessorFn: (row) => row.product.title, header: "产品名称", meta: { width: 270, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => {
       const item = row.original;
       const product = item.product;
-      const sku = item.sku ?? "—";
       return <span className="si-product-main-cell">
         <ProductThumbnail src={product.image_url} />
         <span className="si-product-main-copy"><strong>{product.title}</strong><span>
-          <code className="si-product-sku" title={sku}>SKU {sku}</code>
           {item.kind === "parent" && <Chip tone="info">父 SKU</Chip>}
           {item.kind === "child" && <Chip tone="neutral">子 SKU</Chip>}
           {product.status === "removed" && <Chip tone="neutral">已下架</Chip>}
@@ -70,7 +70,7 @@ function productColumns(onOpen: (row: ProductManagementRow) => void, onOpenUrl: 
     { id: "last_change", accessorFn: (row) => row.stock?.last_change_at ?? null, header: "最近变化", meta: { defaultHidden: true, width: 158, grow: 1, minWidth: 140, text: "clamp2" }, cell: ({ row }) => row.original.stock?.last_change ? <span className="si-products-last-change"><strong>{row.original.stock.last_change_at ?? "近期"}</strong><small>{row.original.stock.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
     { id: "rating", accessorFn: (row) => row.product.rating ?? null, header: "评分 / 评价数", meta: { defaultHidden: true, width: 126, grow: 0, minWidth: 116, align: "end", text: "single" }, cell: ({ row }) => row.original.product.rating == null && row.original.product.review_count == null ? "—" : `${row.original.product.rating == null ? "—" : row.original.product.rating.toFixed(1)} · ${row.original.product.review_count ?? "—"}`, enableSorting: true },
     { id: "link", accessorFn: (row) => row.product.url, header: "链接", meta: { defaultHidden: true, width: 76, grow: 0, minWidth: 72, text: "single" }, cell: ({ row }) => <Button size="small" variant="quiet" icon={<ExternalLink size={13} />} aria-label={`打开 ${row.original.product.title} 商品页`} onClick={(event) => { event.stopPropagation(); onOpenUrl(row.original.product.url); }}>打开</Button>, enableSorting: false },
-    { id: "actions", header: "操作", meta: { width: 56, grow: 0, minWidth: 56, sticky: "right", text: "single" }, cell: ({ row }) => <Button size="small" variant="quiet" icon={<MoreHorizontal size={15} />} aria-label={`查看 ${row.original.sku ?? row.original.product.title} 详情`} onClick={(event) => { event.stopPropagation(); onOpen(row.original); }} />, enableSorting: false },
+    { id: "actions", header: "操作", meta: { width: 56, grow: 0, minWidth: 56, sticky: "right", text: "single" }, enableHiding: false, cell: ({ row }) => <Button size="small" variant="quiet" icon={<MoreHorizontal size={15} />} aria-label={`查看 ${row.original.sku ?? row.original.product.title} 详情`} onClick={(event) => { event.stopPropagation(); onOpen(row.original); }} />, enableSorting: false },
   ];
 }
 
@@ -118,7 +118,7 @@ function buildDrawerVariants(detail: ProductFull, allStockRows: readonly SkuStoc
 
 function drawerVariantColumns(): ColumnDef<DrawerVariant, unknown>[] {
   return [
-    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 158, grow: 0, minWidth: 138, text: "single" }, cell: ({ row }) => <code>{row.original.sku}</code>, enableSorting: true },
+    { id: "sku", accessorKey: "sku", header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, sticky: "left", text: "single" }, enableHiding: false, cell: ({ row }) => <code>{row.original.sku}</code>, enableSorting: true },
     { id: "title", accessorKey: "title", header: "变体", meta: { width: 190, grow: 1, minWidth: 160, text: "clamp2" }, cell: ({ row }) => <span>{row.original.title}{removedSkuReason(row.original.record ?? ({ status: "active" } as SkuRecord)) && <small className="si-product-sku-reason">{removedSkuReason(row.original.record!)}</small>}</span>, enableSorting: true },
     { id: "stock_status", accessorFn: (row) => row.stock?.stock_status ?? row.variant?.stock_status ?? null, header: "库存", meta: { width: 92, grow: 0, minWidth: 84, text: "single" }, cell: ({ row }) => {
       const status = row.original.stock?.stock_status ?? row.original.variant?.stock_status;

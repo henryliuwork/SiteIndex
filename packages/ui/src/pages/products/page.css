@@ -117,9 +117,8 @@ display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--sp
 overflow: hidden; max-width: 150px; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.si-product-main-copy .si-product-sku {
-color: var(--color-ink-2); font-weight: 600;
-}
+.si-product-sku { color: var(--color-ink-2); font-family: var(--font-mono); font-weight: 600; white-space: nowrap; }
+.si-product-sku.is-child { padding-left: var(--space-3); }
 
 .si-product-main-copy .si-chip {
 min-height: 16px; padding: 0 var(--space-1); font-size: var(--fs-body);
