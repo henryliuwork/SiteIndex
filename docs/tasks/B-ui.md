@@ -171,6 +171,7 @@
 - [x] G8.0-2 EDM 基线收敛：#723 已迁入 PageFrame，删除 `edm` 旧外框基线 — 本 PR
 - [x] G8.0-2 B-2g：定时任务汇总页迁入全局 PageFrame 表格滚动模式；系统任务与孤立任务在页头切换的紧凑区显示，保留校验、刷新和清理入口 — 本 PR
 - [x] G8.0-2 内容页基线收敛：#725 已迁入 PageFrame，删除 `content` 旧外框基线 — 本 PR
+- [x] G8.0-2 待办页基线收敛：#728 已迁入 PageFrame，删除 `project-todos` 旧外框基线 — 本 PR
 
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。
