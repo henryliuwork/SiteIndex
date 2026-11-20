@@ -6,7 +6,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import type { BlogFilters, BlogPost, JobProgress, JobResult, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, Notice, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, SummaryLine, formatDateTime, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, DataTable, DetailPanel, FilterBar, FilterPill, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, SummaryLine, formatDateTime, useToast } from "../components";
 import { blogIndexNotice, blogRecognitionCounts, blogRecognitionNeedsRecrawl, getBlogRecognitionConfigUpdatedAt, hasBlogRecognitionConfig } from "./content/blog-recognition";
 
 type ContentView = "blog" | "keywords";
@@ -213,8 +213,8 @@ export function ContentPage() {
     <span className="si-content-total">显示 {view === "blog" ? blogs?.rows.length ?? 0 : keywords?.rows.length ?? 0} / {view === "blog" ? blogs?.total ?? 0 : keywords?.total ?? 0} 条</span>
   </div>;
 
-  return <div className="si-page si-content-page">
-    <ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button size="small" variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button><Button size="small" onClick={() => void exportRows()}><FileDown size={14} />导出 CSV</Button></>} overflow={[{ label: "博客识别设置", onSelect: () => navigate(`/p/${id}/settings/config?section=blog-recognition`) }, { label: "打开项目文件夹", onSelect: () => void openProjectFolder() }]} />
+  return <PageFrame kind="project" scroll="table" header={<ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button><Button onClick={() => void exportRows()}><FileDown size={16} />导出 CSV</Button></>} overflow={[{ label: "博客识别设置", onSelect: () => navigate(`/p/${id}/settings/config?section=blog-recognition`) }, { label: "打开项目文件夹", onSelect: () => void openProjectFolder() }]} />}>
+    <div className="si-page si-content-page">
     <ProjectTabPanel projectId={project.id} tab="content">
     {summaryItems.length > 0 && <SummaryLine items={summaryItems} ariaLabel="内容摘要"
       timeNote={`博客识别配置：Sitemap ${blogConfigCounts.sitemaps} 条、URL 规则 ${blogConfigCounts.rules} 条；最近识别${seoSummaryQuery.isLoading ? "时间读取中" : seoSummaryQuery.isError ? "时间读取失败" : lastRecognizedAt ? `于 ${formatDateTime(lastRecognizedAt)}` : "时间未知"}`} />}
@@ -242,6 +242,7 @@ export function ContentPage() {
       {selected && "keyword" in selected && <div className="si-content-detail"><div><span>类型</span>{selected.role === "primary" ? "主词" : "次词"}</div><div><span>搜索意图</span>{intentLabels[selected.intent]}</div><div><span>主题簇</span>{selected.cluster}</div><div><span>状态</span>{keywordStatusLabels[selected.status]}</div><div><span>目标页面</span><code>{selected.target_url || "未分配"}</code></div><div><span>搜索量</span>{selected.search_volume ?? "预留"}</div><div><span>当前排名</span>{selected.current_rank ?? "预留"}</div><div className="full"><span>备注</span>{selected.note || "—"}</div>{selected.target_url && <Button size="small" onClick={() => void openExternal(selected.target_url!, "目标页面")}><ExternalLink size={13} />打开目标页面</Button>}</div>}
     </DetailPanel>
     </ProjectTabPanel>
-  </div>;
+    </div>
+  </PageFrame>;
 }
 import "./content/page.css";

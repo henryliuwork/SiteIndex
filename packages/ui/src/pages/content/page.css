@@ -1,9 +1,9 @@
 .si-content-page {
-display: flex; min-height: 0; flex-direction: column; height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) * 2); gap: var(--space-section);
+display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--space-section-gap);
 }
 
 .si-content-page > .si-tab-panel {
-display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--space-section);
+display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--space-section-gap);
 }
 .si-content-page .si-summary-line { min-height: var(--control-height-compact); flex: none; }
 
@@ -30,7 +30,7 @@ max-width: 600px; margin: 0; color: var(--color-muted); font-size: var(--fs-capt
 .si-content-view-switch { display: flex; justify-content: flex-start; }
 .si-content-empty-toolbar { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-control); background: var(--color-surface); }
 .si-content-toolbar {
-display: flex; width: 100%; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--space-control-group);
+display: flex; width: 100%; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--space-1);
 }
 
 .si-content-toolbar > .si-search-input {
@@ -42,7 +42,7 @@ flex: 1 1 360px;
 }
 
 .si-content-filterbar .si-filter-bar-items {
-width: 100%; gap: var(--space-1);
+width: 100%; gap: var(--space-2);
 }
 
 .si-content-total {
@@ -102,12 +102,6 @@ justify-self: start; margin-top: var(--space-3);
 }
 
 @media (min-width: 1101px) {
-  .si-content-page {
-    height: calc(100vh - var(--si-title-bar-height) - var(--si-content-top-padding) + var(--space-1));
-    margin-top: calc(-1 * (var(--si-content-top-padding) + var(--space-1)));
-    gap: var(--space-1);
-  }
-  .si-content-page > .si-tab-panel { gap: var(--space-1); }
   .si-content-page .si-table-toolbar { min-height: var(--control-height); flex-wrap: nowrap; gap: var(--space-1); padding: 0 var(--space-2); }
   .si-content-page .si-table-toolbar-content { flex: 1 1 0; flex-wrap: nowrap; }
   .si-content-page .si-filter-bar-items, .si-content-page .si-content-toolbar { flex-wrap: nowrap; }
