@@ -157,6 +157,7 @@
 - [x] W0 可测量违例审计：按路线图 §4 记录页面、截图、条款和归属，提交 lead 冻结；不在本 PR 修改 D 页面 — 本 PR
 - [x] G8.0-1 B-1a：共享 PageFrame 提供 global/project 外框及 content/table 滚动模式；旧页面待 G8.0-2 逐页迁移 — 本 PR
 - [x] G8.0-1 B-1b：侧栏项目项两行显示项目名、平台与最近运行时间；域名放悬停标题，已识别同步目录显示警告图标 — 本 PR
+- [x] G8.0-1 B-1c：ProjectHeader 在项目 PageFrame 内使用 48px 单行导航/操作；旧页面兼容至 G8.0-2 迁移 — 本 PR
 
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。

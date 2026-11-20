@@ -4,6 +4,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Cloud, MoreHorizontal } from "lucide-react";
 import type { ProjectSummary } from "@siteindex/shared";
 import { PageHeaderActions, type PageHeaderOverflowAction } from "./layout-primitives";
+import { usePageFrameKind } from "./page-frame";
 import { Button, TabPanel, Tabs } from "./primitives";
 import { formatDateTime } from "./utils";
 import "./project-header.css";
@@ -176,6 +177,14 @@ export function ProjectHeader({
   overflow?: readonly PageHeaderOverflowAction[];
   hasTabPanel?: boolean;
 }) {
+  const inProjectFrame = usePageFrameKind() === "project";
+  if (inProjectFrame) return <div className="si-project-header si-project-header-single">
+    <ProjectNavigation projectId={project.id} activeTab={activeTab} hasTabPanel={hasTabPanel} />
+    <div className="si-project-header-action-slot">
+      <PageHeaderActions actions={actions} overflow={overflow} className="si-project-header-actions" />
+    </div>
+  </div>;
+
   const projectSubtitle = subtitle ?? `${project.domain} · ${platformLabels[project.platform]}`;
   const selectedTab = activeTab;
   const syncAt = project.sync?.at ?? null;
