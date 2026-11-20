@@ -5,6 +5,7 @@ export * from "./info-tooltip";
 export * from "./input-with-action";
 export * from "./layout-primitives";
 export * from "./overlays";
+export * from "./page-frame";
 export * from "./project-header";
 export * from "./primitives";
 export * from "./shell";
