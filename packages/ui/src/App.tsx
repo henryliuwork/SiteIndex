@@ -15,7 +15,9 @@ function AppShell() {
   const platform = useQuery({ queryKey: ["app", "platform"], queryFn: () => api.app.platform() });
   const projects = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
-  const navProjects = projects.data?.map(({ id, name, sync }) => ({ id, name, state: sync.state })) ?? [{ id: "kingsyard", name: "Kingsyard", state: "partial" as const }];
+  const navProjects = projects.data?.map(({ id, name, domain, platform, storage_location, sync }) => ({
+    id, name, domain, platform, storageLocation: storage_location, syncAt: sync.at, state: sync.state,
+  })) ?? [];
   const runnerProject = projects.data?.find((project) => project.is_runner);
   return (
     <WindowChrome platform={platform.data ?? "win32"}>
