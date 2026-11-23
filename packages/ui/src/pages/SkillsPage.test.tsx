@@ -71,7 +71,8 @@ describe("SkillsPage retired skills", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={queryClient}><ToastProvider><MemoryRouter><SkillsPage /></MemoryRouter></ToastProvider></QueryClientProvider>);
 
-    fireEvent.click(await screen.findByRole("button", { name: /stock-report/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /stock-report/ }));
+    expect((screen.getByRole("radio", { name: /stock-report/ }) as HTMLInputElement).checked).toBe(true);
     const status = await screen.findByText("本地版本较新（不覆盖）");
     const targetRow = status.closest(".si-skill-target");
     expect(targetRow).toBeTruthy();
