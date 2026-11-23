@@ -1,6 +1,6 @@
 import { app, shell } from "electron";
 import { mkdir } from "node:fs/promises";
-import type { AppSettings } from "@siteindex/shared";
+import type { ConfigSaveOptions, SettingsPatch } from "@siteindex/shared";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import { sendDingTalkTestNotification } from "../notifications.js";
 import { chooseDirectory } from "./app.js";
@@ -9,8 +9,8 @@ import type { IpcContext } from "./context.js";
 export function createSettingsHandlers(context: IpcContext): IpcHandlerImplementations {
   return {
     "settings.get": () => context.settings.get(),
-    "settings.set": async (patch) => {
-      const updated = await context.settings.set(patch as Partial<AppSettings>);
+    "settings.set": async (patch, options) => {
+      const updated = await context.settings.set(patch as SettingsPatch, options as ConfigSaveOptions | undefined);
       await context.settingsChanged(updated);
       return updated;
     },

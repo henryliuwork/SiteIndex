@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { AppSettingsSnapshot } from "@siteindex/shared";
 import { createSettingsStore } from "./settings-store.js";
 
 describe("settings store", () => {
@@ -30,7 +31,9 @@ describe("settings store", () => {
     expect(first.launch_at_login).toBe(false);
     expect(first.cache_dir).toBe(join(settingsDirectory, "cache"));
     expect(await store.exists()).toBe(true);
-    expect(JSON.parse(await readFile(store.filePath, "utf8"))).toEqual(first);
+    const persisted = { ...first };
+    delete persisted.revision;
+    expect(JSON.parse(await readFile(store.filePath, "utf8"))).toEqual(persisted);
   });
 
   it("merges partial settings and persists nested settings", async () => {
@@ -89,8 +92,10 @@ describe("settings store", () => {
   it("keeps future user fields when reading and saving known settings", async () => {
     const store = createSettingsStore(settingsDirectory, "DESKTOP-01");
     const initial = await store.get();
+    const stored = { ...initial };
+    delete stored.revision;
     const original = `${JSON.stringify({
-      ...initial,
+      ...stored,
       future_user_field: "保留此值",
       browser: { ...initial.browser, future_browser_field: "browser-choice" },
       notify: { ...initial.notify, future_notify_field: "notification-choice" },
@@ -111,12 +116,17 @@ describe("settings store", () => {
   it("leaves a valid settings file byte-identical when saving no changes", async () => {
     const store = createSettingsStore(settingsDirectory, "DESKTOP-01");
     const settings = await store.get();
-    const original = `${JSON.stringify(settings, null, 4)}\n`;
+    const stored = { ...settings };
+    delete stored.revision;
+    const original = `${JSON.stringify(stored, null, 4)}\n`;
     await writeFile(store.filePath, original, "utf8");
 
     await store.set({});
     expect(await readFile(store.filePath, "utf8")).toBe(original);
     await store.set({ device_name: settings.device_name });
+    expect(await readFile(store.filePath, "utf8")).toBe(original);
+    const latest = await store.get();
+    await store.set({ notify: { on_success: true } }, { revision: latest.revision, dirty_paths: [] });
     expect(await readFile(store.filePath, "utf8")).toBe(original);
   });
 
@@ -128,7 +138,9 @@ describe("settings store", () => {
     const settings = await store.get();
 
     expect(settings.device_name).toBe("DESKTOP-01");
-    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual(settings);
+    const persisted = { ...settings };
+    delete persisted.revision;
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual(persisted);
   });
 
   it("rejects malformed settings updates", async () => {
@@ -146,5 +158,39 @@ describe("settings store", () => {
     await store.set({ hidden_projects: ["C:\\Projects\\fictional"] });
     expect((await store.get()).hidden_projects).toEqual(["C:\\Projects\\fictional"]);
     await expect(store.set({ hidden_projects: [42] as never })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+  });
+
+  it("rejects a stale notification draft and preserves the newer saved field", async () => {
+    const store = createSettingsStore(settingsDirectory, "DESKTOP-01");
+    const stale = await store.get() as AppSettingsSnapshot;
+    await store.set({ notify: { on_success: true } }, {
+      revision: stale.revision, dirty_paths: ["notify.on_success"],
+    });
+    await expect(store.set({ notify: { ...stale.notify, on_failure: false } }, {
+      revision: stale.revision, dirty_paths: ["notify.on_failure"],
+    })).rejects.toMatchObject({ code: "CONFIG_INVALID", message: "配置已在别处更新，请刷新后重试。" });
+    expect((await store.get()).notify).toMatchObject({ on_success: true, on_failure: true });
+  });
+
+  it("applies only dirty nested fields and requires explicit clear for empty values", async () => {
+    const store = createSettingsStore(settingsDirectory, "DESKTOP-01");
+    const initial = await store.get() as AppSettingsSnapshot;
+    const changed = await store.set({ notify: { on_success: true } }, {
+      revision: initial.revision, dirty_paths: ["notify.on_success"],
+    });
+    await store.set({ notify: { ...initial.notify, on_failure: false } }, {
+      revision: changed.revision, dirty_paths: ["notify.on_failure"],
+    });
+    expect((await store.get()).notify).toMatchObject({ on_success: true, on_failure: false });
+    const before = await readFile(store.filePath, "utf8");
+    const current = await store.get() as AppSettingsSnapshot;
+    await expect(store.set({ device_name: "" }, {
+      revision: current.revision, dirty_paths: ["device_name"],
+    })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    expect(await readFile(store.filePath, "utf8")).toBe(before);
+    await store.set({ device_name: "" }, {
+      revision: current.revision, dirty_paths: ["device_name"], clear: ["device_name"],
+    });
+    expect((await store.get()).device_name).toBe("");
   });
 });

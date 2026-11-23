@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
-import type { AppSettings, SkillPlatform } from "@siteindex/shared";
+import type { AppSettings, AppSettingsSnapshot, ConfigSaveOptions, SettingsPatch, SkillPlatform } from "@siteindex/shared";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -43,7 +43,7 @@ function normalizeSettings(value: unknown, defaults: AppSettings): AppSettings {
   const browser = isRecord(value.browser) ? value.browser : {};
   const notify = isRecord(value.notify) ? value.notify : {};
 
-  return {
+  const normalized = {
     ...value,
     device_id: typeof value.device_id === "string" && value.device_id ? value.device_id : defaults.device_id,
     device_name: typeof value.device_name === "string" ? value.device_name : defaults.device_name,
@@ -86,6 +86,8 @@ function normalizeSettings(value: unknown, defaults: AppSettings): AppSettings {
       ? value.conflict_patterns.filter((item): item is string => typeof item === "string")
       : defaults.conflict_patterns,
   };
+  delete (normalized as Record<string, unknown>).revision; // IPC metadata never belongs in settings.json.
+  return normalized;
 }
 
 function cloneSettings(settings: AppSettings): AppSettings {
@@ -133,7 +135,7 @@ function serializeByFile<T>(filePath: string, operation: () => Promise<T>): Prom
   return current;
 }
 
-function validatePatch(patch: unknown): asserts patch is Partial<AppSettings> {
+function validatePatch(patch: unknown): asserts patch is SettingsPatch {
   if (!isRecord(patch)) invalidSettings("settings.set 需要一个设置对象。");
 
   const allowedKeys = new Set([
@@ -173,31 +175,65 @@ function validatePatch(patch: unknown): asserts patch is Partial<AppSettings> {
     invalidSettings("skill_platforms 格式无效。");
   }
   if ("browser" in patch) {
-    if (
-      !isRecord(patch.browser) ||
-      !("channel" in patch.browser) ||
-      !(
-        patch.browser.channel === "msedge" ||
-        patch.browser.channel === "chrome" ||
-        patch.browser.channel === "custom"
-      ) ||
-      !(typeof patch.browser.executable_path === "string" || patch.browser.executable_path === null)
-    ) {
-      invalidSettings("browser 设置格式无效。");
-    }
+    if (!isRecord(patch.browser)) invalidSettings("browser 设置格式无效。");
+    if ("channel" in patch.browser && !["msedge", "chrome", "custom"].includes(String(patch.browser.channel)))
+      invalidSettings("browser.channel 设置格式无效。");
+    if ("executable_path" in patch.browser &&
+      !(typeof patch.browser.executable_path === "string" || patch.browser.executable_path === null))
+      invalidSettings("browser.executable_path 设置格式无效。");
   }
   if ("notify" in patch) {
     const notify = patch.notify;
-    if (
-      !isRecord(notify) ||
-      typeof notify.on_failure !== "boolean" ||
-      typeof notify.on_success !== "boolean" ||
-      !(typeof notify.oos_threshold === "number" || notify.oos_threshold === null) ||
-      !(typeof notify.dingtalk_webhook === "string" || notify.dingtalk_webhook === null)
-    ) {
-      invalidSettings("notify 设置格式无效。");
+    if (!isRecord(notify)) invalidSettings("notify 设置格式无效。");
+    for (const key of ["on_failure", "on_success"]) {
+      if (key in notify && typeof notify[key] !== "boolean") invalidSettings(`notify.${key} 设置格式无效。`);
     }
+    if ("oos_threshold" in notify && !(typeof notify.oos_threshold === "number" || notify.oos_threshold === null))
+      invalidSettings("notify.oos_threshold 设置格式无效。");
+    if ("dingtalk_webhook" in notify && !(typeof notify.dingtalk_webhook === "string" || notify.dingtalk_webhook === null))
+      invalidSettings("notify.dingtalk_webhook 设置格式无效。");
   }
+}
+
+async function fileRevision(filePath: string): Promise<string | undefined> {
+  try { return createHash("sha256").update(await readFile(filePath)).digest("hex"); }
+  catch (error) {
+    if (isRecord(error) && error.code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+function protectedPatch(current: AppSettings, patch: SettingsPatch, options: ConfigSaveOptions): AppSettings {
+  if (options.revision !== undefined && typeof options.revision !== "string") invalidSettings("revision 格式无效。");
+  if (options.dirty_paths !== undefined && (!Array.isArray(options.dirty_paths) ||
+    !options.dirty_paths.every((path) => typeof path === "string"))) invalidSettings("dirty_paths 格式无效。");
+  if (options.clear !== undefined && (!Array.isArray(options.clear) ||
+    !options.clear.every((path) => typeof path === "string"))) invalidSettings("clear 格式无效。");
+  const values = new Map<string, unknown>();
+  for (const [key, value] of Object.entries(patch)) {
+    if ((key === "browser" || key === "notify") && isRecord(value)) {
+      for (const [field, nested] of Object.entries(value)) values.set(`${key}.${field}`, nested);
+    } else values.set(key, value);
+  }
+  const paths = options.dirty_paths ?? [...values.keys()];
+  const clear = new Set(options.clear ?? []);
+  for (const path of clear) if (!paths.includes(path)) invalidSettings(`clear 字段未修改：${path}。`);
+  const next = cloneSettings(current);
+  for (const path of paths) {
+    if (!values.has(path)) invalidSettings(`未提交被修改字段 ${path}。`);
+    const [section = "", field, extra] = path.split(".");
+    if (extra || (field && section !== "browser" && section !== "notify")) invalidSettings(`设置字段无效：${path}。`);
+    const target = field ? (next as unknown as Record<string, Record<string, unknown>>)[section] : next as unknown as Record<string, unknown>;
+    if (!target || (!field && !Object.hasOwn(next, path))) invalidSettings(`设置字段无效：${path}。`);
+    const key = field ?? section;
+    if (field && !Object.hasOwn(target, key)) invalidSettings(`设置字段无效：${path}。`);
+    const value = values.get(path);
+    const empty = (item: unknown) => item === "" || item === null || item === undefined ||
+      (Array.isArray(item) && item.length === 0);
+    if (empty(value) && !empty(target[key]) && !clear.has(path)) invalidSettings(`清空 ${path} 需要明确确认。`);
+    target[key] = value;
+  }
+  return next;
 }
 
 async function writeAtomically(filePath: string, settings: AppSettings): Promise<void> {
@@ -231,8 +267,8 @@ async function writeAtomically(filePath: string, settings: AppSettings): Promise
 export interface SettingsStore {
   readonly filePath: string;
   exists(): Promise<boolean>;
-  get(): Promise<AppSettings>;
-  set(patch: Partial<AppSettings>): Promise<AppSettings>;
+  get(): Promise<AppSettingsSnapshot>;
+  set(patch: SettingsPatch, options?: ConfigSaveOptions): Promise<AppSettingsSnapshot>;
 }
 
 export function createSettingsStore(settingsDirectory: string, deviceName = hostname()): SettingsStore {
@@ -267,20 +303,25 @@ export function createSettingsStore(settingsDirectory: string, deviceName = host
       return serializeByFile(filePath, async () => {
         const { settings, needsRepair } = await readSettings();
         if (needsRepair) await writeAtomically(filePath, settings);
-        return settings;
+        return { ...settings, revision: await fileRevision(filePath) };
       });
     },
-    async set(patch) {
+    async set(patch, options) {
       validatePatch(patch);
       return serializeByFile(filePath, async () => {
         const { settings: current, needsRepair } = await readSettings();
-        const next = {
+        const revision = await fileRevision(filePath);
+        if (options !== undefined && !isRecord(options)) invalidSettings("保存选项格式无效。");
+        if (options?.revision !== undefined && options.revision !== revision)
+          throw { code: "CONFIG_INVALID", message: "配置已在别处更新，请刷新后重试。" };
+        const next = options ? protectedPatch(current, patch, options) : {
           ...current,
           ...patch,
           browser: patch.browser ? { ...current.browser, ...patch.browser } : current.browser,
           notify: patch.notify ? { ...current.notify, ...patch.notify } : current.notify,
         };
-        if (!needsRepair && sameJsonValue(current, next)) return current;
+        if (!needsRepair && sameJsonValue(current, next)) return { ...current, revision };
+        if (!sameJsonValue(normalizeSettings(next, defaults), next)) invalidSettings("设置值无法正确读回。");
         await writeAtomically(filePath, next);
         try {
           const persisted = JSON.parse(await readFile(filePath, "utf8")) as unknown;
@@ -288,7 +329,7 @@ export function createSettingsStore(settingsDirectory: string, deviceName = host
         } catch {
           throw { code: "WRITE_FAILED", message: "软件设置保存后读回失败。" };
         }
-        return next;
+        return { ...next, revision: await fileRevision(filePath) };
       });
     },
   };

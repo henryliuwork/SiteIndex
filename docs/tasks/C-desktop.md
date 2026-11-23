@@ -219,3 +219,7 @@
 
 - [x] preload 暴露 `todos.list/update/history`；Desktop handler 在项目登记校验后直通 `CoreService.todos`。虚构本地项目通过 preload → IPC → Core 往返验证列表、状态/备注更新和历史记录；不按设备筛选待办。
 - [ ] `PENDING_HANDLERS` 保留至此 Desktop 接线 PR 合并后，再通过独立 contract PR 清理。
+
+## v0.8.2 · 设置保存
+
+- [x] C-1：`settings.json` 支持 revision、dirty_paths、显式 clear 与写后读回；旧调用兼容，合成双会话复现 #744。
