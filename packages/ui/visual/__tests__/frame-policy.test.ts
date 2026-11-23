@@ -32,6 +32,24 @@ describe("v0.8 PageFrame gate", () => {
     ]));
   });
 
+  it.each(["project-settings-config", "project-settings-categories", "project-settings-files"])(
+    "allows content scroll only on %s while rejecting document and frame body scroll",
+    (routeName) => {
+      const contentScroll = { ...project, contentScroll: true };
+      expect(checkFrameMetrics(routeName, "project", true, contentScroll, baseline).findings).toEqual([]);
+      for (const scroll of ["documentScroll", "bodyScroll"] as const) {
+        const metrics = { ...contentScroll, [scroll]: true };
+        expect(checkFrameMetrics(routeName, "project", true, metrics, baseline).findings.map((finding) => finding.rule))
+          .toContain("frame-table-scroll");
+      }
+    },
+  );
+
+  it("rejects content scroll on a neighboring project route", () => {
+    expect(checkFrameMetrics("project-settings-runs", "project", true, { ...project, contentScroll: true }, baseline)
+      .findings.map((finding) => finding.rule)).toContain("frame-table-scroll");
+  });
+
   it("fails when a known SKU table has no SKU column at all, including the variant drawer", () => {
     const noSku: FrameMetrics = { ...project, tables: [
       { id: "products.merged", firstHeader: "产品名称", hasSkuHeader: false },

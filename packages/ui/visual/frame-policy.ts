@@ -25,6 +25,12 @@ export interface FrameBaseline {
 
 export interface FrameFinding { rule: string; message: string }
 
+const projectSettingsContentScrollRoutes = new Set([
+  "project-settings-config",
+  "project-settings-categories",
+  "project-settings-files",
+]);
+
 export function checkSkuTables(routeName: string, tables: FrameMetrics["tables"]): FrameFinding[] {
   const findings: FrameFinding[] = [];
   const requiredSkuTables = new Set(["products.merged", "products.variant-stock", "edm.images"]);
@@ -69,7 +75,8 @@ export function checkFrameMetrics(
     near("global-title-padding", metrics.globalPaddingTop, 24);
   }
   near("frame-body-start", metrics.bodyStart, 16);
-  if (hasDataTable && (metrics.documentScroll || metrics.contentScroll || metrics.bodyScroll)) {
+  const disallowedContentScroll = metrics.contentScroll && !projectSettingsContentScrollRoutes.has(routeName);
+  if (hasDataTable && (metrics.documentScroll || disallowedContentScroll || metrics.bodyScroll)) {
     findings.push({ rule: "frame-table-scroll", message: "表格页的 document、内容区或外框主体出现纵向滚动。" });
   }
   for (const height of metrics.toolbarControlHeights) near("toolbar-control-height", height, 32);
