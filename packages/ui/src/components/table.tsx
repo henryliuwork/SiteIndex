@@ -368,7 +368,7 @@ export function DataTable<T, F = Record<string, unknown>>({
       <div className="si-table-toolbar">
         <div className="si-table-toolbar-content">{toolbar}</div>
         <div className="si-table-toolbar-settings">
-          <Popover trigger={<Button size="small" icon={<Columns3 size={15} />}>列设置</Button>} className="si-column-popover">
+          <Popover trigger={<Button icon={<Columns3 size={15} />}>列设置</Button>} className="si-column-popover">
             {columnMenu}
           </Popover>
         </div>

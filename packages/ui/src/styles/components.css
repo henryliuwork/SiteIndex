@@ -111,9 +111,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-pagination { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-1) 0; color: var(--color-muted); font-size: var(--fs-body); }
 .si-pagination-count { font-variant-numeric: tabular-nums; }
 .si-page-size { display: inline-flex; align-items: center; gap: var(--space-2); }
-.si-page-size select { height: 30px; padding: 0 var(--space-6) 0 var(--space-2); border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); }
+.si-page-size select { height: var(--control-height); padding: 0 var(--space-6) 0 var(--space-3); border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); }
 .si-pagination-controls { display: inline-flex; align-items: center; gap: var(--space-2); }
-.si-pagination-controls button { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); }
+.si-pagination-controls button { display: grid; width: 44px; height: var(--control-height); place-items: center; padding: 0 var(--space-3); border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-ink-2); }
 .si-pagination-controls button:disabled { color: var(--color-faint); cursor: not-allowed; }
 .si-pagination-controls span { min-width: 90px; text-align: center; }
 
@@ -148,7 +148,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-table th.is-sticky-left { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-sticky-right { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-reserved { background: var(--color-neutral-reserved); color: var(--color-faint); }
-.si-sort-button { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0; border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
+.si-sort-button { display: inline-flex; min-height: var(--control-height-compact); align-items: center; gap: var(--space-1); padding: 0 var(--space-2); border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
 .si-table-heading { display: inline-flex; align-items: center; gap: var(--gap-label-control); }
 .si-sort-indicator { display: inline-grid; width: 12px; place-items: center; color: var(--color-faint); }
 .si-table td { height: 40px; padding: 0 var(--space-3); border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: var(--fs-body); white-space: nowrap; }
