@@ -302,6 +302,20 @@ describe("合并后的产品管理表", () => {
     await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: undefined }) })));
   });
 
+  it("链接列仅显示有提示的图标按钮，并打开对应商品页", async () => {
+    const mockApi = await renderProductsPage();
+    mockApi.shell.openExternal = vi.fn().mockResolvedValue(undefined);
+    const table = await screen.findByRole("table");
+    await within(table).findByText("虚构组合商品", { selector: "strong" });
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "链接" }));
+    const button = await within(table).findByRole("button", { name: "打开 虚构组合商品 商品页" });
+    expect(button.getAttribute("title")).toBe("打开 虚构组合商品 商品页");
+    expect(button.textContent).toBe("");
+    fireEvent.click(button);
+    await waitFor(() => expect(mockApi.shell.openExternal).toHaveBeenCalledWith(parent.url));
+  });
+
   it("父 SKU 价格显示范围，子 SKU 显示自己的价格且只在父行显示有货变体数", async () => {
     await renderProductsPage();
     const table = await screen.findByRole("table");
