@@ -1,6 +1,6 @@
 # v0.8.2 设置保存审计矩阵（W0）
 
-> 基线：最初从 `origin/main` `7c44825` 取证，文档分支已变基至包含 #752 的当前 main。只用 `synthetic-shop.test` 虚构项目的临时副本取证。`S/R/U` 分别表示保存后读回、新建 service 或重启后读回、从 v0.8.0 覆盖升级后读回。`待验`不等于通过；D/E/C 的端到端证据到齐后逐行定案。
+> 基线：最初从 `origin/main` `7c44825` 取证，文档分支已变基至包含 #762 的当前 main。只用虚构项目的隔离副本取证。项目级 `S/R/U` 分别表示正式 UI 保存后读回、退出重开后读回、从 v0.8.0 覆盖升级后读回；合成 Core/IPC 证据另列，不能替代这些格。`待验`不等于通过。
 >
 > 本矩阵按 roadmap §5.2 的封闭范围列设置项。项目配置写入共用 `projects.updateConfig` → `site.json` → `projects.get`；应用配置由 C 的 `settings.set/get` → `settings.json`；分类、计划、README、待办、GSC 的独立 API 单列。
 
@@ -8,100 +8,103 @@
 
 | 编号 | 复现步骤与结果 | 归属 |
 |---|---|---|
-| R1 | 合成项目先有 `seo.core_keywords=["bird feeder"]`、`seo.competitors=["competitor.example.test"]`、`seo.title_range=[30,60]`；调用 `projects.updateConfig(id,{seo:{core_keywords:["new keyword"]}})` 后重读文件，`competitors` 与 `title_range` 消失。`service/index.ts:2190-2195` 顶层替换分区。 | [#743](https://github.com/henryliuwork/SiteIndex/issues/743)，D 类 |
+| R1 | 旧版合成复现：只提交 `seo.core_keywords` 后，`seo.competitors` 与 `seo.title_range` 消失。#762 已修 Core 深合并、dirty/revision、显式清空和写后读回，三系统 CI 全绿；正式 UI 提交仍待验。 | [#743](https://github.com/henryliuwork/SiteIndex/issues/743)，D 类 |
 | R2 | 旧版合成复现：README 缺 `## 当前重点` 时提交 `focus="Focus text"`，保存返回成功，重读仍无内容。#752 已修 Core 补标题并通过三系统 CI；打包 UI 保存与缺段提示仍待验。 | [#745](https://github.com/henryliuwork/SiteIndex/issues/745)，D 类 |
-| R3 | D 在隔离 mock 页输入 `DEMO KEYWORD `，文本框立即回显为 `DEMO KEYWORD`；`fromLines` 每键 trim/filter 后回填，尾部空格与回车中的空行无法暂存。 | [#743 评论](https://github.com/henryliuwork/SiteIndex/issues/743)，D-4 输入保真 |
+| R3 | 旧版隔离 mock 页每键 trim/filter，尾部空格与回车空行无法暂存。#761 已修 7 个真正的多行字段为原始草稿至失焦/保存；站点地图仍是单行框，不在该修复内。正式 UI 读回待验。 | [#761](https://github.com/henryliuwork/SiteIndex/pull/761)，I8 |
 | R4 | D 在隔离 mock 页先加载旧草稿，再通过另一次调用更新 `brand.tagline`，只在页面改品牌名后保存；提交的 16 个顶层字段仍含旧 tagline，读回也回退为旧值。 | [#743 评论](https://github.com/henryliuwork/SiteIndex/issues/743)，D 类 |
 | R5 | 旧版合成复现：README 模板初始含 5 个自动区块标记；保存工作规则后标记从 5 个变为 0 个。#752 已修 Core 读写边界并通过三系统 CI；打包 UI 待验。 | [#745 评论](https://github.com/henryliuwork/SiteIndex/issues/745#issuecomment-7094778905)，D 类 |
 
-当前 `updateConfig` 没有写后重读比对、revision、显式 `clear` 或空 patch 字节不变判定。C 已在 [#747](https://github.com/henryliuwork/SiteIndex/pull/747) 修复 `settings.json` 未知字段丢失与无操作重写，通知旧草稿风险由 #744 跟进。受影响的真实项目写入暂停；A 的复现只写系统临时目录。#752 的修复已合并，#745 仍等待缺段标记、B 页面提示和 E 直接路径复验；不能以 Core 单测关闭问题。
+Core [#762](https://github.com/henryliuwork/SiteIndex/pull/762) 已合并受保护的 `updateConfig` 路径：深合并、revision、显式 `clear`、写后读回与无操作字节不变；旧两参调用仍可清空，D 的 dirty/revision UI 提交尚待接线。C [#747](https://github.com/henryliuwork/SiteIndex/pull/747) 已修 `settings.json` 未知字段丢失与无操作重写；通知旧草稿风险由 #744 跟进。#752/#759 的 README Core 修复已合并，#745 仍待 B 页面提示和 E 直接路径复验；不能以 Core 单测关闭问题。A 的复现只写系统临时目录。
 
 ### 升级路径的已验证范围
 
 `v0.8.0` 标签中的 `fixtures/e-v050-w0/projects/legacy/index/site.json` 与 `templates/project/README.md` 曾和取证时 main 的对应文件 Git blob 相同。A 将其复制到系统临时目录，填入虚构 SEO 关键词、竞品域名、长度范围和博客识别配置，再由当时 Core 新建 service 加载并运行 `views`、`validate`、`readme`。加载与三个任务后，`site.json` 中这些用户字段逐键保留；`views` 和 `readme` 返回 `ok`，`validate` 因该轻量 fixture 缺校验所需文件返回 `failed`，但仍未改写上述字段。模板的三个用户段正文在 `readme` Job 后仍在；读回“工作规则”在 Job 前误含自动标记，见 R5（#752 已修）。
 
-这只能证明**旧版文件经当前 Core 的上述路径**的行为。尚未完成 v0.8.0 安装包覆盖升级、v0.7.5/v0.7.6 顺序打开，以及 daily/weekly/monthly 的成功任务路径；“升级后变空”的准确步骤目前**未复现**，U 列仍为待验。
+这只能证明**旧版文件经当时 Core 的上述路径**的行为。尚未完成 v0.8.0 安装包覆盖升级、v0.7.5/v0.7.6 顺序打开，以及 daily/weekly/monthly 的成功任务路径；“升级后变空”的准确步骤目前**未复现**，U 列仍为待验。后续各旧版本应使用独立可恢复的虚构副本。
 
 ## 项目设置 · `site.json`
 
-下表的 API `P` = `projects.updateConfig`；读回 `G` = `projects.get(id).config`。当前 UI 保存提交整份草稿，故各行均暴露于 R4；`S/R/U` 的逐项实测由 D/E 补证，不能用源码推断为通过。
+下表的 API `P` = `projects.updateConfig`；读回 `G` = `projects.get(id).config`。当前 UI 保存提交整份草稿，故各行仍暴露于 R4。D 用隔离虚构项目**完整 patch**一次提交，在磁盘、新 Core service 与返回值之间逐项深比较下表 44 个控件字段，得到 `CONFIG_FULL_PATCH_READBACK_OK fields=44`；该证据标为 `C44`，不证明局部 patch、dirty/revision 或正式 UI S/R/U。E 的 JSON 编辑合成证据标为 `J1`，两者细节见 [D 补证](https://github.com/henryliuwork/SiteIndex/pull/753#issuecomment-7097121009)与 [E 补证](https://github.com/henryliuwork/SiteIndex/pull/753#issuecomment-7096276776)。
 
-| 设置项 | 页面/控件 | API | 写入文件与键 → 读回 | 不变量与当前结论 | S/R/U |
-|---|---|---|---|---|---|
-| 以 JSON 编辑整个配置 | 项目设置·JSON 草稿 | P | `site.json` 全部键 → G 与原文件 | I1：E 的隔离 Core 全量提交→新实例读回一致、其他 16 个顶层分区未变；UI mock 仅同会话提交。I2–I6 与安装版仍待验 | 待验/待验/待验 |
-| 域名 | 基本·域名 | P | `site.json:domain` → G | I2/I4：R4 风险 | 待验/待验/待验 |
-| 网站地址 | 基本·网站地址 | P | `base_url` → G | I2/I4：R4 风险 | 待验/待验/待验 |
-| 平台 | 基本·平台 | P | `platform` → G | I4：R4 风险 | 待验/待验/待验 |
-| 币种 | 基本·币种 | P | `currency` → G | I2/I4：R4 风险 | 待验/待验/待验 |
-| 语言 | 基本·语言 | P | `locale` → G | I2/I4：R4 风险 | 待验/待验/待验 |
-| 时区 | 基本·时区 | P | `timezone` → G | I2/I4：R4 风险 | 待验/待验/待验 |
-| 目标市场 | 基本·逗号列表 | P | `markets` → G | I2/I4：空列表与 R4 风险 | 待验/待验/待验 |
-| 品牌名 | 品牌·名称 | P | `brand.name` → G | I2–I4：整块品牌替换风险 | 待验/待验/待验 |
-| 一句话定位 | 品牌·定位 | P | `brand.tagline` → G | I2–I4：整块品牌替换风险 | 待验/待验/待验 |
-| 文案调性 | 品牌·调性 | P | `brand.voice` → G | I2–I4：整块品牌替换风险 | 待验/待验/待验 |
-| 目标人群 | 品牌·人群 | P | `brand.audience` → G | I2–I4：整块品牌替换风险 | 待验/待验/待验 |
-| 核心卖点 | 品牌·多行 | P | `brand.usp` → G | I2/I8：空列表及 R3 | 待验/待验/待验 |
-| Feed 地址 | 数据源·多行 | P | `crawl.feed_url` → G | I2/I8：空列表及 R3；Core 另作 feed 兼容归一化 | 待验/待验/待验 |
-| SKU 字段 | 数据源·字段 | P | `crawl.sku_field` → G | I2/I4：R4 风险 | 待验/待验/待验 |
-| 主分类层级 | 数据源·数字 | P | `crawl.category_depth` → G | I2/I4：空输入及 R4 风险 | 待验/待验/待验 |
-| 商品消失时 | 数据源·选择 | P | `crawl.missing_as` → G | I4：R4 风险 | 待验/待验/待验 |
-| 移除保护阈值 | 数据源·数字 | P | `crawl.max_removed_ratio` → G | I2/I4：空输入及 R4 风险 | 待验/待验/待验 |
-| Feed 生成时间 | 数据源·文本 | P | `crawl.feed_generated_at` → G | I2/I4：空文本及 R4 风险 | 待验/待验/待验 |
-| 站点地图 | 数据源·多行 | P | `sitemaps` → G | I2/I8：空列表及 R3 | 待验/待验/待验 |
-| 数据修正 | 数据源·JSON | P | `crawl.overrides` → G | I2–I4：保存时总从文本重解析；R4 风险 | 待验/待验/待验 |
-| 请求间隔 | 抓取·数字 | P | `crawl.rate_limit_ms` → G | I2/I4：空输入会变 0；R4 风险 | 待验/待验/待验 |
-| 每周最多页面 | 抓取·数字 | P | `crawl.max_pages` → G | I2/I4：空输入及 R4 风险 | 待验/待验/待验 |
-| 抓取产品页 | 抓取·勾选 | P | `crawl.crawl_product_pages` → G | I4：R4 风险 | 待验/待验/待验 |
-| 无 Feed 自动采集 | 抓取·勾选 | P | `crawl.auto_collect_products` → G | I4：R4 风险 | 待验/待验/待验 |
-| 排除 URL 规则 | 抓取·多行 | P | `crawl.exclude_url_patterns` → G | I2/I8：空列表及 R3 | 待验/待验/待验 |
-| 博客 Sitemap | 博客识别·多行 | P | `content.blog_sitemaps` → G | I2–I4/I8：整块 content/R3 风险 | 待验/待验/待验 |
-| 博客 URL 规则 | 博客识别·多行 | P | `content.blog_url_patterns` → G | I2–I4/I8：整块 content/R3 风险 | 待验/待验/待验 |
-| 父子 SKU 开关 | 父子 SKU·勾选 | P | `sku_grouping.enabled` → G | I3/I4：整块分组替换风险 | 待验/待验/待验 |
-| 父子 SKU 规则类型 | 父子 SKU·选择 | P | `sku_grouping.rule.type` → G | I3/I4：整块规则替换风险 | 待验/待验/待验 |
-| 父子 SKU 规则值 | 父子 SKU·文本 | P | `sku_grouping.rule.value` → G | I2–I4：空文本及 R4 风险 | 待验/待验/待验 |
-| 关注分类 | 关注分类·列表/手动添加 | P | `categories.watched` → G | I2–I4：整块分类替换风险 | 待验/待验/待验 |
-| 核心关键词 | SEO·多行 | P | `seo.core_keywords` → G | **缺陷 R1/R3**：分区丢字段及输入保真 | 缺陷/待验/待验 |
-| 竞品域名 | SEO·多行 | P | `seo.competitors` → G | **缺陷 R1**：局部 SEO patch 后消失；R3 输入风险 | 缺陷/待验/待验 |
-| Title 长度范围 | SEO·数字对 | P | `seo.title_range` → G | **缺陷 R1**：局部 SEO patch 后消失 | 缺陷/待验/待验 |
-| Description 长度范围 | SEO·数字对 | P | `seo.description_range` → G | I3/I4：R1 同一分区风险 | 待验/待验/待验 |
-| 邮件平台 | EDM·选择 | P | `edm.platform` → G | I3/I4：整块 EDM 替换风险 | 待验/待验/待验 |
-| 每封产品数 | EDM·数字 | P | `edm.max_products` → G | I2–I4：空输入及 R4 风险 | 待验/待验/待验 |
-| 推荐冷却期 | EDM·数字 | P | `edm.cooldown_days` → G | I2–I4：空输入及 R4 风险 | 待验/待验/待验 |
-| UTM source | EDM·文本 | P | `edm.utm.source` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 |
-| UTM medium | EDM·文本 | P | `edm.utm.medium` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 |
-| 图片优先级 | EDM·选择 | P | `edm.image_priority` → G | I3/I4：R4 风险 | 待验/待验/待验 |
-| 默认受众 | EDM·文本 | P | `integrations.mailchimp.audience` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 |
-| LinkFlow MCP 服务 | 集成·文本 | P | `integrations.linkflow.mcp_server` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 |
-| LinkFlow 录入工具 | 集成·文本 | P | `integrations.linkflow.create_tool` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 |
+| 设置项 | 页面/控件 | API | 写入文件与键 → 读回 | 不变量与当前结论 | S/R/U | 合成/Core | G8.2-3 终验 |
+|---|---|---|---|---|---|---|---|
+| 以 JSON 编辑整个配置 | 项目设置·JSON 草稿 | P | `site.json` 全部键 → G 与原文件 | I1：E 的隔离 Core 全量提交→新实例读回一致、其他 16 个顶层分区未变；UI mock 仅同会话提交。I2–I6 与安装版仍待验 | 待验/待验/待验 | J1 | 待验 |
+| 域名 | 基本·域名 | P | `site.json:domain` → G | I2/I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 网站地址 | 基本·网站地址 | P | `base_url` → G | I2/I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 平台 | 基本·平台 | P | `platform` → G | I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 币种 | 基本·币种 | P | `currency` → G | I2/I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 语言 | 基本·语言 | P | `locale` → G | I2/I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 时区 | 基本·时区 | P | `timezone` → G | I2/I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 目标市场 | 基本·逗号列表 | P | `markets` → G | I2/I4：空列表与 R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 品牌名 | 品牌·名称 | P | `brand.name` → G | I2–I4：整块品牌替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 一句话定位 | 品牌·定位 | P | `brand.tagline` → G | I2–I4：整块品牌替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 文案调性 | 品牌·调性 | P | `brand.voice` → G | I2–I4：整块品牌替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 目标人群 | 品牌·人群 | P | `brand.audience` → G | I2–I4：整块品牌替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 核心卖点 | 品牌·多行 | P | `brand.usp` → G | I2/I8：空列表及 R3 | 待验/待验/待验 | C44 | 待验 |
+| Feed 地址 | 数据源·多行 | P | `crawl.feed_url` → G | I2/I8：空列表及 R3；Core 另作 feed 兼容归一化 | 待验/待验/待验 | C44 | 待验 |
+| SKU 字段 | 数据源·字段 | P | `crawl.sku_field` → G | I2/I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 主分类层级 | 数据源·数字 | P | `crawl.category_depth` → G | I2/I4：空输入及 R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 商品消失时 | 数据源·选择 | P | `crawl.missing_as` → G | I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 移除保护阈值 | 数据源·数字 | P | `crawl.max_removed_ratio` → G | I2/I4：空输入及 R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| Feed 生成时间 | 数据源·文本 | P | `crawl.feed_generated_at` → G | I2/I4：空文本及 R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 站点地图 | 数据源·单行文本框 | P | `sitemaps` → G | I2：当前每键 `fromLines` 回填；#761 不覆盖此控件，输入与清空待验 | 待验/待验/待验 | C44 | 待验 |
+| 数据修正 | 数据源·JSON | P | `crawl.overrides` → G | I2–I4：保存时总从文本重解析；R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 请求间隔 | 抓取·数字 | P | `crawl.rate_limit_ms` → G | I2/I4：空输入会变 0；R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 每周最多页面 | 抓取·数字 | P | `crawl.max_pages` → G | I2/I4：空输入及 R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 抓取产品页 | 抓取·勾选 | P | `crawl.crawl_product_pages` → G | I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 无 Feed 自动采集 | 抓取·勾选 | P | `crawl.auto_collect_products` → G | I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 排除 URL 规则 | 抓取·多行 | P | `crawl.exclude_url_patterns` → G | I2/I8：空列表及 R3 | 待验/待验/待验 | C44 | 待验 |
+| 博客 Sitemap | 博客识别·多行 | P | `content.blog_sitemaps` → G | I2–I4/I8：整块 content/R3 风险 | 待验/待验/待验 | C44 | 待验 |
+| 博客 URL 规则 | 博客识别·多行 | P | `content.blog_url_patterns` → G | I2–I4/I8：整块 content/R3 风险 | 待验/待验/待验 | C44 | 待验 |
+| 父子 SKU 开关 | 父子 SKU·勾选 | P | `sku_grouping.enabled` → G | I3/I4：整块分组替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 父子 SKU 规则类型 | 父子 SKU·选择 | P | `sku_grouping.rule.type` → G | I3/I4：整块规则替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 父子 SKU 规则值 | 父子 SKU·文本 | P | `sku_grouping.rule.value` → G | I2–I4：空文本及 R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 关注分类 | 关注分类·列表/手动添加 | P | `categories.watched` → G | I2–I4：整块分类替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 核心关键词 | SEO·多行 | P | `seo.core_keywords` → G | R1/R3 旧版缺陷；#762/#761 已修 Core 与多行草稿，正式 UI 待验 | 待验/待验/待验 | C44 | 待验 |
+| 竞品域名 | SEO·多行 | P | `seo.competitors` → G | R1 旧版缺陷；#762 Core 已修，正式 UI 待验 | 待验/待验/待验 | C44 | 待验 |
+| Title 长度范围 | SEO·数字对 | P | `seo.title_range` → G | R1 旧版缺陷；#762 Core 已修，正式 UI 待验 | 待验/待验/待验 | C44 | 待验 |
+| Description 长度范围 | SEO·数字对 | P | `seo.description_range` → G | I3/I4：R1 同一分区风险 | 待验/待验/待验 | C44 | 待验 |
+| 邮件平台 | EDM·选择 | P | `edm.platform` → G | I3/I4：整块 EDM 替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 每封产品数 | EDM·数字 | P | `edm.max_products` → G | I2–I4：空输入及 R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 推荐冷却期 | EDM·数字 | P | `edm.cooldown_days` → G | I2–I4：空输入及 R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| UTM source | EDM·文本 | P | `edm.utm.source` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 | C44 | 待验 |
+| UTM medium | EDM·文本 | P | `edm.utm.medium` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 | C44 | 待验 |
+| 图片优先级 | EDM·选择 | P | `edm.image_priority` → G | I3/I4：R4 风险 | 待验/待验/待验 | C44 | 待验 |
+| 默认受众 | EDM·文本 | P | `integrations.mailchimp.audience` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 | C44 | 待验 |
+| LinkFlow MCP 服务 | 集成·文本 | P | `integrations.linkflow.mcp_server` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 | C44 | 待验 |
+| LinkFlow 录入工具 | 集成·文本 | P | `integrations.linkflow.create_tool` → G | I2–I4：嵌套对象替换风险 | 待验/待验/待验 | C44 | 待验 |
 
 `site.json` 中还有由其他流程拥有、设置页不直接编辑的 `policies`、`crawl.stock_verify`、`crawl.stock_rules`、`crawl.allow_unpriced_products`、`crawl.max_removed_ratio` 以外的阈值、`edm.discount_tiers`、`edm.image_host`、`integrations.gsc`、`readme.disabled_blocks`、`workspace` 与 `schema_version`。这些键是 I6 的逐键保留断言对象；不能把“设置页没控件”解释为允许升级时删除。`workspace_folders` 是已废弃字段，按既有决策读取忽略、写回去掉，不列为用户拥有字段。
 
 ## 项目设置 · 独立保存入口
 
-| 设置项 | 页面/控件 | IPC/API | 写入文件与键 → 读回 | 不变量与当前结论 | S/R/U |
-|---|---|---|---|---|---|
-| 分类模式 | 分类设置·选择 | `categories.save/get` | `site.json:categories.mode` → `categories.get` | I1/I4/I6：保存前读最新 watched，其余草稿陈旧风险待验 | 待验/待验/待验 |
-| 分类 URL 规则 | 分类设置·规则 | `categories.save/get` | `categories.url_pattern` → `categories.get` | I1/I4/I6：同上 | 待验/待验/待验 |
-| 手动分类名称 | 分类设置·表格 | `categories.save/get` | `categories.manual[].name` → `categories.get` | I1/I4/I6：逐项读回待验 | 待验/待验/待验 |
-| 手动分类 slug | 分类设置·表格 | `categories.save/get` | `categories.manual[].slug` → `categories.get` | I1/I4/I6：逐项读回待验 | 待验/待验/待验 |
-| 手动分类 URL | 分类设置·表格 | `categories.save/get` | `categories.manual[].url` → `categories.get` | I1/I4/I6：逐项读回待验 | 待验/待验/待验 |
-| 手动分类匹配规则 | 分类设置·表格 | `categories.save/get` | `categories.manual[].match` → `categories.get` | I1/I4/I6：逐项读回待验 | 待验/待验/待验 |
-| 每日计划 | 运行·计划弹窗 | `schedule.save/get` | `site.json:schedule.daily.enabled/time` → `schedule.get` | I1/I4/I6：两个字段均待逐项读回；全量草稿无 revision | 待验/待验/待验 |
-| 校验计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.validate.enabled/time` → `schedule.get` | I1/I4/I6：两个字段均待逐项读回 | 待验/待验/待验 |
-| 每周计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.weekly.enabled/time/days` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 |
-| README 计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.readme.enabled/time/days` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 |
-| 每月计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.monthly.enabled/time/day_of_month` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 |
-| 唤醒设备执行 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.wake_to_run` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 |
-| 错过后补跑 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.run_if_missed` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 |
-| 失败时通知 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.notify_on_failure` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 |
-| 同步后校验 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.validate_after_sync` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 |
-| 执行设备改为本机 | 运行·设备操作 | `runner.claim/get` | `index/.runner.json` → `runner.get` | I1：E 的隔离 Desktop handler 写文件、新 handler/Core 实例读回本机设备一致；mock `runner.get` 固定返回 false 是 mock 证据限制。安装版重启与系统任务仍待验 | 待验/待验/待验 |
-| README 项目概况 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 项目概况` → `readme.get` | I7：#752 Core 合成回归通过，打包 UI 逐段读回待验 | 待验/待验/待验 |
-| README 当前重点 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 当前重点` → `readme.get` | R2 旧版缺陷；#752 Core 已补标题，缺段提示和打包 UI 待验 | 待验/待验/待验 |
-| README 工作规则 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 工作规则与偏好` → `readme.get` | R5 旧版缺陷；#752 Core 已保留自动区块，打包 UI 待验 | 待验/待验/待验 |
-| 待办人工状态 | 待办·状态 | `todos.update/list` | 本地待办人工状态与历史 → `todos.list` | I1/I6：API 仅提交状态字段；文件级复验待 E | 待验/待验/待验 |
-| 待办备注 | 待办·备注 | `todos.update/list` | 本地待办人工备注与历史 → `todos.list` | I1/I2/I6：`null` 为显式清空；文件级复验待 E | 待验/待验/待验 |
-| GSC 项目属性 | 项目设置·GSC 卡片 | 当前无可编辑入口 | `integrations.gsc` → `projects.get` | 卡片仅显示“暂未开放”；I6 仍须保留已有键 | 不适用/待验/待验 |
+合成证据代号：`CAT` = D 的虚构分类 `categories.save` 后新 Core service 逐字段读回 `mode/url_pattern/manual.name/slug/url/match/watched`；`VAL` = D 的轻量虚构项目 `files.validate` 后新 service `files.lastReport` 与返回报告一致（项目故意缺业务文件，**不表示校验通过**）；`RUN` = E 的隔离 Desktop handler `runner.claim` 写文件、新 handler/Core service 读回设备一致；`README` = #752/#759 的 Core 回归。上述证据均不等于正式安装版 UI 退出重开。
+
+| 设置项 | 页面/控件 | IPC/API | 写入文件与键 → 读回 | 不变量与当前结论 | S/R/U | 合成/Core | G8.2-3 终验 |
+|---|---|---|---|---|---|---|---|
+| 分类模式 | 分类设置·选择 | `categories.save/get` | `site.json:categories.mode` → `categories.get` | I1：合成 Core 新实例读回通过；保存前读最新 watched，其余草稿陈旧风险待验 | 待验/待验/待验 | CAT | 待验 |
+| 分类 URL 规则 | 分类设置·规则 | `categories.save/get` | `categories.url_pattern` → `categories.get` | I1：合成 Core 新实例读回通过；正式 UI 待验 | 待验/待验/待验 | CAT | 待验 |
+| 手动分类名称 | 分类设置·表格 | `categories.save/get` | `categories.manual[].name` → `categories.get` | I1：合成 Core 新实例读回通过；正式 UI 待验 | 待验/待验/待验 | CAT | 待验 |
+| 手动分类 slug | 分类设置·表格 | `categories.save/get` | `categories.manual[].slug` → `categories.get` | I1：合成 Core 新实例读回通过；正式 UI 待验 | 待验/待验/待验 | CAT | 待验 |
+| 手动分类 URL | 分类设置·表格 | `categories.save/get` | `categories.manual[].url` → `categories.get` | I1：合成 Core 新实例读回通过；正式 UI 待验 | 待验/待验/待验 | CAT | 待验 |
+| 手动分类匹配规则 | 分类设置·表格 | `categories.save/get` | `categories.manual[].match` → `categories.get` | I1：合成 Core 新实例读回通过；正式 UI 待验 | 待验/待验/待验 | CAT | 待验 |
+| 每日计划 | 运行·计划弹窗 | `schedule.save/get` | `site.json:schedule.daily.enabled/time` → `schedule.get` | I1/I4/I6：两个字段均待逐项读回；全量草稿无 revision | 待验/待验/待验 | 待验 | 待验 |
+| 校验计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.validate.enabled/time` → `schedule.get` | I1/I4/I6：两个字段均待逐项读回 | 待验/待验/待验 | 待验 | 待验 |
+| 每周计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.weekly.enabled/time/days` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 | 待验 | 待验 |
+| README 计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.readme.enabled/time/days` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 | README | 待验 |
+| 每月计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.monthly.enabled/time/day_of_month` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 | 待验 | 待验 |
+| 唤醒设备执行 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.wake_to_run` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 | 待验 | 待验 |
+| 错过后补跑 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.run_if_missed` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 | 待验 | 待验 |
+| 失败时通知 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.notify_on_failure` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 | 待验 | 待验 |
+| 同步后校验 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.validate_after_sync` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 | 待验 | 待验 |
+| 执行设备改为本机 | 运行·设备操作 | `runner.claim/get` | `index/.runner.json` → `runner.get` | I1：E 的隔离 Desktop handler 写文件、新 handler/Core 实例读回本机设备一致；mock `runner.get` 固定返回 false 是 mock 证据限制。安装版重启与系统任务仍待验 | 待验/待验/待验 | RUN | 待验 |
+| README 项目概况 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 项目概况` → `readme.get` | I7：#752 Core 合成回归通过，打包 UI 逐段读回待验 | 待验/待验/待验 | README | 待验 |
+| README 当前重点 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 当前重点` → `readme.get` | R2 旧版缺陷；#752 已补标题，#759 Core 已报告缺段，B 页面提示和打包 UI 待验 | 待验/待验/待验 | README | 待验 |
+| README 工作规则 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 工作规则与偏好` → `readme.get` | R5 旧版缺陷；#752 Core 已保留自动区块，打包 UI 待验 | 待验/待验/待验 | README | 待验 |
+| 待办人工状态 | 待办·状态 | `todos.update/list` | 本地待办人工状态与历史 → `todos.list` | I1/I6：API 仅提交状态字段；文件级复验待 E | 待验/待验/待验 | 待验 | 待验 |
+| 待办备注 | 待办·备注 | `todos.update/list` | 本地待办人工备注与历史 → `todos.list` | I1/I2/I6：`null` 为显式清空；文件级复验待 E | 待验/待验/待验 | 待验 | 待验 |
+| 文件校验报告（非设置） | 本地文件·校验 | `files.validate/lastReport` | 校验报告 → `files.lastReport` | I1：合成 Core 新实例读回同一报告；轻量项目不完整，未执行修复，正式 UI 待验 | 待验/待验/待验 | VAL | 待验 |
+| GSC 项目属性 | 项目设置·GSC 卡片 | 当前无可编辑入口 | `integrations.gsc` → `projects.get` | 卡片仅显示“暂未开放”；I6 仍须保留已有键 | 不适用/待验/待验 | 待验 | 待验 |
 
 ## 应用设置 · `settings.json` 与本机状态
 
@@ -138,18 +141,18 @@ E 对 JSON 编辑与执行设备的[隔离合成补证](https://github.com/henry
 
 | 不变量 | 当前结果与证据缺口 |
 |---|---|
-| I1 写后读回 | #747/#751 仅覆盖应用设置的合成 IPC 路径；项目设置、分类、计划、README、待办的打包 UI 保存与读回待验。 |
-| I2 空值保护 | 非空值、空数组/null、显式 `clear` 必须分别验；#751 的空值保持不证明显式清空。项目级待 #743 Core 与 D dirty 提交。 |
-| I3 深合并 | R1 已证明旧 Core 的 `seo` 局部 patch 丢字段；其他分区与 JSON 全量编辑待逐项复验。 |
-| I4 陈旧写入 | R4 已证明旧 UI 草稿覆盖；`revision` 冲突提示与刷新后的不丢字段待验。 |
-| I5 空保存字节不变 | #747 合成测试和 #751 应用设置文件证据已覆盖一条路径；项目 `site.json`、README、分类和计划待验。 |
+| I1 写后读回 | #762 受保护 Core 写后重读，D 的 C44/CAT/VAL、E 的 J1/RUN 及 #747/#751 应用设置均有**对应合成路径**读回；正式 UI 保存、计划、待办与打包版仍待验。 |
+| I2 空值保护 | #762 Core 受保护路径拒绝无 `clear` 的非空→空值覆盖，旧两参仍可清空；D dirty 提交和正式 UI 显式清空待验。#751 空值保持不证明显式清空。 |
+| I3 深合并 | R1 是旧版缺陷；#762 Core 合成回归覆盖 `seo` 子字段，D 的 C44 是全量提交读回。其他分区的局部提交及 UI 接线待验。 |
+| I4 陈旧写入 | R4 是旧 UI 草稿覆盖；#762 Core 的 revision 冲突/空 revision 拒绝有合成测试，D 携带 revision 和刷新提示仍待验。 |
+| I5 空保存字节不变 | #762 受保护 Core 空保存、#747/#751 应用设置合成路径已验证；README、分类、计划的正式 UI 空保存待验。 |
 | I6 升级及任务保留 | A 的旧文件→当前 Core `views/readme` 合成路径只证明有限字段；v0.8.0、v0.7.5、v0.7.6 应各用独立可恢复副本，安装包覆盖及 daily/weekly/monthly 成功路径待验。 |
-| I7 README 用户段 | #752 Core 合成回归已通过；缺段标记 Core PR #759 待 CI，B 页面提示及 E 直接路径读回待验。 |
-| I8 输入保真 | R3 旧 UI 输入空格/回车丢失已复现；D 的原始草稿、保存解析及重启读回待验。 |
+| I7 README 用户段 | #752/#759 Core 合成回归均已三系统 CI 通过并合并；B 页面缺段提示与 E 正式 UI 直接路径读回待验。 |
+| I8 输入保真 | R3 是旧版缺陷；#761 已将 7 个多行字段改为原始草稿至失焦/保存。站点地图为单行且未覆盖，正式 UI 输入与重启读回待验。 |
 
-1. D：把项目设置全部控件的 dirty 提交路径、关键词输入组件复现、README 缺段提示补入本矩阵；不把源码风险冒充已完成 UI 验收。
-2. C：按 C-1 提交 `settings.json` 逐键保存→新实例读回与升级脚本证据；`revision` 只作为 IPC 元数据，不落盘。
-3. E：在隔离合成项目上按 roadmap §5.3 对 v0.8.0、v0.7.5、v0.7.6、当前 main 顺序复验，并给出升级后变空的准确步骤，或明确“未复现”。待证据齐全后逐行把 `待验` 改为“通过”或“缺陷”，再将矩阵标记完成。
-4. A：contract 仅加可选字段/参数；旧两参语义保持。A-1 的受保护保存路径与 A-2 的 README、升级 fixture 分别进独立 PR；[#743](https://github.com/henryliuwork/SiteIndex/issues/743) 与 [#745](https://github.com/henryliuwork/SiteIndex/issues/745) 各按已归类 D 类的 ≤200 行修复门槛执行，不夹带其他缺陷。
+1. D：项目设置 C44 仅是完整 patch 的 Core 证据；dirty/revision 的真实 UI 提交、关键词与站点地图输入、README 缺段提示继续按各自 PR 验证。
+2. C：#747/#751/#758 已提供应用设置的合成与打包 IPC 证据；空值显式清空、旧草稿并发及正式 v0.8.2 安装版仍待验，`revision` 不落盘。
+3. E：已核对 J1/RUN 等合成路径；“升级后变空”在现有有限路径**未复现**。G8.2-3 仍须用各自可恢复的虚构副本完成 v0.8.0、v0.7.5、v0.7.6 与本版安装包的逐项 S/R/U，运行 daily/weekly/monthly 后对用户字段逐键比较；待验格不得提前改成通过。
+4. A：#762 受保护 Core 保存、#752/#759 README Core 修复均已合并；A-2 升级 fixture 与更多任务路径回归仍待独立 PR。[#743](https://github.com/henryliuwork/SiteIndex/issues/743) 和 [#745](https://github.com/henryliuwork/SiteIndex/issues/745) 仍待 UI/安装版交叉验证，不因 Core CI 关闭。
 
-Core 的 [#752](https://github.com/henryliuwork/SiteIndex/pull/752) 已在三系统 CI 通过后合并，覆盖缺标题补写、用户段/自动区块隔离与 refresh 回归；[#759](https://github.com/henryliuwork/SiteIndex/pull/759) 提交缺段标记 Core 实现，仍待三系统 CI 和审核。二者均不代替 B 的 UI 缺段提示或 E 的安装版直接路径复验。
+本矩阵已列出 roadmap §5.2 封闭范围的写入与读回入口，区分 `C44/J1/CAT/VAL/RUN/README` 合成 Core、#751 CI 合成安装包 IPC 与 G8.2-3 正式安装版证据。G8.2-0 可据此审核“范围与已知状态”，**不表示** G8.2-3 逐项验收通过。
