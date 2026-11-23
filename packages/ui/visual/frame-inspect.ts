@@ -56,6 +56,7 @@ const frameProbe = String.raw`(() => {
     headerHeight: headerRect?.height ?? null,
     globalPaddingTop: header ? Number.parseFloat(getComputedStyle(header).paddingTop) : null,
     bodyStart: headerRect && bodyFirst ? bodyFirst.top - headerRect.bottom : null,
+    bodyScrollTop: body?.scrollTop ?? 0,
     buttonHeights: actionRoot ? rects("button, a[href]", actionRoot).map((rect) => rect.height) : [],
     buttonGaps: gap(actions),
     documentScroll: scrolls(document.scrollingElement),

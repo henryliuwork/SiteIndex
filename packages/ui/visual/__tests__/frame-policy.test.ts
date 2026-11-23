@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { checkFrameMetrics, type FrameBaseline, type FrameMetrics } from "../frame-policy";
+import { checkFrameMetrics, checkSkuTables, type FrameBaseline, type FrameMetrics } from "../frame-policy";
 
 const baseline: FrameBaseline = { version: 1, legacyRoutes: { legacy: "project" } };
 const project: FrameMetrics = {
-  kind: "project", headerOffset: 0, headerHeight: 48, globalPaddingTop: 0, bodyStart: 16,
+  kind: "project", headerOffset: 0, headerHeight: 48, globalPaddingTop: 0, bodyStart: 16, bodyScrollTop: 0,
   buttonHeights: [32, 32], buttonGaps: [12], documentScroll: false, contentScroll: false, bodyScroll: false,
   toolbarControlHeights: [32, 32], toolbarGaps: [8], selectedFilterGaps: [12, 12],
   tables: [{ id: "products.merged", firstHeader: "SKU", hasSkuHeader: true }], domainInProjectHeader: false,
@@ -30,6 +30,39 @@ describe("v0.8 PageFrame gate", () => {
       "project-header-button-gap", "frame-body-start", "frame-table-scroll", "toolbar-control-height",
       "toolbar-control-gap", "selected-filter-gap", "sku-first-column",
     ]));
+  });
+
+  it.each(["project-settings-config", "project-settings-categories", "project-settings-files"])(
+    "allows PageFrame body scroll only on %s while rejecting document and outer content scroll",
+    (routeName) => {
+      const bodyScroll = { ...project, bodyScroll: true };
+      expect(checkFrameMetrics(routeName, "project", true, bodyScroll, baseline).findings).toEqual([]);
+      for (const scroll of ["documentScroll", "contentScroll"] as const) {
+        const metrics = { ...bodyScroll, [scroll]: true };
+        expect(checkFrameMetrics(routeName, "project", true, metrics, baseline).findings.map((finding) => finding.rule))
+          .toContain("frame-table-scroll");
+      }
+    },
+  );
+
+  it("rejects PageFrame body scroll on a neighboring project route", () => {
+    expect(checkFrameMetrics("project-settings-runs", "project", true, { ...project, bodyScroll: true }, baseline)
+      .findings.map((finding) => finding.rule)).toContain("frame-table-scroll");
+  });
+
+  it("measures the settings body start from its unscrolled position without changing the threshold", () => {
+    const deepLink = { ...project, bodyStart: -2484, bodyScrollTop: 2500 };
+    expect(checkFrameMetrics("project-settings-categories", "project", false, deepLink, baseline).findings).toEqual([]);
+    expect(checkFrameMetrics("project-settings-categories", "project", false, { ...deepLink, bodyStart: -2478 }, baseline)
+      .findings.map((finding) => finding.rule)).toContain("frame-body-start");
+    expect(checkFrameMetrics("project-settings-runs", "project", false, deepLink, baseline)
+      .findings.map((finding) => finding.rule)).toContain("frame-body-start");
+  });
+
+  it("does not treat the settings category SKU count as an identifier column", () => {
+    const table = { id: "categories.manual", firstHeader: "分类", hasSkuHeader: true };
+    expect(checkSkuTables("project-settings-categories", [table])).toEqual([]);
+    expect(checkSkuTables("products", [table]).map((finding) => finding.rule)).toContain("sku-first-column");
   });
 
   it("fails when a known SKU table has no SKU column at all, including the variant drawer", () => {

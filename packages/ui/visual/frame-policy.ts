@@ -6,6 +6,7 @@ export interface FrameMetrics {
   headerHeight: number | null;
   globalPaddingTop: number | null;
   bodyStart: number | null;
+  bodyScrollTop: number;
   buttonHeights: number[];
   buttonGaps: number[];
   documentScroll: boolean;
@@ -25,6 +26,12 @@ export interface FrameBaseline {
 
 export interface FrameFinding { rule: string; message: string }
 
+export const projectSettingsScrollableBodyRoutes = new Set([
+  "project-settings-config",
+  "project-settings-categories",
+  "project-settings-files",
+]);
+
 export function checkSkuTables(routeName: string, tables: FrameMetrics["tables"]): FrameFinding[] {
   const findings: FrameFinding[] = [];
   const requiredSkuTables = new Set(["products.merged", "products.variant-stock", "edm.images"]);
@@ -33,7 +40,9 @@ export function checkSkuTables(routeName: string, tables: FrameMetrics["tables"]
     findings.push({ rule: "sku-table-missing", message: `当前页面未找到应有的 ${primaryTableId} 表格。` });
   }
   for (const table of tables) {
-    if ((requiredSkuTables.has(table.id) || table.hasSkuHeader) && table.firstHeader !== "SKU") {
+    // The settings category table labels a SKU count column "SKU"; it is not a SKU identifier table.
+    const categoryCountTable = projectSettingsScrollableBodyRoutes.has(routeName) && table.id === "categories.manual";
+    if (!categoryCountTable && (requiredSkuTables.has(table.id) || table.hasSkuHeader) && table.firstHeader !== "SKU") {
       findings.push({ rule: "sku-first-column", message: `${table.id} 首个数据列表头应为 SKU，实际 ${table.firstHeader || "缺失"}。` });
     }
   }
@@ -68,8 +77,11 @@ export function checkFrameMetrics(
     near("global-title-height", metrics.headerHeight, 56);
     near("global-title-padding", metrics.globalPaddingTop, 24);
   }
-  near("frame-body-start", metrics.bodyStart, 16);
-  if (hasDataTable && (metrics.documentScroll || metrics.contentScroll || metrics.bodyScroll)) {
+  const bodyStart = projectSettingsScrollableBodyRoutes.has(routeName) && metrics.bodyStart !== null
+    ? metrics.bodyStart + metrics.bodyScrollTop : metrics.bodyStart;
+  near("frame-body-start", bodyStart, 16);
+  const disallowedBodyScroll = metrics.bodyScroll && !projectSettingsScrollableBodyRoutes.has(routeName);
+  if (hasDataTable && (metrics.documentScroll || metrics.contentScroll || disallowedBodyScroll)) {
     findings.push({ rule: "frame-table-scroll", message: "表格页的 document、内容区或外框主体出现纵向滚动。" });
   }
   for (const height of metrics.toolbarControlHeights) near("toolbar-control-height", height, 32);

@@ -256,6 +256,8 @@ width 是基准宽度，grow 为剩余空间分配权重（0 固定、1 次要�
 2. 不含表格的页面（README、设计、设置、运行等）：项目头吸顶不动，**只有项目头下方的内容区滚动**。
 3. 同一页面只允许一个纵向滚动容器。
 
+D9 例外：仅 `project-settings-config`、`project-settings-categories`、`project-settings-files` 三个完整路由允许页面内容区（`.si-page-frame-body`）纵向滚动；其中的 DataTable 仍在表内滚动。外层 `.si-content`、`document`（html/body）与页面横向滚动仍禁止，其他含表页面及所有 §6.7 断言不变。
+
 ### 6.2 项目标识迁入侧栏
 - 项目页头**删除**"项目名 · 域名 · 平台 · 最近运行 · 状态 chip"整行。
 - 侧栏项目项改为两行：
