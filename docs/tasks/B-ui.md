@@ -174,6 +174,12 @@
 - [x] G8.0-2 待办页基线收敛：#728 已迁入 PageFrame，删除 `project-todos` 旧外框基线 — 本 PR
 - [x] G8.0-2 D9 设置页：三个完整路由仅允许 PageFrame 内容区滚动；深链与嵌入表格按实际滚动容器测量，删除三条旧外框基线 — 本 PR
 
+## v0.8.2 · 间距规范与组件统一
+- [x] B-0：路线图 §3.1–§3.7 规范写入 DESIGN；新增语义间距 token；PR 模板增加“影响面”表，AGENTS 摘要核对一致 — 本 PR
+- [ ] B-2：`ui:check` S1–S10 与 27 路由 `spacing-baseline.json` — 待独立 PR
+- [ ] B-1：共享 Tab、页头、间距、筛选/表单组件、DataTable help 与无值列 — 待独立 PR
+- [ ] B-3：全局页逐页修复并移除 spacing 基线 — 待 B-1 合并
+
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。
 - [x] v0.7.5 G7.5-4（B 范围）：README 来源时间移入说明，状态格移除相对日期，控件高度与库存颜色使用现有 token；其余 B 页面时间显示已核对 — 本 PR。

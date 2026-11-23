@@ -82,6 +82,15 @@
   --space-control-group: var(--space-2);
   --space-table-header-content: var(--space-2);
   --space-section-gap: var(--space-3);
+  --gap-inline: var(--space-2);
+  --gap-group: var(--space-3);
+  --gap-block: var(--space-4);
+  --gap-page: var(--space-6);
+  --pad-control-x: var(--space-3);
+  --pad-chip-x: var(--space-3);
+  --pad-chip-y: var(--space-1);
+  --pad-card: var(--space-4);
+  --gap-label-control: var(--space-1);
 
   --control-height: 32px;
   --control-height-compact: 28px;
