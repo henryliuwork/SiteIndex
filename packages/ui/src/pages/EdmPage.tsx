@@ -398,6 +398,7 @@ export function EdmPage() {
           projectId,
           localWarning: "保存对话框已取消，但本机未能清除这次另存状态；该项目的另存操作可能暂时禁用。请恢复本机存储后重新进入页面。",
         });
+        if (isMockApi && isCurrentProject) toast.info("演示模式：未写入文件。");
         return;
       }
       const safetyWarning = markerResolved ? undefined : "结果已确认，但本机无法解除另存状态门闩；请检查本地存储后再继续。";
@@ -649,9 +650,8 @@ export function EdmPage() {
   if (projectQuery.isLoading) return <div className="si-page-loading" role="status">正在加载项目信息…</div>;
   if (projectQuery.isError || !project) return <ApiErrorNotice page label="项目 EDM 页面加载失败。" error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />;
 
-  return <PageFrame kind="project" scroll="table" header={<ProjectHeader project={project} activeTab="edm" hasTabPanel actions={!isMockApi && exportCapability.available ? <Button variant="primary" disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>{exportMutation.isPending ? "正在准备 SKU 清单…" : "另存全项目 SKU 清单"}</Button> : undefined} overflow={[
+  return <PageFrame kind="project" scroll="table" header={<ProjectHeader project={project} activeTab="edm" hasTabPanel actions={<><Button variant="primary" onClick={() => void copyCommand()}>生成命令</Button>{exportCapability.available && <Button disabled={exportMutation.isPending || exportSafetyBlocked} onClick={startExport}>{exportMutation.isPending ? "正在准备 SKU 清单…" : "导出 SKU 清单"}</Button>}</>} overflow={[
       { label: "打开项目文件夹", onSelect: () => void openProjectFolder() },
-      { label: "复制 edm-builder 指令", onSelect: () => void copyCommand() },
       ...(availableEdmScenarioTabs().length ? [{ label: "EDM 只读检查", onSelect: () => setScenarioDrawerOpen(true) }] : []),
       ...(isMockApi ? [{ label: "交互模拟（仅本地演示，不会上传或写入台账）", onSelect: () => setMediaDemoOpen(true) }] : []),
       ...(!isMockApi && recoveredMediaRun ? [{ label: "最近图片任务结果", onSelect: () => setMediaHistoryDrawerOpen(true) }] : []),

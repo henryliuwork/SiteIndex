@@ -3,6 +3,14 @@ import { createEdmMock } from "../edm";
 import { rowsByProject } from "../context";
 
 describe("EDM mock parent-only filtering", () => {
+  it("returns a cancelled synthetic export without claiming a saved file", async () => {
+    const exportIndex = createEdmMock().exportIndex;
+    expect(exportIndex).toBeTypeOf("function");
+    await expect(exportIndex!("demo")).resolves.toEqual({
+      status: "cancelled", sku_count: 0, missing_image_count: 0,
+    });
+  });
+
   it("returns parent aggregates and lets a child SKU search find its parent row", async () => {
     const child = rowsByProject.demo[0]!;
     const secondChild = rowsByProject.demo[1]!;

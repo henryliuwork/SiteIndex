@@ -105,6 +105,9 @@ describe("DesignPage Token v2", () => {
     const { api } = createDesignApi();
     await renderDesignPage(api);
 
+    expect(await screen.findByRole("button", { name: "重新抓取设计规范" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "复制 Token（JSON）" })).toBeTruthy();
+
     const dateNote = await screen.findByText(/设计规范提取任务：/);
     expect(dateNote.classList.contains("si-design-data-date")).toBe(true);
     expect(dateNote.closest(".si-tab-panel")).toBeTruthy();

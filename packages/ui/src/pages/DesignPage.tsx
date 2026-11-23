@@ -282,7 +282,7 @@ export function DesignPage() {
     <PageFrame kind="project" header={<ProjectHeader project={project} activeTab="design" hasTabPanel actions={
           <>
             <Button variant="secondary" disabled={!tokens} onClick={() => void copyTokens()}>复制 Token（JSON）</Button>
-            <Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void refresh()}>{activeRunId ? "提取中…" : "重新提取"}</Button>
+            <Button variant="primary" disabled={Boolean(activeRunId)} onClick={() => void refresh()}>{activeRunId ? "提取中…" : "重新抓取设计规范"}</Button>
           </>
         } overflow={[
           ...(safeArtifactPaths.tokens ? [{ label: "打开 tokens.json", onSelect: () => void openDesignArtifact("tokens") }] : []),

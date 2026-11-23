@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, FileDown } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { BlogFilters, BlogPost, JobProgress, JobResult, Keyword, KeywordFilters, ListQuery } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
@@ -213,7 +213,7 @@ export function ContentPage() {
     <span className="si-content-total">显示 {view === "blog" ? blogs?.rows.length ?? 0 : keywords?.rows.length ?? 0} / {view === "blog" ? blogs?.total ?? 0 : keywords?.total ?? 0} 条</span>
   </div>;
 
-  return <PageFrame kind="project" scroll="table" header={<ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取"}</Button><Button onClick={() => void exportRows()}><FileDown size={16} />导出 CSV</Button></>} overflow={[{ label: "博客识别设置", onSelect: () => navigate(`/p/${id}/settings/config?section=blog-recognition`) }, { label: "打开项目文件夹", onSelect: () => void openProjectFolder() }]} />}>
+  return <PageFrame kind="project" scroll="table" header={<ProjectHeader project={project} activeTab="content" hasTabPanel actions={<><Button variant="primary" disabled={recrawlStarting || Boolean(recrawlRunId) || !project.path} onClick={() => void recrawlBlogs()}>{recrawlStarting ? "正在启动…" : recrawlRunId ? "抓取中…" : "重新抓取博客"}</Button><Button onClick={() => navigate(`/p/${id}/settings/config?section=blog-recognition`)}>博客识别设置</Button></>} overflow={[{ label: "导出 CSV", onSelect: () => void exportRows() }, { label: "打开项目文件夹", onSelect: () => void openProjectFolder() }]} />}>
     <div className="si-page si-content-page">
     <ProjectTabPanel projectId={project.id} tab="content">
     {summaryItems.length > 0 && <SummaryLine items={summaryItems} ariaLabel="内容摘要"
