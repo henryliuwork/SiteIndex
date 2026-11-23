@@ -34,7 +34,7 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 - 日期时间通过共享 `formatDateTime` 展示，跨年时带年份；禁止“今天 / 昨天”等相对前缀，并避免在同页重复显示同一时间信息。
 - **页面外框（v0.8.0）**：页面只有两种外框，由共享 `PageFrame` 提供，页面不得自设顶部距离、`calc(100vh - …)` 或负 margin。**全局页**（项目中心、Skill 中心、定时任务、设置、新建向导）：标题行高 56px，上内边距 24px，不吸顶。**项目页**：项目头紧贴标题栏、上内边距 0、吸顶，单行高 48px（左导航 Tab、右页头操作），内容起点距项目头 16px；项目名、平台、最近运行时间只在侧栏项目项（两行：`项目名` / `平台 | MM-DD HH:mm`），页头不再显示域名与状态 chip。
 - **滚动**：含表格的页面窗口与内容区都不滚动，只有表格体内部滚动；无表格的页面只有项目头下方内容区滚动；一个页面只允许一个纵向滚动容器。
-- **D9 例外**：仅 `project-settings-config`、`project-settings-categories`、`project-settings-files` 允许内容区纵向滚动，内嵌表格仍在表内滚动；`document`、PageFrame body、页面横向滚动和其他断言不豁免。
+- **D9 例外**：仅 `project-settings-config`、`project-settings-categories`、`project-settings-files` 允许页面内容区（`.si-page-frame-body`）纵向滚动，内嵌表格仍在表内滚动；外层 `.si-content`、`document`（html/body）、页面横向滚动和其他断言不豁免。
 - **页头按钮**：高 32px、左右内边距 12px、按钮间距 12px、图标 16px；每页 ≤1 主 + ≤2 次 + “更多 ⋯”。
 - **表格上方节奏**：SummaryLine / 已选筛选标签行 / 工具栏 / 表格四个区域之间统一 `--space-section-gap`（12px）；搜索框与筛选按钮高 32px、间距 8px，不得靠页面私有 margin 调整。
 - **表格列**：选择框 → 标识列 → 名称列 → 状态 → 度量 → 时间 → 右侧固定操作列；有 SKU 的表格 **SKU 单独成列居首并左侧固定**（等宽字体）；数字右对齐并用等宽数字。InfoTooltip 内长串必须折行，不得溢出气泡。完整规范与 `ui:check` 断言见 v0.8.0 roadmap §3。

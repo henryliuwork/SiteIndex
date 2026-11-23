@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { inspectFrame } from "./frame-inspect";
-import { checkFrameMetrics, checkSkuTables, type FrameBaseline } from "./frame-policy";
+import { checkFrameMetrics, checkSkuTables, projectSettingsScrollableBodyRoutes, type FrameBaseline } from "./frame-policy";
 import { inspectTooltips } from "./tooltip-inspect";
 import { createServer, type ViteDevServer } from "vite";
 import { classifyDataSurface, classifyPageSurface, getVerticalScrollDelta, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
@@ -330,6 +330,48 @@ async function scrollCheckViewportTableIntoContent(page: Page): Promise<void> {
     if (content) content.scrollTop = scrollTop;
   }, target.scrollTop + delta);
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+}
+
+// D9 settings pages scroll their PageFrame body. Check each embedded table after
+// scrolling its footer into that viewport, then restore the user's deep-link position.
+async function inspectSettingsTableReachability(page: Page): Promise<Array<{ bottomInViewport: boolean; paginationInViewport: boolean } | null>> {
+  return page.evaluate(() => {
+    const body = document.querySelector<HTMLElement>(".si-page-frame.is-content > .si-page-frame-body");
+    if (!body) return [];
+    const initialScrollTop = body.scrollTop;
+    const viewport = body.getBoundingClientRect();
+    const areas = Array.from(document.querySelectorAll<HTMLElement>(".si-table-scroll")).filter((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const results: Array<{ bottomInViewport: boolean; paginationInViewport: boolean } | null> = [];
+    try {
+      for (const area of areas) {
+        const table = area.closest<HTMLElement>(".si-data-table");
+        if (!table?.classList.contains("is-fill") && !area.closest(".si-table-region")) {
+          results.push(null);
+          continue;
+        }
+        const footer = table.querySelector<HTMLElement>(".si-pagination");
+        const targetBottom = footer?.getBoundingClientRect().bottom ?? area.getBoundingClientRect().bottom;
+        body.scrollTop += targetBottom - viewport.bottom;
+        const areaRect = area.getBoundingClientRect();
+        const footerRect = footer?.getBoundingClientRect();
+        results.push({
+          bottomInViewport: areaRect.bottom > viewport.top && areaRect.bottom <= viewport.bottom + 1,
+          paginationInViewport: Boolean(footerRect && footerRect.top >= viewport.top - 1 && footerRect.bottom <= viewport.bottom + 1),
+        });
+      }
+    } finally {
+      body.scrollTop = initialScrollTop;
+    }
+    return results;
+  });
 }
 
 async function inspectPage(page: Page): Promise<{
@@ -725,6 +767,11 @@ async function main(): Promise<void> {
             ? (await inspectPage(page)).metrics.sectionPage as SectionPageMetrics : undefined;
           await scrollCheckViewportTableIntoContent(page);
           const inspection = await inspectPage(page);
+          if (projectSettingsScrollableBodyRoutes.has(route.name)) {
+            const reached = await inspectSettingsTableReachability(page);
+            const tables = inspection.metrics.tables as Array<{ bottomInViewport: boolean; paginationInViewport: boolean }>;
+            reached.forEach((result, index) => { if (result && tables[index]) Object.assign(tables[index], result); });
+          }
           heading = inspection.heading;
           metrics = { ...inspection.metrics, sectionPage: firstScreenSectionPage ?? inspection.metrics.sectionPage, dataSurfaceState };
           const frame = await inspectFrame(page);
