@@ -180,7 +180,11 @@ async function launch() {
     if (page) break;
     await delay(300);
   }
-  assert(page, "installed app did not load resources/ui/index.html");
+  if (!page) {
+    const targets = browser.contexts().flatMap((context) => context.pages()).map((target) =>
+      target.url().includes("fallback.html") ? "fallback" : target.url() === "about:blank" ? "blank" : "other");
+    throw new Error(`installed app did not load resources/ui/index.html; targets=${targets.join(",") || "none"}; processExit=${processHandle.exitCode}`);
+  }
   await page.waitForFunction(() => Boolean(window.siteindex?.settings?.get), null, { timeout: 30_000 });
   return page;
 }
@@ -229,6 +233,14 @@ async function main() {
   stage = "isolated profile";
   await prepareProfile();
   await makeProject();
+  // The packaged first-run directory picker blocks window creation until a root exists.
+  // Seed only the synthetic root; all other settings are saved through v0.8.0 IPC below.
+  await writeFile(SETTINGS_PATH, `${JSON.stringify({
+    device_id: "synthetic-v082-runner",
+    device_name: "Synthetic runner",
+    projects_root: LAYOUT.projectRoot,
+    close_to_tray: false,
+  })}\n`);
   const baselineInstaller = path.join(ROOT, "baseline-setup.exe");
   const candidateInstaller = path.join(ROOT, "candidate-setup.exe");
   await Promise.all([copyFile(oldInput, baselineInstaller), copyFile(newInput, candidateInstaller)]);
