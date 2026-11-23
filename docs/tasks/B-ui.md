@@ -176,7 +176,7 @@
 
 ## v0.8.2 · 间距规范与组件统一
 - [x] B-0：路线图 §3.1–§3.7 规范写入 DESIGN；新增语义间距 token；PR 模板增加“影响面”表，AGENTS 摘要核对一致 — 本 PR
-- [ ] B-2：`ui:check` S1–S10 与 27 路由 `spacing-baseline.json` — 待独立 PR
+- [x] B-2：`ui:check` S1–S10 与 27 路由 × 2 视口 `spacing-baseline.json`；S7 沿用样式扫描 — 本 PR
 - [ ] B-1：共享 Tab、页头、间距、筛选/表单组件、DataTable help 与无值列 — 待独立 PR
 - [ ] B-3：全局页逐页修复并移除 spacing 基线 — 待 B-1 合并
 
