@@ -184,6 +184,24 @@ describe("项目设置单页区块", () => {
     expect(screen.getByTestId("location").textContent).toBe(entry);
   }, 20_000);
 
+  it.each([
+    "/p/demo/settings/categories",
+    "/p/demo/settings/files",
+    "/p/demo/settings/config?section=categories",
+  ])("%s 的分类模式使用可聚焦按钮并保留选择状态和说明", async (entry) => {
+    await renderSettings(entry);
+    const manual = await screen.findByRole("button", { name: "手动配置" }) as HTMLButtonElement;
+    const feed = screen.getByRole("button", { name: "Feed 分类字段" }) as HTMLButtonElement;
+    expect(manual.getAttribute("aria-pressed")).toBe("true");
+    expect(feed.getAttribute("aria-pressed")).toBe("false");
+    expect(document.getElementById(feed.getAttribute("aria-describedby")!)?.textContent).toContain("读取 feed 的 product_type");
+    feed.focus();
+    expect(document.activeElement).toBe(feed);
+    fireEvent.click(feed);
+    expect(feed.getAttribute("aria-pressed")).toBe("true");
+    expect(manual.getAttribute("aria-pressed")).toBe("false");
+  }, 20_000);
+
   it("分类识别保存只提交已保存的 watched，保留未保存关注分类和配置草稿", async () => {
     const { mockApi, updateConfig, saveCategories, validateFiles } = await renderSettings("/p/demo/settings/config");
     const domain = await screen.findByLabelText("域名") as HTMLInputElement;

@@ -15,8 +15,7 @@
 .si-category-mode-section { display: grid; gap: var(--space-3); }
 .si-category-mode-section h2 { margin: 0; color: var(--color-ink); font-size: var(--fs-sub-title); }
 .si-category-mode-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--space-3); }
-.si-category-mode-card { display: grid; min-height: 98px; align-content: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); text-align: left; font: inherit; cursor: pointer; }
-.si-category-mode-card:hover { border-color: var(--color-brand); }
+.si-category-mode-card { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); color: var(--color-muted); }
 .si-category-mode-card.active { border-color: var(--color-brand); background: var(--color-row-hover); }
 .si-category-mode-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--color-ink); font-size: var(--fs-body); }
 .si-category-mode-card > span:last-child { font-size: var(--fs-caption); line-height: 1.55; }
