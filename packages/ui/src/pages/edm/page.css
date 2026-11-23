@@ -344,7 +344,7 @@
 }
 
 .si-edm-manual-cell .si-button {
-  padding: 0 var(--space-2);
+  padding: 0 var(--pad-control-x);
   font-size: var(--fs-body);
   white-space: nowrap;
 }

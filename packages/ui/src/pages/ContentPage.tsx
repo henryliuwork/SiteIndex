@@ -55,7 +55,7 @@ function blogColumns(): ColumnDef<BlogPost, unknown>[] {
     { id: "primary_keyword", accessorKey: "primary_keyword", header: "主关键词", meta: { width: 180, grow: 1, minWidth: 140, text: "single", defaultHidden: true }, cell: ({ row }) => row.original.primary_keyword || <span className="si-muted">未登记</span>, enableSorting: true },
     { id: "links_internal", accessorKey: "links_internal", header: "内链 出/入", meta: { width: 104, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => (row.original.links_internal.length + " / " + (row.original.links_in ?? 0)), enableSorting: false },
     { id: "links_products", accessorKey: "links_products", header: "链接产品", meta: { width: 108, grow: 0, minWidth: 96, text: "single" }, cell: ({ row }) => row.original.linked_out_of_stock?.length ? <Chip tone="warn">{row.original.linked_out_of_stock.length} · 含缺货</Chip> : <Chip tone="neutral">{row.original.links_products.length}</Chip>, enableSorting: false },
-    { id: "schema", accessorKey: "has_faq", header: "Schema", meta: { width: 144, grow: 0, minWidth: 132, text: "single" }, cell: ({ row }) => row.original.has_faq ? <Chip tone="ok">BlogPosting · FAQ</Chip> : <Chip tone="danger">缺失</Chip>, enableSorting: true },
+    { id: "schema", accessorKey: "has_faq", header: "Schema", meta: { width: 152, grow: 0, minWidth: 140, text: "single" }, cell: ({ row }) => row.original.has_faq ? <Chip tone="ok">BlogPosting · FAQ</Chip> : <Chip tone="danger">缺失</Chip>, enableSorting: true },
     { id: "impressions", header: "展现", meta: { width: 88, grow: 0, minWidth: 80, defaultHidden: true, text: "single" }, cell: () => "—" },
     { id: "clicks", header: "点击", meta: { width: 88, grow: 0, minWidth: 80, defaultHidden: true, text: "single" }, cell: () => "—" },
   ];

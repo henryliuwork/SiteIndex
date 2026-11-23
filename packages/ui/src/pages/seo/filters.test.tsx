@@ -39,6 +39,7 @@ describe("SEO 筛选下拉", () => {
       { value: "all", label: "全部" }, { value: "high", label: "高" },
     ]} onChange={onChange} />);
 
+    expect(screen.getByRole("button", { name: "严重级别：全部" }).textContent).toBe("严重级别");
     fireEvent.click(screen.getByRole("button", { name: "严重级别：全部" }));
     fireEvent.click(screen.getByRole("button", { name: "高" }));
     expect(onChange).toHaveBeenCalledWith("high");
