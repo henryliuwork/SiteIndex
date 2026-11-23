@@ -14,13 +14,27 @@
 | R4 | D 在隔离 mock 页先加载旧草稿，再通过另一次调用更新 `brand.tagline`，只在页面改品牌名后保存；提交的 16 个顶层字段仍含旧 tagline，读回也回退为旧值。 | [#743 评论](https://github.com/henryliuwork/SiteIndex/issues/743)，D 类 |
 | R5 | 旧版合成复现：README 模板初始含 5 个自动区块标记；保存工作规则后标记从 5 个变为 0 个。#752 已修 Core 读写边界并通过三系统 CI；打包 UI 待验。 | [#745 评论](https://github.com/henryliuwork/SiteIndex/issues/745#issuecomment-7094778905)，D 类 |
 
-Core [#762](https://github.com/henryliuwork/SiteIndex/pull/762) 已合并受保护的 `updateConfig` 路径：深合并、revision、显式 `clear`、写后读回与无操作字节不变；旧两参调用仍可清空，D 的 dirty/revision UI 提交尚待接线。C [#747](https://github.com/henryliuwork/SiteIndex/pull/747) 已修 `settings.json` 未知字段丢失与无操作重写；通知旧草稿风险由 #744 跟进。#752/#759 的 README Core 修复已合并，#745 仍待 B 页面提示和 E 直接路径复验；不能以 Core 单测关闭问题。A 的复现只写系统临时目录。
+Core [#762](https://github.com/henryliuwork/SiteIndex/pull/762) 已合并受保护的 `updateConfig` 路径：深合并、revision、显式 `clear`、写后读回与无操作字节不变；旧两参调用仍可清空，D 的 dirty/revision UI 提交尚待接线。C [#747](https://github.com/henryliuwork/SiteIndex/pull/747) 已修 `settings.json` 未知字段丢失与无操作重写；通知旧草稿风险由 #744 跟进。#752/#759 的 README Core 修复已合并，E 已复验 Core 直接路径，#745 已关闭；B 页面提示与正式安装版仍待验。A 的复现只写系统临时目录。
 
 ### 升级路径的已验证范围
 
 `v0.8.0` 标签中的 `fixtures/e-v050-w0/projects/legacy/index/site.json` 与 `templates/project/README.md` 曾和取证时 main 的对应文件 Git blob 相同。A 将其复制到系统临时目录，填入虚构 SEO 关键词、竞品域名、长度范围和博客识别配置，再由当时 Core 新建 service 加载并运行 `views`、`validate`、`readme`。加载与三个任务后，`site.json` 中这些用户字段逐键保留；`views` 和 `readme` 返回 `ok`，`validate` 因该轻量 fixture 缺校验所需文件返回 `failed`，但仍未改写上述字段。模板的三个用户段正文在 `readme` Job 后仍在；读回“工作规则”在 Job 前误含自动标记，见 R5（#752 已修）。
 
-这只能证明**旧版文件经当时 Core 的上述路径**的行为。尚未完成 v0.8.0 安装包覆盖升级、v0.7.5/v0.7.6 顺序打开，以及 daily/weekly/monthly 的成功任务路径；“升级后变空”的准确步骤目前**未复现**，U 列仍为待验。后续各旧版本应使用独立可恢复的虚构副本。
+这只能证明**旧版文件经当时 Core 的上述路径**的行为。下面分别记录 v0.7.5/v0.7.6/当前 Core 源码探测与 v0.8.0 同源打包 CLI 探测；两者均未执行正式安装包覆盖升级。“升级后变空”的准确步骤目前**未复现**，U 列仍为待验。
+
+### §5.3 W0：跨版本同形态源码任务探测
+
+A 从同一仓库虚构 `fixtures/e-v050-w0/projects/legacy` 各复制一份到系统临时目录，填入虚构品牌、市场、SEO 关键词/竞品/Title 范围、博客前缀与 README 三用户段。Feed 指向各版本本地虚构 `fixtures/feeds/day1.xml`；仅对虚构站点 Sitemap/HTML 使用内存 `fetch` 回环。每个 Job 后重新读 `site.json` 与 README，对上述用户字段逐键比较。临时 probe 与输出未提交仓库；下表是实际运行结果，不能代表安装包 UI。
+
+| Core 版本 | daily | weekly | monthly | readme | validate | 每步后用户字段 |
+|---|---|---|---|---|---|---|
+| v0.7.5 `c6ef611` | ok | partial | failed/7 | ok | failed/1 | 所选配置键与 README 三段均不变 |
+| v0.7.6 `833784e` | ok | partial | failed/7 | ok | failed/1 | 所选配置键与 README 三段均不变 |
+| 当前 Core（`e5971f7`；之后 #763/#764 未改 Core） | ok | partial | failed/7 | ok | failed/1 | 所选配置键与 README 三段均不变 |
+
+复现命令为各版本隔离工作树中的 `pnpm exec vitest run packages/core/test/w0-upgrade-probe.test.ts --maxWorkers=1 --minWorkers=1`。首轮 v0.7.5 daily 因原夹具旧 SKU 与本地 feed 不同触发移除保护，虚构配置仅将 `max_removed_ratio` 设为 1 后，三版 daily 均成功。weekly 的 `links/product_details` 输入为空而返回 partial；monthly 未提供浏览器路径而返回 `BROWSER_UNAVAILABLE`；validate 因轻量夹具缺 `AGENTS.md`、`CLAUDE.md` 等文件而失败。因此**仅能确认已执行路径没有清空所选字段**；三版的 weekly/monthly/validate 完整成功路径与正式安装包覆盖升级仍未验证。
+
+E 另以 v0.8.0 同源构建的 Windows 解包 `resources/cli.js`（源码与已发布 v0.8.0 tag 的 `packages/` 相同）在独立虚构副本上逐个独立进程执行任务。[执行记录](https://github.com/henryliuwork/SiteIndex/pull/753#issuecomment-7097641512)表明：首次 daily 因合成旧索引移除保护失败，在该副本加 `--force` 后 ok；weekly ok；monthly 首次缺浏览器路径失败，指定本机浏览器后 ok；readme ok；validate 首次因轻量副本缺文件与请求间隔不合 schema 失败，只修正副本条件后 ok。每次退出后重读的 SEO 两字段与 README 三用户段均保留，最终五类 runs 记录均为 ok。**该探测既非官方 Release EXE 安装，也未覆盖安装 v0.8.2**；旧草稿并发、正式 UI 和其他用户字段仍待验。
 
 ## 项目设置 · `site.json`
 
@@ -146,13 +160,13 @@ E 对 JSON 编辑与执行设备的[隔离合成补证](https://github.com/henry
 | I3 深合并 | R1 是旧版缺陷；#762 Core 合成回归覆盖 `seo` 子字段，D 的 C44 是全量提交读回。其他分区的局部提交及 UI 接线待验。 |
 | I4 陈旧写入 | R4 是旧 UI 草稿覆盖；#762 Core 的 revision 冲突/空 revision 拒绝有合成测试，D 携带 revision 和刷新提示仍待验。 |
 | I5 空保存字节不变 | #762 受保护 Core 空保存、#747/#751 应用设置合成路径已验证；README、分类、计划的正式 UI 空保存待验。 |
-| I6 升级及任务保留 | A 的旧文件→当前 Core `views/readme` 合成路径只证明有限字段；v0.8.0、v0.7.5、v0.7.6 应各用独立可恢复副本，安装包覆盖及 daily/weekly/monthly 成功路径待验。 |
-| I7 README 用户段 | #752/#759 Core 合成回归均已三系统 CI 通过并合并；B 页面缺段提示与 E 正式 UI 直接路径读回待验。 |
+| I6 升级及任务保留 | A 的 v0.7.5/v0.7.6/当前 Core 隔离副本：daily/readme 成功、weekly partial、monthly/validate 失败后所选字段保持；E 的 v0.8.0 同源解包 CLI 在定向修正测试条件后五类任务均成功，所选字段保持。正式安装包覆盖升级、旧版完整成功路径及更多用户字段待验。 |
+| I7 README 用户段 | #752/#759 Core 合成回归均已三系统 CI 通过并合并，E 已复验 Core 直接路径；B 页面缺段提示与正式 UI 读回待验。 |
 | I8 输入保真 | R3 是旧版缺陷；#761 已将 7 个多行字段改为原始草稿至失焦/保存。站点地图为单行且未覆盖，正式 UI 输入与重启读回待验。 |
 
 1. D：项目设置 C44 仅是完整 patch 的 Core 证据；dirty/revision 的真实 UI 提交、关键词与站点地图输入、README 缺段提示继续按各自 PR 验证。
 2. C：#747/#751/#758 已提供应用设置的合成与打包 IPC 证据；空值显式清空、旧草稿并发及正式 v0.8.2 安装版仍待验，`revision` 不落盘。
 3. E：已核对 J1/RUN 等合成路径；“升级后变空”在现有有限路径**未复现**。G8.2-3 仍须用各自可恢复的虚构副本完成 v0.8.0、v0.7.5、v0.7.6 与本版安装包的逐项 S/R/U，运行 daily/weekly/monthly 后对用户字段逐键比较；待验格不得提前改成通过。
-4. A：#762 受保护 Core 保存、#752/#759 README Core 修复均已合并；A-2 升级 fixture 与更多任务路径回归仍待独立 PR。[#743](https://github.com/henryliuwork/SiteIndex/issues/743) 和 [#745](https://github.com/henryliuwork/SiteIndex/issues/745) 仍待 UI/安装版交叉验证，不因 Core CI 关闭。
+4. A：#762 受保护 Core 保存、#752/#759 README Core 修复均已合并；A-2 升级 fixture 与更多任务路径回归仍待独立 PR。#745 已关闭；[#743](https://github.com/henryliuwork/SiteIndex/issues/743) 的 UI/安装版交叉验证仍待完成。
 
 本矩阵已列出 roadmap §5.2 封闭范围的写入与读回入口，区分 `C44/J1/CAT/VAL/RUN/README` 合成 Core、#751 CI 合成安装包 IPC 与 G8.2-3 正式安装版证据。G8.2-0 可据此审核“范围与已知状态”，**不表示** G8.2-3 逐项验收通过。
