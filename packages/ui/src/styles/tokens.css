@@ -91,6 +91,7 @@
   --pad-chip-y: var(--space-1);
   --pad-card: var(--space-4);
   --gap-label-control: var(--space-1);
+  --pad-segmented-inner: 2px;
 
   --control-height: 32px;
   --control-height-compact: 28px;

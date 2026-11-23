@@ -65,6 +65,30 @@ function renderTable(props: {
 }
 
 describe("DataTable v2", () => {
+  it("renders column help outside the sort button without changing sorting", () => {
+    const onQueryChange = renderTable({ columns: [
+      { accessorKey: "label", header: "名称", meta: { width: 200, help: "商品显示名称的口径。" } },
+    ] });
+    const header = screen.getByRole("columnheader");
+    expect(header.querySelector(".si-table-heading > .si-sort-button")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "名称说明" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "名称" }));
+    expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ sort: { field: "label", dir: "asc" } }));
+  });
+
+  it("hides explicitly empty columns by default and labels them in column settings", async () => {
+    renderTable({ columns: [
+      { accessorKey: "label", header: "名称", meta: { width: 200 } },
+      { accessorKey: "kind", header: "类别", meta: { width: 120, allEmpty: true } },
+    ] });
+    expect(screen.queryByRole("columnheader", { name: "类别" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    const emptyColumn = await screen.findByRole("checkbox", { name: "类别 · 无数据" });
+    expect(emptyColumn.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(emptyColumn);
+    await waitFor(() => expect(screen.getByRole("columnheader", { name: "类别" })).toBeTruthy());
+  });
+
   it("clears compact fill fallback when the same table switches to a fixed height", async () => {
     tableScrollClientHeight = 55;
     vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(function (this: HTMLElement) {

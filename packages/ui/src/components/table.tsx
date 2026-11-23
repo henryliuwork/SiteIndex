@@ -11,6 +11,7 @@ import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ArrowUpDown, Columns3 } from "lucide-react";
 import type { ListQuery } from "@siteindex/shared";
 import { Button, ColumnCheckbox, Pagination, Popover } from "./primitives";
+import { InfoTooltip } from "./info-tooltip";
 import { useColumnPrefs, useTablePageSize } from "./utils";
 import { assertCompatibleRowText, calculateColumnWidths, findColumnsWithoutWidthContract } from "./table-layout";
 
@@ -23,6 +24,10 @@ declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends RowData, TValue> {
     reserved?: boolean;
     defaultHidden?: boolean;
+    /** 由调用方根据完整数据判定；仅影响默认列设置，不覆盖用户选择。 */
+    allEmpty?: boolean;
+    /** 表头口径说明，显示在排序按钮之外。 */
+    help?: string;
     /** 基准宽度(px)，参与 colgroup 计算。 */
     width?: number;
     /** 剩余空间分配权重：0 固定，1 次要伸缩，2 主要伸缩。默认 0。 */
@@ -79,7 +84,7 @@ export function DataTable<T, F = Record<string, unknown>>({
   const [availableWidth, setAvailableWidth] = useState(0);
   const [compactFillFallback, setCompactFillFallback] = useState(false);
   const columnIds = useMemo(() => columns.map(getColumnId), [columns]);
-  const defaultVisible = useMemo(() => columns.flatMap((column, index) => column.meta?.defaultHidden ? [] : [getColumnId(column, index)]), [columns]);
+  const defaultVisible = useMemo(() => columns.flatMap((column, index) => column.meta?.defaultHidden || column.meta?.allEmpty ? [] : [getColumnId(column, index)]), [columns]);
   const columnPrefs = useColumnPrefs(tableId, scopeId);
   const pageSizeState = useTablePageSize(tableId, scopeId);
   const columnIdsKey = columnIds.join("\u0000");
@@ -285,7 +290,7 @@ export function DataTable<T, F = Record<string, unknown>>({
         return (
           <ColumnCheckbox
             key={column.id}
-            label={typeof column.columnDef.header === "string" ? column.columnDef.header : column.id}
+            label={(typeof column.columnDef.header === "string" ? column.columnDef.header : column.id) + (column.columnDef.meta?.allEmpty ? " · 无数据" : "")}
             checked={column.getIsVisible()}
             disabled={!canHide || (column.getIsVisible() && table.getVisibleLeafColumns().length <= 1)}
             onCheckedChange={() => columnPrefs.toggle(column.id)}
@@ -387,18 +392,22 @@ export function DataTable<T, F = Record<string, unknown>>({
                   const sorted = header.column.getIsSorted();
                   const reserved = Boolean(header.column.columnDef.meta?.reserved);
                   const align = header.column.columnDef.meta?.align;
+                  const help = header.column.columnDef.meta?.help;
                   const stickyRight = header.column.columnDef.meta?.sticky === "right" || header.column.id === "actions";
                   const stickyLeft = header.column.columnDef.meta?.sticky === "left" && !stickyRight;
                   const className = [reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
                   const style = { ...(align ? { textAlign: align === "end" ? "right" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(header.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(header.column.id) ?? 0 } : {}) };
+                  const headerContent = header.column.getCanSort() ? (
+                    <button className="si-sort-button" type="button" onClick={() => sortBy(header.column.id)}>
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      <span className="si-sort-indicator" aria-hidden="true">{sorted === "asc" ? <ArrowUp size={12} /> : sorted === "desc" ? <ArrowDown size={12} /> : <ArrowUpDown size={12} />}</span>
+                    </button>
+                  ) : flexRender(header.column.columnDef.header, header.getContext());
                   return (
                     <th key={header.id} className={className} style={style} aria-sort={sorted ? sorted === "asc" ? "ascending" : "descending" : "none"}>
-                      {header.isPlaceholder ? null : header.column.getCanSort() ? (
-                        <button className="si-sort-button" type="button" onClick={() => sortBy(header.column.id)}>
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          <span className="si-sort-indicator" aria-hidden="true">{sorted === "asc" ? <ArrowUp size={12} /> : sorted === "desc" ? <ArrowDown size={12} /> : <ArrowUpDown size={12} />}</span>
-                        </button>
-                      ) : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.isPlaceholder ? null : help ? (
+                        <span className="si-table-heading">{headerContent}<InfoTooltip label={`${typeof header.column.columnDef.header === "string" ? header.column.columnDef.header : header.column.id}说明`} content={help} /></span>
+                      ) : headerContent}
                     </th>
                   );
                 })}

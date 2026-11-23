@@ -177,8 +177,9 @@
 ## v0.8.2 · 间距规范与组件统一
 - [x] B-0：路线图 §3.1–§3.7 规范写入 DESIGN；新增语义间距 token；PR 模板增加“影响面”表，AGENTS 摘要核对一致 — 本 PR
 - [x] B-2：`ui:check` S1–S10 与 27 路由 × 2 视口 `spacing-baseline.json`；S7 沿用样式扫描 — 本 PR
-- [ ] B-1：共享 Tab、页头、间距、筛选/表单组件、DataTable help 与无值列 — 待独立 PR
+- [x] B-1：共享 Tab、页头、间距、筛选/表单组件、DataTable help 与无值列 — 本 PR 收口
 - [x] B-1a：项目 Tab 指示线与页头次要按钮按实测宽度显示；SummaryLine、Chip 按语义 token 留出内边距 — 本 PR
+- [x] B-1c：DataTable 的 `meta.help` 表头说明、调用方明确标记整列无值时默认隐藏，以及 Segmented 容器 2px 内边距 — 本 PR
 - [x] D 类 #744：软件设置只提交变更字段与 revision，显式清空才附 clear；冲突保留草稿并提供刷新 — 本 PR
 - [x] B-1b：共享 FilterPopover、带标签 Select 和 FilterCheckbox；统一 Select 弹层间距 — 本 PR
 - [ ] B-3：全局页逐页修复并移除 spacing 基线 — 待 B-1 合并
