@@ -86,6 +86,40 @@ describe("settings store", () => {
     expect(mtimeMs).toBe(oldTime.getTime());
   });
 
+  it("keeps future user fields when reading and saving known settings", async () => {
+    const store = createSettingsStore(settingsDirectory, "DESKTOP-01");
+    const initial = await store.get();
+    const original = `${JSON.stringify({
+      ...initial,
+      future_user_field: "保留此值",
+      browser: { ...initial.browser, future_browser_field: "browser-choice" },
+      notify: { ...initial.notify, future_notify_field: "notification-choice" },
+    }, null, 4)}\n`;
+    await writeFile(store.filePath, original, "utf8");
+
+    await store.get();
+    expect(await readFile(store.filePath, "utf8")).toBe(original);
+
+    await store.set({ device_name: "虚构电脑" });
+    const persisted = JSON.parse(await readFile(store.filePath, "utf8")) as Record<string, unknown>;
+    expect(persisted.future_user_field).toBe("保留此值");
+    expect(persisted.browser).toMatchObject({ future_browser_field: "browser-choice" });
+    expect(persisted.notify).toMatchObject({ future_notify_field: "notification-choice" });
+    expect((await createSettingsStore(settingsDirectory, "OTHER-DEVICE").get()).device_name).toBe("虚构电脑");
+  });
+
+  it("leaves a valid settings file byte-identical when saving no changes", async () => {
+    const store = createSettingsStore(settingsDirectory, "DESKTOP-01");
+    const settings = await store.get();
+    const original = `${JSON.stringify(settings, null, 4)}\n`;
+    await writeFile(store.filePath, original, "utf8");
+
+    await store.set({});
+    expect(await readFile(store.filePath, "utf8")).toBe(original);
+    await store.set({ device_name: settings.device_name });
+    expect(await readFile(store.filePath, "utf8")).toBe(original);
+  });
+
   it("recovers a malformed settings file with safe defaults", async () => {
     const filePath = join(settingsDirectory, "settings.json");
     await writeFile(filePath, "{ invalid json", "utf8");
