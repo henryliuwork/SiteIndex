@@ -82,6 +82,18 @@ function apiBridgeFor(context: IpcContext) {
 }
 
 describe("IPC handler completeness", () => {
+  it("forwards protected settings options to the store", async () => {
+    const context = testContext();
+    const patch = { notify: { on_failure: false } };
+    const options = { revision: "synthetic-revision", dirty_paths: ["notify.on_failure"] };
+    const result = { notify: { on_failure: false }, revision: "updated-revision" };
+    const set = vi.fn(async () => result);
+    Object.assign(context, { settings: { set }, settingsChanged: vi.fn(async () => undefined) });
+    const handler = createIpcHandlerImplementations(context)["settings.set"];
+    await expect(handler?.(patch, options)).resolves.toBe(result);
+    expect(set).toHaveBeenCalledWith(patch, options);
+  });
+
   it("implements every SiteIndexApi invoke method, including optional namespaces", () => {
     const implementations = createIpcHandlerImplementations(testContext());
     const apiMethods = new Set<string>(API_INVOKE_METHODS);
