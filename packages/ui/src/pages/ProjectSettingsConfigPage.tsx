@@ -27,10 +27,10 @@ function SelectField({ label, value, options, onChange }: {
   return <label className="si-config-field"><span>{label}</span><select className="si-text-field" value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
-function TextAreaField({ label, value, onChange, mono = false, rows = 3 }: {
-  label: string; value: string; onChange: (value: string) => void; mono?: boolean; rows?: number;
+function TextAreaField({ label, value, onChange, onBlur, mono = false, rows = 3 }: {
+  label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; mono?: boolean; rows?: number;
 }) {
-  return <label className="si-config-field"><span>{label}</span><textarea className={mono ? "si-config-textarea si-config-mono" : "si-config-textarea"} rows={rows} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+  return <label className="si-config-field"><span>{label}</span><textarea className={mono ? "si-config-textarea si-config-mono" : "si-config-textarea"} rows={rows} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} /></label>;
 }
 
 function ConfigCard({ id, title, children }: { id: ConfigSectionId; title: string; children: ReactNode }) {
@@ -38,8 +38,32 @@ function ConfigCard({ id, title, children }: { id: ConfigSectionId; title: strin
 }
 
 function asLines(values: readonly string[] | undefined): string { return values?.join("\n") ?? ""; }
-function fromLines(value: string): string[] { return value.split("\n").map((item) => item.trim()).filter(Boolean); }
+function fromLines(value: string): string[] { return [...new Set(value.split("\n").map((item) => item.trim()).filter(Boolean))]; }
 function asFeeds(value: SiteConfig["crawl"]["feed_url"]): string { return (Array.isArray(value) ? value : [value]).join("\n"); }
+type LineField = "usp" | "feed_url" | "exclude_url_patterns" | "blog_sitemaps" | "blog_url_patterns" | "core_keywords" | "competitors";
+type LineDrafts = Record<LineField, string>;
+
+function lineDraftsFromConfig(config: SiteConfig): LineDrafts {
+  return {
+    usp: asLines(config.brand.usp), feed_url: asFeeds(config.crawl.feed_url),
+    exclude_url_patterns: asLines(config.crawl.exclude_url_patterns),
+    blog_sitemaps: asLines(config.content?.blog_sitemaps), blog_url_patterns: asLines(config.content?.blog_url_patterns),
+    core_keywords: asLines(config.seo?.core_keywords), competitors: asLines(config.seo?.competitors),
+  };
+}
+
+function withParsedLineDrafts(config: SiteConfig, values: LineDrafts | null, dirty: ReadonlySet<LineField>): SiteConfig {
+  if (!values || dirty.size === 0) return config;
+  let next = config;
+  for (const field of dirty) {
+    const lines = fromLines(values[field]);
+    if (field === "usp") next = { ...next, brand: { ...next.brand, usp: lines } };
+    else if (field === "feed_url" || field === "exclude_url_patterns") next = { ...next, crawl: { ...next.crawl, [field]: lines } };
+    else if (field === "blog_sitemaps" || field === "blog_url_patterns") next = { ...next, content: { ...next.content, [field]: lines } };
+    else next = { ...next, seo: { ...next.seo, [field]: lines } };
+  }
+  return next;
+}
 
 function categoryKey(category: Pick<WatchedCategory, "name" | "slug">): string {
   return category.slug?.trim() || category.name.trim().toLocaleLowerCase("zh-CN");
@@ -62,6 +86,8 @@ export function ProjectSettingsConfigPage() {
   const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const [draft, setDraft] = useState<SiteConfig | null>(null);
+  const [lineDrafts, setLineDrafts] = useState<LineDrafts | null>(null);
+  const [dirtyLineFields, setDirtyLineFields] = useState<ReadonlySet<LineField>>(() => new Set());
   const grouping = draft?.sku_grouping ?? { enabled: false, rule: { type: "regex", value: recommendedSkuGroupingPattern } as SkuGroupingRule };
   const groupingPreset = skuGroupingPresetForRule(grouping.rule);
   const groupingRulePlaceholder = grouping.rule.type === "suffix" ? "-G"
@@ -98,6 +124,8 @@ export function ProjectSettingsConfigPage() {
     if (!projectQuery.data || initializedProjectId.current === id) return;
     initializedProjectId.current = id;
     setDraft(projectQuery.data.config);
+    setLineDrafts(lineDraftsFromConfig(projectQuery.data.config));
+    setDirtyLineFields(new Set());
     setOverrideText(JSON.stringify(projectQuery.data.config.crawl.overrides ?? {}, null, 2));
   }, [id, projectQuery.data]);
 
@@ -124,6 +152,14 @@ export function ProjectSettingsConfigPage() {
   const patchCrawl = <K extends keyof SiteConfig["crawl"]>(key: K, value: SiteConfig["crawl"][K]) => setDraft((current) => current ? { ...current, crawl: { ...current.crawl, [key]: value } } : current);
   const patchSeo = <K extends keyof NonNullable<SiteConfig["seo"]>>(key: K, value: NonNullable<SiteConfig["seo"]>[K]) => setDraft((current) => current ? { ...current, seo: { ...current.seo, [key]: value } } : current);
   const patchEdm = <K extends keyof NonNullable<SiteConfig["edm"]>>(key: K, value: NonNullable<SiteConfig["edm"]>[K]) => setDraft((current) => current ? { ...current, edm: { ...current.edm, [key]: value } } : current);
+  const updateLineDraft = (field: LineField, value: string) => {
+    setLineDrafts((current) => current ? { ...current, [field]: value } : current);
+    setDirtyLineFields((current) => new Set(current).add(field));
+  };
+  const commitLineDraft = (field: LineField) => {
+    if (!dirtyLineFields.has(field)) return;
+    setDraft((current) => current ? withParsedLineDrafts(current, lineDrafts, new Set([field])) : current);
+  };
   const updateCategoryDraft = (categories: CategoriesConfig) => setDraft((current) => current ? {
     ...current,
     categories: { ...current.categories, ...categories, watched: current.categories.watched },
@@ -155,7 +191,8 @@ export function ProjectSettingsConfigPage() {
     try {
       const overrides: unknown = JSON.parse(overrideText);
       if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) throw new Error("数据修正必须是 JSON 对象");
-      config = { ...next, crawl: { ...next.crawl, overrides: overrides as SiteConfig["crawl"]["overrides"] } };
+      const prepared = withParsedLineDrafts(next, lineDrafts, dirtyLineFields);
+      config = { ...prepared, crawl: { ...prepared.crawl, overrides: overrides as SiteConfig["crawl"]["overrides"] } };
     } catch (error) {
       toast.error("保存失败：" + apiErrorMessage(error, "数据修正 JSON 格式无效"));
       return;
@@ -169,6 +206,8 @@ export function ProjectSettingsConfigPage() {
         markBlogRecognitionConfigUpdated(id);
       }
       setDraft(saved);
+      setLineDrafts(lineDraftsFromConfig(saved));
+      setDirtyLineFields(new Set());
       setOverrideText(JSON.stringify(saved.crawl.overrides ?? {}, null, 2));
       await Promise.all([
         invalidateProjectSummary(queryClient, id),
@@ -185,7 +224,8 @@ export function ProjectSettingsConfigPage() {
 
   const inspectFeed = async () => {
     if (!draft || inspectingFeed) return;
-    const feedUrls = (Array.isArray(draft.crawl.feed_url) ? draft.crawl.feed_url : [draft.crawl.feed_url]).map((url) => url.trim()).filter(Boolean);
+    const currentFeed = withParsedLineDrafts(draft, lineDrafts, dirtyLineFields).crawl.feed_url;
+    const feedUrls = (Array.isArray(currentFeed) ? currentFeed : [currentFeed]).map((url) => url.trim()).filter(Boolean);
     if (!feedUrls.length) {
       toast.error("请先填写至少一个 Feed 地址。");
       return;
@@ -201,13 +241,15 @@ export function ProjectSettingsConfigPage() {
     }
   };
 
-  const openJson = () => { setJsonText(JSON.stringify(draft, null, 2)); setJsonError(""); setJsonOpen(true); };
+  const openJson = () => { setJsonText(JSON.stringify(draft && withParsedLineDrafts(draft, lineDrafts, dirtyLineFields), null, 2)); setJsonError(""); setJsonOpen(true); };
   const applyJson = () => {
     try {
       const value: unknown = JSON.parse(jsonText);
       if (!value || typeof value !== "object" || !("domain" in value) || !("base_url" in value) || !("crawl" in value)) throw new Error("需要包含 domain、base_url 和 crawl 的项目配置");
       setDraft(value as SiteConfig);
       const config = value as SiteConfig;
+      setLineDrafts(lineDraftsFromConfig(config));
+      setDirtyLineFields(new Set());
       setOverrideText(JSON.stringify(config.crawl.overrides ?? {}, null, 2));
       setJsonOpen(false);
       setJsonError("");
@@ -247,10 +289,10 @@ export function ProjectSettingsConfigPage() {
           <TextField label="一句话定位" value={draft.brand.tagline ?? ""} onChange={(value) => patchBrand("tagline", value)} />
           <TextField label="文案调性" value={draft.brand.voice ?? ""} onChange={(value) => patchBrand("voice", value)} />
           <TextField label="目标人群" value={draft.brand.audience ?? ""} onChange={(value) => patchBrand("audience", value)} />
-        </div><TextAreaField label="核心卖点（每行一项）" value={asLines(draft.brand.usp)} onChange={(value) => patchBrand("usp", fromLines(value))} rows={2} /></ConfigCard>
+        </div><TextAreaField label="核心卖点（每行一项）" value={lineDrafts?.usp ?? asLines(draft.brand.usp)} onChange={(value) => updateLineDraft("usp", value)} onBlur={() => commitLineDraft("usp")} rows={2} /></ConfigCard>
 
-        <ConfigCard id="source" title="数据源 · GMC feed"><div className="si-config-card-title"><p>Feed 地址（按顺序合并）</p><div className="si-config-feed-actions"><Button size="small" disabled={inspectingFeed} onClick={() => void inspectFeed()}>{inspectingFeed ? "检测中…" : "检测 Feed"}</Button><Button size="small" onClick={() => patchCrawl("feed_url", [...(Array.isArray(draft.crawl.feed_url) ? draft.crawl.feed_url : [draft.crawl.feed_url]), ""])}>+ 添加 feed</Button></div></div>
-          <TextAreaField label="每行一个地址" value={asFeeds(draft.crawl.feed_url)} onChange={(value) => patchCrawl("feed_url", fromLines(value))} mono rows={3} />
+        <ConfigCard id="source" title="数据源 · GMC feed"><div className="si-config-card-title"><p>Feed 地址（按顺序合并）</p><div className="si-config-feed-actions"><Button size="small" disabled={inspectingFeed} onClick={() => void inspectFeed()}>{inspectingFeed ? "检测中…" : "检测 Feed"}</Button><Button size="small" onClick={() => updateLineDraft("feed_url", (lineDrafts?.feed_url ?? asFeeds(draft.crawl.feed_url)) + "\n")}>+ 添加 feed</Button></div></div>
+          <TextAreaField label="每行一个地址" value={lineDrafts?.feed_url ?? asFeeds(draft.crawl.feed_url)} onChange={(value) => updateLineDraft("feed_url", value)} onBlur={() => commitLineDraft("feed_url")} mono rows={3} />
           {feedResult && <div className="si-config-feed-result" role="status"><strong>检测结果</strong><span>{feedResult.items.toLocaleString("zh-CN")} 条目</span><span>{feedResult.usable_skus.toLocaleString("zh-CN")} 个可用 SKU</span><span>{feedResult.products.toLocaleString("zh-CN")} 个产品</span><span>跳过：重复 {feedResult.skipped.duplicate} · 缺价格或链接 {feedResult.skipped.missing_price_or_link} · 缺 ID {feedResult.skipped.no_id}</span></div>}
           <div className="si-config-grid si-config-grid-3">
             <TextField label="SKU 字段" value={draft.crawl.sku_field ?? "id"} onChange={(value) => patchCrawl("sku_field", value)} />
@@ -270,14 +312,14 @@ export function ProjectSettingsConfigPage() {
           <label className="si-config-check"><input type="checkbox" checked={draft.crawl.crawl_product_pages ?? true} onChange={(event) => patchCrawl("crawl_product_pages", event.target.checked)} /><span>每周抓取产品页 SEO</span></label>
           <div className="si-config-check"><input id="si-auto-collect-products" type="checkbox" checked={draft.crawl.auto_collect_products ?? false} onChange={(event) => patchCrawl("auto_collect_products", event.target.checked)} /><label htmlFor="si-auto-collect-products">无 Feed 时自动采集商品</label><InfoTooltip label="自动采集商品说明" content="无 Feed 同步优先使用 WooCommerce Store API；不可用时回退商品 Sitemap/HTML。" /></div>
         </div><div className="si-config-grid si-config-grid-2">
-          <TextAreaField label="排除 URL 规则（每行一条）" value={asLines(draft.crawl.exclude_url_patterns)} onChange={(value) => patchCrawl("exclude_url_patterns", fromLines(value))} mono rows={2} />
+          <TextAreaField label="排除 URL 规则（每行一条）" value={lineDrafts?.exclude_url_patterns ?? asLines(draft.crawl.exclude_url_patterns)} onChange={(value) => updateLineDraft("exclude_url_patterns", value)} onBlur={() => commitLineDraft("exclude_url_patterns")} mono rows={2} />
         </div></ConfigCard>
 
         <ConfigCard id="blog-recognition" title="博客识别">
           <p className="si-config-help">博客 Sitemap 会将其中的文章 URL 加入抓取队列；博客 URL 规则用于识别内容类型。</p>
           <div className="si-config-grid si-config-grid-2">
-            <TextAreaField label="博客 Sitemap（每行一个地址）" value={asLines(draft.content?.blog_sitemaps)} onChange={(value) => patch("content", { ...draft.content, blog_sitemaps: fromLines(value) })} mono rows={3} />
-            <TextAreaField label="博客 URL 前缀或规则（每行一条）" value={asLines(draft.content?.blog_url_patterns)} onChange={(value) => patch("content", { ...draft.content, blog_url_patterns: fromLines(value) })} mono rows={3} />
+            <TextAreaField label="博客 Sitemap（每行一个地址）" value={lineDrafts?.blog_sitemaps ?? asLines(draft.content?.blog_sitemaps)} onChange={(value) => updateLineDraft("blog_sitemaps", value)} onBlur={() => commitLineDraft("blog_sitemaps")} mono rows={3} />
+            <TextAreaField label="博客 URL 前缀或规则（每行一条）" value={lineDrafts?.blog_url_patterns ?? asLines(draft.content?.blog_url_patterns)} onChange={(value) => updateLineDraft("blog_url_patterns", value)} onBlur={() => commitLineDraft("blog_url_patterns")} mono rows={3} />
           </div>
         </ConfigCard>
 
@@ -341,8 +383,8 @@ export function ProjectSettingsConfigPage() {
         <ProjectSettingsCategoriesPage embedded onConfigSaved={updateCategoryDraft} />
 
         <ConfigCard id="seo" title="SEO"><div className="si-config-grid si-config-grid-2">
-          <TextAreaField label="核心关键词（每行一项）" value={asLines(draft.seo?.core_keywords)} onChange={(value) => patchSeo("core_keywords", fromLines(value))} rows={3} />
-          <TextAreaField label="竞品域名（每行一个）" value={asLines(draft.seo?.competitors)} onChange={(value) => patchSeo("competitors", fromLines(value))} mono rows={3} />
+          <TextAreaField label="核心关键词（每行一项）" value={lineDrafts?.core_keywords ?? asLines(draft.seo?.core_keywords)} onChange={(value) => updateLineDraft("core_keywords", value)} onBlur={() => commitLineDraft("core_keywords")} rows={3} />
+          <TextAreaField label="竞品域名（每行一个）" value={lineDrafts?.competitors ?? asLines(draft.seo?.competitors)} onChange={(value) => updateLineDraft("competitors", value)} onBlur={() => commitLineDraft("competitors")} mono rows={3} />
           <div className="si-config-range"><span>Title 长度范围</span><div><input aria-label="Title 最短长度" className="si-text-field" type="number" value={draft.seo?.title_range?.[0] ?? 30} onChange={(event) => patchSeo("title_range", [Number(event.target.value), draft.seo?.title_range?.[1] ?? 60])} /><span>至</span><input aria-label="Title 最长长度" className="si-text-field" type="number" value={draft.seo?.title_range?.[1] ?? 60} onChange={(event) => patchSeo("title_range", [draft.seo?.title_range?.[0] ?? 30, Number(event.target.value)])} /></div></div>
           <div className="si-config-range"><span>Description 长度范围</span><div><input aria-label="Description 最短长度" className="si-text-field" type="number" value={draft.seo?.description_range?.[0] ?? 70} onChange={(event) => patchSeo("description_range", [Number(event.target.value), draft.seo?.description_range?.[1] ?? 155])} /><span>至</span><input aria-label="Description 最长长度" className="si-text-field" type="number" value={draft.seo?.description_range?.[1] ?? 155} onChange={(event) => patchSeo("description_range", [draft.seo?.description_range?.[0] ?? 70, Number(event.target.value)])} /></div></div>
         </div></ConfigCard>

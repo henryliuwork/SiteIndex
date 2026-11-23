@@ -79,6 +79,43 @@ async function renderSettings(initialEntry: string, omitGsc = false, initialGscP
 }
 
 describe("项目设置单页区块", () => {
+  it("关键词草稿保留内部与末尾空格、回车和重复空行，失焦后保存为去重词组", async () => {
+    const { updateConfig } = await renderSettings("/p/demo2/settings/config?section=seo");
+    updateConfig.mockImplementation(async (_id, config) => config as SiteConfig);
+    const keywords = await screen.findByRole("textbox", { name: "核心关键词（每行一项）" }) as HTMLTextAreaElement;
+    fireEvent.change(keywords, { target: { value: "bird feeder " } });
+    expect(keywords.value).toBe("bird feeder ");
+    fireEvent.change(keywords, { target: { value: "bird feeder \na b\n\nc d  \na b\n" } });
+    expect(keywords.value).toBe("bird feeder \na b\n\nc d  \na b\n");
+    expect(updateConfig).not.toHaveBeenCalled();
+    fireEvent.blur(keywords);
+    expect(keywords.value).toBe("bird feeder \na b\n\nc d  \na b\n");
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", expect.objectContaining({
+      seo: expect.objectContaining({ core_keywords: ["bird feeder", "a b", "c d"] }),
+    })));
+  }, 20_000);
+
+  it("保存仍在编辑的多行草稿时才解析，且不清空未修改的列表字段", async () => {
+    const { mockApi, updateConfig } = await renderSettings("/p/demo2/settings/config?section=seo");
+    const original = (await mockApi.projects.get("demo2")).config;
+    updateConfig.mockImplementation(async (_id, config) => config as SiteConfig);
+    const keywords = await screen.findByRole("textbox", { name: "核心关键词（每行一项）" }) as HTMLTextAreaElement;
+    fireEvent.change(keywords, { target: { value: "a b\nc d  \n\n" } });
+    expect(keywords.value).toBe("a b\nc d  \n\n");
+    const competitors = screen.getByRole("textbox", { name: "竞品域名（每行一个）" }) as HTMLTextAreaElement;
+    fireEvent.change(competitors, { target: { value: "rival.example.test \n\npeer.example.test\nrival.example.test" } });
+    expect(competitors.value).toBe("rival.example.test \n\npeer.example.test\nrival.example.test");
+    fireEvent.blur(screen.getByRole("textbox", { name: "核心卖点（每行一项）" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledOnce());
+    const submitted = updateConfig.mock.calls[0]?.[1];
+    expect(submitted?.seo?.core_keywords).toEqual(["a b", "c d"]);
+    expect(submitted?.seo?.competitors).toEqual(["rival.example.test", "peer.example.test"]);
+    expect(submitted?.brand?.usp).toEqual(original.brand.usp);
+    expect(submitted?.content?.blog_sitemaps).toEqual(original.content?.blog_sitemaps);
+  }, 20_000);
+
   it("无 Feed 商品采集开关可保存到抓取配置", async () => {
     const { updateConfig } = await renderSettings("/p/demo2/settings/config?section=crawl");
     const toggle = await screen.findByRole("checkbox", { name: "无 Feed 时自动采集商品" }) as HTMLInputElement;
