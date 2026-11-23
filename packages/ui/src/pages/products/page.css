@@ -34,11 +34,6 @@ flex: none; min-width: 0;
 width: 100%; gap: var(--space-2); padding: 0;
 }
 
-.si-products-filter-popover {
-z-index: 60; display: grid; width: min(22rem, calc(100vw - var(--space-8))); gap: var(--space-2);
-}
-.si-products-filter-popover .si-select-trigger { width: 100%; }
-
 .si-products-grouping-preview {
 display: grid; gap: var(--space-3); margin-top: var(--space-4); color: var(--color-ink-2); font-size: var(--fs-body);
 }
