@@ -30,7 +30,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function renderTodos(configure?: (todos: NonNullable<SiteIndexApi["todos"]>) => void, omitTodos = false) {
+async function renderTodos(configure?: (todos: NonNullable<SiteIndexApi["todos"]>) => void, omitTodos = false, initialPath = "/p/demo/todos") {
   const mockApi = createMockApi();
   if (configure && mockApi.todos) configure(mockApi.todos);
   if (omitTodos) mockApi.todos = undefined;
@@ -47,7 +47,7 @@ async function renderTodos(configure?: (todos: NonNullable<SiteIndexApi["todos"]
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <ToastProvider>
-        <MemoryRouter initialEntries={["/p/demo/todos"]}>
+        <MemoryRouter initialEntries={[initialPath]}>
           <Routes><Route path="/p/:id/todos" element={<ProjectTodosPage />} /></Routes>
         </MemoryRouter>
       </ToastProvider>
@@ -92,6 +92,16 @@ describe("ProjectTodosPage", () => {
     expect(await screen.findByText("价格历史存在日期缺口")).toBeTruthy();
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索项目待办" }), { target: { value: "not-a-demo-sku" } });
     expect(await screen.findByText("没有匹配的待办")).toBeTruthy();
+  });
+
+  it("概览深链选中未完成待办并打开对应详情", async () => {
+    const key = "demo:inventory.stock-mismatch:DEMO001CP01";
+    await renderTodos(undefined, false, `/p/demo/todos?status=active&todo=${encodeURIComponent(key)}`);
+    expect(await screen.findByRole("heading", { name: "状态与备注" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "库存状态与 Feed 记录不一致" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "待办状态筛选" }).textContent).toContain("未完成"));
+    expect(screen.queryByText("价格历史存在日期缺口")).toBeNull();
   });
 
   it("区分完整空结果与尚未运行的规则检查", async () => {

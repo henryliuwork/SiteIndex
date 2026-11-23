@@ -25,6 +25,7 @@ afterEach(() => {
 async function renderOverview(mockApi: ReturnType<typeof createMockApi>) {
   vi.doMock("../api", () => ({
     api: mockApi,
+    apiErrorDetails: (error: unknown) => error instanceof Error ? { message: error.message } : null,
     apiErrorMessage: (error: unknown, fallback: string) =>
       typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
         ? error.message
@@ -56,57 +57,91 @@ describe("OverviewPage 布局和操作", () => {
     expect(screen.queryByText(/未配置商品来源|每日库存同步未启用/)).toBeNull();
   });
 
-  it("五张概览卡使用真实查询计数并链接到同口径筛选", async () => {
+  it("待办、产品管理、SEO 模块使用真实查询计数并链接到对应筛选", async () => {
     const mockApi = createMockApi();
+    const inventory = await mockApi.inventory.summary("demo");
+    mockApi.inventory.summary = vi.fn(async () => ({ ...inventory, product_management: {
+      as_of: "2026-11-13", total_rows: 20, in_stock_rows: 15, online_rate: 0.75,
+      changed_rows: 2, out_of_stock_7d_rows: 3, fluctuating_30d_rows: 1,
+    } }));
+    const seo = await mockApi.seo.summary("demo");
+    mockApi.seo.summary = vi.fn(async () => ({ ...seo, crawled_at: "2026-11-13T08:00:00.000Z",
+      kpis: seo.kpis.map((item) => item.key === "issues" ? { ...item, value: "2" } : item) }));
     const originalSeoRows = mockApi.seo.listPageRows!;
     mockApi.seo.listPageRows = vi.fn(async (id, query) => ({ ...await originalSeoRows(id, query),
-      summary: { latest_crawl_date: null, open_pages: 9, new_pages: 4, unindexed_pages: 3, fixed_pages: 2 } }));
-    mockApi.content.summary = vi.fn(async () => ({ kpis: [
-      { key: "no_schema", label: "缺少 Schema", value: "6" },
-      { key: "no_links", label: "无站内链接", value: "5" },
-    ], uncovered_core_keywords: [] }));
-    mockApi.edm.listImages = vi.fn(async () => ({ rows: [], total: 7 }));
-    const overview = await mockApi.overview.get("demo");
-    mockApi.overview.get = vi.fn(async () => ({ ...overview, kpis: [{ key: "sales", label: "30 天销量", value: "999" }] }));
+      summary: { latest_crawl_date: "2026-11-13", open_pages: 9, new_pages: 4, unindexed_pages: 3, fixed_pages: 2 } }));
     await renderOverview(mockApi);
 
-    const cards = await screen.findByRole("region", { name: "项目指标" });
-    await waitFor(() => expect(cards.querySelectorAll("a.si-kpi-card")).toHaveLength(5));
-    expect([...cards.querySelectorAll("a.si-kpi-card")].map((item) => [item.textContent, item.getAttribute("href")])).toEqual([
+    await waitFor(() => expect(screen.getByRole("region", { name: "产品管理" }).textContent).toContain("75%"));
+    const modules = document.querySelectorAll(".si-overview-module");
+    expect([...modules].map((module) => module.getAttribute("aria-label"))).toEqual(["待办", "产品管理", "SEO"]);
+    await waitFor(() => expect(document.querySelectorAll(".si-overview-module-metric[href]")).toHaveLength(8));
+    const links = [...document.querySelectorAll<HTMLAnchorElement>(".si-overview-module-metric[href]")];
+    expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["未完成3", "/p/demo/todos?status=active"],
+      ["在线率75%", "/p/demo/products?summary_metric=in_stock"],
+      ["今日变化2", "/p/demo/products?summary_metric=changed"],
+      ["长期缺货3", "/p/demo/products?summary_metric=out_of_stock_7d"],
+      ["状态波动1", "/p/demo/products?summary_metric=fluctuating_30d"],
+      ["待处理问题2", "/p/demo/seo?status=open"],
       ["本次新增问题页4", "/p/demo/seo?summary=new"],
       ["未收录页面3", "/p/demo/seo?summary=unindexed"],
-      ["博客缺少 Schema6", "/p/demo/content?issue=no_schema"],
-      ["博客无站内链接5", "/p/demo/content?issue=no_links"],
-      ["EDM 缺图 SKU7", "/p/demo/edm?view=none"],
     ]);
+    expect(screen.getByText("本周到期").nextElementSibling?.textContent).toBe("—");
+    expect(screen.getByText("待办尚无截止时间数据。")).toBeTruthy();
     expect(mockApi.seo.listPageRows).toHaveBeenCalledWith("demo", { page: 1, pageSize: 1, filters: {} });
-    expect(mockApi.edm.listImages).toHaveBeenCalledWith("demo", { page: 1, pageSize: 1, filters: { view: "none" } });
-    expect(screen.queryByText("30 天销量")).toBeNull();
+    expect(mockApi.inventory.summary).toHaveBeenCalledWith("demo", 30);
   });
 
-  it("旧 bridge 缺少 SEO 页面聚合时隐藏对应卡并明确说明", async () => {
+  it("旧 bridge 缺少 SEO 页面聚合时不造 0，并明确说明", async () => {
     const mockApi = createMockApi();
     delete mockApi.seo.listPageRows;
     await renderOverview(mockApi);
-    expect(await screen.findByText("当前版本暂不支持 SEO 页面指标。")).toBeTruthy();
-    expect(screen.queryByText("本次新增问题页")).toBeNull();
-    expect(screen.queryByText("未收录页面")).toBeNull();
-    expect(await screen.findByText("博客缺少 Schema")).toBeTruthy();
+    expect(await screen.findByText("当前版本尚未提供 SEO 页面聚合。")).toBeTruthy();
+    expect(screen.getByText("本次新增问题页").nextElementSibling?.textContent).toBe("—");
+    expect(screen.getByRole("region", { name: "SEO" }).textContent).toContain("待处理问题");
   });
 
-  it("按 KPI、关注、README 摘要、变更记录排列，并把快捷操作放进页面操作区", async () => {
+  it("待办加载失败不遮挡产品与 SEO，且可单独重试", async () => {
+    const mockApi = createMockApi();
+    mockApi.todos!.list = vi.fn(async () => { throw new Error("待办读取失败"); });
+    await renderOverview(mockApi);
+    expect(await screen.findByText("待办加载失败。")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "产品管理" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "SEO" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("region", { name: "待办" }).querySelector("button")!);
+    await waitFor(() => expect(mockApi.todos!.list).toHaveBeenCalledTimes(2));
+  });
+
+  it("无业务日和无完整规则检查时显示空态，不把缺失值写成 0", async () => {
+    const mockApi = createMockApi();
+    const inventory = await mockApi.inventory.summary("demo");
+    mockApi.inventory.summary = vi.fn(async () => ({ ...inventory, product_management: { ...inventory.product_management!, as_of: null } }));
+    mockApi.todos!.list = vi.fn(async () => ({ items: [], scan: { status: "not_run" as const, evaluated_at: null } }));
+    const seo = await mockApi.seo.summary("demo");
+    mockApi.seo.summary = vi.fn(async () => ({ ...seo, crawled_at: null }));
+    const listPageRows = mockApi.seo.listPageRows!;
+    mockApi.seo.listPageRows = vi.fn(async (id, query) => ({ ...await listPageRows(id, query),
+      summary: { latest_crawl_date: null, open_pages: 0, new_pages: 0, unindexed_pages: 0, fixed_pages: 0 } }));
+    await renderOverview(mockApi);
+    expect(await screen.findByText("规则检查尚未完整完成，暂不能确认未完成数。")).toBeTruthy();
+    expect(screen.getByText("尚无产品管理业务日数据，请先同步商品。")).toBeTruthy();
+    expect(await screen.findByText("尚无 SEO 抓取数据，请先运行抓取。")).toBeTruthy();
+    expect(document.querySelectorAll(".si-overview-module-metric")).toHaveLength(0);
+  });
+
+  it("按三模块、关注、README 摘要、变更记录排列，并把快捷操作放进页面操作区", async () => {
     await renderOverview(createMockApi());
 
     expect(await screen.findByRole("heading", { name: "需要关注" })).toBeTruthy();
-    const cards = await screen.findByRole("region", { name: "项目指标" });
-    await waitFor(() => expect(cards.querySelectorAll("a.si-kpi-card")).toHaveLength(5));
+    expect(await screen.findByRole("region", { name: "待办" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "快捷操作" })).toBeNull();
     expect(screen.getByRole("button", { name: "立即同步" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "打开项目文件夹" })).toBeTruthy();
 
     const content = document.querySelector(".si-overview-content");
     expect([...content!.children].map((element) => element.classList[0] || element.tagName.toLowerCase())).toEqual([
-      "si-overview-kpis", "si-overview-attention", "si-overview-readme", "si-overview-changelog",
+      "si-overview-modules", "si-overview-attention", "si-overview-readme", "si-overview-changelog",
     ]);
     expect(document.querySelector(".si-overview-content > .si-page-header")).toBeNull();
     expect(document.querySelector<HTMLDetailsElement>(".si-overview-instruction")?.open).toBe(false);
@@ -187,8 +222,9 @@ describe("OverviewPage 布局和操作", () => {
     expect(await screen.findByText("每日同步已完成。")).toBeTruthy();
     await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["overview", "demo"] })));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["seo", "pageRows", "demo"] }));
-    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["content", "summary", "demo"] }));
-    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["edm", "images", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["project-todos", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["inventory-summary", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["seo", "summary", "demo"] }));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["projects", "demo"], exact: true }));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["projects"], exact: true }));
   });

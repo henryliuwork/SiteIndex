@@ -10,7 +10,7 @@ const pageCases = [
     file: "OverviewPage.tsx",
     tab: "overview",
     projectIdExpression: "summary.id",
-    normal: "si-overview-kpis",
+    normal: "si-overview-modules",
     loading: "overviewQuery.isLoading",
     error: "overviewQuery.isError",
     empty: "attention?.length ?",
