@@ -224,3 +224,4 @@
 
 - [x] C-1：`settings.json` 支持 revision、dirty_paths、显式 clear 与写后读回；旧调用兼容，合成双会话复现 #744。
 - [x] C-1：`projects.updateConfig` IPC 透传第三参数，让 #743 的 Core revision、dirty_paths、clear 保护到达项目设置页。
+- [x] C-3：从 G8.2-2 通过的 main 开独立版本分支，统一 Desktop、CLI、MCP 为 0.8.2，供 G8.2-3 生成无 tag 的 Windows 候选安装包；版本 PR 待 G8.2-4 合并。
