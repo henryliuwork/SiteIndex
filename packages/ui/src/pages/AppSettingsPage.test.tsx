@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import type { AppSettings } from "@siteindex/shared";
+import type { AppSettings, AppSettingsSnapshot } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 type CredentialState = "configured" | "not_configured" | "needs_reentry" | "unavailable";
@@ -37,14 +37,18 @@ afterEach(() => {
 async function renderSettings(options: { settings?: AppSettings; wordpress?: boolean; bridge?: CredentialBridgeInput | null } = {}) {
   const mockApi = createMockApi({ wordpressImageHostDemo: options.wordpress ?? false });
   const defaultSettings = await mockApi.settings.get();
-  let savedSettings = options.settings ?? defaultSettings;
+  let revision = 1;
+  let savedSettings: AppSettingsSnapshot = { ...(options.settings ?? defaultSettings), revision: String(revision) };
   vi.spyOn(mockApi.settings, "get").mockImplementation(async () => savedSettings);
-  const save = vi.spyOn(mockApi.settings, "set").mockImplementation(async (patch) => {
+  const save = vi.spyOn(mockApi.settings, "set").mockImplementation(async (patch, config) => {
+    if (config?.revision && config.revision !== String(revision))
+      throw { code: "CONFIG_INVALID", message: "配置已在别处更新，请刷新后重试。" };
     savedSettings = {
       ...savedSettings,
       ...patch,
       browser: { ...savedSettings.browser, ...patch.browser },
       notify: { ...savedSettings.notify, ...patch.notify },
+      revision: String(++revision),
     };
     return savedSettings;
   });
@@ -54,7 +58,7 @@ async function renderSettings(options: { settings?: AppSettings; wordpress?: boo
   vi.doMock("../api", () => ({
     api: mockApi,
     isMockApi: true,
-    apiErrorMessage: (_error: unknown, fallback: string) => fallback,
+    apiErrorMessage: (error: unknown, fallback: string) => typeof error === "object" && error !== null && "message" in error ? String(error.message) : fallback,
     apiErrorDetails: (error: unknown) => {
       if (typeof error !== "object" || error === null || typeof (error as { message?: unknown }).message !== "string") return null;
       const value = error as { message: string; code?: unknown };
@@ -73,10 +77,62 @@ async function renderSettings(options: { settings?: AppSettings; wordpress?: boo
       </ToastProvider>
     </QueryClientProvider>,
   );
-  return { mockApi, save, queryClient };
+  return { mockApi, save, queryClient, externalUpdate: (patch: Partial<AppSettings>) => {
+    savedSettings = { ...savedSettings, ...patch, notify: { ...savedSettings.notify, ...patch.notify }, revision: String(++revision) };
+  } };
 }
 
 describe("AppSettingsPage background options", () => {
+  it("keeps another session's notification change and retries only the edited field after refresh", async () => {
+    const { mockApi, save, externalUpdate } = await renderSettings();
+    fireEvent.click(await screen.findByRole("tab", { name: "通知" }));
+    externalUpdate({ notify: { on_success: true } as AppSettings["notify"] });
+    fireEvent.click(screen.getByRole("checkbox", { name: "失败时" }));
+
+    await screen.findByText("配置已在别处更新");
+    expect(save).toHaveBeenLastCalledWith({ notify: { on_failure: false } }, {
+      revision: "1", dirty_paths: ["notify.on_failure"], clear: [],
+    });
+    expect((await mockApi.settings.get()).notify).toMatchObject({ on_success: true, on_failure: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "刷新设置" }));
+    await waitFor(() => expect(screen.queryByText("配置已在别处更新")).toBeNull());
+    fireEvent.click(screen.getByRole("checkbox", { name: "失败时" }));
+    await waitFor(async () => expect((await mockApi.settings.get()).notify).toMatchObject({ on_success: true, on_failure: false }));
+    expect(save).toHaveBeenLastCalledWith({ notify: { on_failure: false } }, {
+      revision: "2", dirty_paths: ["notify.on_failure"], clear: [],
+    });
+  });
+
+  it("skips unchanged inputs and marks an intentional cleared webhook", async () => {
+    const { save } = await renderSettings();
+    fireEvent.blur(await screen.findByLabelText("本机设备名"));
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "通知" }));
+    const webhook = screen.getByLabelText("钉钉机器人 Webhook");
+    fireEvent.change(webhook, { target: { value: "synthetic-hook" } });
+    fireEvent.blur(webhook);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    fireEvent.change(webhook, { target: { value: "" } });
+    fireEvent.blur(webhook);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save).toHaveBeenLastCalledWith({ notify: { dingtalk_webhook: null } }, {
+      revision: "2", dirty_paths: ["notify.dingtalk_webhook"], clear: ["notify.dingtalk_webhook"],
+    });
+  });
+
+  it("keeps another unsaved field in the draft after a checkbox save", async () => {
+    const { mockApi } = await renderSettings();
+    fireEvent.click(await screen.findByRole("tab", { name: "通知" }));
+    const webhook = screen.getByLabelText("钉钉机器人 Webhook") as HTMLInputElement;
+    fireEvent.change(webhook, { target: { value: "synthetic-pending-hook" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "成功时" }));
+    await waitFor(async () => expect((await mockApi.settings.get()).notify.on_success).toBe(true));
+    expect(webhook.value).toBe("synthetic-pending-hook");
+    fireEvent.blur(webhook);
+    await waitFor(async () => expect((await mockApi.settings.get()).notify.dingtalk_webhook).toBe("synthetic-pending-hook"));
+  });
+
   it("keeps untouched browser and notification fields when a nested patch is saved", async () => {
     const { mockApi, save } = await renderSettings();
     const before = await mockApi.settings.get();
@@ -111,9 +167,9 @@ describe("AppSettingsPage background options", () => {
     expect(screen.queryByText("该功能将在后续版本提供。")).toBeNull();
 
     fireEvent.click(closeToTray);
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ close_to_tray: false }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ close_to_tray: false }, expect.objectContaining({ dirty_paths: ["close_to_tray"] })));
     fireEvent.click(launchAtLogin);
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ launch_at_login: true }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ launch_at_login: true }, expect.objectContaining({ dirty_paths: ["launch_at_login"] })));
   });
 
   it("hides background options when the optional settings are not supplied", async () => {

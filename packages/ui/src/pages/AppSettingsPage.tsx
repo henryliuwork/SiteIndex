@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import type { AppSettings, SkillPlatform } from "@siteindex/shared";
+import type { AppSettings, AppSettingsSnapshot, SettingsPatch, SkillPlatform } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { ApiErrorNotice, Button, Card, Chip, InfoTooltip, Input, InputWithAction, Notice, PageFrame, PageHeader, TabPanel, Tabs, useToast } from "../components";
 import { displayVersion, updateStatusLabel, useAnyRunningJob, useUpdatesController } from "../updates";
@@ -18,11 +18,27 @@ const settingsTabs = [
 ] as const;
 type SettingsTab = (typeof settingsTabs)[number]["value"];
 
+function changedSettings(patch: SettingsPatch, baseline: AppSettingsSnapshot) {
+  const changes: { path: string; value: unknown }[] = [];
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === "revision") continue;
+    if ((key === "notify" || key === "browser") && value) {
+      for (const [field, entry] of Object.entries(value)) changes.push({ path: `${key}.${field}`, value: entry });
+    } else changes.push({ path: key, value });
+  }
+  return changes.filter(({ path, value }) => {
+    const [key, field] = path.split(".");
+    const previous = field ? (baseline[key as "notify" | "browser"] as unknown as Record<string, unknown>)[field]
+      : baseline[key as keyof AppSettings];
+    return JSON.stringify(previous) !== JSON.stringify(value);
+  });
+}
+
 export function AppSettingsPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [activeTab, setActiveTab] = useState<SettingsTab>("basic");
-  const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
+  const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get(), refetchOnWindowFocus: false });
   const browserQuery = useQuery({ queryKey: ["settings", "browser"], queryFn: () => api.settings.detectBrowser(), enabled: activeTab === "environment" });
   const cliQuery = useQuery({ queryKey: ["settings", "cli"], queryFn: () => api.settings.cliStatus(), enabled: activeTab === "environment" });
   const platformQuery = useQuery({ queryKey: ["app", "platform"], queryFn: () => api.app.platform() });
@@ -32,25 +48,56 @@ export function AppSettingsPage() {
   const runningJobsQuery = useAnyRunningJob(activeTab === "about" && updates.status?.state === "ready");
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveConflict, setSaveConflict] = useState(false);
   const [testingBrowser, setTestingBrowser] = useState(false);
   const [installingCli, setInstallingCli] = useState(false);
   const [sendingTestNotification, setSendingTestNotification] = useState(false);
   const [openingLogs, setOpeningLogs] = useState(false);
 
   useEffect(() => {
-    if (settingsQuery.data) setDraft(settingsQuery.data);
+    const loaded = settingsQuery.data;
+    if (loaded) setDraft((current) => current ?? loaded);
   }, [settingsQuery.data]);
 
-  const saveSettings = async (patch: Partial<AppSettings>, message = "已保存") => {
-    if (saving) return;
+  const saveSettings = async (patch: SettingsPatch, message: string | null = "已保存") => {
+    const baseline = settingsQuery.data;
+    if (saving || !baseline) return false;
+    const changes = changedSettings(patch, baseline);
+    if (!changes.length) return true;
+    const dirtyPatch: Record<string, unknown> = {};
+    for (const { path, value } of changes) {
+      const [key, field] = path.split(".");
+      if (field) dirtyPatch[key!] = { ...(dirtyPatch[key!] as object | undefined), [field]: value };
+      else dirtyPatch[key!] = value;
+    }
     setSaving(true);
     try {
-      const saved = await api.settings.set(patch);
+      const saved = await api.settings.set(dirtyPatch as SettingsPatch, {
+        revision: baseline.revision,
+        dirty_paths: changes.map(({ path }) => path),
+        clear: changes.filter(({ value }) => value === null || value === "" || Array.isArray(value) && value.length === 0).map(({ path }) => path),
+      });
       queryClient.setQueryData(["settings"], saved);
-      setDraft(saved);
-      toast.success(message);
+      setDraft((current) => {
+        if (!current) return saved;
+        const submitted = new Set(changes.map(({ path }) => path));
+        const pending = changedSettings(current as SettingsPatch, baseline).filter(({ path }) => !submitted.has(path));
+        const next: AppSettings = { ...saved, browser: { ...saved.browser }, notify: { ...saved.notify } };
+        for (const { path, value } of pending) {
+          const [key, field] = path.split(".");
+          if (field) (next[key as "browser" | "notify"] as unknown as Record<string, unknown>)[field] = value;
+          else (next as unknown as Record<string, unknown>)[key!] = value;
+        }
+        return next;
+      });
+      setSaveConflict(false);
+      if (message) toast.success(message);
+      return true;
     } catch (error) {
-      toast.error("保存失败：" + apiErrorMessage(error, "请稍后重试"));
+      const reason = apiErrorMessage(error, "请稍后重试");
+      if (reason.includes("配置已在别处更新")) setSaveConflict(true);
+      toast.error("保存失败：" + reason);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -58,13 +105,12 @@ export function AppSettingsPage() {
 
   const saveNotify = <K extends keyof AppSettings["notify"],>(key: K, value: AppSettings["notify"][K]) => {
     if (!draft) return;
-    const notify = { ...draft.notify, [key]: value };
-    setDraft({ ...draft, notify });
-    void saveSettings({ notify });
+    setDraft({ ...draft, notify: { ...draft.notify, [key]: value } });
+    void saveSettings({ notify: { [key]: value } });
   };
 
   const saveBrowserPath = () => {
-    if (draft) void saveSettings({ browser: draft.browser });
+    if (draft) void saveSettings({ browser: { channel: draft.browser.channel, executable_path: draft.browser.executable_path } });
   };
 
   const chooseProjectsRoot = async () => {
@@ -81,9 +127,7 @@ export function AppSettingsPage() {
     if (!draft || testingBrowser) return;
     setTestingBrowser(true);
     try {
-      const saved = await api.settings.set({ browser: draft.browser });
-      queryClient.setQueryData(["settings"], saved);
-      setDraft(saved);
+      if (!await saveSettings({ browser: { channel: draft.browser.channel, executable_path: draft.browser.executable_path } }, null)) return;
       const result = await browserQuery.refetch();
       result.data?.available
         ? toast.success(`检测到 ${result.data.name ?? "可用浏览器"}`)
@@ -173,6 +217,7 @@ export function AppSettingsPage() {
     <PageFrame kind="global" scroll="content" header={<PageHeader title="设置" meta={<InfoTooltip label="设置文件位置" content={<><code>{settingsPath}</code>，只对本机生效。</>} />} />}>
     <div className="si-page si-app-settings-page">
       <Tabs value={activeTab} options={settingsTabs} onChange={setActiveTab} ariaLabel="软件设置分区" tabIdPrefix="app-settings-tab" panelIdPrefix="app-settings-panel" />
+      {saveConflict && <Notice tone="warn" title="配置已在别处更新" action={<Button onClick={() => void settingsQuery.refetch().then((result) => { if (result.data) { setDraft(result.data); setSaveConflict(false); } })}>刷新设置</Button>}>当前草稿未覆盖其他窗口的修改。刷新后可重新编辑。</Notice>}
       {platformQuery.isError && <ApiErrorNotice label="系统平台信息读取失败。" error={platformQuery.error} onRetry={() => void platformQuery.refetch()} />}
 
       <TabPanel className="si-app-settings-panel" id={`app-settings-panel-${activeTab}`} labelledBy={`app-settings-tab-${activeTab}`}>
@@ -262,13 +307,13 @@ export function AppSettingsPage() {
             <label><input type="checkbox" checked={draft.notify.on_failure} onChange={(event) => saveNotify("on_failure", event.target.checked)} />失败时</label>
             <label><input type="checkbox" checked={draft.notify.on_success} onChange={(event) => saveNotify("on_success", event.target.checked)} />成功时</label>
             <label><input type="checkbox" checked={draft.notify.oos_threshold !== null} onChange={(event) => saveNotify("oos_threshold", event.target.checked ? 0.12 : null)} />新缺货达到阈值时</label>
-            {draft.notify.oos_threshold !== null && <label className="si-threshold-field">阈值 <input aria-label="新缺货阈值百分比" type="number" min="0" max="100" step="1" value={Math.round(draft.notify.oos_threshold * 100)} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, oos_threshold: Number(event.target.value) / 100 } })} onBlur={() => void saveSettings({ notify: draft.notify })} />%</label>}
+            {draft.notify.oos_threshold !== null && <label className="si-threshold-field">阈值 <input aria-label="新缺货阈值百分比" type="number" min="0" max="100" step="1" value={Math.round(draft.notify.oos_threshold * 100)} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, oos_threshold: Number(event.target.value) / 100 } })} onBlur={() => void saveSettings({ notify: { oos_threshold: draft.notify.oos_threshold } })} />%</label>}
           </div>
           <span />
         </div>
         <div className="si-app-setting-row">
           <label htmlFor="si-dingtalk-webhook">钉钉机器人 Webhook</label>
-          <input id="si-dingtalk-webhook" className="si-setting-input si-setting-mono" type="password" autoComplete="new-password" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…" value={draft.notify.dingtalk_webhook ?? ""} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, dingtalk_webhook: event.target.value || null } })} onBlur={() => void saveSettings({ notify: draft.notify })} />
+          <input id="si-dingtalk-webhook" className="si-setting-input si-setting-mono" type="password" autoComplete="new-password" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…" value={draft.notify.dingtalk_webhook ?? ""} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, dingtalk_webhook: event.target.value || null } })} onBlur={() => void saveSettings({ notify: { dingtalk_webhook: draft.notify.dingtalk_webhook } })} />
           {api.settings.sendTestNotification && <Button disabled={sendingTestNotification} onClick={() => void sendTestNotification()}>{sendingTestNotification ? "发送中…" : "发送测试"}</Button>}
         </div>
       </Card>}
