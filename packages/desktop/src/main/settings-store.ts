@@ -44,6 +44,7 @@ function normalizeSettings(value: unknown, defaults: AppSettings): AppSettings {
   const notify = isRecord(value.notify) ? value.notify : {};
 
   return {
+    ...value,
     device_id: typeof value.device_id === "string" && value.device_id ? value.device_id : defaults.device_id,
     device_name: typeof value.device_name === "string" ? value.device_name : defaults.device_name,
     projects_root: typeof value.projects_root === "string" ? value.projects_root : defaults.projects_root,
@@ -57,6 +58,7 @@ function normalizeSettings(value: unknown, defaults: AppSettings): AppSettings {
     launch_at_login: typeof value.launch_at_login === "boolean" ? value.launch_at_login : defaults.launch_at_login,
     cache_dir: typeof value.cache_dir === "string" && value.cache_dir ? value.cache_dir : defaults.cache_dir,
     browser: {
+      ...browser,
       channel:
         browser.channel === "chrome" || browser.channel === "custom" ? browser.channel : defaults.browser.channel,
       executable_path:
@@ -65,6 +67,7 @@ function normalizeSettings(value: unknown, defaults: AppSettings): AppSettings {
           : defaults.browser.executable_path,
     },
     notify: {
+      ...notify,
       on_failure: typeof notify.on_failure === "boolean" ? notify.on_failure : defaults.notify.on_failure,
       on_success: typeof notify.on_success === "boolean" ? notify.on_success : defaults.notify.on_success,
       oos_threshold:
@@ -270,14 +273,21 @@ export function createSettingsStore(settingsDirectory: string, deviceName = host
     async set(patch) {
       validatePatch(patch);
       return serializeByFile(filePath, async () => {
-        const { settings: current } = await readSettings();
+        const { settings: current, needsRepair } = await readSettings();
         const next = {
           ...current,
           ...patch,
           browser: patch.browser ? { ...current.browser, ...patch.browser } : current.browser,
           notify: patch.notify ? { ...current.notify, ...patch.notify } : current.notify,
         };
+        if (!needsRepair && sameJsonValue(current, next)) return current;
         await writeAtomically(filePath, next);
+        try {
+          const persisted = JSON.parse(await readFile(filePath, "utf8")) as unknown;
+          if (!sameJsonValue(persisted, next)) throw new Error("saved settings differ from submitted settings");
+        } catch {
+          throw { code: "WRITE_FAILED", message: "软件设置保存后读回失败。" };
+        }
         return next;
       });
     },
