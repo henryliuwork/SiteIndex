@@ -28,7 +28,7 @@
 | 待办 | 可选 `api.todos.list(id)` 返回 `items` 与扫描质量；`finding` 有标题、首次/最近发现，`state.status` 有处理状态。 | 未完成数、最近 3 条可从可信扫描结果计算。**没有 due/deadline 字段，不能计算“本周到期数”**；按 lead 决定，该数字显示“—”并说明尚无到期数据，不新增抓取或契约字段。当前 `ProjectTodosPage` 也没有 `dedupe_key` 深链定位，D-1 可补路由交互。 |
 | 产品管理 | `api.inventory.summary(id).product_management` 给 `online_rate`、`changed_rows`、`out_of_stock_7d_rows`、`fluctuating_30d_rows` 和业务日 `as_of`。 | 四个数字可直接使用；无业务日时 `null` 应显示“—”而非 0。点击可复用产品页 `summary_metric` 查询参数。 |
 | SEO | `api.seo.summary(id)` 的 `issues` KPI 是开放**问题条数**；可选 `api.seo.listPageRows(id, …).summary` 给 `new_pages`、`unindexed_pages`，是去重**页面数**。 | 三项均有来源，但“本次新增”必须标“问题页”才与 `new_pages` 一致；若要“新增问题条数”，现有摘要不直接提供，需另定口径。深链 `summary=new/unindexed` 可复用。旧 bridge 无 `listPageRows` 时独立空态。 |
-| 内容 | `api.content.summary(id)` 的 `blogs` KPI 为文章总数；`api.content.listBlog(id, …)` 返回带 `published_at` 的文章；项目配置有核心关键词，摘要有 `uncovered_core_keywords`。 | “最近新增篇数”可按文章发布日期计算，但**“最近”时间窗尚未定义**；lead 已向用户征询，答案前该数字显示待定义占位，不推断时间窗。关键词覆盖率仅在核心关键词已配置时由总数减未映射数得出；无配置显示空态。 |
+| 内容 | `api.content.summary(id)` 的 `blogs` KPI 为文章总数；`api.content.listBlog(id, …)` 返回带 `published_at` 的文章；项目配置有核心关键词，摘要有 `uncovered_core_keywords`。 | 用户已定口径：按 `published_at` 统计**近 7 天新增**，无发布日期不计，界面写明“近 7 天新增”。关键词覆盖率仅在核心关键词已配置时由总数减未映射数得出；无配置显示空态。 |
 | 网站主色 | `api.design.get(id).tokens?.color` 给 `primary`、可选 `secondary`、`text`。 | 三色有源，值可为 `null`；无设计规范时独立空态。点击复制使用现有 `api.shell.copyText`。 |
 | 最近抓取任务记录 | `api.jobs.history(id, 5)` 的 `RunLog` 给任务名、状态、开始/结束时间、步骤与错误；耗时可由两时间差得出，未结束则不造时长。 | 列表可实现。`RunsPage` 当前只有 `<details>` 展开历史，没有按 `run_id` 定位的深链；D-1 可补页面内定位。项目头已有最近运行时间，模块只显示记录自身时间。 |
 
