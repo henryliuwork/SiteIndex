@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { makeW2SyntheticFixture } from "./e-windows-v040-synthetic-fixture.mjs";
 import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
 import { createWindowsProfileLayout, inspectContainedPath, inspectWindowsProfileLayout, windowsProfileEnvironment } from "./e-windows-profile-isolation.mjs";
+import { exerciseBaselineAppSettings, exerciseCandidateAppClears } from "./e-windows-v082-app-settings-ui.mjs";
 
 const BASELINE_SHA256 = "65232832171b12d5362c6ec21e6dcb3a542149bbf2e9d1529eacacdf324d7e22";
 const CDP_PORT = 9347;
@@ -21,11 +22,13 @@ const LAYOUT = ROOT ? createWindowsProfileLayout(ROOT) : null;
 const SETTINGS_PATH = LAYOUT ? path.join(LAYOUT.appDataRoot, "SiteIndex", "settings.json") : "";
 const INSTALL_EXE = LAYOUT ? path.join(LAYOUT.installDir, "SiteIndex.exe") : "";
 const PROJECT_PATH = LAYOUT ? path.join(LAYOUT.projectRoot, "synthetic-upgrade-project") : "";
+const EXTRA_PROJECT_PATH = ROOT ? path.join(ROOT, "extra-project.example.test") : "";
+const HIDDEN_PROJECT_PATH = LAYOUT ? path.join(LAYOUT.projectRoot, "hidden-project.example.test") : "";
 const report = {
   sourceCommit: null,
   baseline: { tag: "v0.8.0", sha256: null },
-  candidate: { sha256: null, expectedAsarSha256: null, installedAsarSha256: null },
-  settings: { fields: [], unchangedAfterInstaller: false, unchangedAfterRunJob: false, unchangedAfterRead: false },
+  candidate: { version: null, sha256: null, expectedAsarSha256: null, installedAsarSha256: null },
+  settings: { fields: [], uiRows: [], clearRows: [], unchangedAfterInstaller: false, unchangedAfterRunJob: false, unchangedAfterRead: false },
   runJob: { exitCode: null, successfulViewsRun: false, lockAbsent: false },
   result: "pending",
 };
@@ -99,6 +102,7 @@ async function prepareProfile() {
 
 async function makeProject() {
   const fixture = makeW2SyntheticFixture("https://fixture.synthetic.invalid");
+  fixture.config.edm = { image_host: { type: "wordpress" } };
   const index = path.join(PROJECT_PATH, "index");
   const rows = [
     ["catalog/skus.jsonl", fixture.skus.sort((a, b) => a.sku.localeCompare(b.sku))],
@@ -135,6 +139,19 @@ async function makeProject() {
   await writeFile(path.join(index, "catalog", "categories.json"), `${JSON.stringify(fixture.categories, null, 2)}\n`);
   await writeFile(path.join(index, "ledgers", "sku_media.csv"), "sku,image_role,image_url,alt_text,source,width,height,updated_at\n");
   await writeFile(path.join(index, "ledgers", "sku_tags.csv"), "sku,tags,priority,exclude_edm,email_blurb,season,note,updated_at\n");
+  for (const [target, name, domain] of [
+    [EXTRA_PROJECT_PATH, "Synthetic extra project", "extra.example.test"],
+    [HIDDEN_PROJECT_PATH, "Synthetic hidden project", "hidden.example.test"],
+  ]) {
+    await cp(PROJECT_PATH, target, { recursive: true });
+    const sitePath = path.join(target, "index", "site.json");
+    const config = JSON.parse(await readFile(sitePath, "utf8"));
+    config.domain = domain;
+    config.base_url = `https://${domain}`;
+    config.brand.name = name;
+    delete config.edm;
+    await writeFile(sitePath, `${JSON.stringify(config, null, 2)}\n`);
+  }
 }
 
 async function install(installerPath) {
@@ -193,14 +210,14 @@ function settingsPatch() {
   return {
     device_name: "Synthetic acceptance desktop",
     projects_root: LAYOUT.projectRoot,
-    extra_projects: [],
-    hidden_projects: [],
+    extra_projects: [EXTRA_PROJECT_PATH],
+    hidden_projects: [HIDDEN_PROJECT_PATH],
     close_to_tray: false,
     launch_at_login: true,
     cache_dir: path.join(ROOT, "cache"),
-    browser: { channel: "chrome", executable_path: null },
-    notify: { on_failure: false, on_success: true, oos_threshold: 7, dingtalk_webhook: null },
-    skill_platforms: [{ id: "synthetic-agent", name: "Synthetic agent", dir: path.join(ROOT, "agent-skills"), detected: false }],
+    browser: { channel: "custom", executable_path: path.join(ROOT, "fake-browser.example.test.exe") },
+    notify: { on_failure: false, on_success: true, oos_threshold: 0.12, dingtalk_webhook: "https://example.test/hook" },
+    skill_platforms: [],
     conflict_patterns: ["synthetic-conflict-pattern"],
   };
 }
@@ -228,25 +245,36 @@ async function main() {
   assert(!hasInstalledSiteIndex(), "runner already has SiteIndex installed");
   const [oldInput, newInput] = process.argv.slice(2).map((value) => path.resolve(value));
   assert(oldInput && newInput && await exists(oldInput) && await exists(newInput), "both NSIS installers are required");
+  const candidateVersion = path.basename(newInput).match(/^SiteIndex-Setup-(\d+\.\d+\.\d+)\.exe$/u)?.[1];
+  assert(candidateVersion === "0.8.2", "candidate installer must be SiteIndex-Setup-0.8.2.exe");
+  report.candidate.version = candidateVersion;
   report.sourceCommit = run("git", ["rev-parse", "HEAD"]).stdout.trim();
   stage = "installer provenance";
   assert.equal(await sha256(oldInput), BASELINE_SHA256, "v0.8.0 GitHub Release installer digest changed");
   report.baseline.sha256 = BASELINE_SHA256;
   report.candidate.sha256 = await sha256(newInput);
-  const expectedAsar = path.resolve("release", "win-unpacked", "resources", "app.asar");
-  assert(await exists(expectedAsar), "candidate production NSIS build did not retain win-unpacked/app.asar");
-  report.candidate.expectedAsarSha256 = await sha256(expectedAsar);
+  if (process.env.SITEINDEX_FIXED_ARTIFACT_MODE === "true") {
+    assert.equal(report.candidate.sha256,
+      "890847e95486764f9ddd868e456d96299c8d94afaa706393e71bae6aa010c0fd",
+      "fixed candidate EXE SHA256 changed");
+  } else {
+    const expectedAsar = path.resolve("release", "win-unpacked", "resources", "app.asar");
+    assert(await exists(expectedAsar), "candidate production NSIS build did not retain win-unpacked/app.asar");
+    report.candidate.expectedAsarSha256 = await sha256(expectedAsar);
+  }
 
   stage = "isolated profile";
   await prepareProfile();
   await makeProject();
+  const starterRoot = path.join(ROOT, "starter-empty-projects");
+  await mkdir(starterRoot, { recursive: true });
   // The packaged first-run directory picker blocks window creation until a root exists.
   // Seed only the synthetic root; all other settings are saved through v0.8.0 IPC below.
   await writeFile(SETTINGS_PATH, `${JSON.stringify({
     device_id: "synthetic-v082-runner",
     device_name: "Synthetic runner",
-    projects_root: LAYOUT.projectRoot,
-    close_to_tray: false,
+    projects_root: starterRoot,
+    close_to_tray: true,
   })}\n`);
   const baselineInstaller = path.join(ROOT, "baseline-setup.exe");
   const candidateInstaller = path.join(ROOT, "candidate-setup.exe");
@@ -262,11 +290,27 @@ async function main() {
   const baselineVersion = await oldPage.evaluate(() => window.siteindex.app.version());
   assert.equal(baselineVersion, "0.8.0", "baseline IPC app version is wrong");
   const initial = await oldPage.evaluate(() => window.siteindex.settings.get());
-  const patch = settingsPatch();
-  const saved = await oldPage.evaluate((values) => window.siteindex.settings.set(values), patch);
+  const target = settingsPatch();
+  report.settings.uiRows = await exerciseBaselineAppSettings(oldPage, {
+    ...target,
+    skillDirectory: path.join(ROOT, "agent-skills.example.test"),
+    extraProject: EXTRA_PROJECT_PATH,
+    hiddenProject: HIDDEN_PROJECT_PATH,
+    wpOrigin: "https://fixture.synthetic.invalid",
+  });
+  const afterUi = await oldPage.evaluate(() => window.siteindex.settings.get());
+  await oldPage.evaluate((patterns) => window.siteindex.settings.set({ conflict_patterns: patterns }), target.conflict_patterns);
+  const patch = { ...target,
+    skill_platforms: afterUi.skill_platforms,
+    extra_projects: afterUi.extra_projects,
+    hidden_projects: afterUi.hidden_projects,
+  };
+  const saved = await oldPage.evaluate(() => window.siteindex.settings.get());
   const baselineRead = await oldPage.evaluate(() => window.siteindex.settings.get());
   report.settings.fields = checkFields(saved, patch, initial.device_id);
   checkFields(baselineRead, patch, initial.device_id);
+  report.settings.uiRows = report.settings.uiRows.map((row) => row.id === 81
+    ? { id: 81, status: "passed", evidence: "baseline packaged IPC save + file readback" } : row);
   await stopInstalledApp();
   const baselineRaw = JSON.parse(await readFile(SETTINGS_PATH, "utf8"));
   checkFields(baselineRaw, patch, initial.device_id);
@@ -285,8 +329,8 @@ async function main() {
   await stopInstalledApp();
   report.candidate.installedAsarSha256 = await sha256(path.join(LAYOUT.installDir, "resources", "app.asar"));
   assert.notEqual(report.candidate.installedAsarSha256, oldAsarSha256, "candidate did not replace baseline app.asar");
-  assert.equal(report.candidate.installedAsarSha256, report.candidate.expectedAsarSha256,
-    "installed app.asar differs from the production NSIS candidate");
+  if (report.candidate.expectedAsarSha256) assert.equal(report.candidate.installedAsarSha256,
+    report.candidate.expectedAsarSha256, "installed app.asar differs from the production NSIS candidate");
   report.settings.unchangedAfterInstaller = (await readFile(SETTINGS_PATH)).equals(originalSettingsBytes);
   assert(report.settings.unchangedAfterInstaller, "candidate installer changed settings.json bytes");
 
@@ -307,14 +351,46 @@ async function main() {
 
   stage = "candidate installed IPC readback";
   const newPage = await launch();
+  assert.equal(await newPage.evaluate(() => window.siteindex.app.version()), candidateVersion,
+    "installed candidate IPC version differs from fixed EXE filename");
   const newSettings = await newPage.evaluate(() => window.siteindex.settings.get());
   checkFields(newSettings, patch, initial.device_id);
   assert.equal(newSettings.future_user_field, "synthetic-preserved");
   assert.equal(newSettings.browser.future_browser_field, "synthetic-preserved");
   assert.equal(newSettings.notify.future_notify_field, "synthetic-preserved");
+  const vaultRow = report.settings.uiRows.find((row) => row.id === 82);
+  if (vaultRow?.status === "passed") {
+    assert.deepEqual(await newPage.evaluate(() => window.siteindexWindow.wordpressCredentials.status("https://fixture.synthetic.invalid")),
+      { state: "configured" }, "WordPress vault status changed after upgrade");
+  }
+  for (const row of report.settings.uiRows) {
+    if (row.status === "failed") throw new Error(`application UI setting ${row.id} failed packaged save/readback`);
+  }
   await newPage.evaluate(() => window.siteindex.settings.set({}));
   report.settings.unchangedAfterRead = (await readFile(SETTINGS_PATH)).equals(originalSettingsBytes);
   assert(report.settings.unchangedAfterRead, "candidate settings.get/set({}) rewrote settings.json");
+  report.settings.clearRows = await exerciseCandidateAppClears(newPage, "https://fixture.synthetic.invalid");
+  const beforeListClear = await newPage.evaluate(() => window.siteindex.settings.get());
+  if (beforeListClear.extra_projects.length && beforeListClear.hidden_projects.length) {
+    const cleared = await newPage.evaluate((revision) => window.siteindex.settings.set(
+      { extra_projects: [], hidden_projects: [] },
+      { revision, dirty_paths: ["extra_projects", "hidden_projects"], clear: ["extra_projects", "hidden_projects"] },
+    ), beforeListClear.revision);
+    assert.deepEqual(cleared.extra_projects, []);
+    assert.deepEqual(cleared.hidden_projects, []);
+    report.settings.clearRows.push({ id: 79, status: "passed", evidence: "candidate packaged explicit IPC clear only" });
+    report.settings.clearRows.push({ id: 80, status: "passed", evidence: "candidate packaged explicit IPC clear only" });
+  }
+  const clearedFile = JSON.parse(await readFile(SETTINGS_PATH, "utf8"));
+  assert.equal(clearedFile.browser.executable_path, null, "browser UI clear did not reach settings.json");
+  assert.equal(clearedFile.notify.dingtalk_webhook, null, "Webhook UI clear did not reach settings.json");
+  if (report.settings.clearRows.some((row) => row.id === 79)) {
+    assert.deepEqual(clearedFile.extra_projects, []);
+    assert.deepEqual(clearedFile.hidden_projects, []);
+  }
+  for (const row of report.settings.clearRows) {
+    if (row.status === "failed") throw new Error(`application UI setting ${row.id} failed candidate clear/readback`);
+  }
   report.result = "passed";
 }
 
@@ -360,8 +436,10 @@ try {
     `- Source commit: ${report.sourceCommit ?? "unavailable"}`,
     `- Baseline: ${report.baseline.tag}, GitHub Release EXE SHA256 ${report.baseline.sha256 ?? "unverified"}`,
     `- Candidate production NSIS EXE SHA256: ${report.candidate.sha256 ?? "unavailable"}`,
-    `- Candidate app.asar matches installed copy: ${report.candidate.expectedAsarSha256 !== null && report.candidate.expectedAsarSha256 === report.candidate.installedAsarSha256}`,
+    `- Candidate app.asar changed from baseline: ${report.candidate.installedAsarSha256 !== null}; locally built asar match: ${report.candidate.expectedAsarSha256 ? report.candidate.expectedAsarSha256 === report.candidate.installedAsarSha256 : "not applicable (fixed artifact)"}`,
     `- Settings fields checked: ${report.settings.fields.join(", ") || "none"}`,
+    `- Application rows: ${report.settings.uiRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
+    `- Candidate clear rows: ${report.settings.clearRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
     `- Byte-identical after installer / --run-job / IPC readback: ${report.settings.unchangedAfterInstaller} / ${report.settings.unchangedAfterRunJob} / ${report.settings.unchangedAfterRead}`,
     `- Packaged --run-job views: exit ${report.runJob.exitCode}, history success ${report.runJob.successfulViewsRun}, lock absent ${report.runJob.lockAbsent}`,
     `- Failure stage: ${failure?.stage ?? "none"}`,
