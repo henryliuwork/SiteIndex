@@ -779,6 +779,13 @@ async function main(): Promise<void> {
           const frameCheck = checkFrameMetrics(route.name, route.path.startsWith("/p/") ? "project" : "global", Number(inspection.metrics.tableCount) > 0, frame, frameBaseline);
           frameStatus = frameCheck.status;
           failures.push(...frameCheck.findings);
+          if (route.path === "/") {
+            const title = await page.locator(".si-page-frame-header h1").boundingBox();
+            const header = await page.locator(".si-page-frame-header").boundingBox();
+            if (!title || !header || title.y + title.height > header.y + header.height + 1) {
+              failures.push({ rule: "project-center-title-overflow", message: "项目中心标题越过 56px 标题行。" });
+            }
+          }
           timeWarnings = inspection.timeWarnings;
           for (const warning of timeWarnings) allTimeWarnings.add(`${route.path} @ ${viewport.width}: ${warning}`);
 

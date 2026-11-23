@@ -1,8 +1,9 @@
 .si-page-frame .si-project-center { gap: var(--space-section-gap); }
 .si-page-frame:has(.si-project-center) .si-page-header-copy { display: flex; align-items: center; gap: var(--space-3); }
-.si-page-frame:has(.si-project-center) .si-page-header-meta { min-width: 0; }
-.si-page-frame:has(.si-project-center) .si-project-root-line { flex-wrap: nowrap; }
-.si-page-frame:has(.si-project-center) .si-project-root-line > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-page-frame:has(.si-project-center) .si-page-header-copy > h1 { flex: none; white-space: nowrap; }
+.si-page-frame:has(.si-project-center) .si-page-header-meta { flex: 1 1 auto; min-width: 0; }
+.si-page-frame:has(.si-project-center) .si-project-root-line { min-width: 0; flex-wrap: nowrap; }
+.si-page-frame:has(.si-project-center) .si-project-root-line > span { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .si-center-kpis {
 display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:var(--space-3);
