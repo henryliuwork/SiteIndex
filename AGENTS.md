@@ -3,7 +3,7 @@
 你是 SiteIndex 的并行工作流之一（A / B / C / D / E）。开始任何工作前：
 
 1. 读 `docs/WORKSTREAMS.md` §1，确认你是 **A（Core）/ B（UI 共享层）/ C（Desktop）/ D（UI 项目页面）/ E（真实项目验收）** 中的哪一个，以及你**只能修改的目录**
-2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；**当前执行计划 v0.8.0（页面外框、导航与表格规范统一）以 `docs/plan/2026-11-20-v080-ui-frame-spec-roadmap.md` 为准；v0.7.0 / v0.7.5 见 `docs/plan/2026-11-18-v070-v075-roadmap.md`，目标模式运行手册（lead、汇报、缺陷流程）见 `docs/plan/2026-11-18-v07-lead-playbook.md`**；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
+2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；**当前执行计划 v0.8.2（间距规范与检查、概览页模块化、产品管理页走查、设置数据保存可靠性）以 `docs/plan/2026-11-23-v082-spacing-overview-settings-roadmap.md` 为准；v0.8.0 外框规范见 `docs/plan/2026-11-20-v080-ui-frame-spec-roadmap.md`；v0.7.0 / v0.7.5 见 `docs/plan/2026-11-18-v070-v075-roadmap.md`，目标模式运行手册（lead、汇报、缺陷流程）见 `docs/plan/2026-11-18-v07-lead-playbook.md`**；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
@@ -35,10 +35,15 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 - **页面外框（v0.8.0）**：页面只有两种外框，由共享 `PageFrame` 提供，页面不得自设顶部距离、`calc(100vh - …)` 或负 margin。**全局页**（项目中心、Skill 中心、定时任务、设置、新建向导）：标题行高 56px，上内边距 24px，不吸顶。**项目页**：项目头紧贴标题栏、上内边距 0、吸顶，单行高 48px（左导航 Tab、右页头操作），内容起点距项目头 16px；项目名、平台、最近运行时间只在侧栏项目项（两行：`项目名` / `平台 | MM-DD HH:mm`），页头不再显示域名与状态 chip。
 - **滚动**：含表格的页面窗口与内容区都不滚动，只有表格体内部滚动；无表格的页面只有项目头下方内容区滚动；一个页面只允许一个纵向滚动容器。
 - **D9 例外**：仅 `project-settings-config`、`project-settings-categories`、`project-settings-files` 允许页面内容区（`.si-page-frame-body`）纵向滚动，内嵌表格仍在表内滚动；外层 `.si-content`、`document`（html/body）、页面横向滚动和其他断言不豁免。
-- **页头按钮**：高 32px、左右内边距 12px、按钮间距 12px、图标 16px；每页 ≤1 主 + ≤2 次 + “更多 ⋯”。
+- **页头按钮**：高 32px、左右内边距 12px、按钮间距 12px、图标 16px；一级显示 1 主 + ≤2 次（按 `DESIGN.md` §3 页面按钮表），其余进“更多 ⋯”；只在实测宽度不足时才收纳，1280×800 起必须完整显示主按钮与全部次要按钮。
 - **表格上方节奏**：SummaryLine / 已选筛选标签行 / 工具栏 / 表格四个区域之间统一 `--space-section-gap`（12px）；搜索框与筛选按钮高 32px、间距 8px，不得靠页面私有 margin 调整。
 - **表格列**：选择框 → 标识列 → 名称列 → 状态 → 度量 → 时间 → 右侧固定操作列；有 SKU 的表格 **SKU 单独成列居首并左侧固定**（等宽字体）；数字右对齐并用等宽数字。InfoTooltip 内长串必须折行，不得溢出气泡。完整规范与 `ui:check` 断言见 v0.8.0 roadmap §3。
-- **小样式问题**：只处理 v0.8.0 冻结审计清单内的可测量违例；清单冻结后新发现的一律进 backlog，不得追加。
+- **间距规范（v0.8.2）**：间距只用 4 的倍数 token；页面只用语义 token（`--gap-inline` 8、`--gap-group` 12、`--gap-block` 16、`--gap-page` 24、`--pad-control-x` 12、`--pad-chip-x/y` 12/4、`--pad-card` 16、`--gap-label-control` 4）。禁止裸 px 间距，组件内部对齐用 `gap` 不用 `margin`。控件高 32（紧凑 28）、左右内边距 12（紧凑 8）；相邻可交互控件间距 ≥ 8（页头按钮 12）；卡片之间 ≥ 16；**有边框、背景或指示线的元素，文字到边缘左右 ≥ 8、上下 ≥ 4**。完整矩阵与 `ui:check` 断言 S1–S10 见 v0.8.2 roadmap §3.1/§3.7；`spacing-baseline.json` 只减不增，迁移一页就删除该页条目。
+- **项目导航 Tab**：纯文字 + 底部指示线；指示线 2px 品牌色，贴项目头底边，宽 = 文字宽 + 24px，文字垂直居中，文字到指示线 ≥ 12px；页内 `Segmented` 不使用下划线。
+- **表头说明**：口径或时间窗不自明的列（如“持续”“30 天在线率”）用 `ColumnDef.meta.help` 在表头显示 `InfoTooltip`；价格、名称等自明列不加。整列无值的列默认隐藏。
+- **共享样式传播**：修改样式前先 grep 使用位置；会被多页使用的必须放进共享组件或 token，不得写进页面私有 CSS。PR 描述必须有“影响面”表（使用位置、是否同步、至少 3 个不同页面的前后截图）；禁止只改被反馈的那一页。
+- **设置保存可靠性（v0.8.2）**：保存成功必须以“写入后重新读取并比对一致”为准；UI 只提交被用户修改的字段，不得用空值（`""`、`[]`、`null`、缺失）覆盖已有非空值，清空必须显式（`clear`）；配置按字段深合并，禁止整块替换分区；保存携带 `revision`，文件已变化则拒绝并提示；不修改直接保存必须逐字节不变；升级、迁移与各任务不得改写用户字段；README 用户段缺标题时补出标题再写入，不得静默返回。多行输入框以原始文本为草稿，保存时才解析，关键词内部允许空格与回车换行。详见 v0.8.2 roadmap §5。
+- **小样式问题**：只处理当前版本冻结审计清单内的可测量违例（v0.8.2 见 `docs/plan/2026-11-23-v082-audit-freeze.md`）；清单冻结后新发现的一律进 backlog，不得追加。
 - 涉及 UI 的 PR 必须附 `pnpm ui:check` 输出；样式扫描中新违规会使检查失败，日期/时间重复启发式只给人工复核告警。
 - **板块页（SEO、内容、EDM、产品管理、概览）**：按 `docs/DESIGN.md` §3 的固定骨架组织；项目头之后最多一行可操作 `SummaryLine`，同一数字与时间不得重复，表格为首屏主体。SEO 的问题/页面/内链属于同一实体，应合并进页面表与行抽屉；其他页内分段仅用于不同实体，且无计数徽标。v0.7.5 迁移前先交合并矩阵，`ui:check` §3.5 指标必须达标。
 
