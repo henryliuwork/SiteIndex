@@ -41,7 +41,7 @@ export function SeoSingleFilter<T extends string>({
   return <SeoPopover
     open={open} onOpenChange={setOpen} className="si-seo-dropdown-content"
     trigger={<button type="button" className="si-seo-dropdown-trigger" aria-label={`${label}：${selected?.label ?? "全部"}`}>
-      <span>{label} · {selected?.label ?? "全部"}</span><ChevronDown size={14} aria-hidden="true" />
+      <span>{value === options[0]?.value ? label : label + " · " + (selected?.label ?? "全部")}</span><ChevronDown size={14} aria-hidden="true" />
     </button>}
   >
     <div className="si-seo-dropdown-options" role="group" aria-label={label}>
