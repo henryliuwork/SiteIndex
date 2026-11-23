@@ -28,7 +28,7 @@
 
 | 设置项 | 页面/控件 | API | 写入文件与键 → 读回 | 不变量与当前结论 | S/R/U |
 |---|---|---|---|---|---|
-| 以 JSON 编辑整个配置 | 项目设置·JSON 草稿 | P | `site.json` 全部键 → G 与原文件 | I1–I6：整对象替换可删除未知/用户字段；须分别验证提交、无操作保存、显式清空和逐键读回 | 待验/待验/待验 |
+| 以 JSON 编辑整个配置 | 项目设置·JSON 草稿 | P | `site.json` 全部键 → G 与原文件 | I1：E 的隔离 Core 全量提交→新实例读回一致、其他 16 个顶层分区未变；UI mock 仅同会话提交。I2–I6 与安装版仍待验 | 待验/待验/待验 |
 | 域名 | 基本·域名 | P | `site.json:domain` → G | I2/I4：R4 风险 | 待验/待验/待验 |
 | 网站地址 | 基本·网站地址 | P | `base_url` → G | I2/I4：R4 风险 | 待验/待验/待验 |
 | 平台 | 基本·平台 | P | `platform` → G | I4：R4 风险 | 待验/待验/待验 |
@@ -95,7 +95,7 @@
 | 错过后补跑 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.run_if_missed` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 |
 | 失败时通知 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.notify_on_failure` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 |
 | 同步后校验 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.validate_after_sync` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 |
-| 执行设备改为本机 | 运行·设备操作 | `runner.claim/get` | `index/.runner.json` → `runner.get` | I1/I6：独立于计划保存与系统任务登记；重启读回待验 | 待验/待验/待验 |
+| 执行设备改为本机 | 运行·设备操作 | `runner.claim/get` | `index/.runner.json` → `runner.get` | I1：E 的隔离 Desktop handler 写文件、新 handler/Core 实例读回本机设备一致；mock `runner.get` 固定返回 false 是 mock 证据限制。安装版重启与系统任务仍待验 | 待验/待验/待验 |
 | README 项目概况 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 项目概况` → `readme.get` | I7：#752 Core 合成回归通过，打包 UI 逐段读回待验 | 待验/待验/待验 |
 | README 当前重点 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 当前重点` → `readme.get` | R2 旧版缺陷；#752 Core 已补标题，缺段提示和打包 UI 待验 | 待验/待验/待验 |
 | README 工作规则 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 工作规则与偏好` → `readme.get` | R5 旧版缺陷；#752 Core 已保留自动区块，打包 UI 待验 | 待验/待验/待验 |
@@ -133,6 +133,8 @@ C 负责存储层与 IPC 的逐键 S/R/U 证据；B 负责 UI dirty 提交。下
 ### 横向不变量证据门槛
 
 上表的 I1–I8 编号只表示该行**适用**哪些不变量，不表示已通过。逐项结论仍须有对应 S/R/U 和最终安装版证据；当前门槛如下。
+
+E 对 JSON 编辑与执行设备的[隔离合成补证](https://github.com/henryliuwork/SiteIndex/pull/753#issuecomment-7096276776)只支持上表记录的 Core/Desktop handler 路径。它没有运行正式安装包，也没有验证 UI 退出重开、并发、显式清空或系统任务注册，因此 S/R/U 仍留待验。
 
 | 不变量 | 当前结果与证据缺口 |
 |---|---|
