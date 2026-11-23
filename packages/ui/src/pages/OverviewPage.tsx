@@ -1,23 +1,16 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, FolderOpen, RefreshCw } from "lucide-react";
+import { Clipboard, FileCheck2, FileText, FolderOpen, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { AttentionItem, OverviewData, SeoIssue } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, Notice, PageFrame, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Notice, PageFrame, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { ProductModule, SeoModule, TodoModule } from "./overview/core-modules";
+import { ContentModule, DesignModule, JobsModule } from "./overview/secondary-modules";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
 import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
-function severityTone(severity: AttentionItem["severity"]): "danger" | "warn" | "neutral" {
-  return severity === "high" ? "danger" : severity === "mid" ? "warn" : "neutral";
-}
-
-function severityLabel(severity: AttentionItem["severity"]): string {
-  return severity === "high" ? "高" : severity === "mid" ? "中" : "低";
-}
-
 function projectPath(path: string, file: string): string {
   return path.replace(/[\\/]+$/, "") + (path.includes("\\") ? "\\" : "/") + file;
 }
@@ -48,6 +41,11 @@ export function OverviewPage() {
   const listPageRows = api.seo.listPageRows;
   const seoCardsQuery = useQuery({ queryKey: ["seo", "pageRows", id, "overview-cards"],
     queryFn: () => listPageRows!(id, { page: 1, pageSize: 1, filters: {} }), enabled: Boolean(listPageRows) });
+  const contentSummaryQuery = useQuery({ queryKey: ["content", "summary", id], queryFn: () => api.content.summary(id) });
+  const blogQuery = useQuery({ queryKey: ["content", "blogs", id, "overview"],
+    queryFn: () => api.content.listBlog(id, { page: 1, pageSize: 0, filters: {} }) });
+  const designQuery = useQuery({ queryKey: ["design", id], queryFn: () => api.design.get(id) });
+  const jobsQuery = useQuery({ queryKey: ["job-history", id, "overview"], queryFn: () => api.jobs.history(id, 5) });
   const [running, setRunning] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
@@ -72,6 +70,10 @@ export function OverviewPage() {
         queryClient.invalidateQueries({ queryKey: ["inventory-summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "pageRows", id] }),
+        queryClient.invalidateQueries({ queryKey: ["content", "summary", id] }),
+        queryClient.invalidateQueries({ queryKey: ["content", "blogs", id] }),
+        queryClient.invalidateQueries({ queryKey: ["design", id] }),
+        queryClient.invalidateQueries({ queryKey: ["job-history", id] }),
         invalidateProjectSummary(queryClient, id),
       ]);
     });
@@ -131,10 +133,18 @@ export function OverviewPage() {
 
   const summary = project.summary;
   const feedlessCollectionConfigured = hasFeedlessProductCollection(project.config);
-  const attention = feedlessCollectionConfigured
+  const attention: AttentionItem[] | undefined = feedlessCollectionConfigured
     ? overview?.attention.filter((item) => item.text.toLowerCase() !== "尚未填写 gmc feed")
     : overview?.attention;
   const canIgnoreAttention = typeof api.seo.setRuleIgnored === "function";
+  const seoReminders = attention?.flatMap((item) => {
+    const rule = attentionSeoRule(item.link, item.text);
+    return rule ? [{ rule, text: labelAttentionText(item.text), to: attentionDestination(item.link, id) }] : [];
+  }).filter((item, index, all) => all.findIndex((candidate) => candidate.rule === item.rule) === index) ?? [];
+  const copyColor = async (hex: string) => {
+    try { await api.shell.copyText(hex); toast.success(`已复制 ${hex}。`); }
+    catch (cause) { toast.error(apiErrorMessage(cause, "复制颜色失败。")); }
+  };
   return <PageFrame kind="project" header={<ProjectHeader
       project={summary}
       activeTab="overview"
@@ -157,37 +167,21 @@ export function OverviewPage() {
     <div className="si-overview-modules" aria-label="项目概览模块">
       <TodoModule id={id} available={hasTodos} query={todosQuery} />
       <ProductModule id={id} query={productQuery} />
-      <SeoModule id={id} summaryQuery={seoSummaryQuery} pagesQuery={seoCardsQuery} hasPageRows={Boolean(listPageRows)} />
+      <SeoModule id={id} summaryQuery={seoSummaryQuery} pagesQuery={seoCardsQuery} hasPageRows={Boolean(listPageRows)}
+        reminders={seoReminders} onIgnore={canIgnoreAttention ? (rule) => void ignoreAttentionRule(rule) : undefined} />
+      <ContentModule id={id} summaryQuery={contentSummaryQuery} blogsQuery={blogQuery} coreKeywords={project.config.seo?.core_keywords} />
+      <DesignModule id={id} query={designQuery} onCopy={(hex) => void copyColor(hex)} />
+      <JobsModule id={id} query={jobsQuery} />
     </div>
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
-    <section className="si-overview-attention si-panel">
-      <div className="si-panel-heading"><h2>需要关注</h2><span>来自今日同步与数据检查</span></div>
-      {attention?.length ? <ul>
-        {attention.map((item, index) => {
-          const rule = attentionSeoRule(item.link, item.text);
-          return <li key={item.text + index}>
-            <Chip tone={severityTone(item.severity)}>{severityLabel(item.severity)}</Chip>
-            <span className="si-overview-attention-text">{labelAttentionText(item.text)}</span>
-            <div className="si-overview-attention-actions">
-              <a href={attentionDestination(item.link, id)} onClick={(event) => { event.preventDefault(); navigate(attentionDestination(item.link, id)); }}>{item.link_label}<ExternalLink size={12} aria-hidden="true" /></a>
-              {canIgnoreAttention && rule && <Button size="small" onClick={() => void ignoreAttentionRule(rule)}>忽略</Button>}
-            </div>
-          </li>;
-        })}
-      </ul> : <div className="si-empty-state"><Check size={16} />当前没有需要处理的事项。</div>}
-    </section>
-
-    <section className="si-overview-readme si-panel">
-      <div className="si-panel-heading"><h2>README · 项目概况</h2><a href={"#/p/" + id + "/readme"} onClick={(event) => { event.preventDefault(); navigate("/p/" + id + "/readme"); }}>编辑 README</a></div>
+    <details className="si-overview-readme si-panel">
+      <summary>README · 项目概况</summary>
+      <div className="si-overview-readme-body"><div className="si-panel-heading"><a href={"#/p/" + id + "/readme"} onClick={(event) => { event.preventDefault(); navigate("/p/" + id + "/readme"); }}>编辑 README</a></div>
       {overview.readme.overview.trim() ? <OverviewSummary markdown={overview.readme.overview} /> : <div className="si-empty-state si-overview-readme-empty">暂无 README 项目概况。</div>}
       {overview.readme.focus.trim() && <div className="si-overview-focus"><span>当前重点</span><p>{overview.readme.focus}</p></div>}
       {overview.agent_instruction && <details className="si-overview-instruction"><summary>Agent 接入指令</summary><pre>{overview.agent_instruction}</pre></details>}
-    </section>
-
-    <section className="si-overview-changelog si-panel">
-      <h2>变更记录</h2>
-      {overview.changelog.length ? <ul>{overview.changelog.map((entry, index) => <li key={entry.date + entry.text + index}><time dateTime={entry.date}>{entry.date.slice(5)}</time><span>{entry.text}</span></li>)}</ul> : <div className="si-empty-state"><AlertTriangle size={15} />暂无变更记录。</div>}
-    </section>
+      </div>
+    </details>
     </>}
     </div>
     </ProjectTabPanel>

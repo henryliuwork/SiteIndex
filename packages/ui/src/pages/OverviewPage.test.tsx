@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { AttentionItem, JobResult } from "@siteindex/shared";
 import { createMockApi } from "../mock";
+import { recentBlogCount } from "./overview/secondary-modules";
+import type { BlogPost } from "@siteindex/shared";
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class {
@@ -51,7 +53,7 @@ describe("OverviewPage 布局和操作", () => {
       ...overview.attention,
     ] }));
     await renderOverview(mockApi);
-    expect(await screen.findByRole("heading", { name: "需要关注" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "SEO" })).toBeTruthy();
     expect(screen.queryByText("无 Feed 自动采集已启用")).toBeNull();
     expect(screen.queryByText("尚未填写 GMC feed")).toBeNull();
     expect(screen.queryByText(/未配置商品来源|每日库存同步未启用/)).toBeNull();
@@ -74,9 +76,9 @@ describe("OverviewPage 布局和操作", () => {
 
     await waitFor(() => expect(screen.getByRole("region", { name: "产品管理" }).textContent).toContain("75%"));
     const modules = document.querySelectorAll(".si-overview-module");
-    expect([...modules].map((module) => module.getAttribute("aria-label"))).toEqual(["待办", "产品管理", "SEO"]);
-    await waitFor(() => expect(document.querySelectorAll(".si-overview-module-metric[href]")).toHaveLength(8));
-    const links = [...document.querySelectorAll<HTMLAnchorElement>(".si-overview-module-metric[href]")];
+    expect([...modules].map((module) => module.getAttribute("aria-label"))).toEqual(["待办", "产品管理", "SEO", "内容", "网站主色", "最近抓取任务记录"]);
+    await waitFor(() => expect(document.querySelectorAll(".si-overview-module-metric[href]").length).toBeGreaterThanOrEqual(8));
+    const links = [...document.querySelectorAll<HTMLAnchorElement>(".si-overview-module-metric[href]")].slice(0, 8);
     expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
       ["未完成3", "/p/demo/todos?status=active"],
       ["在线率75%", "/p/demo/products?summary_metric=in_stock"],
@@ -100,6 +102,69 @@ describe("OverviewPage 布局和操作", () => {
     expect(await screen.findByText("当前版本尚未提供 SEO 页面聚合。")).toBeTruthy();
     expect(screen.getByText("本次新增问题页").nextElementSibling?.textContent).toBe("—");
     expect(screen.getByRole("region", { name: "SEO" }).textContent).toContain("待处理问题");
+  });
+
+  it("内容卡只统计真实发表日期，核心词覆盖按项目配置计算", async () => {
+    const mockApi = createMockApi();
+    const project = await mockApi.projects.get("demo");
+    mockApi.projects.get = vi.fn(async () => ({ ...project, config: { ...project.config,
+      seo: { ...project.config.seo, core_keywords: ["demo guide", "demo category"] } } }));
+    const content = await mockApi.content.summary("demo");
+    mockApi.content.summary = vi.fn(async () => ({ ...content, uncovered_core_keywords: ["demo guide"] }));
+    const blogs = await mockApi.content.listBlog("demo", { page: 1, pageSize: 1, filters: {} });
+    mockApi.content.listBlog = vi.fn(async () => ({ rows: [
+      { ...blogs.rows[0]!, published_at: new Date().toLocaleDateString("en-CA") },
+      { ...blogs.rows[0]!, url: "https://demo.example.test/old", published_at: "2026-01-01" },
+    ], total: 2 }));
+    await renderOverview(mockApi);
+    await waitFor(() => expect(screen.getByRole("region", { name: "内容" }).textContent).toContain("核心词覆盖1/2"));
+    expect(screen.getByRole("region", { name: "内容" }).textContent).toContain("博客文章2");
+    expect(screen.getByRole("region", { name: "内容" }).textContent).toContain("近 7 天新增1");
+    expect(mockApi.content.listBlog).toHaveBeenCalledWith("demo", { page: 1, pageSize: 0, filters: {} });
+  });
+
+  it("网站主色可复制真实 HEX，最近失败任务可直达日志", async () => {
+    const mockApi = createMockApi();
+    mockApi.shell.copyText = vi.fn(async () => undefined);
+    mockApi.jobs.history = vi.fn(async () => [{ run_id: "demo-failed-run", job: "weekly" as const, status: "failed" as const,
+      started_at: "2026-11-20T08:00:00+08:00", finished_at: "2026-11-20T08:01:03+08:00" }]);
+    await renderOverview(mockApi);
+    const copy = await screen.findByRole("button", { name: /复制主色 #/ });
+    fireEvent.click(copy);
+    await waitFor(() => expect(mockApi.shell.copyText).toHaveBeenCalledWith(expect.stringMatching(/^#[0-9A-F]{6}$/)));
+    const job = screen.getByRole("region", { name: "最近抓取任务记录" });
+    expect(job.querySelector(".is-failed a")?.getAttribute("href")).toBe("/p/demo/runs?run=demo-failed-run");
+    expect(job.textContent).toContain("1 分 3 秒");
+    expect(mockApi.jobs.history).toHaveBeenCalledWith("demo", 5);
+  });
+
+  it("最近五条任务可展开查看，首屏只显示最新任务时间", async () => {
+    const mockApi = createMockApi();
+    mockApi.jobs.history = vi.fn(async () => Array.from({ length: 5 }, (_, index) => ({
+      run_id: `demo-run-${index}`, job: "daily" as const, status: "ok" as const,
+      started_at: `2026-11-${String(20 - index).padStart(2, "0")}T08:00:00+08:00`,
+      finished_at: `2026-11-${String(20 - index).padStart(2, "0")}T08:01:00+08:00`,
+    })));
+    await renderOverview(mockApi);
+    const jobs = await screen.findByRole("region", { name: "最近抓取任务记录" });
+    await waitFor(() => expect(jobs.querySelectorAll(".si-overview-jobs a")).toHaveLength(1));
+    const toggle = screen.getByRole("button", { name: "查看其余 4 条" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(jobs.querySelectorAll(".si-overview-jobs a")).toHaveLength(5);
+    expect(jobs.querySelectorAll(".si-overview-jobs time")).toHaveLength(5);
+  });
+
+  it("配色查询失败只影响配色卡，支持单卡重试", async () => {
+    const mockApi = createMockApi();
+    mockApi.design.get = vi.fn(async () => { throw new Error("演示设计数据暂不可用"); });
+    await renderOverview(mockApi);
+    expect(await screen.findByText("网站配色加载失败。")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "内容" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "最近抓取任务记录" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("region", { name: "网站主色" }).querySelector("button")!);
+    await waitFor(() => expect(mockApi.design.get).toHaveBeenCalledTimes(2));
   });
 
   it("待办加载失败不遮挡产品与 SEO，且可单独重试", async () => {
@@ -127,13 +192,15 @@ describe("OverviewPage 布局和操作", () => {
     expect(await screen.findByText("规则检查尚未完整完成，暂不能确认未完成数。")).toBeTruthy();
     expect(screen.getByText("尚无产品管理业务日数据，请先同步商品。")).toBeTruthy();
     expect(await screen.findByText("尚无 SEO 抓取数据，请先运行抓取。")).toBeTruthy();
-    expect(document.querySelectorAll(".si-overview-module-metric")).toHaveLength(0);
+    expect(screen.getByRole("region", { name: "产品管理" }).querySelectorAll(".si-overview-module-metric")).toHaveLength(0);
+    expect(screen.getByRole("region", { name: "SEO" }).querySelectorAll(".si-overview-module-metric")).toHaveLength(0);
   });
 
-  it("按三模块、关注、README 摘要、变更记录排列，并把快捷操作放进页面操作区", async () => {
+  it("按六模块与末尾 README 折叠卡排列，并把快捷操作放进页面操作区", async () => {
     await renderOverview(createMockApi());
 
-    expect(await screen.findByRole("heading", { name: "需要关注" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "最近抓取任务记录" })).toBeTruthy();
+    await screen.findByText("README · 项目概况");
     expect(await screen.findByRole("region", { name: "待办" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "快捷操作" })).toBeNull();
     expect(screen.getByRole("button", { name: "立即同步" })).toBeTruthy();
@@ -141,8 +208,13 @@ describe("OverviewPage 布局和操作", () => {
 
     const content = document.querySelector(".si-overview-content");
     expect([...content!.children].map((element) => element.classList[0] || element.tagName.toLowerCase())).toEqual([
-      "si-overview-modules", "si-overview-attention", "si-overview-readme", "si-overview-changelog",
+      "si-overview-modules", "si-overview-readme",
     ]);
+    expect(screen.queryByRole("heading", { name: "需要关注" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "变更记录" })).toBeNull();
+    expect(document.querySelector<HTMLDetailsElement>(".si-overview-readme")?.open).toBe(false);
+    fireEvent.click(screen.getByText("README · 项目概况"));
+    expect(document.querySelector<HTMLDetailsElement>(".si-overview-readme")?.open).toBe(true);
     expect(document.querySelector(".si-overview-content > .si-page-header")).toBeNull();
     expect(document.querySelector<HTMLDetailsElement>(".si-overview-instruction")?.open).toBe(false);
     expect(document.querySelector(".si-overview-instruction")?.textContent).toContain("Agent 接入指令");
@@ -162,14 +234,14 @@ describe("OverviewPage 布局和操作", () => {
     }));
     await renderOverview(mockApi);
 
-    expect(await screen.findByRole("heading", { name: "需要关注" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "SEO" })).toBeTruthy();
     expect(document.querySelector(".si-page-frame-project .si-project-header")).toBeTruthy();
     expect(document.querySelector(".si-project-header-sync")).toBeNull();
     expect(screen.queryByText("同步成功")).toBeNull();
     expect(screen.queryByText(/今天/)).toBeNull();
   });
 
-  it("关注、README 与变更记录没有内容时都显示紧凑空状态", async () => {
+  it("README 与任务记录没有内容时显示紧凑空状态", async () => {
     const mockApi = createMockApi();
     const overview = await mockApi.overview.get("demo");
     mockApi.overview.get = vi.fn(async () => ({
@@ -178,11 +250,12 @@ describe("OverviewPage 布局和操作", () => {
       readme: { ...overview.readme, overview: "", focus: "" },
       changelog: [],
     }));
+    mockApi.jobs.history = vi.fn(async () => []);
     await renderOverview(mockApi);
 
-    expect(await screen.findByText("当前没有需要处理的事项。")).toBeTruthy();
+    expect(await screen.findByText("暂无运行记录，可在运行页启动任务。")).toBeTruthy();
     expect(screen.getByText("暂无 README 项目概况。").classList.contains("si-overview-readme-empty")).toBe(true);
-    expect(screen.getByText("暂无变更记录。")).toBeTruthy();
+    expect(screen.queryByText("暂无变更记录。")).toBeNull();
     expect(screen.queryByText("当前重点")).toBeNull();
   });
 
@@ -225,8 +298,19 @@ describe("OverviewPage 布局和操作", () => {
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["project-todos", "demo"] }));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["inventory-summary", "demo"] }));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["seo", "summary", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["content", "summary", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["content", "blogs", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["design", "demo"] }));
+    expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["job-history", "demo"] }));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["projects", "demo"], exact: true }));
     expect(invalidateQueries).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["projects"], exact: true }));
+  });
+});
+
+describe("概览最近博客日期", () => {
+  it("仅统计本地日历最近七天的有效发表日期", () => {
+    const dates = ["2026-11-17", "2026-11-23", "2026-11-16", "2026-11-24", "2026-11-31", ""];
+    expect(recentBlogCount(dates.map((published_at) => ({ published_at }) as BlogPost), new Date(2026, 10, 23))).toBe(2);
   });
 });
 
@@ -239,7 +323,8 @@ describe("OverviewPage SEO 规则忽略", () => {
     mockApi.seo.setRuleIgnored = vi.fn(async () => ({ updated: 1 }));
     await renderOverview(mockApi);
 
-    expect(await screen.findByText("尚未填写 GMC feed")).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "SEO" })).toBeTruthy();
+    expect(screen.queryByText("尚未填写 GMC feed")).toBeNull();
     expect(screen.queryByRole("button", { name: "忽略" })).toBeNull();
   });
 

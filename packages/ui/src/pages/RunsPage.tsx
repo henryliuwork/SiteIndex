@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import type { JobName, JobProgress, JobResult, JobSchedule, RunLog, RunLogStep, RunnerState, ScheduleConfig, ScheduleRuntimeStatus, SchedulableJob, Weekday } from "@siteindex/shared";
@@ -108,6 +108,8 @@ function stepStatusTone(status: RunLogStep["status"]): "ok" | "danger" | "neutra
 }
 
 export function RunsPage() {
+  const [searchParams] = useSearchParams();
+  const focusedRunId = searchParams.get("run");
   const { id = "demo" } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -337,7 +339,7 @@ export function RunsPage() {
       <section className="si-runs-block si-runs-history">
         <div className="si-runs-block-heading"><div><h2>运行历史</h2></div><Button size="small" onClick={() => void historyQuery.refetch()}>刷新</Button></div>
         {historyQuery.isLoading ? <div className="si-query-loading" role="status">正在加载运行历史…</div> : historyQuery.isError ? <ApiErrorNotice label="运行历史加载失败。" error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /> : history.length ? <div className="si-run-history-list">
-          {history.map((run) => <details className="si-run-history-item" key={run.run_id}>
+          {history.map((run) => <details className="si-run-history-item" key={`${run.run_id}:${focusedRunId ?? ""}`} open={run.run_id === focusedRunId ? true : undefined}>
             <summary><span className="si-run-history-time">{formatDateTime(run.started_at)}</span><strong>{jobLabels[run.job]}</strong><span className="si-run-history-trigger">{triggerLabel(run.trigger)}</span><Chip tone={statusTone(run.status)}>{statusLabel(run.status)}</Chip><span className="si-run-history-duration">{runDuration(run)}</span><span className="si-run-history-summary">{runSummary(run)}</span></summary>
             <div className="si-run-history-detail"><div className="si-run-history-context"><span>执行设备：{run.device_name ?? "—"}</span><span>结束：{run.finished_at ? formatDateTime(run.finished_at) : "进行中"}</span></div>
               {run.steps?.length ? <ol className="si-run-history-steps">{run.steps.map((step, index) => <li key={`${step.key}-${index}`} className={`is-${step.status}`}><span className="si-run-step-number">{index + 1}</span><div><strong>{stepLabel(step.key, index)}</strong>{step.message && <p>{step.message}</p>}</div><Chip tone={stepStatusTone(step.status)}>{stepStatusLabel(step.status)}</Chip></li>)}</ol> : <p className="si-run-history-empty">这条记录没有返回分步结果。</p>}
