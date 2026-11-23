@@ -83,7 +83,7 @@
 }
 
 .si-design-role-formats { display: grid; gap: var(--space-1); }
-.si-design-copy-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.si-design-copy-actions { display: flex; flex-wrap: wrap; gap: var(--gap-inline); }
 
 .si-design-role-value,
 .si-design-role-meta code {
