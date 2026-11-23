@@ -102,7 +102,7 @@ async function renderEdmPage(groupingEnabled: boolean, mockMode = true, imageRow
     if (options.exportError) return Promise.reject(options.exportError);
     return Promise.resolve(defaultExportResult);
   });
-  if (options.exportReady) mockApi.edm.exportIndex = exportIndex;
+  mockApi.edm.exportIndex = options.exportReady ? exportIndex : undefined;
   let resolvePendingMediaPrepare: ((run: { runId: string }) => void) | undefined;
   const mediaPrepare = deferredMediaPrepare
     ? vi.fn(() => new Promise<{ runId: string }>((resolve) => { resolvePendingMediaPrepare = resolve; }))
@@ -324,7 +324,7 @@ describe("EdmPage D-5", () => {
     expect(screen.queryByRole("region", { name: "EDM 任务与提示" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
     expect(screen.getByRole("menuitem", { name: "打开项目文件夹" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "复制 edm-builder 指令" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "生成命令" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "交互模拟（仅本地演示，不会上传或写入台账）" })).toBeTruthy();
   });
 
@@ -357,8 +357,31 @@ describe("EdmPage D-5", () => {
     await renderEdmPage(true);
 
     fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
-    expect(screen.getByRole("menuitem", { name: "复制 edm-builder 指令" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "生成命令" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "复制 edm-builder 指令" })).toBeNull();
     expect(screen.queryByRole("button", { name: /导出.*清单/ })).toBeNull();
+  }, 15_000);
+
+  it("mock export is visible but reports no file was written", async () => {
+    const { exportIndex } = await renderEdmPage(true, true, undefined, false, false, {
+      exportReady: true,
+      exportResult: { status: "cancelled", sku_count: 0, missing_image_count: 0 },
+    });
+    expect(await screen.findByRole("button", { name: "生成命令" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "导出 SKU 清单" }));
+    await waitFor(() => expect(exportIndex).toHaveBeenCalledWith("demo"));
+    expect(await screen.findByText("演示模式：未写入文件。")).toBeTruthy();
+    expect(screen.queryByText(/清单已保存/)).toBeNull();
+  }, 15_000);
+
+  it("生成命令主按钮复用现有复制操作", async () => {
+    const { mockApi } = await renderEdmPage(true);
+    const buildCommand = vi.spyOn(mockApi.edm, "buildCommand");
+    const copyText = vi.spyOn(mockApi.shell, "copyText");
+    fireEvent.click(await screen.findByRole("button", { name: "生成命令" }));
+    await waitFor(() => expect(buildCommand).toHaveBeenCalledWith("demo", expect.objectContaining({ theme: "当前 EDM 活动" })));
+    await waitFor(() => expect(copyText).toHaveBeenCalledWith(expect.stringContaining("edm-builder")));
+    expect(await screen.findByText("edm-builder 指令已复制。")).toBeTruthy();
   }, 15_000);
 
   it("折扣档位列显示，未配置档位时明确说明不会自动选择", async () => {
@@ -617,7 +640,7 @@ describe("EdmPage media preparation prototype", () => {
     await renderEdmPage(true, false);
 
     await screen.findByRole("button", { name: "更多操作" });
-    expect(screen.queryByRole("button", { name: "另存全项目 SKU 清单" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "导出 SKU 清单" })).toBeNull();
   });
 
   it("另存就绪后显示安全文件名与统计，不展示旧 bridge 的项目相对路径", async () => {
@@ -625,7 +648,7 @@ describe("EdmPage media preparation prototype", () => {
       status: "updated", file_name: "sku-index.md", path: "_site-index/edm/sku-index.md", sku_count: 12, missing_image_count: 3,
     };
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     fireEvent.click(button);
 
     await waitFor(() => expect(exportIndex).toHaveBeenCalledWith("demo"));
@@ -645,12 +668,12 @@ describe("EdmPage media preparation prototype", () => {
     const { exportIndex, resolveExport } = await renderEdmPage(true, false, undefined, false, false, {
       exportReady: true, deferredExport: true,
     });
-    fireEvent.click(await screen.findByRole("button", { name: "另存全项目 SKU 清单" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出 SKU 清单" }));
     await waitFor(() => expect(exportIndex).toHaveBeenCalledWith("demo"));
 
     fireEvent.click(screen.getByRole("button", { name: "切换项目" }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/p/other/edm"));
-    const projectBButton = await screen.findByRole("button", { name: /另存全项目 SKU 清单|正在准备 SKU 清单/ });
+    const projectBButton = await screen.findByRole("button", { name: /导出 SKU 清单|正在准备 SKU 清单/ });
     const toastRegion = screen.getByLabelText("通知");
     await act(async () => {
       resolveExport(result);
@@ -666,7 +689,7 @@ describe("EdmPage media preparation prototype", () => {
     fireEvent.click(projectBButton);
     await waitFor(() => expect(exportIndex).toHaveBeenNthCalledWith(2, "other"));
     fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
-    const projectAButton = await screen.findByRole("button", { name: /另存全项目 SKU 清单|正在准备 SKU 清单/ });
+    const projectAButton = await screen.findByRole("button", { name: /导出 SKU 清单|正在准备 SKU 清单/ });
     await waitFor(() => {
       const projectAControl = exportControlFor(projectAButton);
       expect(projectAControl.textContent).toContain("sku-index-A.md");
@@ -681,12 +704,12 @@ describe("EdmPage media preparation prototype", () => {
     expect(within(toastRegion).queryByRole("status")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "切换项目" }));
-    const completedProjectBButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const completedProjectBButton = await screen.findByRole("button", { name: "导出 SKU 清单" });
     await waitFor(() => expect(exportControlFor(completedProjectBButton).textContent).toContain("sku-index-B.md"));
     expect(exportControlFor(completedProjectBButton).textContent).toContain("8 个 SKU");
 
     fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
-    const returnedProjectAButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const returnedProjectAButton = await screen.findByRole("button", { name: "导出 SKU 清单" });
     await waitFor(() => expect(exportControlFor(returnedProjectAButton).textContent).toContain("sku-index-A.md"));
   });
 
@@ -697,7 +720,7 @@ describe("EdmPage media preparation prototype", () => {
     const { exportIndex, resolveExport } = await renderEdmPage(true, false, undefined, false, false, {
       exportReady: true, deferredExport: true,
     });
-    fireEvent.click(await screen.findByRole("button", { name: "另存全项目 SKU 清单" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出 SKU 清单" }));
     await waitFor(() => expect(exportIndex).toHaveBeenCalledWith("demo"));
 
     fireEvent.click(screen.getByRole("button", { name: "切换到 B 库存" }));
@@ -719,12 +742,12 @@ describe("EdmPage media preparation prototype", () => {
     const { exportIndex, rejectExport } = await renderEdmPage(true, false, undefined, false, false, {
       exportReady: true, deferredExport: true,
     });
-    fireEvent.click(await screen.findByRole("button", { name: "另存全项目 SKU 清单" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出 SKU 清单" }));
     await waitFor(() => expect(exportIndex).toHaveBeenCalledWith("demo"));
 
     fireEvent.click(screen.getByRole("button", { name: "切换项目" }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/p/other/edm"));
-    const projectBButton = await screen.findByRole("button", { name: /另存全项目 SKU 清单|正在准备 SKU 清单/ });
+    const projectBButton = await screen.findByRole("button", { name: /导出 SKU 清单|正在准备 SKU 清单/ });
     const toastRegion = screen.getByLabelText("通知");
     await act(async () => {
       rejectExport(unknownError);
@@ -738,7 +761,7 @@ describe("EdmPage media preparation prototype", () => {
     expect(within(toastRegion).queryByRole("alert")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "返回 EDM" }));
-    const projectAButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const projectAButton = await screen.findByRole("button", { name: "导出 SKU 清单" });
     expect(projectAButton.hasAttribute("disabled")).toBe(true);
     expect(exportControlFor(projectAButton).textContent).toContain("清单可能已写入您选择的位置");
     expect(within(toastRegion).queryByRole("status")).toBeNull();
@@ -751,7 +774,7 @@ describe("EdmPage media preparation prototype", () => {
       status: "created", path: "index/edm/sku-index.md", sku_count: 4, missing_image_count: 1,
     };
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     fireEvent.click(button);
 
     const control = exportControlFor(button);
@@ -768,7 +791,7 @@ describe("EdmPage media preparation prototype", () => {
       exportReady: true,
       exportError: conflict,
     });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     fireEvent.click(button);
 
     const message = "项目目录中的目标文件已存在，原文件未覆盖。可以在项目目录内改用新文件名后重试。";
@@ -786,7 +809,7 @@ describe("EdmPage media preparation prototype", () => {
       exportReady: true,
       exportError: safeReplaceUnavailable,
     });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     fireEvent.click(button);
 
     const message = "目标位置已有不同内容的同名文件，原文件未覆盖。请另选文件名后重试。";
@@ -798,14 +821,14 @@ describe("EdmPage media preparation prototype", () => {
   it("用户取消另存时清除进行状态和门闩，不显示成功或错误 toast", async () => {
     const result: EdmSkuIndexExportResult = { status: "cancelled", sku_count: 12, missing_image_count: 3 };
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     const toastRegion = screen.getByLabelText("通知");
     fireEvent.click(button);
 
     await waitFor(() => expect(exportIndex).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(window.localStorage.getItem("siteindex:edm-export-attempt:demo")).toBeNull());
     expect(button.hasAttribute("disabled")).toBe(false);
-    expect(button.textContent).toBe("另存全项目 SKU 清单");
+    expect(button.textContent).toBe("导出 SKU 清单");
     expect(within(toastRegion).queryByRole("status")).toBeNull();
     expect(within(toastRegion).queryByRole("alert")).toBeNull();
     expect(exportControlFor(button).textContent).not.toContain("清单已");
@@ -823,7 +846,7 @@ describe("EdmPage media preparation prototype", () => {
     });
     const result: EdmSkuIndexExportResult = { status: "cancelled", sku_count: 12, missing_image_count: 3 };
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     const toastRegion = screen.getByLabelText("通知");
     fireEvent.click(button);
 
@@ -836,7 +859,7 @@ describe("EdmPage media preparation prototype", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "离开 EDM" }));
     fireEvent.click(await screen.findByRole("button", { name: "返回 EDM" }));
-    const reopenedButton = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const reopenedButton = await screen.findByRole("button", { name: "导出 SKU 清单" });
     expect(reopenedButton.hasAttribute("disabled")).toBe(true);
     expect(await within(exportControlFor(reopenedButton)).findByText(/本机仍保留未清除的另存状态/)).toBeTruthy();
     expect(exportControlFor(reopenedButton).textContent).not.toContain("可能已写入");
@@ -850,7 +873,7 @@ describe("EdmPage media preparation prototype", () => {
       status: "unchanged", file_name: "sku-index.md", sku_count: 12, missing_image_count: 3,
     };
     await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportResult: result });
-    fireEvent.click(await screen.findByRole("button", { name: "另存全项目 SKU 清单" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出 SKU 清单" }));
 
     const toastRegion = screen.getByLabelText("通知");
     await waitFor(() => expect(toastRegion.querySelector(".si-toast-info")?.textContent).toContain("清单已是最新（sku-index.md）：12 个 SKU，待补图 3 个"));
@@ -859,7 +882,7 @@ describe("EdmPage media preparation prototype", () => {
   it("另存结果未知时提示所选位置可能已写入并保持重试禁用", async () => {
     const unknownError = Object.assign(new Error("写入确认超时"), { code: "EDM_EXPORT_OUTCOME_UNKNOWN" });
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportError: unknownError });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     fireEvent.click(button);
 
     const control = exportControlFor(button);
@@ -879,7 +902,7 @@ describe("EdmPage media preparation prototype", () => {
       exportReady: true,
       exportError: notImplemented,
     });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     fireEvent.click(button);
 
     expect(await within(exportControlFor(button)).findByText(notImplemented.message)).toBeTruthy();
@@ -891,7 +914,7 @@ describe("EdmPage media preparation prototype", () => {
   it("本机已有结果未知标记时跨页面进入仍禁用另存", async () => {
     window.localStorage.setItem("siteindex:edm-export-attempt:demo", "unknown");
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
 
     expect(button.hasAttribute("disabled")).toBe(true);
     expect(await screen.findByText(/本机仍保留未清除的另存状态/)).toBeTruthy();
@@ -902,17 +925,17 @@ describe("EdmPage media preparation prototype", () => {
   it("无法持久化另存门闩时不调用 IPC，并提供本机恢复路径", async () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable"); });
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true });
-    fireEvent.click(await screen.findByRole("button", { name: "另存全项目 SKU 清单" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出 SKU 清单" }));
 
     expect(await screen.findAllByText(/请求尚未发送，操作已暂停/)).not.toHaveLength(0);
-    expect(screen.getByRole("button", { name: "另存全项目 SKU 清单" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "导出 SKU 清单" }).hasAttribute("disabled")).toBe(true);
     expect(exportIndex).not.toHaveBeenCalled();
   });
 
   it("清单目标冲突时明确说明没有覆盖已有文件", async () => {
     const conflictError = Object.assign(new Error("目标内容冲突"), { code: "EDM_INDEX_CONFLICT" });
     const { exportIndex } = await renderEdmPage(true, false, undefined, false, false, { exportReady: true, exportError: conflictError });
-    const button = await screen.findByRole("button", { name: "另存全项目 SKU 清单" });
+    const button = await screen.findByRole("button", { name: "导出 SKU 清单" });
     fireEvent.click(button);
 
     const control = exportControlFor(button);

@@ -48,6 +48,7 @@ function imageRowsForQuery(id: Parameters<SiteIndexApi["edm"]["listImages"]>[0],
 export function createEdmMock(): SiteIndexApi["edm"] {
   const metadata = { sources: [{ kind: "mock", label: "虚构示例" }], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] };
   return {
+    exportIndex: (_id) => reply({ status: "cancelled", sku_count: 0, missing_image_count: 0 }),
     summary: (id) => reply(() => {
       const rows = edmImageRows(id);
       return { total: rows.length, feed: rows.filter((row) => row.feed_image_url).length, manual: rows.filter((row) => row.manual_image_url).length, none: rows.filter((row) => row.used === "none").length };

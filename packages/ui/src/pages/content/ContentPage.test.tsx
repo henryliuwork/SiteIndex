@@ -81,7 +81,7 @@ describe("ContentPage 博客重新抓取", () => {
     );
 
     await waitFor(() => expect(listKeywords).toHaveBeenCalled());
-    const refreshButton = await screen.findByRole("button", { name: "重新抓取" });
+    const refreshButton = await screen.findByRole("button", { name: "重新抓取博客" });
     const summaryLine = await screen.findByRole("group", { name: "内容摘要" });
     expect(within(summaryLine).getByRole("button", { name: /无站内链接/ })).toBeTruthy();
     expect(within(summaryLine).getByRole("button", { name: /缺少 Schema/ })).toBeTruthy();
@@ -89,7 +89,7 @@ describe("ContentPage 博客重新抓取", () => {
     expect(within(summaryLine).getByRole("button", { name: "数据来源时间" })).toBeTruthy();
     expect(screen.queryByText(/^最近识别：/)).toBeNull();
     expect(screen.queryByRole("button", { name: /关键词映射/ })).toBeNull();
-    expect(screen.getAllByRole("button", { name: "重新抓取" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "重新抓取博客" })).toHaveLength(1);
     fireEvent.click(within(summaryLine).getByRole("button", { name: /无站内链接/ }));
     await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({
       filters: expect.objectContaining({ issue: "no_links" }),
@@ -111,7 +111,8 @@ describe("ContentPage 博客重新抓取", () => {
     });
     expect(await screen.findByText("博客内容已重新抓取。")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "博客识别设置" }));
+    expect(await screen.findByRole("menuitem", { name: "导出 CSV" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "博客识别设置" }));
     const settingsLocation = await screen.findByTestId("settings-location");
     expect(settingsLocation.textContent).toBe("/p/demo/settings/config?section=blog-recognition");
   }, 25_000);
