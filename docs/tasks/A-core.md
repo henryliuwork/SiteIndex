@@ -228,3 +228,7 @@
 ### v0.8.2 · 项目配置保存可靠性
 
 - [x] #743 Core：项目配置按字段深合并、dirty paths 与 revision 冲突校验、显式清空保护、写后读回及空保存字节不变；虚构项目回归
+
+### v0.8.2 · 升级后用户字段保留
+
+- [x] A-2：v0.8.0 虚构配置与 README 样例执行 daily、weekly、monthly、readme、validate；每步后配置字节及三个用户段保留。轻量 `tech.json` 缺少政策/联系字段时 README 正常生成

@@ -352,14 +352,14 @@ export function buildReadmeAutoContent(input: ReadmeAutoContentInput): ReadmeAut
   const tech = input.techProfile;
   const policies = input.site.policies;
   const policyLines = [
-    formatPolicyFact(tech?.policies.free_shipping_threshold, policies?.free_shipping_threshold)
-      ? `- 免邮/运费：${formatPolicyFact(tech?.policies.free_shipping_threshold, policies?.free_shipping_threshold)}`
+    formatPolicyFact(tech?.policies?.free_shipping_threshold, policies?.free_shipping_threshold)
+      ? `- 免邮/运费：${formatPolicyFact(tech?.policies?.free_shipping_threshold, policies?.free_shipping_threshold)}`
       : null,
-    formatPolicyFact(tech?.policies.return_summary, policies?.return_summary)
-      ? `- 退换货政策：${formatPolicyFact(tech?.policies.return_summary, policies?.return_summary)}`
+    formatPolicyFact(tech?.policies?.return_summary, policies?.return_summary)
+      ? `- 退换货政策：${formatPolicyFact(tech?.policies?.return_summary, policies?.return_summary)}`
       : null,
-    formatPolicyFact(tech?.policies.warranty_summary, policies?.warranty_summary)
-      ? `- 保修承诺：${formatPolicyFact(tech?.policies.warranty_summary, policies?.warranty_summary)}`
+    formatPolicyFact(tech?.policies?.warranty_summary, policies?.warranty_summary)
+      ? `- 保修承诺：${formatPolicyFact(tech?.policies?.warranty_summary, policies?.warranty_summary)}`
       : null,
   ].filter((line): line is string => Boolean(line));
 
@@ -516,12 +516,12 @@ export function buildContextBriefMarkdown(input: ReadmeAutoContentInput): string
 
   const tech = input.techProfile;
   const policies = input.site.policies;
-  const freeShip = formatPolicyFact(tech?.policies.free_shipping_threshold, policies?.free_shipping_threshold);
-  const shipSummary = formatPolicyFact(tech?.policies.shipping_summary, policies?.shipping_summary);
-  const returnSummary = formatPolicyFact(tech?.policies.return_summary, policies?.return_summary);
-  const warrantySummary = formatPolicyFact(tech?.policies.warranty_summary, policies?.warranty_summary);
-  const emailFact = formatPolicyFact(tech?.contact.email, policies?.support_email);
-  const phoneFact = formatPolicyFact(tech?.contact.phone, policies?.support_phone);
+  const freeShip = formatPolicyFact(tech?.policies?.free_shipping_threshold, policies?.free_shipping_threshold);
+  const shipSummary = formatPolicyFact(tech?.policies?.shipping_summary, policies?.shipping_summary);
+  const returnSummary = formatPolicyFact(tech?.policies?.return_summary, policies?.return_summary);
+  const warrantySummary = formatPolicyFact(tech?.policies?.warranty_summary, policies?.warranty_summary);
+  const emailFact = formatPolicyFact(tech?.contact?.email, policies?.support_email);
+  const phoneFact = formatPolicyFact(tech?.contact?.phone, policies?.support_phone);
   const keyPages = { ...(tech?.key_pages ?? {}), ...(policies?.key_pages ?? {}) };
   const socialLinks = { ...(tech?.social_links ?? {}), ...(policies?.social_links ?? {}) };
 
