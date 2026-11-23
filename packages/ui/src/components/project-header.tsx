@@ -82,6 +82,64 @@ export function fitProjectTabs(widths: readonly number[], available: number, act
   return indices.filter((index) => visible.has(index));
 }
 
+export function fitPromotedActions(available: number, baseWidths: readonly number[], secondaryWidths: readonly number[], gap: number): number {
+  const base = baseWidths.reduce((sum, width) => sum + width, 0);
+  for (let count = secondaryWidths.length; count >= 0; count -= 1) {
+    const used = base + secondaryWidths.slice(0, count).reduce((sum, width) => sum + width, 0)
+      + gap * Math.max(0, baseWidths.length + count - 1);
+    if (used <= available) return count;
+  }
+  return 0;
+}
+
+function ProjectHeaderActions({ activeTab, actions, overflow = [] }: {
+  activeTab: ProjectTab;
+  actions?: ReactNode;
+  overflow?: readonly PageHeaderOverflowAction[];
+}) {
+  const slotRef = useRef<HTMLDivElement>(null);
+  const probeRef = useRef<HTMLDivElement>(null);
+  const secondary = activeTab === "products" && overflow[0]?.label === "趋势与分类在线率" && overflow[1]?.label === "导出 CSV"
+    ? overflow.slice(0, 2) : [];
+  const [visibleCount, setVisibleCount] = useState(0);
+
+  useLayoutEffect(() => {
+    const slot = slotRef.current;
+    const header = slot?.closest<HTMLElement>(".si-project-header-single");
+    const actionRow = slot?.querySelector<HTMLElement>(".si-project-header-actions:not(.si-project-header-action-measure)");
+    const tabProbe = header?.querySelector<HTMLElement>(".si-project-tab-measure");
+    if (!slot || !header || !actionRow || !tabProbe || !probeRef.current || !header.clientWidth) return;
+    const measure = () => {
+      const baseWidths = Array.from(actionRow.children)
+        .filter((node) => !node.hasAttribute("data-promoted-action"))
+        .map((node) => node.getBoundingClientRect().width);
+      const secondaryWidths = Array.from(probeRef.current?.children ?? [], (node) => node.getBoundingClientRect().width);
+      const activeIndex = PROJECT_TABS.findIndex((tab) => tab.value === activeTab);
+      const activeWidth = tabProbe.children[activeIndex]?.getBoundingClientRect().width ?? 0;
+      if (!activeWidth || secondaryWidths.some((width) => !width)) return;
+      const gap = Number.parseFloat(getComputedStyle(actionRow).columnGap) || 0;
+      const headerGap = Number.parseFloat(getComputedStyle(header).columnGap) || 0;
+      const minNavigationWidth = activeWidth + 76 + 2 * 8;
+      const next = fitPromotedActions(header.clientWidth - minNavigationWidth - headerGap, baseWidths, secondaryWidths, gap);
+      setVisibleCount((current) => current === next ? current : next);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(header);
+    observer?.observe(actionRow);
+    window.addEventListener("resize", measure);
+    void document.fonts?.ready.then(measure);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
+  }, [activeTab, secondary.length]);
+
+  return <div ref={slotRef} className="si-project-header-action-slot">
+    <PageHeaderActions actions={actions} promoted={secondary.slice(0, visibleCount)} overflow={overflow.slice(visibleCount)} className="si-project-header-actions" />
+    {secondary.length > 0 && <div ref={probeRef} className="si-project-header-actions si-project-header-action-measure" aria-hidden="true">
+      {secondary.map((item) => <Button key={item.label} variant="secondary" tabIndex={-1} icon={item.icon}>{item.label}</Button>)}
+    </div>}
+  </div>;
+}
+
 let pendingProjectTabFocus: string | null = null;
 
 function ProjectNavigation({ projectId, activeTab, hasTabPanel }: { projectId: string; activeTab: ProjectTab; hasTabPanel: boolean }) {
@@ -180,9 +238,7 @@ export function ProjectHeader({
   const inProjectFrame = usePageFrameKind() === "project";
   if (inProjectFrame) return <div className="si-project-header si-project-header-single">
     <ProjectNavigation projectId={project.id} activeTab={activeTab} hasTabPanel={hasTabPanel} />
-    <div className="si-project-header-action-slot">
-      <PageHeaderActions actions={actions} overflow={overflow} className="si-project-header-actions" />
-    </div>
+    <ProjectHeaderActions activeTab={activeTab} actions={actions} overflow={overflow} />
   </div>;
 
   const projectSubtitle = subtitle ?? `${project.domain} · ${platformLabels[project.platform]}`;

@@ -59,7 +59,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-tab-panel { min-width: 0; }
 .si-tab-panel:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 
-.si-chip { display: inline-flex; min-height: 22px; align-items: center; padding: 0 var(--space-2); border-radius: 999px; font-size: var(--fs-caption); font-weight: 600; line-height: var(--lh-caption); white-space: nowrap; }
+.si-chip { display: inline-flex; min-height: var(--control-height-compact); align-items: center; gap: var(--gap-inline); padding: var(--pad-chip-y) var(--pad-chip-x); border-radius: 999px; font-size: var(--fs-caption); font-weight: 600; line-height: var(--lh-caption); white-space: nowrap; }
 .si-page .si-chip { font-size: var(--fs-body); }
 .si-chip-ok { background: var(--color-brand-soft); color: var(--color-brand-strong); }
 .si-chip-warn { background: var(--color-warn-soft); color: var(--color-warn); }
