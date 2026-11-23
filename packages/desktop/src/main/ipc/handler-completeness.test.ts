@@ -82,6 +82,27 @@ function apiBridgeFor(context: IpcContext) {
 }
 
 describe("IPC handler completeness", () => {
+  it("forwards project config revision, dirty fields, and explicit clear to Core", async () => {
+    const context = testContext();
+    const patch = { seo: { core_keywords: ["bird feeder"], competitors: [] } };
+    const options = { revision: "fresh-revision", dirty_paths: ["seo.core_keywords", "seo.competitors"], clear: ["seo.competitors"] };
+    const updated = { seo: patch.seo };
+    const updateConfig = vi.fn(async (_id: unknown, _patch: unknown, savedOptions?: { revision?: string }) => {
+      if (savedOptions?.revision === "stale-revision")
+        throw { code: "CONFIG_INVALID", message: "配置已在别处更新，请刷新后重试。" };
+      return updated;
+    });
+    Object.assign(context.core.projects, { updateConfig });
+    const handler = createIpcHandlerImplementations(context)["projects.updateConfig"];
+
+    await expect(handler?.("demo", patch, options)).resolves.toBe(updated);
+    expect(updateConfig).toHaveBeenCalledWith("demo", patch, options);
+    await expect(handler?.("demo", patch, { ...options, revision: "stale-revision" }))
+      .rejects.toMatchObject({ code: "CONFIG_INVALID" });
+    await expect(handler?.("demo", patch)).resolves.toBe(updated);
+    expect(updateConfig).toHaveBeenLastCalledWith("demo", patch, undefined);
+  });
+
   it("forwards protected settings options to the store", async () => {
     const context = testContext();
     const patch = { notify: { on_failure: false } };

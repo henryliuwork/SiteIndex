@@ -223,3 +223,4 @@
 ## v0.8.2 · 设置保存
 
 - [x] C-1：`settings.json` 支持 revision、dirty_paths、显式 clear 与写后读回；旧调用兼容，合成双会话复现 #744。
+- [x] C-1：`projects.updateConfig` IPC 透传第三参数，让 #743 的 Core revision、dirty_paths、clear 保护到达项目设置页。

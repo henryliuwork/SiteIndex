@@ -237,7 +237,11 @@ export function createProjectsHandlers(context: IpcContext): IpcHandlerImplement
       }),
     "projects.updateConfig": (...args) =>
       context.withProject(args[0], (id) =>
-        context.core.projects.updateConfig(id, args[1] as Parameters<typeof context.core.projects.updateConfig>[1]),
+        context.core.projects.updateConfig(
+          id,
+          args[1] as Parameters<typeof context.core.projects.updateConfig>[1],
+          args[2] as Parameters<typeof context.core.projects.updateConfig>[2],
+        ),
       ),
   };
 }
