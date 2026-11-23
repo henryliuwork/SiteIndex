@@ -97,26 +97,26 @@
 
 ## 应用设置 · `settings.json` 与本机状态
 
-C 负责存储层与 IPC 的逐键 S/R/U 证据；B 负责 UI dirty 提交。下列 `settings.json` 项经 `settings.set/get`，其他本机凭据/系统任务另列。当前 main 已含 [#747](https://github.com/henryliuwork/SiteIndex/pull/747)：合成单测确认未知顶层/browser/notify 字段保留、有效文件无操作保存逐字节不变、新 store 读回设备名；通知并发草稿仍见 #744。这些是存储层证据，不能替代逐控件 IPC 与安装包复验。
+C 负责存储层与 IPC 的逐键 S/R/U 证据；B 负责 UI dirty 提交。下列 `settings.json` 项经 `settings.set/get`，其他本机凭据/系统任务另列。当前 main 已含 [#747](https://github.com/henryliuwork/SiteIndex/pull/747)：合成单测确认未知顶层/browser/notify 字段保留、有效文件无操作保存逐字节不变。C 的 [#751](https://github.com/henryliuwork/SiteIndex/pull/751) 在隔离 GitHub Windows 安装环境用官方 v0.8.0 包保存虚构应用设置、覆盖安装候选包、运行 `views`、经打包 IPC 逐键读回，Windows 安装检查和三系统 CI 全绿；`settings.json` 在安装、Job、读回后逐字节不变。候选包的应用版本仍是 0.8.0，最终 v0.8.2 安装包待 G8.2-3 验收。下表“通过¹”仅指这条打包 IPC 路径，**不代表 UI 控件逐项验收或旧草稿并发保护**。空数组/null 只证明空值维持，不能证明有值保存或显式清空。
 
 | 设置项 | 页面/控件 | IPC/API | 写入文件与键 → 读回 | 不变量与当前结论 | S/R/U |
 |---|---|---|---|---|---|
-| 项目根目录 | 软件设置·选择/文本 | `settings.set/get` | `settings.json:projects_root` → `settings.get` | I1/I4–I6：C 待读回证据 | 待 C/待 C/待 E |
-| 设备名 | 软件设置·文本 | `settings.set/get` | `device_name` → `settings.get` | I1/I4–I6：C 待读回证据 | 待 C/待 C/待 E |
-| 缓存目录 | 软件设置·文本 | `settings.set/get` | `cache_dir` → `settings.get` | I1/I4–I6：C 待读回证据 | 待 C/待 C/待 E |
-| 关闭到托盘 | 软件设置·勾选 | `settings.set/get` | `close_to_tray` → `settings.get` | I1/I4–I6：C 待读回证据 | 待 C/待 C/待 E |
-| 开机启动 | 软件设置·勾选 | `settings.set/get` | `launch_at_login` → `settings.get` | I1/I4–I6：C 待读回证据 | 待 C/待 C/待 E |
-| 浏览器通道 | 软件设置·路径联动 | `settings.set/get` | `browser.channel` → `settings.get` | I1–I6：C 待嵌套 dirty 保存 | 待 C/待 C/待 E |
-| 浏览器路径 | 软件设置·文本 | `settings.set/get` | `browser.executable_path` → `settings.get` | I1–I6：C 待嵌套 dirty 保存 | 待 C/待 C/待 E |
-| 失败通知 | 软件设置·勾选 | `settings.set/get` | `notify.on_failure` → `settings.get` | I2–I4：#744 旧整块草稿风险 | 待 C/待 C/待 E |
-| 成功通知 | 软件设置·勾选 | `settings.set/get` | `notify.on_success` → `settings.get` | I2–I4：#744 旧整块草稿风险 | 待 C/待 C/待 E |
-| 新缺货阈值 | 软件设置·勾选/数字 | `settings.set/get` | `notify.oos_threshold` → `settings.get` | I2–I4：`null` 清空需显式意图；#744 | 待 C/待 C/待 E |
-| 通知 Webhook | 软件设置·密码框 | `settings.set/get` | `notify.dingtalk_webhook` → `settings.get` | I2–I4：空值保护；矩阵不记录地址内容 | 待 C/待 C/待 E |
-| Agent 平台目录 | 软件设置·列表 | `settings.set/get` | `skill_platforms` → `settings.get` | I1/I4–I6：列表编辑/删除需显式意图 | 待 C/待 C/待 E |
-| 单独添加的项目 | 项目中心·添加 | `settings.set/get` | `extra_projects` → `settings.get` | I1/I4–I6：C 待读回证据 | 待 C/待 C/待 E |
-| 隐藏项目 | 项目中心·移除 | `settings.set/get` | `hidden_projects` → `settings.get` | I1/I4–I6：C 待读回证据 | 待 C/待 C/待 E |
-| 冲突文件模式 | 当前无设置控件 | `settings.set/get` | `conflict_patterns` → `settings.get` | I6：保留既有用户字段 | 待 C/待 C/待 E |
-| 本机设备 ID | 内部生成 | `settings.get` | `device_id` → `settings.get` | I6：升级不重新生成 | 待 C/待 C/待 E |
+| 项目根目录 | 软件设置·选择/文本 | `settings.set/get` | `settings.json:projects_root` → `settings.get` | I1/I4–I6：打包 IPC 非空值保留；UI 待验 | 通过¹/通过¹/通过¹ |
+| 设备名 | 软件设置·文本 | `settings.set/get` | `device_name` → `settings.get` | I1/I4–I6：打包 IPC 非空值保留；UI 待验 | 通过¹/通过¹/通过¹ |
+| 缓存目录 | 软件设置·文本 | `settings.set/get` | `cache_dir` → `settings.get` | I1/I4–I6：打包 IPC 非空值保留；UI 待验 | 通过¹/通过¹/通过¹ |
+| 关闭到托盘 | 软件设置·勾选 | `settings.set/get` | `close_to_tray` → `settings.get` | I1/I4–I6：打包 IPC 保存 false；UI 待验 | 通过¹/通过¹/通过¹ |
+| 开机启动 | 软件设置·勾选 | `settings.set/get` | `launch_at_login` → `settings.get` | I1/I4–I6：打包 IPC 保存 true；UI 待验 | 通过¹/通过¹/通过¹ |
+| 浏览器通道 | 软件设置·路径联动 | `settings.set/get` | `browser.channel` → `settings.get` | I1/I6：打包 IPC 非空值保留；I2–I4/ UI 待验 | 通过¹/通过¹/通过¹ |
+| 浏览器路径 | 软件设置·文本 | `settings.set/get` | `browser.executable_path` → `settings.get` | I1/I6：仅测试 null 保留；非空/清空与 UI 待验 | 待验(仅 null)/待验/待验 |
+| 失败通知 | 软件设置·勾选 | `settings.set/get` | `notify.on_failure` → `settings.get` | I1/I6：打包 IPC 保存 false；#744 旧草稿风险待修 | 通过¹/通过¹/通过¹ |
+| 成功通知 | 软件设置·勾选 | `settings.set/get` | `notify.on_success` → `settings.get` | I1/I6：打包 IPC 保存 true；#744 旧草稿风险待修 | 通过¹/通过¹/通过¹ |
+| 新缺货阈值 | 软件设置·勾选/数字 | `settings.set/get` | `notify.oos_threshold` → `settings.get` | I1/I6：打包 IPC 保存 7；显式清空/ UI 待验 | 通过¹/通过¹/通过¹ |
+| 通知 Webhook | 软件设置·密码框 | `settings.set/get` | `notify.dingtalk_webhook` → `settings.get` | I1/I6：仅测试 null 保留；不记录地址，非空/清空待验 | 待验(仅 null)/待验/待验 |
+| Agent 平台目录 | 软件设置·列表 | `settings.set/get` | `skill_platforms` → `settings.get` | I1/I6：打包 IPC 合成非空列表保留；UI 待验 | 通过¹/通过¹/通过¹ |
+| 单独添加的项目 | 项目中心·添加 | `settings.set/get` | `extra_projects` → `settings.get` | I1/I6：仅测试空列表；非空/删除待验 | 待验(仅空)/待验/待验 |
+| 隐藏项目 | 项目中心·移除 | `settings.set/get` | `hidden_projects` → `settings.get` | I1/I6：仅测试空列表；非空/删除待验 | 待验(仅空)/待验/待验 |
+| 冲突文件模式 | 当前无设置控件 | `settings.set/get` | `conflict_patterns` → `settings.get` | I6：打包 IPC 合成非空列表保留 | 通过¹/通过¹/通过¹ |
+| 本机设备 ID | 内部生成 | `settings.get` | `device_id` → `settings.get` | I6：打包 IPC 保持原 ID | 通过¹/通过¹/通过¹ |
 | WordPress 凭据 | 软件设置·凭据卡片 | 独立凭据 API | 本机加密 vault → 凭据状态读回 | C 所有权；不得在矩阵/日志记录密钥 | 待 C/待 C/待 E |
 | 系统计划任务登记 | 定时任务页 | `schedule.save/verify` | `site.json:schedule` + 系统计划任务 → `schedule.get/verify` | C 核对注册路径与重启读回；项目配置归 A | 待 C/待 C/待 E |
 
