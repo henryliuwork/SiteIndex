@@ -1,18 +1,18 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { InventorySummary, ProjectTodosResult, SeoPageTableResult, SeoSummary } from "@siteindex/shared";
-import { ApiErrorNotice, Notice } from "../../components";
+import type { InventorySummary, ProjectTodosResult, SeoIssue, SeoPageTableResult, SeoSummary } from "@siteindex/shared";
+import { ApiErrorNotice, Button, Notice } from "../../components";
 
-type ModuleQuery<T> = { data: T | undefined; isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
+export type ModuleQuery<T> = { data: T | undefined; isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
 
-function Module({ title, to, children }: { title: string; to: string; children: ReactNode }) {
+export function Module({ title, to, children }: { title: string; to: string; children: ReactNode }) {
   return <section className="si-overview-module si-panel" aria-label={title}>
     <h2><Link to={to}>{title}</Link></h2>
     {children}
   </section>;
 }
 
-function Metric({ label, value, to, tone }: { label: string; value: string; to?: string; tone?: "danger" }) {
+export function Metric({ label, value, to, tone }: { label: string; value: string; to?: string; tone?: "danger" }) {
   const content = <><span>{label}</span><strong className={tone === "danger" ? "is-danger" : undefined}>{value}</strong></>;
   return to ? <Link className="si-overview-module-metric" to={to}>{content}</Link>
     : <div className="si-overview-module-metric">{content}</div>;
@@ -60,8 +60,9 @@ export function ProductModule({ id, query }: { id: string; query: ModuleQuery<In
   </Module>;
 }
 
-export function SeoModule({ id, summaryQuery, pagesQuery, hasPageRows }: {
+export function SeoModule({ id, summaryQuery, pagesQuery, hasPageRows, reminders = [], onIgnore }: {
   id: string; summaryQuery: ModuleQuery<SeoSummary>; pagesQuery: ModuleQuery<SeoPageTableResult>; hasPageRows: boolean;
+  reminders?: { rule: SeoIssue["rule"]; text: string; to: string }[]; onIgnore?: (rule: SeoIssue["rule"]) => void;
 }) {
   const to = `/p/${encodeURIComponent(id)}/seo`;
   const issueMetric = summaryQuery.data?.kpis.find((metric) => metric.key === "issues");
@@ -77,5 +78,9 @@ export function SeoModule({ id, summaryQuery, pagesQuery, hasPageRows }: {
             <Metric label="未收录页面" value={pages?.unindexed_pages.toString() ?? "—"} to={pages ? `${to}?summary=unindexed` : undefined} />
           </div>}
     {!hasPageRows && !summaryQuery.isPending && !summaryQuery.isError && <p className="si-overview-module-hint">当前版本尚未提供 SEO 页面聚合。</p>}
+    {reminders.length > 0 && <ul className="si-overview-module-list si-overview-seo-reminders">{reminders.slice(0, 3).map(({ rule, text, to: destination }) => <li key={rule}>
+      <Link to={destination} title={text}>{text}</Link>
+      {onIgnore && <Button size="small" onClick={() => onIgnore(rule)}>忽略</Button>}
+    </li>)}</ul>}
   </Module>;
 }

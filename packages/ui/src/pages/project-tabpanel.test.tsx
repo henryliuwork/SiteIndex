@@ -13,7 +13,7 @@ const pageCases = [
     normal: "si-overview-modules",
     loading: "overviewQuery.isLoading",
     error: "overviewQuery.isError",
-    empty: "attention?.length ?",
+    empty: "暂无 README 项目概况。",
   },
   {
     file: "ProductsPage.tsx",

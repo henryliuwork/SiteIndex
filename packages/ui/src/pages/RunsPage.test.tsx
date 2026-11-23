@@ -23,7 +23,7 @@ afterEach(() => {
   vi.resetModules();
 });
 
-async function renderRunsPage(history: RunLog[]) {
+async function renderRunsPage(history: RunLog[], initialPath = "/p/demo/runs") {
   const mockApi = createMockApi();
   const project = await mockApi.projects.get("demo");
   mockApi.projects.get = vi.fn(async (id) => ({ ...project, summary: { ...project.summary, id } }));
@@ -37,7 +37,7 @@ async function renderRunsPage(history: RunLog[]) {
   const [{ RunsPage }, { ToastProvider }] = await Promise.all([import("./RunsPage"), import("../components")]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
   render(<ToastProvider><QueryClientProvider client={queryClient}>
-    <MemoryRouter initialEntries={["/p/demo/runs"]}><Routes><Route path="/p/:id/runs" element={<RunsPage />} /></Routes></MemoryRouter>
+    <MemoryRouter initialEntries={[initialPath]}><Routes><Route path="/p/:id/runs" element={<RunsPage />} /></Routes></MemoryRouter>
   </QueryClientProvider></ToastProvider>);
   return { mockApi };
 }
@@ -137,6 +137,16 @@ describe("RunsPage 媒体任务历史", () => {
     expect(started).toBeTruthy();
     expect(document.querySelector(".si-runs-page")?.textContent?.split(started!)).toHaveLength(2);
     expect(within(historyEntry).queryByText(/^开始：/)).toBeNull();
+  });
+
+  it("从概览失败任务链接进入时展开对应运行日志", async () => {
+    await renderRunsPage([{
+      run_id: "demo-failed-run", job: "weekly", started_at: "2026-11-20T08:00:00+08:00",
+      finished_at: "2026-11-20T08:01:03+08:00", status: "failed", errors: ["演示抓取失败"],
+    }], "/p/demo/runs?run=demo-failed-run");
+    await screen.findByText("运行历史");
+    await waitFor(() => expect(document.querySelector<HTMLDetailsElement>(".si-run-history-item")?.open).toBe(true));
+    expect(screen.getAllByText("演示抓取失败").length).toBeGreaterThan(0);
   });
 
   it("用逐 SKU 持久化结果生成媒体历史摘要", async () => {
