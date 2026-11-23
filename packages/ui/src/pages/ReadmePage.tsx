@@ -13,6 +13,11 @@ const blockTitles: Record<string, string> = {
   "design-summary": "设计规范速览",
   changelog: "变更记录",
 };
+const userBlockTitles: Record<keyof ReadmeData["user_blocks"], string> = {
+  overview: "项目概况",
+  focus: "当前重点",
+  rules: "工作规则与偏好",
+};
 
 function latestUpdate(data: ReadmeData | undefined): string {
   const value = data?.auto_blocks.find((block) => block.id === "index-summary")?.updated_at;
@@ -20,9 +25,10 @@ function latestUpdate(data: ReadmeData | undefined): string {
   return `网站数据速览自动区块更新于 ${formatDateTime(value)}`;
 }
 
-function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving, editingRules, onEditRules, onCancelRules }: {
+function UserBlocksCard({ blocks, savedBlocks, missingBlocks, onChange, onReset, onSave, saving, editingRules, onEditRules, onCancelRules }: {
   blocks: ReadmeData["user_blocks"];
   savedBlocks: ReadmeData["user_blocks"];
+  missingBlocks?: ReadmeData["missing_user_blocks"];
   onChange: (key: keyof ReadmeData["user_blocks"], value: string) => void;
   onReset: () => void;
   onSave: () => void;
@@ -38,6 +44,7 @@ function UserBlocksCard({ blocks, savedBlocks, onChange, onReset, onSave, saving
   ];
   return <Card className="si-readme-card si-readme-user-card" label="README 用户区块">
     <div className="si-readme-card-heading"><h2>用户区块</h2><InfoTooltip label="用户区块说明" content="由你和 Agent 编辑，SiteIndex 不会自动覆盖。" /></div>
+    {missingBlocks?.length ? <Notice tone="warn" title="README 段落缺失">缺少：{missingBlocks.map((key) => userBlockTitles[key]).join("、")}。保存后会补齐标题并写入内容。</Notice> : null}
     {fields.map(({ key, label, rows }) => key === "rules" ? <div className="si-readme-field" key={key}>
       <span>{label}</span>
       {editingRules ? <>
@@ -139,7 +146,7 @@ export function ReadmePage() {
     <ProjectTabPanel projectId={project.id} tab="readme">
     {runMessage && <Notice tone="info">{runMessage}</Notice>}
     {readmeQuery.isLoading ? <div className="si-page-loading" role="status">正在加载 README…</div> : readmeQuery.isError || !data ? <ApiErrorNotice label="README 内容加载失败。" error={readmeQuery.error} onRetry={() => void readmeQuery.refetch()} /> : <div className="si-readme-layout">
-      <UserBlocksCard blocks={draft} savedBlocks={data.user_blocks} onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))} onReset={() => { setDraft(data.user_blocks); setEditingRules(false); }} onSave={() => void onSave()} saving={saving} editingRules={editingRules} onEditRules={() => setEditingRules(true)} onCancelRules={() => { setDraft((current) => ({ ...current, rules: data.user_blocks.rules })); setEditingRules(false); }} />
+      <UserBlocksCard blocks={draft} savedBlocks={data.user_blocks} missingBlocks={data.missing_user_blocks} onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))} onReset={() => { setDraft(data.user_blocks); setEditingRules(false); }} onSave={() => void onSave()} saving={saving} editingRules={editingRules} onEditRules={() => setEditingRules(true)} onCancelRules={() => { setDraft((current) => ({ ...current, rules: data.user_blocks.rules })); setEditingRules(false); }} />
       <AutoBlocksCard data={data} />
     </div>}
     </ProjectTabPanel>
