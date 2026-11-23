@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.1",
+  "domain": "synthetic-shop.test",
+  "base_url": "https://synthetic-shop.test",
+  "platform": "other",
+  "currency": "USD",
+  "locale": "en-US",
+  "timezone": "UTC",
+  "markets": ["US", "TEST"],
+  "brand": {
+    "name": "Synthetic Archive",
+    "tagline": "User-owned tagline with spaces",
+    "voice": "Calm and concise",
+    "audience": "Sample readers",
+    "usp": ["Simple setup", "Clear records"]
+  },
+  "sitemaps": ["https://synthetic-shop.test/sitemap.xml"],
+  "crawl": {
+    "adapter": "gmc_feed",
+    "feed_url": "https://synthetic-shop.test/feed.xml",
+    "sku_field": "id",
+    "missing_as": "out_of_stock",
+    "max_removed_ratio": 1,
+    "crawl_product_pages": true,
+    "rate_limit_ms": 200
+  },
+  "categories": {
+    "mode": "feed",
+    "watched": [{ "name": "Demo products", "slug": "demo-products" }]
+  },
+  "seo": {
+    "core_keywords": ["sample product", "long tail phrase"],
+    "competitors": ["rival.example.test"],
+    "title_range": [30, 60],
+    "description_range": [80, 160]
+  },
+  "content": {
+    "blog_sitemaps": [],
+    "blog_url_patterns": ["/blog/"]
+  },
+  "edm": {
+    "platform": "other",
+    "max_products": 4,
+    "cooldown_days": 14
+  },
+  "integrations": {
+    "gsc": { "property": "https://synthetic-shop.test/" }
+  },
+  "schedule": {
+    "daily": { "enabled": false, "time": "02:00" },
+    "validate": { "enabled": false, "time": "03:00" },
+    "weekly": { "enabled": false, "days": [1], "time": "04:00" },
+    "readme": { "enabled": false, "time": "05:00" },
+    "monthly": { "enabled": false, "day_of_month": 1, "time": "06:00" },
+    "options": {
+      "wake_to_run": false,
+      "run_if_missed": false,
+      "notify_on_failure": false,
+      "validate_after_sync": false
+    }
+  }
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="https://example.test/ns/g" version="2.0">
+  <channel>
+    <title>Synthetic Archive</title>
+    <item>
+      <g:id>DEMO-A</g:id>
+      <g:title>Sample item A</g:title>
+      <g:link>https://synthetic-shop.test/products/demo-a</g:link>
+      <g:price>12.00 USD</g:price>
+      <g:availability>in stock</g:availability>
+      <g:product_type>Demo products</g:product_type>
+    </item>
+    <item>
+      <g:id>DEMO-B</g:id>
+      <g:title>Sample item B</g:title>
+      <g:link>https://synthetic-shop.test/products/demo-b</g:link>
+      <g:price>16.00 USD</g:price>
+      <g:availability>out of stock</g:availability>
+      <g:product_type>Demo products</g:product_type>
+    </item>
+  </channel>
+</rss>
