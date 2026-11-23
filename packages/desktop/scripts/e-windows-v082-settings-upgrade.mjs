@@ -207,10 +207,17 @@ function settingsPatch() {
 
 function checkFields(actual, expected, deviceId) {
   for (const [key, value] of Object.entries(expected)) {
-    assert.deepEqual(actual[key], value, `settings field ${key} changed during upgrade`);
+    if (key === "browser" || key === "notify") {
+      for (const [field, expectedValue] of Object.entries(value)) {
+        assert.deepEqual(actual[key]?.[field], expectedValue, `settings field ${key}.${field} changed during upgrade`);
+      }
+    } else {
+      assert.deepEqual(actual[key], value, `settings field ${key} changed during upgrade`);
+    }
   }
   assert.equal(actual.device_id, deviceId, "device_id changed during upgrade");
-  return ["device_id", ...Object.keys(expected)];
+  return ["device_id", ...Object.entries(expected).flatMap(([key, value]) =>
+    key === "browser" || key === "notify" ? Object.keys(value).map((field) => `${key}.${field}`) : [key])];
 }
 
 async function main() {
