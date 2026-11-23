@@ -132,6 +132,9 @@ describe("项目设置单页区块", () => {
     await renderSettings(entry);
 
     expect(await screen.findByRole("heading", { name: heading })).toBeTruthy();
+    const frame = document.querySelector(".si-page-frame-project.is-content");
+    expect(frame?.querySelector(".si-page-frame-header .si-project-header-single")).toBeTruthy();
+    expect(frame?.querySelector(".si-page-frame-body .si-project-config-page .si-tab-panel")).toBeTruthy();
     expect(document.getElementById(section)).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "配置目录" }).querySelectorAll("button")).toHaveLength(12);
     await waitFor(() => expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "start" }));

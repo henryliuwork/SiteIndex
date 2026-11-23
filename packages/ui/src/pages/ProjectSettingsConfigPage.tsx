@@ -5,7 +5,7 @@ import { Link, useLocation, useParams, useSearchParams } from "react-router-dom"
 import type { CategoriesConfig, FeedInspectResult, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, InfoTooltip, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, InfoTooltip, PageFrame, ProjectHeader, ProjectTabPanel, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { recommendedSkuGroupingPattern, skuGroupingExample, skuGroupingPresetForRule, skuGroupingPresetOptions, skuGroupingRuleForPreset, trailingNumberPattern, type SkuGroupingPreset } from "./project-settings-config/sku-grouping-presets";
 import { configSectionLinks, isConfigSectionId, scrollToConfigSection, type ConfigSectionId } from "./project-settings-config/section-navigation";
@@ -226,8 +226,8 @@ export function ProjectSettingsConfigPage() {
   const project = projectQuery.data.summary;
 
   return <DialogPrimitive.Root open={jsonOpen} onOpenChange={(open) => { if (open) openJson(); else setJsonOpen(false); }}>
+  <PageFrame kind="project" scroll="content" header={<ProjectHeader project={project} activeTab="settings" hasTabPanel actions={<><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></>} />}>
   <div className="si-page si-project-config-page">
-    <ProjectHeader project={project} activeTab="settings" hasTabPanel subtitle="index/site.json" actions={<><DialogPrimitive.Trigger asChild><Button type="button">以 JSON 编辑</Button></DialogPrimitive.Trigger><Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存配置"}</Button></>} />
     <ProjectTabPanel projectId={project.id} tab="settings">
     <div className="si-config-layout">
       <nav className="si-config-outline" aria-label="配置目录">{configSectionLinks.map(([target, label]) => <button key={target} type="button" aria-controls={target} aria-current={activeSection === target ? "location" : undefined} className={activeSection === target ? "active" : undefined} onClick={() => selectSection(target)}>{label}</button>)}</nav>
@@ -378,5 +378,6 @@ export function ProjectSettingsConfigPage() {
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   </div>
+  </PageFrame>
   </DialogPrimitive.Root>;
 }
