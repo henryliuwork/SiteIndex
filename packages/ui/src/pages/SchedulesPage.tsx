@@ -82,8 +82,8 @@ function ScheduleStatusCell({ project, registered, verification, canVerify, onVe
   return <div className="si-schedule-status-cell">
     <Chip tone={status.tone}>{status.label}</Chip>
     {canVerify && <div className="si-schedule-status-actions">
-      <Button size="small" disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id); }}>{checking ? "校验中…" : "校验"}</Button>
-      {result?.state === "path_mismatch" && <Button size="small" variant="primary" disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id, true); }}>{checking ? "修复中…" : "修复"}</Button>}
+      <Button disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id); }}>{checking ? "校验中…" : "校验"}</Button>
+      {result?.state === "path_mismatch" && <Button variant="primary" disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id, true); }}>{checking ? "修复中…" : "修复"}</Button>}
     </div>}
     {(result?.message || error) && <small className={error || result?.state === "error" ? "si-schedule-status-error" : "si-schedule-status-message"} role={error || result?.state === "error" ? "alert" : "status"}>{error || result?.message}</small>}
   </div>;
@@ -105,8 +105,8 @@ function TaskPager({ index, count, onChange, label }: { index: number; count: nu
   if (count <= 1) return null;
   return <div className="si-schedule-task-pager">
     <span aria-live="polite">{label} {index + 1} / {count}</span>
-    <Button size="small" disabled={index === 0} onClick={() => onChange(index - 1)}>上一条</Button>
-    <Button size="small" disabled={index >= count - 1} onClick={() => onChange(index + 1)}>下一条</Button>
+    <Button disabled={index === 0} onClick={() => onChange(index - 1)}>上一条</Button>
+    <Button disabled={index >= count - 1} onClick={() => onChange(index + 1)}>下一条</Button>
   </div>;
 }
 
@@ -131,7 +131,7 @@ function SystemTasksSection({ projects }: { projects: ProjectSummary[] }) {
   return <Card className="si-system-tasks" label="系统计划任务">
     <div className="si-system-tasks-heading">
       <div><h2>系统计划任务</h2><p>只读核对系统中的任务状态及项目计划配置。</p></div>
-      <Button size="small" icon={<RefreshCw size={14} aria-hidden="true" />} disabled={tasksQuery.isFetching} onClick={() => void refreshTasks()}>{tasksQuery.isFetching ? "刷新中…" : "刷新"}</Button>
+      <Button icon={<RefreshCw size={14} aria-hidden="true" />} disabled={tasksQuery.isFetching} onClick={() => void refreshTasks()}>{tasksQuery.isFetching ? "刷新中…" : "刷新"}</Button>
     </div>
     {tasksQuery.isLoading ? <p className="si-schedules-state" role="status">正在读取系统计划任务…</p>
       : tasksQuery.isError ? <ApiErrorNotice label="系统计划任务加载失败。" error={tasksQuery.error} onRetry={() => void tasksQuery.refetch()} />
@@ -197,7 +197,7 @@ function OrphanScheduleTasks() {
         : tasks.length === 0 ? <EmptyState title="没有孤立任务">当前没有指向已删除项目目录的计划任务。</EmptyState>
           : <><ul className="si-orphan-schedule-list">{tasks.slice(visibleIndex, visibleIndex + 1).map((task) => <li key={task.taskName}>
             <div><strong>{task.taskName}</strong><code>{task.path}</code><span>{task.reason}</span></div>
-            {api.schedule.removeOrphan && <Button size="small" disabled={cleaningTask !== null} onClick={() => void cleanTask(task.taskName)}>{cleaningTask === task.taskName ? "清理中…" : "清理"}</Button>}
+            {api.schedule.removeOrphan && <Button disabled={cleaningTask !== null} onClick={() => void cleanTask(task.taskName)}>{cleaningTask === task.taskName ? "清理中…" : "清理"}</Button>}
           </li>)}</ul><TaskPager index={visibleIndex} count={tasks.length} onChange={setTaskIndex} label="孤立任务" /></>}
   </Card>;
 }
@@ -284,7 +284,7 @@ export function SchedulesPage() {
     { id: "last_run", accessorFn: (row) => row.lastRun?.finished_at ?? row.lastRun?.started_at ?? "", header: "最近一次运行", meta: { width: 140, grow: 0, minWidth: 128, text: "clamp2" }, cell: ({ row }) => row.original.historyError ? <ApiErrorNotice label="运行记录读取失败。" error={row.original.historyError} /> : row.original.historyLoading ? <span className="si-muted">正在读取…</span> : row.original.lastRun ? <div className="si-schedule-last-run"><Chip tone={runStatus(row.original.lastRun).tone}>{runStatus(row.original.lastRun).label}</Chip><time>{formatDateTime(row.original.lastRun.finished_at ?? row.original.lastRun.started_at)}</time></div> : <span className="si-muted">暂无运行记录</span> },
     { id: "next_run", accessorFn: (row) => row.schedule ? nextRun(row.schedule)?.at ?? "" : "", header: "下一次运行", meta: { width: 160, grow: 1, minWidth: 140, text: "clamp2" }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">—</span> : row.original.schedule ? nextRun(row.original.schedule) ? <span>{nextRun(row.original.schedule)!.job} · {formatDateTime(nextRun(row.original.schedule)!.at)}</span> : <span className="si-muted">暂无计划</span> : <span className="si-muted">正在读取…</span> },
     { id: "system_status", accessorFn: (row) => row.schedule?.registered ? "已注册" : "未注册", header: "系统计划任务", meta: { width: 150, grow: 0, minWidth: 140, text: "clamp2" }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">读取失败</span> : row.original.schedule ? <ScheduleStatusCell project={row.original.project} registered={row.original.schedule.registered} verification={verificationByProject[row.original.project.id]} canVerify={typeof api.schedule.verify === "function"} onVerify={(projectId, repair) => { void runVerification(projectId, repair); }} /> : <span className="si-muted">正在读取…</span> },
-    { id: "actions", accessorFn: (row) => row.project.id, header: "操作", meta: { width: 92, grow: 0, minWidth: 84, text: "single", sticky: "right", align: "end" }, cell: ({ row }) => <Link className="si-button si-button-small" to={`/p/${row.original.project.id}/runs`}>去配置</Link> },
+    { id: "actions", accessorFn: (row) => row.project.id, header: "操作", meta: { width: 92, grow: 0, minWidth: 84, text: "single", sticky: "right", align: "end" }, cell: ({ row }) => <Link className="si-button" to={`/p/${row.original.project.id}/runs`}>去配置</Link> },
   ];
 
   const openProjectRuns = (row: ScheduleProjectRow) => navigate(`/p/${row.project.id}/runs`);

@@ -379,17 +379,16 @@ function CenterStatus({ status }: { status: ProjectSummary["sync"]["state"] }) {
 }
 
 function AttentionKpi({ count, expanded, onToggle }: { count: number; expanded: boolean; onToggle: () => void }) {
-  return <button
+  return <div className={"si-kpi-card" + (count > 0 ? " si-kpi-warn" : "")}>
+    <button
     type="button"
-    className={"si-kpi-card si-center-attention-toggle" + (count > 0 ? " si-kpi-warn" : "")}
+    className="si-center-attention-toggle"
     aria-expanded={expanded}
     aria-controls="si-center-attention-panel"
     onClick={onToggle}
-  >
-    <span className="si-kpi-label">待处理提醒</span>
+    >待处理提醒</button>
     <strong className="si-kpi-value">{count}</strong>
-    <span className="si-kpi-hint">点击按项目查看提醒</span>
-  </button>;
+  </div>;
 }
 
 function AttentionIssueRow({ project, issue }: { project: ProjectSummary; issue: SeoIssue }) {

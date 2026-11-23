@@ -248,7 +248,7 @@ describe("ProjectCenterPage attention list", () => {
     expect(await within(panel).findByText(reminders[3]!)).toBeTruthy();
     expect(within(panel).queryByText(reminders[0]!)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关闭抽屉" }));
-    await waitFor(() => expect(within(screen.getByRole("button", { name: /待处理提醒/ })).getByText("3")).toBeTruthy());
+    await waitFor(() => expect(within(screen.getByRole("button", { name: /待处理提醒/ }).closest(".si-kpi-card") as HTMLElement).getByText("3")).toBeTruthy());
     expect(queryClient.getQueryState(["seo", "summary", "demo"])?.isInvalidated).toBe(true);
     expect(listIssues).toHaveBeenCalledTimes(2);
   });
