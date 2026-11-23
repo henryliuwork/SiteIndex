@@ -113,12 +113,15 @@ export function SkillsPage() {
 
       <div className="si-skills-layout">
         <Card className="si-skills-list" label="Skill 列表">
+          <div className="si-skill-choice-list" role="radiogroup" aria-label="选择 Skill">
           {skillsQuery.data.map((skill) => (
-            <button key={skill.name} type="button" className={`si-skill-choice${skill.name === activeName ? " active" : ""}`} aria-pressed={skill.name === activeName} onClick={() => setSelectedName(skill.name)}>
+            <label key={skill.name} className={`si-skill-choice${skill.name === activeName ? " active" : ""}`}>
+              <input className="si-sr-only" type="radio" name="selected-skill" checked={skill.name === activeName} onChange={() => setSelectedName(skill.name)} />
               <span className="si-skill-choice-top"><code>{skill.name}</code><Chip tone={versionTone(skill)}>{skill.version}{skill.retired ? " · 已退役" : skill.has_update ? " 有更新" : ""}</Chip></span>
               <span className="si-skill-choice-description">{skill.description}</span>
-            </button>
+            </label>
           ))}
+          </div>
         </Card>
 
         <div className="si-skills-detail-column">
