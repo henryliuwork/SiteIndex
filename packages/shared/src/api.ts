@@ -197,6 +197,24 @@ export interface AppSettings {
   conflict_patterns: string[];
 }
 
+/** IPC-only revision metadata; the revision is not stored in settings.json. */
+export interface AppSettingsSnapshot extends AppSettings {
+  revision?: string;
+}
+
+/** Existing complete patches remain valid; protected saves may submit individual nested fields. */
+export type SettingsPatch = Partial<Omit<AppSettings, "browser" | "notify">> & {
+  browser?: Partial<AppSettings["browser"]>;
+  notify?: Partial<AppSettings["notify"]>;
+};
+
+/** Optional protected-save path. Without options, existing callers keep their previous behavior. */
+export interface ConfigSaveOptions {
+  revision?: string;
+  dirty_paths?: string[];
+  clear?: string[];
+}
+
 /** 本机缓存中的项目界面偏好，不写入项目云盘目录。 */
 export interface ProjectUiState {
   columns: Record<string, string[]>;
@@ -242,7 +260,15 @@ export interface ProjectDetail {
   summary: ProjectSummary;
   config: SiteConfig;
   runner: RunnerInfo | null;
+  /** Hash of the raw site.json bytes loaded with config; optional for older bridges. */
+  config_revision?: string;
 }
+
+/** A partial field patch for protected project saves; arrays remain whole-field values. */
+export type SiteConfigPatch = Omit<Partial<SiteConfig>, "brand" | "crawl"> & {
+  brand?: Partial<SiteConfig["brand"]>;
+  crawl?: Partial<SiteConfig["crawl"]>;
+};
 
 export interface DetectResult {
   input: string;
@@ -684,6 +710,8 @@ export interface EdmCampaignSafetyData {
 export interface ReadmeData {
   user_blocks: { overview: string; focus: string; rules: string };
   auto_blocks: { id: string; title: string; updated_at: ISODateTime | null; schedule: string }[];
+  /** User sections whose headings are absent from README.md. */
+  missing_user_blocks?: (keyof ReadmeData["user_blocks"])[];
   /** @deprecated 2026-10-27 起软件不再管理工作区文件夹（docs/decisions/2026-10-27-data-index-focus.md），待 A/B/C 移除调用后删除。 */
   folder_map: FolderRow[];
 }
@@ -806,8 +834,8 @@ export interface SiteIndexApi {
     platform(): Promise<"win32" | "darwin">;
   };
   settings: {
-    get(): Promise<AppSettings>;
-    set(patch: Partial<AppSettings>): Promise<AppSettings>;
+    get(): Promise<AppSettingsSnapshot>;
+    set(patch: SettingsPatch, options?: ConfigSaveOptions): Promise<AppSettingsSnapshot>;
     detectBrowser(): Promise<BrowserStatus>;
     cliStatus(): Promise<CliStatus>;
     installCli(): Promise<CliStatus>;
@@ -846,7 +874,7 @@ export interface SiteIndexApi {
     addExisting(path: string): Promise<ProjectSummary>;
     /** 仅取消本机登记，不删除项目目录中的任何文件。 */
     remove?(id: ProjectId): Promise<void>;
-    updateConfig(id: ProjectId, patch: Partial<SiteConfig>): Promise<SiteConfig>;
+    updateConfig(id: ProjectId, patch: SiteConfigPatch, options?: ConfigSaveOptions): Promise<SiteConfig>;
     onChanged(cb: (id: ProjectId) => void): Unsubscribe;
   };
   /** v0.4.0 workspace API；可选以兼容尚未升级的旧 bridge 与 mock。 */
