@@ -164,13 +164,13 @@ export function WordPressCredentialsCard() {
                 {bridgeReady && statusQuery?.isLoading && <span role="status" className="si-setting-hint">正在读取状态…</span>}
                 {presentation && <Chip tone={presentation.tone}>{presentation.label}</Chip>}
                 {bridgeReady && state && state !== "unavailable" && <>
-                  <Button size="small" onClick={() => { setUsername(""); setApplicationPassword(""); setEditing(target); }}>
+                  <Button onClick={() => { setUsername(""); setApplicationPassword(""); setEditing(target); }}>
                     {state === "configured" ? "替换凭据" : state === "needs_reentry" ? "重新录入" : "配置凭据"}
                   </Button>
-                  {(state === "configured" || state === "needs_reentry") && <Button size="small" variant="danger" onClick={() => setPendingDelete(target)}>删除本机凭据</Button>}
+                  {(state === "configured" || state === "needs_reentry") && <Button variant="danger" onClick={() => setPendingDelete(target)}>删除本机凭据</Button>}
                 </>}
-                {bridgeReady && statusQuery?.isError && <Button size="small" onClick={() => void statusQuery.refetch()}>重试</Button>}
-                {bridgeReady && state === "unavailable" && <Button size="small" onClick={() => void statusQuery?.refetch()}>重新检查</Button>}
+                {bridgeReady && statusQuery?.isError && <Button onClick={() => void statusQuery.refetch()}>重试</Button>}
+                {bridgeReady && state === "unavailable" && <Button onClick={() => void statusQuery?.refetch()}>重新检查</Button>}
                 {!bridgeReady && <Chip tone="warn">桌面接口不可用</Chip>}
               </div>
             </div>

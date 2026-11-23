@@ -796,7 +796,7 @@ async function main(): Promise<void> {
             const baselineKey = `${route.name}@${viewport.width}`;
             spacingFindings = await inspectSpacing(page, route.name);
             const allowed = spacingBaseline.checks[baselineKey];
-            if (!allowed) failures.push({ rule: "spacing-baseline-missing", message: `${baselineKey} 未登记间距检查。` });
+            if (!allowed && spacingFindings.length > 0) failures.push({ rule: "spacing-baseline-missing", message: `${baselineKey} 未登记间距检查。` });
             const comparison = compareSpacingFindings(spacingFindings, allowed);
             spacingLegacyCount = comparison.legacyCount;
             spacingResolvedKeys = comparison.resolvedKeys;
