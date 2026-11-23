@@ -1,5 +1,5 @@
 import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -19,6 +19,7 @@ import {
   type Category,
   type CategoryPreview,
   type ContentSummary,
+  type ConfigSaveOptions,
   type DesignTokens,
   type DailySummaryRow,
   type DetectResult,
@@ -503,7 +504,7 @@ async function projectFilePath(projectPath: string, relativePath: string): Promi
   return absoluteProjectPath(projectPath, relativePath, await pathsForProject(projectPath));
 }
 
-async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
+async function readSiteConfigSource(projectPath: string): Promise<{ config: SiteConfig; content: string }> {
   const configPath = await projectFilePath(projectPath, PATHS.site);
   let content: string;
   try {
@@ -539,14 +540,64 @@ async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
         options: { ...defaultSchedule.options, ...schedule?.options },
       },
     } as SiteConfig;
-    return normalizeSiteFeedConfig(config);
+    return { config: normalizeSiteFeedConfig(config), content };
   } catch (error) {
     throw siteError("CONFIG_INVALID", "项目配置文件不是有效 JSON", String(error));
   }
 }
 
+async function readSiteConfig(projectPath: string): Promise<SiteConfig> {
+  return (await readSiteConfigSource(projectPath)).config;
+}
+
 function serializeSiteConfig(config: SiteConfig): string {
   return `${JSON.stringify(config, (key, value) => key === "workspace_folders" ? undefined : value, 2)}\n`;
+}
+
+function configRevision(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function configPathValue(record: UnknownRecord, keyPath: string): unknown {
+  let value: unknown = record;
+  for (const key of keyPath.split(".")) {
+    if (!key || key === "__proto__" || key === "constructor" || key === "prototype") {
+      throw siteError("CONFIG_INVALID", "配置字段路径无效。", keyPath);
+    }
+    const parent = asRecord(value);
+    if (!parent || !Object.hasOwn(parent, key)) throw siteError("CONFIG_INVALID", "配置字段未随请求提交。", keyPath);
+    value = parent[key];
+  }
+  if (value === undefined) throw siteError("CONFIG_INVALID", "配置字段未随请求提交。", keyPath);
+  return value;
+}
+
+function mergeConfigFields(base: UnknownRecord, patch: UnknownRecord, options?: ConfigSaveOptions, prefix = ""): UnknownRecord {
+  const next = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
+      throw siteError("CONFIG_INVALID", "配置字段名无效。", key);
+    }
+    if (!prefix && key === "workspace_folders") continue;
+    const keyPath = prefix ? `${prefix}.${key}` : key;
+    if (options?.dirty_paths && !options.dirty_paths.some((dirty) =>
+      dirty === keyPath || dirty.startsWith(`${keyPath}.`) || keyPath.startsWith(`${dirty}.`))) continue;
+    if (value === undefined) continue;
+    const object = asRecord(value);
+    if (object) {
+      next[key] = mergeConfigFields(asRecord(base[key]) ?? {}, object, options, keyPath);
+    } else {
+      const previous = base[key];
+      const clearsValue = value === "" || value === null || (Array.isArray(value) && value.length === 0);
+      const hadValue = previous !== undefined && previous !== null && previous !== ""
+        && (!Array.isArray(previous) || previous.length > 0);
+      if (clearsValue && hadValue && !options?.clear?.includes(keyPath)) {
+        throw siteError("CONFIG_INVALID", "清空已有配置需要明确的清空操作。", keyPath);
+      }
+      next[key] = value;
+    }
+  }
+  return next;
 }
 
 type SeoIgnoreRule = { url?: string; rule: SeoIssue["rule"] };
@@ -2196,32 +2247,46 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
     get: async (id) => {
       const projectPath = resolve(id);
       const snapshot = await loadProjectSummary(projectPath);
+      const source = await readSiteConfigSource(projectPath);
       const storageLocation = await inspectProjectStorageLocation(projectPath);
-      return { summary: projectSummary(snapshot, id, ctx.deviceId, storageLocation), config: snapshot.config, runner: snapshot.runner };
+      return { summary: projectSummary(snapshot, id, ctx.deviceId, storageLocation),
+        config: source.config, config_revision: configRevision(source.content), runner: snapshot.runner };
     },
-    updateConfig: async (id, patch) => {
+    updateConfig: async (id, patch, options) => {
       const projectPath = resolve(id);
       await assertProjectStorageLocal(projectPath);
-      const snapshot = await load(projectPath);
-      const patchCrawl = asRecord((patch as UnknownRecord).crawl);
-      const crawl: UnknownRecord = { ...snapshot.config.crawl, ...patchCrawl };
-      if (patchCrawl && ["feed_url", "feed_urls", "feed"].some((key) => Object.prototype.hasOwnProperty.call(patchCrawl, key))) {
-        const patchFeed = configuredFeedValue({ crawl: patchCrawl });
-        crawl.feed_url = patchFeed ?? [];
-      }
-      const config = normalizeSiteFeedConfig({
-        ...snapshot.config,
-        ...patch,
-        crawl: crawl as unknown as SiteConfig["crawl"],
-        workspace_folders: [],
-      } as SiteConfig);
-      try {
-        await atomicWrite(await projectFilePath(projectPath, PATHS.site), serializeSiteConfig(config));
-      } catch (error) {
-        throw setError(error);
-      }
-      invalidate(projectPath);
-      return config;
+      return withLock(projectPath, async () => {
+        const source = await readSiteConfigSource(projectPath);
+        const incoming = asRecord(patch);
+        if (!incoming) throw siteError("CONFIG_INVALID", "配置更新内容无效。");
+        if (!Object.keys(incoming).length && !options?.clear?.length) return source.config;
+        if (options?.dirty_paths?.length === 0 && !options.clear?.length) return source.config;
+        if (options?.revision && options.revision !== configRevision(source.content)) {
+          throw siteError("CONFIG_INVALID", "配置已在别处更新，请刷新后再保存。");
+        }
+        for (const field of [...(options?.dirty_paths ?? []), ...(options?.clear ?? [])]) configPathValue(incoming, field);
+        if (options?.clear?.some((field) => options.dirty_paths && !options.dirty_paths.includes(field))) {
+          throw siteError("CONFIG_INVALID", "清空字段必须是本次修改的字段。");
+        }
+        const patchCrawl = asRecord(incoming.crawl);
+        const hasFeedPatch = patchCrawl && ["feed_url", "feed_urls", "feed"].some((key) => Object.hasOwn(patchCrawl, key));
+        const prepared: UnknownRecord = hasFeedPatch ? {
+          ...incoming, crawl: { ...patchCrawl, feed_url: configuredFeedValue({ crawl: patchCrawl }) ?? [] },
+        } : incoming;
+        const merged = mergeConfigFields(asRecord(source.config) ?? {}, prepared, options);
+        const config = normalizeSiteFeedConfig({ ...merged, workspace_folders: [] } as unknown as SiteConfig);
+        if (options && serializeSiteConfig(config) === serializeSiteConfig(source.config)) return source.config;
+        const serialized = serializeSiteConfig(config);
+        try {
+          const sitePath = await projectFilePath(projectPath, PATHS.site);
+          await atomicWrite(sitePath, serialized);
+          if (await readFile(sitePath, "utf8") !== serialized) {
+            throw siteError("WRITE_FAILED", "配置写入后读回不一致，请重试。");
+          }
+        } catch (error) { throw setError(error); }
+        invalidate(projectPath);
+        return config;
+      });
     },
     detect: detectSite,
     inspectFeed: inspectFeeds,
