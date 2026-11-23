@@ -1,6 +1,13 @@
 /** Packaged v0.8.0 UI actions; all values and paths are synthetic runner-local data. */
 export async function exerciseBaselineAppSettings(page, values) {
   const rows = [];
+  let activeTab = "基本信息";
+  let inSettings = true;
+  const reloadSettings = async () => {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator("#si-device-name").waitFor();
+    if (activeTab !== "基本信息") await page.getByRole("tab", { name: activeTab }).click();
+  };
   const record = async (ids, action, verify) => {
     try {
       await action();
@@ -11,17 +18,22 @@ export async function exerciseBaselineAppSettings(page, values) {
           return JSON.stringify(actual) === JSON.stringify(expected);
         });
       }, { paths: verify }, { timeout: 12_000 });
+      if (inSettings) {
+        await page.getByText("正在保存软件设置…").waitFor({ state: "hidden", timeout: 12_000 });
+        await reloadSettings();
+      }
       for (const id of ids) rows.push({ id, status: "passed", evidence: "baseline packaged UI save + IPC readback" });
     } catch (error) {
       for (const id of ids) rows.push({ id, status: "failed", evidence: "baseline packaged UI save/readback failed",
         errorType: error?.name ?? "Error" });
+      if (inSettings) await reloadSettings();
     }
   };
   const blur = async (selector, value) => {
     await page.locator(selector).fill(value);
     await page.locator(selector).press("Tab");
   };
-  const tab = async (name) => page.getByRole("tab", { name }).click();
+  const tab = async (name) => { await page.getByRole("tab", { name }).click(); activeTab = name; };
 
   await page.evaluate(() => { window.location.hash = "#/settings"; });
   await page.locator("#si-device-name").waitFor();
@@ -60,6 +72,7 @@ export async function exerciseBaselineAppSettings(page, values) {
       const settings = await window.siteindex.settings.get();
       return settings.skill_platforms.some((entry) => entry.dir === directory);
     }, values.skillDirectory, { timeout: 12_000 });
+    await page.getByText("正在保存软件设置…").waitFor({ state: "hidden", timeout: 12_000 });
     rows.push({ id: 78, status: "passed", evidence: "baseline packaged UI save + IPC readback" });
   } catch (error) {
     rows.push({ id: 78, status: "failed", evidence: "baseline packaged UI save/readback failed",
@@ -67,6 +80,7 @@ export async function exerciseBaselineAppSettings(page, values) {
   }
 
   await page.evaluate(() => { window.location.hash = "#/"; });
+  inSettings = false;
   await page.getByRole("button", { name: "添加已有项目" }).waitFor();
   await record([79], async () => {
     await page.getByRole("button", { name: "添加已有项目" }).click();
@@ -86,10 +100,14 @@ export async function exerciseBaselineAppSettings(page, values) {
   if (vault?.state === "unavailable") {
     rows.push({ id: 82, status: "unverified", evidence: "runner OS safe storage unavailable; no credential submitted" });
   } else {
+    let credentialStage = "target-button";
     try {
+      await page.getByRole("heading", { name: "WordPress 图片托管凭据" }).waitFor();
       await page.getByRole("button", { name: "配置凭据" }).first().click();
+      credentialStage = "credential-form";
       await page.locator("#si-wp-username").fill("fixture-only-user");
       await page.locator("#si-wp-application-password").fill("fixture-only-password");
+      credentialStage = "save-status";
       await page.getByRole("button", { name: "保存到本机" }).click();
       await page.waitForFunction(async (origin) =>
         (await window.siteindexWindow?.wordpressCredentials?.status(origin))?.state === "configured",
@@ -97,7 +115,7 @@ export async function exerciseBaselineAppSettings(page, values) {
       rows.push({ id: 82, status: "passed", evidence: "baseline packaged UI save + vault status only" });
     } catch (error) {
       rows.push({ id: 82, status: "failed", evidence: "baseline packaged credential UI/status failed",
-        errorType: error?.name ?? "Error" });
+        errorType: error?.name ?? "Error", stage: credentialStage });
     }
   }
   rows.push({ id: 83, status: "unverified", evidence: "OS schedule registration deferred to independent-entry block" });
