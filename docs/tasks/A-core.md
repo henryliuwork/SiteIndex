@@ -223,3 +223,4 @@
 ### v0.8.2 · README 保存可靠性
 
 - [x] #745 Core：缺少用户段标题时补写；读取和保存用户段时保留 README 自动区块；虚构项目覆盖保存与 refresh 读回
+- [x] #745 Core：`readme.get().missing_user_blocks` 按固定顺序报告缺失用户段，标题存在但正文为空不误报；保存补齐后不再报告

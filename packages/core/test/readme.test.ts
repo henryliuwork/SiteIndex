@@ -85,17 +85,35 @@ describe("README automatic blocks", () => {
     const before = await readFile(readmePath, "utf8");
     await writeFile(readmePath, before.replace(/## 当前重点\r?\n[^\r\n]*\r?\n/, ""), "utf8");
     const blocks = { overview: "Synthetic overview", focus: "Synthetic focus", rules: "Synthetic rules" };
+    expect((await api.readme.get("synthetic")).missing_user_blocks).toEqual(["focus"]);
 
     await api.readme.saveUserBlocks("synthetic", blocks);
     const saved = await readFile(readmePath, "utf8");
     expect(saved).toContain("## 当前重点\nSynthetic focus\n");
     expect(parseReadmeAutoBlocks(saved)).toHaveLength(5);
     expect((await api.readme.get("synthetic")).user_blocks).toEqual(blocks);
+    expect((await api.readme.get("synthetic")).missing_user_blocks).toBeUndefined();
 
     await api.readme.refresh("synthetic");
     expect((await api.readme.get("synthetic")).user_blocks).toEqual(blocks);
     expect(parseReadmeAutoBlocks(await readFile(readmePath, "utf8"))).toHaveLength(5);
   }, 15_000);
+
+  it("reports all missing user headings in stable order without treating empty bodies as missing", async () => {
+    const projectPath = await makeSyntheticReadmeProject();
+    const api = service(projectPath);
+    const readmePath = path.join(projectPath, PATHS.readme);
+    const before = await readFile(readmePath, "utf8");
+    expect((await api.readme.get("synthetic")).missing_user_blocks).toBeUndefined();
+
+    const autoStart = before.indexOf('<!-- siteindex:auto:start id="index-summary" -->');
+    await writeFile(readmePath, `# Synthetic project\n\n${before.slice(autoStart)}`, "utf8");
+    expect((await api.readme.get("synthetic")).missing_user_blocks).toEqual(["overview", "focus", "rules"]);
+
+    await writeFile(readmePath, `# Synthetic project\n\n## 项目概况\n\n${before.slice(autoStart)}`, "utf8");
+    expect((await api.readme.get("synthetic")).missing_user_blocks).toEqual(["focus", "rules"]);
+    expect((await api.readme.get("synthetic")).user_blocks.overview).toBe("");
+  });
 
   it("parses and replaces block bodies while preserving every byte outside their markers", () => {
     const source = [
