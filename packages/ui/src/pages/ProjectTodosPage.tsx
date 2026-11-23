@@ -1,15 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { ListQuery, PathKey, ProjectTodo, TodoManualHistoryEntry, TodoManualStatus, UpdateTodoManualInput } from "@siteindex/shared";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { AlertCircle, CheckCircle2, ClipboardList, Clock3, FileSearch, MinusCircle } from "lucide-react";
 import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageFrame, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, useToast } from "../components";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import "./project-todos/page.css";
 
-type TodoQueryFilters = { status?: TodoManualStatus };
+type TodoQueryFilters = { status?: TodoManualStatus | "active" };
 type TodoUpdateSubmission =
   | { dedupe_key: string; field: "status"; input: Extract<UpdateTodoManualInput, { status: TodoManualStatus }> }
   | { dedupe_key: string; field: "note"; input: Extract<UpdateTodoManualInput, { note: string | null }> };
@@ -75,7 +75,7 @@ function historyIcon(entry: TodoManualHistoryEntry) {
 }
 
 function filterFinding(item: ProjectTodo, search: string, status: string): boolean {
-  if (status && item.state.status !== status) return false;
+  if (status === "active" ? ["done", "ignored"].includes(item.state.status) : status && item.state.status !== status) return false;
   if (!search) return true;
   const value = [
     item.finding.title,
@@ -92,7 +92,11 @@ function filterFinding(item: ProjectTodo, search: string, status: string): boole
 
 export function ProjectTodosPage() {
   const { id = "demo" } = useParams<{ id: string }>();
-  const [query, setQuery] = useState(initialQuery);
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState<ListQuery<TodoQueryFilters>>(() => ({ ...initialQuery,
+    filters: { status: searchParams.get("status") === "active" ? "active" : undefined },
+  }));
+  const openedTodoKey = useRef<string | null>(null);
   const [selectedTodo, setSelectedTodo] = useState<ProjectTodo | null>(null);
   const [draftStatus, setDraftStatus] = useState<TodoManualStatus>("open");
   const [draftNote, setDraftNote] = useState("");
@@ -148,6 +152,13 @@ export function ProjectTodosPage() {
     setDraftStatus(item.state.status);
     setDraftNote(item.state.note ?? "");
   };
+  useEffect(() => {
+    const key = searchParams.get("todo");
+    if (!key || openedTodoKey.current === key || !todosQuery.data) return;
+    openedTodoKey.current = key;
+    const item = todosQuery.data.items.find(({ finding }) => finding.dedupe_key === key);
+    if (item) selectTodo(item);
+  }, [searchParams, todosQuery.data]);
   const saveStatus = () => {
     if (!selectedTodo || !hasUpdateApi || selectedTodo.state.status === draftStatus) return;
     updateMutation.mutate({
@@ -273,12 +284,13 @@ export function ProjectTodosPage() {
           value={query.filters?.status ?? "all"}
           options={[
             { value: "all", label: "全部状态" },
+            { value: "active", label: "未完成" },
             ...Object.entries(statusLabels).map(([value, label]) => ({ value, label })),
           ]}
           onValueChange={(value) => setQuery((current) => ({
             ...current,
             page: 1,
-            filters: { status: value === "all" ? undefined : value as TodoManualStatus },
+            filters: { status: value === "all" ? undefined : value as TodoQueryFilters["status"] },
           }))}
         /></FilterBar></div>
         <span className="si-todo-result-count">显示 {rows.length} / {filteredItems.length} 条</span>

@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, Clipboard, ExternalLink, FileCheck2, FileText, FolderOpen, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AttentionItem, Kpi, OverviewData, SeoIssue } from "@siteindex/shared";
+import type { AttentionItem, OverviewData, SeoIssue } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, KpiCard, Notice, PageFrame, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, Notice, PageFrame, ProjectHeader, ProjectTabPanel, useToast } from "../components";
+import { ProductModule, SeoModule, TodoModule } from "./overview/core-modules";
 import { OverviewSummary, attentionDestination, labelAttentionText } from "./overview/summary";
 import { issueLabels } from "./seo/labels";
 import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
@@ -39,12 +40,14 @@ export function OverviewPage() {
   const toast = useToast();
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const overviewQuery = useQuery({ queryKey: ["overview", id], queryFn: () => api.overview.get(id) });
+  const todosApi = api.todos;
+  const hasTodos = typeof todosApi?.list === "function";
+  const todosQuery = useQuery({ queryKey: ["project-todos", id], queryFn: () => todosApi!.list(id), enabled: hasTodos, retry: false });
+  const productQuery = useQuery({ queryKey: ["inventory-summary", id, 30], queryFn: () => api.inventory.summary(id, 30) });
+  const seoSummaryQuery = useQuery({ queryKey: ["seo", "summary", id], queryFn: () => api.seo.summary(id) });
   const listPageRows = api.seo.listPageRows;
   const seoCardsQuery = useQuery({ queryKey: ["seo", "pageRows", id, "overview-cards"],
     queryFn: () => listPageRows!(id, { page: 1, pageSize: 1, filters: {} }), enabled: Boolean(listPageRows) });
-  const contentCardsQuery = useQuery({ queryKey: ["content", "summary", id], queryFn: () => api.content.summary(id) });
-  const edmCardsQuery = useQuery({ queryKey: ["edm", "images", id, "overview-missing"],
-    queryFn: () => api.edm.listImages(id, { page: 1, pageSize: 1, filters: { view: "none" } }) });
   const [running, setRunning] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [runId, setRunId] = useState<string | null>(null);
@@ -65,9 +68,10 @@ export function OverviewPage() {
       else toast.error(result.summary);
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["overview", id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-todos", id] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory-summary", id] }),
+        queryClient.invalidateQueries({ queryKey: ["seo", "summary", id] }),
         queryClient.invalidateQueries({ queryKey: ["seo", "pageRows", id] }),
-        queryClient.invalidateQueries({ queryKey: ["content", "summary", id] }),
-        queryClient.invalidateQueries({ queryKey: ["edm", "images", id] }),
         invalidateProjectSummary(queryClient, id),
       ]);
     });
@@ -131,22 +135,6 @@ export function OverviewPage() {
     ? overview?.attention.filter((item) => item.text.toLowerCase() !== "尚未填写 gmc feed")
     : overview?.attention;
   const canIgnoreAttention = typeof api.seo.setRuleIgnored === "function";
-  const seoSummary = seoCardsQuery.data?.summary;
-  const contentKpis = contentCardsQuery.data?.kpis ?? [];
-  const blogMetric = (key: string, label: string): Kpi | null => {
-    const value = contentKpis.find((item) => item.key === key)?.value;
-    return value !== undefined && /^\d+$/.test(value)
-      ? { key, label, value, link: `/p/${encodeURIComponent(id)}/content?issue=${key}` } : null;
-  };
-  const cards: Kpi[] = [
-    ...(seoSummary ? [
-      { key: "seo-new", label: "本次新增问题页", value: String(seoSummary.new_pages), link: `/p/${encodeURIComponent(id)}/seo?summary=new` },
-      { key: "seo-unindexed", label: "未收录页面", value: String(seoSummary.unindexed_pages), link: `/p/${encodeURIComponent(id)}/seo?summary=unindexed` },
-    ] : []),
-    blogMetric("no_schema", "博客缺少 Schema"),
-    blogMetric("no_links", "博客无站内链接"),
-    ...(edmCardsQuery.data ? [{ key: "edm-missing", label: "EDM 缺图 SKU", value: String(edmCardsQuery.data.total), link: `/p/${encodeURIComponent(id)}/edm?view=none` }] : []),
-  ].filter((item): item is Kpi => item !== null);
   return <PageFrame kind="project" header={<ProjectHeader
       project={summary}
       activeTab="overview"
@@ -166,17 +154,12 @@ export function OverviewPage() {
     <div className="si-overview-content">
     {running && <Notice tone="info" title="每日同步进行中">{syncMessage || "正在同步项目数据…"}</Notice>}
     {summary.sync.state === "failed" && !running && <Notice tone="error" title="最近一次同步失败">请查看运行记录中的原因，或重新同步。</Notice>}
+    <div className="si-overview-modules" aria-label="项目概览模块">
+      <TodoModule id={id} available={hasTodos} query={todosQuery} />
+      <ProductModule id={id} query={productQuery} />
+      <SeoModule id={id} summaryQuery={seoSummaryQuery} pagesQuery={seoCardsQuery} hasPageRows={Boolean(listPageRows)} />
+    </div>
     {overviewQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目概览…</div> : overviewQuery.isError || !overview ? <ApiErrorNotice label="概览数据加载失败。" error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} /> : <>
-    {(seoCardsQuery.isError || contentCardsQuery.isError || edmCardsQuery.isError || !listPageRows) && <div className="si-overview-metric-errors">
-      {!listPageRows && <Notice tone="warn">当前版本暂不支持 SEO 页面指标。</Notice>}
-      {seoCardsQuery.isError && <ApiErrorNotice label="SEO 页面指标加载失败。" error={seoCardsQuery.error} onRetry={() => void seoCardsQuery.refetch()} />}
-      {contentCardsQuery.isError && <ApiErrorNotice label="博客指标加载失败。" error={contentCardsQuery.error} onRetry={() => void contentCardsQuery.refetch()} />}
-      {edmCardsQuery.isError && <ApiErrorNotice label="EDM 缺图指标加载失败。" error={edmCardsQuery.error} onRetry={() => void edmCardsQuery.refetch()} />}
-    </div>}
-    {cards.length > 0 && <section className="si-overview-kpis" aria-label="项目指标">
-      {cards.map((metric) => <KpiCard key={metric.key} metric={metric} />)}
-    </section>}
-
     <section className="si-overview-attention si-panel">
       <div className="si-panel-heading"><h2>需要关注</h2><span>来自今日同步与数据检查</span></div>
       {attention?.length ? <ul>
