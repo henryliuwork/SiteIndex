@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { compareSpacingFindings } from "../spacing-policy";
+import { compareSpacingFindings, hasMissingSpacingBaseline, validateSpacingExceptions, type SpacingException } from "../spacing-policy";
 import type { SpacingFinding } from "../spacing-inspect";
 
 const finding = (rule: SpacingFinding["rule"], key: string): SpacingFinding => ({ rule, key, message: key });
 
 describe("spacing baseline", () => {
+  const tableHeaderHelp: SpacingException = {
+    id: "table-header-help-4px", rule: "S3", reason: "共享表头说明按设计规范保留 4px 间距",
+  };
+
   it("fails a new violation even if a different old violation was resolved", () => {
     const result = compareSpacingFindings([finding("S1", "S1:new")], ["S1:old"]);
     expect(result.introduced.map((item) => item.key)).toEqual(["S1:new"]);
@@ -16,5 +20,28 @@ describe("spacing baseline", () => {
     expect(result.introduced).toEqual([]);
     expect(result.legacyCount).toBe(1);
     expect(result.resolvedKeys).toEqual(["S3:resolved"]);
+  });
+
+  it("allows only the named table header help exception; other S3 gaps still fail", () => {
+    const findings = [
+      { ...finding("S3", "S3:header"), exceptionId: tableHeaderHelp.id },
+      finding("S3", "S3:other"),
+      { ...finding("S2", "S2:header"), exceptionId: tableHeaderHelp.id },
+    ];
+    const result = compareSpacingFindings(findings, [], [tableHeaderHelp]);
+    expect(result.introduced.map(({ key }) => key)).toEqual(["S3:other", "S2:header"]);
+    expect(result.legacyCount).toBe(0);
+  });
+
+  it("requires a reason and caps registered exceptions at ten", () => {
+    expect(() => validateSpacingExceptions({ version: 1, exceptions: [tableHeaderHelp] })).not.toThrow();
+    expect(() => validateSpacingExceptions({ version: 1, exceptions: [{ ...tableHeaderHelp, reason: "" }] })).toThrow();
+    expect(() => validateSpacingExceptions({ version: 1, exceptions: Array.from({ length: 11 }, (_, index) => ({ ...tableHeaderHelp, id: `exception-${index}` })) })).toThrow();
+  });
+
+  it("does not require a baseline when all findings are registered exceptions", () => {
+    const excepted = { ...finding("S3", "S3:header"), exceptionId: tableHeaderHelp.id };
+    expect(hasMissingSpacingBaseline(undefined, compareSpacingFindings([excepted], undefined, [tableHeaderHelp]).introduced)).toBe(false);
+    expect(hasMissingSpacingBaseline(undefined, compareSpacingFindings([excepted, finding("S3", "S3:other")], undefined, [tableHeaderHelp]).introduced)).toBe(true);
   });
 });

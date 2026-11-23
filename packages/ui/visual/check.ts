@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { inspectFrame } from "./frame-inspect";
 import { inspectSpacing, type SpacingFinding } from "./spacing-inspect";
-import { compareSpacingFindings, type SpacingBaseline } from "./spacing-policy";
+import { compareSpacingFindings, hasMissingSpacingBaseline, validateSpacingExceptions, type SpacingBaseline, type SpacingExceptions } from "./spacing-policy";
 import { checkFrameMetrics, checkSkuTables, projectSettingsScrollableBodyRoutes, type FrameBaseline } from "./frame-policy";
 import { inspectTooltips } from "./tooltip-inspect";
 import { createServer, type ViteDevServer } from "vite";
@@ -703,6 +703,9 @@ async function main(): Promise<void> {
   const frameBaseline = JSON.parse(await readFile(frameBaselinePath, "utf8")) as FrameBaseline;
   const spacingBaselinePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "spacing-baseline.json");
   const spacingBaseline = JSON.parse(await readFile(spacingBaselinePath, "utf8")) as SpacingBaseline;
+  const spacingExceptionsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "spacing-exceptions.json");
+  const spacingExceptions = JSON.parse(await readFile(spacingExceptionsPath, "utf8")) as SpacingExceptions;
+  validateSpacingExceptions(spacingExceptions);
   const stylePolicy = compareStyleFindings(styleFindings, styleBaselineFile.counts);
 
   try {
@@ -796,8 +799,8 @@ async function main(): Promise<void> {
             const baselineKey = `${route.name}@${viewport.width}`;
             spacingFindings = await inspectSpacing(page, route.name);
             const allowed = spacingBaseline.checks[baselineKey];
-            if (!allowed && spacingFindings.length > 0) failures.push({ rule: "spacing-baseline-missing", message: `${baselineKey} 未登记间距检查。` });
-            const comparison = compareSpacingFindings(spacingFindings, allowed);
+            const comparison = compareSpacingFindings(spacingFindings, allowed, spacingExceptions.exceptions);
+            if (hasMissingSpacingBaseline(allowed, comparison.introduced)) failures.push({ rule: "spacing-baseline-missing", message: `${baselineKey} 未登记间距检查。` });
             spacingLegacyCount = comparison.legacyCount;
             spacingResolvedKeys = comparison.resolvedKeys;
             failures.push(...comparison.introduced.map(({ rule, message }) => ({ rule, message })));
