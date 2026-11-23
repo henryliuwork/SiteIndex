@@ -177,13 +177,17 @@
 
 /* PageFrame opts into the v0.8 single-row header; legacy routes remain unchanged. */
 .si-project-header-single { top: 0; display: flex; height: var(--project-header-height); align-items: center; gap: var(--space-4); border-bottom: 1px solid var(--color-line); }
-.si-project-header-single .si-project-tab-strip { min-width: 0; flex: 1 1 auto; }
+.si-project-header-single .si-project-tab-strip { min-width: 0; height: 100%; flex: 1 1 auto; }
 .si-project-header-single .si-tabs { height: 100%; gap: var(--space-1); }
-.si-project-header-single .si-tabs button { padding-inline: var(--space-3); font-size: var(--fs-sub-title); }
+.si-project-header-single .si-tabs button { display: inline-flex; height: 100%; align-items: center; padding-inline: var(--space-3); font-size: var(--fs-sub-title); font-weight: 400; }
+.si-project-header-single .si-tabs button:hover { color: var(--color-ink); }
+.si-project-header-single .si-tabs button.active { color: var(--color-ink); font-weight: 600; }
+.si-project-header-single .si-tabs button.active::after { border-radius: 1px; }
 .si-project-header-single .si-project-tab-measure { gap: var(--space-1); }
 .si-project-header-single .si-project-tab-measure span { padding-inline: var(--space-3); font-size: var(--fs-sub-title); }
 .si-project-header-single .si-project-header-action-slot { width: auto; min-width: 0; flex: none; }
 .si-project-header-single .si-project-header-actions { gap: var(--space-3); }
+.si-project-header-single .si-project-header-action-measure { position: absolute; width: max-content; visibility: hidden; pointer-events: none; }
 .si-project-header-single .si-project-header-actions .si-button,
 .si-project-header-single .si-project-tab-more { min-height: var(--control-height); height: var(--control-height); padding-inline: var(--space-3); gap: var(--space-2); font-size: var(--fs-body); }
 .si-project-header-single .si-project-header-actions .si-button svg,

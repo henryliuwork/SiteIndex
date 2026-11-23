@@ -1,5 +1,5 @@
 .si-summary-line { position: relative; display: flex; min-width: 0; align-items: center; gap: var(--space-2); overflow: hidden; white-space: nowrap; }
-.si-summary-line-item, .si-summary-line-more { display: inline-flex; flex: none; min-height: var(--control-height-compact); align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--color-line); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink-2); font: inherit; cursor: pointer; }
+.si-summary-line-item, .si-summary-line-more { display: inline-flex; flex: none; min-height: var(--control-height-compact); align-items: center; gap: var(--gap-inline); padding: var(--pad-chip-y) var(--pad-chip-x); border: 1px solid var(--color-line); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink-2); font: inherit; cursor: pointer; }
 .si-summary-line-item strong { color: var(--color-ink); font-variant-numeric: tabular-nums; }
 .si-summary-line-item[aria-pressed="true"] { border-color: var(--color-brand); background: var(--color-brand-soft); color: var(--color-brand-strong); }
 .si-summary-line-item:focus-visible, .si-summary-line-more:focus-visible, .si-summary-line-popover button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: -2px; }

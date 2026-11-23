@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ProjectSummary } from "@siteindex/shared";
-import { PROJECT_TABS, ProjectHeader, ProjectTabPanel, fitProjectTabs, projectPanelId, projectTabId } from "../project-header";
+import { PROJECT_TABS, ProjectHeader, ProjectTabPanel, fitProjectTabs, fitPromotedActions, projectPanelId, projectTabId } from "../project-header";
 import { Button } from "../primitives";
 import { PageFrame } from "../page-frame";
 import { formatDateTime } from "../utils";
@@ -145,6 +145,36 @@ describe("ProjectHeader compact layout", () => {
   it("keeps the selected tab visible when only a subset fits", () => {
     expect(fitProjectTabs([60, 60, 60, 60, 60], 230, 4, 8, 76)).toEqual([0, 4]);
     expect(fitProjectTabs([60, 60, 60], 196, 2, 8, 76)).toEqual([0, 1, 2]);
+  });
+
+  it("keeps the product secondary actions reachable before a width is measured", () => {
+    const onTrend = vi.fn();
+    const onExport = vi.fn();
+    const onReport = vi.fn();
+    render(<MemoryRouter><PageFrame kind="project" header={<ProjectHeader project={project} activeTab="products"
+      actions={<Button variant="primary">立即同步</Button>}
+      overflow={[
+        { label: "趋势与分类在线率", onSelect: onTrend },
+        { label: "导出 CSV", onSelect: onExport },
+        { label: "查看今日日报", onSelect: onReport },
+      ]}
+    />}>内容</PageFrame></MemoryRouter>);
+    const actionRow = document.querySelector(".si-project-header-actions:not(.si-project-header-action-measure)")!;
+    fireEvent.click(within(actionRow as HTMLElement).getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "趋势与分类在线率" }));
+    fireEvent.click(within(actionRow as HTMLElement).getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "导出 CSV" }));
+    expect(onTrend).toHaveBeenCalledOnce();
+    expect(onExport).toHaveBeenCalledOnce();
+    fireEvent.click(within(actionRow as HTMLElement).getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看今日日报" }));
+    expect(onReport).toHaveBeenCalledOnce();
+  });
+
+  it("removes secondary actions before the primary action when measured space shrinks", () => {
+    expect(fitPromotedActions(460, [110, 80], [130, 90], 12)).toBe(2);
+    expect(fitPromotedActions(350, [110, 80], [130, 90], 12)).toBe(1);
+    expect(fitPromotedActions(210, [110, 80], [130, 90], 12)).toBe(0);
   });
 
   it("moves tabs after a resize into a keyboard menu and focuses the selected destination", async () => {

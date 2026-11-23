@@ -15,8 +15,9 @@ export interface PageHeaderOverflowAction {
   icon?: ReactNode;
 }
 
-export function PageHeaderActions({ actions, overflow = [], className = "si-page-header-actions" }: {
+export function PageHeaderActions({ actions, promoted = [], overflow = [], className = "si-page-header-actions" }: {
   actions?: ReactNode;
+  promoted?: readonly PageHeaderOverflowAction[];
   overflow?: readonly PageHeaderOverflowAction[];
   className?: string;
 }) {
@@ -37,6 +38,7 @@ export function PageHeaderActions({ actions, overflow = [], className = "si-page
   if (!actions && overflow.length === 0) return null;
   return <div className={className}>
     {actions}
+    {promoted.map((item) => <Button key={item.label} variant="secondary" disabled={item.disabled} onClick={item.onSelect} data-promoted-action="true" icon={item.icon}>{item.label}</Button>)}
     {overflow.length > 0 && <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <Button variant="ghost" size="small" className="si-page-header-more" aria-label="更多操作" title="更多操作" aria-haspopup="menu" aria-expanded={open}>
