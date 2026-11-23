@@ -198,6 +198,43 @@ function findCell(row: HTMLElement, headerName: string): string | undefined {
 }
 
 describe("合并后的产品管理表", () => {
+  it("筛选弹层使用可见标签和共享复选框", async () => {
+    const mockApi = await renderProductsPage();
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+    const dialog = await screen.findByRole("dialog", { name: "产品筛选" });
+    for (const label of ["库存状态", "分类", "价格变动", "标签"]) {
+      expect(within(dialog).getByText(label)).toBeTruthy();
+    }
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "仅关注分类" }));
+    await waitFor(() => expect(mockApi.inventory.listSkus).toHaveBeenLastCalledWith("demo", expect.objectContaining({
+      filters: expect.objectContaining({ watched_only: true }),
+    })));
+  });
+
+  it("整列无值时默认隐藏并在列设置标注无数据，真实值不被标空", async () => {
+    const empty = makeProduct({ handle: "demo-empty", title: "虚构无指标商品", product_id: "DEMOEMPTY", skus: ["DEMOEMPTY"] });
+    await renderProductsPage({ products: [empty], parentStocks: [makeStock("DEMOEMPTY", 24, { last_change: null, last_change_at: null })] });
+    const table = await screen.findByRole("table");
+    await within(table).findByText("虚构无指标商品", { selector: "strong" });
+    expect(within(table).queryByRole("columnheader", { name: "有货变体" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    for (const label of ["有货变体 · 无数据", "最近变化 · 无数据", "评分 / 评价数 · 无数据"]) {
+      expect(await screen.findByRole("checkbox", { name: label })).toBeTruthy();
+    }
+  });
+
+  it("五个非自明表头显示与 Core 口径一致的说明", async () => {
+    await renderProductsPage();
+    const table = await screen.findByRole("table");
+    await within(table).findByText("虚构组合商品", { selector: "strong" });
+    expect(within(table).getByRole("button", { name: "30 天在线率说明" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    for (const name of ["持续", "近 30 天趋势", "最近变化", "评分 / 评价数"]) {
+      fireEvent.click(await screen.findByRole("checkbox", { name }));
+      expect(within(table).getByRole("button", { name: `${name}说明` })).toBeTruthy();
+    }
+  });
   it("使用项目表格外框，项目头不重复显示站点和同步时间", async () => {
     await renderProductsPage({ syncAt: "2026-11-12T10:00:00Z" });
     expect(await screen.findByRole("table")).toBeTruthy();
