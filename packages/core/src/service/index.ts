@@ -1332,13 +1332,23 @@ async function appendRunLog(projectPath: string, record: RunLog): Promise<void> 
   await writeJsonl(filePath, next, "run_log");
 }
 
+function readmeSection(markdown: string, title: string): { start: number; end: number; body: string } | null {
+  const heading = `## ${title}`;
+  const lines = markdown.match(/[^\r\n]*(?:\r?\n|$)/g) ?? [];
+  let offset = 0;
+  let start = -1;
+  for (const line of lines) {
+    if (start >= 0 && (/^##\s+/.test(line) || /^<!-- siteindex:auto:start\b/.test(line))) {
+      return { start, end: offset, body: markdown.slice(start, offset).trim() };
+    }
+    if (start < 0 && line.trim() === heading) start = offset + line.length;
+    offset += line.length;
+  }
+  return start < 0 ? null : { start, end: markdown.length, body: markdown.slice(start).trim() };
+}
+
 function extractReadmeSection(markdown: string, title: string): string {
-  const lines = markdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === `## ${title}`);
-  if (start < 0) return "";
-  let end = start + 1;
-  while (end < lines.length && !/^##\s+/.test(lines[end]!)) end += 1;
-  return lines.slice(start + 1, end).join("\n").trim();
+  return readmeSection(markdown, title)?.body ?? "";
 }
 
 function readmeUserBlocks(markdown: string): ReadmeData["user_blocks"] {
@@ -1350,13 +1360,16 @@ function readmeUserBlocks(markdown: string): ReadmeData["user_blocks"] {
 }
 
 function replaceReadmeSection(markdown: string, title: string, content: string): string {
-  const lines = markdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === `## ${title}`);
-  if (start < 0) return markdown;
-  let end = start + 1;
-  while (end < lines.length && !/^##\s+/.test(lines[end]!)) end += 1;
-  lines.splice(start + 1, end - start - 1, content.trim(), "");
-  return `${lines.join("\n").replace(/\n*$/, "\n")}`;
+  const section = readmeSection(markdown, title);
+  const body = content.trim();
+  const eol = markdown.includes("\r\n") ? "\r\n" : "\n";
+  if (!section) {
+    const prefix = markdown.replace(/(?:\r?\n)*$/, "");
+    return `${prefix ? `${prefix}${eol}${eol}` : ""}## ${title}${eol}${body}${eol}`;
+  }
+  if (section.body === body) return markdown;
+  const suffix = markdown.slice(section.end);
+  return `${markdown.slice(0, section.start)}${body}${eol}${suffix ? eol : ""}${suffix}`;
 }
 
 function categorySlug(value: string): string {

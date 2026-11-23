@@ -26,6 +26,18 @@ async function makeProject(layout: ProjectLayout = "legacy"): Promise<string> {
   return projectPath;
 }
 
+async function makeSyntheticReadmeProject(): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-readme-synthetic-"));
+  TEMP_DIRS.push(root);
+  const projectPath = path.join(root, "synthetic-project");
+  await cp(path.resolve(process.cwd(), "fixtures/e-v050-w0/projects/legacy"), projectPath, { recursive: true });
+  const template = await readFile(path.resolve(process.cwd(), "templates/project/README.md"), "utf8");
+  await writeFile(path.join(projectPath, PATHS.readme),
+    template.replace('<!-- siteindex:auto:end id="index-summary" -->',
+      'Synthetic generated content\n<!-- siteindex:auto:end id="index-summary" -->'), "utf8");
+  return projectPath;
+}
+
 function service(projectPath: string) {
   return createCoreService({ resolveProject: () => projectPath, deviceId: "test-device", cacheDir: path.join(path.dirname(projectPath), "cache") });
 }
@@ -43,6 +55,48 @@ const emptyContents: ReadmeAutoContent = {
 };
 
 describe("README automatic blocks", () => {
+  it("keeps generated blocks outside the user rules section while saving", async () => {
+    const projectPath = await makeSyntheticReadmeProject();
+    const api = service(projectPath);
+    const readmePath = path.join(projectPath, PATHS.readme);
+    const before = await readFile(readmePath, "utf8");
+    const autoBlocks = parseReadmeAutoBlocks(before);
+    expect(autoBlocks).toHaveLength(5);
+    expect((await api.readme.get("synthetic")).user_blocks.rules).not.toContain("siteindex:auto");
+
+    await api.readme.saveUserBlocks("synthetic", {
+      overview: "Synthetic overview", focus: "Synthetic focus", rules: "Synthetic rules",
+    });
+    const saved = await readFile(readmePath, "utf8");
+    expect(parseReadmeAutoBlocks(saved)).toEqual(autoBlocks);
+    expect((await api.readme.get("synthetic")).user_blocks).toEqual({
+      overview: "Synthetic overview", focus: "Synthetic focus", rules: "Synthetic rules",
+    });
+    await api.readme.saveUserBlocks("synthetic", {
+      overview: "Synthetic overview", focus: "Synthetic focus", rules: "Synthetic rules",
+    });
+    expect(await readFile(readmePath, "utf8")).toBe(saved);
+  });
+
+  it("appends a missing user heading and preserves all user blocks through refresh", async () => {
+    const projectPath = await makeSyntheticReadmeProject();
+    const api = service(projectPath);
+    const readmePath = path.join(projectPath, PATHS.readme);
+    const before = await readFile(readmePath, "utf8");
+    await writeFile(readmePath, before.replace(/## 当前重点\r?\n[^\r\n]*\r?\n/, ""), "utf8");
+    const blocks = { overview: "Synthetic overview", focus: "Synthetic focus", rules: "Synthetic rules" };
+
+    await api.readme.saveUserBlocks("synthetic", blocks);
+    const saved = await readFile(readmePath, "utf8");
+    expect(saved).toContain("## 当前重点\nSynthetic focus\n");
+    expect(parseReadmeAutoBlocks(saved)).toHaveLength(5);
+    expect((await api.readme.get("synthetic")).user_blocks).toEqual(blocks);
+
+    await api.readme.refresh("synthetic");
+    expect((await api.readme.get("synthetic")).user_blocks).toEqual(blocks);
+    expect(parseReadmeAutoBlocks(await readFile(readmePath, "utf8"))).toHaveLength(5);
+  }, 15_000);
+
   it("parses and replaces block bodies while preserving every byte outside their markers", () => {
     const source = [
       "用户区块含有 $& 和 CRLF",
