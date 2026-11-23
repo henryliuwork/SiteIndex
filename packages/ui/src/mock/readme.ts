@@ -1,7 +1,8 @@
 import type { SiteIndexApi } from "@siteindex/shared";
-import { beginRun, clone, delay, projectKey, reply, userReadmeBlocks } from "./context";
+import { beginRun, clone, delay, mockMode, projectKey, reply, userReadmeBlocks } from "./context";
 
 export function createReadmeMock(): SiteIndexApi["readme"] {
+  let missingFocus = mockMode === "readme-missing";
   return {
     get: (id) => reply(() => ({
       user_blocks: userReadmeBlocks[projectKey(id)],
@@ -13,8 +14,9 @@ export function createReadmeMock(): SiteIndexApi["readme"] {
         { id: "changelog", title: "变更记录", updated_at: "2026-10-22T05:00:00+08:00", schedule: "每次运行" },
       ],
       folder_map: [],
+      ...(missingFocus && id === "demo" ? { missing_user_blocks: ["focus" as const] } : {}),
     })),
-    saveUserBlocks: (id, blocks) => reply(() => { userReadmeBlocks[projectKey(id)] = clone(blocks); }),
+    saveUserBlocks: (id, blocks) => reply(() => { userReadmeBlocks[projectKey(id)] = clone(blocks); missingFocus = false; }),
     refresh: async (id) => { await delay(); return { runId: beginRun("C:/SiteIndex/Projects/" + id, "readme") }; },
   };
 }
