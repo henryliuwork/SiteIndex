@@ -47,6 +47,9 @@ it("rejects stale writes and implicit clears while leaving no-op saves byte-iden
   await expect(api().projects.updateConfig("synthetic", { brand: { name: "Renamed" } }, {
     revision: stale.config_revision, dirty_paths: ["brand.name"],
   })).rejects.toMatchObject({ code: "CONFIG_INVALID", message: "配置已在别处更新，请刷新后再保存。" });
+  await expect(api().projects.updateConfig("synthetic", { brand: { name: "Renamed" } }, {
+    revision: "", dirty_paths: ["brand.name"],
+  })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
   expect(await readFile(sitePath, "utf8")).toBe(externalBytes);
 
   const fresh = await api().projects.get("synthetic");
@@ -63,6 +66,9 @@ it("rejects stale writes and implicit clears while leaving no-op saves byte-iden
   await api().projects.updateConfig("synthetic", { seo: { core_keywords: [] } }, {
     dirty_paths: ["seo.core_keywords"], clear: ["seo.core_keywords"],
   });
+  expect((await api().projects.get("synthetic")).config.seo?.core_keywords).toEqual([]);
+  await api().projects.updateConfig("synthetic", { seo: { core_keywords: ["legacy value"] } });
+  await api().projects.updateConfig("synthetic", { seo: { core_keywords: [] } });
   expect((await api().projects.get("synthetic")).config.seo?.core_keywords).toEqual([]);
 
   const beforeNoop = await readFile(sitePath, "utf8");

@@ -591,7 +591,7 @@ function mergeConfigFields(base: UnknownRecord, patch: UnknownRecord, options?: 
       const clearsValue = value === "" || value === null || (Array.isArray(value) && value.length === 0);
       const hadValue = previous !== undefined && previous !== null && previous !== ""
         && (!Array.isArray(previous) || previous.length > 0);
-      if (clearsValue && hadValue && !options?.clear?.includes(keyPath)) {
+      if (options && clearsValue && hadValue && !options.clear?.includes(keyPath)) {
         throw siteError("CONFIG_INVALID", "清空已有配置需要明确的清空操作。", keyPath);
       }
       next[key] = value;
@@ -2261,7 +2261,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         if (!incoming) throw siteError("CONFIG_INVALID", "配置更新内容无效。");
         if (!Object.keys(incoming).length && !options?.clear?.length) return source.config;
         if (options?.dirty_paths?.length === 0 && !options.clear?.length) return source.config;
-        if (options?.revision && options.revision !== configRevision(source.content)) {
+        if (options?.revision !== undefined && options.revision !== configRevision(source.content)) {
           throw siteError("CONFIG_INVALID", "配置已在别处更新，请刷新后再保存。");
         }
         for (const field of [...(options?.dirty_paths ?? []), ...(options?.clear ?? [])]) configPathValue(incoming, field);
