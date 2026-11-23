@@ -92,7 +92,7 @@ E 另以 v0.8.0 同源构建的 Windows 解包 `resources/cli.js`（源码与已
 
 ## 项目设置 · 独立保存入口
 
-合成证据代号：`CAT` = D 的虚构分类 `categories.save` 后新 Core service 逐字段读回 `mode/url_pattern/manual.name/slug/url/match/watched`；`VAL` = D 的轻量虚构项目 `files.validate` 后新 service `files.lastReport` 与返回报告一致（项目故意缺业务文件，**不表示校验通过**）；`RUN` = E 的隔离 Desktop handler `runner.claim` 写文件、新 handler/Core service 读回设备一致；`README` = #752/#759 的 Core 回归。上述证据均不等于正式安装版 UI 退出重开。
+合成补证：[E 计划/待办/GSC](https://github.com/henryliuwork/SiteIndex/pull/753#issuecomment-7097924172)、[C 应用设置/凭据/任务](https://github.com/henryliuwork/SiteIndex/pull/753#issuecomment-7097956829)。合成证据代号：`CAT` = D 的虚构分类 `categories.save` 后新 Core service 逐字段读回 `mode/url_pattern/manual.name/slug/url/match/watched`；`VAL` = D 的轻量虚构项目 `files.validate` 后新 service `files.lastReport` 与返回报告一致（项目故意缺业务文件，**不表示校验通过**）；`RUN` = E 的隔离 Desktop handler `runner.claim` 写文件、新 handler/Core service 读回设备一致；`README` = #752/#759 的 Core 回归。上述证据均不等于正式安装版 UI 退出重开。
 
 | 设置项 | 页面/控件 | IPC/API | 写入文件与键 → 读回 | 不变量与当前结论 | S/R/U | W0 合成结论（仅已测路径） | G8.2-3 终验 |
 |---|---|---|---|---|---|---|---|
@@ -102,27 +102,27 @@ E 另以 v0.8.0 同源构建的 Windows 解包 `resources/cli.js`（源码与已
 | 手动分类 slug | 分类设置·表格 | `categories.save/get` | `categories.manual[].slug` → `categories.get` | I1：合成 Core 新实例读回通过；正式 UI 待验 | 待验/待验/待验 | 通过（CAT：分类字段 Core 读回） | 待验 |
 | 手动分类 URL | 分类设置·表格 | `categories.save/get` | `categories.manual[].url` → `categories.get` | I1：合成 Core 新实例读回通过；正式 UI 待验 | 待验/待验/待验 | 通过（CAT：分类字段 Core 读回） | 待验 |
 | 手动分类匹配规则 | 分类设置·表格 | `categories.save/get` | `categories.manual[].match` → `categories.get` | I1：合成 Core 新实例读回通过；正式 UI 待验 | 待验/待验/待验 | 通过（CAT：分类字段 Core 读回） | 待验 |
-| 每日计划 | 运行·计划弹窗 | `schedule.save/get` | `site.json:schedule.daily.enabled/time` → `schedule.get` | I1/I4/I6：两个字段均待逐项读回；全量草稿无 revision | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
-| 校验计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.validate.enabled/time` → `schedule.get` | I1/I4/I6：两个字段均待逐项读回 | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
-| 每周计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.weekly.enabled/time/days` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
-| README 计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.readme.enabled/time/days` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 | 无法验证（计划字段未测） | 待验 |
-| 每月计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.monthly.enabled/time/day_of_month` → `schedule.get` | I1/I4/I6：三个字段均待逐项读回 | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
-| 唤醒设备执行 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.wake_to_run` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
-| 错过后补跑 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.run_if_missed` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
-| 失败时通知 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.notify_on_failure` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
-| 同步后校验 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.validate_after_sync` → `schedule.get` | I1/I4/I6：待逐项读回 | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
+| 每日计划 | 运行·计划弹窗 | `schedule.save/get` | `site.json:schedule.daily.enabled/time` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI/系统登记待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
+| 校验计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.validate.enabled/time` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI/系统登记待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
+| 每周计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.weekly.enabled/time/days` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI/系统登记待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
+| README 计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.readme.enabled/time/days` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI/系统登记待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
+| 每月计划 | 运行·计划弹窗 | `schedule.save/get` | `schedule.monthly.enabled/time/day_of_month` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI/系统登记待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
+| 唤醒设备执行 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.wake_to_run` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI 待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
+| 错过后补跑 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.run_if_missed` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI 待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
+| 失败时通知 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.notify_on_failure` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI 待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
+| 同步后校验 | 运行·高级勾选 | `schedule.save/get` | `schedule.options.validate_after_sync` → `schedule.get` | I1/I4/I6：E 的 Core 合成逐字段读回通过；UI 待验 | 待验/待验/待验 | 通过（E：计划字段 Core 新实例读回） | 待验 |
 | 执行设备改为本机 | 运行·设备操作 | `runner.claim/get` | `index/.runner.json` → `runner.get` | I1：E 的隔离 Desktop handler 写文件、新 handler/Core 实例读回本机设备一致；mock `runner.get` 固定返回 false 是 mock 证据限制。安装版重启与系统任务仍待验 | 待验/待验/待验 | 通过（RUN：Desktop handler 读回） | 待验 |
 | README 项目概况 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 项目概况` → `readme.get` | I7：#752 Core 合成回归通过，打包 UI 逐段读回待验 | 待验/待验/待验 | 通过（README：Core 回归与直接读回） | 待验 |
 | README 当前重点 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 当前重点` → `readme.get` | R2 旧版缺陷；#752 已补标题，#759 Core 已报告缺段，B 页面提示和打包 UI 待验 | 待验/待验/待验 | 通过（README：Core 回归与直接读回） | 待验 |
 | README 工作规则 | README·用户段 | `readme.saveUserBlocks/get` | `README.md:## 工作规则与偏好` → `readme.get` | R5 旧版缺陷；#752 Core 已保留自动区块，打包 UI 待验 | 待验/待验/待验 | 通过（README：Core 回归与直接读回） | 待验 |
-| 待办人工状态 | 待办·状态 | `todos.update/list` | 本地待办人工状态与历史 → `todos.list` | I1/I6：API 仅提交状态字段；文件级复验待 E | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
-| 待办备注 | 待办·备注 | `todos.update/list` | 本地待办人工备注与历史 → `todos.list` | I1/I2/I6：`null` 为显式清空；文件级复验待 E | 待验/待验/待验 | 无法验证（W0 未做字段级读回） | 待验 |
+| 待办人工状态 | 待办·状态 | `todos.update/list` | 本地待办人工状态与历史 → `todos.list` | I1/I6：API 仅提交状态字段；E 所选待办的状态与文件、新实例一致；重新命中生命周期未测 | 待验/待验/待验 | 通过（E：所选待办状态/备注新实例读回） | 待验 |
+| 待办备注 | 待办·备注 | `todos.update/list` | 本地待办人工备注与历史 → `todos.list` | I1/I2/I6：`null` 为显式清空；E 所选待办的备注与文件、新实例一致；重新命中生命周期未测 | 待验/待验/待验 | 通过（E：所选待办状态/备注新实例读回） | 待验 |
 | 文件校验报告（非设置） | 本地文件·校验 | `files.validate/lastReport` | 校验报告 → `files.lastReport` | I1：合成 Core 新实例读回同一报告；轻量项目不完整，未执行修复，正式 UI 待验 | 待验/待验/待验 | 通过（VAL：报告读回，非校验成功） | 待验 |
-| GSC 项目属性 | 项目设置·GSC 卡片 | 当前无可编辑入口 | `integrations.gsc` → `projects.get` | 卡片仅显示“暂未开放”；I6 仍须保留已有键 | 不适用/待验/待验 | 无法验证（无编辑入口；升级未测） | 待验 |
+| GSC 项目属性 | 项目设置·GSC 卡片 | 当前无可编辑入口 | `integrations.gsc` → `projects.get` | 卡片仅显示“暂未开放”；E 合成 views 后已有 GSC 键逐键保留，其他 Job/升级待验 | 不适用/待验/待验 | 通过（E：views 后已有字段逐键保留） | 待验 |
 
 ## 应用设置 · `settings.json` 与本机状态
 
-C 负责存储层与 IPC 的逐键 S/R/U 证据；B 负责 UI dirty 提交。下列 `settings.json` 项经 `settings.set/get`，其他本机凭据/系统任务另列。当前 main 已含 [#747](https://github.com/henryliuwork/SiteIndex/pull/747)：合成单测确认未知顶层/browser/notify 字段保留、有效文件无操作保存逐字节不变。C 的 [#751](https://github.com/henryliuwork/SiteIndex/pull/751) 在隔离 GitHub Windows 安装环境用官方 v0.8.0 包保存虚构应用设置、覆盖安装候选包、运行 `views`、经打包 IPC 逐键读回，Windows 安装检查和三系统 CI 全绿；`settings.json` 在安装、Job、读回后逐字节不变。候选包的应用版本仍是 0.8.0，最终 v0.8.2 安装包待 G8.2-3 验收。下表 S/R/U 中的“CI 合成安装包通过”仅指这条打包 IPC 路径，**不代表 UI 控件逐项验收或旧草稿并发保护**。空数组/null 只证明空值维持，不能证明有值保存或显式清空。
+C 负责存储层与 IPC 的逐键 S/R/U 证据；B 负责 UI dirty 提交。下列 `settings.json` 项经 `settings.set/get`，其他本机凭据/系统任务另列。当前 main 已含 [#747](https://github.com/henryliuwork/SiteIndex/pull/747)：合成单测确认未知顶层/browser/notify 字段保留、有效文件无操作保存逐字节不变。C 的 [#751](https://github.com/henryliuwork/SiteIndex/pull/751) 在隔离 GitHub Windows 安装环境用官方 v0.8.0 包保存虚构应用设置、覆盖安装候选包、运行 `views`、经打包 IPC 逐键读回，Windows 安装检查和三系统 CI 全绿；`settings.json` 在安装、Job、读回后逐字节不变。候选包的应用版本仍是 0.8.0，最终 v0.8.2 安装包待 G8.2-3 验收。下表 S/R/U 中的“CI 合成安装包通过”仅指这条打包 IPC 路径，**不代表 UI 控件逐项验收或旧草稿并发保护**。#751 的空数组/null 只证明空值维持；C 随后的[定向合成补证](https://github.com/henryliuwork/SiteIndex/pull/753#issuecomment-7097956829)另测四个字段的非空保存与显式清空。
 
 | 设置项 | 页面/控件 | IPC/API | 写入文件与键 → 读回 | 不变量与当前结论 | 合成 S/R/U | W0 结论（仅已测路径） | 最终安装版 |
 |---|---|---|---|---|---|---|
@@ -132,31 +132,31 @@ C 负责存储层与 IPC 的逐键 S/R/U 证据；B 负责 UI dirty 提交。下
 | 关闭到托盘 | 软件设置·勾选 | `settings.set/get` | `close_to_tray` → `settings.get` | I1/I4–I6：打包 IPC 保存 false；UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
 | 开机启动 | 软件设置·勾选 | `settings.set/get` | `launch_at_login` → `settings.get` | I1/I4–I6：打包 IPC 保存 true；UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
 | 浏览器通道 | 软件设置·路径联动 | `settings.set/get` | `browser.channel` → `settings.get` | I1/I6：打包 IPC 非空值保留；I2–I4/ UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
-| 浏览器路径 | 软件设置·文本 | `settings.set/get` | `browser.executable_path` → `settings.get` | I1/I6：仅测试 null 保留；非空/清空与 UI 待验 | 待验(仅 null)/待验/待验 | 无法验证（仅空值保留，未测非空保存） | 待验 |
+| 浏览器路径 | 软件设置·文本 | `settings.set/get` | `browser.executable_path` → `settings.get` | I1/I6：C 合成 IPC 非空保存、新实例读回与显式清空通过；UI/安装版待验 | 待验/待验/待验 | 通过（C：合成 IPC 非空读回及显式清空） | 待验 |
 | 失败通知 | 软件设置·勾选 | `settings.set/get` | `notify.on_failure` → `settings.get` | I1/I6：打包 IPC 保存 false；#744 旧草稿风险待修 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
 | 成功通知 | 软件设置·勾选 | `settings.set/get` | `notify.on_success` → `settings.get` | I1/I6：打包 IPC 保存 true；#744 旧草稿风险待修 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
 | 新缺货阈值 | 软件设置·勾选/数字 | `settings.set/get` | `notify.oos_threshold` → `settings.get` | I1/I6：打包 IPC 保存 7；显式清空/ UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
-| 通知 Webhook | 软件设置·密码框 | `settings.set/get` | `notify.dingtalk_webhook` → `settings.get` | I1/I6：仅测试 null 保留；不记录地址，非空/清空待验 | 待验(仅 null)/待验/待验 | 无法验证（仅空值保留，未测非空保存） | 待验 |
+| 通知 Webhook | 软件设置·密码框 | `settings.set/get` | `notify.dingtalk_webhook` → `settings.get` | I1/I6：C 仅用虚构地址完成合成 IPC 非空读回与显式清空；未发送通知，UI/安装版待验 | 待验/待验/待验 | 通过（C：合成 IPC 非空读回及显式清空） | 待验 |
 | Agent 平台目录 | 软件设置·列表 | `settings.set/get` | `skill_platforms` → `settings.get` | I1/I6：打包 IPC 合成非空列表保留；UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
-| 单独添加的项目 | 项目中心·添加 | `settings.set/get` | `extra_projects` → `settings.get` | I1/I6：仅测试空列表；非空/删除待验 | 待验(仅空)/待验/待验 | 无法验证（仅空值保留，未测非空保存） | 待验 |
-| 隐藏项目 | 项目中心·移除 | `settings.set/get` | `hidden_projects` → `settings.get` | I1/I6：仅测试空列表；非空/删除待验 | 待验(仅空)/待验/待验 | 无法验证（仅空值保留，未测非空保存） | 待验 |
+| 单独添加的项目 | 项目中心·添加 | `settings.set/get` | `extra_projects` → `settings.get` | I1/I6：C 合成 IPC 非空列表读回与显式清空通过；项目扫描/UI 待验 | 待验/待验/待验 | 通过（C：合成 IPC 非空读回及显式清空） | 待验 |
+| 隐藏项目 | 项目中心·移除 | `settings.set/get` | `hidden_projects` → `settings.get` | I1/I6：C 合成 IPC 非空列表读回与显式清空通过；隐藏 UI 待验 | 待验/待验/待验 | 通过（C：合成 IPC 非空读回及显式清空） | 待验 |
 | 冲突文件模式 | 当前无设置控件 | `settings.set/get` | `conflict_patterns` → `settings.get` | I6：打包 IPC 合成非空列表保留 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
 | 本机设备 ID | 内部生成 | `settings.get` | `device_id` → `settings.get` | I6：打包 IPC 保持原 ID | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
-| WordPress 凭据 | 软件设置·凭据卡片 | 独立凭据 API | 本机加密 vault → 凭据状态读回 | C 所有权；不得在矩阵/日志记录密钥 | 待 C/待 C/待 E | 无法验证（W0 未做此路径） | 待验 |
-| 系统计划任务登记 | 定时任务页 | `schedule.save/verify` | `site.json:schedule` + 系统计划任务 → `schedule.get/verify` | C 核对注册路径与重启读回；项目配置归 A | 待 C/待 C/待 E | 无法验证（W0 未做此路径） | 待验 |
+| WordPress 凭据 | 软件设置·凭据卡片 | 独立凭据 API | 本机加密 vault → 凭据状态读回 | C 的假 vault 保存/清除后新实例状态读回通过；真实系统加密/安装版待验，不记录凭据 | 待 C/待 C/待 E | 通过（C：假 vault 的状态读回） | 待验 |
+| 系统计划任务登记 | 定时任务页 | `schedule.save/verify` | `site.json:schedule` + 系统计划任务 → `schedule.get/verify` | C 假注册回调与 verify 调用链通过；真实 OS 登记及重启读回未测 | 待 C/待 C/待 E | 通过（C：假注册回调；真实 OS 待验） | 待验 |
 
 ## 待补证与交付边界
 
 ### 横向不变量证据门槛
 
-上表的 I1–I8 编号只表示该行**适用**哪些不变量，不表示已通过。W0 列已逐项写明“通过”及其证据范围，或“无法验证”及缺口；它不等于正式 UI 的 S/R/U。仍有计划字段、待办、GSC、部分应用设置及系统任务无法验证，故按 roadmap §5.2“每项通过/缺陷”的原标准，**G8.2-0 目前不能判通过**。本 PR 可先审矩阵与已知缺陷，最终安装版另在 G8.2-3 验收。
+上表的 I1–I8 编号只表示该行**适用**哪些不变量，不表示已通过。E/C 定向补证后，每行 W0 列均有**限定已测路径**的合成结论；计划字段、待办状态、GSC 任务保留、应用设置、凭据状态与假任务回调均有逐项证据。R1/R2/R3/R4/R5 是已复现的旧版缺陷，不因局部读回通过而抹去。正式 UI 的 S/R/U、真实 OS 任务登记、系统加密和覆盖升级仍待 G8.2-3；G8.2-0 是否退出由 Lead 按完整路线图判定。
 
 E 对 JSON 编辑与执行设备的[隔离合成补证](https://github.com/henryliuwork/SiteIndex/pull/753#issuecomment-7096276776)只支持上表记录的 Core/Desktop handler 路径。它没有运行正式安装包，也没有验证 UI 退出重开、并发、显式清空或系统任务注册，因此 S/R/U 仍留待验。
 
 | 不变量 | 当前结果与证据缺口 |
 |---|---|
-| I1 写后读回 | #762 受保护 Core 写后重读，D 的 C44/CAT/VAL、E 的 J1/RUN 及 #747/#751 应用设置均有**对应合成路径**读回；正式 UI 保存、计划、待办与打包版仍待验。 |
-| I2 空值保护 | #762 Core 受保护路径拒绝无 `clear` 的非空→空值覆盖，旧两参仍可清空；D dirty 提交和正式 UI 显式清空待验。#751 空值保持不证明显式清空。 |
+| I1 写后读回 | #762 受保护 Core 写后重读，D 的 C44/CAT/VAL、E 的 J1/RUN/计划/待办/GSC、C 的应用设置与假回调均有**对应合成路径**读回；正式 UI 保存和安装版仍待验。 |
+| I2 空值保护 | #762 Core 受保护路径拒绝无 `clear` 的非空→空值覆盖，旧两参仍可清空；C 对四项应用设置合成路径的显式清空通过。D dirty 提交和正式 UI 清空待验。#751 单独的空值保持不证明显式清空。 |
 | I3 深合并 | R1 是旧版缺陷；#762 Core 合成回归覆盖 `seo` 子字段，D 的 C44 是全量提交读回。其他分区的局部提交及 UI 接线待验。 |
 | I4 陈旧写入 | R4 是旧 UI 草稿覆盖；#762 Core 的 revision 冲突/空 revision 拒绝有合成测试，D 携带 revision 和刷新提示仍待验。 |
 | I5 空保存字节不变 | #762 受保护 Core 空保存、#747/#751 应用设置合成路径已验证；README、分类、计划的正式 UI 空保存待验。 |
@@ -165,7 +165,7 @@ E 对 JSON 编辑与执行设备的[隔离合成补证](https://github.com/henry
 | I8 输入保真 | R3 是旧版缺陷；#761 已将 7 个多行字段改为原始草稿至失焦/保存。站点地图为单行且未覆盖，正式 UI 输入与重启读回待验。 |
 
 1. D：项目设置 C44 仅是完整 patch 的 Core 证据；dirty/revision 的真实 UI 提交、关键词与站点地图输入、README 缺段提示继续按各自 PR 验证。
-2. C：#747/#751/#758 已提供应用设置的合成与打包 IPC 证据；空值显式清空、旧草稿并发及正式 v0.8.2 安装版仍待验，`revision` 不落盘。
+2. C：#747/#751/#758 及定向补证覆盖应用设置的合成与打包 IPC；四项非空保存/显式清空在合成路径通过，其他字段清空、旧草稿并发及正式 v0.8.2 安装版仍待验，`revision` 不落盘。
 3. E：已核对 J1/RUN 等合成路径；“升级后变空”在现有有限路径**未复现**。G8.2-3 仍须用各自可恢复的虚构副本完成 v0.8.0、v0.7.5、v0.7.6 与本版安装包的逐项 S/R/U，运行 daily/weekly/monthly 后对用户字段逐键比较；待验格不得提前改成通过。
 4. A：#762 受保护 Core 保存、#752/#759 README Core 修复均已合并；A-2 升级 fixture 与更多任务路径回归仍待独立 PR。#745 已关闭；[#743](https://github.com/henryliuwork/SiteIndex/issues/743) 的 UI/安装版交叉验证仍待完成。
 
