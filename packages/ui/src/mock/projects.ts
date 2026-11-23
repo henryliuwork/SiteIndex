@@ -231,7 +231,13 @@ export function createProjectsMock(
       const added = [...addedProjects.values()].find((project) => project.summary.id === id);
       const current = added?.config ?? projectConfigs[key];
       const hadFeed = hasConfiguredFeed(current.crawl.feed_url);
-      const updatedConfig = { ...current, ...clone(patch) };
+      const next = clone(patch);
+      const updatedConfig = {
+        ...current,
+        ...next,
+        brand: { ...current.brand, ...next.brand },
+        crawl: { ...current.crawl, ...next.crawl },
+      };
       if (added) added.config = updatedConfig;
       else projectConfigs[key] = updatedConfig;
       const summary = added?.summary ?? projectSummaries[key];

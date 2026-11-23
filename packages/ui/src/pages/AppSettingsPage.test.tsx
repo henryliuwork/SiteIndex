@@ -40,7 +40,12 @@ async function renderSettings(options: { settings?: AppSettings; wordpress?: boo
   let savedSettings = options.settings ?? defaultSettings;
   vi.spyOn(mockApi.settings, "get").mockImplementation(async () => savedSettings);
   const save = vi.spyOn(mockApi.settings, "set").mockImplementation(async (patch) => {
-    savedSettings = { ...savedSettings, ...patch };
+    savedSettings = {
+      ...savedSettings,
+      ...patch,
+      browser: { ...savedSettings.browser, ...patch.browser },
+      notify: { ...savedSettings.notify, ...patch.notify },
+    };
     return savedSettings;
   });
   if (options.bridge) {
@@ -72,6 +77,19 @@ async function renderSettings(options: { settings?: AppSettings; wordpress?: boo
 }
 
 describe("AppSettingsPage background options", () => {
+  it("keeps untouched browser and notification fields when a nested patch is saved", async () => {
+    const { mockApi, save } = await renderSettings();
+    const before = await mockApi.settings.get();
+    const updated = await mockApi.settings.set({
+      browser: { executable_path: "C:/Fixture/browser.exe" } as AppSettings["browser"],
+      notify: { on_failure: !before.notify.on_failure } as AppSettings["notify"],
+    });
+
+    expect(save).toHaveBeenCalledOnce();
+    expect(updated.browser).toEqual({ ...before.browser, executable_path: "C:/Fixture/browser.exe" });
+    expect(updated.notify).toEqual({ ...before.notify, on_failure: !before.notify.on_failure });
+  });
+
   it("explains per-device local project storage and keeps the root chooser available", async () => {
     await renderSettings();
 

@@ -1,4 +1,4 @@
-import type { ProjectId } from "@siteindex/shared";
+import type { ProjectId, SiteConfig } from "@siteindex/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { clone, projectConfigs, projectSummaries, projectsChanged } from "../context";
 import { createProjectsMock, mockProjectNonFeedWarnings } from "../projects";
@@ -15,6 +15,19 @@ afterEach(() => {
 });
 
 describe("projects mock summary updates", () => {
+  it("merges partial brand and crawl changes without dropping required config fields", async () => {
+    const api = createProjectsMock();
+    const before = (await api.get("demo2")).config;
+    const updated = await api.updateConfig("demo2", {
+      brand: { tagline: "Fixture tagline" },
+      crawl: { rate_limit_ms: before.crawl.rate_limit_ms + 100 },
+    } as unknown as Partial<SiteConfig>);
+
+    expect(updated.brand).toEqual({ ...before.brand, tagline: "Fixture tagline" });
+    expect(updated.crawl).toEqual({ ...before.crawl, rate_limit_ms: before.crawl.rate_limit_ms + 100 });
+    expect((await api.get("demo2")).config).toEqual(updated);
+  });
+
   it("无 Feed 自动采集开关移除来源阻断提醒，关闭后恢复", async () => {
     const api = createProjectsMock();
     const project = await api.get("demo2");

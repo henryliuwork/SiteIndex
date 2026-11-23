@@ -5,9 +5,10 @@ export function createSettingsMock(): SiteIndexApi["settings"] {
   return {
     get: () => projectCenterErrorMode ? Promise.reject(projectCenterError()) : reply(settingsState),
     set: (patch) => reply(() => {
-      Object.assign(settingsState, clone(patch));
-      if (patch.browser) settingsState.browser = { ...settingsState.browser, ...patch.browser };
-      if (patch.notify) settingsState.notify = { ...settingsState.notify, ...patch.notify };
+      const next = clone(patch);
+      const browser = next.browser ? { ...settingsState.browser, ...next.browser } : settingsState.browser;
+      const notify = next.notify ? { ...settingsState.notify, ...next.notify } : settingsState.notify;
+      Object.assign(settingsState, next, { browser, notify });
       return settingsState;
     }),
     detectBrowser: () => reply<BrowserStatus>({ available: true, name: "Microsoft Edge mock", path: "C:/Program Files/Microsoft/Edge/Application/msedge.exe" }),
