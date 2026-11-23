@@ -1359,6 +1359,15 @@ function readmeUserBlocks(markdown: string): ReadmeData["user_blocks"] {
   };
 }
 
+function missingReadmeUserBlocks(markdown: string): NonNullable<ReadmeData["missing_user_blocks"]> {
+  const headings = [
+    ["overview", "项目概况"],
+    ["focus", "当前重点"],
+    ["rules", "工作规则与偏好"],
+  ] as const;
+  return headings.filter(([, title]) => readmeSection(markdown, title) === null).map(([key]) => key);
+}
+
 function replaceReadmeSection(markdown: string, title: string, content: string): string {
   const section = readmeSection(markdown, title);
   const body = content.trim();
@@ -2961,7 +2970,11 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             .map(([job, value]) => `${job} ${(value as { time: string }).time}`)
             .join("、"),
         }));
-      return { user_blocks: readmeUserBlocks(markdown), auto_blocks, folder_map: [] };
+      const missing_user_blocks = missingReadmeUserBlocks(markdown);
+      return {
+        user_blocks: readmeUserBlocks(markdown), auto_blocks, folder_map: [],
+        ...(missing_user_blocks.length ? { missing_user_blocks } : {}),
+      };
     },
     saveUserBlocks: async (id, blocks) => {
       const projectPath = resolve(id);
