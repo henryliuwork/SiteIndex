@@ -342,8 +342,14 @@ try {
     }
   }
   if (ROOT && (!redirect || redirect.canRemoveProfileRoot)) {
-    try { await contained(process.env.RUNNER_TEMP, ROOT); await rm(ROOT, { recursive: true, force: true }); }
-    catch { failure ??= { stage: "cleanup", category: "PROFILE_CLEANUP_FAILED" }; }
+    try {
+      await contained(process.env.RUNNER_TEMP, ROOT);
+      await rm(ROOT, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+      assert(!await exists(ROOT), "isolated profile remains after cleanup");
+    } catch (error) {
+      failure ??= { stage: "cleanup", category: "PROFILE_CLEANUP_FAILED",
+        code: error && typeof error === "object" && "code" in error ? String(error.code) : "UNKNOWN" };
+    }
   }
   if (failure) report.result = "failed";
   await mkdir(OUTPUT_DIRECTORY, { recursive: true });
