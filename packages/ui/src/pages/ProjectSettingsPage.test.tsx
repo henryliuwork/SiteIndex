@@ -44,6 +44,10 @@ async function renderSettings(initialEntry: string, omitGsc = false, initialGscP
     await mockApi.gsc?.connect();
     await mockApi.gsc?.selectProperty("demo", initialGscProperty);
   }
+  const getProject = mockApi.projects.get.bind(mockApi.projects);
+  vi.spyOn(mockApi.projects, "get").mockImplementation(async (id) => ({
+    ...await getProject(id), config_revision: "synthetic-revision",
+  }));
   const originalUpdateConfig = mockApi.projects.updateConfig.bind(mockApi.projects);
   const updateConfig = vi.spyOn(mockApi.projects, "updateConfig").mockImplementation(originalUpdateConfig);
   const originalSaveCategories = mockApi.categories.save.bind(mockApi.categories);
@@ -57,7 +61,7 @@ async function renderSettings(initialEntry: string, omitGsc = false, initialGscP
   vi.doMock("../api", () => ({
     api: mockApi,
     isMockApi: true,
-    apiErrorMessage: (_error: unknown, fallback: string) => fallback,
+    apiErrorMessage: (error: unknown, fallback: string) => (error as { message?: string } | null)?.message ?? fallback,
   }));
 
   const [{ ProjectSettingsConfigPage }, { ToastProvider }] = await Promise.all([
@@ -91,14 +95,13 @@ describe("项目设置单页区块", () => {
     fireEvent.blur(keywords);
     expect(keywords.value).toBe("bird feeder \na b\n\nc d  \na b\n");
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", expect.objectContaining({
-      seo: expect.objectContaining({ core_keywords: ["bird feeder", "a b", "c d"] }),
-    })));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", {
+      seo: { core_keywords: ["bird feeder", "a b", "c d"] },
+    }, { revision: "synthetic-revision", dirty_paths: ["seo.core_keywords"], clear: [] }));
   }, 20_000);
 
   it("保存仍在编辑的多行草稿时才解析，且不清空未修改的列表字段", async () => {
-    const { mockApi, updateConfig } = await renderSettings("/p/demo2/settings/config?section=seo");
-    const original = (await mockApi.projects.get("demo2")).config;
+    const { updateConfig } = await renderSettings("/p/demo2/settings/config?section=seo");
     updateConfig.mockImplementation(async (_id, config) => config as SiteConfig);
     const keywords = await screen.findByRole("textbox", { name: "核心关键词（每行一项）" }) as HTMLTextAreaElement;
     fireEvent.change(keywords, { target: { value: "a b\nc d  \n\n" } });
@@ -112,8 +115,9 @@ describe("项目设置单页区块", () => {
     const submitted = updateConfig.mock.calls[0]?.[1];
     expect(submitted?.seo?.core_keywords).toEqual(["a b", "c d"]);
     expect(submitted?.seo?.competitors).toEqual(["rival.example.test", "peer.example.test"]);
-    expect(submitted?.brand?.usp).toEqual(original.brand.usp);
-    expect(submitted?.content?.blog_sitemaps).toEqual(original.content?.blog_sitemaps);
+    expect(submitted?.brand).toBeUndefined();
+    expect(submitted?.content).toBeUndefined();
+    expect(updateConfig.mock.calls[0]?.[2]?.dirty_paths).toEqual(["seo.core_keywords", "seo.competitors"]);
   }, 20_000);
 
   it("无 Feed 商品采集开关可保存到抓取配置", async () => {
@@ -124,9 +128,9 @@ describe("项目设置单页区块", () => {
     expect((await screen.findByRole("tooltip")).textContent).toContain("无 Feed 同步优先使用 WooCommerce Store API；不可用时回退商品 Sitemap/HTML。");
     fireEvent.click(toggle);
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", expect.objectContaining({
-      crawl: expect.objectContaining({ feed_url: "", auto_collect_products: true }),
-    })));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", {
+      crawl: { auto_collect_products: true },
+    }, { revision: "synthetic-revision", dirty_paths: ["crawl.auto_collect_products"], clear: [] }));
   }, 20_000);
 
   it("WooCommerce 与 WordPress 平台可分别显示并保存", async () => {
@@ -136,7 +140,9 @@ describe("项目设置单页区块", () => {
     expect([...platform.options].map((option) => option.value)).toContain("wordpress");
     fireEvent.change(platform, { target: { value: "wordpress" } });
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", expect.objectContaining({ platform: "wordpress" })));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", { platform: "wordpress" }, {
+      revision: "synthetic-revision", dirty_paths: ["platform"], clear: [],
+    }));
   }, 30_000);
 
   it("逐条编辑多个分类前缀，预览只显示 Core 返回的匹配结果", async () => {
@@ -188,10 +194,12 @@ describe("项目设置单页区块", () => {
     fireEvent.click(screen.getByRole("button", { name: "添加关注分类" }));
 
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({
-      categories: expect.objectContaining({ watched: expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })]) }),
-    })));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", {
+      categories: { watched: expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })]) },
+      domain: "saved.example.test",
+    }, { revision: "synthetic-revision", dirty_paths: expect.arrayContaining(["domain", "categories.watched"]), clear: [] }));
     await waitFor(async () => expect((await mockApi.projects.get("demo")).config.categories.watched).toEqual(expect.arrayContaining([expect.objectContaining({ slug: "demo-watched-category" })])));
+    await screen.findByText("配置已保存。");
 
     updateConfig.mockClear();
     fireEvent.change(screen.getByPlaceholderText("例如：户外灯具"), { target: { value: "未保存关注分类" } });
@@ -223,9 +231,9 @@ describe("项目设置单页区块", () => {
     fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "本地设置仍可使用" } });
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
 
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({
-      brand: expect.objectContaining({ tagline: "本地设置仍可使用" }),
-    })));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", { brand: { tagline: "本地设置仍可使用" } }, {
+      revision: "synthetic-revision", dirty_paths: ["brand.tagline"], clear: [],
+    }));
   }, 20_000);
 
   it("GSC 尚未开放时保存其他设置仍保留已有属性与未保存草稿", async () => {
@@ -241,12 +249,9 @@ describe("项目设置单页区块", () => {
     fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "保留的未保存草稿" } });
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
 
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", expect.objectContaining({
-      brand: expect.objectContaining({ tagline: "保留的未保存草稿" }),
-      integrations: expect.objectContaining({
-        gsc: expect.objectContaining({ property_site_url: "sc-domain:demo.example.test", keep_fixture_value: true }),
-      }),
-    })));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo", { brand: { tagline: "保留的未保存草稿" } }, {
+      revision: "synthetic-revision", dirty_paths: ["brand.tagline"], clear: [],
+    }));
   }, 20_000);
 
   it("缺少 GSC bridge 时保存其他设置也不清除原有 GSC 配置", async () => {
@@ -264,6 +269,44 @@ describe("项目设置单页区块", () => {
     await waitFor(() => expect(updateConfig).toHaveBeenCalledOnce());
     const savedConfig = updateConfig.mock.calls[0]?.[1];
     expect(savedConfig?.brand?.tagline).toBe("清除后保留的草稿");
-    expect(savedConfig?.integrations?.gsc).toEqual({ property_site_url: "sc-domain:demo.example.test", keep_fixture_value: true });
+    expect(savedConfig?.integrations).toBeUndefined();
+  }, 20_000);
+
+  it("只提交修改的字段，显式清空后可重新加载且保留其他字段", async () => {
+    const { mockApi, updateConfig } = await renderSettings("/p/demo2/settings/config");
+    const before = await mockApi.projects.get("demo2");
+    fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", { brand: { tagline: "" } }, {
+      revision: "synthetic-revision", dirty_paths: ["brand.tagline"], clear: ["brand.tagline"],
+    }));
+    await waitFor(async () => expect((await mockApi.projects.get("demo2")).config.brand.tagline).toBe(""), { timeout: 5_000 });
+    const reloaded = await mockApi.projects.get("demo2");
+    expect(reloaded.config.brand.name).toBe(before.config.brand.name);
+  }, 20_000);
+
+  it("旧草稿冲突时保留输入且提示刷新，不写入配置", async () => {
+    const { mockApi, updateConfig } = await renderSettings("/p/demo2/settings/config");
+    const original = (await mockApi.projects.get("demo2")).config.brand.tagline;
+    updateConfig.mockRejectedValue({ code: "CONFIG_INVALID", message: "配置已在别处更新，请刷新后再保存。" });
+    fireEvent.change(await screen.findByLabelText("一句话定位"), { target: { value: "未保存的虚构草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    expect(await screen.findByText(/配置已在别处更新，请刷新后再保存/)).toBeTruthy();
+    expect((screen.getByLabelText("一句话定位") as HTMLInputElement).value).toBe("未保存的虚构草稿");
+    expect((await mockApi.projects.get("demo2")).config.brand.tagline).toBe(original);
+    expect(updateConfig.mock.calls[0]?.[2]?.revision).toBe("synthetic-revision");
+  }, 20_000);
+
+  it("空保存不写入；清空已有多行列表须带显式 clear", async () => {
+    const { updateConfig } = await renderSettings("/p/demo2/settings/config");
+    const usp = await screen.findByRole("textbox", { name: "核心卖点（每行一项）" });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    expect(await screen.findByText("配置未更改。")).toBeTruthy();
+    expect(updateConfig).not.toHaveBeenCalled();
+    fireEvent.change(usp, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith("demo2", { brand: { usp: [] } }, {
+      revision: "synthetic-revision", dirty_paths: ["brand.usp"], clear: ["brand.usp"],
+    }));
   }, 20_000);
 });

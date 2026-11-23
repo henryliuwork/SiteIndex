@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
-import type { CategoriesConfig, FeedInspectResult, SiteConfig, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
+import type { CategoriesConfig, ConfigSaveOptions, FeedInspectResult, SiteConfig, SiteConfigPatch, SkuGroupingPreview, SkuGroupingRule, WatchedCategory } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { invalidateProjectSummary, projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Chip, InfoTooltip, PageFrame, ProjectHeader, ProjectTabPanel, useToast } from "../components";
@@ -65,6 +65,34 @@ function withParsedLineDrafts(config: SiteConfig, values: LineDrafts | null, dir
   return next;
 }
 
+function protectedConfigPatch(before: SiteConfig, after: SiteConfig): { patch: SiteConfigPatch; options: ConfigSaveOptions } {
+  const dirty_paths: string[] = [];
+  const clear: string[] = [];
+  const unchanged = Symbol("unchanged");
+  const record = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  const diff = (oldValue: unknown, newValue: unknown, path: string): unknown | typeof unchanged => {
+    if (record(newValue)) {
+      const oldRecord = record(oldValue) ? oldValue : {};
+      for (const key of Object.keys(oldRecord)) {
+        if (!Object.hasOwn(newValue, key)) throw new Error(`JSON 中删除「${path ? `${path}.` : ""}${key}」不受支持；请明确设为空值。`);
+      }
+      const next: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(newValue)) {
+        const changed = diff(oldRecord[key], value, path ? `${path}.${key}` : key);
+        if (changed !== unchanged) next[key] = changed;
+      }
+      return Object.keys(next).length ? next : unchanged;
+    }
+    if (JSON.stringify(oldValue) === JSON.stringify(newValue)) return unchanged;
+    dirty_paths.push(path);
+    const value = newValue === undefined ? null : newValue;
+    if (value === "" || value === null || (Array.isArray(value) && value.length === 0)) clear.push(path);
+    return value;
+  };
+  const patch = diff(before, after, "");
+  return { patch: patch === unchanged ? {} : patch as SiteConfigPatch, options: { dirty_paths, clear } };
+}
+
 function categoryKey(category: Pick<WatchedCategory, "name" | "slug">): string {
   return category.slug?.trim() || category.name.trim().toLocaleLowerCase("zh-CN");
 }
@@ -119,10 +147,14 @@ export function ProjectSettingsConfigPage() {
   const [activeSection, setActiveSection] = useState<ConfigSectionId>("basic");
   const handledRequestedSection = useRef<string | null>(null);
   const initializedProjectId = useRef<string | null>(null);
+  const loadedConfig = useRef<SiteConfig | null>(null);
+  const loadedRevision = useRef<string | null>(null);
 
   useEffect(() => {
     if (!projectQuery.data || initializedProjectId.current === id) return;
     initializedProjectId.current = id;
+    loadedConfig.current = projectQuery.data.config;
+    loadedRevision.current = projectQuery.data.config_revision ?? null;
     setDraft(projectQuery.data.config);
     setLineDrafts(lineDraftsFromConfig(projectQuery.data.config));
     setDirtyLineFields(new Set());
@@ -197,22 +229,33 @@ export function ProjectSettingsConfigPage() {
       toast.error("保存失败：" + apiErrorMessage(error, "数据修正 JSON 格式无效"));
       return;
     }
-    const previousCategories = projectQuery.data?.config.categories ?? config.categories;
-    const previousBlogRecognition = projectQuery.data?.config.content;
+    let changes: ReturnType<typeof protectedConfigPatch>;
+    try {
+      changes = protectedConfigPatch(loadedConfig.current ?? config, config);
+    } catch (error) { toast.error(error instanceof Error ? error.message : apiErrorMessage(error, "配置变更无效。")); return; }
+    if (!changes.options.dirty_paths?.length) { toast.info("配置未更改。"); return; }
+    if (!loadedRevision.current && !isMockApi) { toast.error("当前版本无法安全保存配置，请更新软件后重试。"); return; }
+    const previousCategories = loadedConfig.current?.categories ?? config.categories;
+    const previousBlogRecognition = loadedConfig.current?.content;
     setSaving(true);
     try {
-      const saved = await api.projects.updateConfig(id, config);
+      const saved = await api.projects.updateConfig(id, changes.patch, {
+        ...changes.options, ...(loadedRevision.current ? { revision: loadedRevision.current } : {}),
+      });
+      const refreshed = await api.projects.get(id);
       if (didBlogRecognitionConfigChange(previousBlogRecognition, saved.content)) {
         markBlogRecognitionConfigUpdated(id);
       }
-      setDraft(saved);
-      setLineDrafts(lineDraftsFromConfig(saved));
+      loadedConfig.current = refreshed.config;
+      loadedRevision.current = refreshed.config_revision ?? null;
+      setDraft(refreshed.config);
+      setLineDrafts(lineDraftsFromConfig(refreshed.config));
       setDirtyLineFields(new Set());
-      setOverrideText(JSON.stringify(saved.crawl.overrides ?? {}, null, 2));
+      setOverrideText(JSON.stringify(refreshed.config.crawl.overrides ?? {}, null, 2));
       await Promise.all([
         invalidateProjectSummary(queryClient, id),
         queryClient.invalidateQueries({ queryKey: ["sku-grouping-preview", id] }),
-        invalidateInventoryForCategoryChange(queryClient, id, previousCategories, saved.categories),
+        invalidateInventoryForCategoryChange(queryClient, id, previousCategories, refreshed.config.categories),
       ]);
       toast.success("配置已保存。");
     } catch (error) {

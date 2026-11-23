@@ -36,6 +36,6 @@ describe("关注分类缓存刷新", () => {
   it("设置页保存分类配置后调用库存缓存失效", () => {
     const source = readFileSync(new URL("../ProjectSettingsConfigPage.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("invalidateInventoryForCategoryChange(queryClient, id, previousCategories, saved.categories)");
+    expect(source).toContain("invalidateInventoryForCategoryChange(queryClient, id, previousCategories, refreshed.config.categories)");
   });
 });
