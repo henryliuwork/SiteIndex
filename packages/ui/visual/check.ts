@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { inspectFrame } from "./frame-inspect";
+import { inspectSpacing, type SpacingFinding } from "./spacing-inspect";
+import { compareSpacingFindings, type SpacingBaseline } from "./spacing-policy";
 import { checkFrameMetrics, checkSkuTables, projectSettingsScrollableBodyRoutes, type FrameBaseline } from "./frame-policy";
 import { inspectTooltips } from "./tooltip-inspect";
 import { createServer, type ViteDevServer } from "vite";
@@ -41,6 +43,9 @@ interface CheckReport {
   timeWarnings: string[];
   sectionPageFindings?: ReturnType<typeof checkSectionPageMetrics>;
   frameStatus?: "strict" | "legacy";
+  spacingFindings?: SpacingFinding[];
+  spacingLegacyCount?: number;
+  spacingResolvedKeys?: string[];
 }
 
 const uiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -696,6 +701,8 @@ async function main(): Promise<void> {
   const sectionBaseline = JSON.parse(await readFile(sectionBaselinePath, "utf8")) as SectionPageBaseline;
   const frameBaselinePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "frame-baseline.json");
   const frameBaseline = JSON.parse(await readFile(frameBaselinePath, "utf8")) as FrameBaseline;
+  const spacingBaselinePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "spacing-baseline.json");
+  const spacingBaseline = JSON.parse(await readFile(spacingBaselinePath, "utf8")) as SpacingBaseline;
   const stylePolicy = compareStyleFindings(styleFindings, styleBaselineFile.counts);
 
   try {
@@ -725,6 +732,9 @@ async function main(): Promise<void> {
     const routes = await discoverRoutes(server, projectId);
     const unknownBaselineRoutes = Object.keys(frameBaseline.legacyRoutes).filter((name) => !routes.some((route) => route.name === name));
     if (unknownBaselineRoutes.length) throw new Error(`外框基线包含已不存在的路由：${unknownBaselineRoutes.join("、")}`);
+    const spacingKeys = new Set(routes.flatMap((route) => [1280, 1920].map((width) => `${route.name}@${width}`)));
+    const unknownSpacingKeys = Object.keys(spacingBaseline.checks).filter((key) => !spacingKeys.has(key));
+    if (unknownSpacingKeys.length) throw new Error(`间距基线包含已不存在的路由/视口：${unknownSpacingKeys.join("、")}`);
 
     console.log(`ui:check: ${routes.length} routes × ${viewports.length} viewports; project=${projectId}`);
     if (mockModeOverride) console.log(`ui:check mock override: ${mockModeOverride} on ${mockModeRoute}`);
@@ -745,6 +755,9 @@ async function main(): Promise<void> {
         let timeWarnings: string[] = [];
         let sectionPageFindings: ReturnType<typeof checkSectionPageMetrics> | undefined;
         let frameStatus: "strict" | "legacy" | undefined;
+        let spacingFindings: SpacingFinding[] | undefined;
+        let spacingLegacyCount: number | undefined;
+        let spacingResolvedKeys: string[] | undefined;
         currentConsoleErrors = consoleErrors;
         try {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
@@ -779,6 +792,16 @@ async function main(): Promise<void> {
           const frameCheck = checkFrameMetrics(route.name, route.path.startsWith("/p/") ? "project" : "global", Number(inspection.metrics.tableCount) > 0, frame, frameBaseline);
           frameStatus = frameCheck.status;
           failures.push(...frameCheck.findings);
+          if (viewport.width === 1280 || viewport.width === 1920) {
+            const baselineKey = `${route.name}@${viewport.width}`;
+            spacingFindings = await inspectSpacing(page, route.name);
+            const allowed = spacingBaseline.checks[baselineKey];
+            if (!allowed) failures.push({ rule: "spacing-baseline-missing", message: `${baselineKey} 未登记间距检查。` });
+            const comparison = compareSpacingFindings(spacingFindings, allowed);
+            spacingLegacyCount = comparison.legacyCount;
+            spacingResolvedKeys = comparison.resolvedKeys;
+            failures.push(...comparison.introduced.map(({ rule, message }) => ({ rule, message })));
+          }
           if (route.path === "/") {
             const title = await page.locator(".si-page-frame-header h1").boundingBox();
             const header = await page.locator(".si-page-frame-header").boundingBox();
@@ -883,7 +906,7 @@ async function main(): Promise<void> {
           failures.push(...await inspectProductVariantSku(page));
         }
         for (const error of consoleErrors) failures.push({ rule: "console-error", message: error });
-        reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors, timeWarnings, sectionPageFindings, frameStatus });
+        reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors, timeWarnings, sectionPageFindings, frameStatus, spacingFindings, spacingLegacyCount, spacingResolvedKeys });
         const state = failures.length ? `FAIL ${failures.length}` : frameStatus === "legacy" ? "LEGACY FRAME" : "PASS";
         const terminalState = typeof metrics.dataSurfaceState === "string" ? ` (${metrics.dataSurfaceState})` : "";
         console.log(`[${state}] ${route.path} @ ${viewport.width}×${viewport.height}${terminalState}`);
@@ -911,13 +934,16 @@ async function main(): Promise<void> {
     sectionPageBaselineVersion: sectionBaseline.version,
     sectionPageLegacyFindingCount: reports.reduce((count, item) => count + (item.sectionPageFindings?.filter((finding) => finding.legacy).length ?? 0), 0),
     frameBaselineVersion: frameBaseline.version,
+    spacingBaselineVersion: spacingBaseline.version,
+    spacingLegacyFindingCount: reports.reduce((count, item) => count + (item.spacingLegacyCount ?? 0), 0),
+    spacingResolvedKeyCount: reports.reduce((count, item) => count + (item.spacingResolvedKeys?.length ?? 0), 0),
     legacyFrameCheckCount: reports.filter((item) => item.frameStatus === "legacy").length,
     strictFrameCheckCount: reports.filter((item) => item.frameStatus === "strict").length,
     checks: reports,
   };
   await writeFile(path.join(shotsDir, "report.json"), JSON.stringify(report, null, 2) + "\n", "utf8");
   const failures = reports.flatMap((item) => item.failures.map((failure) => ({ route: item.route, viewport: item.viewport.width, ...failure })));
-  console.log(`ui:check complete: ${reports.length} route/viewport checks, ${report.strictFrameCheckCount} strict / ${report.legacyFrameCheckCount} legacy frame checks, ${failures.length} UI failures, ${stylePolicy.introduced.length} new style failure(s), ${stylePolicy.legacyCount} legacy style finding(s), ${report.sectionPageLegacyFindingCount} section-page baseline finding(s), ${allTimeWarnings.size} time warning(s).`);
+  console.log(`ui:check complete: ${reports.length} route/viewport checks, ${report.strictFrameCheckCount} strict / ${report.legacyFrameCheckCount} legacy frame checks, ${failures.length} UI failures, ${stylePolicy.introduced.length} new style failure(s), ${stylePolicy.legacyCount} legacy style finding(s), ${report.sectionPageLegacyFindingCount} section-page baseline finding(s), ${report.spacingLegacyFindingCount} spacing baseline finding(s), ${report.spacingResolvedKeyCount} resolved spacing key(s), ${allTimeWarnings.size} time warning(s).`);
   console.log(`Report: ${path.relative(uiRoot, path.join(shotsDir, "report.json"))}`);
   for (const failure of failures) console.error(`- ${failure.route} @ ${failure.viewport}: [${failure.rule}] ${failure.message}`);
   for (const finding of stylePolicy.introduced) console.error(`- ${finding.source}:${finding.line}: [${finding.rule}] ${finding.signature}`);
