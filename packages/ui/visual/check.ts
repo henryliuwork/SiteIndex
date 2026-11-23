@@ -786,6 +786,15 @@ async function main(): Promise<void> {
               failures.push({ rule: "project-center-title-overflow", message: "项目中心标题越过 56px 标题行。" });
             }
           }
+          if (route.path === "/skills") {
+            const nestedScroll = await page.locator(".si-skill-body").evaluate((element) => {
+              const overflow = getComputedStyle(element).overflowY;
+              return (overflow === "auto" || overflow === "scroll") && element.scrollHeight > element.clientHeight + 1;
+            });
+            if (nestedScroll || frame.contentScroll || frame.documentScroll) {
+              failures.push({ rule: "skills-single-scroll", message: "Skill 页只能由 PageFrame 内容区纵向滚动。" });
+            }
+          }
           timeWarnings = inspection.timeWarnings;
           for (const warning of timeWarnings) allTimeWarnings.add(`${route.path} @ ${viewport.width}: ${warning}`);
 
