@@ -2,7 +2,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { PATHS, type CreateProjectInput, type DetectResult } from "@siteindex/shared";
+import { JOB_NAMES, PATHS, type CreateProjectInput, type DetectResult } from "@siteindex/shared";
 import type { BrowserLauncher, BrowserPage, BrowserSession } from "../src/browser/automation";
 import { createProjectFiles } from "../src/projects/create";
 import { createCoreService } from "../src/service";
@@ -15,7 +15,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function fakeBrowser(): BrowserLauncher {
+function fakeBrowser(captcha = false): BrowserLauncher {
   const page: BrowserPage = {
     goto: async () => undefined,
     setViewportSize: async () => undefined,
@@ -33,14 +33,14 @@ function fakeBrowser(): BrowserLauncher {
       buttons: { primary: null, secondary: null, outline: null },
       components: {}, logo: null, favicon: null,
     }) as T,
-    locator: () => ({ innerText: async () => "", count: async () => 0 }),
+    locator: () => ({ innerText: async () => "", count: async () => captcha ? 1 : 0 }),
     close: async () => undefined,
   };
   const browser: BrowserSession = { newPage: async () => page, close: async () => undefined };
   return async () => browser;
 }
 
-it("preserves v0.8.0 user fields through startup and every scheduled job", async () => {
+it("preserves v0.8.0 user fields through every job type with external paths simulated", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-upgrade-080-"));
   roots.push(root);
   const base = "https://synthetic-shop.test";
@@ -84,18 +84,28 @@ it("preserves v0.8.0 user fields through startup and every scheduled job", async
       : new Response("missing", { status: 404 });
   }));
 
-  const service = () => createCoreService({ resolveProject: () => project, deviceId: "upgrade-test",
+  const service = (captcha = false) => createCoreService({ resolveProject: () => project, deviceId: "upgrade-test",
     cacheDir: path.join(root, "cache"), browserExecutablePath: "C:/Synthetic/browser.exe",
-    browserLauncher: fakeBrowser() });
+    browserLauncher: fakeBrowser(captcha) });
   const checkUserFields = async () => {
     expect(await readFile(path.join(project, PATHS.site), "utf8")).toBe(originalSite);
     expect((await service().projects.get("project")).config.seo?.core_keywords).toEqual(["sample product", "long tail phrase"]);
     expect((await service().readme.get("project")).user_blocks).toEqual(expectedBlocks);
   };
   await checkUserFields(); // startup read
-  for (const job of ["daily", "weekly", "monthly", "readme", "validate"] as const) {
-    const result = await service().runJob({ projectPath: project, job, trigger: "manual", date: "2026-11-23" }, () => undefined);
+  const directJobs = ["daily", "weekly", "monthly", "readme", "validate", "views", "init", "design", "media"] as const;
+  expect([...directJobs, "index-check"].sort()).toEqual([...JOB_NAMES].sort());
+  for (const job of directJobs) {
+    // Media is request-scoped; an empty SKU selection needs no image host or WordPress credentials.
+    const result = await service().runJob({ projectPath: project, job, trigger: "manual", date: "2026-11-23",
+      ...(job === "media" ? { skus: [] } : {}) }, () => undefined);
     expect(result.status, `${job}: ${JSON.stringify(result)}`).toBe("ok");
     await checkUserFields(); // new service after each job
   }
+  // Google index checking is interactive; a synthetic captcha stops at the first page without a live query.
+  const indexCheck = await service(true).runJob({ projectPath: project, job: "index-check", trigger: "manual",
+    date: "2026-11-23" }, () => undefined);
+  expect(indexCheck.status).toBe("partial");
+  expect(indexCheck.summary).toContain("Google 验证");
+  await checkUserFields();
 }, 60_000);
