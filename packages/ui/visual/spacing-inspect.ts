@@ -1,7 +1,7 @@
 import type { Page } from "playwright-core";
 
 export type SpacingRule = "S1" | "S2" | "S3" | "S4" | "S5" | "S6" | "S8" | "S9" | "S10";
-export interface SpacingFinding { rule: SpacingRule; key: string; message: string }
+export interface SpacingFinding { rule: SpacingRule; key: string; message: string; exceptionId?: string }
 
 // Keep this probe as a string: Vite's TS transform adds a server-only helper to
 // nested callbacks when a typed function is passed directly to page.evaluate.
@@ -23,8 +23,8 @@ const probe = String.raw`(() => {
     }
     return parts.join(".");
   };
-  const add = (rule, element, message, suffix = "") => {
-    findings.push({ rule, key: rule + ":" + key(element) + suffix, message });
+  const add = (rule, element, message, suffix = "", exceptionId) => {
+    findings.push({ rule, key: rule + ":" + key(element) + suffix, message, ...(exceptionId ? { exceptionId } : {}) });
   };
   const round = (value) => Math.round(value * 10) / 10;
   const textRects = (element) => {
@@ -81,7 +81,11 @@ const probe = String.raw`(() => {
       const gap = right.left - left.right;
       const minimum = parent.closest(".si-project-header-actions") ? 12 : 8;
       if (gap >= -0.5 && gap < minimum - 1) {
-        add("S3", sorted[index], "相邻控件间距 " + round(gap) + "px，应至少 " + minimum + "px。", "~" + key(sorted[index - 1]));
+        const tableHeaderHelp = parent.matches(".si-table-heading")
+          && sorted[index - 1].matches(".si-sort-button")
+          && sorted[index].matches(".si-info-tooltip-trigger")
+          && Math.abs(gap - 4) <= 1;
+        add("S3", sorted[index], "相邻控件间距 " + round(gap) + "px，应至少 " + minimum + "px。", "~" + key(sorted[index - 1]), tableHeaderHelp ? "table-header-help-4px" : undefined);
       }
     }
   }

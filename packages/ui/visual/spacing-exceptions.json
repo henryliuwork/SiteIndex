@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "id": "table-header-help-4px",
+      "rule": "S3",
+      "reason": "DESIGN.md §3.5 规定排序表头文字与 InfoTooltip 说明按钮间距为 4px；仅适用于共享 DataTable 的 si-table-heading 组合。"
+    }
+  ]
+}
