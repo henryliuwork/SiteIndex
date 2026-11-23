@@ -183,7 +183,8 @@
 - [x] I7（B 页面）：README 根据 `missing_user_blocks` 提示缺失用户段，保存后读回状态清除提示 — 本 PR
 - [x] D 类 #744：软件设置只提交变更字段与 revision，显式清空才附 clear；冲突保留草稿并提供刷新 — 本 PR
 - [x] B-1b：共享 FilterPopover、带标签 Select 和 FilterCheckbox；统一 Select 弹层间距 — 本 PR
-- [ ] B-3：全局页逐页修复并移除 spacing 基线 — 待 B-1 合并
+- [ ] B-3：全局页逐页修复并移除 spacing 基线 — 进行中
+- [x] B-3 共享前置：InfoTooltip 图标按钮补紧凑内边距，统一修复 S2；各页基线随页面迁移删除 — 本 PR
 
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。
