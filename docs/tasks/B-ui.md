@@ -179,6 +179,7 @@
 - [x] B-2：`ui:check` S1–S10 与 27 路由 × 2 视口 `spacing-baseline.json`；S7 沿用样式扫描 — 本 PR
 - [ ] B-1：共享 Tab、页头、间距、筛选/表单组件、DataTable help 与无值列 — 待独立 PR
 - [x] B-1a：项目 Tab 指示线与页头次要按钮按实测宽度显示；SummaryLine、Chip 按语义 token 留出内边距 — 本 PR
+- [x] D 类 #744：软件设置只提交变更字段与 revision，显式清空才附 clear；冲突保留草稿并提供刷新 — 本 PR
 - [ ] B-3：全局页逐页修复并移除 spacing 基线 — 待 B-1 合并
 
 ## 交付给其他工作流
