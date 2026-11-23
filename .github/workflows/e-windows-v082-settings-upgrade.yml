@@ -1,0 +1,54 @@
+name: E · Windows settings upgrade acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/e-windows-v082-settings-upgrade.yml"
+      - "packages/desktop/scripts/e-windows-v082-settings-upgrade.mjs"
+      - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
+      - "packages/desktop/scripts/windows-appdata-redirect.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-settings-upgrade:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build candidate with production NSIS script
+        run: pnpm --filter @siteindex/desktop dist:win
+      - name: Download pinned v0.8.0 Release installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir baseline-installer
+      - name: Verify isolated overwrite and settings readback
+        shell: pwsh
+        timeout-minutes: 30
+        env:
+          SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: node packages/desktop/scripts/e-windows-v082-settings-upgrade.mjs baseline-installer/SiteIndex-Setup-0.8.0.exe release/SiteIndex-Setup-0.8.0.exe
+      - name: Add acceptance summary
+        if: always()
+        shell: pwsh
+        run: |
+          $summary = "siteindex-v082-upgrade-results/summary.md"
+          if (Test-Path -LiteralPath $summary) { Get-Content -LiteralPath $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
+      - name: Upload synthetic-only report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteindex-v082-settings-upgrade
+          path: siteindex-v082-upgrade-results/
+          if-no-files-found: warn
+          retention-days: 14
