@@ -1,0 +1,16 @@
+.si-filter-popover {
+  z-index: 60;
+  display: grid;
+  width: min(22rem, calc(100vw - var(--space-8)));
+  gap: var(--gap-group);
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-pop);
+}
+.si-filter-popover-group { display: grid; gap: var(--gap-inline); }
+.si-filter-popover-field { display: grid; min-width: 0; gap: var(--gap-label-control); }
+.si-filter-popover-label { color: var(--color-ink-2); font-size: var(--fs-caption); font-weight: var(--fw-strong); }
+.si-filter-popover-field .si-select-trigger { width: 100%; }
+.si-filter-popover-checkbox .si-checkbox-row { min-height: var(--control-height-compact); padding-inline: var(--pad-chip-x); }

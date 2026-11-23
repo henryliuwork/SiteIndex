@@ -1,5 +1,6 @@
 export * from "./ApiErrorNotice";
 export { FilterBar } from "./filter-bar";
+export * from "./filter-popover";
 export * from "./form-controls";
 export * from "./info-tooltip";
 export * from "./input-with-action";
