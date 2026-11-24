@@ -1,0 +1,105 @@
+name: E · Windows v0.8.2 settings matrix 46-60
+
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled]
+    paths:
+      - ".github/workflows/e-windows-v082-matrix-46-60.yml"
+      - "packages/desktop/scripts/e-windows-v082-matrix-46-60.mjs"
+  workflow_dispatch:
+    inputs:
+      expected_source_commit:
+        description: "Frozen full SHA of this acceptance script branch"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  windows-settings-matrix:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.label.name == 'gate3-approved' }}
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify frozen acceptance code and pinned installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SOURCE: ${{ inputs.expected_source_commit || github.event.pull_request.head.sha }}
+        run: |
+          $source = (git rev-parse HEAD).Trim()
+          if ($env:EXPECTED_SOURCE -notmatch '^[0-9a-f]{40}$' -or $source -cne $env:EXPECTED_SOURCE) { throw 'Acceptance code commit differs from frozen head.' }
+          $repo = $env:GITHUB_REPOSITORY
+          $run = gh api "repos/$repo/actions/runs/45312779688" | ConvertFrom-Json
+          $artifact = gh api "repos/$repo/actions/artifacts/14884245939" | ConvertFrom-Json
+          $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
+          $expectedCandidate = 'ac9c6ff65da40b0828b32cf7ddf3de563a202233'
+          $expectedZip = 'bdd6ccd6e4b7615556fbd7a939d8d3ecfb938a2a89b4e12fe319a588819004ac'
+          if ($run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success') { throw 'Candidate did not come from a successful Release workflow.' }
+          if ($run.event -ne 'workflow_dispatch' -or $run.head_sha -cne $expectedCandidate -or $run.head_branch -ceq 'main') { throw 'Candidate source commit or branch differs from the fixed v0.8.2 build.' }
+          if ($artifact.id -ne 14884245939 -or $artifact.name -ne 'siteindex-win' -or $artifact.expired) { throw 'Candidate artifact identity changed.' }
+          if ($artifact.workflow_run.id -ne $run.id -or $artifact.workflow_run.head_sha -cne $expectedCandidate) { throw 'Candidate artifact is not from the pinned Release run.' }
+          if (([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -cne $expectedZip) { throw 'Candidate ZIP digest differs from the pin.' }
+          $release = gh api "repos/$repo/releases/tags/v0.8.0" | ConvertFrom-Json
+          $tag = gh api "repos/$repo/git/ref/tags/v0.8.0" | ConvertFrom-Json
+          $tagObject = $tag.object
+          for ($depth = 0; $tagObject.type -eq 'tag' -and $depth -lt 5; $depth++) {
+            $tagObject = (gh api "repos/$repo/git/tags/$($tagObject.sha)" | ConvertFrom-Json).object
+          }
+          $asset = @($release.assets | Where-Object name -eq 'SiteIndex-Setup-0.8.0.exe') | Select-Object -First 1
+          if ($release.draft -or $release.prerelease -or $tagObject.type -ne 'commit' -or $tagObject.sha -cne '47bf86878c80a96667d65e7b8b60229496ac995f') { throw 'Baseline release/tag changed.' }
+          if ($asset.id -ne 781732072 -or ([string]$asset.digest -replace '^sha256:', '').ToLowerInvariant() -cne '65232832171b12d5362c6ec21e6dcb3a542149bbf2e9d1529eacacdf324d7e22') { throw 'Baseline asset identity or digest changed.' }
+          "SITEINDEX_EXPECTED_SOURCE_COMMIT=$source" >> $env:GITHUB_ENV
+      - name: Download exact candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: 14884245939
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 45312779688
+          path: siteindex-candidate-artifact
+          digest-mismatch: error
+      - name: Download pinned baseline and verify EXE hashes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.8.0 --repo $env:GITHUB_REPOSITORY --pattern SiteIndex-Setup-0.8.0.exe --dir baseline-installer
+          $old = 'baseline-installer/SiteIndex-Setup-0.8.0.exe'
+          $new = 'siteindex-candidate-artifact/SiteIndex-Setup-0.8.2.exe'
+          $installers = @(Get-ChildItem -LiteralPath 'siteindex-candidate-artifact' -Filter 'SiteIndex-Setup-*.exe' -File -Recurse)
+          if ($installers.Count -ne 1 -or $installers[0].FullName -cne (Resolve-Path -LiteralPath $new).Path) { throw 'Candidate artifact has unexpected EXE contents.' }
+          if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne '65232832171b12d5362c6ec21e6dcb3a542149bbf2e9d1529eacacdf324d7e22') { throw 'Baseline EXE hash mismatch.' }
+          if ((Get-FileHash -LiteralPath $new -Algorithm SHA256).Hash.ToLowerInvariant() -cne '8dedcea2b0ef30e6d14ec006345a31bfd3b3fdb6f0c42cb876f6263f00ed12e6') { throw 'Candidate EXE hash mismatch.' }
+      - name: Save, exit, overwrite, and read back each setting
+        shell: pwsh
+        timeout-minutes: 75
+        env:
+          SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: node packages/desktop/scripts/e-windows-v082-matrix-46-60.mjs baseline-installer/SiteIndex-Setup-0.8.0.exe siteindex-candidate-artifact/SiteIndex-Setup-0.8.2.exe
+      - name: Add synthetic summary
+        if: always()
+        shell: pwsh
+        run: |
+          $summary = 'siteindex-v082-matrix-46-60-results/summary.md'
+          if (Test-Path -LiteralPath $summary) { Get-Content -LiteralPath $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
+      - name: Upload synthetic results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteindex-v082-matrix-46-60
+          path: siteindex-v082-matrix-46-60-results/
+          if-no-files-found: warn
+          retention-days: 14
