@@ -131,6 +131,14 @@ async function install(installer) {
   await contained(ROOT, INSTALL_EXE);
   assert(await exists(path.join(LAYOUT.installDir, "resources", "ui", "index.html")), "installed UI missing");
 }
+async function uninstall() {
+  const target = path.join(LAYOUT.installDir, "Uninstall SiteIndex.exe");
+  await contained(ROOT, target);
+  run(target, ["/S"], { env: environment() });
+  const until = Date.now() + 10_000;
+  while (await exists(INSTALL_EXE) && Date.now() < until) await delay(250);
+  assert(!await exists(INSTALL_EXE), "isolated NSIS uninstall did not remove installed app");
+}
 async function launch() {
   const endpoint = "http://127.0.0.1:9348";
   assert(!await fetch(`${endpoint}/json/version`).then((r) => r.ok).catch(() => false), "CDP port already in use");
@@ -296,6 +304,7 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     await cleanupSchedule(page, project, knownNames);
     entry.clean = true;
     await exitNormally();
+    await uninstall();
     entry.status = "passed";
   } finally {
     if (!entry.clean && await exists(INSTALL_EXE)) {
