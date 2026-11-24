@@ -1,29 +1,15 @@
-name: E · Windows system schedule upgrade acceptance
+name: C · Windows v0.8.0 schedule #52 diagnostic
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, labeled]
-    paths:
-      - ".github/workflows/e-windows-v082-schedule-system-upgrade.yml"
-      - "packages/desktop/scripts/e-windows-v082-schedule-system-upgrade.mjs"
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
-  system-schedule:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'gate3-approved')
+  schedule-52-diagnostic:
     runs-on: windows-2025
-    timeout-minutes: 120
-    env:
-      CANDIDATE_RUN_ID: "45312779688"
-      CANDIDATE_ARTIFACT_ID: "14884245939"
-      CANDIDATE_SOURCE_SHA: ac9c6ff65da40b0828b32cf7ddf3de563a202233
-      CANDIDATE_ZIP_SHA256: bdd6ccd6e4b7615556fbd7a939d8d3ecfb938a2a89b4e12fe319a588819004ac
-      CANDIDATE_EXE_SHA256: 8dedcea2b0ef30e6d14ec006345a31bfd3b3fdb6f0c42cb876f6263f00ed12e6
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -32,50 +18,45 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Verify pinned Release run and artifact
+      - name: Verify reviewed source and official v0.8.0 baseline
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ env.CANDIDATE_RUN_ID }}
-          ARTIFACT_ID: ${{ env.CANDIDATE_ARTIFACT_ID }}
-          SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
-          ZIP_SHA: ${{ env.CANDIDATE_ZIP_SHA256 }}
+          EXPECTED_SOURCE: ${{ github.sha }}
         run: |
-          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or $env:ZIP_SHA -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'Full source and artifact hashes are required.' }
+          $source = (git rev-parse HEAD).Trim()
+          if ($env:EXPECTED_SOURCE -cnotmatch '^[0-9a-f]{40}$' -or $source -cne $env:EXPECTED_SOURCE) { throw 'Diagnostic source differs from reviewed head.' }
+          if ($env:GITHUB_REF -cne 'refs/heads/c/diag-v082-schedule52') { throw 'Diagnostic must run from its isolated branch.' }
           $repo = $env:GITHUB_REPOSITORY
-          $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
-          $run = gh api "repos/$repo/actions/runs/$env:RUN_ID" | ConvertFrom-Json
-          $artifact = gh api "repos/$repo/actions/artifacts/$env:ARTIFACT_ID" | ConvertFrom-Json
-          if ($run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.event -ne 'workflow_dispatch' -or $run.head_branch -ne 'c/version-0.8.2' -or $run.head_sha -cne $env:SOURCE_SHA) { throw 'Candidate Release run provenance mismatch.' }
-          if ($artifact.id -ne [long]$env:ARTIFACT_ID -or $artifact.name -ne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne [long]$env:RUN_ID -or $artifact.workflow_run.head_sha -cne $env:SOURCE_SHA) { throw 'Candidate artifact provenance mismatch.' }
-          if (([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -ne $env:ZIP_SHA.ToLowerInvariant()) { throw 'Candidate artifact ZIP digest mismatch.' }
-      - uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ env.CANDIDATE_ARTIFACT_ID }}
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ env.CANDIDATE_RUN_ID }}
-          path: pinned-candidate
-          digest-mismatch: error
-      - name: Verify candidate and official baseline
+          $release = gh api "repos/$repo/releases/tags/v0.8.0" | ConvertFrom-Json
+          $tag = gh api "repos/$repo/git/ref/tags/v0.8.0" | ConvertFrom-Json
+          $tagObject = $tag.object
+          for ($depth = 0; $tagObject.type -eq 'tag' -and $depth -lt 5; $depth++) {
+            $tagObject = (gh api "repos/$repo/git/tags/$($tagObject.sha)" | ConvertFrom-Json).object
+          }
+          $asset = @($release.assets | Where-Object name -eq 'SiteIndex-Setup-0.8.0.exe') | Select-Object -First 1
+          $expectedSha = '65232832171b12d5362c6ec21e6dcb3a542149bbf2e9d1529eacacdf324d7e22'
+          if ($release.draft -or $release.prerelease -or $tagObject.type -ne 'commit' -or $tagObject.sha -cne '47bf86878c80a96667d65e7b8b60229496ac995f') { throw 'Official v0.8.0 release/tag changed.' }
+          if ($asset.id -ne 781732072 -or ([string]$asset.digest -replace '^sha256:', '').ToLowerInvariant() -cne $expectedSha) { throw 'Official baseline asset identity or digest changed.' }
+          "SITEINDEX_EXPECTED_SOURCE_COMMIT=$source" >> $env:GITHUB_ENV
+      - name: Download official baseline and verify EXE hash
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          EXE_SHA: ${{ env.CANDIDATE_EXE_SHA256 }}
         run: |
-          $files = @(Get-ChildItem -LiteralPath pinned-candidate -Filter 'SiteIndex-Setup-*.exe' -File -Recurse)
-          if ($files.Count -ne 1 -or $files[0].Name -ne 'SiteIndex-Setup-0.8.2.exe') { throw 'Expected exactly one v0.8.2 EXE.' }
-          if ((Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash -ine $env:EXE_SHA) { throw 'Candidate EXE SHA256 mismatch.' }
-          gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir official-baseline
-      - name: Check #83 system tasks across overwrite upgrade
+          gh release download v0.8.0 --repo $env:GITHUB_REPOSITORY --pattern SiteIndex-Setup-0.8.0.exe --dir official-baseline
+          $old = 'official-baseline/SiteIndex-Setup-0.8.0.exe'
+          if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne '65232832171b12d5362c6ec21e6dcb3a542149bbf2e9d1529eacacdf324d7e22') { throw 'Official baseline EXE hash mismatch.' }
+      - name: Record one isolated schedule #52 diagnostic
+        timeout-minutes: 25
         env:
-          SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
-          SITEINDEX_EXPECTED_CANDIDATE_SHA256: ${{ env.CANDIDATE_EXE_SHA256 }}
-        run: node packages/desktop/scripts/e-windows-v082-schedule-system-upgrade.mjs official-baseline/SiteIndex-Setup-0.8.0.exe pinned-candidate/SiteIndex-Setup-0.8.2.exe
-      - name: Publish synthetic report
+          SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: node packages/desktop/scripts/e-windows-v082-schedule52-diagnostic.mjs official-baseline/SiteIndex-Setup-0.8.0.exe
+      - name: Upload synthetic diagnostic
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: siteindex-v082-schedule-system
-          path: siteindex-v082-schedule-system-results/
+          name: siteindex-v082-schedule52-diagnostic
+          path: siteindex-v082-schedule52-diagnostic-results/
           if-no-files-found: warn
+          retention-days: 14
