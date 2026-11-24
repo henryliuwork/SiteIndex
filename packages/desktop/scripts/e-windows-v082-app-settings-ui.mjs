@@ -205,8 +205,14 @@ export async function exerciseCandidateAppReadback(page, settingsPath, values) {
     () => input('input[aria-label="新平台 Skill 目录"]', values.skillDirectory));
   await page.evaluate(() => { window.location.hash = "#/"; });
   await page.getByRole("button", { name: "添加已有项目" }).waitFor();
-  await check(79, "extra_projects", (entries) => entries.includes(values.extraProject), () =>
-    page.getByText("Synthetic extra project", { exact: true }).first().waitFor({ timeout: 12_000 }));
+  await check(79, "extra_projects", (entries) => entries.includes(values.extraProject), async () => {
+    const title = page.locator(".si-project-title").filter({ hasText: /^Synthetic extra project$/ }).first();
+    await title.waitFor({ state: "visible", timeout: 12_000 });
+    assert.equal((await title.innerText()).trim(), "Synthetic extra project");
+    const projects = await page.evaluate(() => window.siteindex.projects.list());
+    assert(projects.some((project) => project.id === "extra-project.example.test"
+      && project.name === "Synthetic extra project"), "#79 packaged projects.list missing extra project");
+  });
   await check(80, "hidden_projects", (entries) => entries.includes(values.hiddenProject), async () =>
     assert.equal(await page.getByText("Synthetic hidden project", { exact: true }).count(), 0));
   await check(81, "conflict_patterns", equal(values.conflict_patterns), null);
