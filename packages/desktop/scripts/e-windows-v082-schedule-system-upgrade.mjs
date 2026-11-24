@@ -149,24 +149,44 @@ async function readBack(page, stage) {
     project: await window.siteindex.projects.get(id),
     schedule: await window.siteindex.schedule.get(id),
     verify: await window.siteindex.schedule.verify(id),
+    runtime: await window.siteindex.schedule.status(),
     tasks: await window.siteindex.schedule.listSystemTasks(),
   }), projectId);
+  const rows = api.tasks.filter((row) => row.projectId === projectId);
+  const inspected = {};
+  const diagnostics = {
+    verify: { state: api.verify.state, message: api.verify.message?.replaceAll(root, "<synthetic-root>") ?? null },
+    runtime: api.runtime,
+    registered: api.schedule.registered,
+    fileDaily: file.schedule?.daily ?? null,
+    apiDaily: api.schedule.config.daily,
+    taskNames: rows.map((row) => row.taskName),
+    system: {},
+  };
+  report[`${stage}Diagnostics`] = diagnostics;
+  for (const job of jobs) {
+    try {
+      const xml = systemTask(job);
+      inspected[job] = xml;
+      diagnostics.system[job] = { time: xml.startBoundary?.slice(11, 16),
+        weekdays: xml.week, monthDay: xml.month, triggerCount: xml.triggerCount,
+        actionCount: xml.actionCount, triggerEnabled: xml.triggerEnabled,
+        command: xml.command?.replaceAll(root, "<synthetic-root>"),
+        arguments: xml.arguments?.replaceAll(root, "<synthetic-root>"),
+        workingDirectory: xml.workingDirectory?.replaceAll(root, "<synthetic-root>") };
+    } catch (error) { diagnostics.system[job] = { error: safe(error) }; }
+  }
   assert.deepEqual(file.schedule, api.schedule.config, `${stage} file/API schedule mismatch`);
   assert.deepEqual(file.schedule, api.project.config.schedule, `${stage} project API mismatch`);
   assert.deepEqual(file.schedule.daily, { enabled: true, days: [2, 4], time: "17:44" });
   assert.equal(api.verify.state, "ok", `${stage} packaged verification failed`);
-  const rows = api.tasks.filter((row) => row.projectId === projectId);
   assert.equal(rows.length, jobs.length, `${stage} packaged system task count`);
   for (const job of jobs) {
     assert(rows.some((row) => row.taskName.toLowerCase() === taskName(job).toLowerCase()), `${stage} missing ${job} IPC task`);
-    const xml = systemTask(job);
+    const xml = inspected[job];
+    assert(xml, `${stage} ${job} system task XML could not be read`);
     assertXml(job, xml);
-    report[`${stage}System`][job] = { time: xml.startBoundary?.slice(11, 16),
-      weekdays: xml.week, monthDay: xml.month, triggerCount: xml.triggerCount,
-      actionCount: xml.actionCount, triggerEnabled: xml.triggerEnabled,
-      command: xml.command?.replaceAll(root, "<synthetic-root>"),
-      arguments: xml.arguments?.replaceAll(root, "<synthetic-root>"),
-      workingDirectory: xml.workingDirectory?.replaceAll(root, "<synthetic-root>") };
+    report[`${stage}System`][job] = diagnostics.system[job];
   }
   report[`${stage}File`] = true;
   report[`${stage}Api`] = true;
