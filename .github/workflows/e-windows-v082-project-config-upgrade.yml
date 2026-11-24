@@ -1,23 +1,12 @@
 name: E · Windows project config upgrade acceptance
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/e-windows-v082-project-config-upgrade.yml"
+      - "packages/desktop/scripts/e-windows-v082-project-config-upgrade.mjs"
   workflow_dispatch:
-    inputs:
-      candidate_run_id:
-        description: Successful release.yml run on c/version-0.8.2
-        required: true
-      candidate_artifact_id:
-        description: Exact siteindex-win artifact ID
-        required: true
-      candidate_source_sha:
-        description: Full release source commit SHA
-        required: true
-      candidate_artifact_sha256:
-        description: GitHub artifact ZIP SHA256
-        required: true
-      candidate_exe_sha256:
-        description: SiteIndex-Setup-0.8.2.exe SHA256
-        required: true
 
 permissions:
   contents: read
@@ -27,6 +16,12 @@ jobs:
   config-basic:
     runs-on: windows-2025
     timeout-minutes: 60
+    env:
+      CANDIDATE_RUN_ID: "45312779688"
+      CANDIDATE_ARTIFACT_ID: "14884245939"
+      CANDIDATE_SOURCE_SHA: ac9c6ff65da40b0828b32cf7ddf3de563a202233
+      CANDIDATE_ZIP_SHA256: bdd6ccd6e4b7615556fbd7a939d8d3ecfb938a2a89b4e12fe319a588819004ac
+      CANDIDATE_EXE_SHA256: 8dedcea2b0ef30e6d14ec006345a31bfd3b3fdb6f0c42cb876f6263f00ed12e6
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -39,10 +34,10 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.candidate_run_id }}
-          ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
-          SOURCE_SHA: ${{ inputs.candidate_source_sha }}
-          ZIP_SHA: ${{ inputs.candidate_artifact_sha256 }}
+          RUN_ID: ${{ env.CANDIDATE_RUN_ID }}
+          ARTIFACT_ID: ${{ env.CANDIDATE_ARTIFACT_ID }}
+          SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          ZIP_SHA: ${{ env.CANDIDATE_ZIP_SHA256 }}
         run: |
           if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or $env:ZIP_SHA -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'Full source and artifact hashes are required.' }
           $repo = $env:GITHUB_REPOSITORY
@@ -54,17 +49,17 @@ jobs:
           if (([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -ne $env:ZIP_SHA.ToLowerInvariant()) { throw 'Candidate artifact ZIP digest mismatch.' }
       - uses: actions/download-artifact@v8
         with:
-          artifact-ids: ${{ inputs.candidate_artifact_id }}
+          artifact-ids: ${{ env.CANDIDATE_ARTIFACT_ID }}
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.candidate_run_id }}
+          run-id: ${{ env.CANDIDATE_RUN_ID }}
           path: pinned-candidate
           digest-mismatch: error
       - name: Verify exact candidate EXE and download official baseline
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          EXE_SHA: ${{ inputs.candidate_exe_sha256 }}
+          EXE_SHA: ${{ env.CANDIDATE_EXE_SHA256 }}
         run: |
           if ($env:EXE_SHA -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'Full candidate EXE hash is required.' }
           $files = @(Get-ChildItem -LiteralPath pinned-candidate -Filter 'SiteIndex-Setup-*.exe' -File -Recurse)
@@ -74,7 +69,7 @@ jobs:
       - name: Check #1–20 packaged UI and upgrade readback
         env:
           SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
-          SITEINDEX_EXPECTED_CANDIDATE_SHA256: ${{ inputs.candidate_exe_sha256 }}
+          SITEINDEX_EXPECTED_CANDIDATE_SHA256: ${{ env.CANDIDATE_EXE_SHA256 }}
         run: node packages/desktop/scripts/e-windows-v082-project-config-upgrade.mjs official-baseline/SiteIndex-Setup-0.8.0.exe pinned-candidate/SiteIndex-Setup-0.8.2.exe
       - name: Publish synthetic report
         if: always()
