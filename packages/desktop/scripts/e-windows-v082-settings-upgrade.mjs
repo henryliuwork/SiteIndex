@@ -329,6 +329,7 @@ async function main() {
   await trayToggle.waitFor();
   if (await trayToggle.isChecked()) await trayToggle.click();
   await oldPage.waitForFunction(async () => (await window.siteindex.settings.get()).close_to_tray === false);
+  await oldPage.getByText("正在保存软件设置…").waitFor({ state: "hidden", timeout: 12_000 });
   await stopInstalledApp();
   const target = settingsPatch();
   report.settings.uiRows = await exerciseBaselineAppSettings({
@@ -393,8 +394,8 @@ async function main() {
   await newPage.evaluate(() => { window.location.hash = "#/settings"; });
   await newPage.getByRole("heading", { name: "WordPress 图片托管凭据" }).waitFor();
   const credentialCard = newPage.getByRole("region", { name: "凭据：https://fixture.synthetic.invalid" });
-  const credentialUi = await credentialCard.getByText("本机凭据已保存").count() > 0;
-  report.settings.candidateRows.push({ id: 82, status: credentialUi ? "passed" : "failed",
+  await credentialCard.getByText("本机凭据已保存").waitFor({ timeout: 12_000 });
+  report.settings.candidateRows.push({ id: 82, status: "passed",
     evidence: "candidate credential UI + status + encrypted vault metadata" });
   assert(report.settings.candidateRows.length === 15
     && report.settings.candidateRows.every((row) => row.status === "passed"),

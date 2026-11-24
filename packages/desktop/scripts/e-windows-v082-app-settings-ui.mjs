@@ -50,6 +50,7 @@ export async function exerciseBaselineAppSettings({ launch, stop, settingsPath, 
     const toggle = page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" });
     await toggle.click();
     await page.waitForFunction(async () => (await window.siteindex.settings.get()).close_to_tray === true);
+    await page.getByText("正在保存软件设置…").waitFor({ state: "hidden", timeout: 12_000 });
     await toggle.click();
   }, verify: [["close_to_tray", false]] });
   await run([72, 73], { tab: "浏览器与命令行", action: (page) => blur(page, "#si-browser-path", values.browser.executable_path),
@@ -204,8 +205,8 @@ export async function exerciseCandidateAppReadback(page, settingsPath, values) {
     () => input('input[aria-label="新平台 Skill 目录"]', values.skillDirectory));
   await page.evaluate(() => { window.location.hash = "#/"; });
   await page.getByRole("button", { name: "添加已有项目" }).waitFor();
-  await check(79, "extra_projects", (entries) => entries.includes(values.extraProject), async () =>
-    assert(await page.getByText("Synthetic extra project", { exact: true }).count() > 0));
+  await check(79, "extra_projects", (entries) => entries.includes(values.extraProject), () =>
+    page.getByText("Synthetic extra project", { exact: true }).first().waitFor({ timeout: 12_000 }));
   await check(80, "hidden_projects", (entries) => entries.includes(values.hiddenProject), async () =>
     assert.equal(await page.getByText("Synthetic hidden project", { exact: true }).count(), 0));
   await check(81, "conflict_patterns", equal(values.conflict_patterns), null);
