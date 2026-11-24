@@ -176,17 +176,13 @@ async function install(installerPath) {
 
 async function stopInstalledApp() {
   if (!processHandle) return;
-  const script = `
-    Add-Type -Namespace SI -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);'
-    $target = Get-Process -Id ${processHandle.pid} -ErrorAction SilentlyContinue
-    if (-not $target -or $target.Path -ine $env:SITEINDEX_ACCEPTANCE_INSTALL_EXE -or $target.MainWindowHandle -eq 0) { exit 2 }
-    if (-not [SI.Native]::PostMessage($target.MainWindowHandle, 16, [IntPtr]::Zero, [IntPtr]::Zero)) { exit 3 }
-  `;
-  run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script],
-    { env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: INSTALL_EXE }, timeout: 20_000 });
+  const page = browser?.contexts().flatMap((context) => context.pages())
+    .find((item) => item.url().startsWith("file:") && item.url().includes("/ui/index.html"));
+  assert(page && !page.isClosed(), "packaged UI is unavailable for normal exit");
+  await page.evaluate(() => window.close()).catch(() => undefined);
   const deadline = Date.now() + 30_000;
   while (processHandle.exitCode === null && Date.now() < deadline) await delay(250);
-  assert.equal(processHandle.exitCode, 0, "packaged app did not exit normally after WM_CLOSE");
+  assert.equal(processHandle.exitCode, 0, "packaged app did not exit normally after UI window.close");
   let remaining = 1;
   const childrenDeadline = Date.now() + 10_000;
   while (remaining && Date.now() < childrenDeadline) {
@@ -196,7 +192,7 @@ async function stopInstalledApp() {
     remaining = Number(result.stdout.trim());
     if (remaining) await delay(250);
   }
-  assert.equal(remaining, 0, "packaged app still has running processes after WM_CLOSE");
+  assert.equal(remaining, 0, "packaged app still has running processes after UI window.close");
   if (browser) { await browser.close().catch(() => undefined); browser = undefined; }
   processHandle = undefined;
 }
