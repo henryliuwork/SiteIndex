@@ -13,14 +13,15 @@ const PACKAGES = [
   { version: "0.7.6", sha256: "303d5fd725bb6f6f1e310b86d2bfe747b6b5f560548e87bae77ad98de6388514" },
   { version: "0.8.0", sha256: "65232832171b12d5362c6ec21e6dcb3a542149bbf2e9d1529eacacdf324d7e22" },
 ];
+const CANDIDATE_SHA256 = "890847e95486764f9ddd868e456d96299c8d94afaa706393e71bae6aa010c0fd";
 assert(process.platform === "win32" && process.env.GITHUB_ACTIONS === "true"
   && process.env.SITEINDEX_RUNNER_ENVIRONMENT === "github-hosted" && process.env.RUNNER_TEMP,
 "Version contrast requires a fresh GitHub-hosted Windows runner");
 const installers = process.argv.slice(2).map((item) => path.resolve(item));
-assert(installers.length === 2, "Two official NSIS installers are required");
+assert(installers.length === 3, "Two official NSIS installers and the fixed 0.8.2 candidate are required");
 const root = await mkdtemp(path.join(process.env.RUNNER_TEMP, "siteindex-790-"));
 const reportDir = path.resolve("siteindex-v082-login-startup-results");
-const report = { sourceCommit: null, versions: [], result: "pending", failure: null };
+const report = { sourceCommit: null, versions: [], candidate: null, result: "pending", failure: null };
 let current = null;
 
 function command(file, args, options = {}) {
@@ -126,7 +127,8 @@ async function toggle(state, enabled) {
   assert.equal(before.settings.projects_root, "", "Test must retain an empty project root");
   assert.equal(before.settings.extra_projects.length, 0, "Test must have no projects");
   const checkbox = page.getByRole("checkbox", { name: "开机时启动 SiteIndex" });
-  const ui = { beforeChecked: await checkbox.isChecked(), disabled: await checkbox.isDisabled(),
+  const ui = { appVersion: await page.evaluate(() => window.siteindex.app.version()),
+    beforeChecked: await checkbox.isChecked(), disabled: await checkbox.isDisabled(),
     scheduleMode: before.schedule.mode, hasProjects: false, actionError: null, toast: [] };
   try {
     assert.equal(ui.beforeChecked, !enabled, "Checkbox does not have the expected initial state");
@@ -149,6 +151,13 @@ async function toggle(state, enabled) {
 
 async function ipcDiagnostic(state) {
   const page = await launch(state);
+  const context = await page.evaluate(async () => ({
+    appVersion: await window.siteindex.app.version(),
+    settings: await window.siteindex.settings.get(),
+    schedule: await window.siteindex.schedule.status(),
+  }));
+  assert.equal(context.settings.projects_root, "", "IPC diagnosis must have an empty project root");
+  assert.deepEqual(context.settings.extra_projects, [], "IPC diagnosis must have no projects");
   const result = await page.evaluate(async () => {
     try { const saved = await window.siteindex.settings.set({ launch_at_login: true });
       return { value: saved.launch_at_login, error: null }; }
@@ -157,8 +166,15 @@ async function ipcDiagnostic(state) {
   result.error = result.error ? sanitize(result.error, state.layout) : null;
   await stopApp(state);
   const file = JSON.parse(await readFile(state.settingsPath, "utf8"));
-  return { ipc: result, fileValue: file.launch_at_login,
+  return { appVersion: context.appVersion, scheduleMode: context.schedule.mode, hasProjects: false,
+    ipc: result, fileValue: file.launch_at_login,
     registry: publicEntries(runEntries(state.exe), state.layout) };
+}
+
+function toggleMatches(result, enabled) {
+  return !result.ui.actionError && result.ui.afterChecked === enabled
+    && result.ui.toast.includes("已保存") && result.ipc.value === enabled
+    && result.fileValue === enabled && (enabled ? result.registry.length > 0 : result.registry.length === 0);
 }
 
 async function restoreRegistry(state, initial) {
@@ -201,12 +217,8 @@ async function runVersion(packageInfo, installer, index) {
     result.on = await toggle(state, true);
     result.picker = "cancelled via native dialog";
     result.off = await toggle(state, false);
-    const onOk = !result.on.ui.actionError && result.on.ui.afterChecked === true
-      && result.on.ui.toast.includes("已保存") && result.on.ipc.value === true
-      && result.on.fileValue === true && result.on.registry.length > 0;
-    const offOk = !result.off.ui.actionError && result.off.ui.afterChecked === false
-      && result.off.ui.toast.includes("已保存") && result.off.ipc.value === false
-      && result.off.fileValue === false && result.off.registry.length === 0;
+    const onOk = toggleMatches(result.on, true);
+    const offOk = toggleMatches(result.off, false);
     if (!onOk || !offOk) {
       result.outcome = "reproduced";
       // Use a separate clean profile for IPC-only diagnosis, without writing config files directly.
@@ -255,10 +267,80 @@ async function runDiagnostic(packageInfo, installer, index) {
   }
 }
 
+async function runCandidateUpgrade(baselineInstaller, candidateInstaller) {
+  const layout = createWindowsProfileLayout(path.join(root, "candidate-upgrade-0.8.2"));
+  const state = { layout, exe: path.join(layout.installDir, "SiteIndex.exe"),
+    settingsPath: path.join(layout.appDataRoot, "SiteIndex", "settings.json"),
+    port: 9480, browser: null, process: null, redirect: null, installed: false };
+  current = state;
+  const result = { source: "v0.8.0 official NSIS -> fixed v0.8.2 candidate NSIS",
+    baselineSha256: await digest(baselineInstaller), candidateSha256: await digest(candidateInstaller),
+    startupBefore: [], baselineIpc: null, afterOverwrite: null, uiOff: null, uiOn: null,
+    finalUiOff: null, restore: null, outcome: "pending", stage: "installer digest" };
+  report.candidate = result;
+  assert.equal(result.baselineSha256, PACKAGES[1].sha256, "Official v0.8.0 installer digest mismatch");
+  assert.equal(result.candidateSha256, CANDIDATE_SHA256, "Fixed v0.8.2 candidate EXE digest mismatch");
+  for (const directory of Object.values(layout)) if (typeof directory === "string") await mkdir(directory, { recursive: true });
+  const checks = await inspectWindowsProfileLayout(layout);
+  assert(Object.values(checks).every((item) => item.withinRoot && item.noReparse), "Candidate profile escaped isolated root");
+  state.redirect = createWindowsAppDataRedirect({ appDataRoot: layout.appDataRoot,
+    runRegistry: (args) => spawnSync("reg.exe", args, { encoding: "utf8", windowsHide: true, timeout: 15_000 }) });
+  state.redirect.redirect();
+  const probe = command("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+    "[Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)"], { env: env(layout) });
+  assert.equal(probe.stdout.trim().toLowerCase(), layout.appDataRoot.toLowerCase(), "Candidate AppData escaped profile");
+  const initial = runEntries(state.exe);
+  assert.deepEqual(initial, [], "Hosted runner already has a SiteIndex startup item");
+  result.startupBefore = publicEntries(initial, layout);
+  try {
+    result.stage = "official v0.8.0 install and packaged IPC save";
+    command(baselineInstaller, ["/S", `/D=${layout.installDir}`], { env: env(layout), timeout: 300_000 });
+    state.installed = true;
+    assert(await exists(state.exe), "Official v0.8.0 NSIS did not install");
+    result.baselineIpc = await ipcDiagnostic(state);
+    assert.equal(result.baselineIpc.appVersion, "0.8.0", "Baseline IPC app version mismatch");
+    assert.equal(result.baselineIpc.ipc.error, null, "Baseline packaged settings.set rejected #71");
+    assert.equal(result.baselineIpc.ipc.value, true, "Baseline packaged IPC did not save #71");
+    assert.equal(result.baselineIpc.fileValue, true, "Baseline settings.json did not retain #71 after exit");
+    assert(result.baselineIpc.registry.length > 0, "Baseline Windows startup item missing after IPC save");
+    const oldAsar = await digest(path.join(layout.installDir, "resources", "app.asar"));
+    result.stage = "fixed candidate NSIS overwrite";
+    command(candidateInstaller, ["/S", `/D=${layout.installDir}`], { env: env(layout), timeout: 300_000 });
+    result.afterOverwrite = {
+      settingsValue: JSON.parse(await readFile(state.settingsPath, "utf8")).launch_at_login,
+      registry: publicEntries(runEntries(state.exe), layout),
+      asarChanged: oldAsar !== await digest(path.join(layout.installDir, "resources", "app.asar")),
+    };
+    assert.equal(result.afterOverwrite.settingsValue, true, "Candidate installer changed saved #71");
+    assert(result.afterOverwrite.registry.length > 0, "Candidate installer removed the Windows startup item");
+    assert(result.afterOverwrite.asarChanged, "Candidate installer did not replace app.asar");
+    result.stage = "candidate UI disable #71";
+    result.uiOff = await toggle(state, false);
+    assert.equal(result.uiOff.ui.appVersion, "0.8.2", "Packaged UI is not v0.8.2");
+    assert(toggleMatches(result.uiOff, false), "Candidate UI disable #71 failed UI/IPC/file/registry readback");
+    result.stage = "candidate UI enable #71";
+    result.uiOn = await toggle(state, true);
+    assert(toggleMatches(result.uiOn, true), "Candidate UI enable #71 failed UI/IPC/file/registry readback");
+    result.stage = "candidate UI restore #71 off";
+    result.finalUiOff = await toggle(state, false);
+    assert(toggleMatches(result.finalUiOff, false), "Candidate UI final #71 off did not restore state");
+    result.outcome = "passed";
+  } catch (error) {
+    result.outcome = "failed";
+    result.error = sanitize(error?.message ?? error, layout);
+    throw error;
+  } finally {
+    await cleanupVersion(state, initial);
+    result.restore = state.restore ?? null;
+    current = null;
+  }
+}
+
 try {
   report.sourceCommit = command("git", ["rev-parse", "HEAD"]).stdout.trim();
   for (let index = 0; index < PACKAGES.length; index++)
     await runVersion(PACKAGES[index], installers[index], index);
+  await runCandidateUpgrade(installers[1], installers[2]);
   report.result = "completed"; // A reproduced old-version defect is recorded as a finding, not a CI pass claim.
 } catch (error) {
   report.result = "blocked";
