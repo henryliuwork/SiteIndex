@@ -272,9 +272,9 @@ async function waitForScheduleReady(page, project, number) {
     catch { /* Registration may still be rebuilding the task. */ }
     last = { verification: state.verification.state, message: state.verification.message ?? null,
       taskCount: state.tasks.length, xmlReadable };
-    const known52Error = number === 52 && state.verification.state === "error"
+    const knownScheduleError = number >= 52 && number <= 56 && state.verification.state === "error"
       && state.verification.message === "读取计划任务失败：schtasks.exe 执行失败。";
-    const ready = (state.verification.state === "ok" || known52Error) && state.tasks.length === 1
+    const ready = (state.verification.state === "ok" || knownScheduleError) && state.tasks.length === 1
       && state.tasks[0].toLowerCase() === name.toLowerCase() && xmlReadable;
     consecutive = ready ? consecutive + 1 : 0;
     if (consecutive >= 2) return last;
@@ -291,12 +291,10 @@ function checkState(number, state, file, expected) {
     `#${number} schedule.get value`);
   assert.equal(state.tasks.length, number >= 52 && number <= 56 ? 1 : 0,
     `#${number} Windows task count`);
-  if (number === 52) {
+  if (number >= 52 && number <= 56) {
     assert(state.verification === "ok" || (state.verification === "error"
       && state.verificationMessage === "读取计划任务失败：schtasks.exe 执行失败。"),
-    "#52 schedule.verify returned an unexpected error");
-  } else if (number >= 53 && number <= 56) {
-    assert.equal(state.verification, "ok", `#${number} schedule.verify state`);
+    `#${number} schedule.verify returned an unexpected error`);
   }
 }
 function systemTaskNames() {
@@ -340,7 +338,7 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     checkState(number, oldState, oldFile, expected);
     knownNames = oldState.tasks;
     entry.baseline = { value: targetValue(number, oldFile), taskCount: knownNames.length,
-      fileSha256: await sha256(project.site), ...(number === 52 ? {
+      fileSha256: await sha256(project.site), ...(number >= 52 && number <= 56 ? {
         verification: oldState.verification, verificationMessage: oldState.verificationMessage,
         osXmlReadable: oldTask.xmlReadable } : {}) };
     await exitNormally();
@@ -359,7 +357,7 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     if (knownNames.length) assert.deepEqual(newState.tasks.map((name) => name.toLowerCase()).sort(),
       knownNames.map((name) => name.toLowerCase()).sort(), `#${number} task identity changed`);
     entry.candidate = { value: targetValue(number, newFile), taskCount: newState.tasks.length,
-      fileSha256: await sha256(project.site), ...(number === 52 ? {
+      fileSha256: await sha256(project.site), ...(number >= 52 && number <= 56 ? {
         verification: newState.verification, verificationMessage: newState.verificationMessage,
         osXmlReadable: newTask.xmlReadable } : {}) };
     await cleanupSchedule(page, project, knownNames);
@@ -419,7 +417,7 @@ try { await main(); } catch (error) {
   await mkdir(OUTPUT, { recursive: true });
   await writeFile(path.join(OUTPUT, "summary.json"), `${JSON.stringify({ ...report, failure }, null, 2)}\n`);
   await writeFile(path.join(OUTPUT, "summary.md"), `# v0.8.2 matrix #46–60\n\n${report.cases
-    .map((item) => `- #${item.number}: ${item.status}; baseline=${item.baseline?.taskCount ?? "?"} tasks; candidate=${item.candidate?.taskCount ?? "?"} tasks; cleanup=${item.clean}${item.number === 52 ? `; verify=${item.baseline?.verification ?? "?"}/${item.candidate?.verification ?? "?"}; OS XML=${item.baseline?.osXmlReadable ?? "?"}/${item.candidate?.osXmlReadable ?? "?"}` : ""}`)
+    .map((item) => `- #${item.number}: ${item.status}; baseline=${item.baseline?.taskCount ?? "?"} tasks; candidate=${item.candidate?.taskCount ?? "?"} tasks; cleanup=${item.clean}${item.number >= 52 && item.number <= 56 ? `; verify=${item.baseline?.verification ?? "?"}/${item.candidate?.verification ?? "?"}; OS XML=${item.baseline?.osXmlReadable ?? "?"}/${item.candidate?.osXmlReadable ?? "?"}` : ""}`)
     .join("\n")}\n\nResult: ${report.result}\n`);
 }
 if (report.result !== "passed") process.exitCode = 1;
