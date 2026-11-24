@@ -97,6 +97,14 @@ function cancelPicker(pid) {
     { encoding: "utf8", windowsHide: true, timeout: 45_000 });
   if (result.status !== 0) throw new Error(`Native picker cancellation failed (${result.status ?? "unknown"})`);
 }
+function installedAppPids() {
+  const code = "$expected = [IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE); Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $expected } | ForEach-Object { $_.ProcessId }";
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", code],
+    { encoding: "utf8", windowsHide: true, timeout: 20_000,
+      env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: exe } });
+  if (result.error || result.status !== 0) throw new Error("Installed process query failed");
+  return result.stdout.trim().split(/\r?\n/u).filter(Boolean);
+}
 async function stop(requireUiExit = false) {
   let mode = "already-exited";
   if (appProcess?.exitCode === null && browser) {
@@ -105,9 +113,16 @@ async function stop(requireUiExit = false) {
     if (page && !page.isClosed()) await page.evaluate(() => window.close()).catch(() => undefined);
     const deadline = Date.now() + 15_000;
     while (appProcess.exitCode === null && Date.now() < deadline) await delay(250);
-    if (appProcess.exitCode !== null) mode = "ui-close";
+    if (appProcess.exitCode === 0) mode = "ui-close";
   }
   if (browser) { await browser.close().catch(() => undefined); browser = null; }
+  if (requireUiExit) {
+    assert.equal(mode, "ui-close", `Packaged UI exit code was ${appProcess?.exitCode ?? "missing"}`);
+    let remaining = installedAppPids();
+    const deadline = Date.now() + 5000;
+    while (remaining.length && Date.now() < deadline) { await delay(250); remaining = installedAppPids(); }
+    assert.equal(remaining.length, 0, "Installed app left child processes after normal UI exit");
+  }
   if (appProcess?.exitCode === null) { appProcess.kill(); mode = "forced"; }
   appProcess = null;
   if (!await exists(exe)) return;
@@ -115,7 +130,6 @@ async function stop(requireUiExit = false) {
     "$expected = [IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE); Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $expected } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
   { env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: exe }, timeout: 20_000 });
   await delay(500);
-  if (requireUiExit) assert.equal(mode, "ui-close", "Packaged UI did not exit normally");
   return mode;
 }
 async function launch() {
