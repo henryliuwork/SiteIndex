@@ -1,22 +1,16 @@
-name: E · Windows settings upgrade acceptance
+name: C · Windows project 79 diagnosis (synthetic only)
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/e-windows-v082-settings-upgrade.yml"
-      - "packages/desktop/scripts/e-windows-v082-settings-upgrade.mjs"
-      - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
-      - "packages/desktop/scripts/windows-appdata-redirect.mjs"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
-  windows-settings-upgrade:
+  project-79-diagnostic:
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,30 +19,48 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build candidate with production NSIS script
-        run: pnpm --filter @siteindex/desktop dist:win
-      - name: Download pinned v0.8.0 Release installer
+      - name: Download official v0.8.0 installer
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir baseline-installer
-      - name: Verify isolated overwrite and settings readback
+      - name: Verify pinned v0.8.2 candidate provenance
         shell: pwsh
-        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $repo = $env:GITHUB_REPOSITORY
+          $run = gh api "repos/$repo/actions/runs/45312779688" | ConvertFrom-Json
+          $artifact = gh api "repos/$repo/actions/artifacts/14884245939" | ConvertFrom-Json
+          $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
+          if ($run.id -ne 45312779688 -or $run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.event -ne 'workflow_dispatch' -or $run.head_branch -cne 'c/version-0.8.2' -or $run.head_sha -cne 'ac9c6ff65da40b0828b32cf7ddf3de563a202233') { throw 'Pinned candidate run provenance mismatch.' }
+          if ($artifact.id -ne 14884245939 -or $artifact.name -cne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne $run.id -or $artifact.workflow_run.head_sha -cne $run.head_sha -or ([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -cne 'bdd6ccd6e4b7615556fbd7a939d8d3ecfb938a2a89b4e12fe319a588819004ac') { throw 'Pinned candidate artifact mismatch.' }
+      - name: Download exact candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: 14884245939
+          run-id: 45312779688
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: candidate-installer
+          digest-mismatch: error
+      - name: Diagnose only project 79 across same-path NSIS overwrite
+        shell: pwsh
+        timeout-minutes: 25
         env:
           SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}
-        run: node packages/desktop/scripts/e-windows-v082-settings-upgrade.mjs baseline-installer/SiteIndex-Setup-0.8.0.exe release/SiteIndex-Setup-0.8.0.exe
-      - name: Add acceptance summary
+        run: node packages/desktop/scripts/e-windows-v082-project79-diagnostic.mjs baseline-installer/SiteIndex-Setup-0.8.0.exe candidate-installer/SiteIndex-Setup-0.8.2.exe
+      - name: Add diagnostic summary
         if: always()
         shell: pwsh
         run: |
-          $summary = "siteindex-v082-upgrade-results/summary.md"
+          $summary = 'siteindex-project79-diagnostic-results/summary.md'
           if (Test-Path -LiteralPath $summary) { Get-Content -LiteralPath $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
-      - name: Upload synthetic-only report
+      - name: Upload synthetic-only diagnosis
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: siteindex-v082-settings-upgrade
-          path: siteindex-v082-upgrade-results/
+          name: siteindex-v082-project79-diagnostic
+          path: siteindex-project79-diagnostic-results/
           if-no-files-found: warn
           retention-days: 14
