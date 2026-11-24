@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
@@ -19,9 +19,8 @@ assert(process.platform === "win32" && process.env.GITHUB_ACTIONS === "true"
 const installers = process.argv.slice(2).map((value) => path.resolve(value));
 assert(installers.length === 2, "Two official NSIS EXEs are required");
 const root = await mkdtemp(path.join(process.env.RUNNER_TEMP, "siteindex-794-"));
-const report = { result: "pending", versions: [], failure: null };
+const report = { result: "pending", versions: [], cleanup: "pending" };
 const reportDir = path.resolve("siteindex-v082-vault-diagnostic-results");
-let active;
 let cleanupBlocked = false;
 
 function call(file, args, options = {}) {
@@ -37,11 +36,6 @@ function env(layout) {
   value.SITEINDEX_UI_URL = "";
   for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "NODE_AUTH_TOKEN", "NPM_TOKEN"]) delete value[key];
   return value;
-}
-function safe(error, layout) {
-  return String(error?.message ?? error ?? "").replaceAll(layout.root, "<isolated>")
-    .replaceAll(process.cwd(), "<checkout>").replaceAll("fixture-only-password", "<redacted>")
-    .replaceAll(/https?:\/\/[^\s"']+/gu, "<synthetic-origin>").slice(0, 1500);
 }
 function cancelPicker(pid) {
   const script = `
@@ -121,22 +115,21 @@ async function vaultFileState(layout) {
   const relative = path.win32.relative(layout.localAppDataRoot, file);
   const withinLocalAppData = Boolean(relative) && !relative.startsWith("..") && !path.win32.isAbsolute(relative);
   assert(withinLocalAppData, "Vault path escaped isolated LOCALAPPDATA");
-  try { return { exists: true, bytes: (await stat(file)).size, withinLocalAppData }; }
-  catch (error) { if (error?.code === "ENOENT") return { exists: false, bytes: null, withinLocalAppData }; throw error; }
+  try { await access(file); return true; }
+  catch (error) { if (error?.code === "ENOENT") return false; throw error; }
 }
 async function checkVersion(version, expectedHash, installer, index) {
   const layout = createWindowsProfileLayout(path.join(root, `version-${version}`));
   const state = { layout, exe: path.join(layout.installDir, "SiteIndex.exe"), port: 9550 + index,
     process: null, browser: null, redirect: null, installed: false, exitAttempted: false };
-  active = state;
-  const row = { version, exeSha256: null, initialStatus: null, sameSessionStatus: null,
-    restartedStatus: null, safeStorageAvailable: null, safeStorageAfterRestart: null,
-    closeToTrayUi: null, closeToTrayIpc: null, normalExitMs: null,
-    normalExitConfirmed: false, vaultAfterSave: null,
-    vaultAfterRestart: null, uiError: null, outcome: "pending" };
+  const row = { version, initialStatus: null, sameSessionStatus: null,
+    restartedStatusImmediate: null, restartedStatusDelayed: null,
+    safeStorageAvailable: { initial: null, sameSession: null, restartedImmediate: null, restartedDelayed: null },
+    vaultExists: { initial: null, afterSave: null, afterRestart: null },
+    normalExitConfirmed: false, cleanup: "pending", outcome: "pending" };
   report.versions.push(row);
-  row.exeSha256 = createHash("sha256").update(await readFile(installer)).digest("hex");
-  assert.equal(row.exeSha256, expectedHash, `Official v${version} EXE digest mismatch`);
+  assert(createHash("sha256").update(await readFile(installer)).digest("hex") === expectedHash,
+    `Official v${version} EXE digest mismatch`);
   for (const directory of Object.values(layout)) if (typeof directory === "string") await mkdir(directory, { recursive: true });
   const checks = await inspectWindowsProfileLayout(layout);
   assert(Object.values(checks).every((check) => check.withinRoot && check.noReparse), "Profile escaped isolated root");
@@ -161,70 +154,73 @@ async function checkVersion(version, expectedHash, installer, index) {
     const trayToggle = page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" });
     await trayToggle.click();
     await page.waitForFunction(async () => (await window.siteindex.settings.get()).close_to_tray === false);
-    row.closeToTrayUi = await trayToggle.isChecked();
-    row.closeToTrayIpc = (await page.evaluate(() => window.siteindex.settings.get())).close_to_tray;
-    assert(row.closeToTrayUi === false && row.closeToTrayIpc === false,
+    assert(await trayToggle.isChecked() === false
+      && (await page.evaluate(() => window.siteindex.settings.get())).close_to_tray === false,
       "Normal window close setting did not save through packaged UI");
     row.initialStatus = (await page.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
-    row.safeStorageAvailable = row.initialStatus !== "unavailable";
-    if (!row.safeStorageAvailable) {
-      row.vaultAfterSave = await vaultFileState(layout);
-      row.normalExitMs = await exitNormally(state);
-      row.normalExitConfirmed = true;
-      const fresh = await launch(state);
-      row.restartedStatus = (await fresh.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
-      row.safeStorageAfterRestart = row.restartedStatus !== "unavailable";
-      row.vaultAfterRestart = await vaultFileState(layout);
-      row.outcome = "unavailable";
-      return row;
+    row.safeStorageAvailable.initial = row.initialStatus !== "unavailable";
+    row.vaultExists.initial = await vaultFileState(layout);
+    let uiFailed = false;
+    if (row.safeStorageAvailable.initial) {
+      try {
+        await page.getByRole("button", { name: "配置凭据" }).first().click();
+        await page.locator("#si-wp-username").fill("fixture-only-user");
+        await page.locator("#si-wp-application-password").fill("fixture-only-password");
+        await page.getByRole("button", { name: "保存到本机" }).click();
+        await page.waitForFunction(async (site) =>
+          (await window.siteindexWindow.wordpressCredentials.status(site)).state === "configured", origin, { timeout: 12_000 });
+      } catch { uiFailed = true; }
+      row.sameSessionStatus = (await page.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
+      row.safeStorageAvailable.sameSession = row.sameSessionStatus !== "unavailable";
+      row.vaultExists.afterSave = await vaultFileState(layout);
     }
-    try {
-      await page.getByRole("button", { name: "配置凭据" }).first().click();
-      await page.locator("#si-wp-username").fill("fixture-only-user");
-      await page.locator("#si-wp-application-password").fill("fixture-only-password");
-      await page.getByRole("button", { name: "保存到本机" }).click();
-      await page.waitForFunction(async (site) =>
-        (await window.siteindexWindow.wordpressCredentials.status(site)).state === "configured", origin, { timeout: 12_000 });
-    } catch (error) { row.uiError = safe(error, layout); }
-    row.sameSessionStatus = (await page.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
-    row.vaultAfterSave = await vaultFileState(layout);
-    row.normalExitMs = await exitNormally(state);
+    await exitNormally(state);
     row.normalExitConfirmed = true;
     const fresh = await launch(state);
-    row.restartedStatus = (await fresh.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
-    row.safeStorageAfterRestart = row.restartedStatus !== "unavailable";
-    row.vaultAfterRestart = await vaultFileState(layout);
-    row.outcome = row.sameSessionStatus === "configured" && row.restartedStatus === "configured" && !row.uiError
-      && row.vaultAfterSave.exists && row.vaultAfterRestart.exists ? "passed" : "reproduced";
+    row.restartedStatusImmediate = (await fresh.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
+    await delay(1200);
+    row.restartedStatusDelayed = (await fresh.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
+    row.safeStorageAvailable.restartedImmediate = row.restartedStatusImmediate !== "unavailable";
+    row.safeStorageAvailable.restartedDelayed = row.restartedStatusDelayed !== "unavailable";
+    row.vaultExists.afterRestart = await vaultFileState(layout);
+    row.outcome = !row.safeStorageAvailable.initial ? "unavailable"
+      : row.sameSessionStatus === "configured" && row.restartedStatusImmediate === "configured"
+      && row.restartedStatusDelayed === "configured" && !uiFailed
+      && row.vaultExists.afterSave && row.vaultExists.afterRestart ? "passed" : "reproduced";
     return row;
-  } catch (error) { row.outcome = "blocked"; row.error = safe(error, layout); return row; }
+  } catch { row.outcome = "blocked"; return row; }
   finally {
+    let cleaned = true;
     if (state.process && !state.exitAttempted) {
       try { await exitNormally(state); }
-      catch (error) { row.outcome = "blocked"; row.cleanupError = safe(error, layout); }
+      catch { cleaned = false; }
     }
-    if (state.process) {
-      cleanupBlocked = true;
-      row.outcome = "blocked";
-      row.cleanupError ??= "Packaged app did not exit normally";
+    if (state.process) cleaned = false;
+    if (!state.process && state.installed) {
+      const uninstaller = path.join(layout.installDir, "Uninstall SiteIndex.exe");
+      if (!await exists(uninstaller)) cleaned = false;
+      else { try { call(uninstaller, ["/S"], { env: env(layout) }); } catch { cleaned = false; } }
     }
-    if (!state.process && state.installed && await exists(path.join(layout.installDir, "Uninstall SiteIndex.exe")))
-      call(path.join(layout.installDir, "Uninstall SiteIndex.exe"), ["/S"], { env: env(layout) });
-    if (state.redirect?.hasChanges && !state.redirect.restored)
-      assert(state.redirect.restore(), "AppData redirect restore failed");
-    active = null;
+    if (state.redirect?.hasChanges && !state.redirect.restored) {
+      try { if (!state.redirect.restore()) cleaned = false; }
+      catch { cleaned = false; }
+    }
+    row.cleanup = cleaned ? "complete" : "blocked";
+    if (!cleaned) { cleanupBlocked = true; row.outcome = "blocked"; }
   }
 }
 try {
   for (let index = 0; index < versions.length; index++)
     await checkVersion(versions[index][0], versions[index][1], installers[index], index);
   report.result = report.versions.every((row) => row.outcome !== "blocked") ? "completed" : "blocked";
-} catch (error) { report.result = "blocked"; report.failure = safe(error, active?.layout ?? { root }); }
+} catch { report.result = "blocked"; }
 finally {
+  const relative = path.relative(path.resolve(process.env.RUNNER_TEMP), path.resolve(root));
+  if (!cleanupBlocked && relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+    try { await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); report.cleanup = "complete"; }
+    catch { report.cleanup = "blocked"; report.result = "blocked"; }
+  } else { report.cleanup = "blocked"; report.result = "blocked"; }
   await mkdir(reportDir, { recursive: true });
   await writeFile(path.join(reportDir, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
-  const relative = path.relative(path.resolve(process.env.RUNNER_TEMP), path.resolve(root));
-  if (!cleanupBlocked && relative && !relative.startsWith("..") && !path.isAbsolute(relative))
-    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }).catch(() => undefined);
 }
 if (report.result !== "completed") process.exitCode = 1;
