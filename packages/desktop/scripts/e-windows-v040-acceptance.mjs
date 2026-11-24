@@ -3647,36 +3647,80 @@ async function runInstalledJob(page, request) {
     const api = window.siteindex;
     const completed = [];
     const progress = [];
+    const timeline = [];
+    const startedAt = performance.now();
+    const mark = (step) => timeline.push({ step, elapsedMs: Math.round(performance.now() - startedAt) });
     let expectedRunId = "";
     let resolveExpected;
     const onFinished = api.jobs.onFinished((result) => {
       completed.push(result);
+      if (input.job === "create") mark("init.finished");
       if (expectedRunId && result.runId === expectedRunId) resolveExpected?.(result);
     });
     const onProgress = api.jobs.onProgress((event) => progress.push(event.runId));
     let timeout;
     try {
-      const started = input.job === "create"
-        ? await api.projects.create(input.createInput)
-        : input.job === "media"
-          ? await api.media.prepare({ project: input.projectId, skus: [input.sku] })
-          : await api.jobs.run({ projectPath: input.projectPath, job: input.job, date: input.date ?? "2026-11-12" });
+      let started;
+      try {
+        if (input.job === "create") mark("projects.create.start");
+        started = input.job === "create"
+          ? await api.projects.create(input.createInput)
+          : input.job === "media"
+            ? await api.media.prepare({ project: input.projectId, skus: [input.sku] })
+            : await api.jobs.run({ projectPath: input.projectPath, job: input.job, date: input.date ?? "2026-11-12" });
+      } catch (cause) {
+        if (input.job !== "create") throw cause;
+        const error = cause && typeof cause === "object" ? cause : {};
+        mark("projects.create.error");
+        return { job: "init", createdId: null, status: "failed", exitCode: null,
+          code: String(error.code ?? "UNKNOWN"), message: String(error.message ?? cause), summary: null,
+          steps: [], progressEvents: 0, timeline };
+      }
+      if (input.job === "create") mark("projects.create.returned");
       expectedRunId = started.runId;
-      if (input.job === "create") await api.projects.updateConfig(started.id, { schedule: input.disabledSchedule });
+      const runningAfterCreate = input.job === "create" ? await api.jobs.running(started.id) : null;
       const alreadyFinished = completed.find((result) => result.runId === expectedRunId);
       const result = alreadyFinished ?? await new Promise((resolve, reject) => {
         resolveExpected = resolve;
         timeout = setTimeout(() => reject(new Error("Hosted acceptance Job did not finish before timeout.")), 180_000);
       });
+      const runningAfterInit = input.job === "create" ? await api.jobs.running(started.id) : null;
+      let schedule = null;
+      if (input.job === "create" && result.status === "ok") {
+        mark("schedule.read.start");
+        try {
+          const before = await api.schedule.get(started.id);
+          const beforeTasks = await api.schedule.listSystemTasks();
+          const registeredTasks = beforeTasks.filter((row) => row.projectId === started.id);
+          const registeredNames = new Set(registeredTasks.map((row) => row.taskName.toLowerCase()));
+          mark("schedule.save.start");
+          const saved = await api.schedule.save(started.id, input.disabledSchedule);
+          mark("schedule.save.finished");
+          const afterTasks = await api.schedule.listSystemTasks();
+          schedule = { beforeRegistered: before.registered,
+            beforeTaskCount: registeredTasks.length,
+            afterRegistered: saved.registered,
+            afterTaskCount: afterTasks.filter((row) => row.projectId === started.id
+              || registeredNames.has(row.taskName.toLowerCase())).length };
+        } catch (cause) {
+          const error = cause && typeof cause === "object" ? cause : {};
+          mark("schedule.cleanup.error");
+          schedule = { code: String(error.code ?? "UNKNOWN"), message: String(error.message ?? cause) };
+        }
+      }
       return {
         job: result.job,
         createdId: "id" in started ? started.id : null,
         status: result.status,
         exitCode: result.exitCode,
+        code: result.exitCode === 4 ? "LOCKED" : null,
+        message: result.errors?.join(" | ") ?? null,
+        summary: result.summary ?? null,
         counts: result.counts ?? {},
         steps: Array.isArray(result.steps) ? result.steps.map((step) => ({ key: step.key, status: step.status })) : [],
         mediaStatuses: Array.isArray(result.media_results) ? result.media_results.map((item) => item.status) : [],
         progressEvents: progress.filter((runId) => runId === expectedRunId).length,
+        ...(input.job === "create" ? { timeline, runningAfterCreate, runningAfterInit, schedule } : {}),
       };
     } finally {
       if (timeout) clearTimeout(timeout);
@@ -3900,16 +3944,42 @@ async function testInstalledWooLoopback(page) {
       }
       const config = JSON.parse(await readFile(path.join(projectPath, "index/site.json"), "utf8"));
       const initSteps = Object.fromEntries(created.steps.map((step) => [step.key, step.status]));
+      const scheduleDisabledInConfig = Object.entries(disabledSchedule())
+        .filter(([key]) => key !== "options")
+        .every(([key]) => config.schedule?.[key]?.enabled === false);
+      const createDiagnostics = mode === "store_api" ? {
+        code: created.code ?? null,
+        message: created.message ? safeMessage(created.message) : null,
+        summary: created.summary ? safeMessage(created.summary) : null,
+        timeline: created.timeline ?? [],
+        runningAfterCreate: created.runningAfterCreate?.job ?? null,
+        runningAfterInit: created.runningAfterInit?.job ?? null,
+        lockFileAfter: (await exists(path.join(projectPath, "index", ".lock")))
+          || (await exists(path.join(projectPath, "_site-index", ".lock"))),
+        schedule: created.schedule ? {
+          ...created.schedule,
+          ...(created.schedule.message ? { message: safeMessage(created.schedule.message) } : {}),
+        } : null,
+        scheduleDisabledInConfig,
+      } : {};
       assert(created.createdId === projectId && created.job === "init" && created.status === "ok"
         && created.exitCode === 0 && (mode !== "store_api" || created.progressEvents > 0)
         && ["daily", "weekly", "views"].every((key) => initSteps[key] === "ok")
-        && initSteps.schedule === "skipped"
+        && (mode === "store_api"
+          ? initSteps.schedule === "ok"
+            && created.schedule?.beforeRegistered === true && created.schedule.beforeTaskCount > 0
+            && created.schedule.afterRegistered === false && created.schedule.afterTaskCount === 0
+            && scheduleDisabledInConfig && createDiagnostics.lockFileAfter === false
+            && created.timeline.some((event) => event.step === "init.finished")
+            && created.timeline.findIndex((event) => event.step === "init.finished")
+              < created.timeline.findIndex((event) => event.step === "schedule.save.start")
+          : initSteps.schedule === "skipped")
         && config.crawl.auto_collect_products === true && config.crawl.feed_url.length === 0
         && config.categories.url_pattern === WOO_CATEGORY_RULE,
       `installed projects.create initializes no-Feed WooCommerce through packaged IPC (${mode})`, {
         status: created.status, exitCode: created.exitCode, progressEvents: created.progressEvents, initSteps,
         autoCollect: config.crawl.auto_collect_products, feedCount: config.crawl.feed_url.length,
-        multiPrefixCategories: config.categories.url_pattern === WOO_CATEGORY_RULE,
+        multiPrefixCategories: config.categories.url_pattern === WOO_CATEGORY_RULE, ...createDiagnostics,
       });
 
       const jobs = {};
