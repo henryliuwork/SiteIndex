@@ -39,13 +39,14 @@ assert(process.platform === "win32" && process.env.GITHUB_ACTIONS === "true"
 assert(input.length === 2 && process.env.SITEINDEX_EXPECTED_CANDIDATE_SHA256,
   "Official baseline and pinned candidate installers are required");
 const root = await mkdtemp(path.join(process.env.RUNNER_TEMP, "siteindex-config-"));
-const layout = createWindowsProfileLayout(root);
-const exe = path.join(layout.installDir, "SiteIndex.exe");
-const siteFile = path.join(layout.projectRoot, projectId, "index", "site.json");
+let layout; let exe; let siteFile;
 const reportDir = path.resolve("siteindex-v082-project-config-results");
 const report = { result: "pending", stage: "prepare", baselineSha256: null,
-  candidateSha256: null, rows: fields.map(([id, key]) => ({ id, key, baselineFile: false,
-    baselineApi: false, candidateFile: false, candidateApi: false })), invariants: {}, failure: null };
+  candidateSha256: null, rows: fields.map(([id, key]) => ({ id, key, uiSaved: false,
+    baselineExitMode: null, baselineFile: false, baselineApi: false, candidateInstalled: false,
+    installerByteIdentical: false, candidateFile: false, candidateApi: false,
+    fullConfigPreserved: false, emptySaveByteIdentical: false,
+    candidateExitMode: null, outcome: "unverified" })), failure: null };
 let redirect; let installed = false; let appProcess; let browser;
 
 const exists = async (file) => { try { await access(file); return true; } catch { return false; } };
@@ -93,14 +94,26 @@ function cancelPicker(pid) {
     { encoding: "utf8", windowsHide: true, timeout: 45_000 });
   if (result.status !== 0) throw new Error(`Native picker cancellation failed (${result.status ?? "unknown"})`);
 }
-async function stop() {
+async function stop(requireUiExit = false) {
+  let mode = "already-exited";
+  if (appProcess?.exitCode === null && browser) {
+    const page = browser.contexts().flatMap((context) => context.pages())
+      .find((item) => item.url().startsWith("file:") && item.url().includes("/ui/index.html"));
+    if (page && !page.isClosed()) await page.evaluate(() => window.close()).catch(() => undefined);
+    const deadline = Date.now() + 15_000;
+    while (appProcess.exitCode === null && Date.now() < deadline) await delay(250);
+    if (appProcess.exitCode !== null) mode = "ui-close";
+  }
   if (browser) { await browser.close().catch(() => undefined); browser = null; }
-  if (appProcess) { appProcess.kill(); appProcess = null; }
+  if (appProcess?.exitCode === null) { appProcess.kill(); mode = "forced"; }
+  appProcess = null;
   if (!await exists(exe)) return;
   call("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "$expected = [IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE); Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $expected } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
   { env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: exe }, timeout: 20_000 });
   await delay(500);
+  if (requireUiExit) assert.equal(mode, "ui-close", "Packaged UI did not exit normally");
+  return mode;
 }
 async function launch() {
   const endpoint = "http://127.0.0.1:9561";
@@ -121,6 +134,13 @@ async function launch() {
   assert(page, "Packaged UI did not open");
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.waitForFunction(() => Boolean(window.siteindex?.projects?.get), null, { timeout: 20_000 });
+  await page.evaluate(() => { window.location.hash = "#/settings"; });
+  const closeToTray = page.getByLabel("关闭窗口时最小化到托盘");
+  await closeToTray.waitFor();
+  if (await closeToTray.isChecked()) {
+    await closeToTray.click();
+    await page.waitForFunction(async () => !(await window.siteindex.settings.get()).close_to_tray);
+  }
   return page;
 }
 async function apiConfig(page) {
@@ -139,15 +159,14 @@ async function savePage(page, key, expected) {
     return JSON.stringify(actual) === JSON.stringify(value);
   }, { id: projectId, pathKey: key, value: expected }, { timeout: 20_000 });
 }
-async function compareRows(page, stage, selected) {
+async function compareRow(page, stage, index) {
   const fromFile = await readConfigFile();
   const fromApi = await apiConfig(page);
-  for (const [id, key, expected] of selected) {
-    const row = report.rows[id - 1];
-    row[`${stage}File`] = JSON.stringify(valueAt(fromFile, key)) === JSON.stringify(expected);
-    row[`${stage}Api`] = JSON.stringify(valueAt(fromApi, key)) === JSON.stringify(expected);
-    assert(row[`${stage}File`] && row[`${stage}Api`], `#${id} ${key} ${stage} readback mismatch`);
-  }
+  const [id, key, expected] = fields[index];
+  const row = report.rows[index];
+  row[`${stage}File`] = JSON.stringify(valueAt(fromFile, key)) === JSON.stringify(expected);
+  row[`${stage}Api`] = JSON.stringify(valueAt(fromApi, key)) === JSON.stringify(expected);
+  assert(row[`${stage}File`] && row[`${stage}Api`], `#${id} ${key} ${stage} readback mismatch`);
 }
 async function editJson(page) {
   await page.getByRole("button", { name: "以 JSON 编辑" }).click();
@@ -159,43 +178,43 @@ async function editJson(page) {
   await savePage(page, fields[0][1], fields[0][2]);
   return config;
 }
-async function editBasic(page) {
-  const fill = async (label, value) => page.getByLabel(label, { exact: true }).fill(value);
-  await fill("域名", fields[1][2]);
-  await fill("网站地址", fields[2][2]);
-  await page.getByLabel("平台", { exact: true }).selectOption(fields[3][2]);
-  await fill("币种", fields[4][2]);
-  await fill("语言", fields[5][2]);
-  await fill("时区", fields[6][2]);
-  await fill("目标市场（逗号分隔）", fields[7][2].join(", "));
-  await fill("品牌名", fields[8][2]);
-  await fill("一句话定位", fields[9][2]);
-  await fill("文案调性", fields[10][2]);
-  await fill("目标人群", fields[11][2]);
-  await fill("核心卖点（每行一项）", fields[12][2].join("\n"));
-  await fill("每行一个地址", fields[13][2][0]);
-  await fill("SKU 字段", fields[14][2]);
-  await fill("主分类层级", String(fields[15][2]));
-  await page.getByLabel("商品消失时", { exact: true }).selectOption(fields[16][2]);
-  await fill("移除保护阈值（0–1）", String(fields[17][2]));
-  await fill("Feed 生成时间", fields[18][2]);
-  await fill("站点地图（每行一个）", fields[19][2][0]);
-  await savePage(page, fields[8][1], fields[8][2]);
+const basicActions = [
+  ["域名", "text"], ["网站地址", "text"], ["平台", "select"],
+  ["币种", "text"], ["语言", "text"], ["时区", "text"],
+  ["目标市场（逗号分隔）", "comma"], ["品牌名", "text"],
+  ["一句话定位", "text"], ["文案调性", "text"], ["目标人群", "text"],
+  ["核心卖点（每行一项）", "lines"], ["每行一个地址", "first"],
+  ["SKU 字段", "text"], ["主分类层级", "number"],
+  ["商品消失时", "select"], ["移除保护阈值（0–1）", "number"],
+  ["Feed 生成时间", "text"], ["站点地图（每行一个）", "first"],
+];
+async function editBasicField(page, index) {
+  const [id, key, expected] = fields[index];
+  const [label, kind] = basicActions[index - 1];
+  const control = page.getByLabel(label, { exact: true });
+  if (kind === "select") await control.selectOption(expected);
+  else await control.fill(kind === "comma" ? expected.join(", ")
+    : kind === "lines" ? expected.join("\n")
+      : kind === "first" ? expected[0] : String(expected));
+  await savePage(page, key, expected);
+  report.rows[id - 1].uiSaved = true;
 }
-async function main() {
-  report.stage = "provenance";
-  report.baselineSha256 = await hash(input[0]);
-  report.candidateSha256 = await hash(input[1]);
-  assert.equal(report.baselineSha256, baselineHash, "Official v0.8.0 EXE SHA256 mismatch");
-  assert.equal(report.candidateSha256, process.env.SITEINDEX_EXPECTED_CANDIDATE_SHA256.toLowerCase(),
-    "Pinned candidate EXE SHA256 mismatch");
+async function checkField(index) {
+  const [id, key, expected] = fields[index];
+  const row = report.rows[index];
+  layout = createWindowsProfileLayout(path.join(root, `field-${id}`));
+  exe = path.join(layout.installDir, "SiteIndex.exe");
+  siteFile = path.join(layout.projectRoot, projectId, "index", "site.json");
+  installed = false;
+  redirect = null;
+  try {
   for (const directory of Object.values(layout)) if (typeof directory === "string") await mkdir(directory, { recursive: true });
   const checks = await inspectWindowsProfileLayout(layout);
   assert(Object.values(checks).every((item) => item.withinRoot && item.noReparse), "Profile isolation failed");
   redirect = createWindowsAppDataRedirect({ appDataRoot: layout.appDataRoot,
     runRegistry: (args) => spawnSync("reg.exe", args, { encoding: "utf8", windowsHide: true, timeout: 15_000 }) });
   redirect.redirect();
-  report.stage = "baseline install";
+  report.stage = `#${id} baseline install`;
   call(input[0], ["/S", `/D=${layout.installDir}`], { env: environment() });
   installed = true;
   let page = await launch();
@@ -207,50 +226,52 @@ async function main() {
   });
   assert.equal(created.id, projectId);
   await projectPage(page);
-  report.stage = "#1 baseline JSON UI save";
-  const jsonExpected = await editJson(page);
-  await stop();
-  report.invariants.jsonFullConfigFileRoundTrip = containsExpected(await readConfigFile(), jsonExpected);
-  assert(report.invariants.jsonFullConfigFileRoundTrip, "JSON editor did not preserve all submitted keys");
+  report.stage = `#${id} baseline UI save`;
+  const jsonExpected = index === 0 ? await editJson(page) : null;
+  if (index === 0) row.uiSaved = true;
+  else await editBasicField(page, index);
+  row.baselineExitMode = await stop(true);
+  report.stage = `#${id} exited baseline file readback`;
+  row.baselineFile = JSON.stringify(valueAt(await readConfigFile(), key)) === JSON.stringify(expected);
+  assert(row.baselineFile, `#${id} exited baseline file mismatch`);
+  if (jsonExpected) assert(containsExpected(await readConfigFile(), jsonExpected),
+    "JSON editor did not preserve all submitted keys in file");
   page = await launch();
-  report.invariants.jsonFullConfigApiRoundTrip = containsExpected(await apiConfig(page), jsonExpected);
-  assert(report.invariants.jsonFullConfigApiRoundTrip, "JSON editor API readback differs");
-  await compareRows(page, "baseline", fields.slice(0, 1));
-  await projectPage(page);
-  report.stage = "#2–20 baseline structured UI save";
-  await editBasic(page);
-  await stop();
-  page = await launch();
-  await compareRows(page, "baseline", fields);
+  report.stage = `#${id} new baseline process API readback`;
+  await compareRow(page, "baseline", index);
+  if (jsonExpected) assert(containsExpected(await apiConfig(page), jsonExpected),
+    "JSON editor did not preserve all submitted keys in API");
   const baselineConfig = await readConfigFile();
   const baselineBytes = await readFile(siteFile);
-  await stop();
-  report.stage = "pinned candidate overwrite install";
+  await stop(true);
+  report.stage = `#${id} pinned candidate overwrite install`;
   call(input[1], ["/S", `/D=${layout.installDir}`], { env: environment() });
-  assert((await readFile(siteFile)).equals(baselineBytes), "Installer rewrote site.json");
+  row.candidateInstalled = true;
+  row.installerByteIdentical = (await readFile(siteFile)).equals(baselineBytes);
+  assert(row.installerByteIdentical, `#${id} installer rewrote site.json`);
   page = await launch();
   assert.equal(await page.evaluate(() => window.siteindex.app.version()), "0.8.2");
-  report.stage = "candidate #1–20 readback";
-  await compareRows(page, "candidate", fields);
-  report.invariants.fullConfigPreserved = containsExpected(await readConfigFile(), baselineConfig)
+  report.stage = `#${id} candidate file and API readback`;
+  await compareRow(page, "candidate", index);
+  row.fullConfigPreserved = containsExpected(await readConfigFile(), baselineConfig)
     && containsExpected(await apiConfig(page), baselineConfig);
-  assert(report.invariants.fullConfigPreserved, "Candidate startup lost a baseline config key");
+  assert(row.fullConfigPreserved, `#${id} candidate startup lost a baseline config key`);
   await projectPage(page);
-  report.stage = "candidate invariants";
+  report.stage = `#${id} candidate no-op save`;
   const beforeEmpty = await readFile(siteFile);
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  report.invariants.emptySaveByteIdentical = (await readFile(siteFile)).equals(beforeEmpty);
-  assert(report.invariants.emptySaveByteIdentical, "No-op UI save rewrote site.json");
+  row.emptySaveByteIdentical = (await readFile(siteFile)).equals(beforeEmpty);
+  assert(row.emptySaveByteIdentical, `#${id} no-op UI save rewrote site.json`);
+  if (id === 10) {
   const oldRevision = (await page.evaluate((id) => window.siteindex.projects.get(id), projectId)).config_revision;
   assert(oldRevision, "Candidate did not expose config revision");
   await page.getByLabel("一句话定位", { exact: true }).fill("");
   await savePage(page, "brand.tagline", "");
   const cleared = await readConfigFile();
-  report.invariants.explicitClear = cleared.brand.tagline === "";
-  report.invariants.siblingsPreserved = cleared.brand.voice === fields[10][2]
-    && cleared.brand.audience === fields[11][2] && cleared.crawl.user_agent === fields[0][2];
-  assert(report.invariants.explicitClear && report.invariants.siblingsPreserved,
-    "Explicit clear changed another field");
+  row.explicitClear = cleared.brand.tagline === "";
+  row.siblingsPreserved = cleared.brand.name === baselineConfig.brand.name
+    && JSON.stringify(cleared.brand.voice) === JSON.stringify(baselineConfig.brand.voice);
+  assert(row.explicitClear && row.siblingsPreserved, "Explicit clear changed another brand field");
   const beforeStale = await readFile(siteFile);
   const stale = await page.evaluate(async ({ id, revision }) => {
     try {
@@ -259,22 +280,42 @@ async function main() {
       return "accepted";
     } catch (error) { return String(error?.message ?? error); }
   }, { id: projectId, revision: oldRevision });
-  report.invariants.staleRevisionRejected = stale.includes("配置已在别处更新")
+  row.staleRevisionRejected = stale.includes("配置已在别处更新")
     && (await readFile(siteFile)).equals(beforeStale);
-  assert(report.invariants.staleRevisionRejected, "Stale revision was not rejected");
+  assert(row.staleRevisionRejected, "Stale revision was not rejected");
+  }
+  row.candidateExitMode = await stop(true);
+  row.outcome = "passed";
+  } catch (error) {
+    row.outcome = "failed";
+    row.error = safe(error);
+    throw error;
+  } finally {
+    let cleanupError;
+    try { await stop(); } catch (error) { cleanupError = error; }
+    if (installed && await exists(path.join(layout.installDir, "Uninstall SiteIndex.exe"))) {
+      try { call(path.join(layout.installDir, "Uninstall SiteIndex.exe"), ["/S"], { env: environment() }); }
+      catch (error) { cleanupError ??= error; }
+    }
+    if (redirect?.hasChanges && !redirect.restored && !redirect.restore())
+      cleanupError ??= new Error("Isolated AppData redirect was not restored");
+    if (!redirect?.hasChanges || redirect.restored)
+      await rm(layout.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }).catch(() => undefined);
+    if (cleanupError) { row.outcome = "failed"; row.error = safe(cleanupError); throw cleanupError; }
+  }
+}
+try {
+  report.stage = "provenance";
+  report.baselineSha256 = await hash(input[0]);
+  report.candidateSha256 = await hash(input[1]);
+  assert.equal(report.baselineSha256, baselineHash, "Official v0.8.0 EXE SHA256 mismatch");
+  assert.equal(report.candidateSha256, process.env.SITEINDEX_EXPECTED_CANDIDATE_SHA256.toLowerCase(),
+    "Pinned candidate EXE SHA256 mismatch");
+  for (let index = 0; index < fields.length; index++) await checkField(index);
   report.result = "passed";
 }
-try { await main(); }
 catch (error) { report.result = "failed"; report.failure = safe(error); }
 finally {
-  await stop().catch(() => undefined);
-  if (installed && await exists(path.join(layout.installDir, "Uninstall SiteIndex.exe"))) {
-    try { call(path.join(layout.installDir, "Uninstall SiteIndex.exe"), ["/S"], { env: environment() }); }
-    catch (error) { report.result = "failed"; report.failure ??= safe(error); }
-  }
-  if (redirect?.hasChanges && !redirect.restored && !redirect.restore()) {
-    report.result = "failed"; report.failure ??= "Isolated AppData redirect was not restored";
-  }
   await mkdir(reportDir, { recursive: true });
   await writeFile(path.join(reportDir, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
   if (!redirect?.hasChanges || redirect.restored)
