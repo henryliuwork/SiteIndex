@@ -290,23 +290,26 @@ async function main() {
   const baselineVersion = await oldPage.evaluate(() => window.siteindex.app.version());
   assert.equal(baselineVersion, "0.8.0", "baseline IPC app version is wrong");
   const initial = await oldPage.evaluate(() => window.siteindex.settings.get());
+  await stopInstalledApp();
   const target = settingsPatch();
-  report.settings.uiRows = await exerciseBaselineAppSettings(oldPage, {
-    ...target,
-    skillDirectory: path.join(ROOT, "agent-skills.example.test"),
-    extraProject: EXTRA_PROJECT_PATH,
-    hiddenProject: HIDDEN_PROJECT_PATH,
-    wpOrigin: "https://fixture.synthetic.invalid",
+  report.settings.uiRows = await exerciseBaselineAppSettings({
+    launch, stop: stopInstalledApp, settingsPath: SETTINGS_PATH,
+    values: { ...target,
+      skillDirectory: path.join(ROOT, "agent-skills.example.test"),
+      extraProject: EXTRA_PROJECT_PATH,
+      hiddenProject: HIDDEN_PROJECT_PATH,
+      wpOrigin: "https://fixture.synthetic.invalid" },
   });
-  const afterUi = await oldPage.evaluate(() => window.siteindex.settings.get());
-  await oldPage.evaluate((patterns) => window.siteindex.settings.set({ conflict_patterns: patterns }), target.conflict_patterns);
+  const finalOldPage = await launch();
+  const afterUi = await finalOldPage.evaluate(() => window.siteindex.settings.get());
+  await finalOldPage.evaluate((patterns) => window.siteindex.settings.set({ conflict_patterns: patterns }), target.conflict_patterns);
   const patch = { ...target,
     skill_platforms: afterUi.skill_platforms,
     extra_projects: afterUi.extra_projects,
     hidden_projects: afterUi.hidden_projects,
   };
-  const saved = await oldPage.evaluate(() => window.siteindex.settings.get());
-  const baselineRead = await oldPage.evaluate(() => window.siteindex.settings.get());
+  const saved = await finalOldPage.evaluate(() => window.siteindex.settings.get());
+  const baselineRead = await finalOldPage.evaluate(() => window.siteindex.settings.get());
   report.settings.fields = checkFields(saved, patch, initial.device_id);
   checkFields(baselineRead, patch, initial.device_id);
   report.settings.uiRows = report.settings.uiRows.map((row) => row.id === 81
@@ -398,6 +401,7 @@ let failure;
 try {
   await main();
 } catch (error) {
+  if (error?.uiRows) report.settings.uiRows = error.uiRows;
   failure = { stage, category: error?.name ?? "Error",
     message: String(error?.message ?? error).replaceAll(ROOT, "<isolated>").replaceAll(process.cwd(), "<checkout>") };
   report.result = "failed";
