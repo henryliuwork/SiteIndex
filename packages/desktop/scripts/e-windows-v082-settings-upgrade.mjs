@@ -49,11 +49,13 @@ async function sha256(filePath) {
 }
 
 async function vaultMetadata(origin) {
-  const filename = `wordpress-${createHash("sha256").update(origin).digest("hex")}.vault.json`;
-  const file = path.join(LAYOUT.vaultPath, filename);
+  const file = vaultFileFor(origin);
   await contained(LAYOUT.localAppDataRoot, file);
   try { return { exists: true, bytes: (await stat(file)).size, withinLocalAppData: true }; }
   catch (error) { if (error?.code === "ENOENT") return { exists: false, bytes: null, withinLocalAppData: true }; throw error; }
+}
+function vaultFileFor(origin) {
+  return path.join(LAYOUT.vaultPath, `wordpress-${createHash("sha256").update(origin).digest("hex")}.vault.json`);
 }
 
 function run(file, args, options = {}) {
@@ -260,7 +262,7 @@ function settingsPatch() {
     close_to_tray: false,
     cache_dir: path.join(ROOT, "cache"),
     browser: { channel: "custom", executable_path: path.join(ROOT, "fake-browser.example.test.exe") },
-    notify: { on_failure: false, on_success: true, oos_threshold: 0.12, dingtalk_webhook: "https://example.test/hook" },
+    notify: { on_failure: false, on_success: true, oos_threshold: 0.17, dingtalk_webhook: "https://example.test/hook" },
     skill_platforms: [],
     conflict_patterns: ["synthetic-conflict-pattern"],
   };
@@ -345,6 +347,7 @@ async function main() {
   report.settings.vault.baseline = await vaultMetadata("https://fixture.synthetic.invalid");
   assert(report.settings.vault.baseline.exists && report.settings.vault.baseline.bytes > 0,
     "baseline WordPress vault missing after normal restart");
+  const baselineVaultDigest = await sha256(vaultFileFor("https://fixture.synthetic.invalid"));
   const finalOldPage = await launch();
   const afterUi = await finalOldPage.evaluate(() => window.siteindex.settings.get());
   await finalOldPage.evaluate((patterns) => window.siteindex.settings.set({ conflict_patterns: patterns }), target.conflict_patterns);
@@ -385,7 +388,9 @@ async function main() {
   assert.deepEqual(await newPage.evaluate(() => window.siteindexWindow.wordpressCredentials.status("https://fixture.synthetic.invalid")),
     { state: "configured" }, "WordPress vault status changed after upgrade");
   report.settings.vault.candidate = await vaultMetadata("https://fixture.synthetic.invalid");
-  assert(report.settings.vault.candidate.exists && report.settings.vault.candidate.bytes === report.settings.vault.baseline.bytes,
+  report.settings.vault.unchanged = report.settings.vault.candidate.exists
+    && await sha256(vaultFileFor("https://fixture.synthetic.invalid")) === baselineVaultDigest;
+  assert(report.settings.vault.unchanged && report.settings.vault.candidate.bytes === report.settings.vault.baseline.bytes,
     "candidate WordPress vault metadata changed after upgrade");
   report.settings.candidateRows = await exerciseCandidateAppReadback(newPage, SETTINGS_PATH, {
     ...target, skillDirectory: path.join(ROOT, "agent-skills.example.test"),
@@ -479,6 +484,7 @@ try {
     `- Application rows: ${report.settings.uiRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
     `- Candidate readback rows: ${report.settings.candidateRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
     `- WordPress vault existed before/after upgrade: ${report.settings.vault.baseline?.exists ?? false} / ${report.settings.vault.candidate?.exists ?? false}`,
+    `- WordPress encrypted vault unchanged after upgrade: ${report.settings.vault.unchanged ?? false}`,
     `- Candidate clear rows: ${report.settings.clearRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
     `- Byte-identical after installer / IPC readback: ${report.settings.unchangedAfterInstaller} / ${report.settings.unchangedAfterRead}`,
     `- Failure stage: ${failure?.stage ?? "none"}`,

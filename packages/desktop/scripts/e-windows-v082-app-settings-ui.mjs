@@ -61,9 +61,9 @@ export async function exerciseBaselineAppSettings({ launch, stop, settingsPath, 
     await page.getByRole("checkbox", { name: "新缺货达到阈值时" }).click();
     await page.waitForFunction(async () => (await window.siteindex.settings.get()).notify.oos_threshold === 0.12);
     await page.getByText("正在保存软件设置…").waitFor({ state: "hidden" });
-    await page.getByRole("spinbutton", { name: "新缺货阈值百分比" }).fill("12");
+    await page.getByRole("spinbutton", { name: "新缺货阈值百分比" }).fill("17");
     await page.getByRole("spinbutton", { name: "新缺货阈值百分比" }).press("Tab");
-  }, verify: [["notify.oos_threshold", 0.12]] });
+  }, verify: [["notify.oos_threshold", 0.17]] });
   await run([77], { tab: "通知", action: (page) => blur(page, "#si-dingtalk-webhook", values.notify.dingtalk_webhook),
     verify: [["notify.dingtalk_webhook", values.notify.dingtalk_webhook]] });
   await run([78], { tab: "Agent 平台", action: async (page) => {
@@ -194,9 +194,9 @@ export async function exerciseCandidateAppReadback(page, settingsPath, values) {
     await page.getByRole("checkbox", { name: "失败时", exact: true }).isChecked(), false));
   await check(75, "notify.on_success", equal(true), async () => assert.equal(
     await page.getByRole("checkbox", { name: "成功时", exact: true }).isChecked(), true));
-  await check(76, "notify.oos_threshold", equal(0.12), async () => {
+  await check(76, "notify.oos_threshold", equal(0.17), async () => {
     assert.equal(await page.getByRole("checkbox", { name: "新缺货达到阈值时" }).isChecked(), true);
-    assert.equal(await page.getByRole("spinbutton", { name: "新缺货阈值百分比" }).inputValue(), "12");
+    assert.equal(await page.getByRole("spinbutton", { name: "新缺货阈值百分比" }).inputValue(), "17");
   });
   await check(77, "notify.dingtalk_webhook", equal(values.notify.dingtalk_webhook),
     () => input("#si-dingtalk-webhook", values.notify.dingtalk_webhook));
