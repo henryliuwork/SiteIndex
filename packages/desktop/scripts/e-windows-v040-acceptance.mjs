@@ -1979,8 +1979,8 @@ async function readW2SectionPageMetrics(page) {
       relativeTimeCount: (pageText.match(/今天|昨天/gu) ?? []).length,
       horizontalScrollerCount: scrollbars,
       documentHorizontalOverflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > innerWidth + 1,
-      overviewCardCount: [...root.querySelectorAll(".si-overview-kpis .si-kpi-card")].filter(visible).length,
-      overviewClickableCardCount: [...root.querySelectorAll(".si-overview-kpis a.si-kpi-card[href]")].filter(visible).length,
+      overviewCardCount: [...root.querySelectorAll(".si-overview-modules > .si-overview-module")].filter(visible).length,
+      overviewClickableCardCount: [...root.querySelectorAll(".si-overview-module a[href]")].filter(visible).length,
     };
   });
 }
@@ -2001,7 +2001,7 @@ async function runW2PackagedPageWalk(page) {
           await page.setViewportSize(viewport);
           await goToW2Route(page, `/p/${W2_PROJECT_ID}${route === "overview" ? "" : `/${route}`}`);
           if (tableId) await waitForW2Table(page, tableId);
-          else await page.locator(".si-overview-kpis .si-kpi-card").first().waitFor({ state: "visible", timeout: 20_000 });
+          else await page.locator(".si-overview-modules > .si-overview-module").first().waitFor({ state: "visible", timeout: 20_000 });
           const metrics = await readW2SectionPageMetrics(page);
           const viewportApplied = metrics?.viewport.width === viewport.width && metrics?.viewport.height === viewport.height;
           const visibleText = await page.locator("body").innerText();
@@ -2592,8 +2592,8 @@ async function testW2Pages(page, syntheticSite) {
   let overviewRoutePass = false;
   await attemptW2("Overview SEO attention link opens the filtered issues view", "ui", async () => {
     await goToW2Route(page, `/p/${W2_PROJECT_ID}`);
-    await page.locator(".si-overview-attention").waitFor({ state: "visible", timeout: 20_000 });
-    const link = page.getByRole("link", { name: "查看 SEO 问题" }).first();
+    await page.locator('.si-overview-module[aria-label="SEO"]').waitFor({ state: "visible", timeout: 20_000 });
+    const link = page.locator('.si-overview-seo-reminders a[href*="rule=title_missing"]').first();
     await link.waitFor({ state: "visible", timeout: 10_000 });
     await link.click();
     await waitForW2TableTotal(page, "seo.pageRows", W2_EXPECTED.issues - 6);
@@ -2840,6 +2840,9 @@ async function testW2Pages(page, syntheticSite) {
     const parentTotal = W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus;
     const initial = await waitForW2TableTotal(page, tableId, parentTotal);
     const defaultParentSelected = await parentButton.getAttribute("aria-pressed") === "true";
+    const summaryMore = page.getByRole("button", { name: "更多摘要项" });
+    const summaryCollapsed = await summaryMore.count() > 0;
+    if (summaryCollapsed) await summaryMore.click();
     const summary = await page.evaluate(async (projectId) => {
       const management = (await window.siteindex.inventory.summary(projectId, 30)).product_management;
       const expected = management?.as_of ? [
@@ -2848,11 +2851,12 @@ async function testW2Pages(page, syntheticSite) {
         ["长期缺货", management.out_of_stock_7d_rows],
         ["状态波动", management.fluctuating_30d_rows],
       ].filter(([, value]) => value !== null) : [];
-      const visible = [...document.querySelectorAll('.si-summary-line[aria-label="产品管理摘要"] > button.si-summary-line-item')]
+      const visible = [...document.querySelectorAll('.si-summary-line[aria-label="产品管理摘要"] > button.si-summary-line-item, .si-summary-line-popover > button')]
         .map((item) => [item.querySelector("span")?.textContent?.trim(), Number(item.querySelector("strong")?.textContent?.replaceAll(",", ""))]);
       return { expected, visible, matched: visible.length >= 2 && visible.every(([label, value], index) =>
         label === expected[index]?.[0] && value === expected[index]?.[1]) };
     }, W2_PROJECT_ID);
+    if (summaryCollapsed) await page.keyboard.press("Escape");
     const rowIds = await readW2VisibleRowKeys(page, tableId);
     const childrenVisibleByDefault = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
     const variantRow = table.locator('tbody tr[data-row-id="group-000:SYN-P000"]');
@@ -2941,7 +2945,7 @@ async function testW2Pages(page, syntheticSite) {
     await clickProjectTab(page, "内容");
     await waitForW2Table(page, "content.blog");
     const pagination = await exerciseW2Pagination(page, "content.blog", W2_EXPECTED.blogsBeforeRefresh);
-    const refreshButton = page.getByRole("button", { name: "重新抓取", exact: true });
+    const refreshButton = page.getByRole("button", { name: "重新抓取博客", exact: true });
     const refreshVisible = await refreshButton.isVisible();
     const keywordMappingVisible = await page.getByText("关键词映射", { exact: false }).count() > 0;
     return { passed: pagination.passed && refreshVisible && !keywordMappingVisible,
@@ -2949,7 +2953,7 @@ async function testW2Pages(page, syntheticSite) {
   });
 
   await attemptW2("Content refresh button runs against loopback-only synthetic pages and refreshes summary/table", "ui", async () => {
-    const refreshButton = page.getByRole("button", { name: "重新抓取", exact: true });
+    const refreshButton = page.getByRole("button", { name: "重新抓取博客", exact: true });
     await refreshButton.click();
     const busyStateObserved = await page.evaluate(() => {
       const button = Array.from(document.querySelectorAll("button")).find((item) => ["正在启动…", "抓取中…"].includes(item.textContent?.trim() ?? ""));
@@ -3001,6 +3005,7 @@ async function testW2Pages(page, syntheticSite) {
     attempt: attemptW2,
     goTo: goToV082Route,
     startWooLoopback,
+    cleanupWizardProject: cleanupV082WizardProject,
   });
   const gate3Checks = report.w2Acceptance.checks.filter((check) => check.name.startsWith("G8.2-3 "));
   report.gate3Visual = { expected: 54, recorded: gate3Checks.length,
@@ -3016,6 +3021,28 @@ async function testW2Pages(page, syntheticSite) {
     evidence: { reason: "Hosted acceptance uses synthetic project files and loopback-only pages; no real project was included." },
   });
   await goToW2Route(page, "/");
+}
+
+async function cleanupV082WizardProject(page, folderName) {
+  if (!/^synthetic-visual-(?:1280|1920)$/u.test(folderName)) throw new Error("Unexpected synthetic wizard folder name.");
+  const projectPath = path.resolve(PROJECTS_ROOT, folderName);
+  if (!(await exists(projectPath))) return;
+  const [runnerRoot, projectRoot, project, info] = await Promise.all([
+    inspectContainedPath(RUNNER_TEMP, TEST_ROOT),
+    inspectContainedPath(TEST_ROOT, PROJECTS_ROOT),
+    inspectContainedPath(TEST_ROOT, projectPath),
+    lstat(projectPath),
+  ]);
+  if (!runnerRoot.withinRoot || !runnerRoot.noReparse || !projectRoot.withinRoot || !projectRoot.noReparse
+    || !project.withinRoot || !project.noReparse || !info.isDirectory()
+    || path.dirname(projectPath) !== path.resolve(PROJECTS_ROOT)) {
+    throw new Error("Refusing to clean a wizard project outside the runner-only synthetic project root.");
+  }
+  const registered = await page.evaluate(async (id) => (await window.siteindex.projects.list())
+    .some((entry) => entry.id === id), folderName);
+  if (registered) await page.evaluate((id) => window.siteindex.projects.remove(id), folderName);
+  await rm(projectPath, { recursive: true, force: false, maxRetries: 3, retryDelay: 100 });
+  if (await exists(projectPath)) throw new Error("Synthetic wizard project still exists after cleanup.");
 }
 
 async function safeCandidateScreenshot(page) {

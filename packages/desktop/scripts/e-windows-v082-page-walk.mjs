@@ -78,8 +78,8 @@ async function capture(page, name, viewport, context) {
 
 async function captureWizard(page, viewport, context) {
   const loopback = await context.startWooLoopback(`visual-${viewport.width}`);
-  // The wizard rejects duplicate hostnames; both aliases target the runner-only loopback.
-  const siteUrl = viewport.width === 1920 ? loopback.origin.replace("127.0.0.1", "localhost") : loopback.origin;
+  const siteUrl = loopback.origin;
+  const folderName = `synthetic-visual-${viewport.width}`;
   let nextCase = 0;
   const screenshotStep = async (name) => {
     nextCase += 1;
@@ -105,7 +105,7 @@ async function captureWizard(page, viewport, context) {
     await screenshotStep(wizardCases[3]);
     await page.getByRole("button", { name: "下一步：品牌配置" }).click();
     await page.locator(".si-wizard-location-card").waitFor({ state: "visible" });
-    await page.getByRole("textbox", { name: "项目文件夹名" }).fill(`synthetic-visual-${viewport.width}`);
+    await page.getByRole("textbox", { name: "项目文件夹名" }).fill(folderName);
     await screenshotStep(wizardCases[4]);
     await page.getByRole("button", { name: "下一步：Agent 工作区" }).click();
     await page.locator(".si-wizard-workspace-layout").waitFor({ state: "visible" });
@@ -123,7 +123,8 @@ async function captureWizard(page, viewport, context) {
       });
     }
   } finally {
-    await loopback.close();
+    try { await context.cleanupWizardProject(page, folderName); }
+    finally { await loopback.close(); }
   }
 }
 
