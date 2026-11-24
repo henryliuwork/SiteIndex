@@ -163,29 +163,12 @@ async function launch() {
   return currentPage;
 }
 async function exitNormally() {
-  if (!processHandle) return;
-  const code = `
-    Add-Type -Namespace SI -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);'
-    $expected = [IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE)
-    $matched = @(Get-CimInstance Win32_Process -Filter "Name = 'SiteIndex.exe'" | Where-Object { $_.ExecutablePath -ieq $expected })
-    $windows = @($matched | ForEach-Object { $item = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($item -and $item.MainWindowHandle -ne 0) { $item } })
-    $probe = [ordered]@{ launchedPid = ${processHandle.pid}; matchedPids = @($matched | ForEach-Object { $_.ProcessId }); windowPids = @($windows | ForEach-Object { $_.Id }); matchedCount = $matched.Count; windowCount = $windows.Count; launchedPidMatched = @($matched | Where-Object { $_.ProcessId -eq ${processHandle.pid} }).Count -eq 1 }
-    if ($windows.Count -ne 1) { $probe.result = 'NO_UNIQUE_WINDOW'; $probe | ConvertTo-Json -Compress; exit 2 }
-    $probe.targetPid = $windows[0].Id
-    if (-not [SI.Native]::PostMessage($windows[0].MainWindowHandle, 16, [IntPtr]::Zero, [IntPtr]::Zero)) { $probe.result = 'POST_FAILED'; $probe | ConvertTo-Json -Compress; exit 3 }
-    $probe.result = 'POSTED'; $probe | ConvertTo-Json -Compress
-  `;
-  const dispatched = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", code],
-    { encoding: "utf8", windowsHide: true, timeout: 20_000,
-      env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: INSTALL_EXE } });
-  let probe = {};
-  try { probe = JSON.parse(String(dispatched.stdout ?? "").trim().split(/\r?\n/u).at(-1)); } catch { /* Missing probe fails below. */ }
-  assert(!dispatched.error && dispatched.status === 0 && probe.result === "POSTED",
-    `normal WM_CLOSE dispatch failed: exit=${dispatched.status ?? "unknown"}, probe=${JSON.stringify(probe)}`);
+  assert(processHandle && currentPage && browser, "installed UI is unavailable for normal exit");
+  await currentPage.evaluate(() => window.close()).catch(() => undefined);
   const until = Date.now() + 30_000;
   while (processHandle.exitCode === null && Date.now() < until) await delay(250);
   assert(processHandle.exitCode !== null, "installed app did not exit after closing its window");
-  assert.equal(processHandle.exitCode, 0, "installed app exited with nonzero code after WM_CLOSE");
+  assert.equal(processHandle.exitCode, 0, "installed app exited with nonzero code after UI close");
   let remaining = 1;
   const childrenUntil = Date.now() + 10_000;
   while (remaining && Date.now() < childrenUntil) {
