@@ -115,10 +115,6 @@ overflow: hidden; max-width: 150px; text-overflow: ellipsis; white-space: nowrap
 .si-product-sku { color: var(--color-ink-2); font-family: var(--font-mono); font-weight: 600; white-space: nowrap; }
 .si-product-sku.is-child { padding-left: var(--space-3); }
 
-.si-product-main-copy .si-chip {
-min-height: 16px; padding: 0 var(--space-1); font-size: var(--fs-body);
-}
-
 .si-product-tag {
 display: inline-flex; min-height: 19px; align-items: center; gap: var(--space-1); padding: 0 var(--space-2); border-radius: 10px; background: var(--color-info-soft); color: var(--color-info); font-size: var(--fs-body); white-space: nowrap;
 }
