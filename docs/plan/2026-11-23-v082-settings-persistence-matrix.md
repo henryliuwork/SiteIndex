@@ -13,6 +13,11 @@
 | R3 | 旧版隔离 mock 页每键 trim/filter，尾部空格与回车空行无法暂存。#761 已修 7 个真正的多行字段为原始草稿至失焦/保存；站点地图仍是单行框，不在该修复内。正式 UI 读回待验。 | [#761](https://github.com/henryliuwork/SiteIndex/pull/761)，I8 |
 | R4 | D 在隔离 mock 页先加载旧草稿，再通过另一次调用更新 `brand.tagline`，只在页面改品牌名后保存；提交的 16 个顶层字段仍含旧 tagline，读回也回退为旧值。 | [#743 评论](https://github.com/henryliuwork/SiteIndex/issues/743)，D 类 |
 | R5 | 旧版合成复现：README 模板初始含 5 个自动区块标记；保存工作规则后标记从 5 个变为 0 个。#752 已修 Core 读写边界并通过三系统 CI；打包 UI 待验。 | [#745 评论](https://github.com/henryliuwork/SiteIndex/issues/745#issuecomment-7094778905)，D 类 |
+| R6 | 正式 v0.8.0 Windows 包在全新托管 runner、隔离会话中打开「设置 → 基本信息」，勾选「开机时启动 SiteIndex」后，[#789 Run 45302559344](https://github.com/henryliuwork/SiteIndex/actions/runs/45302559344) 于 UI 保存阶段报 `baseline UI setting 71 failed at UI save: Error`（合成报告 artifact 14879816141）。#67–70 已独立会话完成 UI、IPC、文件读回；#71 没有保存后文件读回或实际 Windows 启动项证据，0.8.2 候选尚未安装。现有日志未记录具体异常消息或堆栈，不能据此断定根因。v0.7.6 正式包对照待验；两版保存/IPC/系统启动项源码无差异，源码不足以判定引入时间。 | [#790](https://github.com/henryliuwork/SiteIndex/issues/790)，用户指定 D 类，G8.2-3 阻塞 |
+
+**用户决策 D10：**第 71 项允许一次单项方法例外，不作先例。旧版只可通过打包应用与界面相同的真实 `settings.set` IPC 保存，不能直接写配置文件或数据库；保存后必须重新读取文件并逐值比对，还要核对 Windows 实际启动项，测试后恢复原状态。系统态核对须同时记录调度模式与项目存在性：现有策略在 `residentNeeded` 时即使关闭该勾选项仍可能保留启动项，不能把「关闭后注册表项必须消失」作为无条件断言。覆盖安装后必须在 0.8.2 界面开启、关闭各保存一次并重新读回；若候选界面同样报错，该项不通过并按 D 类修复。其余 82 项仍逐项按原验收规则执行。本行记录的是失败与待验边界，不能由方法例外改写为通过。
+
+R6 复现与日志：①在全新 GitHub-hosted Windows runner 核对官方 v0.8.0 EXE 后安装到隔离目录；②用虚构项目打开打包界面 `#/settings`；③勾选「开机时启动 SiteIndex」，等待界面保存；④预期保存成功、退出后文件与 Windows 启动项可读回，实际第③步报错并停止，故第④步和 0.8.2 覆盖均**未执行**。Run 45302559344 的现有日志原文为 `v0.8.2 settings upgrade failed at v0.8.0 baseline install and save: baseline UI setting 71 failed at UI save: Error`；合成报告只含 `stage: UI save`、`errorType: Error`，没有更详细堆栈。新对照须补完整脱敏错误、实际文件读回值与系统启动项快照，不能补填为通过。
 
 Core [#762](https://github.com/henryliuwork/SiteIndex/pull/762) 已合并受保护的 `updateConfig` 路径：深合并、revision、显式 `clear`、写后读回与无操作字节不变；旧两参调用仍可清空，D 的 dirty/revision UI 提交尚待接线。C [#747](https://github.com/henryliuwork/SiteIndex/pull/747) 已修 `settings.json` 未知字段丢失与无操作重写；通知旧草稿风险由 #744 跟进。#752/#759 的 README Core 修复已合并，E 已复验 Core 直接路径，#745 已关闭；B 页面提示与正式安装版仍待验。A 的复现只写系统临时目录。
 
@@ -130,7 +135,7 @@ C 负责存储层与 IPC 的逐键 S/R/U 证据；B 负责 UI dirty 提交。下
 | 设备名 | 软件设置·文本 | `settings.set/get` | `device_name` → `settings.get` | I1/I4–I6：打包 IPC 非空值保留；UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
 | 缓存目录 | 软件设置·文本 | `settings.set/get` | `cache_dir` → `settings.get` | I1/I4–I6：打包 IPC 非空值保留；UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
 | 关闭到托盘 | 软件设置·勾选 | `settings.set/get` | `close_to_tray` → `settings.get` | I1/I4–I6：打包 IPC 保存 false；UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
-| 开机启动 | 软件设置·勾选 | `settings.set/get` | `launch_at_login` → `settings.get` | I1/I4–I6：打包 IPC 保存 true；UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
+| 开机启动 | 软件设置·勾选 | `settings.set/get` | `launch_at_login` → `settings.get`、`settings.json` 与 Windows 实际启动项 | I1/I4–I6：#751 仅打包 IPC 合成通过；正式 v0.8.0 UI 保存失败见 R6，v0.7.6 对照与候选 UI 开/关待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 路径）；正式旧版 UI 失败（#790） | 阻塞：旧版 #71 保存后文件/系统读回与 0.8.2 覆盖后 UI 开/关均未验证 |
 | 浏览器通道 | 软件设置·路径联动 | `settings.set/get` | `browser.channel` → `settings.get` | I1/I6：打包 IPC 非空值保留；I2–I4/ UI 待验 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
 | 浏览器路径 | 软件设置·文本 | `settings.set/get` | `browser.executable_path` → `settings.get` | I1/I6：C 合成 IPC 非空保存、新实例读回与显式清空通过；UI/安装版待验 | 待验/待验/待验 | 通过（C：合成 IPC 非空读回及显式清空） | 待验 |
 | 失败通知 | 软件设置·勾选 | `settings.set/get` | `notify.on_failure` → `settings.get` | I1/I6：打包 IPC 保存 false；#744 旧草稿风险待修 | CI 合成安装包通过/CI 合成安装包通过/CI 合成安装包通过 | 通过（#751：合成打包 IPC 读回） | 待验 |
