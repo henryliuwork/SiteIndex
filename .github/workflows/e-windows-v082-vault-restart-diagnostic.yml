@@ -1,11 +1,6 @@
-name: E · Windows #82 vault restart diagnostic
+name: E · Windows #82 normal-exit vault contrast
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/e-windows-v082-vault-restart-diagnostic.yml"
-      - "packages/desktop/scripts/e-windows-v082-vault-restart-diagnostic.mjs"
   workflow_dispatch:
 
 permissions:
@@ -30,7 +25,7 @@ jobs:
         run: |
           gh release download v0.7.6 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.7.6.exe --dir installer-076
           gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir installer-080
-      - name: Diagnose #82 UI vault status across full process restart
+      - name: Diagnose #82 UI vault status after normal app exit
         env:
           SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
         run: node packages/desktop/scripts/e-windows-v082-vault-restart-diagnostic.mjs installer-076/SiteIndex-Setup-0.7.6.exe installer-080/SiteIndex-Setup-0.8.0.exe
@@ -41,9 +36,9 @@ jobs:
           $path = 'siteindex-v082-vault-diagnostic-results/summary.json'
           if (Test-Path -LiteralPath $path) {
             $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '## #794 synthetic WordPress vault restart diagnostic'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '## #794 synthetic WordPress vault normal-exit contrast'
             foreach ($row in $report.versions) {
-              Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- v$($row.version): $($row.outcome); same=$($row.sameSessionStatus); restart=$($row.restartedStatus); vault file=$($row.vaultAfterRestart.exists)"
+              Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- v$($row.version): $($row.outcome); normal exit=$($row.normalExitMs) ms; same=$($row.sameSessionStatus); restart=$($row.restartedStatus); vault file=$($row.vaultAfterRestart.exists)"
             }
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value 'Diagnostic result only; no candidate package or real credentials were used.'
           }
