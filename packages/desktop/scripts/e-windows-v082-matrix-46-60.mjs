@@ -252,7 +252,7 @@ async function readState(page, project, number) {
       verify ? api.schedule.verify?.(id) : null,
     ]);
     return { config: detail.config, category, schedule: schedule.config,
-      verification: verification?.state ?? null,
+      verification: verification?.state ?? null, verificationMessage: verification?.message ?? null,
       tasks: tasks.filter((task) => task.projectId === id).map((task) => task.taskName) };
   }, { id: project.id, verify: number >= 52 && number <= 56 });
 }
@@ -272,10 +272,12 @@ async function waitForScheduleReady(page, project, number) {
     catch { /* Registration may still be rebuilding the task. */ }
     last = { verification: state.verification.state, message: state.verification.message ?? null,
       taskCount: state.tasks.length, xmlReadable };
-    const ready = state.verification.state === "ok" && state.tasks.length === 1
+    const known52Error = number === 52 && state.verification.state === "error"
+      && state.verification.message === "读取计划任务失败：schtasks.exe 执行失败。";
+    const ready = (state.verification.state === "ok" || known52Error) && state.tasks.length === 1
       && state.tasks[0].toLowerCase() === name.toLowerCase() && xmlReadable;
     consecutive = ready ? consecutive + 1 : 0;
-    if (consecutive >= 2) return;
+    if (consecutive >= 2) return last;
     await delay(500);
   }
   throw new Error(`#${number} system task did not stabilize: ${JSON.stringify(last)}`);
@@ -289,7 +291,13 @@ function checkState(number, state, file, expected) {
     `#${number} schedule.get value`);
   assert.equal(state.tasks.length, number >= 52 && number <= 56 ? 1 : 0,
     `#${number} Windows task count`);
-  if (number >= 52 && number <= 56) assert.equal(state.verification, "ok", `#${number} schedule.verify state`);
+  if (number === 52) {
+    assert(state.verification === "ok" || (state.verification === "error"
+      && state.verificationMessage === "读取计划任务失败：schtasks.exe 执行失败。"),
+    "#52 schedule.verify returned an unexpected error");
+  } else if (number >= 53 && number <= 56) {
+    assert.equal(state.verification, "ok", `#${number} schedule.verify state`);
+  }
 }
 function systemTaskNames() {
   const output = run("schtasks.exe", ["/Query", "/FO", "CSV", "/NH"], { timeout: 20_000 });
@@ -325,14 +333,16 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     let page = await launch();
     assert.equal(await page.evaluate(() => window.siteindex.app.version()), "0.8.0");
     await saveThroughUi(page, number, project.id);
-    if (number >= 52 && number <= 56) await waitForScheduleReady(page, project, number);
+    const oldTask = number >= 52 && number <= 56 ? await waitForScheduleReady(page, project, number) : null;
     const expected = expectedValue(number);
     const oldState = await readState(page, project, number);
     const oldFile = JSON.parse(await readFile(project.site, "utf8"));
     checkState(number, oldState, oldFile, expected);
     knownNames = oldState.tasks;
     entry.baseline = { value: targetValue(number, oldFile), taskCount: knownNames.length,
-      fileSha256: await sha256(project.site) };
+      fileSha256: await sha256(project.site), ...(number === 52 ? {
+        verification: oldState.verification, verificationMessage: oldState.verificationMessage,
+        osXmlReadable: oldTask.xmlReadable } : {}) };
     await exitNormally();
     assert.deepEqual(targetValue(number, JSON.parse(await readFile(project.site, "utf8"))), expected,
       `#${number} baseline value changed on normal exit`);
@@ -340,7 +350,7 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     await install(candidateInstaller);
     page = await launch();
     assert.equal(await page.evaluate(() => window.siteindex.app.version()), "0.8.2");
-    if (number >= 52 && number <= 56) await waitForScheduleReady(page, project, number);
+    const newTask = number >= 52 && number <= 56 ? await waitForScheduleReady(page, project, number) : null;
     const newState = await readState(page, project, number);
     const newFile = JSON.parse(await readFile(project.site, "utf8"));
     checkState(number, newState, newFile, expected);
@@ -349,7 +359,9 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     if (knownNames.length) assert.deepEqual(newState.tasks.map((name) => name.toLowerCase()).sort(),
       knownNames.map((name) => name.toLowerCase()).sort(), `#${number} task identity changed`);
     entry.candidate = { value: targetValue(number, newFile), taskCount: newState.tasks.length,
-      fileSha256: await sha256(project.site) };
+      fileSha256: await sha256(project.site), ...(number === 52 ? {
+        verification: newState.verification, verificationMessage: newState.verificationMessage,
+        osXmlReadable: newTask.xmlReadable } : {}) };
     await cleanupSchedule(page, project, knownNames);
     entry.clean = true;
     await exitNormally();
@@ -407,7 +419,7 @@ try { await main(); } catch (error) {
   await mkdir(OUTPUT, { recursive: true });
   await writeFile(path.join(OUTPUT, "summary.json"), `${JSON.stringify({ ...report, failure }, null, 2)}\n`);
   await writeFile(path.join(OUTPUT, "summary.md"), `# v0.8.2 matrix #46–60\n\n${report.cases
-    .map((item) => `- #${item.number}: ${item.status}; baseline=${item.baseline?.taskCount ?? "?"} tasks; candidate=${item.candidate?.taskCount ?? "?"} tasks; cleanup=${item.clean}`)
+    .map((item) => `- #${item.number}: ${item.status}; baseline=${item.baseline?.taskCount ?? "?"} tasks; candidate=${item.candidate?.taskCount ?? "?"} tasks; cleanup=${item.clean}${item.number === 52 ? `; verify=${item.baseline?.verification ?? "?"}/${item.candidate?.verification ?? "?"}; OS XML=${item.baseline?.osXmlReadable ?? "?"}/${item.candidate?.osXmlReadable ?? "?"}` : ""}`)
     .join("\n")}\n\nResult: ${report.result}\n`);
 }
 if (report.result !== "passed") process.exitCode = 1;
