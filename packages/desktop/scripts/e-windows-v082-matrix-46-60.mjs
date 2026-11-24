@@ -256,6 +256,30 @@ async function readState(page, project, number) {
       tasks: tasks.filter((task) => task.projectId === id).map((task) => task.taskName) };
   }, { id: project.id, verify: number >= 52 && number <= 56 });
 }
+async function waitForScheduleReady(page, project, number) {
+  const name = `\\SiteIndex\\${project.id}-${JOBS[number - 52]}`;
+  const until = Date.now() + 60_000;
+  let consecutive = 0;
+  let last = null;
+  while (Date.now() < until) {
+    const state = await page.evaluate(async (id) => ({
+      verification: await window.siteindex.schedule.verify(id),
+      tasks: (await window.siteindex.schedule.listSystemTasks())
+        .filter((task) => task.projectId === id).map((task) => task.taskName),
+    }), project.id);
+    let xmlReadable = false;
+    try { xmlReadable = /<Task\b/u.test(run("schtasks.exe", ["/Query", "/TN", name, "/XML"], { timeout: 20_000 })); }
+    catch { /* Registration may still be rebuilding the task. */ }
+    last = { verification: state.verification.state, message: state.verification.message ?? null,
+      taskCount: state.tasks.length, xmlReadable };
+    const ready = state.verification.state === "ok" && state.tasks.length === 1
+      && state.tasks[0].toLowerCase() === name.toLowerCase() && xmlReadable;
+    consecutive = ready ? consecutive + 1 : 0;
+    if (consecutive >= 2) return;
+    await delay(500);
+  }
+  throw new Error(`#${number} system task did not stabilize: ${JSON.stringify(last)}`);
+}
 function checkState(number, state, file, expected) {
   assert.deepEqual(targetValue(number, state.config), expected, `#${number} packaged projects.get value`);
   assert.deepEqual(targetValue(number, file), expected, `#${number} site.json value`);
@@ -301,6 +325,7 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     let page = await launch();
     assert.equal(await page.evaluate(() => window.siteindex.app.version()), "0.8.0");
     await saveThroughUi(page, number, project.id);
+    if (number >= 52 && number <= 56) await waitForScheduleReady(page, project, number);
     const expected = expectedValue(number);
     const oldState = await readState(page, project, number);
     const oldFile = JSON.parse(await readFile(project.site, "utf8"));
@@ -315,6 +340,7 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     await install(candidateInstaller);
     page = await launch();
     assert.equal(await page.evaluate(() => window.siteindex.app.version()), "0.8.2");
+    if (number >= 52 && number <= 56) await waitForScheduleReady(page, project, number);
     const newState = await readState(page, project, number);
     const newFile = JSON.parse(await readFile(project.site, "utf8"));
     checkState(number, newState, newFile, expected);
