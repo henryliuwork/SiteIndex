@@ -9,10 +9,10 @@ export async function exerciseBaselineAppSettings({ launch, stop, settingsPath, 
     await page.locator(selector).fill(value);
     await page.locator(selector).press("Tab");
   };
-  const run = async (ids, { route = "#/settings", tab, action, verify, skillDirectory }) => {
+  const run = async (ids, { route = "#/settings", tab, action, verify, skillDirectory, cancelPicker = false }) => {
     let stage = "launch";
     try {
-      const page = await launch();
+      const page = await launch(cancelPicker);
       stage = "UI save";
       await page.evaluate((hash) => { window.location.hash = hash; }, route);
       if (route === "#/settings") {
@@ -43,7 +43,7 @@ export async function exerciseBaselineAppSettings({ launch, stop, settingsPath, 
       throw failure;
     }
   };
-  await run([67], { action: (page) => blur(page, "#si-projects-root", values.projects_root), verify: [["projects_root", values.projects_root]] });
+  await run([67], { cancelPicker: true, action: (page) => blur(page, "#si-projects-root", values.projects_root), verify: [["projects_root", values.projects_root]] });
   await run([68], { action: (page) => blur(page, "#si-device-name", values.device_name), verify: [["device_name", values.device_name]] });
   await run([69], { action: (page) => blur(page, "#si-cache-dir", values.cache_dir), verify: [["cache_dir", values.cache_dir]] });
   await run([70], { action: (page) => page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" }).click(), verify: [["close_to_tray", false]] });
