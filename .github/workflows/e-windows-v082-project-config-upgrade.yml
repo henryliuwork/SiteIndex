@@ -1,0 +1,85 @@
+name: E · Windows project config upgrade acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful release.yml run on c/version-0.8.2
+        required: true
+      candidate_artifact_id:
+        description: Exact siteindex-win artifact ID
+        required: true
+      candidate_source_sha:
+        description: Full release source commit SHA
+        required: true
+      candidate_artifact_sha256:
+        description: GitHub artifact ZIP SHA256
+        required: true
+      candidate_exe_sha256:
+        description: SiteIndex-Setup-0.8.2.exe SHA256
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  config-basic:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify pinned Release run and artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.candidate_run_id }}
+          ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+          SOURCE_SHA: ${{ inputs.candidate_source_sha }}
+          ZIP_SHA: ${{ inputs.candidate_artifact_sha256 }}
+        run: |
+          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or $env:ZIP_SHA -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'Full source and artifact hashes are required.' }
+          $repo = $env:GITHUB_REPOSITORY
+          $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
+          $run = gh api "repos/$repo/actions/runs/$env:RUN_ID" | ConvertFrom-Json
+          $artifact = gh api "repos/$repo/actions/artifacts/$env:ARTIFACT_ID" | ConvertFrom-Json
+          if ($run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.event -ne 'workflow_dispatch' -or $run.head_branch -ne 'c/version-0.8.2' -or $run.head_sha -cne $env:SOURCE_SHA) { throw 'Candidate Release run provenance mismatch.' }
+          if ($artifact.id -ne [long]$env:ARTIFACT_ID -or $artifact.name -ne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne [long]$env:RUN_ID -or $artifact.workflow_run.head_sha -cne $env:SOURCE_SHA) { throw 'Candidate artifact provenance mismatch.' }
+          if (([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -ne $env:ZIP_SHA.ToLowerInvariant()) { throw 'Candidate artifact ZIP digest mismatch.' }
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ inputs.candidate_artifact_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          path: pinned-candidate
+          digest-mismatch: error
+      - name: Verify exact candidate EXE and download official baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE_SHA: ${{ inputs.candidate_exe_sha256 }}
+        run: |
+          if ($env:EXE_SHA -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'Full candidate EXE hash is required.' }
+          $files = @(Get-ChildItem -LiteralPath pinned-candidate -Filter 'SiteIndex-Setup-*.exe' -File -Recurse)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'SiteIndex-Setup-0.8.2.exe') { throw 'Expected exactly one v0.8.2 candidate EXE.' }
+          if ((Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash -ine $env:EXE_SHA) { throw 'Candidate EXE SHA256 mismatch.' }
+          gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir official-baseline
+      - name: Check #1–20 packaged UI and upgrade readback
+        env:
+          SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
+          SITEINDEX_EXPECTED_CANDIDATE_SHA256: ${{ inputs.candidate_exe_sha256 }}
+        run: node packages/desktop/scripts/e-windows-v082-project-config-upgrade.mjs official-baseline/SiteIndex-Setup-0.8.0.exe pinned-candidate/SiteIndex-Setup-0.8.2.exe
+      - name: Publish synthetic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteindex-v082-project-config-basic
+          path: siteindex-v082-project-config-results/
+          if-no-files-found: warn
