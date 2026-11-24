@@ -1,122 +1,118 @@
-/** Packaged v0.8.0 UI actions; all values and paths are synthetic runner-local data. */
-export async function exerciseBaselineAppSettings(page, values) {
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+/** Each v0.8.0 UI save gets a fresh packaged process; only synthetic values are used. */
+export async function exerciseBaselineAppSettings({ launch, stop, settingsPath, values }) {
   const rows = [];
-  let activeTab = "基本信息";
-  let inSettings = true;
-  const reloadSettings = async () => {
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await page.locator("#si-device-name").waitFor();
-    if (activeTab !== "基本信息") await page.getByRole("tab", { name: activeTab }).click();
-  };
-  const record = async (ids, action, verify) => {
-    try {
-      await action();
-      await page.waitForFunction(async ({ paths }) => {
-        const settings = await window.siteindex.settings.get();
-        return paths.every(([key, expected]) => {
-          const actual = key.split(".").reduce((part, segment) => part?.[segment], settings);
-          return JSON.stringify(actual) === JSON.stringify(expected);
-        });
-      }, { paths: verify }, { timeout: 12_000 });
-      if (inSettings) {
-        await page.getByText("正在保存软件设置…").waitFor({ state: "hidden", timeout: 12_000 });
-        await reloadSettings();
-      }
-      for (const id of ids) rows.push({ id, status: "passed", evidence: "baseline packaged UI save + IPC readback" });
-    } catch (error) {
-      for (const id of ids) rows.push({ id, status: "failed", evidence: "baseline packaged UI save/readback failed",
-        errorType: error?.name ?? "Error" });
-      if (inSettings) await reloadSettings();
-    }
-  };
-  const blur = async (selector, value) => {
+  const at = (source, key) => key.split(".").reduce((part, segment) => part?.[segment], source);
+  const blur = async (page, selector, value) => {
     await page.locator(selector).fill(value);
     await page.locator(selector).press("Tab");
   };
-  const tab = async (name) => { await page.getByRole("tab", { name }).click(); activeTab = name; };
-
-  await page.evaluate(() => { window.location.hash = "#/settings"; });
-  await page.locator("#si-device-name").waitFor();
-  await record([67], () => blur("#si-projects-root", values.projects_root), [["projects_root", values.projects_root]]);
-  await record([68], () => blur("#si-device-name", values.device_name), [["device_name", values.device_name]]);
-  await record([69], () => blur("#si-cache-dir", values.cache_dir), [["cache_dir", values.cache_dir]]);
-  await record([70], () => page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" }).uncheck(),
-    [["close_to_tray", false]]);
-  await record([71], () => page.getByRole("checkbox", { name: "开机时启动 SiteIndex" }).check(),
-    [["launch_at_login", true]]);
-
-  await tab("浏览器与命令行");
-  await record([72, 73], () => blur("#si-browser-path", values.browser.executable_path),
-    [["browser.channel", "custom"], ["browser.executable_path", values.browser.executable_path]]);
-
-  await tab("通知");
-  await record([74], () => page.getByRole("checkbox", { name: "失败时", exact: true }).uncheck(),
-    [["notify.on_failure", false]]);
-  await record([75], () => page.getByRole("checkbox", { name: "成功时", exact: true }).check(),
-    [["notify.on_success", true]]);
-  await record([76], async () => {
+  const run = async (ids, { route = "#/settings", tab, action, verify, skillDirectory }) => {
+    let stage = "launch";
+    try {
+      const page = await launch();
+      stage = "UI save";
+      await page.evaluate((hash) => { window.location.hash = hash; }, route);
+      if (route === "#/settings") {
+        await page.locator("#si-device-name").waitFor();
+        if (tab) await page.getByRole("tab", { name: tab }).click();
+      } else await page.getByRole("button", { name: "添加已有项目" }).waitFor();
+      await action(page);
+      stage = "IPC readback";
+      await page.waitForFunction(async ({ paths, skillDirectory: directory }) => {
+        const settings = await window.siteindex.settings.get();
+        return paths.every(([key, expected]) => JSON.stringify(key.split(".").reduce((part, segment) =>
+          part?.[segment], settings)) === JSON.stringify(expected))
+          && (!directory || settings.skill_platforms.some((entry) => entry.dir === directory));
+      }, { paths: verify, skillDirectory }, { timeout: 12_000 });
+      await page.getByText("正在保存软件设置…").waitFor({ state: "hidden", timeout: 12_000 });
+      stage = "process exit";
+      await stop();
+      stage = "settings.json readback";
+      const disk = JSON.parse(await readFile(settingsPath, "utf8"));
+      for (const [key, expected] of verify) assert.deepEqual(at(disk, key), expected, `disk readback: ${key}`);
+      if (skillDirectory) assert(disk.skill_platforms.some((entry) => entry.dir === skillDirectory), "disk readback: skill_platforms");
+      for (const id of ids) rows.push({ id, status: "passed", evidence: "separate baseline UI session + IPC/file readback" });
+    } catch (error) {
+      await stop();
+      for (const id of ids) rows.push({ id, status: "failed", stage, errorType: error?.name ?? "Error" });
+      const failure = new Error(`baseline UI setting ${ids.join("/")} failed at ${stage}: ${error?.name ?? "Error"}`);
+      failure.uiRows = rows;
+      throw failure;
+    }
+  };
+  await run([67], { action: (page) => blur(page, "#si-projects-root", values.projects_root), verify: [["projects_root", values.projects_root]] });
+  await run([68], { action: (page) => blur(page, "#si-device-name", values.device_name), verify: [["device_name", values.device_name]] });
+  await run([69], { action: (page) => blur(page, "#si-cache-dir", values.cache_dir), verify: [["cache_dir", values.cache_dir]] });
+  await run([70], { action: (page) => page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" }).uncheck(), verify: [["close_to_tray", false]] });
+  await run([71], { action: (page) => page.getByRole("checkbox", { name: "开机时启动 SiteIndex" }).check(), verify: [["launch_at_login", true]] });
+  await run([72, 73], { tab: "浏览器与命令行", action: (page) => blur(page, "#si-browser-path", values.browser.executable_path),
+    verify: [["browser.channel", "custom"], ["browser.executable_path", values.browser.executable_path]] });
+  await run([74], { tab: "通知", action: (page) => page.getByRole("checkbox", { name: "失败时", exact: true }).uncheck(), verify: [["notify.on_failure", false]] });
+  await run([75], { tab: "通知", action: (page) => page.getByRole("checkbox", { name: "成功时", exact: true }).check(), verify: [["notify.on_success", true]] });
+  await run([76], { tab: "通知", action: async (page) => {
     await page.getByRole("checkbox", { name: "新缺货达到阈值时" }).check();
+    await page.waitForFunction(async () => (await window.siteindex.settings.get()).notify.oos_threshold === 0.12);
+    await page.getByText("正在保存软件设置…").waitFor({ state: "hidden" });
     await page.getByRole("spinbutton", { name: "新缺货阈值百分比" }).fill("12");
     await page.getByRole("spinbutton", { name: "新缺货阈值百分比" }).press("Tab");
-  }, [["notify.oos_threshold", 0.12]]);
-  await record([77], () => blur("#si-dingtalk-webhook", values.notify.dingtalk_webhook),
-    [["notify.dingtalk_webhook", values.notify.dingtalk_webhook]]);
-
-  await tab("Agent 平台");
-  try {
+  }, verify: [["notify.oos_threshold", 0.12]] });
+  await run([77], { tab: "通知", action: (page) => blur(page, "#si-dingtalk-webhook", values.notify.dingtalk_webhook),
+    verify: [["notify.dingtalk_webhook", values.notify.dingtalk_webhook]] });
+  await run([78], { tab: "Agent 平台", action: async (page) => {
     await page.getByRole("button", { name: "添加平台目录" }).click();
+    await page.waitForFunction(async () => (await window.siteindex.settings.get()).skill_platforms.some((entry) => entry.name === "新平台"));
+    await page.getByText("正在保存软件设置…").waitFor({ state: "hidden" });
     const input = page.getByRole("textbox", { name: "新平台 Skill 目录" }).last();
     await input.fill(values.skillDirectory);
     await input.press("Tab");
-    await page.waitForFunction(async (directory) => {
-      const settings = await window.siteindex.settings.get();
-      return settings.skill_platforms.some((entry) => entry.dir === directory);
-    }, values.skillDirectory, { timeout: 12_000 });
-    await page.getByText("正在保存软件设置…").waitFor({ state: "hidden", timeout: 12_000 });
-    rows.push({ id: 78, status: "passed", evidence: "baseline packaged UI save + IPC readback" });
-  } catch (error) {
-    rows.push({ id: 78, status: "failed", evidence: "baseline packaged UI save/readback failed",
-      errorType: error?.name ?? "Error" });
-  }
-
-  await page.evaluate(() => { window.location.hash = "#/"; });
-  inSettings = false;
-  await page.getByRole("button", { name: "添加已有项目" }).waitFor();
-  await record([79], async () => {
+  }, verify: [], skillDirectory: values.skillDirectory });
+  await run([79], { route: "#/", action: async (page) => {
     await page.getByRole("button", { name: "添加已有项目" }).click();
     await page.locator("#existing-project-path").fill(values.extraProject);
     await page.getByRole("dialog").getByRole("button", { name: "添加项目", exact: true }).click();
-  }, [["extra_projects", [values.extraProject]]]);
-  await record([80], async () => {
+  }, verify: [["extra_projects", [values.extraProject]]] });
+  await run([80], { route: "#/", action: async (page) => {
     await page.getByRole("button", { name: "Synthetic hidden project更多操作" }).click();
     await page.getByRole("button", { name: "移除项目", exact: true }).first().click();
     await page.getByRole("dialog").getByRole("button", { name: "移除项目", exact: true }).click();
-  }, [["hidden_projects", [values.hiddenProject]]]);
-
+  }, verify: [["hidden_projects", [values.hiddenProject]]] });
   rows.push({ id: 81, status: "pending-api", evidence: "no UI; settings.set/get and file readback in harness" });
-  await page.evaluate(() => { window.location.hash = "#/settings"; });
-  await page.locator("#si-device-name").waitFor();
-  const vault = await page.evaluate((origin) => window.siteindexWindow?.wordpressCredentials?.status(origin), values.wpOrigin);
-  if (vault?.state === "unavailable") {
-    rows.push({ id: 82, status: "unverified", evidence: "runner OS safe storage unavailable; no credential submitted" });
-  } else {
-    let credentialStage = "target-button";
-    try {
+  let stage = "vault status";
+  try {
+    const page = await launch();
+    await page.evaluate(() => { window.location.hash = "#/settings"; });
+    await page.locator("#si-device-name").waitFor();
+    const status = await page.evaluate((origin) => window.siteindexWindow?.wordpressCredentials?.status(origin), values.wpOrigin);
+    if (status?.state === "unavailable") {
+      rows.push({ id: 82, status: "unverified", evidence: "runner OS safe storage unavailable; no credential submitted" });
+      await stop();
+    } else {
+      stage = "credential UI save";
       await page.getByRole("heading", { name: "WordPress 图片托管凭据" }).waitFor();
       await page.getByRole("button", { name: "配置凭据" }).first().click();
-      credentialStage = "credential-form";
       await page.locator("#si-wp-username").fill("fixture-only-user");
       await page.locator("#si-wp-application-password").fill("fixture-only-password");
-      credentialStage = "save-status";
       await page.getByRole("button", { name: "保存到本机" }).click();
       await page.waitForFunction(async (origin) =>
         (await window.siteindexWindow?.wordpressCredentials?.status(origin))?.state === "configured",
       values.wpOrigin, { timeout: 12_000 });
-      rows.push({ id: 82, status: "passed", evidence: "baseline packaged UI save + vault status only" });
-    } catch (error) {
-      rows.push({ id: 82, status: "failed", evidence: "baseline packaged credential UI/status failed",
-        errorType: error?.name ?? "Error", stage: credentialStage });
+      await stop();
+      stage = "fresh vault status";
+      const fresh = await launch();
+      assert.equal((await fresh.evaluate((origin) =>
+        window.siteindexWindow?.wordpressCredentials?.status(origin), values.wpOrigin))?.state, "configured");
+      await stop();
+      rows.push({ id: 82, status: "passed", evidence: "baseline UI save + fresh process vault status only" });
     }
+  } catch (error) {
+    await stop();
+    rows.push({ id: 82, status: "failed", stage, errorType: error?.name ?? "Error" });
+    const failure = new Error(`baseline UI setting 82 failed at ${stage}: ${error?.name ?? "Error"}`);
+    failure.uiRows = rows;
+    throw failure;
   }
   rows.push({ id: 83, status: "unverified", evidence: "OS schedule registration deferred to independent-entry block" });
   return rows;
