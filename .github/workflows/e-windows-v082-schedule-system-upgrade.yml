@@ -1,0 +1,81 @@
+name: E · Windows system schedule upgrade acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - ".github/workflows/e-windows-v082-schedule-system-upgrade.yml"
+      - "packages/desktop/scripts/e-windows-v082-schedule-system-upgrade.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  system-schedule:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'gate3-approved')
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      CANDIDATE_RUN_ID: "45312779688"
+      CANDIDATE_ARTIFACT_ID: "14884245939"
+      CANDIDATE_SOURCE_SHA: ac9c6ff65da40b0828b32cf7ddf3de563a202233
+      CANDIDATE_ZIP_SHA256: bdd6ccd6e4b7615556fbd7a939d8d3ecfb938a2a89b4e12fe319a588819004ac
+      CANDIDATE_EXE_SHA256: 8dedcea2b0ef30e6d14ec006345a31bfd3b3fdb6f0c42cb876f6263f00ed12e6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify pinned Release run and artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ env.CANDIDATE_RUN_ID }}
+          ARTIFACT_ID: ${{ env.CANDIDATE_ARTIFACT_ID }}
+          SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          ZIP_SHA: ${{ env.CANDIDATE_ZIP_SHA256 }}
+        run: |
+          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or $env:ZIP_SHA -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'Full source and artifact hashes are required.' }
+          $repo = $env:GITHUB_REPOSITORY
+          $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
+          $run = gh api "repos/$repo/actions/runs/$env:RUN_ID" | ConvertFrom-Json
+          $artifact = gh api "repos/$repo/actions/artifacts/$env:ARTIFACT_ID" | ConvertFrom-Json
+          if ($run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.event -ne 'workflow_dispatch' -or $run.head_branch -ne 'c/version-0.8.2' -or $run.head_sha -cne $env:SOURCE_SHA) { throw 'Candidate Release run provenance mismatch.' }
+          if ($artifact.id -ne [long]$env:ARTIFACT_ID -or $artifact.name -ne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne [long]$env:RUN_ID -or $artifact.workflow_run.head_sha -cne $env:SOURCE_SHA) { throw 'Candidate artifact provenance mismatch.' }
+          if (([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -ne $env:ZIP_SHA.ToLowerInvariant()) { throw 'Candidate artifact ZIP digest mismatch.' }
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ env.CANDIDATE_ARTIFACT_ID }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CANDIDATE_RUN_ID }}
+          path: pinned-candidate
+          digest-mismatch: error
+      - name: Verify candidate and official baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE_SHA: ${{ env.CANDIDATE_EXE_SHA256 }}
+        run: |
+          $files = @(Get-ChildItem -LiteralPath pinned-candidate -Filter 'SiteIndex-Setup-*.exe' -File -Recurse)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'SiteIndex-Setup-0.8.2.exe') { throw 'Expected exactly one v0.8.2 EXE.' }
+          if ((Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash -ine $env:EXE_SHA) { throw 'Candidate EXE SHA256 mismatch.' }
+          gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir official-baseline
+      - name: Check #83 system tasks across overwrite upgrade
+        env:
+          SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
+          SITEINDEX_EXPECTED_CANDIDATE_SHA256: ${{ env.CANDIDATE_EXE_SHA256 }}
+        run: node packages/desktop/scripts/e-windows-v082-schedule-system-upgrade.mjs official-baseline/SiteIndex-Setup-0.8.0.exe pinned-candidate/SiteIndex-Setup-0.8.2.exe
+      - name: Publish synthetic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteindex-v082-schedule-system
+          path: siteindex-v082-schedule-system-results/
+          if-no-files-found: warn
