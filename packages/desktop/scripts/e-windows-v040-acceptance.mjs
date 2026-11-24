@@ -27,6 +27,7 @@ import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
 import { createHostedUpdateDiagnostics } from "./e-windows-v041-updater-diagnostics.mjs";
 import { attachCredentialIsolationOracle } from "./e-windows-v041-credential-oracle.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
+import { runV082PackagedFrameWalk } from "./e-windows-v082-page-walk.mjs";
 import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
 import {
   createWindowsProfileLayout,
@@ -1629,6 +1630,12 @@ async function goToW2Route(page, route) {
   await page.locator(".si-page").first().waitFor({ state: "visible", timeout: 15_000 });
 }
 
+async function goToV082Route(page, route) {
+  await page.evaluate((nextRoute) => { window.location.hash = `#${nextRoute}`; }, route);
+  await page.waitForFunction((nextRoute) => window.location.hash === `#${nextRoute}`, route, { timeout: 15_000 });
+  await page.locator(".si-page-frame").first().waitFor({ state: "visible", timeout: 15_000 });
+}
+
 async function clickProjectTab(page, label) {
   if (await page.locator(".si-drawer").isVisible().catch(() => false)) {
     await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
@@ -1972,8 +1979,8 @@ async function readW2SectionPageMetrics(page) {
       relativeTimeCount: (pageText.match(/今天|昨天/gu) ?? []).length,
       horizontalScrollerCount: scrollbars,
       documentHorizontalOverflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > innerWidth + 1,
-      overviewCardCount: [...root.querySelectorAll(".si-overview-kpis .si-kpi-card")].filter(visible).length,
-      overviewClickableCardCount: [...root.querySelectorAll(".si-overview-kpis a.si-kpi-card[href]")].filter(visible).length,
+      overviewCardCount: [...root.querySelectorAll(".si-overview-modules > .si-overview-module")].filter(visible).length,
+      overviewClickableCardCount: [...root.querySelectorAll(".si-overview-module a[href]")].filter(visible).length,
     };
   });
 }
@@ -1994,7 +2001,7 @@ async function runW2PackagedPageWalk(page) {
           await page.setViewportSize(viewport);
           await goToW2Route(page, `/p/${W2_PROJECT_ID}${route === "overview" ? "" : `/${route}`}`);
           if (tableId) await waitForW2Table(page, tableId);
-          else await page.locator(".si-overview-kpis .si-kpi-card").first().waitFor({ state: "visible", timeout: 20_000 });
+          else await page.locator(".si-overview-modules > .si-overview-module").first().waitFor({ state: "visible", timeout: 20_000 });
           const metrics = await readW2SectionPageMetrics(page);
           const viewportApplied = metrics?.viewport.width === viewport.width && metrics?.viewport.height === viewport.height;
           const visibleText = await page.locator("body").innerText();
@@ -2585,8 +2592,8 @@ async function testW2Pages(page, syntheticSite) {
   let overviewRoutePass = false;
   await attemptW2("Overview SEO attention link opens the filtered issues view", "ui", async () => {
     await goToW2Route(page, `/p/${W2_PROJECT_ID}`);
-    await page.locator(".si-overview-attention").waitFor({ state: "visible", timeout: 20_000 });
-    const link = page.getByRole("link", { name: "查看 SEO 问题" }).first();
+    await page.locator('.si-overview-module[aria-label="SEO"]').waitFor({ state: "visible", timeout: 20_000 });
+    const link = page.locator('.si-overview-seo-reminders a[href*="rule=title_missing"]').first();
     await link.waitFor({ state: "visible", timeout: 10_000 });
     await link.click();
     await waitForW2TableTotal(page, "seo.pageRows", W2_EXPECTED.issues - 6);
@@ -2833,6 +2840,9 @@ async function testW2Pages(page, syntheticSite) {
     const parentTotal = W2_EXPECTED.parentGroups + W2_EXPECTED.ungroupedSkus;
     const initial = await waitForW2TableTotal(page, tableId, parentTotal);
     const defaultParentSelected = await parentButton.getAttribute("aria-pressed") === "true";
+    const summaryMore = page.getByRole("button", { name: "更多摘要项" });
+    const summaryCollapsed = await summaryMore.count() > 0;
+    if (summaryCollapsed) await summaryMore.click();
     const summary = await page.evaluate(async (projectId) => {
       const management = (await window.siteindex.inventory.summary(projectId, 30)).product_management;
       const expected = management?.as_of ? [
@@ -2841,11 +2851,12 @@ async function testW2Pages(page, syntheticSite) {
         ["长期缺货", management.out_of_stock_7d_rows],
         ["状态波动", management.fluctuating_30d_rows],
       ].filter(([, value]) => value !== null) : [];
-      const visible = [...document.querySelectorAll('.si-summary-line[aria-label="产品管理摘要"] > button.si-summary-line-item')]
+      const visible = [...document.querySelectorAll('.si-summary-line[aria-label="产品管理摘要"] > button.si-summary-line-item, .si-summary-line-popover > button')]
         .map((item) => [item.querySelector("span")?.textContent?.trim(), Number(item.querySelector("strong")?.textContent?.replaceAll(",", ""))]);
       return { expected, visible, matched: visible.length >= 2 && visible.every(([label, value], index) =>
         label === expected[index]?.[0] && value === expected[index]?.[1]) };
     }, W2_PROJECT_ID);
+    if (summaryCollapsed) await page.keyboard.press("Escape");
     const rowIds = await readW2VisibleRowKeys(page, tableId);
     const childrenVisibleByDefault = rowIds.some((value) => /-CH-\d{2}$/u.test(value));
     const variantRow = table.locator('tbody tr[data-row-id="group-000:SYN-P000"]');
@@ -2934,7 +2945,7 @@ async function testW2Pages(page, syntheticSite) {
     await clickProjectTab(page, "内容");
     await waitForW2Table(page, "content.blog");
     const pagination = await exerciseW2Pagination(page, "content.blog", W2_EXPECTED.blogsBeforeRefresh);
-    const refreshButton = page.getByRole("button", { name: "重新抓取", exact: true });
+    const refreshButton = page.getByRole("button", { name: "重新抓取博客", exact: true });
     const refreshVisible = await refreshButton.isVisible();
     const keywordMappingVisible = await page.getByText("关键词映射", { exact: false }).count() > 0;
     return { passed: pagination.passed && refreshVisible && !keywordMappingVisible,
@@ -2942,7 +2953,7 @@ async function testW2Pages(page, syntheticSite) {
   });
 
   await attemptW2("Content refresh button runs against loopback-only synthetic pages and refreshes summary/table", "ui", async () => {
-    const refreshButton = page.getByRole("button", { name: "重新抓取", exact: true });
+    const refreshButton = page.getByRole("button", { name: "重新抓取博客", exact: true });
     await refreshButton.click();
     const busyStateObserved = await page.evaluate(() => {
       const button = Array.from(document.querySelectorAll("button")).find((item) => ["正在启动…", "抓取中…"].includes(item.textContent?.trim() ?? ""));
@@ -2987,6 +2998,21 @@ async function testW2Pages(page, syntheticSite) {
   });
 
   await runW2PackagedPageWalk(page);
+  await runV082PackagedFrameWalk(page, {
+    projectId: W2_PROJECT_ID,
+    outputDir: OUTPUT_DIR,
+    sensitiveValues: [APP_DATA_ROOT, TEST_ROOT, ...CREDENTIAL_CANARY_VALUES],
+    attempt: attemptW2,
+    goTo: goToV082Route,
+    startWooLoopback,
+    cleanupWizardProject: cleanupV082WizardProject,
+  });
+  const gate3Checks = report.w2Acceptance.checks.filter((check) => check.name.startsWith("G8.2-3 "));
+  report.gate3Visual = { expected: 54, recorded: gate3Checks.length,
+    passed: gate3Checks.filter((check) => check.status === "passed").length,
+    failed: gate3Checks.filter((check) => check.status === "failed").length };
+  assert(gate3Checks.length === 54, "G8.2-3 installed page evidence contains 27 routes at both viewports",
+    report.gate3Visual);
 
   report.w2Acceptance.checks.push({
     name: "Real project and real-site data behavior",
@@ -2995,6 +3021,28 @@ async function testW2Pages(page, syntheticSite) {
     evidence: { reason: "Hosted acceptance uses synthetic project files and loopback-only pages; no real project was included." },
   });
   await goToW2Route(page, "/");
+}
+
+async function cleanupV082WizardProject(page, folderName) {
+  if (!/^synthetic-visual-(?:1280|1920)$/u.test(folderName)) throw new Error("Unexpected synthetic wizard folder name.");
+  const projectPath = path.resolve(PROJECTS_ROOT, folderName);
+  if (!(await exists(projectPath))) return;
+  const [runnerRoot, projectRoot, project, info] = await Promise.all([
+    inspectContainedPath(RUNNER_TEMP, TEST_ROOT),
+    inspectContainedPath(TEST_ROOT, PROJECTS_ROOT),
+    inspectContainedPath(TEST_ROOT, projectPath),
+    lstat(projectPath),
+  ]);
+  if (!runnerRoot.withinRoot || !runnerRoot.noReparse || !projectRoot.withinRoot || !projectRoot.noReparse
+    || !project.withinRoot || !project.noReparse || !info.isDirectory()
+    || path.dirname(projectPath) !== path.resolve(PROJECTS_ROOT)) {
+    throw new Error("Refusing to clean a wizard project outside the runner-only synthetic project root.");
+  }
+  const registered = await page.evaluate(async (id) => (await window.siteindex.projects.list())
+    .some((entry) => entry.id === id), folderName);
+  if (registered) await page.evaluate((id) => window.siteindex.projects.remove(id), folderName);
+  await rm(projectPath, { recursive: true, force: false, maxRetries: 3, retryDelay: 100 });
+  if (await exists(projectPath)) throw new Error("Synthetic wizard project still exists after cleanup.");
 }
 
 async function safeCandidateScreenshot(page) {
@@ -3599,36 +3647,80 @@ async function runInstalledJob(page, request) {
     const api = window.siteindex;
     const completed = [];
     const progress = [];
+    const timeline = [];
+    const startedAt = performance.now();
+    const mark = (step) => timeline.push({ step, elapsedMs: Math.round(performance.now() - startedAt) });
     let expectedRunId = "";
     let resolveExpected;
     const onFinished = api.jobs.onFinished((result) => {
       completed.push(result);
+      if (input.job === "create") mark("init.finished");
       if (expectedRunId && result.runId === expectedRunId) resolveExpected?.(result);
     });
     const onProgress = api.jobs.onProgress((event) => progress.push(event.runId));
     let timeout;
     try {
-      const started = input.job === "create"
-        ? await api.projects.create(input.createInput)
-        : input.job === "media"
-          ? await api.media.prepare({ project: input.projectId, skus: [input.sku] })
-          : await api.jobs.run({ projectPath: input.projectPath, job: input.job, date: input.date ?? "2026-11-12" });
+      let started;
+      try {
+        if (input.job === "create") mark("projects.create.start");
+        started = input.job === "create"
+          ? await api.projects.create(input.createInput)
+          : input.job === "media"
+            ? await api.media.prepare({ project: input.projectId, skus: [input.sku] })
+            : await api.jobs.run({ projectPath: input.projectPath, job: input.job, date: input.date ?? "2026-11-12" });
+      } catch (cause) {
+        if (input.job !== "create") throw cause;
+        const error = cause && typeof cause === "object" ? cause : {};
+        mark("projects.create.error");
+        return { job: "init", createdId: null, status: "failed", exitCode: null,
+          code: String(error.code ?? "UNKNOWN"), message: String(error.message ?? cause), summary: null,
+          steps: [], progressEvents: 0, timeline };
+      }
+      if (input.job === "create") mark("projects.create.returned");
       expectedRunId = started.runId;
-      if (input.job === "create") await api.projects.updateConfig(started.id, { schedule: input.disabledSchedule });
+      const runningAfterCreate = input.job === "create" ? await api.jobs.running(started.id) : null;
       const alreadyFinished = completed.find((result) => result.runId === expectedRunId);
       const result = alreadyFinished ?? await new Promise((resolve, reject) => {
         resolveExpected = resolve;
         timeout = setTimeout(() => reject(new Error("Hosted acceptance Job did not finish before timeout.")), 180_000);
       });
+      const runningAfterInit = input.job === "create" ? await api.jobs.running(started.id) : null;
+      let schedule = null;
+      if (input.job === "create" && result.status === "ok") {
+        mark("schedule.read.start");
+        try {
+          const before = await api.schedule.get(started.id);
+          const beforeTasks = await api.schedule.listSystemTasks();
+          const registeredTasks = beforeTasks.filter((row) => row.projectId === started.id);
+          const registeredNames = new Set(registeredTasks.map((row) => row.taskName.toLowerCase()));
+          mark("schedule.save.start");
+          const saved = await api.schedule.save(started.id, input.disabledSchedule);
+          mark("schedule.save.finished");
+          const afterTasks = await api.schedule.listSystemTasks();
+          schedule = { beforeRegistered: before.registered,
+            beforeTaskCount: registeredTasks.length,
+            afterRegistered: saved.registered,
+            afterTaskCount: afterTasks.filter((row) => row.projectId === started.id
+              || registeredNames.has(row.taskName.toLowerCase())).length };
+        } catch (cause) {
+          const error = cause && typeof cause === "object" ? cause : {};
+          mark("schedule.cleanup.error");
+          schedule = { code: String(error.code ?? "UNKNOWN"), message: String(error.message ?? cause) };
+        }
+      }
       return {
         job: result.job,
         createdId: "id" in started ? started.id : null,
         status: result.status,
         exitCode: result.exitCode,
+        code: result.exitCode === 4 ? "LOCKED" : null,
+        message: result.errors?.join(" | ") ?? null,
+        summary: result.summary ?? null,
         counts: result.counts ?? {},
         steps: Array.isArray(result.steps) ? result.steps.map((step) => ({ key: step.key, status: step.status })) : [],
         mediaStatuses: Array.isArray(result.media_results) ? result.media_results.map((item) => item.status) : [],
         progressEvents: progress.filter((runId) => runId === expectedRunId).length,
+        ...(input.job === "create" ? { timeline, runningAfterCreate, runningAfterInit, schedule } : {}),
       };
     } finally {
       if (timeout) clearTimeout(timeout);
@@ -3718,8 +3810,8 @@ async function testInstalledLoopbackJobs(page, syntheticSite) {
   }
 }
 
-async function startWooLoopback() {
-  const workDir = path.join(TEST_ROOT, "synthetic-woo-loopback");
+async function startWooLoopback(suffix = "") {
+  const workDir = path.join(TEST_ROOT, `synthetic-woo-loopback${suffix ? `-${suffix}` : ""}`);
   await mkdir(workDir, { recursive: true });
   const modeFile = path.join(workDir, "mode.txt");
   await writeFile(modeFile, "store_api", "utf8");
@@ -3852,16 +3944,42 @@ async function testInstalledWooLoopback(page) {
       }
       const config = JSON.parse(await readFile(path.join(projectPath, "index/site.json"), "utf8"));
       const initSteps = Object.fromEntries(created.steps.map((step) => [step.key, step.status]));
+      const scheduleDisabledInConfig = Object.entries(disabledSchedule())
+        .filter(([key]) => key !== "options")
+        .every(([key]) => config.schedule?.[key]?.enabled === false);
+      const createDiagnostics = mode === "store_api" ? {
+        code: created.code ?? null,
+        message: created.message ? safeMessage(created.message) : null,
+        summary: created.summary ? safeMessage(created.summary) : null,
+        timeline: created.timeline ?? [],
+        runningAfterCreate: created.runningAfterCreate?.job ?? null,
+        runningAfterInit: created.runningAfterInit?.job ?? null,
+        lockFileAfter: (await exists(path.join(projectPath, "index", ".lock")))
+          || (await exists(path.join(projectPath, "_site-index", ".lock"))),
+        schedule: created.schedule ? {
+          ...created.schedule,
+          ...(created.schedule.message ? { message: safeMessage(created.schedule.message) } : {}),
+        } : null,
+        scheduleDisabledInConfig,
+      } : {};
       assert(created.createdId === projectId && created.job === "init" && created.status === "ok"
         && created.exitCode === 0 && (mode !== "store_api" || created.progressEvents > 0)
         && ["daily", "weekly", "views"].every((key) => initSteps[key] === "ok")
-        && initSteps.schedule === "skipped"
+        && (mode === "store_api"
+          ? initSteps.schedule === "ok"
+            && created.schedule?.beforeRegistered === true && created.schedule.beforeTaskCount > 0
+            && created.schedule.afterTaskCount === 0
+            && scheduleDisabledInConfig && createDiagnostics.lockFileAfter === false
+            && created.timeline.some((event) => event.step === "init.finished")
+            && created.timeline.findIndex((event) => event.step === "init.finished")
+              < created.timeline.findIndex((event) => event.step === "schedule.save.start")
+          : initSteps.schedule === "skipped")
         && config.crawl.auto_collect_products === true && config.crawl.feed_url.length === 0
         && config.categories.url_pattern === WOO_CATEGORY_RULE,
       `installed projects.create initializes no-Feed WooCommerce through packaged IPC (${mode})`, {
         status: created.status, exitCode: created.exitCode, progressEvents: created.progressEvents, initSteps,
         autoCollect: config.crawl.auto_collect_products, feedCount: config.crawl.feed_url.length,
-        multiPrefixCategories: config.categories.url_pattern === WOO_CATEGORY_RULE,
+        multiPrefixCategories: config.categories.url_pattern === WOO_CATEGORY_RULE, ...createDiagnostics,
       });
 
       const jobs = {};
