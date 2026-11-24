@@ -53,6 +53,22 @@ const exists = async (file) => { try { await access(file); return true; } catch 
 const hash = async (file) => createHash("sha256").update(await readFile(file)).digest("hex");
 const readConfigFile = async () => JSON.parse(await readFile(siteFile, "utf8"));
 const valueAt = (source, key) => key.split(".").reduce((value, part) => value?.[part], source);
+const valueType = (value) => value === undefined ? "missing" : Array.isArray(value) ? "array"
+  : value === null ? "null" : typeof value;
+function firstDifference(actual, expected, prefix = "") {
+  if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+    if (!actual || typeof actual !== "object" || Array.isArray(actual))
+      return { path: prefix || "<root>", expectedType: "object", actualType: valueType(actual) };
+    for (const [key, value] of Object.entries(expected)) {
+      const pathKey = prefix ? `${prefix}.${key}` : key;
+      const difference = firstDifference(actual[key], value, pathKey);
+      if (difference) return difference;
+    }
+    return null;
+  }
+  return JSON.stringify(actual) === JSON.stringify(expected) ? null
+    : { path: prefix || "<root>", expectedType: valueType(expected), actualType: valueType(actual) };
+}
 function containsExpected(actual, expected) {
   if (Array.isArray(expected)) return JSON.stringify(actual) === JSON.stringify(expected);
   if (expected && typeof expected === "object")
@@ -226,16 +242,30 @@ async function checkField(index) {
   });
   assert.equal(created.id, projectId);
   await projectPage(page);
+  const beforeJsonFile = index === 0 ? await readConfigFile() : null;
   report.stage = `#${id} baseline UI save`;
   const jsonExpected = index === 0 ? await editJson(page) : null;
   if (index === 0) row.uiSaved = true;
   else await editBasicField(page, index);
   row.baselineExitMode = await stop(true);
   report.stage = `#${id} exited baseline file readback`;
-  row.baselineFile = JSON.stringify(valueAt(await readConfigFile(), key)) === JSON.stringify(expected);
+  const savedFile = await readConfigFile();
+  row.baselineFile = JSON.stringify(valueAt(savedFile, key)) === JSON.stringify(expected);
   assert(row.baselineFile, `#${id} exited baseline file mismatch`);
-  if (jsonExpected) assert(containsExpected(await readConfigFile(), jsonExpected),
-    "JSON editor did not preserve all submitted keys in file");
+  if (jsonExpected) {
+    const difference = firstDifference(savedFile, jsonExpected);
+    if (difference) {
+      row.jsonFirstDifference = { ...difference, beforeType: valueType(valueAt(beforeJsonFile, difference.path)) };
+      const knownOmission = difference.path === "workspace_folders" && difference.actualType === "missing"
+        && row.jsonFirstDifference.beforeType === "missing";
+      assert(knownOmission, "JSON editor produced an unexplained field difference");
+      row.jsonNormalization = "legacy-workspace_folders-omitted";
+    }
+    const persistedExpected = { ...jsonExpected };
+    delete persistedExpected.workspace_folders;
+    assert(!firstDifference(savedFile, persistedExpected),
+      "JSON editor lost another submitted field after known normalization");
+  }
   page = await launch();
   report.stage = `#${id} new baseline process API readback`;
   await compareRow(page, "baseline", index);
