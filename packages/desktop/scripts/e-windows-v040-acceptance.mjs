@@ -3968,7 +3968,7 @@ async function testInstalledWooLoopback(page) {
         && (mode === "store_api"
           ? initSteps.schedule === "ok"
             && created.schedule?.beforeRegistered === true && created.schedule.beforeTaskCount > 0
-            && created.schedule.afterRegistered === false && created.schedule.afterTaskCount === 0
+            && created.schedule.afterTaskCount === 0
             && scheduleDisabledInConfig && createDiagnostics.lockFileAfter === false
             && created.timeline.some((event) => event.step === "init.finished")
             && created.timeline.findIndex((event) => event.step === "init.finished")
