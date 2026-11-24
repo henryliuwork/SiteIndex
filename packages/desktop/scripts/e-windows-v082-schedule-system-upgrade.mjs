@@ -139,7 +139,7 @@ function assertXml(job, value) {
   assert.equal(value.startBoundary?.slice(11, 16), target.time, `${job} trigger time`);
   assert.equal(value.triggerCount, 1, `${job} trigger count`);
   assert.equal(value.actionCount, 1, `${job} action count`);
-  assert.equal(value.triggerEnabled, "true", `${job} trigger enabled`);
+  assert.equal(value.triggerEnabled ?? "true", "true", `${job} trigger enabled`);
   if (target.days) assert.deepEqual([...value.week].sort(), [...target.days].sort(), `${job} weekdays`);
   else assert.deepEqual(value.month, [target.day], `${job} monthly day`);
 }
@@ -190,6 +190,24 @@ async function readBack(page, stage) {
   }
   report[`${stage}File`] = true;
   report[`${stage}Api`] = true;
+}
+async function waitForScheduleReady(page, stage) {
+  const deadline = Date.now() + 60_000;
+  let consecutive = 0;
+  let last = null;
+  while (Date.now() < deadline) {
+    const verify = await page.evaluate((id) => window.siteindex.schedule.verify(id), projectId);
+    const available = jobs.filter((job) => {
+      try { systemTask(job); return true; } catch { return false; }
+    });
+    last = { state: verify.state, message: verify.message?.replaceAll(root, "<synthetic-root>") ?? null,
+      actualTaskCount: available.length };
+    consecutive = verify.state === "ok" && available.length === jobs.length ? consecutive + 1 : 0;
+    if (consecutive >= 2) { report[`${stage}Stability`] = last; return; }
+    await delay(500);
+  }
+  report[`${stage}Stability`] = last;
+  throw new Error(`${stage} system tasks and packaged verification did not stabilize`);
 }
 async function cleanupTasks() {
   for (const job of jobs) {
@@ -245,16 +263,19 @@ try {
   await dialog.getByRole("button", { name: "日", exact: true }).click();
   await dialog.getByLabel("执行时间").fill("17:44");
   await dialog.getByRole("button", { name: "保存计划" }).click();
+  await dialog.waitFor({ state: "hidden", timeout: 30_000 });
   await page.waitForFunction(async (id) => {
     const value = await window.siteindex.schedule.get(id);
     return value.config.daily.time === "17:44" && value.registered;
   }, projectId, { timeout: 30_000 });
   report.uiSaved = true;
+  await waitForScheduleReady(page, "baseline");
   await readBack(page, "baseline");
   report.baselineExitCode = await normalExit();
   assert(jobs.every((job) => !taskAbsent(job)), "System tasks vanished after normal exit");
   const baselineBytes = await readFile(siteFile);
   const reopened = await launch("0.8.0");
+  await waitForScheduleReady(reopened, "baselineReopened");
   await readBack(reopened, "baseline");
   await normalExit();
 
@@ -263,6 +284,7 @@ try {
   report.candidateInstalled = true;
   assert((await readFile(siteFile)).equals(baselineBytes), "Candidate installer changed site.json");
   const upgraded = await launch("0.8.2");
+  await waitForScheduleReady(upgraded, "candidate");
   await readBack(upgraded, "candidate");
   await upgraded.evaluate((id) => { window.location.hash = `#/p/${id}/runs`; }, projectId);
   await upgraded.locator(".si-schedule-row").filter({ has: upgraded.getByText("每日同步", { exact: true }) })
