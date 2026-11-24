@@ -207,7 +207,10 @@ const basicActions = [
 async function editBasicField(page, index) {
   const [id, key, expected] = fields[index];
   const [label, kind] = basicActions[index - 1];
-  const control = page.getByLabel(label, { exact: true });
+  // v0.8.0 SelectField nests its select inside a label without an exact accessible name.
+  const control = kind === "select" ? page.locator(`#${id === 4 ? "basic" : "source"} label.si-config-field`)
+    .filter({ has: page.getByText(label, { exact: true }) }).locator("select")
+    : page.getByLabel(label, { exact: true });
   if (kind === "select") await control.selectOption(expected);
   else await control.fill(kind === "comma" ? expected.join(", ")
     : kind === "lines" ? expected.join("\n")
