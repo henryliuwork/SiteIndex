@@ -1,0 +1,60 @@
+name: E · Windows login startup version contrast
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/e-windows-v082-login-startup-contrast.yml"
+      - "packages/desktop/scripts/e-windows-v082-login-startup-contrast.mjs"
+      - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
+      - "packages/desktop/scripts/windows-appdata-redirect.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare-official-packages:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download official v0.7.6 and v0.8.0 installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.7.6 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.7.6.exe --dir installer-076
+          gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir installer-080
+      - name: Compare packaged UI and IPC without writing project files
+        env:
+          SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
+        run: node packages/desktop/scripts/e-windows-v082-login-startup-contrast.mjs installer-076/SiteIndex-Setup-0.7.6.exe installer-080/SiteIndex-Setup-0.8.0.exe
+      - name: Publish diagnosis, not product acceptance
+        if: always()
+        shell: pwsh
+        run: |
+          $path = 'siteindex-v082-login-startup-results/summary.json'
+          if (Test-Path -LiteralPath $path) {
+            $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '## #790 version attribution diagnostic'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value 'This workflow reports packaged product behavior; a successful diagnostic job is not a product acceptance result.'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Run: $($report.result)"
+            foreach ($entry in $report.versions) {
+              Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- v$($entry.version): $($entry.outcome); UI on=$($entry.on.fileValue), off=$($entry.off.fileValue); diagnostic IPC=$($entry.diagnostic.ipc.value)"
+            }
+            if ($report.failure) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Blocked: $($report.failure)" }
+          }
+      - name: Upload synthetic-only report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteindex-v082-login-startup-contrast
+          path: siteindex-v082-login-startup-results/
+          if-no-files-found: warn
