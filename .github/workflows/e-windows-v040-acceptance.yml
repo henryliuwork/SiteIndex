@@ -83,7 +83,7 @@ on:
         required: false
         type: string
       candidate_installer_sha256:
-        description: "提供候选安装包 URL 时必须填写 EXE SHA256"
+        description: "候选安装包 URL 或固定 v0.8.2 分支 artifact 的 EXE SHA256"
         required: false
         type: string
       candidate_workflow_run_id:
@@ -179,7 +179,7 @@ jobs:
           $candidateReleaseCommit = $env:CANDIDATE_RELEASE_COMMIT_INPUT.Trim().ToLowerInvariant()
           $candidateReleaseAssetId = $env:CANDIDATE_RELEASE_ASSET_ID_INPUT.Trim()
           $candidateReleaseAssetSha256 = $env:CANDIDATE_RELEASE_ASSET_SHA256_INPUT.Trim().ToLowerInvariant()
-          $candidateSha256 = $env:CANDIDATE_SHA256_INPUT.Trim()
+          $candidateSha256 = $env:CANDIDATE_SHA256_INPUT.Trim().ToLowerInvariant()
           $candidateUrl = $env:CANDIDATE_URL_INPUT.Trim()
           $candidateRunId = $env:CANDIDATE_RUN_ID_INPUT.Trim()
           $candidateArtifactId = $env:CANDIDATE_ARTIFACT_ID_INPUT.Trim()
@@ -226,7 +226,9 @@ jobs:
             if (-not $candidateArtifactId -or $candidateArtifactId -notmatch '^\d{1,20}$') { throw "A workflow-run artifact requires a numeric artifact ID." }
             if ($candidateArtifactSha256 -notmatch '^[0-9a-f]{64}$') { throw "A workflow-run artifact requires its 64-character SHA256 digest." }
             if ($candidateSourceCommit -notmatch '^[0-9a-f]{40}$') { throw "A workflow-run artifact requires its 40-character source commit SHA." }
-            if ($candidateSha256) { throw "Do not supply candidate_installer_sha256 in workflow-run artifact mode; the artifact digest and EXE hash are recorded separately." }
+            if ($candidateSha256 -and $candidateSourceCommit -cne 'e60447a079e95f6cfcbf259527f7e9a84098e439') {
+              throw "Only the fixed v0.8.2 branch artifact may supply an EXE SHA256 in workflow-run artifact mode."
+            }
           } elseif ($candidateSha256 -and -not $candidateUrl) {
             throw "A candidate installer SHA256 requires a candidate installer URL."
           }
@@ -320,6 +322,16 @@ jobs:
           $actualDigest = ([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant()
 
           if ($sourceRun.workflow_id -ne $releaseWorkflow.id) { throw "Candidate run did not use the repository Release workflow." }
+          if ($version -ceq '0.8.2' -and $sourceRun.head_branch -ceq 'c/version-0.8.2') {
+            $fixedInputs = @(
+              ($runId -eq 45209864844)
+              ($artifactId -eq 14835333939)
+              ($expectedSource -ceq 'e60447a079e95f6cfcbf259527f7e9a84098e439')
+              ($expectedDigest -ceq '46d8d18d41f3ed3788ac0c373f361d1a6884d7a596bcb3711f02582dfa177979')
+              ($env:SITEINDEX_EXPECTED_CANDIDATE_SHA256 -ceq '890847e95486764f9ddd868e456d96299c8d94afaa706393e71bae6aa010c0fd')
+            )
+            if ($fixedInputs -contains $false) { throw 'Fixed v0.8.2 candidate identifiers or digests do not match.' }
+          }
           $tagRef = $null
           $tagCommit = ''
           if ($sourceRun.event -ceq 'push' -and $sourceRun.head_branch -ceq "v$version") {
@@ -366,6 +378,9 @@ jobs:
           $installers = @(Get-ChildItem -LiteralPath $artifactDirectory -Filter "SiteIndex-Setup-*.exe" -File -Recurse)
           if ($installers.Count -ne 1 -or $installers[0].FullName -ne $installer) { throw "Candidate artifact must contain exactly one installer for the requested version." }
           $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($env:SITEINDEX_EXPECTED_CANDIDATE_SHA256 -and $actual -cne $env:SITEINDEX_EXPECTED_CANDIDATE_SHA256.ToLowerInvariant()) {
+            throw "Candidate artifact EXE SHA256 differs from the supplied digest."
+          }
           "SITEINDEX_CANDIDATE_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
           Write-Output "Verified original artifact EXE $installerName SHA256 $actual."
       - name: Verify and download pinned baseline Release installer

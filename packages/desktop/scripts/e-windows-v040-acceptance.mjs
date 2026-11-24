@@ -27,6 +27,7 @@ import { waitForUpdatedWindowsApp } from "./e-windows-v041-reconnect.mjs";
 import { createHostedUpdateDiagnostics } from "./e-windows-v041-updater-diagnostics.mjs";
 import { attachCredentialIsolationOracle } from "./e-windows-v041-credential-oracle.mjs";
 import { makeW2SyntheticFixture, W2_SYNTHETIC_EXPECTED } from "./e-windows-v040-synthetic-fixture.mjs";
+import { runV082PackagedFrameWalk } from "./e-windows-v082-page-walk.mjs";
 import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
 import {
   createWindowsProfileLayout,
@@ -1629,6 +1630,12 @@ async function goToW2Route(page, route) {
   await page.locator(".si-page").first().waitFor({ state: "visible", timeout: 15_000 });
 }
 
+async function goToV082Route(page, route) {
+  await page.evaluate((nextRoute) => { window.location.hash = `#${nextRoute}`; }, route);
+  await page.waitForFunction((nextRoute) => window.location.hash === `#${nextRoute}`, route, { timeout: 15_000 });
+  await page.locator(".si-page-frame").first().waitFor({ state: "visible", timeout: 15_000 });
+}
+
 async function clickProjectTab(page, label) {
   if (await page.locator(".si-drawer").isVisible().catch(() => false)) {
     await page.getByRole("button", { name: "关闭抽屉", exact: true }).click();
@@ -2987,6 +2994,20 @@ async function testW2Pages(page, syntheticSite) {
   });
 
   await runW2PackagedPageWalk(page);
+  await runV082PackagedFrameWalk(page, {
+    projectId: W2_PROJECT_ID,
+    outputDir: OUTPUT_DIR,
+    sensitiveValues: [APP_DATA_ROOT, TEST_ROOT, ...CREDENTIAL_CANARY_VALUES],
+    attempt: attemptW2,
+    goTo: goToV082Route,
+    startWooLoopback,
+  });
+  const gate3Checks = report.w2Acceptance.checks.filter((check) => check.name.startsWith("G8.2-3 "));
+  report.gate3Visual = { expected: 54, recorded: gate3Checks.length,
+    passed: gate3Checks.filter((check) => check.status === "passed").length,
+    failed: gate3Checks.filter((check) => check.status === "failed").length };
+  assert(gate3Checks.length === 54, "G8.2-3 installed page evidence contains 27 routes at both viewports",
+    report.gate3Visual);
 
   report.w2Acceptance.checks.push({
     name: "Real project and real-site data behavior",
@@ -3718,8 +3739,8 @@ async function testInstalledLoopbackJobs(page, syntheticSite) {
   }
 }
 
-async function startWooLoopback() {
-  const workDir = path.join(TEST_ROOT, "synthetic-woo-loopback");
+async function startWooLoopback(suffix = "") {
+  const workDir = path.join(TEST_ROOT, `synthetic-woo-loopback${suffix ? `-${suffix}` : ""}`);
   await mkdir(workDir, { recursive: true });
   const modeFile = path.join(workDir, "mode.txt");
   await writeFile(modeFile, "store_api", "utf8");
