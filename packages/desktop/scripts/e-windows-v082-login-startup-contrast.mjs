@@ -129,7 +129,10 @@ async function toggle(state, enabled) {
   const ui = { beforeChecked: await checkbox.isChecked(), disabled: await checkbox.isDisabled(),
     scheduleMode: before.schedule.mode, hasProjects: false, actionError: null, toast: [] };
   try {
-    enabled ? await checkbox.check({ timeout: 10_000 }) : await checkbox.uncheck({ timeout: 10_000 });
+    assert.equal(ui.beforeChecked, !enabled, "Checkbox does not have the expected initial state");
+    await checkbox.click({ timeout: 10_000 });
+    await page.waitForFunction(async (expected) =>
+      (await window.siteindex.settings.get()).launch_at_login === expected, enabled, { timeout: 10_000 });
   } catch (error) { ui.actionError = sanitize(error?.message ?? error, state.layout); }
   await delay(1000);
   ui.afterChecked = await checkbox.isChecked().catch(() => null);
@@ -198,10 +201,12 @@ async function runVersion(packageInfo, installer, index) {
     result.on = await toggle(state, true);
     result.picker = "cancelled via native dialog";
     result.off = await toggle(state, false);
-    const onOk = !result.on.ui.actionError && result.on.ipc.value === true && result.on.fileValue === true
-      && result.on.registry.length > 0;
-    const offOk = !result.off.ui.actionError && result.off.ipc.value === false && result.off.fileValue === false
-      && result.off.registry.length === 0;
+    const onOk = !result.on.ui.actionError && result.on.ui.afterChecked === true
+      && result.on.ui.toast.includes("已保存") && result.on.ipc.value === true
+      && result.on.fileValue === true && result.on.registry.length > 0;
+    const offOk = !result.off.ui.actionError && result.off.ui.afterChecked === false
+      && result.off.ui.toast.includes("已保存") && result.off.ipc.value === false
+      && result.off.fileValue === false && result.off.registry.length === 0;
     if (!onOk || !offOk) {
       result.outcome = "reproduced";
       // Use a separate clean profile for IPC-only diagnosis, without writing config files directly.
@@ -222,6 +227,7 @@ async function cleanupVersion(state, initial) {
   if (state.installed && await exists(path.join(state.layout.installDir, "Uninstall SiteIndex.exe"))) {
     command(path.join(state.layout.installDir, "Uninstall SiteIndex.exe"), ["/S"], { env: env(state.layout) });
   }
+  assert.deepEqual(runEntries(state.exe), initial, "SiteIndex startup item differs from pre-test state after uninstall");
   if (state.redirect?.hasChanges && !state.redirect.restored)
     assert(state.redirect.restore(), "AppData registry redirect could not be restored");
 }
@@ -263,8 +269,17 @@ try {
       report.cleanupError = sanitize(error?.message ?? error, current.layout);
     }
   }
+  if (report.result === "completed" && !report.cleanupError) {
+    try {
+      const relative = path.relative(path.resolve(process.env.RUNNER_TEMP), path.resolve(root));
+      assert(relative && !relative.startsWith("..") && !path.isAbsolute(relative), "Cleanup target escaped runner temp");
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+    } catch (error) {
+      if (error?.code === "EBUSY") report.cleanupWarning = "Installed directory remained temporarily busy on disposable hosted runner";
+      else report.cleanupError = sanitize(error?.message ?? error, { root });
+    }
+  }
   await mkdir(reportDir, { recursive: true });
   await writeFile(path.join(reportDir, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
-  if (report.result === "completed" && !report.cleanupError) await rm(root, { recursive: true, force: true });
 }
 if (report.result !== "completed" || report.cleanupError) process.exitCode = 1;
