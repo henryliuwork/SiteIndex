@@ -174,7 +174,7 @@ async function compareRow(page, stage, index) {
   assert(row[`${stage}File`] && row[`${stage}Api`], `#${id} ${key} ${stage} readback mismatch`);
 }
 const actions = [
-  ["crawl", "数据修正（overrides，JSON 对象）", "textarea", (v) => JSON.stringify(v)],
+  ["source", "数据修正（overrides，JSON 对象）", "textarea", (v) => JSON.stringify(v)],
   ["crawl", "请求间隔（毫秒）", "input"],
   ["crawl", "每周最多页面", "input"],
   ["crawl", "每周抓取产品页 SEO", "checkbox"],
