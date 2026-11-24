@@ -1,0 +1,91 @@
+name: E · Windows #71 version contrast and candidate upgrade
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/e-windows-v082-login-startup-contrast.yml"
+      - "packages/desktop/scripts/e-windows-v082-login-startup-contrast.mjs"
+      - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
+      - "packages/desktop/scripts/windows-appdata-redirect.mjs"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  compare-official-packages:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download official v0.7.6 and v0.8.0 installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.7.6 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.7.6.exe --dir installer-076
+          gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir installer-080
+      - name: Verify fixed branch candidate provenance
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $repo = $env:GITHUB_REPOSITORY
+          $run = gh api "repos/$repo/actions/runs/45209864844" | ConvertFrom-Json
+          $artifact = gh api "repos/$repo/actions/artifacts/14835333939" | ConvertFrom-Json
+          $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
+          $source = 'e60447a079e95f6cfcbf259527f7e9a84098e439'
+          $digest = '46d8d18d41f3ed3788ac0c373f361d1a6884d7a596bcb3711f02582dfa177979'
+          if ($run.id -ne 45209864844 -or $run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.event -ne 'workflow_dispatch' -or $run.head_branch -cne 'c/version-0.8.2' -or $run.head_sha -cne $source) { throw 'Fixed candidate Release run provenance mismatch.' }
+          if ($artifact.id -ne 14835333939 -or $artifact.name -cne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne $run.id -or $artifact.workflow_run.head_sha -cne $source -or ([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -cne $digest) { throw 'Fixed candidate artifact provenance or ZIP digest mismatch.' }
+      - name: Download exact fixed candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: 14835333939
+          run-id: 45209864844
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: candidate-installer
+          digest-mismatch: error
+      - name: Verify fixed candidate EXE SHA256
+        shell: pwsh
+        run: |
+          $installer = 'candidate-installer/SiteIndex-Setup-0.8.2.exe'
+          if (-not (Test-Path -LiteralPath $installer)) { throw 'Pinned 0.8.2 candidate EXE missing.' }
+          $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne '890847e95486764f9ddd868e456d96299c8d94afaa706393e71bae6aa010c0fd') { throw 'Pinned candidate EXE SHA256 mismatch.' }
+      - name: Compare official packages and verify fixed candidate UI after overwrite
+        env:
+          SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
+        run: node packages/desktop/scripts/e-windows-v082-login-startup-contrast.mjs installer-076/SiteIndex-Setup-0.7.6.exe installer-080/SiteIndex-Setup-0.8.0.exe candidate-installer/SiteIndex-Setup-0.8.2.exe
+      - name: Publish narrow #71 result
+        if: always()
+        shell: pwsh
+        run: |
+          $path = 'siteindex-v082-login-startup-results/summary.json'
+          if (Test-Path -LiteralPath $path) {
+            $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value '## #790 version attribution and fixed 0.8.2 candidate #71'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value 'This checks only login startup #71; it is not the full 83-setting Gate3 matrix.'
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Run: $($report.result)"
+            foreach ($entry in $report.versions) {
+              Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- v$($entry.version): $($entry.outcome); UI on=$($entry.on.fileValue), off=$($entry.off.fileValue); diagnostic IPC=$($entry.diagnostic.ipc.value)"
+            }
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Fixed v0.8.2 candidate: $($report.candidate.outcome); stage=$($report.candidate.stage); error=$($report.candidate.error)"
+            if ($report.failure) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Blocked: $($report.failure)" }
+          }
+      - name: Upload synthetic-only report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteindex-v082-login-startup-contrast
+          path: siteindex-v082-login-startup-results/
+          if-no-files-found: warn
