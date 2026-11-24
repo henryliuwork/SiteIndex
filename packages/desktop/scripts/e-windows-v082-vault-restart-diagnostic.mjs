@@ -22,6 +22,7 @@ const root = await mkdtemp(path.join(process.env.RUNNER_TEMP, "siteindex-794-"))
 const report = { result: "pending", versions: [], failure: null };
 const reportDir = path.resolve("siteindex-v082-vault-diagnostic-results");
 let active;
+let cleanupBlocked = false;
 
 function call(file, args, options = {}) {
   const result = spawnSync(file, args, { encoding: "utf8", windowsHide: true, timeout: 300_000, ...options });
@@ -60,14 +61,35 @@ function cancelPicker(pid) {
     { encoding: "utf8", windowsHide: true, timeout: 45_000 });
   if (result.status !== 0) throw new Error(`Native picker cancellation failed (${result.status ?? "unknown"})`);
 }
-async function stop(state) {
+async function exitNormally(state) {
+  assert(state.process, "No packaged app process to close");
+  state.exitAttempted = true;
+  const started = Date.now();
+  const code = `
+    Add-Type -Namespace SI -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);'
+    $target = Get-Process -Id ${state.process.pid} -ErrorAction SilentlyContinue
+    if (-not $target -or $target.Path -ine $env:SITEINDEX_ACCEPTANCE_INSTALL_EXE -or $target.MainWindowHandle -eq 0) { exit 2 }
+    if (-not [SI.Native]::PostMessage($target.MainWindowHandle, 16, [IntPtr]::Zero, [IntPtr]::Zero)) { exit 3 }
+  `;
+  call("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", code],
+    { env: { ...env(state.layout), SITEINDEX_ACCEPTANCE_INSTALL_EXE: state.exe }, timeout: 20_000 });
+  const deadline = Date.now() + 30_000;
+  while (state.process.exitCode === null && Date.now() < deadline) await delay(250);
+  assert(state.process.exitCode !== null, "Normal WM_CLOSE did not exit the packaged app");
+  assert.equal(state.process.exitCode, 0, "Packaged app exited with a nonzero code after WM_CLOSE");
+  let remainingCount = 1;
+  const childrenDeadline = Date.now() + 10_000;
+  while (remainingCount && Date.now() < childrenDeadline) {
+    const remaining = call("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      "$expected = [IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE); @(Get-CimInstance Win32_Process -Filter \"Name = 'SiteIndex.exe'\" | Where-Object { $_.ExecutablePath -ieq $expected }).Count"],
+    { env: { ...env(state.layout), SITEINDEX_ACCEPTANCE_INSTALL_EXE: state.exe }, timeout: 20_000 });
+    remainingCount = Number(remaining.stdout.trim());
+    if (remainingCount) await delay(250);
+  }
+  assert.equal(remainingCount, 0, "Packaged app still has running processes after WM_CLOSE");
   if (state.browser) { await state.browser.close().catch(() => undefined); state.browser = null; }
-  if (state.process) { state.process.kill(); state.process = null; }
-  if (!await exists(state.exe)) return;
-  call("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    "$expected = [IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE); Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $expected } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
-  { env: { ...env(state.layout), SITEINDEX_ACCEPTANCE_INSTALL_EXE: state.exe }, timeout: 20_000 });
-  await delay(500);
+  state.process = null;
+  return Date.now() - started;
 }
 async function launch(state) {
   const endpoint = `http://127.0.0.1:${state.port}`;
@@ -75,6 +97,7 @@ async function launch(state) {
   state.process = spawn(state.exe, [`--remote-debugging-port=${state.port}`, "--disable-gpu"], {
     cwd: state.layout.root, env: env(state.layout), windowsHide: true, stdio: "ignore",
   });
+  state.exitAttempted = false;
   state.process.on("error", () => undefined);
   cancelPicker(state.process.pid);
   const deadline = Date.now() + 60_000;
@@ -104,10 +127,12 @@ async function vaultFileState(layout) {
 async function checkVersion(version, expectedHash, installer, index) {
   const layout = createWindowsProfileLayout(path.join(root, `version-${version}`));
   const state = { layout, exe: path.join(layout.installDir, "SiteIndex.exe"), port: 9550 + index,
-    process: null, browser: null, redirect: null, installed: false };
+    process: null, browser: null, redirect: null, installed: false, exitAttempted: false };
   active = state;
   const row = { version, exeSha256: null, initialStatus: null, sameSessionStatus: null,
-    restartedStatus: null, safeStorageAvailable: null, vaultAfterSave: null,
+    restartedStatus: null, safeStorageAvailable: null, safeStorageAfterRestart: null,
+    closeToTrayUi: null, closeToTrayIpc: null, normalExitMs: null,
+    normalExitConfirmed: false, vaultAfterSave: null,
     vaultAfterRestart: null, uiError: null, outcome: "pending" };
   report.versions.push(row);
   row.exeSha256 = createHash("sha256").update(await readFile(installer)).digest("hex");
@@ -133,13 +158,22 @@ async function checkVersion(version, expectedHash, installer, index) {
     assert.equal(created, "synthetic-vault-project");
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "WordPress 图片托管凭据" }).waitFor();
+    const trayToggle = page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" });
+    await trayToggle.uncheck();
+    await page.waitForFunction(async () => (await window.siteindex.settings.get()).close_to_tray === false);
+    row.closeToTrayUi = await trayToggle.isChecked();
+    row.closeToTrayIpc = (await page.evaluate(() => window.siteindex.settings.get())).close_to_tray;
+    assert(row.closeToTrayUi === false && row.closeToTrayIpc === false,
+      "Normal window close setting did not save through packaged UI");
     row.initialStatus = (await page.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
     row.safeStorageAvailable = row.initialStatus !== "unavailable";
     if (!row.safeStorageAvailable) {
       row.vaultAfterSave = await vaultFileState(layout);
-      await stop(state);
+      row.normalExitMs = await exitNormally(state);
+      row.normalExitConfirmed = true;
       const fresh = await launch(state);
       row.restartedStatus = (await fresh.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
+      row.safeStorageAfterRestart = row.restartedStatus !== "unavailable";
       row.vaultAfterRestart = await vaultFileState(layout);
       row.outcome = "unavailable";
       return row;
@@ -154,17 +188,27 @@ async function checkVersion(version, expectedHash, installer, index) {
     } catch (error) { row.uiError = safe(error, layout); }
     row.sameSessionStatus = (await page.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
     row.vaultAfterSave = await vaultFileState(layout);
-    await stop(state);
+    row.normalExitMs = await exitNormally(state);
+    row.normalExitConfirmed = true;
     const fresh = await launch(state);
     row.restartedStatus = (await fresh.evaluate((site) => window.siteindexWindow.wordpressCredentials.status(site), origin)).state;
+    row.safeStorageAfterRestart = row.restartedStatus !== "unavailable";
     row.vaultAfterRestart = await vaultFileState(layout);
     row.outcome = row.sameSessionStatus === "configured" && row.restartedStatus === "configured" && !row.uiError
       && row.vaultAfterSave.exists && row.vaultAfterRestart.exists ? "passed" : "reproduced";
     return row;
   } catch (error) { row.outcome = "blocked"; row.error = safe(error, layout); return row; }
   finally {
-    await stop(state).catch(() => undefined);
-    if (state.installed && await exists(path.join(layout.installDir, "Uninstall SiteIndex.exe")))
+    if (state.process && !state.exitAttempted) {
+      try { await exitNormally(state); }
+      catch (error) { row.outcome = "blocked"; row.cleanupError = safe(error, layout); }
+    }
+    if (state.process) {
+      cleanupBlocked = true;
+      row.outcome = "blocked";
+      row.cleanupError ??= "Packaged app did not exit normally";
+    }
+    if (!state.process && state.installed && await exists(path.join(layout.installDir, "Uninstall SiteIndex.exe")))
       call(path.join(layout.installDir, "Uninstall SiteIndex.exe"), ["/S"], { env: env(layout) });
     if (state.redirect?.hasChanges && !state.redirect.restored)
       assert(state.redirect.restore(), "AppData redirect restore failed");
@@ -174,13 +218,13 @@ async function checkVersion(version, expectedHash, installer, index) {
 try {
   for (let index = 0; index < versions.length; index++)
     await checkVersion(versions[index][0], versions[index][1], installers[index], index);
-  report.result = "completed"; // Product findings are reported per version; this is a diagnostic run.
+  report.result = report.versions.every((row) => row.outcome !== "blocked") ? "completed" : "blocked";
 } catch (error) { report.result = "blocked"; report.failure = safe(error, active?.layout ?? { root }); }
 finally {
   await mkdir(reportDir, { recursive: true });
   await writeFile(path.join(reportDir, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
   const relative = path.relative(path.resolve(process.env.RUNNER_TEMP), path.resolve(root));
-  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative))
+  if (!cleanupBlocked && relative && !relative.startsWith("..") && !path.isAbsolute(relative))
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }).catch(() => undefined);
 }
 if (report.result !== "completed") process.exitCode = 1;
