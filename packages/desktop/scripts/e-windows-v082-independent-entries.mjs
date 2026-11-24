@@ -46,7 +46,7 @@ async function readFileValue(id) {
   if (id <= 64) {
     const markdown = await readFile(targetFile, "utf8");
     const title = sectionTitles[id];
-    const match = markdown.match(new RegExp(`(?:^|\\n)## ${title}\\r?\\n([\\s\\S]*?)(?=\\r?\\n## |$)`, "u"));
+    const match = markdown.match(new RegExp(`(?:^|\\n)## ${title}\\r?\\n([\\s\\S]*?)(?=\\r?\\n(?:## |<!-- siteindex:auto:start\\b)|$)`, "u"));
     return match?.[1].trim();
   }
   const states = (await readFile(targetFile, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
