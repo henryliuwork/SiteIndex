@@ -31,7 +31,9 @@ const report = { result: "pending", stage: "prepare", baselineSha256: null,
   candidateSha256: null, rows: fields.map(([id, key]) => ({ id, key, uiSaved: false,
     baselineExitMode: null, baselineFile: false, baselineApi: false, candidateInstalled: false,
     installerByteIdentical: false, candidateFile: false, candidateApi: false,
-    candidateUi: false, historyPreserved: null, candidateExitMode: null, outcome: "unverified" })), failure: null };
+    candidateUi: false, historyPreserved: null, candidateExitMode: null, outcome: "unverified" })),
+  workspaceMissingTitle: { templateMissing: false, uiSaved: false, exitMode: null,
+    file: false, api: false, ui: false, finalExitMode: null }, failure: null };
 let redirect; let installed = false; let appProcess; let browser;
 
 const exists = async (file) => { try { await access(file); return true; } catch { return false; } };
@@ -41,14 +43,13 @@ const blockKeys = { 62: "overview", 63: "focus", 64: "rules" };
 const todoFixture = { url: "https://config.example.test/synthetic-page", rule: "title_missing",
   severity: "mid", detail: "Synthetic missing title", status: "open",
   first_seen: "2026-11-24", last_seen: "2026-11-24" };
+function readReadmeSection(markdown, title) {
+  const match = markdown.match(new RegExp(`(?:^|\\n)## ${title}\\r?\\n([\\s\\S]*?)(?=\\r?\\n(?:## |<!-- siteindex:auto:start\\b)|$)`, "u"));
+  return match?.[1].trim();
+}
 async function readFileValue(id) {
   if (id === 61) return JSON.parse(await readFile(targetFile, "utf8")).device_id;
-  if (id <= 64) {
-    const markdown = await readFile(targetFile, "utf8");
-    const title = sectionTitles[id];
-    const match = markdown.match(new RegExp(`(?:^|\\n)## ${title}\\r?\\n([\\s\\S]*?)(?=\\r?\\n(?:## |<!-- siteindex:auto:start\\b)|$)`, "u"));
-    return match?.[1].trim();
-  }
+  if (id <= 64) return readReadmeSection(await readFile(targetFile, "utf8"), sectionTitles[id]);
   const states = (await readFile(targetFile, "utf8")).trim().split(/\r?\n/u).map((line) => JSON.parse(line));
   const state = states.find((item) => item.dedupe_key === todoKey);
   return id === 65 ? state?.status : state?.note;
@@ -74,6 +75,24 @@ function environment() {
 function safe(error) {
   return String(error?.message ?? error ?? "").replaceAll(root, "<isolated>")
     .replaceAll(process.cwd(), "<checkout>").replaceAll(/https?:\/\/[^\s"']+/gu, "<synthetic-url>").slice(0, 1200);
+}
+async function createLegacyReadmeFixture(projectDir) {
+  const template = await readFile(path.join(layout.installDir, "resources/templates/project/README.md"), "utf8");
+  assert(template.includes("## 工作规则与偏好"), "Official v0.8.0 legacy README lacks rules heading");
+  await mkdir(path.join(projectDir, "index"), { recursive: true });
+  const job = { enabled: false, days: [], time: "00:00" };
+  const config = {
+    schema_version: "1.0", domain: "config.example.test", base_url: "https://config.example.test",
+    platform: "woocommerce", currency: "USD", locale: "en-US", timezone: "UTC", markets: ["US"],
+    brand: { name: "Synthetic Legacy Project", tagline: "Synthetic acceptance fixture" },
+    sitemaps: [], crawl: { adapter: "gmc_feed", feed_url: [], rate_limit_ms: 200 },
+    categories: { mode: "feed" }, workspace_folders: [],
+    schedule: { daily: { ...job }, validate: { ...job }, weekly: { ...job }, readme: { ...job },
+      monthly: { ...job, day_of_month: 1 },
+      options: { wake_to_run: false, run_if_missed: false, notify_on_failure: false, validate_after_sync: false } },
+  };
+  await writeFile(path.join(projectDir, "index/site.json"), `${JSON.stringify(config, null, 2)}\n`);
+  await writeFile(path.join(projectDir, "README.md"), template); // Only the official template; #64 value is saved through the UI.
 }
 function call(file, args, options = {}) {
   const result = spawnSync(file, args, { encoding: "utf8", windowsHide: true, timeout: 300_000, ...options });
@@ -160,10 +179,10 @@ async function launch() {
   }
   return page;
 }
-async function route(page, id) {
+async function route(page, id, project = projectId) {
   const tail = id === 61 ? "runs" : id <= 64 ? "readme" : "todos";
   await page.evaluate(({ project, pageName }) => { window.location.hash = `#/p/${project}/${pageName}`; },
-    { project: projectId, pageName: tail });
+    { project, pageName: tail });
   await page.waitForFunction((pageName) => window.location.hash.endsWith(`/${pageName}`), tail);
 }
 async function compareRow(page, stage, index) {
@@ -184,6 +203,16 @@ async function openTodo(page) {
   await page.getByText(item.finding.title, { exact: true }).first().click();
   await page.getByRole("combobox", { name: "更新待办状态" }).waitFor();
 }
+async function saveReadmeUi(page, id, project, expected) {
+  await route(page, id, project);
+  const card = page.locator(".si-readme-user-card");
+  if (id === 64) await card.getByRole("button", { name: "编辑", exact: true }).click();
+  await card.getByRole("textbox", { name: sectionTitles[id] }).fill(expected);
+  await card.getByRole("button", { name: "保存", exact: true }).click();
+  await page.waitForFunction(async ({ project, block, value }) =>
+    (await window.siteindex.readme.get(project)).user_blocks[block] === value,
+  { project, block: blockKeys[id], value: expected });
+}
 async function editField(page, index) {
   const [id, , expected] = fields[index];
   if (id === 61) {
@@ -192,14 +221,7 @@ async function editField(page, index) {
     await page.waitForFunction(async (project) => (await window.siteindex.runner.get(project)).is_this_device, projectId);
     await page.getByText("本机已设为此项目的执行设备。").waitFor({ state: "visible", timeout: 5000 });
   } else if (id <= 64) {
-    await route(page, id);
-    const card = page.locator(".si-readme-user-card");
-    if (id === 64) await card.getByRole("button", { name: "编辑", exact: true }).click();
-    await card.getByRole("textbox", { name: sectionTitles[id] }).fill(expected);
-    await card.getByRole("button", { name: "保存", exact: true }).click();
-    await page.waitForFunction(async ({ project, block, value }) =>
-      (await window.siteindex.readme.get(project)).user_blocks[block] === value,
-    { project: projectId, block: blockKeys[id], value: expected });
+    await saveReadmeUi(page, id, projectId, expected);
   } else {
     await openTodo(page);
     if (id === 65) {
@@ -217,7 +239,7 @@ async function editField(page, index) {
   }
   report.rows[index].uiSaved = true;
 }
-async function checkCandidateUi(page, id, expected) {
+async function checkCandidateUi(page, id, expected, project = projectId) {
   if (id === 61) {
     await route(page, id);
     await page.locator(".si-runs-device-inline").getByText(/（本机）/u).waitFor();
@@ -225,13 +247,42 @@ async function checkCandidateUi(page, id, expected) {
       && await page.getByRole("button", { name: "改为本机" }).count() === 0;
   }
   if (id <= 64) {
-    await route(page, id);
+    await route(page, id, project);
     if (id === 64) await page.locator(".si-readme-user-card").getByRole("button", { name: "编辑", exact: true }).click();
     return (await page.getByRole("textbox", { name: sectionTitles[id] }).inputValue()) === expected;
   }
   await openTodo(page);
   return id === 65 ? (await page.getByRole("combobox", { name: "更新待办状态" }).innerText()).includes("进行中")
     : (await page.getByRole("textbox", { name: "编辑待办备注" }).inputValue()) === expected;
+}
+async function checkWorkspaceMissingTitle() {
+  const workspaceId = "synthetic-workspace-missing-rules";
+  const expected = "Candidate saved this synthetic workspace rule.";
+  const readmeFile = path.join(layout.projectRoot, workspaceId, "README.md");
+  const evidence = report.workspaceMissingTitle;
+  report.stage = "#64 candidate workspace creation without rules heading";
+  let page = await launch();
+  const created = await page.evaluate((data) => window.siteindex.projects.createWorkspaceOnly(data), {
+    url: "https://workspace.example.test", brand: { name: "Synthetic Workspace Project" }, markets: ["US"],
+    projects_root: layout.projectRoot, folder_name: workspaceId,
+    workspace: { enabled: true, platform: "woocommerce", esp_presets: [] },
+  });
+  assert.equal(created.id, workspaceId);
+  evidence.templateMissing = !/\n## 工作规则与偏好(?:\r?\n|$)/u.test(await readFile(readmeFile, "utf8"));
+  assert(evidence.templateMissing, "Workspace template already has the rules heading");
+  report.stage = "#64 candidate workspace UI save";
+  await saveReadmeUi(page, 64, workspaceId, expected);
+  evidence.uiSaved = true;
+  evidence.exitMode = await stop(true);
+  report.stage = "#64 candidate workspace exited file readback";
+  evidence.file = readReadmeSection(await readFile(readmeFile, "utf8"), sectionTitles[64]) === expected;
+  assert(evidence.file, "Candidate did not add and persist the missing README heading");
+  page = await launch();
+  report.stage = "#64 candidate workspace new-process API and UI readback";
+  evidence.api = (await page.evaluate((project) => window.siteindex.readme.get(project), workspaceId)).user_blocks.rules === expected;
+  evidence.ui = await checkCandidateUi(page, 64, expected, workspaceId);
+  assert(evidence.api && evidence.ui, "Candidate workspace README was not readable after restart");
+  evidence.finalExitMode = await stop(true);
 }
 async function checkField(index) {
   const [id, key, expected] = fields[index];
@@ -255,13 +306,16 @@ async function checkField(index) {
   report.stage = `#${id} baseline install`;
   call(input[0], ["/S", `/D=${layout.installDir}`], { env: environment() });
   installed = true;
+  if (id === 64) await createLegacyReadmeFixture(projectDir);
   let page = await launch();
   assert.equal(await page.evaluate(() => window.siteindex.app.version()), "0.8.0");
-  const created = await page.evaluate((data) => window.siteindex.projects.createWorkspaceOnly(data), {
-    url: "https://config.example.test", brand: { name: "Synthetic Config Project" }, markets: ["US"],
-    projects_root: layout.projectRoot, folder_name: projectId,
-    workspace: { enabled: true, platform: "woocommerce", esp_presets: [] },
-  });
+  const created = id === 64
+    ? await page.evaluate((directory) => window.siteindex.projects.addExisting(directory), projectDir)
+    : await page.evaluate((data) => window.siteindex.projects.createWorkspaceOnly(data), {
+      url: "https://config.example.test", brand: { name: "Synthetic Config Project" }, markets: ["US"],
+      projects_root: layout.projectRoot, folder_name: projectId,
+      workspace: { enabled: true, platform: "woocommerce", esp_presets: [] },
+    });
   assert.equal(created.id, projectId);
   if (id >= 65) {
     const issuePath = path.join(projectDir, "_site-index/seo/issues.jsonl");
@@ -306,6 +360,7 @@ async function checkField(index) {
   row.candidateUi = await checkCandidateUi(page, id, expected);
   assert(row.candidateUi, `#${id} candidate UI readback mismatch`);
   row.candidateExitMode = await stop(true);
+  if (id === 64) await checkWorkspaceMissingTitle();
   row.outcome = "passed";
   } catch (error) {
     row.outcome = "failed";
