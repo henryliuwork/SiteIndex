@@ -159,7 +159,7 @@ async function checkVersion(version, expectedHash, installer, index) {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "WordPress 图片托管凭据" }).waitFor();
     const trayToggle = page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" });
-    await trayToggle.uncheck();
+    await trayToggle.click();
     await page.waitForFunction(async () => (await window.siteindex.settings.get()).close_to_tray === false);
     row.closeToTrayUi = await trayToggle.isChecked();
     row.closeToTrayIpc = (await page.evaluate(() => window.siteindex.settings.get())).close_to_tray;
