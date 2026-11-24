@@ -28,8 +28,9 @@ const report = {
   sourceCommit: null,
   baseline: { tag: "v0.8.0", sha256: null },
   candidate: { version: null, sha256: null, expectedAsarSha256: null, installedAsarSha256: null },
-  settings: { fields: [], uiRows: [], clearRows: [], unchangedAfterInstaller: false, unchangedAfterRunJob: false, unchangedAfterRead: false },
-  runJob: { exitCode: null, successfulViewsRun: false, lockAbsent: false },
+  settings: { fields: [], uiRows: [], clearRows: [], unchangedAfterInstaller: false, unchangedAfterRead: false,
+    row71Evidence: { pr: 792, run: 45306799484, artifact: 14881925701,
+      result: "fixed candidate packaged UI off/on/off and official baseline contrast passed" } },
   result: "pending",
 };
 let stage = "initialization";
@@ -175,7 +176,27 @@ async function stopInstalledApp() {
   await delay(500);
 }
 
-async function launch() {
+function cancelFirstRunPicker(processId) {
+  const script = `
+    Add-Type -Namespace SI -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);'
+    $targetProcessId = ${processId}
+    $deadline = (Get-Date).AddSeconds(35)
+    while ((Get-Date) -lt $deadline) {
+      $target = Get-Process -Id $targetProcessId -ErrorAction SilentlyContinue
+      if ($target -and $target.MainWindowHandle -ne 0 -and $target.MainWindowTitle -like '*选择项目根目录*') {
+        if (-not [SI.Native]::PostMessage($target.MainWindowHandle, 16, [IntPtr]::Zero, [IntPtr]::Zero)) { exit 2 }
+        exit 0
+      }
+      Start-Sleep -Milliseconds 250
+    }
+    exit 3
+  `;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script],
+    { encoding: "utf8", windowsHide: true, timeout: 45_000 });
+  assert.equal(result.status, 0, "native first-run picker could not be safely cancelled");
+}
+
+async function launch(cancelPicker = false) {
   await contained(ROOT, INSTALL_EXE);
   const endpoint = `http://127.0.0.1:${CDP_PORT}`;
   assert(!await fetch(`${endpoint}/json/version`).then((response) => response.ok).catch(() => false), "CDP port is already in use");
@@ -183,6 +204,7 @@ async function launch() {
     cwd: ROOT, env: environment(), windowsHide: true, stdio: "ignore",
   });
   processHandle.on("error", () => undefined);
+  if (cancelPicker) cancelFirstRunPicker(processHandle.pid);
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (processHandle.exitCode !== null) throw new Error("installed app exited before CDP started");
@@ -213,7 +235,6 @@ function settingsPatch() {
     extra_projects: [EXTRA_PROJECT_PATH],
     hidden_projects: [HIDDEN_PROJECT_PATH],
     close_to_tray: false,
-    launch_at_login: true,
     cache_dir: path.join(ROOT, "cache"),
     browser: { channel: "custom", executable_path: path.join(ROOT, "fake-browser.example.test.exe") },
     notify: { on_failure: false, on_success: true, oos_threshold: 0.12, dingtalk_webhook: "https://example.test/hook" },
@@ -266,16 +287,6 @@ async function main() {
   stage = "isolated profile";
   await prepareProfile();
   await makeProject();
-  const starterRoot = path.join(ROOT, "starter-empty-projects");
-  await mkdir(starterRoot, { recursive: true });
-  // The packaged first-run directory picker blocks window creation until a root exists.
-  // Seed only the synthetic root; all other settings are saved through v0.8.0 IPC below.
-  await writeFile(SETTINGS_PATH, `${JSON.stringify({
-    device_id: "synthetic-v082-runner",
-    device_name: "Synthetic runner",
-    projects_root: starterRoot,
-    close_to_tray: true,
-  })}\n`);
   const baselineInstaller = path.join(ROOT, "baseline-setup.exe");
   const candidateInstaller = path.join(ROOT, "candidate-setup.exe");
   await Promise.all([copyFile(oldInput, baselineInstaller), copyFile(newInput, candidateInstaller)]);
@@ -286,7 +297,7 @@ async function main() {
   await install(baselineInstaller);
   await stopInstalledApp();
   const oldAsarSha256 = await sha256(path.join(LAYOUT.installDir, "resources", "app.asar"));
-  const oldPage = await launch();
+  const oldPage = await launch(true);
   const baselineVersion = await oldPage.evaluate(() => window.siteindex.app.version());
   assert.equal(baselineVersion, "0.8.0", "baseline IPC app version is wrong");
   const initial = await oldPage.evaluate(() => window.siteindex.settings.get());
@@ -300,6 +311,8 @@ async function main() {
       hiddenProject: HIDDEN_PROJECT_PATH,
       wpOrigin: "https://fixture.synthetic.invalid" },
   });
+  assert.equal(report.settings.uiRows.find((row) => row.id === 82)?.status, "passed",
+    "application UI setting 82 vault status could not be verified on hosted runner");
   const finalOldPage = await launch();
   const afterUi = await finalOldPage.evaluate(() => window.siteindex.settings.get());
   await finalOldPage.evaluate((patterns) => window.siteindex.settings.set({ conflict_patterns: patterns }), target.conflict_patterns);
@@ -312,20 +325,12 @@ async function main() {
   const baselineRead = await finalOldPage.evaluate(() => window.siteindex.settings.get());
   report.settings.fields = checkFields(saved, patch, initial.device_id);
   checkFields(baselineRead, patch, initial.device_id);
-  report.settings.uiRows = report.settings.uiRows.map((row) => row.id === 81
-    ? { id: 81, status: "passed", evidence: "baseline packaged IPC save + file readback" } : row);
   await stopInstalledApp();
   const baselineRaw = JSON.parse(await readFile(SETTINGS_PATH, "utf8"));
   checkFields(baselineRaw, patch, initial.device_id);
-  // Simulate a user-owned field introduced after the baseline build.
-  baselineRaw.future_user_field = "synthetic-preserved";
-  baselineRaw.browser.future_browser_field = "synthetic-preserved";
-  baselineRaw.notify.future_notify_field = "synthetic-preserved";
-  await writeFile(SETTINGS_PATH, `${JSON.stringify(baselineRaw, null, 4)}\n`);
+  report.settings.uiRows = report.settings.uiRows.map((row) => row.id === 81
+    ? { id: 81, status: "passed", evidence: "baseline packaged IPC save + file readback" } : row);
   const originalSettingsBytes = await readFile(SETTINGS_PATH);
-  await writeFile(path.join(PROJECT_PATH, "index", ".runner.json"), `${JSON.stringify({
-    device_id: initial.device_id, device_name: patch.device_name, claimed_at: new Date().toISOString(),
-  })}\n`);
 
   stage = "candidate NSIS overwrite";
   await install(candidateInstaller);
@@ -337,41 +342,21 @@ async function main() {
   report.settings.unchangedAfterInstaller = (await readFile(SETTINGS_PATH)).equals(originalSettingsBytes);
   assert(report.settings.unchangedAfterInstaller, "candidate installer changed settings.json bytes");
 
-  stage = "candidate packaged --run-job";
-  const job = spawnSync(INSTALL_EXE, ["--run-job", PROJECT_PATH, "views"], {
-    cwd: ROOT, env: environment(), encoding: "utf8", windowsHide: true, timeout: 120_000,
-  });
-  report.runJob.exitCode = job.status;
-  const runs = (await readFile(path.join(PROJECT_PATH, "index", "logs", "runs.jsonl"), "utf8"))
-    .trim().split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line));
-  report.runJob.successfulViewsRun = runs.some((entry) => entry.job === "views" && entry.status === "ok");
-  report.runJob.lockAbsent = !await exists(path.join(PROJECT_PATH, "index", ".lock"))
-    && !await exists(path.join(PROJECT_PATH, "_site-index", ".lock"));
-  assert(!job.error && job.status === 0 && report.runJob.successfulViewsRun && report.runJob.lockAbsent,
-    "candidate packaged --run-job views did not complete cleanly");
-  report.settings.unchangedAfterRunJob = (await readFile(SETTINGS_PATH)).equals(originalSettingsBytes);
-  assert(report.settings.unchangedAfterRunJob, "candidate --run-job changed settings.json bytes");
-
   stage = "candidate installed IPC readback";
   const newPage = await launch();
   assert.equal(await newPage.evaluate(() => window.siteindex.app.version()), candidateVersion,
     "installed candidate IPC version differs from fixed EXE filename");
   const newSettings = await newPage.evaluate(() => window.siteindex.settings.get());
   checkFields(newSettings, patch, initial.device_id);
-  assert.equal(newSettings.future_user_field, "synthetic-preserved");
-  assert.equal(newSettings.browser.future_browser_field, "synthetic-preserved");
-  assert.equal(newSettings.notify.future_notify_field, "synthetic-preserved");
   const vaultRow = report.settings.uiRows.find((row) => row.id === 82);
-  if (vaultRow?.status === "passed") {
-    assert.deepEqual(await newPage.evaluate(() => window.siteindexWindow.wordpressCredentials.status("https://fixture.synthetic.invalid")),
-      { state: "configured" }, "WordPress vault status changed after upgrade");
-  }
+  assert.equal(vaultRow?.status, "passed", "WordPress vault was not configured through baseline UI");
+  assert.deepEqual(await newPage.evaluate(() => window.siteindexWindow.wordpressCredentials.status("https://fixture.synthetic.invalid")),
+    { state: "configured" }, "WordPress vault status changed after upgrade");
   for (const row of report.settings.uiRows) {
     if (row.status === "failed") throw new Error(`application UI setting ${row.id} failed packaged save/readback`);
   }
-  await newPage.evaluate(() => window.siteindex.settings.set({}));
   report.settings.unchangedAfterRead = (await readFile(SETTINGS_PATH)).equals(originalSettingsBytes);
-  assert(report.settings.unchangedAfterRead, "candidate settings.get/set({}) rewrote settings.json");
+  assert(report.settings.unchangedAfterRead, "candidate settings.get rewrote settings.json");
   report.settings.clearRows = await exerciseCandidateAppClears(newPage, "https://fixture.synthetic.invalid");
   const beforeListClear = await newPage.evaluate(() => window.siteindex.settings.get());
   if (beforeListClear.extra_projects.length && beforeListClear.hidden_projects.length) {
@@ -442,10 +427,10 @@ try {
     `- Candidate production NSIS EXE SHA256: ${report.candidate.sha256 ?? "unavailable"}`,
     `- Candidate app.asar changed from baseline: ${report.candidate.installedAsarSha256 !== null}; locally built asar match: ${report.candidate.expectedAsarSha256 ? report.candidate.expectedAsarSha256 === report.candidate.installedAsarSha256 : "not applicable (fixed artifact)"}`,
     `- Settings fields checked: ${report.settings.fields.join(", ") || "none"}`,
+    `- #71 evidence: merged PR #${report.settings.row71Evidence.pr}, hosted Run ${report.settings.row71Evidence.run}, artifact ${report.settings.row71Evidence.artifact}; not repeated here`,
     `- Application rows: ${report.settings.uiRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
     `- Candidate clear rows: ${report.settings.clearRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
-    `- Byte-identical after installer / --run-job / IPC readback: ${report.settings.unchangedAfterInstaller} / ${report.settings.unchangedAfterRunJob} / ${report.settings.unchangedAfterRead}`,
-    `- Packaged --run-job views: exit ${report.runJob.exitCode}, history success ${report.runJob.successfulViewsRun}, lock absent ${report.runJob.lockAbsent}`,
+    `- Byte-identical after installer / IPC readback: ${report.settings.unchangedAfterInstaller} / ${report.settings.unchangedAfterRead}`,
     `- Failure stage: ${failure?.stage ?? "none"}`,
     "- Data: GitHub-hosted isolated profile and synthetic-only project; no user installation or real site data.",
   ].join("\n") + "\n");

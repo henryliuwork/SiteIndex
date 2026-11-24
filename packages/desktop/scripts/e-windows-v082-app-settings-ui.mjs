@@ -46,14 +46,13 @@ export async function exerciseBaselineAppSettings({ launch, stop, settingsPath, 
   await run([67], { action: (page) => blur(page, "#si-projects-root", values.projects_root), verify: [["projects_root", values.projects_root]] });
   await run([68], { action: (page) => blur(page, "#si-device-name", values.device_name), verify: [["device_name", values.device_name]] });
   await run([69], { action: (page) => blur(page, "#si-cache-dir", values.cache_dir), verify: [["cache_dir", values.cache_dir]] });
-  await run([70], { action: (page) => page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" }).uncheck(), verify: [["close_to_tray", false]] });
-  await run([71], { action: (page) => page.getByRole("checkbox", { name: "开机时启动 SiteIndex" }).check(), verify: [["launch_at_login", true]] });
+  await run([70], { action: (page) => page.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" }).click(), verify: [["close_to_tray", false]] });
   await run([72, 73], { tab: "浏览器与命令行", action: (page) => blur(page, "#si-browser-path", values.browser.executable_path),
     verify: [["browser.channel", "custom"], ["browser.executable_path", values.browser.executable_path]] });
-  await run([74], { tab: "通知", action: (page) => page.getByRole("checkbox", { name: "失败时", exact: true }).uncheck(), verify: [["notify.on_failure", false]] });
-  await run([75], { tab: "通知", action: (page) => page.getByRole("checkbox", { name: "成功时", exact: true }).check(), verify: [["notify.on_success", true]] });
+  await run([74], { tab: "通知", action: (page) => page.getByRole("checkbox", { name: "失败时", exact: true }).click(), verify: [["notify.on_failure", false]] });
+  await run([75], { tab: "通知", action: (page) => page.getByRole("checkbox", { name: "成功时", exact: true }).click(), verify: [["notify.on_success", true]] });
   await run([76], { tab: "通知", action: async (page) => {
-    await page.getByRole("checkbox", { name: "新缺货达到阈值时" }).check();
+    await page.getByRole("checkbox", { name: "新缺货达到阈值时" }).click();
     await page.waitForFunction(async () => (await window.siteindex.settings.get()).notify.oos_threshold === 0.12);
     await page.getByText("正在保存软件设置…").waitFor({ state: "hidden" });
     await page.getByRole("spinbutton", { name: "新缺货阈值百分比" }).fill("12");
