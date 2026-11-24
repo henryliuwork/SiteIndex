@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { makeW2SyntheticFixture } from "./e-windows-v040-synthetic-fixture.mjs";
 import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
 import { createWindowsProfileLayout, inspectContainedPath, inspectWindowsProfileLayout, windowsProfileEnvironment } from "./e-windows-profile-isolation.mjs";
-import { exerciseBaselineAppSettings, exerciseCandidateAppClears } from "./e-windows-v082-app-settings-ui.mjs";
+import { exerciseBaselineAppSettings, exerciseCandidateAppClears, exerciseCandidateAppReadback } from "./e-windows-v082-app-settings-ui.mjs";
 
 const BASELINE_SHA256 = "65232832171b12d5362c6ec21e6dcb3a542149bbf2e9d1529eacacdf324d7e22";
 const CDP_PORT = 9347;
@@ -28,7 +28,8 @@ const report = {
   sourceCommit: null,
   baseline: { tag: "v0.8.0", sha256: null },
   candidate: { version: null, sha256: null, expectedAsarSha256: null, installedAsarSha256: null },
-  settings: { fields: [], uiRows: [], clearRows: [], unchangedAfterInstaller: false, unchangedAfterRead: false,
+  settings: { fields: [], uiRows: [], candidateRows: [], clearRows: [], vault: {},
+    unchangedAfterInstaller: false, unchangedAfterRead: false,
     row71Evidence: { pr: 792, run: 45306799484, artifact: 14881925701,
       result: "fixed candidate packaged UI off/on/off and official baseline contrast passed" } },
   result: "pending",
@@ -45,6 +46,14 @@ async function exists(filePath) {
 
 async function sha256(filePath) {
   return createHash("sha256").update(await readFile(filePath)).digest("hex");
+}
+
+async function vaultMetadata(origin) {
+  const filename = `wordpress-${createHash("sha256").update(origin).digest("hex")}.vault.json`;
+  const file = path.join(LAYOUT.vaultPath, filename);
+  await contained(LAYOUT.localAppDataRoot, file);
+  try { return { exists: true, bytes: (await stat(file)).size, withinLocalAppData: true }; }
+  catch (error) { if (error?.code === "ENOENT") return { exists: false, bytes: null, withinLocalAppData: true }; throw error; }
 }
 
 function run(file, args, options = {}) {
@@ -164,16 +173,30 @@ async function install(installerPath) {
 }
 
 async function stopInstalledApp() {
-  if (browser) { await browser.close().catch(() => undefined); browser = undefined; }
-  if (processHandle) { processHandle.kill(); processHandle = undefined; }
-  if (!INSTALL_EXE || !await exists(INSTALL_EXE)) return;
-  const script = [
-    "$expected = [System.IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE)",
-    "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'SiteIndex.exe' -and $_.ExecutablePath -ieq $expected } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
-  ].join("; ");
+  if (!processHandle) return;
+  const script = `
+    Add-Type -Namespace SI -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);'
+    $target = Get-Process -Id ${processHandle.pid} -ErrorAction SilentlyContinue
+    if (-not $target -or $target.Path -ine $env:SITEINDEX_ACCEPTANCE_INSTALL_EXE -or $target.MainWindowHandle -eq 0) { exit 2 }
+    if (-not [SI.Native]::PostMessage($target.MainWindowHandle, 16, [IntPtr]::Zero, [IntPtr]::Zero)) { exit 3 }
+  `;
   run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script],
     { env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: INSTALL_EXE }, timeout: 20_000 });
-  await delay(500);
+  const deadline = Date.now() + 30_000;
+  while (processHandle.exitCode === null && Date.now() < deadline) await delay(250);
+  assert.equal(processHandle.exitCode, 0, "packaged app did not exit normally after WM_CLOSE");
+  let remaining = 1;
+  const childrenDeadline = Date.now() + 10_000;
+  while (remaining && Date.now() < childrenDeadline) {
+    const result = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      "$expected = [IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE); @(Get-CimInstance Win32_Process -Filter \"Name = 'SiteIndex.exe'\" | Where-Object { $_.ExecutablePath -ieq $expected }).Count"],
+    { env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: INSTALL_EXE }, timeout: 20_000 });
+    remaining = Number(result.stdout.trim());
+    if (remaining) await delay(250);
+  }
+  assert.equal(remaining, 0, "packaged app still has running processes after WM_CLOSE");
+  if (browser) { await browser.close().catch(() => undefined); browser = undefined; }
+  processHandle = undefined;
 }
 
 function cancelFirstRunPicker(processId) {
@@ -276,7 +299,7 @@ async function main() {
   report.candidate.sha256 = await sha256(newInput);
   if (process.env.SITEINDEX_FIXED_ARTIFACT_MODE === "true") {
     assert.equal(report.candidate.sha256,
-      "890847e95486764f9ddd868e456d96299c8d94afaa706393e71bae6aa010c0fd",
+      "8dedcea2b0ef30e6d14ec006345a31bfd3b3fdb6f0c42cb876f6263f00ed12e6",
       "fixed candidate EXE SHA256 changed");
   } else {
     const expectedAsar = path.resolve("release", "win-unpacked", "resources", "app.asar");
@@ -301,6 +324,11 @@ async function main() {
   const baselineVersion = await oldPage.evaluate(() => window.siteindex.app.version());
   assert.equal(baselineVersion, "0.8.0", "baseline IPC app version is wrong");
   const initial = await oldPage.evaluate(() => window.siteindex.settings.get());
+  await oldPage.evaluate(() => { window.location.hash = "#/settings"; });
+  const trayToggle = oldPage.getByRole("checkbox", { name: "关闭窗口时最小化到托盘" });
+  await trayToggle.waitFor();
+  if (await trayToggle.isChecked()) await trayToggle.click();
+  await oldPage.waitForFunction(async () => (await window.siteindex.settings.get()).close_to_tray === false);
   await stopInstalledApp();
   const target = settingsPatch();
   report.settings.uiRows = await exerciseBaselineAppSettings({
@@ -313,6 +341,9 @@ async function main() {
   });
   assert.equal(report.settings.uiRows.find((row) => row.id === 82)?.status, "passed",
     "application UI setting 82 vault status could not be verified on hosted runner");
+  report.settings.vault.baseline = await vaultMetadata("https://fixture.synthetic.invalid");
+  assert(report.settings.vault.baseline.exists && report.settings.vault.baseline.bytes > 0,
+    "baseline WordPress vault missing after normal restart");
   const finalOldPage = await launch();
   const afterUi = await finalOldPage.evaluate(() => window.siteindex.settings.get());
   await finalOldPage.evaluate((patterns) => window.siteindex.settings.set({ conflict_patterns: patterns }), target.conflict_patterns);
@@ -352,6 +383,22 @@ async function main() {
   assert.equal(vaultRow?.status, "passed", "WordPress vault was not configured through baseline UI");
   assert.deepEqual(await newPage.evaluate(() => window.siteindexWindow.wordpressCredentials.status("https://fixture.synthetic.invalid")),
     { state: "configured" }, "WordPress vault status changed after upgrade");
+  report.settings.vault.candidate = await vaultMetadata("https://fixture.synthetic.invalid");
+  assert(report.settings.vault.candidate.exists && report.settings.vault.candidate.bytes === report.settings.vault.baseline.bytes,
+    "candidate WordPress vault metadata changed after upgrade");
+  report.settings.candidateRows = await exerciseCandidateAppReadback(newPage, SETTINGS_PATH, {
+    ...target, skillDirectory: path.join(ROOT, "agent-skills.example.test"),
+    extraProject: EXTRA_PROJECT_PATH, hiddenProject: HIDDEN_PROJECT_PATH,
+  });
+  await newPage.evaluate(() => { window.location.hash = "#/settings"; });
+  await newPage.getByRole("heading", { name: "WordPress 图片托管凭据" }).waitFor();
+  const credentialCard = newPage.getByRole("region", { name: "凭据：https://fixture.synthetic.invalid" });
+  const credentialUi = await credentialCard.getByText("本机凭据已保存").count() > 0;
+  report.settings.candidateRows.push({ id: 82, status: credentialUi ? "passed" : "failed",
+    evidence: "candidate credential UI + status + encrypted vault metadata" });
+  assert(report.settings.candidateRows.length === 15
+    && report.settings.candidateRows.every((row) => row.status === "passed"),
+  "candidate application UI/IPC/file readback failed");
   for (const row of report.settings.uiRows) {
     if (row.status === "failed") throw new Error(`application UI setting ${row.id} failed packaged save/readback`);
   }
@@ -393,7 +440,7 @@ try {
   console.error(`v0.8.2 settings upgrade failed at ${stage}: ${failure.message}`);
 } finally {
   try { await stopInstalledApp(); } catch { failure ??= { stage: "cleanup", category: "APP_STOP_FAILED" }; }
-  if (installed && LAYOUT && await exists(path.join(LAYOUT.installDir, "Uninstall SiteIndex.exe"))) {
+  if (!processHandle && installed && LAYOUT && await exists(path.join(LAYOUT.installDir, "Uninstall SiteIndex.exe"))) {
     try {
       await contained(ROOT, path.join(LAYOUT.installDir, "Uninstall SiteIndex.exe"));
       run(path.join(LAYOUT.installDir, "Uninstall SiteIndex.exe"), ["/S"], { env: environment() });
@@ -406,7 +453,7 @@ try {
       failure ??= { stage: "cleanup", category: "APPDATA_RESTORE_FAILED" };
     }
   }
-  if (ROOT && (!redirect || redirect.canRemoveProfileRoot)) {
+  if (!processHandle && ROOT && (!redirect || redirect.canRemoveProfileRoot)) {
     try {
       await contained(process.env.RUNNER_TEMP, ROOT);
       await rm(ROOT, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
@@ -429,6 +476,8 @@ try {
     `- Settings fields checked: ${report.settings.fields.join(", ") || "none"}`,
     `- #71 evidence: merged PR #${report.settings.row71Evidence.pr}, hosted Run ${report.settings.row71Evidence.run}, artifact ${report.settings.row71Evidence.artifact}; not repeated here`,
     `- Application rows: ${report.settings.uiRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
+    `- Candidate readback rows: ${report.settings.candidateRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
+    `- WordPress vault existed before/after upgrade: ${report.settings.vault.baseline?.exists ?? false} / ${report.settings.vault.candidate?.exists ?? false}`,
     `- Candidate clear rows: ${report.settings.clearRows.map((row) => `${row.id}:${row.status}`).join(", ") || "none"}`,
     `- Byte-identical after installer / IPC readback: ${report.settings.unchangedAfterInstaller} / ${report.settings.unchangedAfterRead}`,
     `- Failure stage: ${failure?.stage ?? "none"}`,

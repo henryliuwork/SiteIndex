@@ -1,13 +1,6 @@
 name: E · Windows settings upgrade acceptance
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/e-windows-v082-settings-upgrade.yml"
-      - "packages/desktop/scripts/e-windows-v082-settings-upgrade.mjs"
-      - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
-      - "packages/desktop/scripts/windows-appdata-redirect.mjs"
   workflow_dispatch:
 
 permissions:
@@ -37,18 +30,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $repo = $env:GITHUB_REPOSITORY
-          $run = gh api "repos/$repo/actions/runs/45209864844" | ConvertFrom-Json
-          $artifact = gh api "repos/$repo/actions/artifacts/14835333939" | ConvertFrom-Json
+          $run = gh api "repos/$repo/actions/runs/45312779688" | ConvertFrom-Json
+          $artifact = gh api "repos/$repo/actions/artifacts/14884245939" | ConvertFrom-Json
           $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
-          $source = 'e60447a079e95f6cfcbf259527f7e9a84098e439'
-          $digest = '46d8d18d41f3ed3788ac0c373f361d1a6884d7a596bcb3711f02582dfa177979'
-          if ($run.id -ne 45209864844 -or $run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.event -ne 'workflow_dispatch' -or $run.head_branch -cne 'c/version-0.8.2' -or $run.head_sha -cne $source) { throw 'Fixed candidate Release run provenance mismatch.' }
-          if ($artifact.id -ne 14835333939 -or $artifact.name -cne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne $run.id -or $artifact.workflow_run.head_sha -cne $source -or ([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -cne $digest) { throw 'Fixed candidate artifact provenance or ZIP digest mismatch.' }
+          $source = 'ac9c6ff65da40b0828b32cf7ddf3de563a202233'
+          $digest = 'bdd6ccd6e4b7615556fbd7a939d8d3ecfb938a2a89b4e12fe319a588819004ac'
+          if ($run.id -ne 45312779688 -or $run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.event -ne 'workflow_dispatch' -or $run.head_branch -cne 'c/version-0.8.2' -or $run.head_sha -cne $source) { throw 'Fixed candidate Release run provenance mismatch.' }
+          if ($artifact.id -ne 14884245939 -or $artifact.name -cne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne $run.id -or $artifact.workflow_run.head_sha -cne $source -or ([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -cne $digest) { throw 'Fixed candidate artifact provenance or ZIP digest mismatch.' }
       - name: Download exact fixed candidate artifact
         uses: actions/download-artifact@v8
         with:
-          artifact-ids: 14835333939
-          run-id: 45209864844
+          artifact-ids: 14884245939
+          run-id: 45312779688
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           path: candidate-installer
@@ -59,7 +52,7 @@ jobs:
           $installer = 'candidate-installer/SiteIndex-Setup-0.8.2.exe'
           if (-not (Test-Path -LiteralPath $installer)) { throw 'Pinned 0.8.2 candidate EXE missing.' }
           $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -cne '890847e95486764f9ddd868e456d96299c8d94afaa706393e71bae6aa010c0fd') { throw 'Pinned candidate EXE SHA256 mismatch.' }
+          if ($actual -cne '8dedcea2b0ef30e6d14ec006345a31bfd3b3fdb6f0c42cb876f6263f00ed12e6') { throw 'Pinned candidate EXE SHA256 mismatch.' }
       - name: Verify isolated overwrite and settings readback
         shell: pwsh
         timeout-minutes: 30
