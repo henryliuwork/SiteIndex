@@ -164,10 +164,27 @@ async function launch() {
 }
 async function exitNormally() {
   if (!processHandle) return;
-  await currentPage?.close().catch(() => undefined);
-  const until = Date.now() + 15_000;
+  const code = `
+    Add-Type -Namespace SI -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);'
+    $target = Get-Process -Id ${processHandle.pid} -ErrorAction SilentlyContinue
+    if (-not $target -or $target.Path -ine $env:SITEINDEX_ACCEPTANCE_INSTALL_EXE -or $target.MainWindowHandle -eq 0) { exit 2 }
+    if (-not [SI.Native]::PostMessage($target.MainWindowHandle, 16, [IntPtr]::Zero, [IntPtr]::Zero)) { exit 3 }
+  `;
+  run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", code],
+    { env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: INSTALL_EXE }, timeout: 20_000 });
+  const until = Date.now() + 30_000;
   while (processHandle.exitCode === null && Date.now() < until) await delay(250);
   assert(processHandle.exitCode !== null, "installed app did not exit after closing its window");
+  assert.equal(processHandle.exitCode, 0, "installed app exited with nonzero code after WM_CLOSE");
+  let remaining = 1;
+  const childrenUntil = Date.now() + 10_000;
+  while (remaining && Date.now() < childrenUntil) {
+    remaining = Number(run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      "$expected = [IO.Path]::GetFullPath($env:SITEINDEX_ACCEPTANCE_INSTALL_EXE); @(Get-CimInstance Win32_Process -Filter \"Name = 'SiteIndex.exe'\" | Where-Object { $_.ExecutablePath -ieq $expected }).Count"],
+    { env: { ...environment(), SITEINDEX_ACCEPTANCE_INSTALL_EXE: INSTALL_EXE }, timeout: 20_000 }));
+    if (remaining) await delay(250);
+  }
+  assert.equal(remaining, 0, "installed app still has processes at its installation path");
   await browser?.close().catch(() => undefined);
   browser = undefined;
   currentPage = undefined;
@@ -234,15 +251,17 @@ function expectedValue(number) {
     time: `03:${String(number).padStart(2, "0")}`, ...(number === 56 ? { day_of_month: 12 } : {}) };
   return true;
 }
-async function readState(page, project) {
-  return page.evaluate(async (id) => {
+async function readState(page, project, number) {
+  return page.evaluate(async ({ id, verify }) => {
     const api = window.siteindex;
-    const [detail, category, schedule, tasks] = await Promise.all([
+    const [detail, category, schedule, tasks, verification] = await Promise.all([
       api.projects.get(id), api.categories.get(id), api.schedule.get(id), api.schedule.listSystemTasks(),
+      verify ? api.schedule.verify?.(id) : null,
     ]);
     return { config: detail.config, category, schedule: schedule.config,
+      verification: verification?.state ?? null,
       tasks: tasks.filter((task) => task.projectId === id).map((task) => task.taskName) };
-  }, project.id);
+  }, { id: project.id, verify: number >= 52 && number <= 56 });
 }
 function checkState(number, state, file, expected) {
   assert.deepEqual(targetValue(number, state.config), expected, `#${number} packaged projects.get value`);
@@ -253,8 +272,18 @@ function checkState(number, state, file, expected) {
     `#${number} schedule.get value`);
   assert.equal(state.tasks.length, number >= 52 && number <= 56 ? 1 : 0,
     `#${number} Windows task count`);
+  if (number >= 52 && number <= 56) assert.equal(state.verification, "ok", `#${number} schedule.verify state`);
+}
+function systemTaskNames() {
+  const output = run("schtasks.exe", ["/Query", "/FO", "CSV", "/NH"], { timeout: 20_000 });
+  return new Set(output.split(/\r?\n/u).map((line) =>
+    /^"((?:[^"]|"")*)"/u.exec(line.replace(/^\uFEFF/u, ""))?.[1]?.replaceAll('""', '"').toLowerCase())
+    .filter(Boolean));
 }
 async function cleanupSchedule(page, project, existingNames) {
+  const before = await page.evaluate(() => window.siteindex.schedule.listSystemTasks());
+  const names = new Set([...existingNames, ...before.filter((task) => task.projectId === project.id)
+    .map((task) => task.taskName)].map((name) => name.toLowerCase()));
   await page.evaluate(async (id) => window.siteindex.schedule.save(id, {
     daily: { enabled: false, days: [], time: "00:00" }, validate: { enabled: false, days: [], time: "00:00" },
     weekly: { enabled: false, days: [], time: "00:00" }, readme: { enabled: false, days: [], time: "00:00" },
@@ -262,9 +291,10 @@ async function cleanupSchedule(page, project, existingNames) {
     options: { wake_to_run: false, run_if_missed: false, notify_on_failure: false, validate_after_sync: false },
   }), project.id);
   const after = await page.evaluate(() => window.siteindex.schedule.listSystemTasks());
-  const names = new Set(existingNames.map((name) => name.toLowerCase()));
   assert(!after.some((task) => task.projectId === project.id || names.has(task.taskName.toLowerCase())),
     `#${project.id} Windows task cleanup failed`);
+  const nativeNames = systemTaskNames();
+  assert(![...names].some((name) => nativeNames.has(name)), `#${project.id} schtasks still contains a test task`);
 }
 async function oneCase(number, oldInstaller, candidateInstaller) {
   currentCase = number;
@@ -279,7 +309,7 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     assert.equal(await page.evaluate(() => window.siteindex.app.version()), "0.8.0");
     await saveThroughUi(page, number, project.id);
     const expected = expectedValue(number);
-    const oldState = await readState(page, project);
+    const oldState = await readState(page, project, number);
     const oldFile = JSON.parse(await readFile(project.site, "utf8"));
     checkState(number, oldState, oldFile, expected);
     knownNames = oldState.tasks;
@@ -292,7 +322,7 @@ async function oneCase(number, oldInstaller, candidateInstaller) {
     await install(candidateInstaller);
     page = await launch();
     assert.equal(await page.evaluate(() => window.siteindex.app.version()), "0.8.2");
-    const newState = await readState(page, project);
+    const newState = await readState(page, project, number);
     const newFile = JSON.parse(await readFile(project.site, "utf8"));
     checkState(number, newState, newFile, expected);
     assert.equal(await sha256(project.site), entry.baseline.fileSha256,
