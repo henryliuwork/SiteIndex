@@ -1,16 +1,10 @@
 name: E · Windows settings upgrade acceptance
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/e-windows-v082-settings-upgrade.yml"
-      - "packages/desktop/scripts/e-windows-v082-settings-upgrade.mjs"
-      - "packages/desktop/scripts/e-windows-profile-isolation.mjs"
-      - "packages/desktop/scripts/windows-appdata-redirect.mjs"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -25,19 +19,47 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build candidate with production NSIS script
-        run: pnpm --filter @siteindex/desktop dist:win
       - name: Download pinned v0.8.0 Release installer
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download v0.8.0 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.0.exe --dir baseline-installer
+      - name: Verify fixed branch candidate provenance
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $repo = $env:GITHUB_REPOSITORY
+          $run = gh api "repos/$repo/actions/runs/45312779688" | ConvertFrom-Json
+          $artifact = gh api "repos/$repo/actions/artifacts/14884245939" | ConvertFrom-Json
+          $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
+          $source = 'ac9c6ff65da40b0828b32cf7ddf3de563a202233'
+          $digest = 'bdd6ccd6e4b7615556fbd7a939d8d3ecfb938a2a89b4e12fe319a588819004ac'
+          if ($run.id -ne 45312779688 -or $run.workflow_id -ne $workflow.id -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.event -ne 'workflow_dispatch' -or $run.head_branch -cne 'c/version-0.8.2' -or $run.head_sha -cne $source) { throw 'Fixed candidate Release run provenance mismatch.' }
+          if ($artifact.id -ne 14884245939 -or $artifact.name -cne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne $run.id -or $artifact.workflow_run.head_sha -cne $source -or ([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -cne $digest) { throw 'Fixed candidate artifact provenance or ZIP digest mismatch.' }
+      - name: Download exact fixed candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: 14884245939
+          run-id: 45312779688
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: candidate-installer
+          digest-mismatch: error
+      - name: Verify fixed candidate EXE SHA256
+        shell: pwsh
+        run: |
+          $installer = 'candidate-installer/SiteIndex-Setup-0.8.2.exe'
+          if (-not (Test-Path -LiteralPath $installer)) { throw 'Pinned 0.8.2 candidate EXE missing.' }
+          $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne '8dedcea2b0ef30e6d14ec006345a31bfd3b3fdb6f0c42cb876f6263f00ed12e6') { throw 'Pinned candidate EXE SHA256 mismatch.' }
       - name: Verify isolated overwrite and settings readback
         shell: pwsh
         timeout-minutes: 30
         env:
           SITEINDEX_RUNNER_ENVIRONMENT: ${{ runner.environment }}
-        run: node packages/desktop/scripts/e-windows-v082-settings-upgrade.mjs baseline-installer/SiteIndex-Setup-0.8.0.exe release/SiteIndex-Setup-0.8.0.exe
+          SITEINDEX_FIXED_ARTIFACT_MODE: 'true'
+        run: node packages/desktop/scripts/e-windows-v082-settings-upgrade.mjs baseline-installer/SiteIndex-Setup-0.8.0.exe candidate-installer/SiteIndex-Setup-0.8.2.exe
       - name: Add acceptance summary
         if: always()
         shell: pwsh
