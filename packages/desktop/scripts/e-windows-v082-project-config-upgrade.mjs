@@ -204,7 +204,7 @@ async function checkField(index) {
   const row = report.rows[index];
   layout = createWindowsProfileLayout(path.join(root, `field-${id}`));
   exe = path.join(layout.installDir, "SiteIndex.exe");
-  siteFile = path.join(layout.projectRoot, projectId, "index", "site.json");
+  siteFile = path.join(layout.projectRoot, projectId, "_site-index", "site.json");
   installed = false;
   redirect = null;
   try {
