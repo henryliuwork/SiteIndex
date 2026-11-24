@@ -321,6 +321,8 @@ finally {
   try {
     if (installed && await exists(path.join(layout.installDir, "Uninstall SiteIndex.exe"))) {
       command(path.join(layout.installDir, "Uninstall SiteIndex.exe"), ["/S"], { env: environment() });
+      const until = Date.now() + 10_000;
+      while (await exists(exe) && Date.now() < until) await delay(250);
       report.cleanup.uninstalled = !await exists(exe);
       assert(report.cleanup.uninstalled, "NSIS uninstall left installed executable");
     }
