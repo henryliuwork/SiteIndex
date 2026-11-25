@@ -1,0 +1,52 @@
+name: E · Windows v0.8.3 table acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  packaged-table:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
+      SITEINDEX_V083_REPORT_DIR: v083-table-results
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download only the fixed v0.8.3 candidate
+        shell: pwsh
+        run: |
+          $repo = 'henryliuwork/SiteIndex'
+          $runId = 45540953781
+          $expectedHead = '1bf5ee8bc77918ca2b670a28bc89556a7b7de439'
+          $run = gh api "repos/$repo/actions/runs/$runId" | ConvertFrom-Json
+          if ($run.head_sha -ne $expectedHead -or $run.conclusion -ne 'success') { throw 'Fixed candidate run provenance mismatch.' }
+          $response = gh api "repos/$repo/actions/runs/$runId/artifacts" | ConvertFrom-Json
+          $artifact = @($response.artifacts | Where-Object { $_.id -eq 14988923468 -and $_.name -eq 'siteindex-win' })
+          if ($artifact.Count -ne 1 -or $artifact[0].expired) { throw 'Fixed Windows artifact is unavailable.' }
+          gh run download $runId --repo $repo --name siteindex-win --dir candidate
+          if ($LASTEXITCODE -ne 0) { throw 'Fixed Windows artifact download failed.' }
+          $exe = @(Get-ChildItem -LiteralPath candidate -Filter 'SiteIndex-Setup-0.8.3.exe' -File -Recurse)
+          if ($exe.Count -ne 1) { throw 'Expected exactly one v0.8.3 installer.' }
+          $digest = (Get-FileHash -LiteralPath $exe[0].FullName -Algorithm SHA256).Hash
+          if ($digest -ne '94F689E66E5FECBDA62EB7DCB631DF5412549420E56249CE88F1AB26DBB20100') { throw 'Fixed installer SHA256 mismatch.' }
+          "SITEINDEX_V083_INSTALLER=$($exe[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install and exercise packaged product table
+        shell: pwsh
+        run: node packages/desktop/scripts/e-windows-v083-table-acceptance.mjs "$env:SITEINDEX_V083_INSTALLER"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v083-table-acceptance-results
+          path: v083-table-results/
+          if-no-files-found: warn
