@@ -35,6 +35,7 @@ describe("Inventory table aggregate cells", () => {
     const { container } = render(<InventoryRateCell value={0.75} />);
     expect(screen.getByText("75%")).toBeTruthy();
     expect(container.querySelector(".si-rate-track")).toBeTruthy();
+    expect(container.querySelector(".si-rate-cell .si-rate-value")?.textContent).toBe("75%");
   });
 
   it("shows a dash instead of placeholder bars when parent history is missing", () => {

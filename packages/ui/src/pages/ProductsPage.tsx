@@ -38,38 +38,30 @@ function initialQuery(): ProductManagementQuery { return { page: 1, pageSize: 50
 
 function productColumns(onOpen: (row: ProductManagementRow) => void, onOpenUrl: (url: string) => void): ColumnDef<ProductManagementRow, unknown>[] {
   return [
-    { id: "sku", accessorFn: (row) => row.sku, header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, sticky: "left", text: "single" }, enableHiding: false, cell: ({ row }) =>
+    { id: "sku", accessorFn: (row) => row.sku, header: "SKU", meta: { width: 150, grow: 0, minWidth: 120, sticky: "left", align: "start", text: "single" }, enableHiding: false, cell: ({ row }) =>
       <code className={`si-product-sku${row.original.kind === "child" ? " is-child" : ""}`} title={row.original.sku ?? undefined}>{row.original.sku ?? "—"}</code>, enableSorting: true },
-    { id: "product", accessorFn: (row) => row.product.title, header: "产品名称", meta: { width: 270, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => {
-      const item = row.original;
-      const product = item.product;
+    { id: "product", accessorFn: (row) => row.product.title, header: "产品名称", meta: { width: 270, grow: 2, minWidth: 220, sticky: "left", align: "start", text: "single" }, enableHiding: false, cell: ({ row }) => {
+      const product = row.original.product;
       return <span className="si-product-main-cell">
         <ProductThumbnail src={product.image_url} />
-        <span className="si-product-main-copy"><strong>{product.title}</strong><span>
-          {item.kind === "parent" && <Chip tone="info">父 SKU</Chip>}
-          {item.kind === "child" && <Chip tone="neutral">子 SKU</Chip>}
-          {product.status === "removed" && <Chip tone="neutral">已下架</Chip>}
-          {product.price_dropped_at && <Chip tone="warn">降价</Chip>}
-          {product.restocked_at && <Chip tone="ok">到货</Chip>}
-          {product.is_new && <Chip tone="info">新品</Chip>}
-          {product.handle && <code>{product.handle}</code>}
-        </span></span>
+        <span className="si-product-main-copy"><strong title={product.title}>{product.title}</strong></span>
       </span>;
     }, enableSorting: true },
-    { id: "stock_status", accessorFn: (row) => row.stock?.stock_status ?? row.product.stock_status, header: "库存状态", meta: { width: 108, grow: 0, minWidth: 100, text: "single" }, cell: ({ row }) => {
+    { id: "stock_status", accessorFn: (row) => row.product.status === "removed" ? "removed" : row.stock?.stock_status ?? row.product.stock_status, header: "库存状态", meta: { width: 108, grow: 0, minWidth: 100, align: "start", text: "single" }, cell: ({ row }) => {
+      if (row.original.product.status === "removed") return <Chip tone="neutral">已下架</Chip>;
       const status = row.original.stock?.stock_status ?? row.original.product.stock_status;
       return <Chip tone={stockTone[status]}>{stockNames[status]}</Chip>;
     }, enableSorting: true },
-    { id: "days_in_status", accessorFn: (row) => row.stock?.days_in_status ?? null, header: "持续", meta: { defaultHidden: true, width: 120, grow: 0, minWidth: 112, align: "end", text: "single", help: "子 SKU 当前库存状态自最近一次状态变化起持续的天数；父 SKU 暂不展示。" }, cell: ({ row }) => row.original.stock ? formatInventoryTableDuration(row.original.stock) : "—", enableSorting: true },
+    { id: "days_in_status", accessorFn: (row) => row.stock?.days_in_status ?? null, header: "持续", meta: { defaultHidden: true, width: 120, grow: 0, minWidth: 112, align: "end", text: "single", help: "子 SKU 当前库存状态自最近一次状态变化起持续的天数；父 SKU 暂不展示。" }, cell: ({ row }) => <span className="si-mono">{row.original.stock ? formatInventoryTableDuration(row.original.stock) : "—"}</span>, enableSorting: true },
     { id: "online_rate_30d", accessorFn: (row) => row.stock?.online_rate_30d ?? null, header: "30 天在线率", meta: { width: 176, grow: 0, minWidth: 168, align: "end", text: "single", help: "近 30 天有记录的日期中，有货日期所占比例；无记录时不计算。" }, cell: ({ row }) => <InventoryRateCell value={row.original.stock?.online_rate_30d} />, enableSorting: true },
-    { id: "history_30d", accessorFn: (row) => row.stock?.history_30d ?? "", header: "近 30 天趋势", meta: { defaultHidden: true, width: 176, grow: 0, minWidth: 160, text: "single", help: "最近 30 个日历日每格一天，颜色表示库存状态；缺少记录的日期留空。" }, cell: ({ row }) => row.original.stock ? <InventoryHistoryCell row={row.original.stock} /> : "—", enableSorting: false },
-    { id: "in_stock_variants", accessorFn: (row) => row.product.in_stock_variants, header: "有货变体", meta: { width: 104, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => formatInStockVariants(row.original), enableSorting: true },
+    { id: "history_30d", accessorFn: (row) => row.stock?.history_30d ?? "", header: "近 30 天趋势", meta: { defaultHidden: true, width: 202, grow: 0, minWidth: 202, align: "start", text: "single", help: "最近 30 个日历日每格一天，颜色表示库存状态；缺少记录的日期留空。" }, cell: ({ row }) => row.original.stock ? <InventoryHistoryCell row={row.original.stock} /> : "—", enableSorting: false },
+    { id: "in_stock_variants", accessorFn: (row) => row.product.in_stock_variants, header: "有货变体", meta: { width: 104, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => <span className="si-mono">{formatInStockVariants(row.original)}</span>, enableSorting: true },
     { id: "price", accessorFn: (row) => row.kind === "parent" ? row.product.price_min : row.stock?.price ?? row.product.price_min, header: "价格", meta: { width: 112, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => <span className="si-mono">{formatProductPrice(row.original)}</span>, enableSorting: true },
-    { id: "category", accessorFn: (row) => row.stock?.category ?? row.product.category, header: "分类", meta: { defaultHidden: true, width: 142, grow: 1, minWidth: 120, text: "single" }, cell: ({ row }) => <code className="si-mono">{(row.original.stock?.category ?? row.original.product.category) || "—"}</code>, enableSorting: true },
-    { id: "last_change", accessorFn: (row) => row.stock?.last_change_at ?? null, header: "最近变化", meta: { defaultHidden: true, width: 158, grow: 1, minWidth: 140, text: "clamp2", help: "最近一次已记录的变化事件及日期；父 SKU 只显示库存状态变化。" }, cell: ({ row }) => row.original.stock?.last_change ? <span className="si-products-last-change"><strong>{row.original.stock.last_change_at ?? "近期"}</strong><small>{row.original.stock.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
-    { id: "rating", accessorFn: (row) => row.product.rating ?? null, header: "评分 / 评价数", meta: { defaultHidden: true, width: 176, grow: 0, minWidth: 168, align: "end", text: "single", help: "来自站点商品详情页的评分与评价数；未抓取到时显示“—”。" }, cell: ({ row }) => row.original.product.rating == null && row.original.product.review_count == null ? "—" : `${row.original.product.rating == null ? "—" : row.original.product.rating.toFixed(1)} · ${row.original.product.review_count ?? "—"}`, enableSorting: true },
-    { id: "link", accessorFn: (row) => row.product.url, header: "链接", meta: { defaultHidden: true, width: 56, grow: 0, minWidth: 56, text: "single" }, cell: ({ row }) => <Button size="small" variant="quiet" icon={<ExternalLink size={13} />} aria-label={`打开 ${row.original.product.title} 商品页`} title={`打开 ${row.original.product.title} 商品页`} onClick={(event) => { event.stopPropagation(); onOpenUrl(row.original.product.url); }} />, enableSorting: false },
-    { id: "actions", header: "操作", meta: { width: 56, grow: 0, minWidth: 56, sticky: "right", text: "single" }, enableHiding: false, cell: ({ row }) => <Button size="small" variant="quiet" icon={<MoreHorizontal size={15} />} aria-label={`查看 ${row.original.sku ?? row.original.product.title} 详情`} onClick={(event) => { event.stopPropagation(); onOpen(row.original); }} />, enableSorting: false },
+    { id: "category", accessorFn: (row) => row.stock?.category ?? row.product.category, header: "分类", meta: { defaultHidden: true, width: 142, grow: 1, minWidth: 120, align: "start", text: "single" }, cell: ({ row }) => <code className="si-mono">{(row.original.stock?.category ?? row.original.product.category) || "—"}</code>, enableSorting: true },
+    { id: "last_change", accessorFn: (row) => row.stock?.last_change_at ?? null, header: "最近变化", meta: { defaultHidden: true, width: 158, grow: 1, minWidth: 140, align: "start", text: "clamp2", help: "最近一次已记录的变化事件及日期；父 SKU 只显示库存状态变化。" }, cell: ({ row }) => row.original.stock?.last_change ? <span className="si-products-last-change"><strong>{row.original.stock.last_change_at ?? "近期"}</strong><small>{row.original.stock.last_change}</small></span> : <span className="si-muted">—</span>, enableSorting: true },
+    { id: "rating", accessorFn: (row) => row.product.rating ?? null, header: "评分 / 评价数", meta: { defaultHidden: true, width: 176, grow: 0, minWidth: 168, align: "end", text: "single", help: "来自站点商品详情页的评分与评价数；未抓取到时显示“—”。" }, cell: ({ row }) => <span className="si-mono">{row.original.product.rating == null && row.original.product.review_count == null ? "—" : `${row.original.product.rating == null ? "—" : row.original.product.rating.toFixed(1)} · ${row.original.product.review_count ?? "—"}`}</span>, enableSorting: true },
+    { id: "link", accessorFn: (row) => row.product.url, header: "链接", meta: { defaultHidden: true, width: 68, grow: 0, minWidth: 68, align: "center", text: "single" }, cell: ({ row }) => <Button size="small" variant="quiet" icon={<ExternalLink size={13} />} aria-label={`打开 ${row.original.product.title} 商品页`} title={`打开 ${row.original.product.title} 商品页`} onClick={(event) => { event.stopPropagation(); onOpenUrl(row.original.product.url); }} />, enableSorting: false },
+    { id: "actions", header: "操作", meta: { width: 64, grow: 0, minWidth: 64, sticky: "right", align: "center", text: "single" }, enableHiding: false, cell: ({ row }) => <Button size="small" variant="quiet" icon={<MoreHorizontal size={15} />} aria-label={`查看 ${row.original.sku ?? row.original.product.title} 详情`} onClick={(event) => { event.stopPropagation(); onOpen(row.original); }} />, enableSorting: false },
   ];
 }
 
