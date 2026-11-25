@@ -803,6 +803,7 @@ function projectSummary(
   snapshot: ProjectSummarySnapshot,
   id: ProjectId,
   deviceId: string,
+  deviceName: string | undefined,
   storageLocation: Awaited<ReturnType<typeof inspectProjectStorageLocation>>,
 ): ProjectSummary {
   const activeSkus = snapshot.skus.filter((row) => row.status === "active");
@@ -840,7 +841,7 @@ function projectSummary(
     attention: snapshot.seoIssues.filter((issue) => issue.status === "open").length,
     warnings,
     ...(storageLocation.status === "known-cloud" ? { storage_location: "known_cloud_sync" as const } : {}),
-    runner_device: runner?.device_name ?? null,
+    runner_device: runner?.device_id === deviceId && deviceName ? deviceName : runner?.device_name ?? null,
     is_runner: runner?.device_id === deviceId,
   };
 }
@@ -1964,12 +1965,14 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             counts, ...(errors.length ? { errors } : {}), steps };
         } else if (req.job === "daily") {
           if (!feedUrlsFromConfig(config).length && !config.crawl.auto_collect_products) {
+            const summary = "未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。";
             jobResult = {
               runId,
               job: req.job,
               status: "skipped",
               exitCode: EXIT.OK,
-              summary: "未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。",
+              summary,
+              errors: [summary],
             };
             progress(90, "daily", jobResult.summary, "warn");
           } else {
@@ -2249,7 +2252,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const snapshot = await loadProjectSummary(projectPath);
       const source = await readSiteConfigSource(projectPath);
       const storageLocation = await inspectProjectStorageLocation(projectPath);
-      return { summary: projectSummary(snapshot, id, ctx.deviceId, storageLocation),
+      return { summary: projectSummary(snapshot, id, ctx.deviceId, ctx.deviceName, storageLocation),
         config: source.config, config_revision: configRevision(source.content), runner: snapshot.runner };
     },
     updateConfig: async (id, patch, options) => {
@@ -3132,7 +3135,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       const projectPath = resolve(id);
       const runnerInfo = await readRunner(projectPath);
       const thisDevice = { device_id: ctx.deviceId, device_name: ctx.deviceName ?? "SiteIndex" };
-      return { runner: runnerInfo, this_device: thisDevice, is_this_device: runnerInfo?.device_id === thisDevice.device_id };
+      return { runner: runnerInfo?.device_id === ctx.deviceId && ctx.deviceName
+        ? { ...runnerInfo, device_name: ctx.deviceName } : runnerInfo,
+      this_device: thisDevice, is_this_device: runnerInfo?.device_id === thisDevice.device_id };
     },
   };
 

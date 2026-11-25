@@ -435,11 +435,12 @@ describe("project service", () => {
     expect(afterEmptyFeed).toEqual(beforeEmptyFeed);
 
     const daily = await api.runJob({ projectPath, job: "daily", trigger: "manual", date: "2026-10-24" }, () => undefined);
-    expect(daily).toMatchObject({ job: "daily", status: "skipped", exitCode: 0 });
+    expect(daily).toMatchObject({ job: "daily", status: "skipped", exitCode: 0,
+      errors: ["未配置 GMC Feed，商品同步已跳过，现有库存数据保持不变。"] });
     const afterStandaloneDaily = await Promise.all(protectedPaths.map((relativePath) => readFile(path.join(projectPath, relativePath))));
     expect(afterStandaloneDaily).toEqual(beforeEmptyFeed);
     const dailyRun = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.run_id === daily.runId);
-    expect(dailyRun).toMatchObject({ job: "daily", status: "skipped" });
+    expect(dailyRun).toMatchObject({ job: "daily", status: "skipped", errors: daily.errors });
   }, 60_000);
 
   it("preserves existing user folders, _about.md and README in the chosen project directory", async () => {
