@@ -86,10 +86,11 @@ async function installInterruptedDailyTransaction(
   return { manifestPath, backupDirectory, targets, ...(externalBytes ? { externalBytes } : {}) };
 }
 
-function service(projectPath: string) {
+function service(projectPath: string, deviceName?: string) {
   return createCoreService({
     resolveProject: (id) => id === "fixture" ? projectPath : path.join(projectPath, "missing"),
     deviceId: "test-device",
+    deviceName,
     cacheDir: path.join(path.dirname(projectPath), "cache"),
   });
 }
@@ -100,6 +101,22 @@ afterEach(async () => {
 });
 
 describe("createCoreService initial namespaces", () => {
+  it("shows the current device name for this runner and keeps another runner's stored name", async () => {
+    const { projectPath } = await makeProject();
+    const runnerPath = path.join(projectPath, PATHS.runner);
+    const api = service(projectPath, "Renamed device");
+    await writeFile(runnerPath, JSON.stringify({
+      device_id: "test-device", device_name: "Old device", claimed_at: "2026-10-21T00:00:00Z",
+    }));
+    expect((await api.projects.get("fixture")).summary.runner_device).toBe("Renamed device");
+    expect((await api.runner.get("fixture")).runner?.device_name).toBe("Renamed device");
+    await writeFile(runnerPath, JSON.stringify({
+      device_id: "other-device", device_name: "Other device", claimed_at: "2026-10-21T00:00:00Z",
+    }));
+    expect((await api.projects.get("fixture")).summary.runner_device).toBe("Other device");
+    expect((await api.runner.get("fixture")).runner?.device_name).toBe("Other device");
+  });
+
   it("reads project details, inventory trends and daily reports from the expected project", async () => {
     const { projectPath } = await makeProject();
     const api = service(projectPath);
