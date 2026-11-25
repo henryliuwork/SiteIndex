@@ -1,5 +1,5 @@
-.si-page-frame .si-schedules-page { display: flex; width: min(100%,1320px); min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--space-section-gap); padding: 0; }
-.si-schedules-page > .si-data-table { min-height: 0; flex: 1 1 auto; }
+.si-page-frame .si-schedules-page { display: flex; width: 100%; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: var(--space-section-gap); padding: 0; }
+.si-schedules-page > .si-table-section { min-height: 0; flex: 1 1 auto; }
 .si-schedule-utility { min-width: 0; flex: none; }
 .si-schedule-utility[hidden] { display: none; }
 .si-schedule-utility .si-card { gap: var(--space-2); padding: var(--space-3); }
@@ -11,8 +11,9 @@
 .si-schedule-project small { overflow: hidden; color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); text-overflow: ellipsis; white-space: nowrap; }
 .si-schedule-cadence, .si-schedule-last-run { display: flex; min-width: 0; align-items: center; gap: var(--space-2); white-space: nowrap; }
 .si-schedule-cadence time, .si-schedule-last-run time { color: var(--color-ink-2); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); }
-.si-schedule-status-cell { display: grid; justify-items: start; gap: var(--space-1); }
-.si-schedule-status-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.si-schedule-status-cell { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gap-inline); }
+.si-schedule-status-actions { display: flex; flex-wrap: wrap; gap: var(--gap-inline); }
+.si-schedule-status-cell > small { flex-basis: 100%; }
 .si-schedule-status-message, .si-schedule-status-error { color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); white-space: normal; }
 .si-schedule-status-error, .si-schedule-cleanup-error { color: var(--color-danger); }
 .si-system-tasks { display: grid; min-width: 0; gap: var(--space-3); }

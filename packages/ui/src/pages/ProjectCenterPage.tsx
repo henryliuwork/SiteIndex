@@ -378,19 +378,6 @@ function CenterStatus({ status }: { status: ProjectSummary["sync"]["state"] }) {
   return <Chip tone={tone}>{status === "ok" ? "成功" : status === "failed" ? "失败" : status === "partial" ? "提醒" : status === "running" ? "运行中" : "待配置"}</Chip>;
 }
 
-function AttentionKpi({ count, expanded, onToggle }: { count: number; expanded: boolean; onToggle: () => void }) {
-  return <div className={"si-kpi-card" + (count > 0 ? " si-kpi-warn" : "")}>
-    <button
-    type="button"
-    className="si-center-attention-toggle"
-    aria-expanded={expanded}
-    aria-controls="si-center-attention-panel"
-    onClick={onToggle}
-    >待处理提醒</button>
-    <strong className="si-kpi-value">{count}</strong>
-  </div>;
-}
-
 function AttentionIssueRow({ project, issue }: { project: ProjectSummary; issue: SeoIssue }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -594,7 +581,7 @@ export function ProjectCenterPage() {
       {projectsQuery.isLoading ? <div className="si-page-loading" role="status">正在加载项目…</div> : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : <>
         <div className="si-center-kpis">
           {metrics.slice(0, 3).map((metric) => metric.key === "attention"
-            ? <AttentionKpi key={metric.key} count={totalAttention} expanded={attentionExpanded} onToggle={() => setAttentionExpanded((expanded) => !expanded)} />
+            ? <KpiCard key={metric.key} metric={metric} onClick={() => setAttentionExpanded((expanded) => !expanded)} ariaExpanded={attentionExpanded} ariaControls="si-center-attention-panel" />
             : <KpiCard key={metric.key} metric={metric} />)}
           <div className="si-center-kpi-with-retry">
             <KpiCard metric={metrics[3]!} />

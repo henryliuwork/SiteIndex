@@ -198,6 +198,9 @@ async function readSurfaceSnapshot(page: Page): Promise<PageSurfaceSnapshot> {
         if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
       }
       return true;
+    }) || Array.from(document.querySelectorAll<HTMLElement>('.si-data-table[data-pagination="false"] .si-table-scroll')).some((element) => {
+      const rect = element.getBoundingClientRect();
+      return element.isConnected && element.getClientRects().length > 0 && rect.width > 0 && rect.height > 0;
     });
     const hasVisibleRows = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table")).some((tableElement) =>
       tableElement.getBoundingClientRect().width > 0 && tableElement.getBoundingClientRect().height > 0
@@ -530,6 +533,7 @@ async function inspectPage(page: Page): Promise<{
         bottom: Math.round(rect.bottom),
         bottomInViewport: rect.bottom <= window.innerHeight + 1 && rect.bottom > 0,
         checkViewport,
+        expectsPagination: table?.dataset.pagination !== "false",
         hasPagination: Boolean(footer),
         paginationBottom: footerRect ? Math.round(footerRect.bottom) : null,
         paginationInViewport: Boolean(footerVisible && footerRect && footerRect.top >= 0 && footerRect.bottom <= window.innerHeight + 1),
@@ -809,7 +813,7 @@ async function main(): Promise<void> {
             const title = await page.locator(".si-page-frame-header h1").boundingBox();
             const header = await page.locator(".si-page-frame-header").boundingBox();
             if (!title || !header || title.y + title.height > header.y + header.height + 1) {
-              failures.push({ rule: "project-center-title-overflow", message: "项目中心标题越过 56px 标题行。" });
+              failures.push({ rule: "project-center-title-overflow", message: "项目中心标题越过 72px 标题行。" });
             }
           }
           if (route.path === "/skills") {
@@ -844,7 +848,7 @@ async function main(): Promise<void> {
             contentSurface: boolean;
             errorSurface: boolean;
             scheduleTableMissingStandardScroll: boolean;
-            tables: Array<{ overflowY: string; bottomInViewport: boolean; checkViewport: boolean; hasPagination: boolean; paginationBottom: number | null; paginationInViewport: boolean; hasPageSizeControl: boolean }>;
+            tables: Array<{ overflowY: string; bottomInViewport: boolean; checkViewport: boolean; expectsPagination: boolean; hasPagination: boolean; paginationBottom: number | null; paginationInViewport: boolean; hasPageSizeControl: boolean }>;
             clippedCells: string[];
             inlineClickMisses: string[];
             sectionPage: SectionPageMetrics;
@@ -893,7 +897,7 @@ async function main(): Promise<void> {
           }
           if (values.tables.some((table) => table.checkViewport && !table.bottomInViewport)) failures.push({ rule: "table-viewport", message: "表格滚动区底部超出窗口视口。" });
           if (!viewport.headerOnly && values.tables.some((table) => table.checkViewport && table.hasPagination && !table.paginationInViewport)) failures.push({ rule: "table-pagination-viewport", message: "表格分页栏未完整显示在窗口视口内。" });
-          if (values.tables.some((table) => !table.hasPagination || !table.hasPageSizeControl)) {
+          if (values.tables.some((table) => table.expectsPagination && (!table.hasPagination || !table.hasPageSizeControl))) {
             failures.push({ rule: "table-pagination", message: "表格没有分页条或每页条数控件。" });
           }
           if (values.inlineClickMisses.length) failures.push({ rule: "inline-hit-test", message: `行内控件被其他元素遮挡：${values.inlineClickMisses.join("；")}` });

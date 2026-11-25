@@ -74,12 +74,12 @@ export function checkFrameMetrics(
     for (const height of metrics.buttonHeights) near("project-header-button-height", height, 32);
     for (const gap of metrics.buttonGaps) near("project-header-button-gap", gap, 12);
   } else {
-    near("global-title-height", metrics.headerHeight, 56);
+    near("global-title-height", metrics.headerHeight, 72);
     near("global-title-padding", metrics.globalPaddingTop, 24);
   }
   const bodyStart = projectSettingsScrollableBodyRoutes.has(routeName) && metrics.bodyStart !== null
     ? metrics.bodyStart + metrics.bodyScrollTop : metrics.bodyStart;
-  near("frame-body-start", bodyStart, 16);
+  near("frame-body-start", bodyStart, expectedKind === "global" ? 0 : 16);
   const disallowedBodyScroll = metrics.bodyScroll && !projectSettingsScrollableBodyRoutes.has(routeName);
   if (hasDataTable && (metrics.documentScroll || metrics.contentScroll || disallowedBodyScroll)) {
     findings.push({ rule: "frame-table-scroll", message: "表格页的 document、内容区或外框主体出现纵向滚动。" });

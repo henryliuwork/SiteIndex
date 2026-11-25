@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Button } from "../primitives";
+import { Button, KpiCard } from "../primitives";
 import { Card, EmptyState, Notice, PageHeader } from "../layout-primitives";
 
 afterEach(cleanup);
 
 describe("shared layout components", () => {
+  it("makes interactive KPI cards fully clickable with expansion semantics", () => {
+    const onClick = vi.fn();
+    render(<KpiCard metric={{ key: "attention", label: "待处理提醒", value: "3" }} onClick={onClick} ariaExpanded={false} ariaControls="attention-panel" />);
+    const card = screen.getByRole("button", { name: /待处理提醒\s*3/ });
+    expect(card.getAttribute("aria-expanded")).toBe("false");
+    expect(card.getAttribute("aria-controls")).toBe("attention-panel");
+    fireEvent.click(card);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
   it("provides a labeled card region", () => {
     render(<Card label="库存摘要"><span>在售 12</span></Card>);
     expect(screen.getByRole("region", { name: "库存摘要" }).textContent).toContain("在售 12");

@@ -57,7 +57,6 @@ export interface DataTableProps<T, F = Record<string, unknown>> {
   height?: number | "fill";
   rowHeight?: number;
   showHeader?: boolean;
-  /** @deprecated DataTable v2 always renders the standard pagination footer. */
   showPagination?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
@@ -72,7 +71,7 @@ function getColumnId<T>(column: ColumnDef<T, unknown>, index: number): string {
 
 export function DataTable<T, F = Record<string, unknown>>({
   tableId, scopeId, rows, total, columns, query, onQueryChange, onRowClick, getRowId,
-  height = "fill", rowHeight, selectable = false, onSelectionChange, showHeader = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
+  height = "fill", rowHeight, selectable = false, onSelectionChange, showHeader = true, showPagination = true, emptyTitle = "暂无数据", emptyDescription = "调整搜索条件或筛选后再试。", toolbar,
 }: DataTableProps<T, F>) {
   const isFill = height === "fill";
   const resolvedRowHeight = rowHeight ?? (columns.some((column) => column.meta?.text === "clamp2") ? 52 : 40);
@@ -417,6 +416,7 @@ export function DataTable<T, F = Record<string, unknown>>({
       className={`si-data-table${isFill ? " is-fill si-table-region" : ""}${compactFillFallback ? " is-compact-fill" : ""}`}
       style={compactFillFallback ? { minHeight: FILL_TABLE_COMPACT_MIN_HEIGHT } : undefined}
       aria-label={tableId + " 数据表"}
+      data-pagination={showPagination ? "true" : "false"}
     >
       <div className="si-table-toolbar">
         <div className="si-table-toolbar-content">{toolbar}</div>
@@ -479,7 +479,7 @@ export function DataTable<T, F = Record<string, unknown>>({
           </tbody>
         </table>
       </div>
-      <Pagination
+      {showPagination !== false && <Pagination
         page={query.page}
         pageSize={pageSize}
         total={total}
@@ -488,7 +488,7 @@ export function DataTable<T, F = Record<string, unknown>>({
           pageSizeState.setPageSize(nextSize);
           onQueryChange({ ...query, page: 1, pageSize: nextSize });
         }}
-      />
+      />}
     </section>
   );
 }

@@ -7,6 +7,8 @@
 .si-page-frame .si-table-section > .si-data-table { border: 0; border-radius: 0; background: transparent; }
 .si-page-frame .si-table-section > .si-data-table > .si-table-scroll { border: 1px solid var(--color-line); border-radius: var(--radius-card) var(--radius-card) 0 0; background: var(--color-surface); }
 .si-page-frame .si-table-section > .si-data-table > .si-pagination { border: 1px solid var(--color-line); border-top: 0; border-radius: 0 0 var(--radius-card) var(--radius-card); background: var(--color-surface); padding-inline: var(--space-3); }
-.si-page-frame .si-table-toolbar { min-height: var(--control-height); gap: var(--space-2); margin-bottom: var(--space-section-gap); padding: 0; border-bottom: 0; }
+.si-page-frame .si-table-section .si-table-toolbar { min-height: var(--control-height); gap: var(--space-2); margin-bottom: var(--space-section-gap); padding: 0; border-bottom: 0; }
+.si-page-frame .si-data-table > .si-table-toolbar { min-height: var(--control-height); gap: var(--space-2); margin-bottom: var(--space-section-gap); padding: 0; border-bottom: 0; }
+.si-page-frame :is(.si-card, .si-recent-runs) .si-data-table > .si-table-toolbar { margin-bottom: 0; padding: var(--space-3) var(--pad-card); border-bottom: 1px solid var(--color-line); }
 .si-page-frame .si-table-toolbar .si-search-input { width: min(var(--table-search-width), 100%); height: var(--control-height); }
 .si-page-frame .si-table-toolbar :is(.si-button, .si-filter-pill, .si-select-trigger, .si-search-input input) { min-height: var(--control-height); height: var(--control-height); }

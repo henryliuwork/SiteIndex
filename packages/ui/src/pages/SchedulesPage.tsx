@@ -5,7 +5,7 @@ import { RefreshCw } from "lucide-react";
 import type { ProjectSummary, RunLog, ScheduleState, SystemTaskRow } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Card, Chip, DataTable, EmptyState, formatDateTime, Notice, PageFrame, PageHeader, Select, useToast } from "../components";
+import { ApiErrorNotice, Button, Card, Chip, DataTable, EmptyState, formatDateTime, Notice, PageFrame, PageHeader, Select, TableSection, useToast } from "../components";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./schedules/page.css";
 
@@ -82,8 +82,8 @@ function ScheduleStatusCell({ project, registered, verification, canVerify, onVe
   return <div className="si-schedule-status-cell">
     <Chip tone={status.tone}>{status.label}</Chip>
     {canVerify && <div className="si-schedule-status-actions">
-      <Button disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id); }}>{checking ? "校验中…" : "校验"}</Button>
-      {result?.state === "path_mismatch" && <Button variant="primary" disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id, true); }}>{checking ? "修复中…" : "修复"}</Button>}
+      <Button size="small" disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id); }}>{checking ? "校验中…" : "校验"}</Button>
+      {result?.state === "path_mismatch" && <Button size="small" variant="primary" disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id, true); }}>{checking ? "修复中…" : "修复"}</Button>}
     </div>}
     {(result?.message || error) && <small className={error || result?.state === "error" ? "si-schedule-status-error" : "si-schedule-status-message"} role={error || result?.state === "error" ? "alert" : "status"}>{error || result?.message}</small>}
   </div>;
@@ -278,13 +278,13 @@ export function SchedulesPage() {
   const mode = runtimeStatusQuery.data?.mode === "system" ? "系统计划任务" : runtimeStatusQuery.data?.mode === "resident" ? "软件常驻（关闭软件后不执行）" : undefined;
 
   const columns: ColumnDef<ScheduleProjectRow, unknown>[] = [
-    { id: "project", accessorFn: (row) => `${row.project.name} ${row.project.domain}`, header: "项目", meta: { width: 144, grow: 0, minWidth: 132, text: "clamp2" }, cell: ({ row }) => <div className="si-schedule-project"><strong>{row.original.project.name}</strong><small>{row.original.project.domain}</small></div> },
-    { id: "daily", accessorFn: (row) => row.schedule?.config.daily.time ?? "", header: "每日同步", meta: { width: 124, grow: 0, minWidth: 112, text: "clamp2" }, cell: ({ row }) => row.original.schedule ? <ScheduleCadence enabled={row.original.schedule.config.daily.enabled} time={row.original.schedule.config.daily.time} /> : row.original.scheduleError ? <ApiErrorNotice label="计划读取失败。" error={row.original.scheduleError} onRetry={row.original.refetchSchedule} /> : <span className="si-muted">正在读取…</span> },
-    { id: "weekly", accessorFn: (row) => row.schedule?.config.weekly.time ?? "", header: "每周抓取", meta: { width: 124, grow: 0, minWidth: 112, text: "clamp2" }, cell: ({ row }) => row.original.schedule ? <ScheduleCadence enabled={row.original.schedule.config.weekly.enabled} time={row.original.schedule.config.weekly.time} /> : row.original.scheduleError ? <span className="si-muted">—</span> : <span className="si-muted">正在读取…</span> },
-    { id: "last_run", accessorFn: (row) => row.lastRun?.finished_at ?? row.lastRun?.started_at ?? "", header: "最近一次运行", meta: { width: 140, grow: 0, minWidth: 128, text: "clamp2" }, cell: ({ row }) => row.original.historyError ? <ApiErrorNotice label="运行记录读取失败。" error={row.original.historyError} /> : row.original.historyLoading ? <span className="si-muted">正在读取…</span> : row.original.lastRun ? <div className="si-schedule-last-run"><Chip tone={runStatus(row.original.lastRun).tone}>{runStatus(row.original.lastRun).label}</Chip><time>{formatDateTime(row.original.lastRun.finished_at ?? row.original.lastRun.started_at)}</time></div> : <span className="si-muted">暂无运行记录</span> },
-    { id: "next_run", accessorFn: (row) => row.schedule ? nextRun(row.schedule)?.at ?? "" : "", header: "下一次运行", meta: { width: 160, grow: 1, minWidth: 140, text: "clamp2" }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">—</span> : row.original.schedule ? nextRun(row.original.schedule) ? <span>{nextRun(row.original.schedule)!.job} · {formatDateTime(nextRun(row.original.schedule)!.at)}</span> : <span className="si-muted">暂无计划</span> : <span className="si-muted">正在读取…</span> },
-    { id: "system_status", accessorFn: (row) => row.schedule?.registered ? "已注册" : "未注册", header: "系统计划任务", meta: { width: 150, grow: 0, minWidth: 140, text: "clamp2" }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">读取失败</span> : row.original.schedule ? <ScheduleStatusCell project={row.original.project} registered={row.original.schedule.registered} verification={verificationByProject[row.original.project.id]} canVerify={typeof api.schedule.verify === "function"} onVerify={(projectId, repair) => { void runVerification(projectId, repair); }} /> : <span className="si-muted">正在读取…</span> },
-    { id: "actions", accessorFn: (row) => row.project.id, header: "操作", meta: { width: 92, grow: 0, minWidth: 84, text: "single", sticky: "right", align: "end" }, cell: ({ row }) => <Link className="si-button" to={`/p/${row.original.project.id}/runs`}>去配置</Link> },
+    { id: "project", accessorFn: (row) => `${row.project.name} ${row.project.domain}`, header: "项目", meta: { width: 180, grow: 0, minWidth: 150, text: "clamp2" }, cell: ({ row }) => <div className="si-schedule-project"><strong>{row.original.project.name}</strong><small>{row.original.project.domain}</small></div> },
+    { id: "daily", accessorFn: (row) => row.schedule?.config.daily.time ?? "", header: "每日同步", meta: { width: 156, grow: 0, minWidth: 144, text: "single" }, cell: ({ row }) => row.original.schedule ? <ScheduleCadence enabled={row.original.schedule.config.daily.enabled} time={row.original.schedule.config.daily.time} /> : row.original.scheduleError ? <ApiErrorNotice label="计划读取失败。" error={row.original.scheduleError} onRetry={row.original.refetchSchedule} /> : <span className="si-muted">正在读取…</span> },
+    { id: "weekly", accessorFn: (row) => row.schedule?.config.weekly.time ?? "", header: "每周抓取", meta: { width: 156, grow: 0, minWidth: 144, text: "single" }, cell: ({ row }) => row.original.schedule ? <ScheduleCadence enabled={row.original.schedule.config.weekly.enabled} time={row.original.schedule.config.weekly.time} /> : row.original.scheduleError ? <span className="si-muted">—</span> : <span className="si-muted">正在读取…</span> },
+    { id: "last_run", accessorFn: (row) => row.lastRun?.finished_at ?? row.lastRun?.started_at ?? "", header: "最近一次运行", meta: { width: 196, grow: 0, minWidth: 180, text: "single" }, cell: ({ row }) => row.original.historyError ? <ApiErrorNotice label="运行记录读取失败。" error={row.original.historyError} /> : row.original.historyLoading ? <span className="si-muted">正在读取…</span> : row.original.lastRun ? <div className="si-schedule-last-run"><Chip tone={runStatus(row.original.lastRun).tone}>{runStatus(row.original.lastRun).label}</Chip><time>{formatDateTime(row.original.lastRun.finished_at ?? row.original.lastRun.started_at)}</time></div> : <span className="si-muted">暂无运行记录</span> },
+    { id: "next_run", accessorFn: (row) => row.schedule ? nextRun(row.schedule)?.at ?? "" : "", header: "下一次运行", meta: { width: 210, grow: 1, minWidth: 180, text: "single" }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">—</span> : row.original.schedule ? nextRun(row.original.schedule) ? <span>{nextRun(row.original.schedule)!.job} · {formatDateTime(nextRun(row.original.schedule)!.at)}</span> : <span className="si-muted">暂无计划</span> : <span className="si-muted">正在读取…</span> },
+    { id: "system_status", accessorFn: (row) => row.schedule?.registered ? "已注册" : "未注册", header: "系统计划任务", meta: { width: 200, grow: 0, minWidth: 180 }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">读取失败</span> : row.original.schedule ? <ScheduleStatusCell project={row.original.project} registered={row.original.schedule.registered} verification={verificationByProject[row.original.project.id]} canVerify={typeof api.schedule.verify === "function"} onVerify={(projectId, repair) => { void runVerification(projectId, repair); }} /> : <span className="si-muted">正在读取…</span> },
+    { id: "actions", accessorFn: (row) => row.project.id, header: "操作", enableSorting: false, meta: { width: 104, grow: 0, minWidth: 96, text: "single", sticky: "right", align: "end" }, cell: ({ row }) => <Link className="si-button si-button-small" to={`/p/${row.original.project.id}/runs`}>去配置</Link> },
   ];
 
   const openProjectRuns = (row: ScheduleProjectRow) => navigate(`/p/${row.project.id}/runs`);
@@ -301,7 +301,7 @@ export function SchedulesPage() {
     {projectsQuery.isLoading ? <EmptyState title="正在加载项目计划…">正在读取项目及其计划配置。</EmptyState>
       : projectsQuery.isError ? <ApiErrorNotice page label="项目列表加载失败。" error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />
         : projects.length === 0 ? <EmptyState title="还没有项目">添加项目后会在这里汇总计划任务。</EmptyState>
-          : <DataTable
+          : <TableSection><DataTable
             tableId="schedules.projects"
             rows={pageRows}
             total={rows.length}
@@ -311,11 +311,11 @@ export function SchedulesPage() {
             getRowId={(row) => row.project.id}
             onRowClick={openProjectRuns}
             height="fill"
-            rowHeight={52}
+            rowHeight={56}
             toolbar={<div className="si-schedule-filter"><span>按项目筛选</span><Select ariaLabel="按项目筛选" value={selectedProject} options={[{ value: "all", label: "全部项目" }, ...projects.map((project) => ({ value: project.id, label: project.name }))]} onValueChange={(value) => { setSelectedProject(value); setQuery((current) => ({ ...current, page: 1 })); }} /></div>}
             emptyTitle="没有找到所选项目"
             emptyDescription="请选择其他项目，或改为查看全部项目。"
-          />}
+          /></TableSection>}
     </div>
   </PageFrame>;
 }
