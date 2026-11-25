@@ -49,7 +49,7 @@ const probe = String.raw`(() => {
     const compact = box.height <= 28.5;
     const headerHelp = element.matches(".si-table-heading .si-info-tooltip-trigger")
       && Math.abs(box.width - 18) <= 1 && Math.abs(box.height - 18) <= 1;
-    const headerSort = element.matches(".si-table-heading .si-sort-button")
+    const headerSort = element.matches(".si-table th .si-sort-button")
       && Math.abs(box.height - 28) <= 1;
     if (Math.abs(box.height - 28) > 1 && Math.abs(box.height - 32) > 1) {
       add("S1", element, "控件高度 " + round(box.height) + "px，应为 28 或 32px。", "", headerHelp ? "table-heading-help-18px" : undefined);

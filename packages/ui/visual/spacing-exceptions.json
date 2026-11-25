@@ -14,7 +14,7 @@
     {
       "id": "table-heading-controls-zero-padding",
       "rule": "S2",
-      "reason": "v0.8.3 排序文字与紧凑说明图标按表头基线排列；仅适用于 si-table-heading 内零左右内边距的排序按钮和 18×18px 说明按钮。"
+      "reason": "v0.8.3 排序文字与紧凑说明图标按表头基线排列；仅适用于共享表格 th 内 28px 高、零左右内边距的排序按钮，以及 si-table-heading 内 18×18px 的说明按钮。"
     }
   ]
 }
