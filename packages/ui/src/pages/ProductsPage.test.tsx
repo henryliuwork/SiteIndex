@@ -327,13 +327,23 @@ describe("合并后的产品管理表", () => {
     expect(headers[0]?.classList.contains("is-sticky-left")).toBe(true);
     expect(headers[0]?.style.left).toBe("0px");
     expect(headers[1]?.textContent).toContain("产品名称");
+    expect(headers[1]?.classList.contains("is-sticky-left")).toBe(true);
     await within(table).findByText("虚构组合商品", { selector: "strong" });
     const parentRow = screen.getByText("虚构组合商品", { selector: "strong" }).closest("tr")!;
     expect(parentRow.querySelector(".si-product-sku")?.textContent).toBe("DEMO001A");
     expect(parentRow.querySelector("td:first-child .si-product-sku")?.textContent).toBe("DEMO001A");
     expect(parentRow.querySelector("td:first-child")?.classList.contains("is-sticky-left")).toBe(true);
     expect(parentRow.querySelector("td:first-child")?.getAttribute("style")).toContain("left: 0px");
+    expect(parentRow.querySelector("td:nth-child(2)")?.classList.contains("is-sticky-left")).toBe(true);
+    expect(parentRow.querySelector("td:nth-child(2)")?.getAttribute("style")).toContain("left:");
+    expect(parentRow.querySelector(".si-product-main-copy")?.textContent).toBe("虚构组合商品");
+    expect(parentRow.querySelector(".si-product-main-copy strong")?.getAttribute("title")).toBe("虚构组合商品");
+    expect(parentRow.querySelector(".si-product-main-copy code, .si-product-main-copy .si-chip")).toBeNull();
     expect(parentRow.querySelector("td:nth-child(2)")?.textContent).not.toContain("DEMO001A");
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    expect(screen.getByRole("checkbox", { name: "SKU" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("checkbox", { name: "产品名称" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(within(table).queryByText("虚构组合商品子款", { selector: "strong" })).toBeNull();
     expect(screen.getByRole("group", { name: "SKU 展示模式" })).toBeTruthy();
     expect(mockApi.products.list).toHaveBeenCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: true }) }));
@@ -346,6 +356,47 @@ describe("合并后的产品管理表", () => {
     expect(childRow.querySelector("td:first-child")?.getAttribute("style")).toContain("left: 0px");
     expect(childRow.querySelector("td:nth-child(2)")?.textContent).not.toContain("DEMO001A01");
     await waitFor(() => expect(mockApi.products.list).toHaveBeenLastCalledWith("demo", expect.objectContaining({ filters: expect.objectContaining({ parent_only: undefined }) })));
+  });
+
+  it("已下架归入库存状态列，名称列仍只显示图片与名称", async () => {
+    const removed = makeProduct({ handle: "demo-removed", title: "虚构下架商品", product_id: "DEMOREMOVED", skus: ["DEMOREMOVED"], status: "removed" });
+    await renderProductsPage({ products: [removed], parentStocks: [], stockRows: [] });
+    const table = await screen.findByRole("table");
+    const row = (await within(table).findByText("虚构下架商品", { selector: "strong" })).closest("tr")!;
+    expect(findCell(row, "库存状态")).toBe("已下架");
+    expect(row.querySelector(".si-product-main-copy")?.textContent).toBe("虚构下架商品");
+  });
+
+  it("各列按内容对齐，链接和操作列保持紧凑固定宽度", async () => {
+    await renderProductsPage();
+    const table = await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    for (const name of ["持续", "近 30 天趋势", "分类", "最近变化", "评分 / 评价数", "链接"]) {
+      fireEvent.click(screen.getByRole("checkbox", { name: name }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    const headers = within(table).getAllByRole("columnheader");
+    const cells = (await within(table).findByText("虚构组合商品", { selector: "strong" })).closest("tr")!.querySelectorAll("td");
+    for (const name of ["SKU", "产品名称", "库存状态", "近 30 天趋势", "分类", "最近变化"]) {
+      const index = headers.findIndex((header) => header.textContent?.includes(name));
+      expect(headers[index]?.style.textAlign).toBe("left");
+      expect(cells[index]?.style.textAlign).toBe("left");
+    }
+    for (const name of ["持续", "30 天在线率", "有货变体", "价格", "评分 / 评价数"]) {
+      const index = headers.findIndex((header) => header.textContent?.includes(name));
+      expect(headers[index]?.style.textAlign).toBe("right");
+      expect(cells[index]?.style.textAlign).toBe("right");
+    }
+    for (const name of ["链接", "操作"]) {
+      const index = headers.findIndex((header) => header.textContent?.includes(name));
+      expect(headers[index]?.style.textAlign).toBe("center");
+      expect(cells[index]?.style.textAlign).toBe("center");
+    }
+    const tableWidth = Number.parseFloat(table.style.width);
+    const widths = [...table.querySelectorAll("colgroup col")].map((column) => Number.parseFloat((column as HTMLTableColElement).style.width) * tableWidth / 100);
+    expect(widths[headers.findIndex((header) => header.textContent?.includes("近 30 天趋势"))]).toBeGreaterThanOrEqual(202);
+    expect(widths[headers.findIndex((header) => header.textContent?.includes("链接"))]).toBeCloseTo(68);
+    expect(widths[headers.findIndex((header) => header.textContent?.includes("操作"))]).toBeCloseTo(64);
   });
 
   it("开启 30 天趋势列时，父子行都在独立列显示比例和真实趋势", async () => {
@@ -365,6 +416,7 @@ describe("合并后的产品管理表", () => {
     const parentRow = (await within(table).findByText("虚构组合商品", { selector: "strong" })).closest("tr")!;
     expect(findCell(parentRow, "30 天在线率")).toBe("50%");
     expect(parentRow.querySelector(".si-status-cells")?.getAttribute("aria-label")).toContain("有货、缺货");
+    expect(parentRow.querySelectorAll(".si-status-cells svg rect")).toHaveLength(30);
     fireEvent.click(screen.getByRole("button", { name: "显示子 SKU" }));
     const childRow = (await within(table).findByText("虚构组合商品子款", { selector: "strong" })).closest("tr")!;
     expect(findCell(childRow, "30 天在线率")).toBe("80%");

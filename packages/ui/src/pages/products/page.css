@@ -97,23 +97,19 @@ display: grid; width: 36px; height: 36px; flex: none; place-items: center; overf
 }
 
 .si-product-main-copy {
-display: grid; min-width: 0; gap: var(--space-1);
+min-width: 0; flex: 1;
 }
 
 .si-product-main-copy > strong {
-overflow: hidden; color: var(--color-ink-2); font-size: var(--fs-body); font-weight: 600; text-overflow: ellipsis; white-space: nowrap;
-}
-
-.si-product-main-copy > span {
-display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--space-1); color: var(--color-muted); font-size: var(--fs-body);
-}
-
-.si-product-main-copy code {
-overflow: hidden; max-width: 150px; text-overflow: ellipsis; white-space: nowrap;
+display: block; overflow: hidden; color: var(--color-ink-2); font-size: var(--fs-body); font-weight: 600; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .si-product-sku { color: var(--color-ink-2); font-family: var(--font-mono); font-weight: 600; white-space: nowrap; }
-.si-product-sku.is-child { padding-left: var(--space-3); }
+.si-product-sku.is-child { padding-left: var(--space-3); color: var(--color-muted); font-weight: 400; }
+
+.si-products-page .si-rate-cell { display: inline-flex; width: 100%; align-items: center; justify-content: flex-end; gap: var(--gap-inline); font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.si-products-page .si-rate-track { width: 72px; flex: 0 0 72px; }
+.si-products-page .si-rate-value { min-width: 4ch; text-align: right; }
 
 .si-product-tag {
 display: inline-flex; min-height: 19px; align-items: center; gap: var(--space-1); padding: 0 var(--space-2); border-radius: 10px; background: var(--color-info-soft); color: var(--color-info); font-size: var(--fs-body); white-space: nowrap;
