@@ -40,24 +40,24 @@ const probe = String.raw`(() => {
     return boxes;
   };
   const controls = Array.from(document.querySelectorAll("main button, main input, main select, main [role='button']"))
-    .filter((element) => visible(element) && !element.closest(".si-table tbody")
+    .filter((element) => visible(element) && !element.closest(".si-table tbody") && !element.matches(".si-kpi-card.is-interactive")
       && !element.closest("[role='tablist']")
       && !element.matches("input[type='checkbox'], input[type='radio'], input[type='hidden'], input[type='file'], input[type='range']"));
   for (const element of controls) {
     const box = rect(element);
     const style = getComputedStyle(element);
     const compact = box.height <= 28.5;
-    const headerHelp = element.matches(".si-table-heading .si-info-tooltip-trigger")
-      && Math.abs(box.width - 18) <= 1 && Math.abs(box.height - 18) <= 1;
+    const infoHelp = element.matches(".si-info-tooltip-trigger")
+      && Math.abs(box.width - 20) <= 1 && Math.abs(box.height - 20) <= 1;
     const headerSort = element.matches(".si-table th .si-sort-button")
       && Math.abs(box.height - 28) <= 1;
     if (Math.abs(box.height - 28) > 1 && Math.abs(box.height - 32) > 1) {
-      add("S1", element, "控件高度 " + round(box.height) + "px，应为 28 或 32px。", "", headerHelp ? "table-heading-help-18px" : undefined);
+      add("S1", element, "控件高度 " + round(box.height) + "px，应为 28 或 32px。", "", infoHelp ? "info-tooltip-20px" : undefined);
     }
     const minimum = compact ? 8 : 12;
     if (parseFloat(style.paddingLeft) < minimum - 1 || parseFloat(style.paddingRight) < minimum - 1) {
       const noPadding = parseFloat(style.paddingLeft) === 0 && parseFloat(style.paddingRight) === 0;
-      add("S2", element, "左右内边距 " + round(parseFloat(style.paddingLeft)) + "/" + round(parseFloat(style.paddingRight)) + "px，应至少 " + minimum + "px。", "", noPadding && (headerHelp || headerSort) ? "table-heading-controls-zero-padding" : undefined);
+      add("S2", element, "左右内边距 " + round(parseFloat(style.paddingLeft)) + "/" + round(parseFloat(style.paddingRight)) + "px，应至少 " + minimum + "px。", "", noPadding && infoHelp ? "info-tooltip-zero-padding" : noPadding && headerSort ? "table-heading-controls-zero-padding" : undefined);
     }
   }
   for (const element of document.querySelectorAll("main .si-chip, main .si-summary-line-item, main .si-summary-line-more")) {

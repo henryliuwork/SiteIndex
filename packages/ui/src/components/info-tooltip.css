@@ -1,8 +1,5 @@
-.si-info-tooltip-trigger { display: inline-grid; width: var(--control-height-compact); height: var(--control-height-compact); place-items: center; padding: var(--space-2); border: 1px solid var(--color-line); border-radius: 50%; background: var(--color-surface); color: var(--color-info); cursor: help; vertical-align: middle; }
-.si-info-tooltip-trigger:hover { background: var(--color-info-soft); }
-.si-table-heading .si-info-tooltip-trigger { width: 18px; height: 18px; padding: 0; border: 0; background: transparent; }
-.si-table-heading .si-info-tooltip-trigger:hover { background: transparent; }
-.si-table-heading .si-info-tooltip-trigger svg { width: 14px; height: 14px; }
+.si-info-tooltip-trigger { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--color-muted); cursor: help; vertical-align: middle; }
+.si-info-tooltip-trigger:hover { background: var(--color-info-soft); color: var(--color-info); }
 .si-info-tooltip-trigger:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 .si-info-tooltip-content { z-index: 70; max-width: min(var(--tooltip-max-width), calc(100vw - var(--space-4))); overflow-wrap: anywhere; word-break: break-word; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface); color: var(--color-ink-2); font-size: var(--fs-body); line-height: var(--lh-body); box-shadow: var(--shadow-pop); }
 .si-info-tooltip-arrow { fill: var(--color-surface); }

@@ -45,6 +45,7 @@ function renderTable(props: {
   onRowClick?: (row: Row) => void;
   onQueryChange?: (query: ListQuery) => void;
   columns?: ColumnDef<Row, unknown>[];
+  showPagination?: boolean;
 } = {}) {
   const onQueryChange = props.onQueryChange ?? vi.fn();
   const tableRows = props.rows ?? rows;
@@ -61,11 +62,18 @@ function renderTable(props: {
     onRowClick={props.onRowClick}
     getRowId={(row) => row.id}
     height={220}
+    showPagination={props.showPagination}
   />);
   return onQueryChange;
 }
 
 describe("DataTable v2", () => {
+  it("omits the pagination footer when showPagination is false", () => {
+    const onQueryChange = renderTable({ showPagination: false });
+    expect(document.querySelector(".si-pagination")).toBeNull();
+    expect(document.querySelector('[aria-label="test.table-v2 数据表"]')?.getAttribute("data-pagination")).toBe("false");
+    expect(onQueryChange).not.toHaveBeenCalled();
+  });
   it("restores required columns missing from old preferences", () => {
     localStorage.setItem("si.cols.test.table-v2", JSON.stringify(["kind"]));
     renderTable({ columns: [

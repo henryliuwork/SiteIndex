@@ -165,7 +165,7 @@ export function LengthBadge({ length, kind = "title", range }: { length: number;
   return <span className={"si-length-badge si-length-" + grade} aria-label={label + "长度 " + length + " 字符"} title={label + "长度：" + length + " 字符"}>{length}</span>;
 }
 
-export function KpiCard({ metric }: { metric: Kpi }) {
+export function KpiCard({ metric, onClick, ariaExpanded, ariaControls }: { metric: Kpi; onClick?: () => void; ariaExpanded?: boolean; ariaControls?: string }) {
   const content = (
     <>
       <span className="si-kpi-label">{metric.label}</span>
@@ -174,7 +174,9 @@ export function KpiCard({ metric }: { metric: Kpi }) {
     </>
   );
   const className = "si-kpi-card" + (metric.reserved ? " is-reserved" : "") + (metric.tone ? " si-kpi-" + metric.tone : "");
-  return metric.link ? <Link className={className} to={metric.link}>{content}</Link> : <div className={className}>{content}</div>;
+  return metric.link ? <Link className={className} to={metric.link}>{content}</Link>
+    : onClick ? <button type="button" className={className + " is-interactive"} onClick={onClick} aria-expanded={ariaExpanded} aria-controls={ariaControls}>{content}</button>
+      : <div className={className}>{content}</div>;
 }
 
 export function Popover({ trigger, children, align = "end", className = "", open, onOpenChange }: { trigger: ReactNode; children: ReactNode; align?: "start" | "center" | "end"; className?: string; open?: boolean; onOpenChange?: (open: boolean) => void }) {

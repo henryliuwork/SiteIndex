@@ -77,7 +77,7 @@ describe("v0.8 PageFrame gate", () => {
   });
 
   it("checks global title geometry without requiring a project header", () => {
-    const global: FrameMetrics = { ...project, kind: "global", headerHeight: 56, globalPaddingTop: 24 };
+    const global: FrameMetrics = { ...project, kind: "global", headerHeight: 72, globalPaddingTop: 24, bodyStart: 0 };
     expect(checkFrameMetrics("settings", "global", false, global, baseline).findings).toEqual([]);
     expect(checkFrameMetrics("settings", "global", false, { ...global, globalPaddingTop: 16 }, baseline).findings[0]?.rule).toBe("global-title-padding");
   });
