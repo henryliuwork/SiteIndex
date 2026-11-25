@@ -8,11 +8,11 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Columns3, GripVertical, LockKeyhole } from "lucide-react";
 import type { ListQuery } from "@siteindex/shared";
 import { Button, ColumnCheckbox, Pagination, Popover } from "./primitives";
 import { InfoTooltip } from "./info-tooltip";
-import { useColumnPrefs, useTablePageSize } from "./utils";
+import { normalizeColumnPrefs, useColumnPrefs, useTablePageSize } from "./utils";
 import { assertCompatibleRowText, calculateColumnWidths, findColumnsWithoutWidthContract } from "./table-layout";
 
 const warnedWidthContracts = new Set<string>();
@@ -34,7 +34,7 @@ declare module "@tanstack/react-table" {
     grow?: 0 | 1 | 2;
     /** 最小宽度(px)，列宽低于此值时表格出现横向滚动。 */
     minWidth?: number;
-    align?: "start" | "end";
+    align?: "start" | "center" | "end";
     /** single 单行省略，clamp2 两行省略，wrap 自由换行。 */
     text?: "single" | "clamp2" | "wrap";
     /** 标识列可固定在左侧，操作列可固定在右侧；actions 列 ID 仍会自动固定在右侧。 */
@@ -83,13 +83,21 @@ export function DataTable<T, F = Record<string, unknown>>({
   const [pinnedActionRowIds, setPinnedActionRowIds] = useState<string[]>([]);
   const [availableWidth, setAvailableWidth] = useState(0);
   const [compactFillFallback, setCompactFillFallback] = useState(false);
+  const [columnMenuOpen, setColumnMenuOpen] = useState(false);
+  const [draftOrder, setDraftOrder] = useState<string[]>([]);
+  const [draftVisible, setDraftVisible] = useState<string[]>([]);
+  const draggedColumnId = useRef<string | null>(null);
   const columnIds = useMemo(() => columns.map(getColumnId), [columns]);
   const defaultVisible = useMemo(() => columns.flatMap((column, index) => column.meta?.defaultHidden || column.meta?.allEmpty ? [] : [getColumnId(column, index)]), [columns]);
+  const requiredColumnIds = useMemo(() => columns.flatMap((column, index) => column.enableHiding === false && !column.meta?.reserved ? [getColumnId(column, index)] : []), [columns]);
+  const lockedStart = useMemo(() => columns.flatMap((column, index) => column.enableHiding === false && column.meta?.sticky !== "right" && getColumnId(column, index) !== "actions" ? [getColumnId(column, index)] : []), [columns]);
+  const lockedEnd = useMemo(() => columns.flatMap((column, index) => column.meta?.sticky === "right" || getColumnId(column, index) === "actions" ? [getColumnId(column, index)] : []), [columns]);
   const columnPrefs = useColumnPrefs(tableId, scopeId);
   const pageSizeState = useTablePageSize(tableId, scopeId);
   const columnIdsKey = columnIds.join("\u0000");
   const defaultsKey = defaultVisible.join("\u0000");
-  useEffect(() => columnPrefs.configure(columnIds, defaultVisible), [columnPrefs.configure, columnIdsKey, defaultsKey]);
+  const requiredKey = requiredColumnIds.join("\u0000");
+  useEffect(() => columnPrefs.configure(columnIds, defaultVisible, requiredColumnIds), [columnPrefs.configure, columnIdsKey, defaultsKey, requiredKey]);
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const missing = findColumnsWithoutWidthContract(columns);
@@ -99,7 +107,17 @@ export function DataTable<T, F = Record<string, unknown>>({
     warnedWidthContracts.add(warningKey);
     console.warn(`[DataTable:${tableId}] 以下列缺少 ColumnDef.meta 宽度契约，也没有旧的 size：${missing.join(", ")}。请使用 meta.width/grow/minWidth。`);
   }, [columns, tableId]);
-  const visibleColumnIds = columnPrefs.visible ?? defaultVisible;
+  const visibleColumnIds = columnPrefs.visible ?? normalizeColumnPrefs(null, columnIds, defaultVisible, requiredColumnIds);
+  const orderedColumnIds = useMemo(() => {
+    const locked = new Set([...lockedStart, ...lockedEnd]);
+    const movable = visibleColumnIds.filter((id) => !locked.has(id));
+    for (const [index, id] of columnIds.entries()) {
+      if (locked.has(id) || movable.includes(id)) continue;
+      const nextVisible = columnIds.slice(index + 1).find((candidate) => movable.includes(candidate));
+      movable.splice(nextVisible ? movable.indexOf(nextVisible) : movable.length, 0, id);
+    }
+    return [...lockedStart, ...movable, ...lockedEnd];
+  }, [columnIds, lockedEnd, lockedStart, visibleColumnIds]);
   const columnVisibility = useMemo(() => Object.fromEntries(columnIds.map((id) => [id, visibleColumnIds.includes(id)])), [columnIds, visibleColumnIds]);
   const sorting: SortingState = query.sort ? [{ id: query.sort.field, desc: query.sort.dir === "desc" }] : [];
   const table = useReactTable({
@@ -110,7 +128,7 @@ export function DataTable<T, F = Record<string, unknown>>({
     manualPagination: true,
     manualSorting: true,
     rowCount: total,
-    state: { columnVisibility, sorting },
+    state: { columnVisibility, columnOrder: orderedColumnIds, sorting },
   });
   const visibleColumns = table.getVisibleLeafColumns();
   const rowModel = table.getRowModel();
@@ -281,23 +299,58 @@ export function DataTable<T, F = Record<string, unknown>>({
     onQueryChange({ ...query, page: 1, sort: { field: columnId, dir } });
   };
 
+  const changeColumnMenuOpen = (open: boolean) => {
+    if (open) {
+      setDraftOrder([...orderedColumnIds]);
+      setDraftVisible([...visibleColumnIds]);
+    }
+    draggedColumnId.current = null;
+    setColumnMenuOpen(open);
+  };
+  const lockedIds = new Set([...lockedStart, ...lockedEnd]);
+  const movableDraftIds = draftOrder.filter((id) => !lockedIds.has(id));
+  const moveDraftColumn = (source: string, target: string) => {
+    if (source === target || lockedIds.has(source) || lockedIds.has(target)) return;
+    setDraftOrder((current) => {
+      const next = [...current];
+      const from = next.indexOf(source);
+      const to = next.indexOf(target);
+      if (from < 0 || to < 0) return current;
+      next.splice(from, 1);
+      next.splice(to, 0, source);
+      return next;
+    });
+  };
+  const toggleDraftColumn = (id: string, checked: boolean) => {
+    if (lockedIds.has(id)) return;
+    setDraftVisible((current) => checked ? [...current, id] : current.filter((item) => item !== id));
+  };
+  const renderColumnSetting = (id: string, locked: boolean) => {
+    const column = table.getColumn(id);
+    if (!column) return null;
+    const index = movableDraftIds.indexOf(id);
+    const label = (typeof column.columnDef.header === "string" ? column.columnDef.header : id) + (column.columnDef.meta?.allEmpty ? " · 无数据" : "");
+    return <div key={id} className="si-column-menu-row" onDragOver={locked ? undefined : (event) => event.preventDefault()} onDrop={locked ? undefined : (event) => { event.preventDefault(); if (draggedColumnId.current) moveDraftColumn(draggedColumnId.current, id); draggedColumnId.current = null; }}>
+      {locked ? <LockKeyhole size={14} aria-label="固定列" className="si-column-lock" /> : <span className="si-column-drag-handle" draggable onDragStart={(event) => { draggedColumnId.current = id; event.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => { draggedColumnId.current = null; }} aria-label={`拖动 ${label}`} role="img"><GripVertical size={14} /></span>}
+      <ColumnCheckbox label={label} checked={locked || draftVisible.includes(id)} disabled={locked || (draftVisible.includes(id) && draftVisible.length <= 1)} onCheckedChange={(checked) => toggleDraftColumn(id, checked)} />
+      {!locked && <span className="si-column-move-buttons">
+        <button type="button" aria-label={`上移 ${label}`} disabled={index <= 0} onClick={() => moveDraftColumn(id, movableDraftIds[index - 1] ?? id)}><ChevronUp size={14} /></button>
+        <button type="button" aria-label={`下移 ${label}`} disabled={index < 0 || index >= movableDraftIds.length - 1} onClick={() => moveDraftColumn(id, movableDraftIds[index + 1] ?? id)}><ChevronDown size={14} /></button>
+      </span>}
+    </div>;
+  };
+
   const columnMenu = (
     <div className="si-column-menu">
-      <div className="si-column-menu-heading">显示列</div>
-      {table.getAllLeafColumns().map((column) => {
-        const reserved = Boolean(column.columnDef.meta?.reserved);
-        const canHide = column.getCanHide() && !reserved;
-        return (
-          <ColumnCheckbox
-            key={column.id}
-            label={(typeof column.columnDef.header === "string" ? column.columnDef.header : column.id) + (column.columnDef.meta?.allEmpty ? " · 无数据" : "")}
-            checked={column.getIsVisible()}
-            disabled={!canHide || (column.getIsVisible() && table.getVisibleLeafColumns().length <= 1)}
-            onCheckedChange={() => columnPrefs.toggle(column.id)}
-          />
-        );
-      })}
-      <Button size="small" variant="quiet" onClick={columnPrefs.reset}>恢复默认</Button>
+      <div className="si-column-menu-heading">显示列与顺序</div>
+      {lockedStart.map((id) => renderColumnSetting(id, true))}
+      {movableDraftIds.map((id) => renderColumnSetting(id, false))}
+      {lockedEnd.map((id) => renderColumnSetting(id, true))}
+      <div className="si-column-menu-actions">
+        <Button size="small" variant="quiet" onClick={() => { setDraftOrder([...columnIds]); setDraftVisible(normalizeColumnPrefs(null, columnIds, defaultVisible, requiredColumnIds)); }}>恢复默认</Button>
+        <Button size="small" onClick={() => changeColumnMenuOpen(false)}>取消</Button>
+        <Button size="small" variant="primary" onClick={() => { columnPrefs.save(draftOrder.filter((id) => draftVisible.includes(id) || lockedIds.has(id))); changeColumnMenuOpen(false); }}>保存</Button>
+      </div>
     </div>
   );
 
@@ -345,7 +398,7 @@ export function DataTable<T, F = Record<string, unknown>>({
           const stickyRight = meta?.sticky === "right" || cell.column.id === "actions";
           const stickyLeft = meta?.sticky === "left" && !stickyRight;
           const className = [meta?.reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
-          const style = { ...(meta?.align ? { textAlign: meta.align === "end" ? "right" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(cell.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(cell.column.id) ?? 0 } : {}) };
+          const style = { ...(meta?.align ? { textAlign: meta.align === "end" ? "right" as const : meta.align === "center" ? "center" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(cell.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(cell.column.id) ?? 0 } : {}) };
           return (
             <td key={cell.id} className={className} style={style}>
               <div className={textClass} title={title}>
@@ -368,7 +421,7 @@ export function DataTable<T, F = Record<string, unknown>>({
       <div className="si-table-toolbar">
         <div className="si-table-toolbar-content">{toolbar}</div>
         <div className="si-table-toolbar-settings">
-          <Popover trigger={<Button icon={<Columns3 size={15} />}>列设置</Button>} className="si-column-popover">
+          <Popover trigger={<Button icon={<Columns3 size={15} />}>列设置</Button>} className="si-column-popover" open={columnMenuOpen} onOpenChange={changeColumnMenuOpen}>
             {columnMenu}
           </Popover>
         </div>
@@ -396,7 +449,7 @@ export function DataTable<T, F = Record<string, unknown>>({
                   const stickyRight = header.column.columnDef.meta?.sticky === "right" || header.column.id === "actions";
                   const stickyLeft = header.column.columnDef.meta?.sticky === "left" && !stickyRight;
                   const className = [reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
-                  const style = { ...(align ? { textAlign: align === "end" ? "right" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(header.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(header.column.id) ?? 0 } : {}) };
+                  const style = { ...(align ? { textAlign: align === "end" ? "right" as const : align === "center" ? "center" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(header.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(header.column.id) ?? 0 } : {}) };
                   const headerContent = header.column.getCanSort() ? (
                     <button className="si-sort-button" type="button" onClick={() => sortBy(header.column.id)}>
                       {flexRender(header.column.columnDef.header, header.getContext())}

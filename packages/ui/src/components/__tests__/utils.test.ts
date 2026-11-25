@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatDateTime, formatPlatformLabel, getLengthGrade, getPaginationModel, nextFilterValue, normalizeTablePageSize, readColumnPrefs, writeColumnPrefs } from "../utils";
+import { formatDateTime, formatPlatformLabel, getLengthGrade, getPaginationModel, nextFilterValue, normalizeColumnPrefs, normalizeTablePageSize, readColumnPrefs, writeColumnPrefs } from "../utils";
 
 describe("日期和时间格式", () => {
   const now = new Date(2026, 10, 9, 12, 0);
@@ -77,5 +77,9 @@ describe("列设置持久化", () => {
   it("损坏的存储值回退到默认列", () => {
     values.set("si.cols.inventory", "not-json");
     expect(readColumnPrefs("inventory", ["sku", "stock"], ["sku"])).toEqual(["sku"]);
+  });
+
+  it("旧列偏好缺少必显列时按原始列位补回，保留其余顺序", () => {
+    expect(normalizeColumnPrefs(["stock", "category"], ["sku", "product", "stock", "category", "actions"], ["sku", "product", "stock"], ["sku", "product", "actions"])).toEqual(["sku", "product", "stock", "category", "actions"]);
   });
 });

@@ -83,9 +83,20 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-kpi-danger .si-kpi-value { color: var(--color-danger); }
 .si-popover-content { z-index: 30; min-width: 190px; padding: var(--space-3); border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-pop); animation: si-popover-in 120ms ease-out; }
 .si-popover-arrow { fill: var(--color-surface); }
-.si-column-popover { width: 230px; }
+.si-column-popover { width: 300px; }
 .si-column-menu { display: grid; gap: var(--space-1); }
 .si-column-menu-heading { padding: var(--space-1) var(--space-1) var(--space-2); color: var(--color-muted); font-size: var(--fs-body); font-weight: 600; }
+.si-column-menu-row { display: flex; min-height: var(--control-height); align-items: center; gap: var(--gap-inline); }
+.si-column-menu-row > .si-checkbox-row { min-width: 0; flex: 1; }
+.si-column-lock, .si-column-drag-handle { display: grid; width: var(--control-height-compact); height: var(--control-height-compact); flex: none; place-items: center; color: var(--color-muted); }
+.si-column-drag-handle { cursor: grab; }
+.si-column-drag-handle:active { cursor: grabbing; }
+.si-column-move-buttons { display: inline-flex; gap: var(--gap-inline); }
+.si-column-move-buttons button { display: grid; width: var(--control-height-compact); height: var(--control-height-compact); place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--color-muted); }
+.si-column-move-buttons button:hover:not(:disabled) { background: var(--color-subtle); }
+.si-column-move-buttons button:disabled { color: var(--color-faint); }
+.si-column-menu-actions { display: flex; justify-content: flex-end; gap: var(--gap-inline); padding-top: var(--gap-inline); border-top: 1px solid var(--color-line); }
+.si-column-menu-actions > :first-child { margin-right: auto; }
 .si-checkbox-row { display: flex; width: 100%; min-height: 30px; align-items: center; gap: var(--space-2); padding: 0 var(--space-1); border: 0; border-radius: 4px; background: transparent; color: var(--color-ink-2); font-size: var(--fs-body); text-align: left; cursor: pointer; }
 .si-checkbox-row:hover:not(:disabled) { background: var(--color-subtle); }
 .si-checkbox-row:disabled { color: var(--color-faint); cursor: default; }
@@ -117,7 +128,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-pagination-controls button:disabled { color: var(--color-faint); cursor: not-allowed; }
 .si-pagination-controls span { min-width: 90px; text-align: center; }
 
-.si-status-cells { display: inline-block; width: 179px; height: 16px; border-radius: 1px; background-repeat: no-repeat; vertical-align: middle; }
+.si-status-cells { display: inline-block; width: 178px; height: 16px; vertical-align: middle; }
+.si-status-cells > svg { display: block; }
 .si-status-cell { display: block; width: 5px; height: 16px; border-radius: 1px; }
 .si-status-in { background: var(--color-stock-in); }
 .si-status-out { background: var(--color-stock-out); }
@@ -149,7 +161,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-table th.is-sticky-left { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-sticky-right { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-reserved { background: var(--color-neutral-reserved); color: var(--color-faint); }
-.si-sort-button { display: inline-flex; min-height: var(--control-height-compact); align-items: center; gap: var(--space-1); padding: 0 var(--space-2); border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
+.si-sort-button { display: inline-flex; min-height: var(--control-height-compact); align-items: center; gap: var(--gap-label-control); padding: 0; border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
 .si-table-heading { display: inline-flex; align-items: center; gap: var(--gap-label-control); }
 .si-sort-indicator { display: inline-grid; width: 12px; place-items: center; color: var(--color-faint); }
 .si-table td { height: 40px; padding: 0 var(--space-3); border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: var(--fs-body); white-space: nowrap; }
