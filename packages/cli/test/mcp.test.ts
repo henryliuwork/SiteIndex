@@ -85,15 +85,15 @@ async function connectTestClient() {
     capabilities: {},
     clientInfo: { name: "synthetic-test-client", version: "1.0.0" },
   });
-  expect(property(resultOf(initialize), "serverInfo")).toMatchObject({ name: "siteindex", version: "0.8.3" });
+  expect(property(resultOf(initialize), "serverInfo")).toMatchObject({ name: "siteindex", version: "0.8.4" });
   await clientTransport.send(parseJSONRPCMessage({ jsonrpc: "2.0", method: "notifications/initialized" }));
   return { request };
 }
 
 describe("read-only MCP scenario tools", () => {
-  it("declares the 0.8.3 CLI package version", async () => {
+  it("declares the 0.8.4 CLI package version", async () => {
     const packageInfo: unknown = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-    expect(property(packageInfo, "version")).toBe("0.8.3");
+    expect(property(packageInfo, "version")).toBe("0.8.4");
   });
 
   it("rejects write options and JSON wrapping before starting stdio", async () => {

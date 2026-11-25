@@ -9,16 +9,20 @@ import { makeW2SyntheticFixture } from "./e-windows-v040-synthetic-fixture.mjs";
 import { createWindowsAppDataRedirect } from "./windows-appdata-redirect.mjs";
 import { createWindowsProfileLayout, inspectWindowsProfileLayout, windowsProfileEnvironment } from "./e-windows-profile-isolation.mjs";
 
-const expectedHash = "94f689e66e5fecbda62eb7dcb631df5412549420e56249ce88f1ab26dbb20100";
+const expectedHash = process.env.SITEINDEX_ACCEPTANCE_INSTALLER_SHA256
+  ?? "94f689e66e5fecbda62eb7dcb631df5412549420e56249ce88f1ab26dbb20100";
+const expectedVersion = process.env.SITEINDEX_ACCEPTANCE_VERSION ?? "0.8.3";
+const expectedHelpSize = Number(process.env.SITEINDEX_ACCEPTANCE_HELP_SIZE ?? "18");
 const projectId = "synthetic-v083-products";
 const tableId = "products.merged";
 const oldColumns = ["stock_status", "online_rate_30d", "price", "actions"];
 const installer = path.resolve(process.argv[2] ?? "");
-const reportDir = path.resolve(process.env.SITEINDEX_V083_REPORT_DIR ?? "v083-table-results");
+const reportDir = path.resolve(process.env.SITEINDEX_ACCEPTANCE_REPORT_DIR
+  ?? process.env.SITEINDEX_V083_REPORT_DIR ?? "v083-table-results");
 assert(process.platform === "win32" && process.env.GITHUB_ACTIONS === "true"
   && process.env.SITEINDEX_RUNNER_ENVIRONMENT === "github-hosted" && process.env.RUNNER_TEMP,
-"v0.8.3 installation acceptance requires a fresh hosted Windows runner");
-assert(path.basename(installer) === "SiteIndex-Setup-0.8.3.exe", "A fixed v0.8.3 installer is required");
+"Packaged installation acceptance requires a fresh hosted Windows runner");
+assert(path.basename(installer) === `SiteIndex-Setup-${expectedVersion}.exe`, "The expected installer version is required");
 const root = await mkdtemp(path.join(process.env.RUNNER_TEMP, "siteindex-v083-"));
 const layout = createWindowsProfileLayout(root);
 const projectDir = path.join(layout.projectRoot, projectId);
@@ -176,6 +180,27 @@ try {
   const created = await page.evaluate((directory) => window.siteindex.projects.addExisting(directory), projectDir);
   assert.equal(created.id, projectId);
   const settings = await page.evaluate(() => window.siteindex.settings.get());
+  if (expectedVersion === "0.8.4") {
+    report.stage = "global page smoke";
+    for (const [route, title, screenshot] of [
+      ["/", "项目中心", "packaged-project-center.png"],
+      ["/skills", "Skill 中心", "packaged-skills.png"],
+      ["/schedules", "定时任务", "packaged-schedules.png"],
+    ]) {
+      await page.evaluate((nextRoute) => { window.location.hash = `#${nextRoute}`; }, route);
+      await page.getByRole("heading", { name: title, level: 1 }).waitFor({ timeout: 30_000 });
+      const frame = page.locator(".si-page-frame-global");
+      const geometry = await frame.evaluate((element) => ({
+        header: element.querySelector(".si-page-frame-header")?.getBoundingClientRect().height ?? 0,
+        bottom: Number.parseFloat(getComputedStyle(element.querySelector(".si-page-frame-body")).paddingBottom),
+      }));
+      assert(geometry.header >= 72 && geometry.bottom >= 24, `${title} global frame spacing is missing`);
+      if (route === "/") assert(await page.locator("button.si-kpi-card.is-interactive").count() > 0, "Interactive KPI card is missing");
+      if (route === "/schedules") await page.locator(".si-table-section .si-data-table").waitFor({ timeout: 30_000 });
+      await page.screenshot({ path: path.join(reportDir, screenshot) });
+    }
+    report.checks.push({ name: "packaged project center, skills and schedules", pass: true });
+  }
   const cacheDir = path.resolve(settings.cache_dir);
   const cacheRelative = path.relative(root, cacheDir);
   assert(cacheRelative && !cacheRelative.startsWith("..") && !path.isAbsolute(cacheRelative), "UI state cache escaped isolated profile");
@@ -226,7 +251,7 @@ try {
       const align = expectedAlign[row.label];
       if (align) assert(row.head === align && row.cell === align, `${row.label} alignment at ${scale}`);
     }
-    assert(result.help && Math.abs(result.help.width - 18) <= 1 && Math.abs(result.help.height - 18) <= 1
+    assert(result.help && Math.abs(result.help.width - expectedHelpSize) <= 1 && Math.abs(result.help.height - expectedHelpSize) <= 1
       && result.help.padding === "0px" && result.help.border === "0px", "Header info icon is oversized");
     assert(result.link && result.link.content <= result.link.width, "Link header is truncated");
     assert(result.trend?.count === 30 && result.trend.gaps.every((gap) => gap >= 1.9)
@@ -261,5 +286,5 @@ try {
   if (redirect && !redirect.restore()) { report.cleanupError = "Roaming AppData registry restoration failed"; process.exitCode = 1; }
   await mkdir(reportDir, { recursive: true });
   await writeFile(path.join(reportDir, "report.json"), JSON.stringify(report, null, 2) + "\n");
-  console.log(`v0.8.3 packaged table acceptance: ${report.outcome}; stage=${report.stage}`);
+  console.log(`v${expectedVersion} packaged table acceptance: ${report.outcome}; stage=${report.stage}`);
 }

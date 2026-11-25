@@ -1,0 +1,76 @@
+name: E · Windows v0.8.4 release acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Fixed Release workflow run ID
+        required: true
+        type: string
+      candidate_head:
+        description: Full candidate source commit SHA
+        required: true
+        type: string
+      candidate_artifact_id:
+        description: Fixed siteindex-win artifact ID
+        required: true
+        type: string
+      candidate_exe_sha256:
+        description: Fixed installer SHA256
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  packaged-windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
+      SITEINDEX_ACCEPTANCE_VERSION: 0.8.4
+      SITEINDEX_ACCEPTANCE_HELP_SIZE: 20
+      SITEINDEX_ACCEPTANCE_REPORT_DIR: v084-acceptance-results
+      SITEINDEX_ACCEPTANCE_INSTALLER_SHA256: ${{ inputs.candidate_exe_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download the fixed candidate
+        shell: pwsh
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_HEAD: ${{ inputs.candidate_head }}
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+        run: |
+          $repo = 'henryliuwork/SiteIndex'
+          if ($env:CANDIDATE_HEAD -notmatch '^[0-9a-f]{40}$' -or $env:SITEINDEX_ACCEPTANCE_INSTALLER_SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Invalid fixed candidate identifiers.' }
+          $run = gh api "repos/$repo/actions/runs/$env:CANDIDATE_RUN_ID" | ConvertFrom-Json
+          $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
+          if ($run.workflow_id -ne $workflow.id -or $run.head_sha -ne $env:CANDIDATE_HEAD -or $run.event -ne 'push' -or $run.head_branch -ne 'v0.8.4' -or $run.conclusion -ne 'success') { throw 'Fixed candidate run provenance mismatch.' }
+          $response = gh api "repos/$repo/actions/runs/$env:CANDIDATE_RUN_ID/artifacts" | ConvertFrom-Json
+          $artifact = @($response.artifacts | Where-Object { $_.id -eq [long]$env:CANDIDATE_ARTIFACT_ID -and $_.name -eq 'siteindex-win' })
+          if ($artifact.Count -ne 1 -or $artifact[0].expired) { throw 'Fixed Windows artifact is unavailable.' }
+          gh run download $env:CANDIDATE_RUN_ID --repo $repo --name siteindex-win --dir candidate
+          if ($LASTEXITCODE -ne 0) { throw 'Fixed Windows artifact download failed.' }
+          $exe = @(Get-ChildItem -LiteralPath candidate -Filter 'SiteIndex-Setup-0.8.4.exe' -File -Recurse)
+          if ($exe.Count -ne 1) { throw 'Expected exactly one v0.8.4 installer.' }
+          $digest = (Get-FileHash -LiteralPath $exe[0].FullName -Algorithm SHA256).Hash
+          if ($digest -ne $env:SITEINDEX_ACCEPTANCE_INSTALLER_SHA256) { throw 'Fixed installer SHA256 mismatch.' }
+          "SITEINDEX_V084_INSTALLER=$($exe[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Exercise isolated packaged UI and job
+        shell: pwsh
+        run: node packages/desktop/scripts/e-windows-v083-table-acceptance.mjs "$env:SITEINDEX_V084_INSTALLER"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v084-acceptance-results
+          path: v084-acceptance-results/
+          if-no-files-found: warn
