@@ -128,21 +128,27 @@ export function getLengthGrade(length: number, kind: LengthKind, range?: [number
 
 const columnKey = (tableId: string): string => "si.cols." + tableId;
 
-export function readColumnPrefs(tableId: string, available: readonly string[], defaults: readonly string[] = available): string[] {
+export function readColumnPrefs(tableId: string, available: readonly string[], defaults: readonly string[] = available, required: readonly string[] = []): string[] {
   try {
     const storage = typeof localStorage === "undefined" ? undefined : localStorage;
-    if (!storage) return [...defaults];
+    if (!storage) return normalizeColumnPrefs(null, available, defaults, required);
     const parsed: unknown = JSON.parse(storage.getItem(columnKey(tableId)) ?? "null");
-    return normalizeColumnPrefs(parsed, available, defaults);
+    return normalizeColumnPrefs(parsed, available, defaults, required);
   } catch {
-    return [...defaults];
+    return normalizeColumnPrefs(null, available, defaults, required);
   }
 }
 
-function normalizeColumnPrefs(value: unknown, available: readonly string[], defaults: readonly string[]): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return [...defaults];
+export function normalizeColumnPrefs(value: unknown, available: readonly string[], defaults: readonly string[], required: readonly string[] = []): string[] {
   const allowed = new Set(available);
-  return [...new Set(value.filter((item: string) => allowed.has(item)))];
+  const saved = Array.isArray(value) && value.every((item) => typeof item === "string") ? value as string[] : defaults;
+  const visible = [...new Set(saved.filter((item) => allowed.has(item)))];
+  for (const id of required) {
+    if (!allowed.has(id) || visible.includes(id)) continue;
+    const before = available.slice(0, available.indexOf(id)).findLast((item) => visible.includes(item));
+    visible.splice(before ? visible.indexOf(before) + 1 : 0, 0, id);
+  }
+  return visible;
 }
 
 export function writeColumnPrefs(tableId: string, visible: readonly string[]): void {
@@ -164,47 +170,49 @@ export function useColumnPrefs(tableId: string, scopeId?: string) {
     projectId?: string;
     availableKey: string;
     defaultsKey: string;
+    requiredKey: string;
     available: string[];
     defaults: string[];
+    required: string[];
     visible: string[] | null;
-  }>({ tableId, projectId, availableKey: "", defaultsKey: "", available: [], defaults: [], visible: null });
+  }>({ tableId, projectId, availableKey: "", defaultsKey: "", requiredKey: "", available: [], defaults: [], required: [], visible: null });
   const current = state.tableId === tableId && state.projectId === projectId ? state : null;
 
-  const configure = useCallback((available: readonly string[], defaults: readonly string[] = available) => {
+  const configure = useCallback((available: readonly string[], defaults: readonly string[] = available, required: readonly string[] = []) => {
     const availableList = [...available];
     const defaultsList = [...defaults];
     const availableKey = availableList.join("\u0000");
     const defaultsKey = defaultsList.join("\u0000");
-    const configKey = [tableId, projectId ?? "", availableKey, defaultsKey].join("\u0001");
+    const requiredList = [...required];
+    const requiredKey = requiredList.join("\u0000");
+    const configKey = [tableId, projectId ?? "", availableKey, defaultsKey, requiredKey].join("\u0001");
     if (configuredKey.current === configKey) return;
     configuredKey.current = configKey;
     const request = ++requestId.current;
-    const fallback = () => readColumnPrefs(tableId, availableList, defaultsList);
-    const base = { tableId, projectId, availableKey, defaultsKey, available: availableList, defaults: defaultsList };
+    const fallback = () => readColumnPrefs(tableId, availableList, defaultsList, requiredList);
+    const base = { tableId, projectId, availableKey, defaultsKey, requiredKey, available: availableList, defaults: defaultsList, required: requiredList };
     setState({ ...base, visible: fallback() });
     const uiState = api.uiState;
     if (!projectId || !uiState) return;
     void uiState.get(projectId).then((saved) => {
       if (request !== requestId.current) return;
       const stored = saved.columns[tableId];
-      const visible = stored === undefined ? fallback() : normalizeColumnPrefs(stored, availableList, defaultsList);
-      setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey
+      const visible = stored === undefined ? fallback() : normalizeColumnPrefs(stored, availableList, defaultsList, requiredList);
+      setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey && previous.requiredKey === requiredKey
         ? { ...previous, visible }
         : previous);
-      if (stored === undefined) void uiState.set(projectId, { columns: { [tableId]: visible } }).catch(() => undefined);
     }).catch(() => {
       if (request !== requestId.current) return;
-      setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey
+      setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey && previous.requiredKey === requiredKey
         ? { ...previous, visible: fallback() }
         : previous);
     });
   }, [projectId, tableId]);
 
-  const toggle = useCallback((id: string) => {
+  const save = useCallback((orderedVisible: readonly string[]) => {
     if (!current) return;
     requestId.current += 1;
-    const visible = current.visible ?? current.defaults;
-    const next = visible.includes(id) ? visible.filter((item) => item !== id) : [...visible, id];
+    const next = normalizeColumnPrefs(orderedVisible, current.available, current.defaults, current.required);
     const uiState = api.uiState;
     if (projectId && uiState) {
       void uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
@@ -212,16 +220,5 @@ export function useColumnPrefs(tableId: string, scopeId?: string) {
     setState({ ...current, visible: next });
   }, [current, projectId, tableId]);
 
-  const reset = useCallback(() => {
-    if (!current) return;
-    requestId.current += 1;
-    const next = [...current.defaults];
-    const uiState = api.uiState;
-    if (projectId && uiState) {
-      void uiState.set(projectId, { columns: { [tableId]: next } }).catch(() => writeColumnPrefs(tableId, next));
-    } else writeColumnPrefs(tableId, next);
-    setState({ ...current, visible: next });
-  }, [current, projectId, tableId]);
-
-  return { visible: current?.visible ?? null, configure, toggle, reset };
+  return { visible: current?.visible ?? null, configure, save };
 }

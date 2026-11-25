@@ -232,6 +232,9 @@ describe("合并后的产品管理表", () => {
     fireEvent.click(screen.getByRole("button", { name: "列设置" }));
     for (const name of ["持续", "近 30 天趋势", "最近变化", "评分 / 评价数"]) {
       fireEvent.click(await screen.findByRole("checkbox", { name }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    for (const name of ["持续", "近 30 天趋势", "最近变化", "评分 / 评价数"]) {
       expect(within(table).getByRole("button", { name: `${name}说明` })).toBeTruthy();
     }
   });
@@ -356,6 +359,7 @@ describe("合并后的产品管理表", () => {
     const table = await screen.findByRole("table");
     fireEvent.click(screen.getByRole("button", { name: "列设置" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "近 30 天趋势" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     const headers = within(table).getAllByRole("columnheader").map((header) => header.textContent?.trim());
     expect(headers.indexOf("近 30 天趋势")).toBe(headers.indexOf("30 天在线率") + 1);
     const parentRow = (await within(table).findByText("虚构组合商品", { selector: "strong" })).closest("tr")!;
@@ -374,6 +378,7 @@ describe("合并后的产品管理表", () => {
     await within(table).findByText("虚构组合商品", { selector: "strong" });
     fireEvent.click(screen.getByRole("button", { name: "列设置" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "链接" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     const button = await within(table).findByRole("button", { name: "打开 虚构组合商品 商品页" });
     expect(button.getAttribute("title")).toBe("打开 虚构组合商品 商品页");
     expect(button.textContent).toBe("");
@@ -391,6 +396,7 @@ describe("合并后的产品管理表", () => {
     fireEvent.click(screen.getByRole("button", { name: "列设置" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "评分 / 评价数" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "最近变化" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(findCell(parentRow, "评分 / 评价数")).toBe("4.8 · 23"));
     expect(findCell(parentRow, "最近变化")).toContain("stock_change");
     expect(within(table).queryByText("30 天销量")).toBeNull();

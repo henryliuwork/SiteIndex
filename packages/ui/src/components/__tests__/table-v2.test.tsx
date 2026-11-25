@@ -5,6 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api";
 import { DataTable } from "../table";
+import { StatusCells } from "../primitives";
 import type { ListQuery } from "@siteindex/shared";
 
 interface Row { id: string; label: string; kind: string }
@@ -65,6 +66,97 @@ function renderTable(props: {
 }
 
 describe("DataTable v2", () => {
+  it("restores required columns missing from old preferences", () => {
+    localStorage.setItem("si.cols.test.table-v2", JSON.stringify(["kind"]));
+    renderTable({ columns: [
+      { accessorKey: "label", header: "SKU", enableHiding: false, meta: { width: 150, sticky: "left" } },
+      { accessorKey: "kind", header: "类别", meta: { width: 120 } },
+      { id: "actions", header: "操作", enableHiding: false, meta: { width: 68, sticky: "right" } },
+    ] });
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["SKU", "类别", "操作"]);
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    expect(screen.getByRole("checkbox", { name: "SKU" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("waits for Save before writing repaired project column preferences", async () => {
+    const uiState = api.uiState!;
+    const saved = { columns: { "test.table-v2": ["kind"] }, page_sizes: {} } as ProjectUiState;
+    vi.spyOn(uiState, "get").mockResolvedValue(saved);
+    const setState = vi.spyOn(uiState, "set").mockResolvedValue(saved);
+    renderTable({ scopeId: "demo", columns: [
+      { accessorKey: "label", header: "SKU", enableHiding: false, meta: { width: 150, sticky: "left" } },
+      { accessorKey: "kind", header: "类别", meta: { width: 120 } },
+    ] });
+    await waitFor(() => expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["SKU", "类别"]));
+    expect(setState.mock.calls.filter(([, update]) => "columns" in update)).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(setState).toHaveBeenCalledWith("demo", { columns: { "test.table-v2": ["label", "kind"] } }));
+  });
+
+  it("keeps column changes as drafts until save and restores default order on request", async () => {
+    const orderedColumns: ColumnDef<Row, unknown>[] = [
+      { accessorKey: "label", header: "SKU", enableHiding: false, meta: { width: 150, sticky: "left" } },
+      { accessorKey: "kind", header: "类别", meta: { width: 120 } },
+      { accessorKey: "id", header: "标识", meta: { width: 120 } },
+      { id: "actions", header: "操作", enableHiding: false, meta: { width: 68, sticky: "right" } },
+    ];
+    const headers = () => screen.getAllByRole("columnheader").map((header) => header.textContent);
+    renderTable({ columns: orderedColumns });
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "下移 类别" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "标识" }));
+    expect(headers()).toEqual(["SKU", "类别", "标识", "操作"]);
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(localStorage.getItem("si.cols.test.table-v2")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "下移 类别" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(headers()).toEqual(["SKU", "标识", "类别", "操作"]));
+    expect(JSON.parse(localStorage.getItem("si.cols.test.table-v2") ?? "null")).toEqual(["label", "id", "kind", "actions"]);
+    cleanup();
+    renderTable({ columns: orderedColumns });
+    expect(headers()).toEqual(["SKU", "标识", "类别", "操作"]);
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复默认" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(headers()).toEqual(["SKU", "标识", "类别", "操作"]);
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复默认" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(headers()).toEqual(["SKU", "类别", "标识", "操作"]));
+  });
+
+  it("moves an optional column with the drag handle only after saving", () => {
+    renderTable({ columns: [
+      { accessorKey: "label", header: "名称", meta: { width: 150 } },
+      { accessorKey: "kind", header: "类别", meta: { width: 120 } },
+      { accessorKey: "id", header: "标识", meta: { width: 120 } },
+    ] });
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    const handle = screen.getByRole("img", { name: "拖动 类别" });
+    const target = screen.getByRole("checkbox", { name: "标识" }).closest(".si-column-menu-row");
+    expect(target).toBeTruthy();
+    fireEvent.dragStart(handle, { dataTransfer: { effectAllowed: "" } });
+    fireEvent.dragOver(target!);
+    fireEvent.drop(target!);
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["名称", "类别", "标识"]);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["名称", "标识", "类别"]);
+  });
+
+  it("renders thirty integer-width SVG trend cells", () => {
+    render(<StatusCells history="iop" />);
+    const trend = screen.getByRole("img");
+    const svg = trend.querySelector("svg")!;
+    const rects = svg.querySelectorAll("rect");
+    expect(rects).toHaveLength(30);
+    expect(svg.getAttribute("viewBox")).toBe("0 0 178 16");
+    expect(svg.getAttribute("shape-rendering")).toBe("crispEdges");
+    expect([...rects].map((rect) => [rect.getAttribute("x"), rect.getAttribute("width")])).toEqual(Array.from({ length: 30 }, (_, index) => [String(index * 6), "4"]));
+    expect(trend.getAttribute("aria-label")).toContain("近 30 日库存");
+    expect(trend.getAttribute("title")).toContain("有货");
+  });
   it("renders column help outside the sort button without changing sorting", () => {
     const onQueryChange = renderTable({ columns: [
       { accessorKey: "label", header: "名称", meta: { width: 200, help: "商品显示名称的口径。" } },
@@ -86,6 +178,7 @@ describe("DataTable v2", () => {
     const emptyColumn = await screen.findByRole("checkbox", { name: "类别 · 无数据" });
     expect(emptyColumn.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(emptyColumn);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(screen.getByRole("columnheader", { name: "类别" })).toBeTruthy());
   });
 
@@ -141,6 +234,7 @@ describe("DataTable v2", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "列设置" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "SKU" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(screen.queryByRole("columnheader", { name: "SKU" })).toBeNull());
     expect(screen.getByRole("columnheader", { name: "类别" }).style.left).toBe("40px");
     expect(document.querySelector("tbody td.is-sticky-left:not(.si-table-selection-cell)")?.getAttribute("style")).toContain("left: 40px");
@@ -156,6 +250,7 @@ describe("DataTable v2", () => {
     const before = [...document.querySelectorAll("colgroup col")].map((column) => column.getAttribute("style"));
     fireEvent.click(screen.getByRole("button", { name: "列设置" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "类别" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(document.querySelectorAll("colgroup col")).toHaveLength(2));
     const after = [...document.querySelectorAll("colgroup col")].map((column) => column.getAttribute("style"));
     expect(after).not.toEqual(before);

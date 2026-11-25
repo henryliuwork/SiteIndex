@@ -177,9 +177,9 @@ export function KpiCard({ metric }: { metric: Kpi }) {
   return metric.link ? <Link className={className} to={metric.link}>{content}</Link> : <div className={className}>{content}</div>;
 }
 
-export function Popover({ trigger, children, align = "end", className = "" }: { trigger: ReactNode; children: ReactNode; align?: "start" | "center" | "end"; className?: string }) {
+export function Popover({ trigger, children, align = "end", className = "", open, onOpenChange }: { trigger: ReactNode; children: ReactNode; align?: "start" | "center" | "end"; className?: string; open?: boolean; onOpenChange?: (open: boolean) => void }) {
   return (
-    <PopoverPrimitive.Root>
+    <PopoverPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <PopoverPrimitive.Trigger asChild>{trigger}</PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content className={"si-popover-content" + (className ? " " + className : "")} align={align} sideOffset={6}>
@@ -312,16 +312,12 @@ export const StatusCells = memo(function StatusCells({ history, label = "近 30 
     in: "var(--color-stock-in)", out: "var(--color-stock-out)", preorder: "var(--color-stock-preorder)",
     unknown: "var(--color-stock-unknown)", "not-listed": "var(--color-stock-not-listed)",
   };
-  const unit = 100 / cells.length;
-  const gradient = cells.map((cell, index) => {
-    const start = unit * index;
-    const end = start + unit;
-    const filledEnd = start + unit * (5 / 6);
-    const tone = statuses[cell]?.tone ?? "unknown";
-    return `${colors[tone] ?? colors.unknown} ${start}% ${filledEnd}%, transparent ${filledEnd}% ${end}%`;
-  }).join(", ");
   const detail = cells.map((cell, index) => dateLabel(index, cells.length) + " · " + (statuses[cell]?.label ?? "未知")).join("；");
-  return <span className="si-status-cells" role="img" aria-label={label + "：" + summary} title={detail} style={{ backgroundImage: `linear-gradient(to right, ${gradient})` }} />;
+  return <span className="si-status-cells" role="img" aria-label={label + "：" + summary} title={detail}>
+    <svg viewBox="0 0 178 16" width="178" height="16" shapeRendering="crispEdges" aria-hidden="true">
+      {cells.map((cell, index) => <rect key={index} x={index * 6} y="0" width="4" height="16" fill={colors[statuses[cell]?.tone ?? "unknown"] ?? colors.unknown} />)}
+    </svg>
+  </span>;
 });
 
 function dateLabel(index: number, length: number): string {
