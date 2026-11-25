@@ -78,6 +78,22 @@ describe("DataTable v2", () => {
     expect(screen.getByRole("checkbox", { name: "SKU" }).hasAttribute("disabled")).toBe(true);
   });
 
+  it("waits for Save before writing repaired project column preferences", async () => {
+    const uiState = api.uiState!;
+    const saved = { columns: { "test.table-v2": ["kind"] }, page_sizes: {} } as ProjectUiState;
+    vi.spyOn(uiState, "get").mockResolvedValue(saved);
+    const setState = vi.spyOn(uiState, "set").mockResolvedValue(saved);
+    renderTable({ scopeId: "demo", columns: [
+      { accessorKey: "label", header: "SKU", enableHiding: false, meta: { width: 150, sticky: "left" } },
+      { accessorKey: "kind", header: "类别", meta: { width: 120 } },
+    ] });
+    await waitFor(() => expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["SKU", "类别"]));
+    expect(setState.mock.calls.filter(([, update]) => "columns" in update)).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(setState).toHaveBeenCalledWith("demo", { columns: { "test.table-v2": ["label", "kind"] } }));
+  });
+
   it("keeps column changes as drafts until save and restores default order on request", async () => {
     const orderedColumns: ColumnDef<Row, unknown>[] = [
       { accessorKey: "label", header: "SKU", enableHiding: false, meta: { width: 150, sticky: "left" } },

@@ -201,7 +201,6 @@ export function useColumnPrefs(tableId: string, scopeId?: string) {
       setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey && previous.requiredKey === requiredKey
         ? { ...previous, visible }
         : previous);
-      if (stored === undefined) void uiState.set(projectId, { columns: { [tableId]: visible } }).catch(() => undefined);
     }).catch(() => {
       if (request !== requestId.current) return;
       setState((previous) => previous.tableId === tableId && previous.projectId === projectId && previous.availableKey === availableKey && previous.defaultsKey === defaultsKey && previous.requiredKey === requiredKey
