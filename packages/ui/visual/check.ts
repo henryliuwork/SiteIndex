@@ -198,6 +198,9 @@ async function readSurfaceSnapshot(page: Page): Promise<PageSurfaceSnapshot> {
         if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
       }
       return true;
+    }) || Array.from(document.querySelectorAll<HTMLElement>('.si-data-table[data-pagination="false"] .si-table-scroll')).some((element) => {
+      const rect = element.getBoundingClientRect();
+      return element.isConnected && element.getClientRects().length > 0 && rect.width > 0 && rect.height > 0;
     });
     const hasVisibleRows = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table")).some((tableElement) =>
       tableElement.getBoundingClientRect().width > 0 && tableElement.getBoundingClientRect().height > 0
