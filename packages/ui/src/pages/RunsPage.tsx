@@ -67,7 +67,7 @@ function runSummary(run: RunLog): string {
   }
   if (run.errors?.length) return run.errors.join("；");
   const counts = run.counts;
-  if (!counts || !Object.keys(counts).length) return run.status === "skipped" ? "未在指定执行设备运行" : run.status === "failed" ? "任务执行失败" : "任务已完成";
+  if (!counts || !Object.keys(counts).length) return run.status === "skipped" ? "任务已跳过" : run.status === "failed" ? "任务执行失败" : "任务已完成";
   const labels: Record<string, string> = { restock: "补货", out_of_stock: "缺货", price: "调价", new: "上新", removed: "下架", error: "错误", missing: "缺失" };
   return Object.entries(counts).map(([key, count]) => `${labels[key] ?? key} ${count}`).join(" · ");
 }

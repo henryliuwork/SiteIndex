@@ -139,6 +139,16 @@ describe("RunsPage 媒体任务历史", () => {
     expect(within(historyEntry).queryByText(/^开始：/)).toBeNull();
   });
 
+  it("无明细的跳过任务不误报执行设备不匹配", async () => {
+    await renderRunsPage([{
+      run_id: "demo-skipped-run", job: "daily", started_at: "2026-11-20T08:00:00+08:00",
+      finished_at: "2026-11-20T08:00:01+08:00", status: "skipped",
+    }]);
+    const historyEntry = await screen.findByText("任务已跳过");
+    expect(historyEntry.closest(".si-run-history-item")).toBeTruthy();
+    expect(screen.queryByText("未在指定执行设备运行")).toBeNull();
+  });
+
   it("从概览失败任务链接进入时展开对应运行日志", async () => {
     await renderRunsPage([{
       run_id: "demo-failed-run", job: "weekly", started_at: "2026-11-20T08:00:00+08:00",
