@@ -20,3 +20,23 @@ describe("S3 table header help exception", () => {
     expect(findings.map(({ exceptionId }) => exceptionId)).toEqual(["table-header-help-4px", undefined, undefined]);
   });
 });
+
+describe("v0.8.3 table header control exceptions", () => {
+  it("tags only the exact header sort and 18px help controls", async () => {
+    const dom = new JSDOM(`<main>
+      <span class="si-table-heading"><button class="si-sort-button" data-size="28" style="padding:0">排序</button><button class="si-info-tooltip-trigger" data-size="18" style="padding:0">说明</button></span>
+      <button data-size="18" style="padding:0">普通按钮</button>
+    </main>`, { runScripts: "outside-only" });
+    for (const button of dom.window.document.querySelectorAll("button")) {
+      const size = Number(button.getAttribute("data-size"));
+      button.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: size, bottom: size, width: size, height: size, toJSON: () => ({}) });
+    }
+    const page = { evaluate: async (script: string) => dom.window.eval(script) } as unknown as Page;
+    const findings = (await inspectSpacing(page, "test")).filter(({ rule }) => rule === "S1" || rule === "S2");
+    expect(findings.map(({ exceptionId }) => exceptionId)).toEqual([
+      "table-heading-controls-zero-padding",
+      "table-heading-help-18px", "table-heading-controls-zero-padding",
+      undefined, undefined,
+    ]);
+  });
+});

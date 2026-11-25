@@ -47,12 +47,17 @@ const probe = String.raw`(() => {
     const box = rect(element);
     const style = getComputedStyle(element);
     const compact = box.height <= 28.5;
+    const headerHelp = element.matches(".si-table-heading .si-info-tooltip-trigger")
+      && Math.abs(box.width - 18) <= 1 && Math.abs(box.height - 18) <= 1;
+    const headerSort = element.matches(".si-table-heading .si-sort-button")
+      && Math.abs(box.height - 28) <= 1;
     if (Math.abs(box.height - 28) > 1 && Math.abs(box.height - 32) > 1) {
-      add("S1", element, "控件高度 " + round(box.height) + "px，应为 28 或 32px。");
+      add("S1", element, "控件高度 " + round(box.height) + "px，应为 28 或 32px。", "", headerHelp ? "table-heading-help-18px" : undefined);
     }
     const minimum = compact ? 8 : 12;
     if (parseFloat(style.paddingLeft) < minimum - 1 || parseFloat(style.paddingRight) < minimum - 1) {
-      add("S2", element, "左右内边距 " + round(parseFloat(style.paddingLeft)) + "/" + round(parseFloat(style.paddingRight)) + "px，应至少 " + minimum + "px。");
+      const noPadding = parseFloat(style.paddingLeft) === 0 && parseFloat(style.paddingRight) === 0;
+      add("S2", element, "左右内边距 " + round(parseFloat(style.paddingLeft)) + "/" + round(parseFloat(style.paddingRight)) + "px，应至少 " + minimum + "px。", "", noPadding && (headerHelp || headerSort) ? "table-heading-controls-zero-padding" : undefined);
     }
   }
   for (const element of document.querySelectorAll("main .si-chip, main .si-summary-line-item, main .si-summary-line-more")) {
