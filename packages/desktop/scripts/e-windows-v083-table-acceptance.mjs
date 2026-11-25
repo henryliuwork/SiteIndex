@@ -41,20 +41,6 @@ function call(file, args, options = {}) {
   const result = spawnSync(file, args, { encoding: "utf8", timeout: 300_000, windowsHide: true, ...options });
   assert(!result.error && result.status === 0, `${path.basename(file)} exited ${result.status ?? "unknown"}`);
 }
-function cancelFirstLaunchPicker(pid) {
-  const script = `Add-Type -Namespace SI -Name Native -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);'
-    $targetProcessId = ${pid}; $deadline = (Get-Date).AddSeconds(35)
-    while ((Get-Date) -lt $deadline) {
-      $target = Get-Process -Id $targetProcessId -ErrorAction SilentlyContinue
-      if ($target -and $target.MainWindowHandle -ne 0 -and $target.MainWindowTitle -like '*选择项目根目录*') {
-        if (-not [SI.Native]::PostMessage($target.MainWindowHandle, 16, [IntPtr]::Zero, [IntPtr]::Zero)) { exit 2 }
-        exit 0
-      }
-      Start-Sleep -Milliseconds 250
-    }
-    exit 3`;
-  call("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { timeout: 45_000 });
-}
 async function makeProject() {
   const fixture = makeW2SyntheticFixture("https://v083.example.test");
   const index = path.join(projectDir, "index");
@@ -90,7 +76,6 @@ async function launch() {
   processHandle = spawn(exe, ["--remote-debugging-port=9563", "--disable-gpu", "--siteindex-hosted-acceptance"],
     { cwd: root, env: env(), windowsHide: true, stdio: "ignore" });
   processHandle.on("error", () => undefined);
-  if (!await exists(path.join(layout.appDataRoot, "SiteIndex", "settings.json"))) cancelFirstLaunchPicker(processHandle.pid);
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline && !await fetch(`${endpoint}/json/version`).then((response) => response.ok).catch(() => false)) {
     assert(processHandle.exitCode === null, "Packaged app exited before CDP was ready");
@@ -167,11 +152,27 @@ try {
   call(installer, ["/S", `/D=${layout.installDir}`], { env: env() });
   assert(await exists(exe), "Installed SiteIndex.exe is missing");
   assert(await exists(path.join(layout.installDir, "resources/fonts")), "Offline fonts are missing");
+  await mkdir(path.join(layout.appDataRoot, "SiteIndex"), { recursive: true });
+  await writeFile(path.join(layout.appDataRoot, "SiteIndex/settings.json"), JSON.stringify({
+    device_id: "synthetic-v083-runner", device_name: "Synthetic Windows runner",
+    projects_root: layout.projectRoot, extra_projects: [], hidden_projects: [],
+    close_to_tray: false, launch_at_login: false, cache_dir: path.join(root, "cache"),
+    browser: { channel: "msedge", executable_path: null },
+    notify: { on_failure: true, on_success: false, oos_threshold: null, dingtalk_webhook: null },
+    skill_platforms: [], conflict_patterns: [],
+  }, null, 2) + "\n");
   await makeProject();
-  report.checks.push({ name: "fixed NSIS install and fonts", pass: true });
+  report.checks.push({ name: "fixed NSIS install and font assets", pass: true });
 
   report.stage = "seed old UI state";
   await launch();
+  await page.context().setOffline(true);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.evaluate(() => document.fonts.ready);
+  const loadedFonts = await page.evaluate(() => [...document.fonts]
+    .filter((font) => font.status === "loaded" && font.family.includes("Geist")).length);
+  assert(loadedFonts > 0, "Bundled Geist font did not load offline");
+  report.checks.push({ name: "bundled font loads offline", pass: true, loadedFonts });
   const created = await page.evaluate((directory) => window.siteindex.projects.addExisting(directory), projectDir);
   assert.equal(created.id, projectId);
   const settings = await page.evaluate(() => window.siteindex.settings.get());
