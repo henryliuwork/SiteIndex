@@ -24,7 +24,10 @@ describe("S3 table header help exception", () => {
 describe("v0.8.3 table header control exceptions", () => {
   it("tags only the exact header sort and 18px help controls", async () => {
     const dom = new JSDOM(`<main>
-      <span class="si-table-heading"><button class="si-sort-button" data-size="28" style="padding:0">排序</button><button class="si-info-tooltip-trigger" data-size="18" style="padding:0">说明</button></span>
+      <table class="si-table"><thead><tr>
+        <th><span class="si-table-heading"><button class="si-sort-button" data-size="28" style="padding:0">排序</button><button class="si-info-tooltip-trigger" data-size="18" style="padding:0">说明</button></span></th>
+        <th><button class="si-sort-button" data-size="28" style="padding:0">独立排序</button></th>
+      </tr></thead></table>
       <button data-size="18" style="padding:0">普通按钮</button>
     </main>`, { runScripts: "outside-only" });
     for (const button of dom.window.document.querySelectorAll("button")) {
@@ -36,6 +39,7 @@ describe("v0.8.3 table header control exceptions", () => {
     expect(findings.map(({ exceptionId }) => exceptionId)).toEqual([
       "table-heading-controls-zero-padding",
       "table-heading-help-18px", "table-heading-controls-zero-padding",
+      "table-heading-controls-zero-padding",
       undefined, undefined,
     ]);
   });
