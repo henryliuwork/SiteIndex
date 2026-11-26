@@ -1,6 +1,6 @@
 # v0.8.5 W0 UI 审计与冻结候选
 
-状态：**待 Lead 确认；确认前不视为冻结**。
+状态：**已冻结**。Lead 确认记录：[Issue #820 评论](https://github.com/henryliuwork/SiteIndex/issues/820#issuecomment-7180547381)。
 
 审计日期：2026-11-26
 
