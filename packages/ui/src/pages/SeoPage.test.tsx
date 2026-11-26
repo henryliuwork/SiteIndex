@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { createMockApi } from "../mock";
@@ -291,21 +291,31 @@ describe("SeoPage 单页面表", () => {
     const mockApi = createMockApi();
     const listPageRows = vi.spyOn(mockApi.seo, "listPageRows");
     await renderSeoPage(mockApi, "/p/demo/seo", true);
-    expect(await screen.findByRole("group", { name: "SEO 摘要" })).toBeTruthy();
+    const summary = await screen.findByRole("group", { name: "SEO 摘要" });
     for (const label of ["待处理问题页", "本次新增", "未收录", "已修复"]) {
-      expect(screen.getByRole("button", { name: new RegExp(label) })).toBeTruthy();
+      expect(within(summary).getByRole("button", { name: new RegExp(label) })).toBeTruthy();
     }
     expect(await screen.findByRole("button", { name: "数据来源时间" })).toBeTruthy();
     expect(screen.queryByText(/SEO 抓取数据截至/)).toBeNull();
     for (const [label, value] of [["待处理问题页", "open"], ["本次新增", "new"], ["未收录", "unindexed"], ["已修复", "fixed"]] as const) {
-      fireEvent.click(screen.getByRole("button", { name: new RegExp(label) }));
+      fireEvent.click(within(summary).getByRole("button", { name: new RegExp(label) }));
       await waitFor(() => expect(screen.getByTestId("search-params").textContent).toContain(`summary=${value}`));
       await waitFor(() => expect(listPageRows).toHaveBeenCalledWith("demo", expect.objectContaining({
         filters: expect.objectContaining({ summary: value }),
       })));
-      fireEvent.click(screen.getByRole("button", { name: new RegExp(label) }));
+      fireEvent.click(within(summary).getByRole("button", { name: new RegExp(label) }));
       await waitFor(() => expect(screen.getByTestId("search-params").textContent).not.toContain("summary="));
     }
+
+    const compactSummary = document.querySelector<HTMLButtonElement>(".si-seo-compact-summary-filter button");
+    expect(compactSummary).toBeTruthy();
+    fireEvent.click(compactSummary!);
+    const compactOptions = document.querySelector<HTMLElement>('.si-seo-dropdown-options[aria-label="SEO 摘要"]');
+    expect(compactOptions).toBeTruthy();
+    fireEvent.click(within(compactOptions!).getByRole("button", { name: /本次新增/ }));
+    await waitFor(() => expect(listPageRows).toHaveBeenCalledWith("demo", expect.objectContaining({
+      filters: expect.objectContaining({ summary: "new" }),
+    })));
   });
 });
 
