@@ -448,7 +448,7 @@ export function DataTable<T, F = Record<string, unknown>>({
                   const help = header.column.columnDef.meta?.help;
                   const stickyRight = header.column.columnDef.meta?.sticky === "right" || header.column.id === "actions";
                   const stickyLeft = header.column.columnDef.meta?.sticky === "left" && !stickyRight;
-                  const className = [reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
+                  const className = [reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right", align && `is-align-${align}`].filter(Boolean).join(" ");
                   const style = { ...(align ? { textAlign: align === "end" ? "right" as const : align === "center" ? "center" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(header.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(header.column.id) ?? 0 } : {}) };
                   const headerContent = header.column.getCanSort() ? (
                     <button className="si-sort-button" type="button" onClick={() => sortBy(header.column.id)}>
