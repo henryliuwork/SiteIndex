@@ -30,19 +30,23 @@ export function redactEvidence(value, { secrets = [] } = {}) {
   });
 }
 
-export function createReport({ baseline, candidate, runner, osBuild, secrets = [] }) {
+export function createReport({ baseline, candidate, runner, osBuild, itemsArgument, itemIds, secrets = [] }) {
   if (!baseline?.sha256 || !candidate?.sha256) throw new Error("Both installer SHA256 values are required");
-  const report = { run: { baseline, candidate, runner, os_build: osBuild }, items: [],
+  const profileIds = new Map();
+  const report = { run: { baseline, candidate, runner, os_build: osBuild,
+    items_argument: itemsArgument, item_ids: itemIds }, items: [],
     cleanup: { status: "not_run", retries: 0 } };
   const add = ({ id, phase, status, evidence = [] }) => {
     if (!["passed", "assertion_failed", "harness_error", "not_run"].includes(status)) {
       throw new Error(`Invalid acceptance status: ${status}`);
     }
-    report.items.push(redactEvidence({ id, phase, status, evidence }, { secrets }));
+    report.items.push(redactEvidence({ id, phase, status,
+      ...(profileIds.has(id) ? { profile_id: profileIds.get(id) } : {}), evidence }, { secrets }));
   };
   const failure = async ({ id, phase, error, kind, page, snapshot, consoleMessages = [], lastIpc = null, outputDir }) => {
     const evidence = [{ message: error?.message ?? String(error), stack: error?.stack ?? "",
-      console: consoleMessages, last_ipc: lastIpc }];
+      console: consoleMessages, last_ipc: lastIpc,
+      ...(error?.exitResult ? { exit_result: error.exitResult } : {}) }];
     if ((page || snapshot) && outputDir) {
       const filename = `${String(id).replace(/[^a-z0-9_-]/giu, "_")}.png`;
       try {
@@ -71,6 +75,7 @@ export function createReport({ baseline, candidate, runner, osBuild, secrets = [
     await writeFile(file, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
   };
   return { report, add, failure, save,
+    setProfileId: (id, profileId) => { profileIds.set(id, profileId); },
     setCleanup: (result) => { report.cleanup = redactEvidence(result, { secrets }); } };
 }
 

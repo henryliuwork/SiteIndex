@@ -11,6 +11,7 @@ describe("v0.8.5 single acceptance entry", () => {
     const options = parseAcceptanceArgs(["--items", "1-83", "--baseline", "v0.8.4",
       "--candidate", "c/version-0.8.5", "--manifest", "pins.json", "--output-dir", "out"]);
     assert.equal(options.itemIds.length, 83);
+    assert.equal(options.itemsArgument, "1-83");
     const handlers = acceptanceHandlers(options.itemIds, {
       username: "synthetic", applicationPassword: "synthetic-canary",
     });
@@ -31,11 +32,12 @@ describe("v0.8.5 single acceptance entry", () => {
       const file = path.join(root, "pins.json");
       await writeFile(file, JSON.stringify({ baseline: { ref: "v0.8.4", kind: "release" },
         candidate: { ref: "c/version-0.8.5", kind: "run-artifact" } }));
-      const options = { itemIds: [82], baselineRef: "v0.8.4", candidateRef: "c/version-0.8.5",
+      const options = { itemIds: [82], itemsArgument: "82", baselineRef: "v0.8.4", candidateRef: "c/version-0.8.5",
         manifest: file, outputDir: path.join(root, "out") };
       const run = vi.fn(async (_input: Record<string, unknown>) => ({ items: [], cleanup: { status: "passed" } }));
       await runFromManifest(options, { run });
       const passed = run.mock.calls[0][0];
+      assert.equal(passed.itemsArgument, "82");
       assert.equal(passed.secrets.length, 2);
       assert.equal(passed.secrets.every((value: string) => value.length > 8), true);
       assert.equal((await readFile(file, "utf8")).includes(passed.secrets[1]), false);

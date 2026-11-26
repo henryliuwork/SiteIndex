@@ -92,7 +92,7 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-acceptance-lifecycle-"));
     try {
       const deps = fakeLifecycle(root);
-      const report = await runAcceptance({ itemIds: [1, 2], baseline: source("baseline.exe", "v0.8.0"),
+      const report = await runAcceptance({ itemIds: [1, 2], itemsArgument: "2,1", baseline: source("baseline.exe", "v0.8.0"),
         candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 1: handler(), 2: handler() },
         outputDir: path.join(root, "out"), dependencies: deps });
       assert.deepEqual(report.items.filter((item) => item.phase === "upgrade-readback").map((item) => item.id), [1, 2]);
@@ -104,7 +104,18 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
       assert.notEqual(deps.installWindowsNsis.mock.calls[0][1], deps.installWindowsNsis.mock.calls[2][1]);
       assert.equal(deps.installWindowsNsis.mock.calls[0][0], path.resolve("baseline.exe"));
       assert.equal(deps.installWindowsNsis.mock.calls[1][0], path.resolve("candidate.exe"));
-      assert.equal(JSON.parse(await readFile(path.join(root, "out", "report.json"), "utf8")).items.length, 3);
+      assert.deepEqual(report.run.item_ids, [1, 2]);
+      assert.equal(report.run.items_argument, "2,1");
+      for (const id of [1, 2]) {
+        const rows = report.items.filter((item) => item.id === id);
+        assert.equal(rows.every((item) => item.profile_id === `synthetic-profile-${id}`), true);
+        for (const phase of ["baseline-exit", "baseline-reopen-exit", "candidate-exit", "candidate-reopen-exit"]) {
+          const exit = rows.find((item) => item.phase === phase);
+          assert.equal(exit?.status, "passed");
+          assert.deepEqual(exit?.evidence, [{ method: "window.close", exitCode: 0, remainingProcesses: 0 }]);
+        }
+      }
+      assert.deepEqual(JSON.parse(await readFile(path.join(root, "out", "report.json"), "utf8")), report);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
