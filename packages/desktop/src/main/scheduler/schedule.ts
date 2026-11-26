@@ -1,4 +1,4 @@
-import type { JobSchedule, ScheduleConfig, ScheduleState, SystemTaskRow, Weekday } from "@siteindex/shared";
+import type { ErrorDetail, JobSchedule, ScheduleConfig, ScheduleState, SystemTaskRow, Weekday } from "@siteindex/shared";
 import { inspectProjectStorageLocation } from "@siteindex/core";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -8,6 +8,7 @@ import path from "node:path";
 import { DOMParser } from "@xmldom/xmldom";
 import type { AddExistingTimingCallback } from "../add-existing-trace.js";
 import { mapWithConcurrency } from "./concurrency.js";
+import { scheduleErrorDetail } from "../error-detail.js";
 import {
   createWindowsTaskRegistrar,
   windowsRootTaskName,
@@ -58,6 +59,7 @@ export interface SystemScheduler {
 export interface ScheduleVerification {
   state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error";
   message?: string;
+  error_detail?: ErrorDetail;
 }
 
 export interface ScheduleRuntimeStatus {
@@ -425,11 +427,14 @@ export function scheduledOccurrenceKey(job: ScheduledJob, config: ScheduleConfig
 
 function execute(file: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { windowsHide: true, maxBuffer: 1024 * 1024, encoding: "utf8" }, (error, stdout) => {
+    execFile(file, args, { windowsHide: true, maxBuffer: 1024 * 1024, encoding: "utf8" }, (error, stdout, stderr) => {
       if (error) {
-        const detail = [stdout, (error as Error & { stderr?: string }).stderr].filter(Boolean).join("\n");
+        const detail = [stdout, stderr].filter(Boolean).join("\n");
         const code = (error as Error & { code?: number | string }).code;
-        reject(Object.assign(new Error(`${file} 执行失败。`), { detail, cause: error, code }));
+        reject(Object.assign(new Error(`${file} 执行失败。`), {
+          detail, cause: error, code, exitCode: typeof code === "number" ? code : undefined,
+          stderr, command: [file, ...args],
+        }));
       } else resolve(stdout);
     });
   });
@@ -604,6 +609,8 @@ export function createSystemScheduler(options: {
   }
 
   async function verify(project: ScheduleProjectDefinition): Promise<ScheduleVerification> {
+    const verificationError = (message: string): ScheduleVerification => ({ state: "error", message,
+      error_detail: scheduleErrorDetail("schedule.verify", new Error(message)) });
     try {
       if (!(await stat(project.projectPath)).isDirectory()) {
         return { state: "orphaned", message: "项目目录不存在，计划任务可能仍指向旧路径。" };
@@ -625,9 +632,12 @@ export function createSystemScheduler(options: {
               break;
             } catch (error) {
               if (!isWindowsTaskMissing(error)) {
+                const errorDetail = scheduleErrorDetail("schedule.verify", error,
+                  ["schtasks.exe", "/Query", "/TN", name, "/XML"]);
                 return {
                   state: "error",
-                  message: `读取计划任务失败：${error instanceof Error ? error.message : String(error)}`,
+                  message: `读取计划任务失败：${errorDetail.cause ?? "命令失败"}`,
+                  error_detail: errorDetail,
                 };
               }
             }
@@ -636,7 +646,7 @@ export function createSystemScheduler(options: {
             if (expected) return { state: "unregistered", message: `${job} 任务：期望存在系统计划任务，实际缺失。` };
             continue;
           }
-          if (!expected) return { state: "error", message: `禁用的 ${job} 计划任务仍然存在。` };
+          if (!expected) return verificationError(`禁用的 ${job} 计划任务仍然存在。`);
           const actualPath = projectPathFromWindowsTaskXml(foundXml);
           if (!actualPath || !sameWindowsPath(actualPath, project.projectPath)) {
             return {
@@ -665,7 +675,7 @@ export function createSystemScheduler(options: {
             const details = differences
               .map(({ field, expected, actual }) => `${field}：期望 ${expected}，实际 ${actual}`)
               .join("；");
-            return { state: "error", message: `${job} 任务配置不一致：${details}。` };
+            return verificationError(`${job} 任务配置不一致：${details}。`);
           }
         }
         return { state: "ok" };
@@ -684,7 +694,7 @@ export function createSystemScheduler(options: {
             }
             throw error;
           }
-          if (!expected) return { state: "error", message: `禁用的 ${job} launchd 任务仍然存在。` };
+          if (!expected) return verificationError(`禁用的 ${job} launchd 任务仍然存在。`);
           if (!content.includes(`<string>${escapePlist(project.projectPath)}</string>`)) {
             return { state: "path_mismatch", message: `${job} launchd 任务使用的项目路径与当前路径不一致。` };
           }
@@ -696,14 +706,16 @@ export function createSystemScheduler(options: {
             schedule: project.config[job],
           });
           if (content !== expectedContent || !(await isMacRegistered(project.projectId, job))) {
-            return { state: "error", message: `${job} launchd 任务未加载或触发配置不一致。` };
+            return verificationError(`${job} launchd 任务未加载或触发配置不一致。`);
           }
         }
         return { state: "ok" };
       }
-      return { state: "error", message: "当前平台不支持计划任务核验。" };
+      return verificationError("当前平台不支持计划任务核验。");
     } catch (error) {
-      return { state: "error", message: error instanceof Error ? error.message : String(error) };
+      const errorDetail = scheduleErrorDetail("schedule.verify", error);
+      return { state: "error", message: errorDetail.cause ?? "计划任务核验失败。",
+        error_detail: errorDetail };
     }
   }
 
