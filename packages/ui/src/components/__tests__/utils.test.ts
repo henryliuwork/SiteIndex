@@ -74,6 +74,11 @@ describe("列设置持久化", () => {
     expect(readColumnPrefs("inventory", ["sku", "stock", "category"])).toEqual(["sku", "stock"]);
   });
 
+  it("迁移含未知列 ID 的旧列偏好时丢弃未知项", () => {
+    values.set("si.cols.inventory", '["sku","removed-column","category"]');
+    expect(readColumnPrefs("inventory", ["sku", "category", "status"], ["sku", "category"])).toEqual(["sku", "category"]);
+  });
+
   it("损坏的存储值回退到默认列", () => {
     values.set("si.cols.inventory", "not-json");
     expect(readColumnPrefs("inventory", ["sku", "stock"], ["sku"])).toEqual(["sku"]);
