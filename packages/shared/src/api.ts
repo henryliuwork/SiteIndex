@@ -39,6 +39,7 @@ import type {
   StockStatus,
   ValidationReport,
 } from "./models";
+import type { ErrorDetail } from "./errors";
 import type { ProjectPaths } from "./paths";
 import type { JobProgress, JobRequest, JobResult, SchedulableJob } from "./jobs";
 import type {
@@ -758,6 +759,7 @@ export interface ScheduleVerification {
   message?: string;
   repaired?: boolean;
   details?: ScheduleVerificationDetail[];
+  error_detail?: ErrorDetail;
 }
 
 export interface SystemTaskRow {

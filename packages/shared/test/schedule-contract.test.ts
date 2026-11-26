@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ScheduleVerification, SiteIndexApi, SystemTaskRow } from "../src";
+import type { ErrorDetail, ScheduleVerification, SiteIndexApi, SystemTaskRow } from "../src";
 import { API_INVOKE_METHODS, PENDING_HANDLERS } from "../src";
 
 describe("schedule system task contract", () => {
@@ -31,12 +31,27 @@ describe("schedule system task contract", () => {
       differences: [],
     };
     const legacyApi: Pick<SiteIndexApi["schedule"], "listSystemTasks"> = {};
+    const errorDetail: ErrorDetail = {
+      code: "SCHEDULE_VERIFY_FAILED",
+      operation: "schedule.verify",
+      command: ["schtasks.exe", "/Query"],
+      exitCode: 1,
+      stderr: "系统任务查询失败",
+    };
+    const failedVerification: ScheduleVerification = {
+      state: "error",
+      message: "计划任务校验失败",
+      error_detail: errorDetail,
+    };
+    const legacyVerification: ScheduleVerification = { state: "error", message: "计划任务校验失败" };
 
     expect(verification.details?.[0]).toMatchObject({
       expected: "C:\\SiteIndex\\fixture",
       actual: "D:\\SiteIndex\\fixture",
     });
     expect(row).toMatchObject({ taskName: "SiteIndex-fixture-daily", systemState: "Ready", configMatches: true });
+    expect(failedVerification.error_detail).toEqual(errorDetail);
+    expect(legacyVerification.error_detail).toBeUndefined();
     expect(legacyApi.listSystemTasks).toBeUndefined();
     expect(API_INVOKE_METHODS.filter((method) => method === "schedule.listSystemTasks")).toHaveLength(1);
     expect(PENDING_HANDLERS).not.toContain("schedule.listSystemTasks");
