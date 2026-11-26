@@ -29,6 +29,7 @@ export async function verifyRemoteSource(source, { request = fetch, token = proc
   if (run.repository?.full_name) assertSame(run.repository.full_name, REPOSITORY, "repository");
 
   if (source.kind === "run-artifact") {
+    assertSame(run.head_branch, source.ref, "run ref");
     if (!/^[a-f\d]{64}$/iu.test(source.archiveSha256 ?? "")) {
       throw new Error("Pinned Actions archive SHA256 is required");
     }

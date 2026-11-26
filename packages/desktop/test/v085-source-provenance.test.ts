@@ -14,7 +14,7 @@ function api(overrides: Record<string, unknown> = {}) {
   const response = (body: object) => ({ ok: true, status: 200, json: async () => body });
   return vi.fn(async (url: string) => {
     if (url.endsWith("actions/runs/123")) return response({ id: 123, workflow_id: 99,
-      head_sha: commit, status: "completed", conclusion: "success", event: "workflow_dispatch",
+      head_sha: commit, head_branch: "v0.8.5-rc.1", status: "completed", conclusion: "success", event: "workflow_dispatch",
       repository: { full_name: "henryliuwork/SiteIndex" }, ...overrides });
     if (url.endsWith("actions/artifacts/456")) return response({ id: 456, name: "siteindex-win",
       expired: false, digest: `sha256:${archiveSha256}`,
@@ -53,5 +53,10 @@ describe("v0.8.5 pinned GitHub installer provenance", () => {
     const request = api();
     await assert.rejects(() => verifyRemoteSource({ ...candidate, archiveSha256: "d".repeat(64) },
       { request, token: "synthetic-token" }), /archive SHA256/u);
+  });
+
+  it("rejects an artifact run from a different branch despite a matching commit", async () => {
+    await assert.rejects(() => verifyRemoteSource(candidate,
+      { request: api({ head_branch: "other-branch" }), token: "synthetic-token" }), /run ref/u);
   });
 });

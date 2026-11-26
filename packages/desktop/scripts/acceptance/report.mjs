@@ -40,18 +40,29 @@ export function createReport({ baseline, candidate, runner, osBuild, secrets = [
     }
     report.items.push(redactEvidence({ id, phase, status, evidence }, { secrets }));
   };
-  const failure = async ({ id, phase, error, kind, page, consoleMessages = [], lastIpc = null, outputDir }) => {
+  const failure = async ({ id, phase, error, kind, page, snapshot, consoleMessages = [], lastIpc = null, outputDir }) => {
     const evidence = [{ message: error?.message ?? String(error), stack: error?.stack ?? "",
       console: consoleMessages, last_ipc: lastIpc }];
-    if (page && outputDir) {
+    if ((page || snapshot) && outputDir) {
       const filename = `${String(id).replace(/[^a-z0-9_-]/giu, "_")}.png`;
       try {
-        await page.screenshot({ path: path.join(outputDir, filename),
+        if (page) await page.screenshot({ path: path.join(outputDir, filename),
           ...(id === 82 ? { mask: [page.getByRole("textbox", { name: "WordPress 用户名" })] } : {}) });
+        else await writeFile(path.join(outputDir, filename), snapshot);
         evidence.push({ screenshot: filename });
       } catch (captureError) {
-        evidence.push({ screenshot_error: captureError?.message ?? String(captureError) });
-        kind = "harness_error";
+        if (snapshot) {
+          try {
+            await writeFile(path.join(outputDir, filename), snapshot);
+            evidence.push({ screenshot: filename });
+          } catch (fallbackError) {
+            evidence.push({ screenshot_error: fallbackError?.message ?? String(fallbackError) });
+            kind = "harness_error";
+          }
+        } else {
+          evidence.push({ screenshot_error: captureError?.message ?? String(captureError) });
+          kind = "harness_error";
+        }
       }
     }
     add({ id, phase, status: kind, evidence });
