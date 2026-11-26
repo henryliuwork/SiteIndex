@@ -80,10 +80,10 @@ function IssueActionMenu({ issue, handlers }: { issue: SeoIssue; handlers: Issue
   </PopoverPrimitive.Root>;
 }
 
-function issueColumns(actions?: IssueActionHandlers): ColumnDef<SeoIssue, unknown>[] {
+export function issueColumns(actions?: IssueActionHandlers): ColumnDef<SeoIssue, unknown>[] {
   const columns: ColumnDef<SeoIssue, unknown>[] = [
     { id: "url", accessorKey: "url", header: "页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, enableHiding: false, cell: ({ row }) => <code className="si-seo-url" title={row.original.url}>{displayPath(row.original.url)}</code>, enableSorting: true },
-    { id: "problem", accessorKey: "detail", header: "问题", meta: { width: 220, grow: 1, minWidth: 160, text: "clamp2" }, cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span title={row.original.detail}>{row.original.detail}</span></span>, enableSorting: false },
+    { id: "problem", accessorKey: "detail", header: "问题", meta: { width: 220, grow: 1, minWidth: 160, text: "clamp2" }, enableHiding: false, cell: ({ row }) => <span className="si-seo-issue-cell"><strong>{issueLabels[row.original.rule] ?? row.original.rule}</strong><span title={row.original.detail}>{row.original.detail}</span></span>, enableSorting: false },
     { id: "severity", accessorKey: "severity", header: "级别", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={severityTones[row.original.severity]}>{severityLabels[row.original.severity]}</Chip>, enableSorting: true },
     { id: "status", accessorKey: "status", header: "状态", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone={statusTones[row.original.status]}>{statusLabels[row.original.status]}</Chip>, enableSorting: true },
     { id: "last_seen", accessorKey: "last_seen", header: "发现于", meta: { width: 140, grow: 0, minWidth: 140, text: "single" }, cell: ({ row }) => <code className="si-seo-date">{row.original.last_seen.slice(5)}</code>, enableSorting: true },
@@ -96,9 +96,10 @@ function issueColumns(actions?: IssueActionHandlers): ColumnDef<SeoIssue, unknow
   return columns;
 }
 
-function pageColumns(titleRange: [number, number], descriptionRange: [number, number]): ColumnDef<SeoRecord, unknown>[] {
+export function pageColumns(titleRange: [number, number], descriptionRange: [number, number]): ColumnDef<SeoRecord, unknown>[] {
   return [
-    { id: "url", accessorKey: "url", header: "页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, enableHiding: false, cell: ({ row }) => <span className="si-seo-page-cell"><code>{displayPath(row.original.url)}</code><span>{row.original.title || "无 Title"}</span></span>, enableSorting: true },
+    { id: "url", accessorKey: "url", header: "URL", meta: { width: 300, grow: 2, minWidth: 220, text: "single" }, enableHiding: false, cell: ({ row }) => <code className="si-seo-url">{displayPath(row.original.url)}</code>, enableSorting: true },
+    { id: "title", accessorKey: "title", header: "标题", meta: { width: 280, grow: 2, minWidth: 220, text: "single" }, enableHiding: false, cell: ({ row }) => <span className="si-seo-page-title">{row.original.title || "无 Title"}</span>, enableSorting: true },
     { id: "page_type", accessorKey: "page_type", header: "类型", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone="neutral">{pageTypeLabels[row.original.page_type]}</Chip>, enableSorting: true },
     { id: "title_length", accessorKey: "title_length", header: "Title 长度", meta: { width: 96, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ row }) => <span className="si-seo-length-cell">{row.original.title_length}<LengthBadge length={row.original.title_length} kind="title" range={titleRange} /></span>, enableSorting: true },
     { id: "description_length", accessorKey: "description_length", header: "Description 长度", meta: { width: 96, grow: 0, minWidth: 80, align: "end", text: "single" }, cell: ({ row }) => <span className="si-seo-length-cell">{row.original.description_length}<LengthBadge length={row.original.description_length} kind="description" range={descriptionRange} /></span>, enableSorting: true },
@@ -106,11 +107,11 @@ function pageColumns(titleRange: [number, number], descriptionRange: [number, nu
   ];
 }
 
-function linkColumns(): ColumnDef<SeoLink, unknown>[] {
+export function linkColumns(): ColumnDef<SeoLink, unknown>[] {
   return [
     { id: "from", accessorKey: "from", header: "来源页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, enableHiding: false, cell: ({ row }) => <code className="si-seo-url">{displayPath(row.original.from)}</code>, enableSorting: true },
-    { id: "anchor", accessorKey: "anchor", header: "锚文本", meta: { width: 220, grow: 1, minWidth: 160, text: "clamp2" }, cell: ({ row }) => row.original.anchor || "（空锚文本）", enableSorting: true },
-    { id: "to", accessorKey: "to", header: "目标页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <span className="si-seo-link-target"><code>{displayPath(row.original.to)}</code>{row.original.nofollow && <Chip tone="warn">nofollow</Chip>}</span>, enableSorting: true },
+    { id: "anchor", accessorKey: "anchor", header: "锚文本", meta: { width: 220, grow: 1, minWidth: 160, text: "clamp2" }, enableHiding: false, cell: ({ row }) => row.original.anchor || "（空锚文本）", enableSorting: true },
+    { id: "to", accessorKey: "to", header: "目标页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, enableHiding: false, cell: ({ row }) => <span className="si-seo-link-target"><code>{displayPath(row.original.to)}</code>{row.original.nofollow && <Chip tone="warn">nofollow</Chip>}</span>, enableSorting: true },
     { id: "to_type", accessorKey: "to_type", header: "类型", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) => <Chip tone="neutral">{pageTypeLabels[row.original.to_type === "page" ? "page" : row.original.to_type]}</Chip>, enableSorting: true },
   ];
 }
@@ -515,7 +516,7 @@ export function SeoPage() {
           </FilterBar><span className="si-seo-result-count">显示 {issueList?.rows.length ?? 0} / {issueList?.total ?? 0} 条</span></div>}
           emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。"
         />}
-        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={52} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" toolbar={<div className="si-seo-table-toolbar"><SearchInput value={pageQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" /><FilterBar className="si-seo-filterbar"><SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} /><SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[{ value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" }]} onChange={setIndexed} /></FilterBar><span className="si-seo-result-count">显示 {pageList?.rows.length ?? 0} / {pageList?.total ?? 0} 条</span></div>} />}
+        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={40} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" toolbar={<div className="si-seo-table-toolbar"><SearchInput value={pageQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" /><FilterBar className="si-seo-filterbar"><SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} /><SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[{ value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" }]} onChange={setIndexed} /></FilterBar><span className="si-seo-result-count">显示 {pageList?.rows.length ?? 0} / {pageList?.total ?? 0} 条</span></div>} />}
         {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" toolbar={<div className="si-seo-table-toolbar"><SearchInput value={linkQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索页面 URL 或内容" /><span className="si-seo-result-count">显示 {linkList?.rows.length ?? 0} / {linkList?.total ?? 0} 条</span></div>} />}
       </>}
       {view === "links" && <details className="si-seo-orphans">
