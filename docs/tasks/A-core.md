@@ -232,3 +232,8 @@
 ### v0.8.2 · 升级后用户字段保留
 
 - [x] A-2：v0.8.0 虚构配置与 README 样例执行 daily、weekly、monthly、readme、validate；每步后配置字节及三个用户段保留。轻量 `tech.json` 缺少政策/联系字段时 README 正常生成
+
+### v0.8.5 · Core 错误诊断
+
+- [x] A-2：`projects.updateConfig` 与 `readme.*` 失败带脱敏 `ErrorDetail`；可选 logger hook 只接收脱敏堆栈；金丝雀不出现在返回错误或日志中。Desktop IPC 与应用日志接线由 C 完成
+- [x] A-3：配置保存、README 与升级任务回归保持 I1–I8 覆盖；虚构数据测试通过

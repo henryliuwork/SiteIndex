@@ -127,6 +127,7 @@ import { readEdmCampaignSafety, readEdmCandidates, readEdmMediaGaps } from "../e
 import { readTodoManualHistory, readTodoManualStates, reconcileTodoManualStates, updateTodoManualState } from "../todos/manual-store";
 import { generateTodoRuleFindings, type TodoRuleEdmCandidate, type TodoRuleSnapshot } from "../todos/rule-generation";
 import { runMonthly } from "../jobs/monthly";
+import { describeOperationError, type CoreErrorLogEntry } from "./error-detail";
 import { repairProjectFile, validateProjectFiles } from "../validate";
 import { launchChromium, type BrowserLauncher } from "../browser/automation";
 import { runDesign } from "../jobs/design";
@@ -147,6 +148,8 @@ export interface CoreServiceContext {
   resolveProject(id: ProjectId): string;
   deviceId: string;
   cacheDir: string;
+  /** 可选应用日志入口；仅接收已脱敏的操作标识、错误码与堆栈。 */
+  logError?: (entry: CoreErrorLogEntry) => void;
   /** Desktop supplies the current projects_root + extra_projects catalog for authoritative create checks. */
   listRegisteredProjects?: () => Promise<readonly RegisteredProjectPath[]>;
   deviceName?: string;
@@ -541,8 +544,8 @@ async function readSiteConfigSource(projectPath: string): Promise<{ config: Site
       },
     } as SiteConfig;
     return { config: normalizeSiteFeedConfig(config), content };
-  } catch (error) {
-    throw siteError("CONFIG_INVALID", "项目配置文件不是有效 JSON", String(error));
+  } catch {
+    throw siteError("CONFIG_INVALID", "项目配置文件不是有效 JSON", "项目配置 JSON 解析失败");
   }
 }
 
@@ -1730,6 +1733,19 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   const createdTags = new Map<string, Set<string>>();
   const readQueues = new Map<string, Promise<void>>();
   const resolve = (id: ProjectId) => path.resolve(ctx.resolveProject(id));
+  const withOperationError = async <T>(
+    operation: string,
+    run: (setProjectPath: (projectPath: string) => void) => Promise<T>,
+  ): Promise<T> => {
+    let projectPath: string | undefined;
+    try {
+      return await run((value) => { projectPath = value; });
+    } catch (error) {
+      const diagnostic = describeOperationError(error, operation, projectPath);
+      try { ctx.logError?.(diagnostic.log); } catch { /* 日志失败不能遮蔽原始操作错误。 */ }
+      throw diagnostic.error;
+    }
+  };
   const invalidate = (projectPath: string) => {
     const key = path.resolve(projectPath);
     cache.delete(key);
@@ -2255,8 +2271,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
       return { summary: projectSummary(snapshot, id, ctx.deviceId, ctx.deviceName, storageLocation),
         config: source.config, config_revision: configRevision(source.content), runner: snapshot.runner };
     },
-    updateConfig: async (id, patch, options) => {
+    updateConfig: async (id, patch, options) => withOperationError("projects.updateConfig", async (setProjectPath) => {
       const projectPath = resolve(id);
+      setProjectPath(projectPath);
       await assertProjectStorageLocal(projectPath);
       return withLock(projectPath, async () => {
         const source = await readSiteConfigSource(projectPath);
@@ -2280,17 +2297,15 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         const config = normalizeSiteFeedConfig({ ...merged, workspace_folders: [] } as unknown as SiteConfig);
         if (options && serializeSiteConfig(config) === serializeSiteConfig(source.config)) return source.config;
         const serialized = serializeSiteConfig(config);
-        try {
-          const sitePath = await projectFilePath(projectPath, PATHS.site);
-          await atomicWrite(sitePath, serialized);
-          if (await readFile(sitePath, "utf8") !== serialized) {
-            throw siteError("WRITE_FAILED", "配置写入后读回不一致，请重试。");
-          }
-        } catch (error) { throw setError(error); }
+        const sitePath = await projectFilePath(projectPath, PATHS.site);
+        await atomicWrite(sitePath, serialized);
+        if (await readFile(sitePath, "utf8") !== serialized) {
+          throw siteError("WRITE_FAILED", "配置写入后读回不一致，请重试。");
+        }
         invalidate(projectPath);
         return config;
       });
-    },
+    }),
     detect: detectSite,
     inspectFeed: inspectFeeds,
     create: async (input: CreateProjectInput) => {
@@ -3022,8 +3037,9 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
   };
 
   const readme: CoreService["readme"] = {
-    get: async (id): Promise<ReadmeData> => {
+    get: async (id): Promise<ReadmeData> => withOperationError("readme.get", async (setProjectPath) => {
       const projectPath = resolve(id);
+      setProjectPath(projectPath);
       const snapshot = await load(projectPath);
       const readmePath = await projectFilePath(projectPath, PATHS.readme);
       const markdown = await readFile(readmePath, "utf8").catch(() => "");
@@ -3043,25 +3059,26 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
         user_blocks: readmeUserBlocks(markdown), auto_blocks, folder_map: [],
         ...(missing_user_blocks.length ? { missing_user_blocks } : {}),
       };
-    },
-    saveUserBlocks: async (id, blocks) => {
+    }),
+    saveUserBlocks: async (id, blocks) => withOperationError("readme.saveUserBlocks", async (setProjectPath) => {
       const projectPath = resolve(id);
+      setProjectPath(projectPath);
       await assertProjectStorageLocal(projectPath);
       const readmePath = await projectFilePath(projectPath, PATHS.readme);
       let markdown = await readFile(readmePath, "utf8").catch(() => "# 项目说明\n");
       markdown = replaceReadmeSection(markdown, "项目概况", blocks.overview);
       markdown = replaceReadmeSection(markdown, "当前重点", blocks.focus);
       markdown = replaceReadmeSection(markdown, "工作规则与偏好", blocks.rules);
-      try { await atomicWrite(readmePath, markdown); }
-      catch (error) { throw setError(error); }
+      await atomicWrite(readmePath, markdown);
       invalidate(projectPath);
-    },
-    refresh: async (id) => {
+    }),
+    refresh: async (id) => withOperationError("readme.refresh", async (setProjectPath) => {
       const projectPath = resolve(id);
+      setProjectPath(projectPath);
       const result = await runJob({ projectPath, job: "readme", trigger: "manual" }, () => undefined);
       if (result.status === "failed") throw siteError("WRITE_FAILED", result.summary, result.errors?.join("\n"));
       return { runId: result.runId };
-    },
+    }),
   };
 
   const folders: CoreService["folders"] = {
