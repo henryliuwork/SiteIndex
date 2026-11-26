@@ -318,9 +318,11 @@ describe("EdmPage D-5", () => {
     expect(frame?.querySelector(".si-page-frame-body .si-edm-page .si-tab-panel")).toBeTruthy();
   });
 
-  it("默认只显示可操作缺图摘要，页头更多收纳整页操作", async () => {
+  it("将缺图数量放在筛选项中，页头更多收纳整页操作", async () => {
     await renderEdmPage(true);
-    expect(await screen.findByRole("group", { name: "EDM 可处理摘要" })).toBeTruthy();
+    const missingImageButton = await screen.findByRole("button", { name: /缺图/ });
+    expect(missingImageButton.closest(".si-edm-filterbar")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "首图选择规则" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "EDM 任务与提示" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
     expect(screen.getByRole("menuitem", { name: "打开项目文件夹" })).toBeTruthy();
