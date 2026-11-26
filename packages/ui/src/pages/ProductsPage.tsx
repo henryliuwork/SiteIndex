@@ -326,6 +326,8 @@ export function ProductsPage() {
     const empty = new Set<string>();
     // 默认列以父 SKU 视图判定；切到子 SKU 时保留用户已开启的列。
     if (parentOnly && mergedRows.length && mergedRows.every((row) => formatInStockVariants(row) === "—")) empty.add("in_stock_variants");
+    if (parentOnly && mergedRows.length && mergedRows.every((row) => row.stock?.online_rate_30d == null)) empty.add("online_rate_30d");
+    if (parentOnly && mergedRows.length && mergedRows.every((row) => (row.kind === "parent" ? row.product.price_min : row.stock?.price ?? row.product.price_min) == null)) empty.add("price");
     if (parentOnly && mergedRows.length && mergedRows.every((row) => !row.stock?.last_change)) empty.add("last_change");
     if (parentOnly && mergedRows.length && mergedRows.every((row) => row.product.rating == null && row.product.review_count == null)) empty.add("rating");
     return productColumns((row) => { setSelectedRow(row); setDrawerSegment("overview"); }, (url) => void openExternal(url))

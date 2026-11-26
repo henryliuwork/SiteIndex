@@ -213,15 +213,25 @@ describe("合并后的产品管理表", () => {
   });
 
   it("整列无值时默认隐藏并在列设置标注无数据，真实值不被标空", async () => {
-    const empty = makeProduct({ handle: "demo-empty", title: "虚构无指标商品", product_id: "DEMOEMPTY", skus: ["DEMOEMPTY"] });
-    await renderProductsPage({ products: [empty], parentStocks: [makeStock("DEMOEMPTY", 24, { last_change: null, last_change_at: null })] });
+    const empty = makeProduct({ handle: "demo-empty", title: "虚构无指标商品", product_id: "DEMOEMPTY", price_min: null, price_max: null, skus: ["DEMOEMPTY"] });
+    await renderProductsPage({ products: [empty], parentStocks: [] });
     const table = await screen.findByRole("table");
     await within(table).findByText("虚构无指标商品", { selector: "strong" });
     expect(within(table).queryByRole("columnheader", { name: "有货变体" })).toBeNull();
+    expect(within(table).queryByRole("columnheader", { name: "30 天在线率" })).toBeNull();
+    expect(within(table).queryByRole("columnheader", { name: "价格" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "列设置" }));
-    for (const label of ["有货变体 · 无数据", "最近变化 · 无数据", "评分 / 评价数 · 无数据"]) {
+    for (const label of ["有货变体 · 无数据", "30 天在线率 · 无数据", "价格 · 无数据", "最近变化 · 无数据", "评分 / 评价数 · 无数据"]) {
       expect(await screen.findByRole("checkbox", { name: label })).toBeTruthy();
     }
+  });
+
+  it("在线率与价格有真实值时不标记为无数据", async () => {
+    await renderProductsPage();
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    expect(screen.queryByRole("checkbox", { name: "30 天在线率 · 无数据" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "价格 · 无数据" })).toBeNull();
   });
 
   it("五个非自明表头显示与 Core 口径一致的说明", async () => {
