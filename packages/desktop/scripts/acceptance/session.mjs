@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
@@ -124,4 +124,28 @@ export async function exitNormally(session, { timeoutMs = 30_000 } = {}) {
     { timeoutMs: 10_000, label: "installed app process cleanup" });
   await session.browser.close();
   return { method: "window.close", exitCode: 0, remainingProcesses: 0 };
+}
+
+/** Single NSIS install/overwrite path for the data-driven packaged acceptance. */
+export function installWindowsNsis(installer, profile, { run = spawnSync } = {}) {
+  if (!installer || !profile?.layout?.installDir) throw new Error("Pinned installer and isolated install directory are required");
+  const result = run(installer, ["/S", `/D=${profile.layout.installDir}`], {
+    cwd: profile.root, env: isolatedEnvironment(profile), encoding: "utf8",
+    windowsHide: true, timeout: 300_000,
+  });
+  if (result.error || result.status !== 0) throw new Error(`NSIS installation failed with exit ${result.status ?? "unknown"}`);
+}
+
+export async function uninstallWindowsNsis(profile, { run = spawnSync, wait = waitForObserved } = {}) {
+  const uninstaller = path.join(profile.layout.installDir, "Uninstall SiteIndex.exe");
+  const executable = path.join(profile.layout.installDir, "SiteIndex.exe");
+  const result = run(uninstaller, ["/S"], {
+    cwd: profile.root, env: isolatedEnvironment(profile), encoding: "utf8",
+    windowsHide: true, timeout: 300_000,
+  });
+  if (result.error || result.status !== 0) throw new Error(`NSIS uninstall failed with exit ${result.status ?? "unknown"}`);
+  await wait(async () => stat(executable).then(() => false, (error) => {
+    if (error?.code === "ENOENT") return true;
+    throw error;
+  }), { timeoutMs: 60_000, label: "NSIS executable removal" });
 }

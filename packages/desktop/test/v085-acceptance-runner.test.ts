@@ -1,0 +1,104 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, it, vi } from "vitest";
+import { parseItemRange, runAcceptance, verifyPinnedInstallers } from "../scripts/acceptance/runner.mjs";
+
+const commit = "a".repeat(40);
+const sha256 = "b".repeat(64);
+const source = (file: string, ref: string) => ({ file, ref, commit, runId: 123,
+  artifactId: 456, artifact: "siteindex-win", sha256 });
+const handler = () => ({ baselineUi: async () => {}, verifyBaselineIpc: async () => {},
+  verifyBaselineFile: async () => {}, candidateUi: async () => {},
+  verifyCandidateIpc: async () => {}, verifyCandidateFile: async () => {} });
+
+function fakeLifecycle(root: string) {
+  let profileNumber = 0;
+  const installWindowsNsis = vi.fn();
+  const uninstallWindowsNsis = vi.fn(async () => {});
+  const cleanupProfile = vi.fn(async () => ({ status: "passed", retries: 0 }));
+  const exitNormally = vi.fn(async () => ({ method: "window.close", exitCode: 0, remainingProcesses: 0 }));
+  return { installWindowsNsis, uninstallWindowsNsis, cleanupProfile, exitNormally,
+    verifyPinnedInstallers: vi.fn(async () => {}),
+    createProfile: vi.fn(async () => {
+      const number = ++profileNumber;
+      return { root: path.join(root, `profile-${number}`), layout: { installDir: path.join(root, `install-${number}`) } };
+    }),
+    redirectWindowsAppData: vi.fn(() => ({ restore: () => true })),
+    launchInstalledApp: vi.fn(async () => ({ page: { on: () => {} }, child: {}, browser: {} })),
+  };
+}
+
+describe("v0.8.5 packaged acceptance lifecycle", () => {
+  it("parses bounded item ranges and rejects duplicates", () => {
+    assert.deepEqual(parseItemRange("3,1-2,83"), [1, 2, 3, 83]);
+    assert.throws(() => parseItemRange("1,1"), /Duplicate/u);
+    assert.throws(() => parseItemRange("84"), /outside 1-83/u);
+    assert.throws(() => parseItemRange("1-x"), /Invalid/u);
+  });
+
+  it("checks both pinned installer SHA256 digests before installation", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-pinned-pair-"));
+    try {
+      const oldFile = path.join(root, "baseline.exe");
+      const newFile = path.join(root, "candidate.exe");
+      await writeFile(oldFile, "synthetic baseline");
+      await writeFile(newFile, "synthetic candidate");
+      const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+      const oldSource = { ...source(oldFile, "v0.8.0"), sha256: digest("synthetic baseline") };
+      const newSource = { ...source(newFile, "v0.8.5-rc.1"), sha256: digest("synthetic candidate") };
+      await verifyPinnedInstallers(oldSource, newSource);
+      await assert.rejects(() => verifyPinnedInstallers(oldSource, { ...newSource, sha256 }), /mismatch/u);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("does not install either package when pinned verification fails", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-bad-pin-"));
+    try {
+      const deps = fakeLifecycle(root);
+      deps.verifyPinnedInstallers.mockImplementation(async () => { throw new Error("Synthetic SHA mismatch"); });
+      const report = await runAcceptance({ itemIds: [1], baseline: source("baseline.exe", "v0.8.0"),
+        candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 1: handler() },
+        outputDir: path.join(root, "out"), dependencies: deps });
+      assert.equal(report.items.find((item) => item.id === "H9")?.status, "harness_error");
+      assert.equal(report.items.find((item) => item.id === 1)?.status, "not_run");
+      assert.equal(deps.installWindowsNsis.mock.calls.length, 0);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("uses a fresh profile per item and preserves baseline to candidate overwrite order", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-acceptance-lifecycle-"));
+    try {
+      const deps = fakeLifecycle(root);
+      const report = await runAcceptance({ itemIds: [1, 2], baseline: source("baseline.exe", "v0.8.0"),
+        candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 1: handler(), 2: handler() },
+        outputDir: path.join(root, "out"), dependencies: deps });
+      assert.deepEqual(report.items.filter((item) => item.phase === "upgrade-readback").map((item) => item.id), [1, 2]);
+      assert.equal(deps.createProfile.mock.calls.length, 2);
+      assert.equal(deps.installWindowsNsis.mock.calls.length, 4);
+      assert.equal(deps.exitNormally.mock.calls.length, 4);
+      assert.equal(deps.uninstallWindowsNsis.mock.calls.length, 2);
+      assert.equal(deps.cleanupProfile.mock.calls.length, 2);
+      assert.notEqual(deps.installWindowsNsis.mock.calls[0][1], deps.installWindowsNsis.mock.calls[2][1]);
+      assert.equal(deps.installWindowsNsis.mock.calls[0][0], path.resolve("baseline.exe"));
+      assert.equal(deps.installWindowsNsis.mock.calls[1][0], path.resolve("candidate.exe"));
+      assert.equal(JSON.parse(await readFile(path.join(root, "out", "report.json"), "utf8")).items.length, 3);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("classifies a readback mismatch without losing separate cleanup evidence", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-acceptance-failure-"));
+    try {
+      const deps = fakeLifecycle(root);
+      const bad = { ...handler(), verifyBaselineFile: async () => { throw new Error("Synthetic saved value missing"); } };
+      const report = await runAcceptance({ itemIds: [7], baseline: source("baseline.exe", "v0.8.0"),
+        candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 7: bad },
+        outputDir: path.join(root, "out"), dependencies: deps });
+      assert.equal(report.items.find((item) => item.id === 7)?.status, "assertion_failed");
+      assert.equal(report.cleanup.status, "passed");
+      assert.equal(deps.uninstallWindowsNsis.mock.calls.length, 1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
