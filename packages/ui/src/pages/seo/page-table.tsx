@@ -27,20 +27,25 @@ function path(url: string) {
   catch { return url; }
 }
 
-function columns(): ColumnDef<SeoPageTableRow, unknown>[] {
+export function seoPageTableColumns(rows: readonly Pick<SeoPageTableRow, "links_internal_in" | "links_internal_out" | "last_issue_change_date">[] = []): ColumnDef<SeoPageTableRow, unknown>[] {
+  const linksInEmpty = rows.length > 0 && rows.every((row) => row.links_internal_in == null);
+  const linksOutEmpty = rows.length > 0 && rows.every((row) => row.links_internal_out == null);
+  const issueDateEmpty = rows.length > 0 && rows.every((row) => row.last_issue_change_date == null);
   return [
-    { id: "url", accessorKey: "url", header: "页面", meta: { width: 280, grow: 2, minWidth: 170, text: "clamp2" }, enableHiding: false, cell: ({ row }) =>
-      <span className="si-seo-page-cell"><strong>{row.original.title || "无 Title"}</strong><code title={row.original.url}>{path(row.original.url)}</code></span>, enableSorting: true },
-    { id: "page_type", accessorKey: "page_type", header: "类型", meta: { width: 80, grow: 0, minWidth: 72, text: "single" }, cell: ({ row }) => pageTypeLabels[row.original.page_type], enableSorting: true },
-    { id: "google_indexed", accessorKey: "google_indexed", header: "收录", meta: { width: 88, grow: 0, minWidth: 80, text: "single" }, cell: ({ row }) =>
+    { id: "url", accessorKey: "url", header: "URL", meta: { width: 180, grow: 2, minWidth: 130, text: "single" }, enableHiding: false, cell: ({ row }) =>
+      <code className="si-seo-url" title={row.original.url}>{path(row.original.url)}</code>, enableSorting: true },
+    { id: "title", accessorKey: "title", header: "标题", meta: { width: 190, grow: 2, minWidth: 150, text: "single" }, enableHiding: false, cell: ({ row }) =>
+      <span className="si-seo-page-title">{row.original.title || "无 Title"}</span>, enableSorting: true },
+    { id: "page_type", accessorKey: "page_type", header: "类型", meta: { width: 60, grow: 0, minWidth: 56, text: "single" }, cell: ({ row }) => pageTypeLabels[row.original.page_type], enableSorting: true },
+    { id: "google_indexed", accessorKey: "google_indexed", header: "收录", meta: { width: 72, grow: 0, minWidth: 68, text: "single" }, cell: ({ row }) =>
       <Chip tone={row.original.google_indexed === true ? "ok" : row.original.google_indexed === false ? "danger" : "neutral"}>{row.original.google_indexed === true ? "已收录" : row.original.google_indexed === false ? "未收录" : "未检查"}</Chip>, enableSorting: true },
-    { id: "open_high", header: "待处理问题", meta: { width: 132, grow: 0, minWidth: 132, text: "single" }, cell: ({ row }) => {
+    { id: "open_high", header: "待处理问题", meta: { width: 100, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => {
       const counts = row.original.open_issue_counts;
-      return counts.high + counts.mid + counts.low ? <span>高 {counts.high} · 中 {counts.mid} · 低 {counts.low}</span> : "—";
+      return counts.high + counts.mid + counts.low ? <span className="si-seo-counts">高 {counts.high} · 中 {counts.mid} · 低 {counts.low}</span> : "—";
     }, enableSorting: true },
-    { id: "links_internal_in", accessorKey: "links_internal_in", header: "入链", meta: { width: 68, grow: 0, minWidth: 60, align: "end", text: "single" }, cell: ({ row }) => row.original.links_internal_in ?? "—", enableSorting: true },
-    { id: "links_internal_out", accessorKey: "links_internal_out", header: "出链", meta: { width: 68, grow: 0, minWidth: 60, align: "end", text: "single" }, cell: ({ row }) => row.original.links_internal_out ?? "—", enableSorting: true },
-    { id: "last_issue_change_date", accessorKey: "last_issue_change_date", header: "最近问题变化", meta: { width: 140, grow: 0, minWidth: 140, text: "single" }, cell: ({ row }) => row.original.last_issue_change_date?.slice(5) ?? "—", enableSorting: true },
+    { id: "links_internal_in", accessorKey: "links_internal_in", header: "入链", meta: { width: 48, grow: 0, minWidth: 48, align: "end", text: "single", ...(linksInEmpty ? { allEmpty: true } : {}) }, cell: ({ row }) => <span className="si-seo-number">{row.original.links_internal_in ?? "—"}</span>, enableSorting: true },
+    { id: "links_internal_out", accessorKey: "links_internal_out", header: "出链", meta: { width: 48, grow: 0, minWidth: 48, align: "end", text: "single", ...(linksOutEmpty ? { allEmpty: true } : {}) }, cell: ({ row }) => <span className="si-seo-number">{row.original.links_internal_out ?? "—"}</span>, enableSorting: true },
+    { id: "last_issue_change_date", accessorKey: "last_issue_change_date", header: "最近问题变化", meta: { width: 100, grow: 0, minWidth: 88, text: "single", ...(issueDateEmpty ? { allEmpty: true } : {}) }, cell: ({ row }) => <code className="si-seo-date">{row.original.last_issue_change_date?.slice(5) ?? "—"}</code>, enableSorting: true },
   ];
 }
 
@@ -63,7 +68,7 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
   useEffect(() => { setQuery((current) => ({ ...current, ...queryFromUrl(searchParams) })); }, [searchParams]);
   useEffect(() => { setSelectedPages([]); setSelectionReset((value) => value + 1); }, [query]);
   const pageRows = useQuery({ queryKey: ["seo", "pageRows", id, query], queryFn: () => api.seo.listPageRows!(id, query as SeoPageTableQuery), placeholderData: keepPreviousData });
-  const defs = useMemo(columns, []);
+  const defs = useMemo(() => seoPageTableColumns(pageRows.data?.rows ?? []), [pageRows.data?.rows]);
   const filters = query.filters ?? {};
   const write = (patch: Record<string, string | string[] | null>) =>
     setSearchParams((current) => updateSeoSearchParams(current, patch), { replace: true });
@@ -112,7 +117,7 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
     {pageRows.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 页面…</div>
       : pageRows.isError ? <ApiErrorNotice label="SEO 页面列表加载失败。" error={pageRows.error} onRetry={() => void pageRows.refetch()} />
         : <DataTable key={selectionReset} tableId="seo.pageRows" rows={pageRows.data?.rows ?? []} total={pageRows.data?.total ?? 0} columns={defs}
-          query={query} onQueryChange={setQuery} getRowId={(row) => row.url} onRowClick={(row) => onOpen(row.url)} height="fill" rowHeight={52}
+          query={query} onQueryChange={setQuery} getRowId={(row) => row.url} onRowClick={(row) => onOpen(row.url)} height="fill" rowHeight={40}
           selectable={Boolean(api.seo.setIssueStatus)} onSelectionChange={setSelectedPages}
           emptyTitle="没有匹配的页面" emptyDescription="调整筛选条件，或重新抓取 SEO 数据。"
           toolbar={selectedPages.length ? <div className="si-seo-selection-toolbar"><span>已选 {selectedPages.length} 页 · 待处理问题 {targets.length} 条</span>
