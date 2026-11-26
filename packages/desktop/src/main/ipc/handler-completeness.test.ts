@@ -109,10 +109,16 @@ describe("IPC handler completeness", () => {
     const options = { revision: "synthetic-revision", dirty_paths: ["notify.on_failure"] };
     const result = { notify: { on_failure: false }, revision: "updated-revision" };
     const set = vi.fn(async () => result);
-    Object.assign(context, { settings: { set }, settingsChanged: vi.fn(async () => undefined) });
+    const logError = vi.fn();
+    Object.assign(context, { settings: { set }, settingsChanged: vi.fn(async () => undefined), logError });
     const handler = createIpcHandlerImplementations(context)["settings.set"];
     await expect(handler?.(patch, options)).resolves.toBe(result);
     expect(set).toHaveBeenCalledWith(patch, options);
+    set.mockRejectedValueOnce({ code: "CONFIG_INVALID", message: "配置冲突" });
+    await expect(handler?.(patch, options)).rejects.toMatchObject({
+      code: "CONFIG_INVALID", error_detail: { code: "CONFIG_INVALID", operation: "settings.set" },
+    });
+    expect(logError).toHaveBeenCalledWith(expect.objectContaining({ operation: "settings.set", stack: expect.any(String) }));
   });
 
   it("implements every SiteIndexApi invoke method, including optional namespaces", () => {

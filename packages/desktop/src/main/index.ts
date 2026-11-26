@@ -24,6 +24,7 @@ import { createScheduleReconciliationQueue } from "./scheduler/reconciliation-qu
 import { createSkillService } from "./skill-service.js";
 import { createDesktopIntegrations } from "./desktop-integrations.js";
 import { createSettingsStore } from "./settings-store.js";
+import { createCoreErrorLogger } from "./diagnostic-log.js";
 import {
   createAddExistingTraceWriter,
   type AddExistingTimingCallback,
@@ -303,7 +304,9 @@ if (!hasSingleInstanceLock) {
       (id) => windowManager.sendToWindows("si:projects.onChanged", id),
     );
     projectCatalog = catalog;
+    const errorLogger = createCoreErrorLogger(app.getPath("logs"));
     const coreContext = {
+      logError: errorLogger,
       resolveProject: catalog.resolveProject,
       listRegisteredProjects: async () => catalog.refresh(await settingsStore.get()),
       get deviceId() {
@@ -541,6 +544,7 @@ if (!hasSingleInstanceLock) {
       },
     });
     registerIpcHandlers({
+      logError: errorLogger,
       updates,
       settings: settingsStore,
       uiState: createUiStateStore(async () => (await settingsStore.get()).cache_dir),

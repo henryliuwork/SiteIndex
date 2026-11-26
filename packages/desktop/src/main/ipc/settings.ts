@@ -4,10 +4,12 @@ import type { ConfigSaveOptions, SettingsPatch } from "@siteindex/shared";
 import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import { sendDingTalkTestNotification } from "../notifications.js";
 import { chooseDirectory } from "./app.js";
+import { settingsIpcError } from "../error-detail.js";
+import { desktopErrorLogEntry } from "../diagnostic-log.js";
 import type { IpcContext } from "./context.js";
 
 export function createSettingsHandlers(context: IpcContext): IpcHandlerImplementations {
-  return {
+  const handlers: IpcHandlerImplementations = {
     "settings.get": () => context.settings.get(),
     "settings.set": async (patch, options) => {
       const updated = await context.settings.set(patch as SettingsPatch, options as ConfigSaveOptions | undefined);
@@ -30,4 +32,13 @@ export function createSettingsHandlers(context: IpcContext): IpcHandlerImplement
     "settings.chooseDirectory": (defaultPath) =>
       chooseDirectory(typeof defaultPath === "string" ? defaultPath : undefined),
   };
+  return Object.fromEntries(Object.entries(handlers).map(([operation, handler]) => [operation,
+    async (...args: unknown[]) => {
+      try { return await handler(...args); }
+      catch (error) {
+        try { context.logError?.(desktopErrorLogEntry(operation, error)); } catch { /* Keep the original error. */ }
+        throw settingsIpcError(operation, error);
+      }
+    },
+  ])) as IpcHandlerImplementations;
 }

@@ -5,6 +5,7 @@ import type { IpcContext } from "./context.js";
 import { invalidSchedule, isScheduleConfig } from "./validators.js";
 import type { ScheduleRuntimeStatus } from "../scheduler/schedule.js";
 import { scheduleErrorDetail, scheduleIpcError } from "../error-detail.js";
+import { desktopErrorLogEntry } from "../diagnostic-log.js";
 
 export function createScheduleHandlers(context: IpcContext): IpcHandlerImplementations {
   const handlers: IpcHandlerImplementations = {
@@ -125,8 +126,22 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
   };
   return Object.fromEntries(Object.entries(handlers).map(([operation, handler]) => [operation,
     async (...args: unknown[]) => {
-      try { return await handler(...args); }
-      catch (error) { throw scheduleIpcError(operation, error); }
+      try {
+        const result = await handler(...args);
+        if (operation === "schedule.verify" && result && typeof result === "object" &&
+          "state" in result && result.state === "error") {
+          const detail = "error_detail" in result && result.error_detail && typeof result.error_detail === "object"
+            && "cause" in result.error_detail ? result.error_detail.cause : undefined;
+          try { context.logError?.(desktopErrorLogEntry(operation,
+            new Error(typeof detail === "string" ? detail : "计划任务核验返回错误状态。"))); }
+          catch { /* Keep the verification result. */ }
+        }
+        return result;
+      }
+      catch (error) {
+        try { context.logError?.(desktopErrorLogEntry(operation, error)); } catch { /* Keep the original error. */ }
+        throw scheduleIpcError(operation, error);
+      }
     },
   ])) as IpcHandlerImplementations;
 }

@@ -1,4 +1,4 @@
-import { assertProjectStorageLocal as assertCoreProjectStorageLocal, type CoreService } from "@siteindex/core";
+import { assertProjectStorageLocal as assertCoreProjectStorageLocal, type CoreService, type CoreServiceContext } from "@siteindex/core";
 import type {
   AppSettings,
   EdmSkuIndexExportResult,
@@ -20,6 +20,7 @@ import type { AddExistingTimingCallback, AddExistingTraceWriter } from "../add-e
 import type { GscOAuthService } from "../gsc-oauth.js";
 
 export interface IpcDependencies {
+  logError?: CoreServiceContext["logError"];
   settings: SettingsStore;
   uiState: UiStateStore;
   updates: UpdateService;
