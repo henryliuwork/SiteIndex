@@ -98,10 +98,14 @@ B 维护 packages/ui/src/components/ 中的共享组件。页面组合这些组�
 
 | 组件 | 规范 |
 |---|---|
-| Button | 高 32px，小号 28px；primary / secondary / ghost / danger。每个操作区最多一个 primary；图标按钮必须有 aria-label 和 tooltip。 |
+| Button | 默认高 32px、左右内边距 12px；小号高 28px、左右内边距 8px，文字到边缘至少 8px。primary / secondary / ghost / danger；每个操作区最多一个 primary；图标按钮必须有 aria-label 和 tooltip。 |
 | Input / Select / Checkbox | 控件高 32px，聚焦环统一。Select 使用 Radix Select/Popover，不用原生 select。 |
 | InputWithAction | 输入框与同行操作按钮共用高度、垂直居中与 `--input-with-action-gap`；作为共享组件使用。 |
-| InfoTooltip | 圆形 `i` 图标按钮（基于 `@radix-ui/react-tooltip`），hover/focus 弹出单句说明（≤ 240px）；禁止用大段内联说明文字替代。 |
+| Segmented | 选项高 28px 或 32px；左右内边距 12px，紧凑时 8px。 |
+| SearchInput | 外框高 32px；左右内边距由外层 label 提供，内层 input 不单独视为可交互控件。 |
+| FilterPill | 高 28px；左右内边距 12px、上下内边距 4px。 |
+| InfoTooltip | 圆形 `i` 图标按钮（基于 `@radix-ui/react-tooltip`），精确命中区 20×20px、无额外左右内边距；hover/focus 弹出单句说明（≤ 240px）；禁止用大段内联说明文字替代。检查器按此组件契约处理，不将其登记为 spacing exception。 |
+| DataTable 表头说明 | `ColumnDef.meta.help` 的 InfoTooltip 与排序控件间距为 `--gap-label-control`（4px）；检查器按此组合契约处理，不将其登记为 spacing exception。 |
 | Tabs | 只允许项目导航 Tab（路由切换）与页内分段 Tab（内容切换）两种；不得新增第三层。 |
 | FilterBar | 筛选下拉优先于 pill；内容超过两行时可折叠，最多两行时不显示“更多筛选”。 |
 | Chip | ok / warn / danger / info / neutral；字号使用 --fs-caption、字重 600。处理状态等状态列统一使用 Chip。 |
@@ -152,6 +156,19 @@ width 是基准宽度，grow 为剩余空间分配权重（0 固定、1 次要�
 
     <DataTable tableId="runs.history" rows={rows} total={rows.length} columns={columns}
       query={query} onQueryChange={setQuery} height="fill" rowHeight={40} />
+
+### 2.3 DataTable 列偏好与一致性（T1–T6）
+
+以下规则适用于 `routes.ts` 中标记为 `hasTable` 的所有路由：
+
+| # | 规则 | 验收要求 |
+|---|---|---|
+| T1 必显列 | 产品管理表的 SKU、产品名称，以及其他表的标识列、名称列不可隐藏。旧列偏好缺少必显列时自动补回。 | 单测覆盖旧缓存迁移；检查确认必显列存在。 |
+| T2 显式保存 | 列偏好仅在点击“保存”后落盘；“取消”不生效；“恢复默认”可用；迁移时丢弃未知列 id。 | 单测覆盖保存、取消、恢复默认和未知 id。 |
+| T3 键盘排序 | 列顺序支持拖拽，也支持键盘操作。 | 单测覆盖键盘重排。 |
+| T4 数字对齐 | 数字列表头与单元格均右对齐，并使用等宽数字。 | 检查表头与数据单元格的对齐一致。 |
+| T5 空列 | 完全没有值的列默认隐藏，可在列设置中恢复。 | 单测覆盖空列默认值与恢复。 |
+| T6 共享表格 | 所有含表格的页面必须使用共享 DataTable v2，不得自行拼接表格。 | `hasTable` 路由必须渲染 DataTable 根类。 |
 
 ## 3. 页面骨架与右上角操作区
 
