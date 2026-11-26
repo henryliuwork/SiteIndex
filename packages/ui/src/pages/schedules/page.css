@@ -2,7 +2,7 @@
 .si-schedules-page > .si-table-section { min-height: 0; flex: 1 1 auto; }
 .si-schedule-utility { min-width: 0; flex: none; }
 .si-schedule-utility[hidden] { display: none; }
-.si-schedule-utility .si-card { gap: var(--space-2); padding: var(--space-3); }
+.si-schedule-utility .si-card { gap: var(--space-2); padding: var(--space-2) var(--space-3); }
 .si-schedule-task-pager { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); color: var(--color-muted); font-size: var(--fs-caption); }
 .si-schedule-filter { display: flex; align-items: center; gap: var(--space-2); color: var(--color-ink-2); font-size: var(--fs-body); }
 .si-schedule-filter .si-select-trigger { min-width: 180px; height: var(--control-height); }
@@ -21,7 +21,7 @@
 .si-system-tasks-heading h2, .si-orphan-schedules-heading h2 { margin: 0; color: var(--color-ink); font-size: var(--fs-section-title); font-weight: var(--fw-section-title); line-height: var(--lh-section-title); }
 .si-system-tasks-heading p, .si-orphan-schedules-heading p { margin: var(--space-1) 0 0; color: var(--color-muted); font-size: var(--fs-body); line-height: var(--lh-body); }
 .si-system-task-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
-.si-system-task-row { display: grid; min-width: 0; grid-template-columns: minmax(180px,1fr) minmax(150px,.8fr) minmax(220px,1.3fr); align-items: start; gap: var(--space-3); padding: var(--space-3) 0; border-top: 1px solid var(--color-line-soft); }
+.si-system-task-row { display: grid; min-width: 0; grid-template-columns: minmax(180px,1fr) minmax(150px,.8fr) minmax(220px,1.3fr); align-items: start; gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--color-line-soft); }
 .si-system-task-main { display: grid; min-width: 0; gap: var(--space-1); }
 .si-system-task-main strong { overflow-wrap: anywhere; color: var(--color-ink); font-size: var(--fs-body); font-weight: 600; }
 .si-system-task-main span, .si-system-task-main small, .si-system-task-status > span { color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
@@ -35,5 +35,10 @@
 .si-orphan-schedule-list strong { color: var(--color-ink); font-size: var(--fs-sub-title); font-weight: var(--fw-sub-title); }
 .si-orphan-schedule-list code { overflow-wrap: anywhere; color: var(--color-muted); font: var(--fw-mono) var(--fs-caption)/var(--lh-caption) var(--font-mono); }
 .si-schedule-cleanup-error { margin: 0; }
+
+@media (max-height: 760px) {
+  .si-page-frame:has(.si-schedules-page) > .si-page-frame-body { padding-bottom: 0; }
+  .si-page-frame .si-schedules-page { gap: var(--space-2); }
+}
 @media (max-width: 900px) { .si-system-task-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .si-system-task-consistency { grid-column: 1 / -1; } }
 @media (max-width: 760px) { .si-schedule-filter { width: 100%; justify-content: space-between; } .si-schedule-filter .si-select-trigger { flex: 1; } .si-system-task-row { grid-template-columns: 1fr; } .si-system-task-consistency { grid-column: auto; } .si-orphan-schedule-list li { align-items: flex-start; flex-direction: column; } }
