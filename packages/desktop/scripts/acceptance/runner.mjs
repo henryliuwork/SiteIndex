@@ -9,7 +9,8 @@ import {
 } from "./session.mjs";
 
 const ASSERTION_PHASES = new Set(["baseline-ipc", "baseline-file", "candidate-ipc", "candidate-file",
-  "baseline-exit", "baseline-reopen-ipc", "baseline-reopen-exit", "candidate-exit"]);
+  "baseline-exit", "baseline-reopen-ipc", "baseline-reopen-exit", "candidate-exit",
+  "candidate-reopen-ipc", "candidate-reopen-exit"]);
 
 export function parseItemRange(input) {
   if (typeof input !== "string" || !input.trim()) throw new Error("--items requires a range such as 1-83");
@@ -155,6 +156,14 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       session = null;
       phase = "candidate-file";
       await handler.verifyCandidateFile({ ...context, profile });
+      phase = "candidate-reopen";
+      session = await deps.launchInstalledApp({ executable, profile });
+      session.page.on?.("console", (message) => consoleMessages.push(message.text()));
+      phase = "candidate-reopen-ipc";
+      await handler.verifyCandidateIpc({ ...context, page: session.page, profile });
+      phase = "candidate-reopen-exit";
+      assertNormalExit(await deps.exitNormally(session));
+      session = null;
       report.add({ id, phase: "upgrade-readback", status: "passed" });
     } catch (error) {
       const kind = error?.acceptanceStatus ?? (ASSERTION_PHASES.has(phase) ? "assertion_failed" : "harness_error");
