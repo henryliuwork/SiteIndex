@@ -22,6 +22,7 @@ function fakeLifecycle(root: string) {
   const exitNormally = vi.fn(async () => ({ method: "window.close", exitCode: 0, remainingProcesses: 0 }));
   return { installWindowsNsis, uninstallWindowsNsis, cleanupProfile, exitNormally,
     verifyPinnedInstallers: vi.fn(async () => {}),
+    verifyRemoteSources: vi.fn(async () => {}),
     createProfile: vi.fn(async () => {
       const number = ++profileNumber;
       return { root: path.join(root, `profile-${number}`), layout: { installDir: path.join(root, `install-${number}`) } };
@@ -64,6 +65,20 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
         outputDir: path.join(root, "out"), dependencies: deps });
       assert.equal(report.items.find((item) => item.id === "H9")?.status, "harness_error");
       assert.equal(report.items.find((item) => item.id === 1)?.status, "not_run");
+      assert.equal(deps.installWindowsNsis.mock.calls.length, 0);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("stops before local installer checks if GitHub provenance fails", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-bad-provenance-"));
+    try {
+      const deps = fakeLifecycle(root);
+      deps.verifyRemoteSources.mockImplementation(async () => { throw new Error("Synthetic run mismatch"); });
+      const report = await runAcceptance({ itemIds: [1], baseline: source("baseline.exe", "v0.8.0"),
+        candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 1: handler() },
+        outputDir: path.join(root, "out"), dependencies: deps });
+      assert.equal(report.items.find((item) => item.id === "H9")?.status, "harness_error");
+      assert.equal(deps.verifyPinnedInstallers.mock.calls.length, 0);
       assert.equal(deps.installWindowsNsis.mock.calls.length, 0);
     } finally { await rm(root, { recursive: true, force: true }); }
   });

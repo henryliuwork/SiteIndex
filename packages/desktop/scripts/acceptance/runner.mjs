@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createReport, verifyInstallerDigest, assertNormalExit } from "./report.mjs";
+import { verifyRemoteSources } from "./source-provenance.mjs";
 import {
   createProfile, redirectWindowsAppData, cleanupProfile, launchInstalledApp, exitNormally,
   installWindowsNsis, uninstallWindowsNsis,
@@ -37,7 +38,9 @@ export function pinnedSource(source, label) {
   }
   return { file: path.resolve(source.file), ref: source.ref, commit: source.commit,
     runId: source.runId, artifactId: source.artifactId,
-    artifact: source.artifact, sha256: source.sha256.toLowerCase() };
+    artifact: source.artifact, sha256: source.sha256.toLowerCase(),
+    kind: source.kind, workflowId: source.workflowId, event: source.event,
+    archiveSha256: source.archiveSha256?.toLowerCase() };
 }
 
 export async function verifyPinnedInstallers(baseline, candidate, verify = verifyInstallerDigest) {
@@ -50,7 +53,9 @@ export async function verifyPinnedInstallers(baseline, candidate, verify = verif
 
 function reportSource(source) {
   return { ref: source.ref, commit: source.commit, run_id: source.runId,
-    artifact_id: source.artifactId, artifact: source.artifact, sha256: source.sha256 };
+    artifact_id: source.artifactId, artifact: source.artifact, sha256: source.sha256,
+    kind: source.kind, workflow_id: source.workflowId, event: source.event,
+    archive_sha256: source.archiveSha256 };
 }
 
 function requiredHandler(handlers, id) {
@@ -66,7 +71,8 @@ function requiredHandler(handlers, id) {
 /** Lifecycle only. Item adapters and the workflow are added in later PRs. */
 export async function runAcceptance({ itemIds, baseline, candidate, handlers, outputDir, runner = "windows-hosted",
   osBuild = os.release(), dependencies = {} }) {
-  const deps = { verifyPinnedInstallers, createProfile, redirectWindowsAppData, cleanupProfile,
+  const deps = { verifyPinnedInstallers, verifyRemoteSources,
+    createProfile, redirectWindowsAppData, cleanupProfile,
     installWindowsNsis, uninstallWindowsNsis, launchInstalledApp, exitNormally, ...dependencies };
   if (!Array.isArray(itemIds) || !itemIds.length || new Set(itemIds).size !== itemIds.length
     || itemIds.some((id) => !Number.isInteger(id) || id < 1 || id > 83)) {
@@ -80,10 +86,11 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
   const reportFile = path.join(outputDir, "report.json");
   let verified = false;
   try {
+    await deps.verifyRemoteSources(sources.baseline, sources.candidate);
     await deps.verifyPinnedInstallers(sources.baseline, sources.candidate);
     verified = true;
     report.add({ id: "H9", phase: "source-verification", status: "passed",
-      evidence: ["Both installer SHA256 digests matched the pinned manifest"] });
+      evidence: ["GitHub run/artifact provenance and both installer SHA256 digests matched"] });
   } catch (error) {
     await report.failure({ id: "H9", phase: "source-verification", error, kind: "harness_error", outputDir });
   }
