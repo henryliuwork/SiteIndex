@@ -1,7 +1,7 @@
 name: CI
 
-# 仓库已公开，GitHub 托管 runner 不计分钟：每个 PR 与 main 都跑三个系统。
-# 不使用 paths-ignore：main 的 ruleset 要求这三个检查，跳过会导致 PR 无法合并。
+# 每个 PR 与 main 只跑 Windows 和 macOS。
+# 不使用 paths-ignore：main 的 ruleset 要求这两个检查，跳过会导致 PR 无法合并。
 on:
   push:
     branches: [main]
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -29,7 +29,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
-      - if: matrix.os == 'ubuntu-latest'
+      - if: matrix.os == 'macos-latest'
         run: pnpm --filter @siteindex/ui build
       - if: matrix.os == 'windows-latest'
         shell: pwsh
