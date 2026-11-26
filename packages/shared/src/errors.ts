@@ -41,11 +41,22 @@ export type SiteIndexErrorCode =
   | "WRITE_FAILED"
   | "UNKNOWN";
 
+/** 可随错误跨进程传递的脱敏诊断信息；stderr 最多 2048 字符。 */
+export interface ErrorDetail {
+  code: string;
+  operation: string;
+  command?: string[];
+  exitCode?: number;
+  stderr?: string;
+  cause?: string;
+}
+
 /** 跨进程传递的错误（IPC 只能传可序列化对象） */
 export interface SiteIndexError {
   code: SiteIndexErrorCode;
   message: string; // 面向用户的中文说明
   detail?: string;
+  error_detail?: ErrorDetail;
 }
 
 export const isSiteIndexError = (e: unknown): e is SiteIndexError =>
