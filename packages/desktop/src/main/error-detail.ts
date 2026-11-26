@@ -4,6 +4,7 @@ function safeText(value: unknown): string {
   if (typeof value !== "string") return "";
   return value
     .replace(/(?:authorization\s*:\s*(?:basic|bearer)\s+)[^\s]+/giu, "Authorization: [redacted]")
+    .replace(/\b(?:set-cookie|cookie)\s*:\s*[^\r\n]*/giu, "[redacted-cookie]")
     .replace(/\b(?:password|token|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+/giu, "[redacted]")
     .replace(/https?:\/\/[^\s"'()<>]+/giu, "[redacted-url]")
     .replace(/[A-Za-z]:\\[^\s"']+/gu, "[redacted-path]")
@@ -42,7 +43,7 @@ export function scheduleErrorDetail(operation: string, error: unknown, fallbackC
   const stderr = safeText(source.stderr).slice(0, 2048);
   const cause = safeText(typeof source.message === "string" ? source.message : String(error)).slice(0, 2048);
   return {
-    code: typeof source.code === "string" ? source.code : "SCHEDULE_COMMAND_FAILED",
+    code: typeof source.code === "string" ? safeText(source.code) : "SCHEDULE_COMMAND_FAILED",
     operation,
     ...(command ? { command } : {}),
     ...(exitCode === undefined ? {} : { exitCode }),
