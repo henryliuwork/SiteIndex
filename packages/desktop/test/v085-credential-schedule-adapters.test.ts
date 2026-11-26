@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it, vi } from "vitest";
-import { credentialAdapter, readSystemTask, scheduleAdapter, sensitiveSystemHandlers, taskAbsent } from
+import { checkScheduleVisible, credentialAdapter, readSystemTask, scheduleAdapter, sensitiveSystemHandlers, taskAbsent } from
   "../scripts/acceptance/credential-schedule-adapters.mjs";
 
 describe("v0.8.5 sensitive and system acceptance adapters", () => {
@@ -36,6 +36,20 @@ describe("v0.8.5 sensitive and system acceptance adapters", () => {
     await credentialAdapter({ username: "synthetic", applicationPassword: "synthetic-canary" }).candidateUi({ page });
     assert.deepEqual(seen, ["heading:WordPress 图片托管凭据",
       "region:凭据：https://credential.example.test", "button:替换凭据"]);
+  });
+
+  it("checks row 83 candidate values within stable schedule test IDs", async () => {
+    const seen: string[] = [];
+    const page = {
+      getByTestId: (id: string) => {
+        seen.push(id);
+        return { waitFor: async () => {}, innerText: async () => id.endsWith("daily")
+          ? "每日同步 每周二、四 · 17:44" : "已注册到任务计划程序" };
+      },
+      getByText: () => { throw new Error("H4 forbids text search locators"); },
+    };
+    await checkScheduleVisible(page);
+    assert.deepEqual(seen, ["runs-schedule-row-daily", "runs-schedule-plan-status"]);
   });
 
   it("reads five task XML fields without exposing raw XML", () => {
