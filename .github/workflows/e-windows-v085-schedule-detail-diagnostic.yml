@@ -15,8 +15,8 @@ on:
         description: Exact siteindex-win artifact ID
         required: true
         type: string
-      exe_sha256:
-        description: Exact installer SHA256
+      artifact_zip_sha256:
+        description: Exact siteindex-win artifact ZIP SHA256
         required: true
         type: string
 
@@ -33,7 +33,7 @@ jobs:
       SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
       SITEINDEX_DIAGNOSTIC_BUILD_RUN: ${{ inputs.build_run_id }}
       SITEINDEX_DIAGNOSTIC_SOURCE_SHA: ${{ inputs.source_sha }}
-      SITEINDEX_DIAGNOSTIC_EXE_SHA256: ${{ inputs.exe_sha256 }}
+      SITEINDEX_DIAGNOSTIC_ZIP_SHA256: ${{ inputs.artifact_zip_sha256 }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -49,13 +49,14 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           ARTIFACT_ID: ${{ inputs.artifact_id }}
         run: |
-          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or $env:SITEINDEX_DIAGNOSTIC_EXE_SHA256 -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'Invalid fixed build identifiers.' }
+          if ($env:SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or $env:SITEINDEX_DIAGNOSTIC_ZIP_SHA256 -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'Invalid fixed build identifiers.' }
           $repo = $env:GITHUB_REPOSITORY
           $run = gh api "repos/$repo/actions/runs/$env:BUILD_RUN_ID" | ConvertFrom-Json
           $workflow = gh api "repos/$repo/actions/workflows/release.yml" | ConvertFrom-Json
           $artifact = gh api "repos/$repo/actions/artifacts/$env:ARTIFACT_ID" | ConvertFrom-Json
-          if ($run.workflow_id -ne $workflow.id -or $run.event -ne 'workflow_dispatch' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.head_sha -cne $env:SOURCE_SHA) { throw 'Diagnostic installer source mismatch.' }
+          if ($run.workflow_id -ne $workflow.id -or $run.event -ne 'workflow_dispatch' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.head_branch -cne 'main' -or $run.head_sha -cne $env:SOURCE_SHA) { throw 'Diagnostic installer source mismatch.' }
           if ($artifact.id -ne [long]$env:ARTIFACT_ID -or $artifact.name -cne 'siteindex-win' -or $artifact.expired -or $artifact.workflow_run.id -ne [long]$env:BUILD_RUN_ID -or $artifact.workflow_run.head_sha -cne $env:SOURCE_SHA) { throw 'Diagnostic installer artifact mismatch.' }
+          if (([string]$artifact.digest -replace '^sha256:', '').ToLowerInvariant() -cne $env:SITEINDEX_DIAGNOSTIC_ZIP_SHA256.ToLowerInvariant()) { throw 'Diagnostic artifact ZIP SHA256 mismatch.' }
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ inputs.artifact_id }}
@@ -69,6 +70,11 @@ jobs:
         run: |
           $exe = @(Get-ChildItem -LiteralPath diagnostic-installer -Filter 'SiteIndex-Setup-*.exe' -File -Recurse)
           if ($exe.Count -ne 1) { throw 'Expected exactly one Windows installer.' }
+          $exeSha = (Get-FileHash -LiteralPath $exe[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($exeSha -cnotmatch '^[0-9a-f]{64}$') { throw 'Could not hash diagnostic installer.' }
+          "SITEINDEX_DIAGNOSTIC_EXE_SHA256=$exeSha" >> $env:GITHUB_ENV
+          $env:SITEINDEX_DIAGNOSTIC_EXE_SHA256 = $exeSha
+          "Pinned diagnostic EXE SHA256: $exeSha" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           node packages/desktop/scripts/e-windows-v085-schedule-detail-diagnostic.mjs $exe[0].FullName
       - uses: actions/upload-artifact@v4
         if: always()
