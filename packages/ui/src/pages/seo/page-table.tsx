@@ -32,19 +32,19 @@ export function seoPageTableColumns(rows: readonly Pick<SeoPageTableRow, "links_
   const linksOutEmpty = rows.length > 0 && rows.every((row) => row.links_internal_out == null);
   const issueDateEmpty = rows.length > 0 && rows.every((row) => row.last_issue_change_date == null);
   return [
-    { id: "url", accessorKey: "url", header: "URL", meta: { width: 180, grow: 2, minWidth: 130, text: "single" }, enableHiding: false, cell: ({ row }) =>
+    { id: "url", accessorKey: "url", header: "URL", meta: { width: 160, grow: 2, minWidth: 130, text: "single" }, enableHiding: false, cell: ({ row }) =>
       <code className="si-seo-url" title={row.original.url}>{path(row.original.url)}</code>, enableSorting: true },
-    { id: "title", accessorKey: "title", header: "标题", meta: { width: 190, grow: 2, minWidth: 150, text: "single" }, enableHiding: false, cell: ({ row }) =>
+    { id: "title", accessorKey: "title", header: "标题", meta: { width: 170, grow: 2, minWidth: 150, text: "single" }, enableHiding: false, cell: ({ row }) =>
       <span className="si-seo-page-title">{row.original.title || "无 Title"}</span>, enableSorting: true },
-    { id: "page_type", accessorKey: "page_type", header: "类型", meta: { width: 60, grow: 0, minWidth: 56, text: "single" }, cell: ({ row }) => pageTypeLabels[row.original.page_type], enableSorting: true },
-    { id: "google_indexed", accessorKey: "google_indexed", header: "收录", meta: { width: 72, grow: 0, minWidth: 68, text: "single" }, cell: ({ row }) =>
+    { id: "page_type", accessorKey: "page_type", header: "类型", meta: { width: 80, grow: 0, minWidth: 80, text: "single" }, cell: ({ row }) => pageTypeLabels[row.original.page_type], enableSorting: true },
+    { id: "google_indexed", accessorKey: "google_indexed", header: "收录", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) =>
       <Chip tone={row.original.google_indexed === true ? "ok" : row.original.google_indexed === false ? "danger" : "neutral"}>{row.original.google_indexed === true ? "已收录" : row.original.google_indexed === false ? "未收录" : "未检查"}</Chip>, enableSorting: true },
     { id: "open_high", header: "待处理问题", meta: { width: 100, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => {
       const counts = row.original.open_issue_counts;
       return counts.high + counts.mid + counts.low ? <span className="si-seo-counts">高 {counts.high} · 中 {counts.mid} · 低 {counts.low}</span> : "—";
     }, enableSorting: true },
-    { id: "links_internal_in", accessorKey: "links_internal_in", header: "入链", meta: { width: 48, grow: 0, minWidth: 48, align: "end", text: "single", ...(linksInEmpty ? { allEmpty: true } : {}) }, cell: ({ row }) => <span className="si-seo-number">{row.original.links_internal_in ?? "—"}</span>, enableSorting: true },
-    { id: "links_internal_out", accessorKey: "links_internal_out", header: "出链", meta: { width: 48, grow: 0, minWidth: 48, align: "end", text: "single", ...(linksOutEmpty ? { allEmpty: true } : {}) }, cell: ({ row }) => <span className="si-seo-number">{row.original.links_internal_out ?? "—"}</span>, enableSorting: true },
+    { id: "links_internal_in", accessorKey: "links_internal_in", header: "入链", meta: { width: 64, grow: 0, minWidth: 64, align: "end", text: "single", ...(linksInEmpty ? { allEmpty: true } : {}) }, cell: ({ row }) => <span className="si-seo-number">{row.original.links_internal_in ?? "—"}</span>, enableSorting: true },
+    { id: "links_internal_out", accessorKey: "links_internal_out", header: "出链", meta: { width: 64, grow: 0, minWidth: 64, align: "end", text: "single", ...(linksOutEmpty ? { allEmpty: true } : {}) }, cell: ({ row }) => <span className="si-seo-number">{row.original.links_internal_out ?? "—"}</span>, enableSorting: true },
     { id: "last_issue_change_date", accessorKey: "last_issue_change_date", header: "最近问题变化", meta: { width: 100, grow: 0, minWidth: 88, text: "single", ...(issueDateEmpty ? { allEmpty: true } : {}) }, cell: ({ row }) => <code className="si-seo-date">{row.original.last_issue_change_date?.slice(5) ?? "—"}</code>, enableSorting: true },
   ];
 }
