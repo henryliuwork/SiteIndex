@@ -1,0 +1,113 @@
+name: E · Windows v0.8.5 data-driven upgrade acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      items:
+        description: "Matrix IDs, e.g. 1-83 or 1-20,46-60"
+        required: true
+        default: "1-83"
+      candidate_ref:
+        description: "Exact candidate release workflow branch"
+        required: true
+      candidate_run_id:
+        description: "Successful release.yml run ID"
+        required: true
+      candidate_artifact_id:
+        description: "siteindex-win Actions artifact ID"
+        required: true
+      candidate_commit:
+        description: "Full candidate commit SHA"
+        required: true
+      candidate_archive_sha256:
+        description: "Full Actions artifact ZIP SHA256"
+        required: true
+      candidate_exe_sha256:
+        description: "Full candidate NSIS EXE SHA256"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  acceptance:
+    runs-on: windows-2025
+    timeout-minutes: 180
+    env:
+      SITEINDEX_RUNNER_ENVIRONMENT: github-hosted
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      ITEMS: ${{ inputs.items }}
+      CANDIDATE_REF: ${{ inputs.candidate_ref }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+      CANDIDATE_ARCHIVE_SHA256: ${{ inputs.candidate_archive_sha256 }}
+      CANDIDATE_EXE_SHA256: ${{ inputs.candidate_exe_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Reject two injected harness faults
+        run: node packages/desktop/scripts/acceptance/negative-selftest.mjs
+      - name: Download pinned official v0.8.4 baseline
+        shell: pwsh
+        run: |
+          gh release download v0.8.4 --repo henryliuwork/SiteIndex --pattern SiteIndex-Setup-0.8.4.exe --dir pinned-baseline
+          $file = 'pinned-baseline/SiteIndex-Setup-0.8.4.exe'
+          if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ine '20b17cb1c3e6f813df93b8fda2ad6ab1aaa3fb6f31641dcd73df9d88c6a4d7d6') {
+            throw 'Official v0.8.4 baseline EXE SHA256 mismatch.'
+          }
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ inputs.candidate_artifact_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          path: pinned-candidate
+          digest-mismatch: error
+      - name: Pin both installer sources
+        shell: pwsh
+        run: |
+          if ($env:CANDIDATE_RUN_ID -notmatch '^[0-9]+$' -or $env:CANDIDATE_ARTIFACT_ID -notmatch '^[0-9]+$' -or $env:CANDIDATE_COMMIT -notmatch '^[0-9a-fA-F]{40}$' -or $env:CANDIDATE_ARCHIVE_SHA256 -notmatch '^[0-9a-fA-F]{64}$' -or $env:CANDIDATE_EXE_SHA256 -notmatch '^[0-9a-fA-F]{64}$' -or [string]::IsNullOrWhiteSpace($env:CANDIDATE_REF)) { throw 'Full candidate provenance fields are required.' }
+          $files = @(Get-ChildItem -LiteralPath pinned-candidate -Filter 'SiteIndex-Setup-*.exe' -File -Recurse)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'SiteIndex-Setup-0.8.5.exe') {
+            throw 'Expected exactly one v0.8.5 candidate NSIS EXE.'
+          }
+          if ((Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash -ine $env:CANDIDATE_EXE_SHA256) {
+            throw 'Candidate EXE SHA256 mismatch.'
+          }
+          $manifest = @{
+            baseline = @{
+              file = (Resolve-Path 'pinned-baseline/SiteIndex-Setup-0.8.4.exe').Path
+              ref = 'v0.8.4'; commit = 'fdf486f9e1a209f525783062c2644cd3401763e7'
+              runId = 45577171330; artifactId = 790734078; artifact = 'SiteIndex-Setup-0.8.4.exe'
+              sha256 = '20b17cb1c3e6f813df93b8fda2ad6ab1aaa3fb6f31641dcd73df9d88c6a4d7d6'
+              kind = 'release'; workflowId = 392411878; event = 'push'
+            }
+            candidate = @{
+              file = $files[0].FullName
+              ref = $env:CANDIDATE_REF; commit = $env:CANDIDATE_COMMIT
+              runId = [long]$env:CANDIDATE_RUN_ID; artifactId = [long]$env:CANDIDATE_ARTIFACT_ID
+              artifact = 'siteindex-win'; sha256 = $env:CANDIDATE_EXE_SHA256
+              archiveSha256 = $env:CANDIDATE_ARCHIVE_SHA256
+              kind = 'run-artifact'; workflowId = 392411878; event = 'workflow_dispatch'
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath pinned-sources.json -Encoding utf8
+      - name: Run selected 83-item matrix shard
+        shell: pwsh
+        run: |
+          node packages/desktop/scripts/acceptance/run.mjs --items $env:ITEMS --baseline v0.8.4 --candidate $env:CANDIDATE_REF --manifest pinned-sources.json --output-dir siteindex-v085-acceptance-results
+      - name: Upload synthetic acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siteindex-v085-acceptance-${{ github.run_id }}
+          path: siteindex-v085-acceptance-results/
+          if-no-files-found: warn

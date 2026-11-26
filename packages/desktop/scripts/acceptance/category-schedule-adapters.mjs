@@ -33,6 +33,12 @@ export function scheduleVerifyAccepted(id, verification) {
     && verification?.state === "error" && verification?.message === KNOWN_VERIFY_ERROR);
 }
 
+export function scheduleVerificationEvidence(id, verification) {
+  if (id < 52 || id > 56 || !scheduleVerifyAccepted(id, verification)) return null;
+  return { state: verification.state,
+    ...(verification.state === "error" ? { message: verification.message } : {}) };
+}
+
 function nativeTask(name, run = spawnSync) {
   const result = run("schtasks.exe", ["/Query", "/TN", name, "/XML"],
     { encoding: "utf8", windowsHide: true, timeout: 20_000 });
@@ -60,13 +66,13 @@ async function systemState(page, projectId, item) {
   }), { project: projectId, verify: item.id >= 52 && item.id <= 56 });
   if (item.id < 52 || item.id > 56) {
     if (state.tasks.length) throw failure(`Row ${item.id} unexpectedly registered a system task`);
-    return [];
+    return { names: [], verification: null };
   }
   const expected = taskName(projectId, item.job);
   if (!scheduleVerifyAccepted(item.id, state.verification) || state.tasks.length !== 1
     || state.tasks[0].taskName.toLowerCase() !== expected.toLowerCase()
     || !nativeTask(expected)) throw failure(`Row ${item.id} system task or XML is missing`);
-  return [expected];
+  return { names: [expected], verification: scheduleVerificationEvidence(item.id, state.verification) };
 }
 
 /** D18/D19's known schedule.verify error applies only to rows 52–56. */
@@ -76,6 +82,8 @@ export function categoryScheduleAdapter(id) {
   let fixture;
   let baselineBytes;
   let baselineTasks;
+  let baselineVerification;
+  let candidateVerification;
   const navigate = async (page) => {
     await page.evaluate(({ project, target }) => { window.location.hash = `#/p/${project}/${target}`; },
       { project: projectId, target: id <= 51 ? "settings/categories" : "runs" });
@@ -104,9 +112,12 @@ export function categoryScheduleAdapter(id) {
         throw error;
       }
     }
-    return [];
+    return { names: [], verification: null };
   };
   return {
+    ...(id >= 52 && id <= 56 ? { reportEvidence: () => ({
+      baseline_schedule_verify: baselineVerification, candidate_schedule_verify: candidateVerification,
+    }) } : {}),
     async baselineUi({ page, profile, noteIpc }) {
       noteIpc({ operation: "settings.set", itemId: id, fields: ["projects_root", "close_to_tray"] });
       const settings = await page.evaluate(async (root) => {
@@ -126,7 +137,9 @@ export function categoryScheduleAdapter(id) {
     },
     async verifyBaselineIpc({ page, noteIpc }) {
       noteIpc({ operation: id <= 51 ? "categories.get" : "schedule.get", itemId: id });
-      baselineTasks = await verifyIpc(page);
+      const observed = await verifyIpc(page);
+      baselineTasks = observed.names;
+      baselineVerification = observed.verification;
     },
     async verifyBaselineFile() {
       await verifyCategoryScheduleFile(item, fixture.siteFile);
@@ -139,8 +152,9 @@ export function categoryScheduleAdapter(id) {
     },
     async verifyCandidateIpc({ page, noteIpc }) {
       noteIpc({ operation: id <= 51 ? "categories.get" : "schedule.get", itemId: id });
-      const tasks = await verifyIpc(page);
-      if (!isDeepStrictEqual(tasks.map((name) => name.toLowerCase()),
+      const observed = await verifyIpc(page);
+      candidateVerification = observed.verification;
+      if (!isDeepStrictEqual(observed.names.map((name) => name.toLowerCase()),
         baselineTasks.map((name) => name.toLowerCase()))) throw failure(`Row ${id} task identity changed`);
     },
     async verifyCandidateFile() {

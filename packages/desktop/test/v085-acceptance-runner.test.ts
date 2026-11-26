@@ -28,7 +28,12 @@ function fakeLifecycle(root: string) {
       return { root: path.join(root, `profile-${number}`), layout: { installDir: path.join(root, `install-${number}`) } };
     }),
     redirectWindowsAppData: vi.fn(() => ({ restore: () => true })),
-    launchInstalledApp: vi.fn(async () => ({ page: { on: () => {} }, child: {}, browser: {} })),
+    launchInstalledApp: vi.fn(async () => ({ page: { on: () => {},
+      screenshot: async ({ path: file }: { path?: string } = {}) => {
+        const bytes = Buffer.from("synthetic-image");
+        if (file) await writeFile(file, bytes);
+        return bytes;
+      } }, child: {}, browser: {} })),
   };
 }
 
@@ -114,6 +119,20 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
       assert.equal(report.items.find((item) => item.id === 7)?.status, "assertion_failed");
       assert.equal(report.cleanup.status, "passed");
       assert.equal(deps.uninstallWindowsNsis.mock.calls.length, 1);
+      assert.equal((await readFile(path.join(root, "out", "7.png"), "utf8")), "synthetic-image");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("attaches the candidate pre-exit screenshot when candidate file readback fails", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-candidate-file-screenshot-"));
+    try {
+      const deps = fakeLifecycle(root);
+      const bad = { ...handler(), verifyCandidateFile: async () => { throw new Error("Synthetic candidate file mismatch"); } };
+      const report = await runAcceptance({ itemIds: [8], baseline: source("baseline.exe", "v0.8.0"),
+        candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 8: bad },
+        outputDir: path.join(root, "out"), dependencies: deps });
+      assert.equal(report.items.find((item) => item.id === 8)?.status, "assertion_failed");
+      assert.equal((await readFile(path.join(root, "out", "8.png"), "utf8")), "synthetic-image");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "vitest";
 import { categoryScheduleAdapter, categoryScheduleHandlers,
-  scheduleVerifyAccepted } from "../scripts/acceptance/category-schedule-adapters.mjs";
+  scheduleVerificationEvidence, scheduleVerifyAccepted } from "../scripts/acceptance/category-schedule-adapters.mjs";
 import { createCategoryScheduleFixture } from "../scripts/acceptance/category-schedule-fixture.mjs";
 
 describe("v0.8.5 category and schedule adapters 46–60", () => {
@@ -13,8 +13,12 @@ describe("v0.8.5 category and schedule adapters 46–60", () => {
     assert.throws(() => categoryScheduleAdapter(61), /Unknown category/u);
     const oldError = { state: "error", message: "读取计划任务失败：schtasks.exe 执行失败。" };
     for (const id of [52, 53, 54, 55, 56]) assert.equal(scheduleVerifyAccepted(id, oldError), true);
+    for (const id of [52, 53, 54, 55, 56]) assert.deepEqual(scheduleVerificationEvidence(id, oldError), oldError);
     for (const id of [51, 57, 60]) assert.equal(scheduleVerifyAccepted(id, oldError), false);
+    for (const id of [51, 57, 60]) assert.equal(scheduleVerificationEvidence(id, oldError), null);
     assert.equal(scheduleVerifyAccepted(52, { state: "error", message: "Other error" }), false);
+    assert.equal(scheduleVerificationEvidence(52, { state: "error", message: "Other error" }), null);
+    assert.deepEqual(scheduleVerificationEvidence(52, { state: "ok", message: "Should not copy arbitrary text" }), { state: "ok" });
   });
 
   it("creates only synthetic legacy fixture files and disabled schedules", async () => {

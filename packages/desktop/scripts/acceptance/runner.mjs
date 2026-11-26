@@ -111,6 +111,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
     let session;
     let installed = false;
     let handler;
+    let snapshot;
     const consoleMessages = [];
     const context = { id, noteIpc: (operation) => { context.lastIpc = operation; }, lastIpc: null };
     try {
@@ -129,6 +130,9 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       await handler.baselineUi({ ...context, page: session.page, profile });
       phase = "baseline-ipc";
       await handler.verifyBaselineIpc({ ...context, page: session.page, profile });
+      phase = "baseline-snapshot";
+      snapshot = await session.page.screenshot?.({
+        ...(id === 82 ? { mask: [session.page.getByRole("textbox", { name: "WordPress 用户名" })] } : {}) });
       phase = "baseline-exit";
       assertNormalExit(await deps.exitNormally(session));
       session = null;
@@ -151,6 +155,9 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       await handler.candidateUi({ ...context, page: session.page, profile });
       phase = "candidate-ipc";
       await handler.verifyCandidateIpc({ ...context, page: session.page, profile });
+      phase = "candidate-snapshot";
+      snapshot = await session.page.screenshot?.({
+        ...(id === 82 ? { mask: [session.page.getByRole("textbox", { name: "WordPress 用户名" })] } : {}) });
       phase = "candidate-exit";
       assertNormalExit(await deps.exitNormally(session));
       session = null;
@@ -169,7 +176,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
     } catch (error) {
       const kind = error?.acceptanceStatus ?? (ASSERTION_PHASES.has(phase) ? "assertion_failed" : "harness_error");
       await report.failure({ id, phase, error, kind, page: session?.page,
-        consoleMessages, lastIpc: context.lastIpc, outputDir });
+        snapshot, consoleMessages, lastIpc: context.lastIpc, outputDir });
     } finally {
       if (session) {
         try { assertNormalExit(await deps.exitNormally(session)); session = null; }
