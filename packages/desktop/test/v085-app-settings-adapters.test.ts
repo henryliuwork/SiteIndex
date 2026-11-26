@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, vi } from "vitest";
-import { appSettingsAdapter, appSettingsHandlers, appSettingsValues, startupEntries } from
+import { appSettingsAdapter, appSettingsHandlers, appSettingsValues, checkVisible, startupEntries } from
   "../scripts/acceptance/app-settings-adapters.mjs";
 
 describe("v0.8.5 application settings adapters 67–81", () => {
@@ -34,6 +34,40 @@ describe("v0.8.5 application settings adapters 67–81", () => {
     assert.deepEqual(startupEntries(exe, run).map((entry) => entry.name), ["SiteIndex"]);
     assert.deepEqual(startupEntries("C:\\other\\SiteIndex.exe", run), []);
     assert.deepEqual(run.mock.calls[0][1], ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"]);
+  });
+
+  it("locates visible and removed projects by named links", async () => {
+    const seen: string[] = [];
+    const page = {
+      getByRole: (role: string, options: { name: string }) => {
+        seen.push(`${role}:${options.name}`);
+        return { waitFor: async () => {}, count: async () => 0 };
+      },
+      getByText: () => { throw new Error("H4 forbids text search locators"); },
+      evaluate: async () => [{ name: "Synthetic extra project" }],
+    };
+    await checkVisible(page, { id: 79 }, {});
+    await checkVisible(page, { id: 80 }, {});
+    assert.deepEqual(seen, ["link:Synthetic extra project", "region:项目列表",
+      "link:Synthetic hidden project"]);
+  });
+
+  it("reads the candidate masked webhook through its stable test ID", async () => {
+    const seen: string[] = [];
+    const expected = "https://webhook.example.test/synthetic-only";
+    const page = {
+      getByRole: (role: string, options: { name: string }) => {
+        seen.push(`${role}:${options.name}`);
+        return { click: async () => {} };
+      },
+      getByTestId: (id: string) => {
+        seen.push(`testid:${id}`);
+        return { inputValue: async () => expected };
+      },
+      getByText: () => { throw new Error("H4 forbids text search locators"); },
+    };
+    await checkVisible(page, { id: 77, kind: "webhook", tab: "notifications", expected }, {});
+    assert.deepEqual(seen, ["tab:通知", "testid:app-settings-dingtalk-webhook"]);
   });
 
   it("rejects candidate startup that rewrites the baseline settings file", async () => {

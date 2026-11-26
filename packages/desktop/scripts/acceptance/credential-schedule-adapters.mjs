@@ -90,8 +90,12 @@ export function credentialAdapter({ username, applicationPassword }) {
     async candidateUi({ page }) {
       await navigate(page, "#/settings", "WordPress 图片托管凭据");
       const region = page.getByRole("region", { name: `凭据：${CREDENTIAL_ORIGIN}` });
-      await region.getByText("本机凭据已保存", { exact: true }).waitFor();
-      await region.getByRole("button", { name: "替换凭据" }).waitFor();
+      const replace = region.getByRole("button", { name: "替换凭据" });
+      await replace.waitFor();
+      await replace.click();
+      const dialog = page.getByRole("dialog", { name: "替换 WordPress 凭据" });
+      await dialog.getByTestId("app-settings-wordpress-application-password").waitFor();
+      await dialog.getByRole("button", { name: "取消" }).click();
     },
     async verifyCandidateIpc({ page, noteIpc }) {
       noteIpc({ operation: "wordpressCredentials.status", itemId: 82 });
@@ -167,6 +171,17 @@ async function systemReadback(page, profile) {
   });
 }
 
+export async function checkScheduleVisible(page) {
+  const daily = page.getByTestId("runs-schedule-row-daily");
+  const status = page.getByTestId("runs-schedule-plan-status");
+  await daily.waitFor();
+  await status.waitFor();
+  await waitForObserved(async () => (await daily.innerText()).includes("每周二、四 · 17:44"),
+    { label: "row 83 daily schedule UI readback" });
+  await waitForObserved(async () => (await status.innerText()).includes("已注册到任务计划程序"),
+    { label: "row 83 registered schedule UI readback" });
+}
+
 /** #83 has no D18/D19 schedule.verify exemption; five real tasks and XML must pass. */
 export function scheduleAdapter() {
   let siteFile;
@@ -217,8 +232,7 @@ export function scheduleAdapter() {
         throw failed("Row 83 candidate overwrite changed schedule config bytes");
       }
       await navigate(page, `#/p/${SCHEDULE_PROJECT}/runs`, "定时计划");
-      await page.getByText("每周二、四 · 17:44", { exact: true }).waitFor();
-      await page.getByText("已注册到任务计划程序").waitFor();
+      await checkScheduleVisible(page);
     },
     async verifyCandidateIpc({ page, profile, noteIpc }) {
       noteIpc({ operation: "schedule.get/verify/listSystemTasks", itemId: 83 });
