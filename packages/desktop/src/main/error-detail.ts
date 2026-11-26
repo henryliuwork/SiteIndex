@@ -1,15 +1,20 @@
 import type { ErrorDetail, SiteIndexError } from "@siteindex/shared";
 
-function safeText(value: unknown): string {
+export function redactDesktopDiagnosticText(value: unknown): string {
   if (typeof value !== "string") return "";
   return value
-    .replace(/(?:authorization\s*:\s*(?:basic|bearer)\s+)[^\s]+/giu, "Authorization: [redacted]")
+    .replace(/\b(?:authorization|proxy-authorization)\s*:\s*[^\r\n]*/giu, "Authorization: [redacted]")
     .replace(/\b(?:set-cookie|cookie)\s*:\s*[^\r\n]*/giu, "[redacted-cookie]")
-    .replace(/\b(?:password|token|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+/giu, "[redacted]")
+    .replace(/\b(?:password|passwd|token|secret|credential|api[_-]?key)\s*[:=]\s*[^\s,;]+/giu, "[redacted]")
+    .replace(/\b(?:basic|bearer)\s+[^\s]+/giu, "[redacted-auth]")
     .replace(/https?:\/\/[^\s"'()<>]+/giu, "[redacted-url]")
-    .replace(/[A-Za-z]:\\[^\s"']+/gu, "[redacted-path]")
-    .replace(/\/(?:Users|home)\/[^\s"']+/gu, "[redacted-path]");
+    .replace(/[A-Za-z]:\\Users\\[^\r\n"']+/giu, "~")
+    .replace(/[A-Za-z]:\\[^\r\n"']+/gu, "[redacted-path]")
+    .replace(/\/(?:Users|home)\/[^\r\n"']+/gu, "~")
+    .replace(/\/(?:tmp|var|private|mnt)\/[^\r\n"']+/gu, "[redacted-path]");
 }
+
+const safeText = redactDesktopDiagnosticText;
 
 function safeCommand(command: unknown): string[] | undefined {
   if (!Array.isArray(command) || !command.every((part) => typeof part === "string") || command.length === 0) {
@@ -56,9 +61,28 @@ export function scheduleIpcError(operation: string, error: unknown): SiteIndexEr
   const source = error && typeof error === "object" ? error as Record<string, unknown> : {};
   const hasCode = !(error instanceof Error) && typeof source.code === "string" && typeof source.message === "string";
   return {
-    code: hasCode ? source.code as SiteIndexError["code"] : "UNKNOWN",
+    code: hasCode ? safeText(source.code) as SiteIndexError["code"] : "UNKNOWN",
     message: hasCode ? safeText(source.message) : "计划任务操作失败。",
     ...(typeof source.detail === "string" ? { detail: safeText(source.detail) } : {}),
     error_detail: sanitizeErrorDetail(source.error_detail) ?? scheduleErrorDetail(operation, error),
+  };
+}
+
+export function settingsIpcError(operation: string, error: unknown): SiteIndexError {
+  const source = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const hasCode = !(error instanceof Error) && typeof source.code === "string" && typeof source.message === "string";
+  const detail = sanitizeErrorDetail(source.error_detail) ?? sanitizeErrorDetail({
+    code: typeof source.code === "string" ? source.code : "UNKNOWN",
+    operation,
+    command: source.command,
+    exitCode: typeof source.exitCode === "number" ? source.exitCode : undefined,
+    stderr: source.stderr,
+    cause: typeof source.message === "string" ? source.message : String(error),
+  });
+  return {
+    code: hasCode ? safeText(source.code) as SiteIndexError["code"] : "UNKNOWN",
+    message: hasCode ? safeText(source.message) : "软件设置操作失败。",
+    ...(typeof source.detail === "string" ? { detail: safeText(source.detail) } : {}),
+    ...(detail ? { error_detail: detail } : {}),
   };
 }

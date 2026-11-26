@@ -104,4 +104,17 @@ describe("schedule.verify IPC", () => {
       exitCode: 5, command: ["schtasks.exe", "/Query", "/TN", "[redacted]"] } });
     expect(JSON.stringify(error)).not.toMatch(/CANARY_PASSWORD|CANARY_BASIC|CANARY_TASK/u);
   });
+
+  it("logs a returned verify error while preserving its state and IPC detail", async () => {
+    const logError = vi.fn();
+    const { value } = context(vi.fn(async () => ({ state: "error" as const,
+      message: "计划任务核验失败。",
+      error_detail: { code: "SCHEDULE_COMMAND_FAILED", operation: "schedule.verify",
+        cause: "无法读取任务" } })));
+    value.logError = logError;
+    await expect(createScheduleHandlers(value)["schedule.verify"]?.("synthetic-project"))
+      .resolves.toMatchObject({ state: "error", error_detail: { code: "SCHEDULE_COMMAND_FAILED" } });
+    expect(logError).toHaveBeenCalledWith(expect.objectContaining({ operation: "schedule.verify",
+      stack: expect.stringContaining("无法读取任务") }));
+  });
 });

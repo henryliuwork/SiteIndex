@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { API_INVOKE_METHODS } from "@siteindex/shared";
 import { ipcChannel } from "../shared/ipc-contract.js";
 import { createHandlerRegistry, getIpcHandlerPaths, serializeIpcError } from "./ipc-registry.js";
-import { scheduleErrorDetail } from "./error-detail.js";
+import { scheduleErrorDetail, settingsIpcError } from "./error-detail.js";
 
 describe("IPC invoke registry contract", () => {
   it("registers every shared invoke method exactly once", () => {
@@ -37,5 +37,16 @@ describe("IPC invoke registry contract", () => {
     const code = scheduleErrorDetail("schedule.verify", Object.assign(new Error("synthetic"),
       { code: "password=CANARY_CODE" }));
     expect(JSON.stringify(code)).not.toContain("CANARY_CODE");
+  });
+
+  it("passes settings ErrorDetail without leaking credential or stack canaries", () => {
+    const failure = Object.assign(new Error("Cookie: session=CANARY_COOKIE\npassword=CANARY_PASSWORD"), {
+      code: "EACCES", stderr: "Set-Cookie: sid=CANARY_SET_COOKIE\nC:\\Users\\Fixture CANARY_USER\\AppData\\settings.json",
+      stack: "CANARY_STACK",
+    });
+    const serialized = serializeIpcError(settingsIpcError("settings.set", failure)).message;
+    const payload = JSON.parse(serialized.replace(/^__SITEINDEX_IPC_ERROR__:/u, ""));
+    expect(payload).toMatchObject({ code: "UNKNOWN", error_detail: { code: "EACCES", operation: "settings.set" } });
+    expect(serialized).not.toMatch(/CANARY_COOKIE|CANARY_PASSWORD|CANARY_SET_COOKIE|CANARY_USER|AppData|CANARY_STACK/u);
   });
 });
