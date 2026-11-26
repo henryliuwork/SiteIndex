@@ -3,7 +3,7 @@
 你是 SiteIndex 的并行工作流之一（A / B / C / D / E）。开始任何工作前：
 
 1. 读 `docs/WORKSTREAMS.md` §1，确认你是 **A（Core）/ B（UI 共享层）/ C（Desktop）/ D（UI 项目页面）/ E（真实项目验收）** 中的哪一个，以及你**只能修改的目录**
-2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；**当前执行计划 v0.8.2（间距规范与检查、概览页模块化、产品管理页走查、设置数据保存可靠性）以 `docs/plan/2026-11-23-v082-spacing-overview-settings-roadmap.md` 为准；v0.8.0 外框规范见 `docs/plan/2026-11-20-v080-ui-frame-spec-roadmap.md`；v0.7.0 / v0.7.5 见 `docs/plan/2026-11-18-v070-v075-roadmap.md`，目标模式运行手册（lead、汇报、缺陷流程）见 `docs/plan/2026-11-18-v07-lead-playbook.md`**；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
+2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；**当前执行计划 v0.8.5（规范化收口：共享层界面规范、验收脚本规范、错误可诊断、小版本准入）以 `docs/plan/2026-11-26-v085-hardening-roadmap.md` 为准；v0.8.2（间距规范、概览模块化、设置保存可靠性）见 `docs/plan/2026-11-23-v082-spacing-overview-settings-roadmap.md`；v0.8.0 外框规范见 `docs/plan/2026-11-20-v080-ui-frame-spec-roadmap.md`；v0.7.0 / v0.7.5 见 `docs/plan/2026-11-18-v070-v075-roadmap.md`，目标模式运行手册（lead、汇报、缺陷流程）见 `docs/plan/2026-11-18-v07-lead-playbook.md`**；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
@@ -43,7 +43,12 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 - **表头说明**：口径或时间窗不自明的列（如“持续”“30 天在线率”）用 `ColumnDef.meta.help` 在表头显示 `InfoTooltip`；价格、名称等自明列不加。整列无值的列默认隐藏。
 - **共享样式传播**：修改样式前先 grep 使用位置；会被多页使用的必须放进共享组件或 token，不得写进页面私有 CSS。PR 描述必须有“影响面”表（使用位置、是否同步、至少 3 个不同页面的前后截图）；禁止只改被反馈的那一页。
 - **设置保存可靠性（v0.8.2）**：保存成功必须以“写入后重新读取并比对一致”为准；UI 只提交被用户修改的字段，不得用空值（`""`、`[]`、`null`、缺失）覆盖已有非空值，清空必须显式（`clear`）；配置按字段深合并，禁止整块替换分区；保存携带 `revision`，文件已变化则拒绝并提示；不修改直接保存必须逐字节不变；升级、迁移与各任务不得改写用户字段；README 用户段缺标题时补出标题再写入，不得静默返回。多行输入框以原始文本为草稿，保存时才解析，关键词内部允许空格与回车换行。详见 v0.8.2 roadmap §5。
-- **小样式问题**：只处理当前版本冻结审计清单内的可测量违例（v0.8.2 见 `docs/plan/2026-11-23-v082-audit-freeze.md`）；清单冻结后新发现的一律进 backlog，不得追加。
+- **小样式问题**：只处理当前版本冻结审计清单内的可测量违例（v0.8.5 见 `docs/plan/2026-11-26-v085-audit-freeze.md`）；清单冻结后新发现的一律进 backlog，不得追加。`spacing-baseline.json` 保持空；`spacing-exceptions.json` 只减不增，每条须在 `DESIGN.md` 有对应条款；不得为通过检查放宽阈值或新增例外。
+- **视口矩阵（v0.8.5）**：`ui:check` 对全部路由跑 4 个视口：1280×800@1、1920×1080@1、1536×864@1.25、1280×720@1.5（后两者对应 Windows 125%、150% 缩放）。
+- **表格标准 T1–T6（v0.8.5）**：必显列（产品管理为 SKU、产品名称）不可隐藏，旧列缓存缺失时自动补回；列偏好仅在“保存”时落盘，“取消”不生效，未知列 id 迁移时丢弃；列顺序可拖拽且键盘可操作；数字列表头与数据同为右对齐；整列无值默认隐藏；含表格的页面一律使用共享 DataTable v2。详见 v0.8.5 roadmap §3.2。
+- **错误可诊断（v0.8.5）**：设置、配置、README、定时任务相关错误必须携带 `ErrorDetail`（错误码、操作、脱敏命令、退出码、脱敏 stderr）；堆栈只写应用日志，不经 IPC 返回界面；脱敏须通过金丝雀测试，绝不输出凭据值或文件内容。禁止只报泛化的 “Error”。
+- **验收脚本规范 H1–H10（v0.8.5）**：正常退出不强杀；每个设置项独立会话；等待状态不用固定 sleep；用 role 或 `data-testid` 定位；失败必留消息、堆栈、截图、控制台与最近一次 IPC；只用合成数据并清理；统一报告 schema；区分 `assertion_failed` 与 `harness_error`，后者不得推动产品代码修改；基线与候选包 SHA 校验；单一入口工作流。启动、退出、清理逻辑全仓只允许一份实现。详见 `docs/ACCEPTANCE.md` 与 v0.8.5 roadmap §3.4。
+- **小版本准入（v0.8.5 起，适用于所有执行者，包括用户直接发起的 codex 会话）**：小版本（x.y.Z）只允许 R/D/B 类缺陷修复、冻结清单内的样式违例、依赖与版本号；行为改动必须有计划文档。任何发版必须有计划文档或补丁说明（`docs/plan/YYYY-MM-DD-vXYZ-patch.md`）、看板 issue、三系统 CI、`ui:check` 输出与手册 §7 发布清单；同一工作日最多发布 1 个版本（B 类阻断除外）。
 - 涉及 UI 的 PR 必须附 `pnpm ui:check` 输出；样式扫描中新违规会使检查失败，日期/时间重复启发式只给人工复核告警。
 - **板块页（SEO、内容、EDM、产品管理、概览）**：按 `docs/DESIGN.md` §3 的固定骨架组织；项目头之后最多一行可操作 `SummaryLine`，同一数字与时间不得重复，表格为首屏主体。SEO 的问题/页面/内链属于同一实体，应合并进页面表与行抽屉；其他页内分段仅用于不同实体，且无计数徽标。v0.7.5 迁移前先交合并矩阵，`ui:check` §3.5 指标必须达标。
 
