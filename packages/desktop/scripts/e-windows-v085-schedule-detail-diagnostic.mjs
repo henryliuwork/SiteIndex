@@ -125,7 +125,15 @@ try {
       report.cleanup.uninstalled = true;
     } catch (error) { report.cleanup.uninstallError = redactEvidence(String(error)); }
   }
-  if (profile) report.cleanup.profile = await cleanupProfile(profile, { redirect });
+  if (profile) {
+    try { report.cleanup.profile = await cleanupProfile(profile, { redirect }); }
+    catch (error) {
+      report.cleanup.profile = { status: "harness_error", message: redactEvidence(String(error)) };
+      report.classification = "harness_error";
+    }
+  }
+  if (report.cleanup.taskError || report.cleanup.uninstallError || report.cleanup.normalExitError
+    || report.cleanup.profile?.status === "harness_error") report.classification = "harness_error";
   await mkdir(reportDir, { recursive: true });
   await writeFile(path.join(reportDir, "diagnostic.json"), `${JSON.stringify(report, null, 2)}\n`);
 }
