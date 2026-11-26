@@ -116,4 +116,21 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
       assert.equal(deps.uninstallWindowsNsis.mock.calls.length, 1);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+
+  it("runs system cleanup in a fresh installed session before NSIS uninstall", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-system-cleanup-"));
+    try {
+      const deps = fakeLifecycle(root);
+      const cleanupSystem = vi.fn(async () => {});
+      const report = await runAcceptance({ itemIds: [52], baseline: source("baseline.exe", "v0.8.0"),
+        candidate: source("candidate.exe", "v0.8.5-rc.1"),
+        handlers: { 52: { ...handler(), cleanupSystem } },
+        outputDir: path.join(root, "out"), dependencies: deps });
+      assert.equal(cleanupSystem.mock.calls.length, 1);
+      assert.equal(deps.launchInstalledApp.mock.calls.length, 4);
+      assert.equal(deps.exitNormally.mock.calls.length, 4);
+      assert.equal(deps.uninstallWindowsNsis.mock.calls.length, 1);
+      assert.equal(report.cleanup.status, "passed");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
 });
