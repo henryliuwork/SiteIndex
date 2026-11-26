@@ -51,7 +51,14 @@ export function redirectWindowsAppData(profile, { runRegistry = (args) => spawnS
     throw new Error("AppData registry redirection requires an isolated hosted Windows runner");
   }
   const redirect = createWindowsAppDataRedirect({ appDataRoot: profile.layout.appDataRoot, runRegistry });
-  redirect.redirect();
+  try {
+    redirect.redirect();
+  } catch (error) {
+    if (redirect.hasChanges && !redirect.restore()) {
+      throw new Error("Could not restore AppData registry after redirection failed", { cause: error });
+    }
+    throw error;
+  }
   return redirect;
 }
 
