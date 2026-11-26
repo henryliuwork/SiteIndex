@@ -19,6 +19,25 @@ describe("v0.8.5 sensitive and system acceptance adapters", () => {
     assert.throws(() => sensitiveSystemHandlers([81], {}), /Unsupported/u);
   });
 
+  it("checks row 82 candidate state through its named region and button", async () => {
+    const seen: string[] = [];
+    const waitFor = async () => {};
+    const page = {
+      evaluate: async () => {},
+      getByRole: (role: string, options: { name: string }) => {
+        seen.push(`${role}:${options.name}`);
+        return role === "region" ? { getByRole: (nestedRole: string, nestedOptions: { name: string }) => {
+          seen.push(`${nestedRole}:${nestedOptions.name}`);
+          return { waitFor };
+        } } : { waitFor };
+      },
+      getByText: () => { throw new Error("H4 forbids text search locators"); },
+    };
+    await credentialAdapter({ username: "synthetic", applicationPassword: "synthetic-canary" }).candidateUi({ page });
+    assert.deepEqual(seen, ["heading:WordPress 图片托管凭据",
+      "region:凭据：https://credential.example.test", "button:替换凭据"]);
+  });
+
   it("reads five task XML fields without exposing raw XML", () => {
     const run = vi.fn(() => ({ status: 0, stdout: JSON.stringify({
       command: "C:\\isolated\\SiteIndex.exe",

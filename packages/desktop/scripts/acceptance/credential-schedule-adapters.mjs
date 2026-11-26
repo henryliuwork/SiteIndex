@@ -90,7 +90,6 @@ export function credentialAdapter({ username, applicationPassword }) {
     async candidateUi({ page }) {
       await navigate(page, "#/settings", "WordPress 图片托管凭据");
       const region = page.getByRole("region", { name: `凭据：${CREDENTIAL_ORIGIN}` });
-      await region.getByText("本机凭据已保存", { exact: true }).waitFor();
       await region.getByRole("button", { name: "替换凭据" }).waitFor();
     },
     async verifyCandidateIpc({ page, noteIpc }) {
