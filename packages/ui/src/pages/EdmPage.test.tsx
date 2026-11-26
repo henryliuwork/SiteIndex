@@ -320,7 +320,7 @@ describe("EdmPage D-5", () => {
 
   it("将缺图数量放在筛选项中，页头更多收纳整页操作", async () => {
     await renderEdmPage(true);
-    const missingImageButton = await screen.findByRole("button", { name: /缺图/ });
+    const missingImageButton = await screen.findByRole("button", { name: /^缺图\s+\d+$/ });
     expect(missingImageButton.closest(".si-edm-filterbar")).toBeTruthy();
     expect(screen.getByRole("button", { name: "首图选择规则" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "EDM 任务与提示" })).toBeNull();
