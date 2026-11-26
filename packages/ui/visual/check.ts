@@ -19,12 +19,13 @@ interface RouteCase {
   name: string;
   path: string;
   waitForDataSurface?: boolean;
+  expectsDataTableV2?: boolean;
 }
 
 interface Viewport {
   width: number;
   height: number;
-  headerOnly?: boolean;
+  deviceScaleFactor: number;
 }
 
 interface CheckFailure {
@@ -53,10 +54,10 @@ const shotsDir = process.env.SITEINDEX_UI_CHECK_SHOTS_DIR
   ? path.resolve(uiRoot, process.env.SITEINDEX_UI_CHECK_SHOTS_DIR)
   : path.join(uiRoot, ".shots");
 const viewports: Viewport[] = [
-  { width: 1024, height: 768, headerOnly: true }, // Extra compact viewport checks the shell/header; table viewport remains the 1280+ contract.
-  { width: 1280, height: 800 },
-  { width: 1440, height: 900 },
-  { width: 1920, height: 1080 },
+  { width: 1280, height: 800, deviceScaleFactor: 1 },
+  { width: 1920, height: 1080, deviceScaleFactor: 1 },
+  { width: 1536, height: 864, deviceScaleFactor: 1.25 },
+  { width: 1280, height: 720, deviceScaleFactor: 1.5 },
 ];
 const mockModeOverride = process.env.SITEINDEX_UI_CHECK_MOCK_MODE;
 const mockModeRoute = process.env.SITEINDEX_UI_CHECK_MOCK_ROUTE ?? "/p/demo/design";
@@ -98,10 +99,11 @@ async function discoverRoutes(server: ViteDevServer, projectId: string): Promise
       cases.push({ name: "not-found", path: "/__ui-check-not-found__" });
     } else {
       const path = routePath.replaceAll(":id", encodeURIComponent(projectId));
-      cases.push({ name, path, waitForDataSurface: isDataTableRoute(path) });
+      const expectsDataTableV2 = isDataTableRoute(path);
+      cases.push({ name, path, waitForDataSurface: expectsDataTableV2, expectsDataTableV2 });
       if (path === "/schedules") {
-        cases.push({ name: "schedules-system", path, waitForDataSurface: true });
-        cases.push({ name: "schedules-orphans", path, waitForDataSurface: true });
+        cases.push({ name: "schedules-system", path, waitForDataSurface: true, expectsDataTableV2: false });
+        cases.push({ name: "schedules-orphans", path, waitForDataSurface: true, expectsDataTableV2: false });
       }
     }
   }
@@ -478,6 +480,50 @@ async function inspectPage(page: Page): Promise<{
       }
       return true;
     });
+    const visibleDataTables = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table")).filter((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!element.isConnected || element.getClientRects().length === 0 || rect.width <= 0 || rect.height <= 0) return false;
+      for (let current: HTMLElement | null = element; current && current !== document.documentElement; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+      }
+      return true;
+    });
+    const dataTableV2Findings: string[] = [];
+    const numericAlignmentFindings: string[] = [];
+    for (const [tableIndex, section] of visibleDataTables.entries()) {
+      const table = section.querySelector<HTMLTableElement>(".si-table-scroll > table.si-table");
+      const label = section.getAttribute("aria-label") || `DataTable ${tableIndex + 1}`;
+      if (!table) {
+        dataTableV2Findings.push(`${label}: 缺少表体滚动区内的 .si-table`);
+        continue;
+      }
+      if (!table.querySelector("colgroup") || getComputedStyle(table).tableLayout !== "fixed") {
+        dataTableV2Findings.push(`${label}: 缺少 colgroup 或 table-layout: fixed`);
+      }
+      const headerCells = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead tr:last-child > th"));
+      for (const [columnIndex, header] of headerCells.entries()) {
+        if (!header.classList.contains("is-align-end")) continue;
+        const columnLabel = header.innerText.trim() || String(columnIndex + 1);
+        if (getComputedStyle(header).textAlign !== "right") numericAlignmentFindings.push(`${label} / ${columnLabel}: 表头未右对齐`);
+        for (const row of Array.from(table.querySelectorAll<HTMLTableRowElement>("tbody tr[data-row-id]"))) {
+          const cell = row.children.item(columnIndex);
+          if (!(cell instanceof HTMLElement)) continue;
+          const style = getComputedStyle(cell);
+          if (!cell.classList.contains("is-align-end") || style.textAlign !== "right") {
+            numericAlignmentFindings.push(`${label} / ${columnLabel}: 数据未与表头右对齐`);
+          }
+          if (!style.fontVariantNumeric.split(/\s+/).includes("tabular-nums")) {
+            numericAlignmentFindings.push(`${label} / ${columnLabel}: 数据未使用等宽数字`);
+          }
+        }
+      }
+    }
+    const legacyVisibleTableCount = Array.from(document.querySelectorAll<HTMLTableElement>("main table:not(.si-table)"))
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && !element.closest("[role='dialog'], .si-detail-panel, .si-drawer, .si-popover-content");
+      }).length;
     const hasVisibleRows = Array.from(document.querySelectorAll<HTMLElement>(".si-data-table .si-table tbody tr[data-row-id]")).some((row) => {
       const rect = row.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return false;
@@ -666,6 +712,11 @@ async function inspectPage(page: Page): Promise<{
         settingInputHeights,
         skillTargetButtonHeights,
         tableCount: tables.length,
+        dataTableV2Count: visibleDataTables.length,
+        dataTableV2Findings,
+        legacyVisibleTableCount,
+        numericAlignmentFindings: numericAlignmentFindings.slice(0, 20),
+        numericAlignedColumnCount: visibleDataTables.reduce((count, section) => count + section.querySelectorAll("thead th.is-align-end").length, 0),
         emptySurface,
         contentSurface,
         errorSurface,
@@ -683,6 +734,10 @@ async function inspectPage(page: Page): Promise<{
 
 function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "route";
+}
+
+function viewportLabel(viewport: Viewport): string {
+  return `${viewport.width}x${viewport.height}@${viewport.deviceScaleFactor}`;
 }
 
 async function inspectProductVariantSku(page: Page): Promise<CheckFailure[]> {
@@ -754,7 +809,10 @@ async function main(): Promise<void> {
     console.log(`ui:check: ${routes.length} routes × ${viewports.length} viewports; project=${projectId}`);
     if (mockModeOverride) console.log(`ui:check mock override: ${mockModeOverride} on ${mockModeRoute}`);
     for (const viewport of viewports) {
-      const context = await browser.newContext({ viewport });
+      const context = await browser.newContext({
+        viewport: { width: viewport.width, height: viewport.height },
+        deviceScaleFactor: viewport.deviceScaleFactor,
+      });
       const page = await context.newPage();
       let currentConsoleErrors: string[] | null = null;
       page.on("console", (message) => {
@@ -807,16 +865,17 @@ async function main(): Promise<void> {
           const frameCheck = checkFrameMetrics(route.name, route.path.startsWith("/p/") ? "project" : "global", Number(inspection.metrics.tableCount) > 0, frame, frameBaseline);
           frameStatus = frameCheck.status;
           failures.push(...frameCheck.findings);
-          if (viewport.width === 1280 || viewport.width === 1920) {
-            const baselineKey = `${route.name}@${viewport.width}`;
-            spacingFindings = await inspectSpacing(page, route.name);
-            const allowed = spacingBaseline.checks[baselineKey];
-            const comparison = compareSpacingFindings(spacingFindings, allowed, spacingExceptions.exceptions);
-            if (hasMissingSpacingBaseline(allowed, comparison.introduced)) failures.push({ rule: "spacing-baseline-missing", message: `${baselineKey} 未登记间距检查。` });
-            spacingLegacyCount = comparison.legacyCount;
-            spacingResolvedKeys = comparison.resolvedKeys;
-            failures.push(...comparison.introduced.map(({ rule, message }) => ({ rule, message })));
+          const usesSpacingBaseline = viewport.deviceScaleFactor === 1 && (viewport.width === 1280 || viewport.width === 1920);
+          const baselineKey = usesSpacingBaseline ? `${route.name}@${viewport.width}` : `${route.name}@${viewportLabel(viewport)}`;
+          spacingFindings = await inspectSpacing(page, route.name);
+          const allowed = usesSpacingBaseline ? spacingBaseline.checks[baselineKey] : undefined;
+          const comparison = compareSpacingFindings(spacingFindings, allowed, spacingExceptions.exceptions);
+          if (usesSpacingBaseline && hasMissingSpacingBaseline(allowed, comparison.introduced)) {
+            failures.push({ rule: "spacing-baseline-missing", message: `${baselineKey} 未登记间距检查。` });
           }
+          spacingLegacyCount = comparison.legacyCount;
+          spacingResolvedKeys = comparison.resolvedKeys;
+          failures.push(...comparison.introduced.map(({ rule, message }) => ({ rule, message })));
           if (route.path === "/") {
             const title = await page.locator(".si-page-frame-header h1").boundingBox();
             const header = await page.locator(".si-page-frame-header").boundingBox();
@@ -834,7 +893,7 @@ async function main(): Promise<void> {
             }
           }
           timeWarnings = inspection.timeWarnings;
-          for (const warning of timeWarnings) allTimeWarnings.add(`${route.path} @ ${viewport.width}: ${warning}`);
+          for (const warning of timeWarnings) allTimeWarnings.add(`${route.path} @ ${viewportLabel(viewport)}: ${warning}`);
 
           const values = metrics as {
             verticalOverflow: boolean;
@@ -852,6 +911,11 @@ async function main(): Promise<void> {
             settingInputHeights: number[];
             skillTargetButtonHeights: number[];
             tableCount: number;
+            dataTableV2Count: number;
+            dataTableV2Findings: string[];
+            legacyVisibleTableCount: number;
+            numericAlignmentFindings: string[];
+            numericAlignedColumnCount: number;
             emptySurface: boolean;
             contentSurface: boolean;
             errorSurface: boolean;
@@ -870,6 +934,11 @@ async function main(): Promise<void> {
           }
           if (route.waitForDataSurface && values.dataSurfaceState === "table" && !values.tableCount) {
             failures.push({ rule: "table-readiness-mismatch", message: "就绪判定为表格已加载，但截图测量没有可见表格滚动区。" });
+          }
+          if (route.expectsDataTableV2 && (values.dataSurfaceState === "table" || values.dataSurfaceState === "empty")) {
+            if (!values.dataTableV2Count) failures.push({ rule: "data-table-v2-route", message: "该数据表路由未渲染共享 DataTable v2。" });
+            if (values.legacyVisibleTableCount) failures.push({ rule: "data-table-v2-legacy", message: `该数据表路由显示了 ${values.legacyVisibleTableCount} 个非 DataTable 表格。` });
+            if (values.dataTableV2Findings.length) failures.push({ rule: "data-table-v2-structure", message: values.dataTableV2Findings.join("；") });
           }
           if (route.waitForDataSurface && values.dataSurfaceState === "empty" && !values.emptySurface) {
             failures.push({ rule: "table-readiness-mismatch", message: "就绪判定为空态，但截图测量没有可见空态。" });
@@ -899,12 +968,15 @@ async function main(): Promise<void> {
           if (route.path === "/settings" && (!values.settingInputHeights.length || values.settingInputHeights.some((height) => height !== 32))) failures.push({ rule: "setting-input-height", message: `设置输入框高度应为 32px，实际 ${values.settingInputHeights.join("、") || "未渲染"}。` });
           if (route.path === "/skills" && (!values.skillTargetButtonHeights.length || values.skillTargetButtonHeights.some((height) => height !== 32))) failures.push({ rule: "skill-target-button-height", message: `Skill 安装按钮高度应为 32px，实际 ${values.skillTargetButtonHeights.join("、") || "未渲染"}。` });
           if (values.clippedCells.length) failures.push({ rule: "table-cell-clipping", message: `表格文字被裁切且没有完整文本提示：${values.clippedCells.join("；")}` });
+          if (values.numericAlignedColumnCount > 0 && values.numericAlignmentFindings.length) {
+            failures.push({ rule: "numeric-column-alignment", message: values.numericAlignmentFindings.join("；") });
+          }
           if (values.scheduleTableMissingStandardScroll) failures.push({ rule: "table-scroll", message: "定时任务表格尚未接入 DataTable 的内部滚动区。" });
           if (values.tableCount && values.tables.some((table) => table.overflowY !== "auto" && table.overflowY !== "scroll")) {
             failures.push({ rule: "table-scroll", message: "表格滚动区的 overflow-y 不是 auto/scroll。" });
           }
           if (values.tables.some((table) => table.checkViewport && !table.bottomInViewport)) failures.push({ rule: "table-viewport", message: "表格滚动区底部超出窗口视口。" });
-          if (!viewport.headerOnly && values.tables.some((table) => table.checkViewport && table.hasPagination && !table.paginationInViewport)) failures.push({ rule: "table-pagination-viewport", message: "表格分页栏未完整显示在窗口视口内。" });
+          if (values.tables.some((table) => table.checkViewport && table.hasPagination && !table.paginationInViewport)) failures.push({ rule: "table-pagination-viewport", message: "表格分页栏未完整显示在窗口视口内。" });
           if (values.tables.some((table) => table.expectsPagination && (!table.hasPagination || !table.hasPageSizeControl))) {
             failures.push({ rule: "table-pagination", message: "表格没有分页条或每页条数控件。" });
           }
@@ -912,7 +984,7 @@ async function main(): Promise<void> {
         } catch (error) {
           failures.push({ rule: "route-load", message: asErrorMessage(error) });
         }
-        const fileName = `${slug(route.name)}-${viewport.width}.png`;
+        const fileName = `${slug(route.name)}-${viewportLabel(viewport)}.png`;
         await page.screenshot({ path: path.join(shotsDir, fileName), fullPage: false }).catch((error: unknown) => {
           failures.push({ rule: "screenshot", message: asErrorMessage(error) });
         });
@@ -924,7 +996,7 @@ async function main(): Promise<void> {
         reports.push({ route: route.path, routeName: route.name, viewport, heading, metrics, failures, consoleErrors, timeWarnings, sectionPageFindings, frameStatus, spacingFindings, spacingLegacyCount, spacingResolvedKeys });
         const state = failures.length ? `FAIL ${failures.length}` : frameStatus === "legacy" ? "LEGACY FRAME" : "PASS";
         const terminalState = typeof metrics.dataSurfaceState === "string" ? ` (${metrics.dataSurfaceState})` : "";
-        console.log(`[${state}] ${route.path} @ ${viewport.width}×${viewport.height}${terminalState}`);
+        console.log(`[${state}] ${route.path} @ ${viewportLabel(viewport)}${terminalState}`);
       }
       await context.close();
     }
@@ -957,7 +1029,7 @@ async function main(): Promise<void> {
     checks: reports,
   };
   await writeFile(path.join(shotsDir, "report.json"), JSON.stringify(report, null, 2) + "\n", "utf8");
-  const failures = reports.flatMap((item) => item.failures.map((failure) => ({ route: item.route, viewport: item.viewport.width, ...failure })));
+  const failures = reports.flatMap((item) => item.failures.map((failure) => ({ route: item.route, viewport: viewportLabel(item.viewport), ...failure })));
   console.log(`ui:check complete: ${reports.length} route/viewport checks, ${report.strictFrameCheckCount} strict / ${report.legacyFrameCheckCount} legacy frame checks, ${failures.length} UI failures, ${stylePolicy.introduced.length} new style failure(s), ${stylePolicy.legacyCount} legacy style finding(s), ${report.sectionPageLegacyFindingCount} section-page baseline finding(s), ${report.spacingLegacyFindingCount} spacing baseline finding(s), ${report.spacingResolvedKeyCount} resolved spacing key(s), ${allTimeWarnings.size} time warning(s).`);
   console.log(`Report: ${path.relative(uiRoot, path.join(shotsDir, "report.json"))}`);
   for (const failure of failures) console.error(`- ${failure.route} @ ${failure.viewport}: [${failure.rule}] ${failure.message}`);

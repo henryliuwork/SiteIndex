@@ -396,7 +396,7 @@ export function DataTable<T, F = Record<string, unknown>>({
           const textClass = text === "clamp2" ? "si-cell-2" : text === "wrap" ? "si-cell-wrap" : "si-cell-1";
           const stickyRight = meta?.sticky === "right" || cell.column.id === "actions";
           const stickyLeft = meta?.sticky === "left" && !stickyRight;
-          const className = [meta?.reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
+          const className = [meta?.reserved && "is-reserved", meta?.align && `is-align-${meta.align}`, stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
           const style = { ...(meta?.align ? { textAlign: meta.align === "end" ? "right" as const : meta.align === "center" ? "center" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(cell.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(cell.column.id) ?? 0 } : {}) };
           return (
             <td key={cell.id} className={className} style={style}>
