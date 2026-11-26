@@ -117,3 +117,39 @@ describe("ContentPage 博客重新抓取", () => {
     expect(settingsLocation.textContent).toBe("/p/demo/settings/config?section=blog-recognition");
   }, 25_000);
 });
+
+describe("ContentPage DataTable 列契约", () => {
+  it("标题和关键词必显，只有当前结果整列缺值时才标记为空", async () => {
+    const mockApi = createMockApi();
+    vi.doMock("../../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const { blogColumns, keywordColumns } = await import("../ContentPage");
+    const blogResult = await mockApi.content.listBlog("demo", { page: 1, pageSize: 50 });
+    const keywordResult = await mockApi.content.listKeywords("demo", { page: 1, pageSize: 50 });
+    const blog = blogResult.rows[0]!;
+    const keyword = keywordResult.rows[0]!;
+
+    const blogDefs = blogColumns([
+      { ...blog, word_count: null, primary_keyword: null },
+      { ...blog, word_count: 420, primary_keyword: "虚构关键词" },
+    ]);
+    const emptyBlogDefs = blogColumns([{ ...blog, word_count: null, primary_keyword: null }]);
+    const keywordDefs = keywordColumns([
+      { ...keyword, target_url: null, search_volume: null, current_rank: null },
+      { ...keyword, target_url: "https://demo.example.test/guide", search_volume: 120, current_rank: 8 },
+    ]);
+    const emptyKeywordDefs = keywordColumns([{ ...keyword, target_url: null, search_volume: null, current_rank: null }]);
+    const byId = (columns: readonly { id?: string; enableHiding?: boolean; meta?: { allEmpty?: boolean; align?: string } }[], id: string) => columns.find((column) => column.id === id);
+
+    expect(byId(blogDefs, "title")?.enableHiding).toBe(false);
+    expect(byId(keywordDefs, "keyword")?.enableHiding).toBe(false);
+    expect(byId(blogDefs, "word_count")?.meta?.allEmpty).toBeUndefined();
+    expect(byId(blogDefs, "primary_keyword")?.meta?.allEmpty).toBeUndefined();
+    expect(byId(emptyBlogDefs, "word_count")?.meta?.allEmpty).toBe(true);
+    expect(byId(emptyBlogDefs, "primary_keyword")?.meta?.allEmpty).toBe(true);
+    expect(byId(keywordDefs, "target_url")?.meta?.allEmpty).toBeUndefined();
+    expect(byId(emptyKeywordDefs, "target_url")?.meta?.allEmpty).toBe(true);
+    expect(byId(emptyKeywordDefs, "search_volume")?.meta?.allEmpty).toBe(true);
+    expect(byId(emptyKeywordDefs, "current_rank")?.meta?.allEmpty).toBe(true);
+    expect(byId(blogDefs, "links_products")?.meta?.align).toBe("end");
+  });
+});
