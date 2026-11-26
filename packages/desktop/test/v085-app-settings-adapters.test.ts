@@ -52,6 +52,24 @@ describe("v0.8.5 application settings adapters 67–81", () => {
       "link:Synthetic hidden project"]);
   });
 
+  it("reads the candidate masked webhook through its stable test ID", async () => {
+    const seen: string[] = [];
+    const expected = "https://webhook.example.test/synthetic-only";
+    const page = {
+      getByRole: (role: string, options: { name: string }) => {
+        seen.push(`${role}:${options.name}`);
+        return { click: async () => {} };
+      },
+      getByTestId: (id: string) => {
+        seen.push(`testid:${id}`);
+        return { inputValue: async () => expected };
+      },
+      getByText: () => { throw new Error("H4 forbids text search locators"); },
+    };
+    await checkVisible(page, { id: 77, kind: "webhook", tab: "notifications", expected }, {});
+    assert.deepEqual(seen, ["tab:通知", "testid:app-settings-dingtalk-webhook"]);
+  });
+
   it("rejects candidate startup that rewrites the baseline settings file", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-setting-adapter-"));
     const profile = { root, layout: { projectRoot: path.join(root, "projects"),

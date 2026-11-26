@@ -90,7 +90,12 @@ export function credentialAdapter({ username, applicationPassword }) {
     async candidateUi({ page }) {
       await navigate(page, "#/settings", "WordPress 图片托管凭据");
       const region = page.getByRole("region", { name: `凭据：${CREDENTIAL_ORIGIN}` });
-      await region.getByRole("button", { name: "替换凭据" }).waitFor();
+      const replace = region.getByRole("button", { name: "替换凭据" });
+      await replace.waitFor();
+      await replace.click();
+      const dialog = page.getByRole("dialog", { name: "替换 WordPress 凭据" });
+      await dialog.getByTestId("app-settings-wordpress-application-password").waitFor();
+      await dialog.getByRole("button", { name: "取消" }).click();
     },
     async verifyCandidateIpc({ page, noteIpc }) {
       noteIpc({ operation: "wordpressCredentials.status", itemId: 82 });

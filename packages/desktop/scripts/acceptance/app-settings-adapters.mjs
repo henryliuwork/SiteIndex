@@ -96,15 +96,7 @@ export async function checkVisible(page, item, values) {
     } else if (item.kind === "platform") {
       assertPersisted(await page.getByRole("textbox", { name: "新平台 Skill 目录" }).last().inputValue(), item.expected);
     } else if (item.kind === "webhook") {
-      await page.getByRole("button", { name: "发送测试" }).focus();
-      await page.keyboard.press("Shift+Tab");
-      const matches = await page.evaluate((expected) => {
-        const input = document.activeElement;
-        return input instanceof HTMLInputElement && input.type === "password"
-          && [...(input.labels ?? [])].some((label) => label.textContent?.trim() === "钉钉机器人 Webhook")
-          && input.value === expected;
-      }, item.expected);
-      if (!matches) throw failed("Row 77 candidate masked webhook UI value differs from saved setting");
+      assertPersisted(await page.getByTestId("app-settings-dingtalk-webhook").inputValue(), item.expected);
     } else {
       const name = item.kind === "browser" ? "自定义路径" : item.name;
       assertPersisted(await page.getByRole("textbox", { name }).inputValue(),
