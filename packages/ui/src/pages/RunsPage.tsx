@@ -321,12 +321,12 @@ export function RunsPage() {
         </div>
         {scheduleRuntimeQuery.data?.authorization_required && <div className="si-schedule-auth-banner"><span>需要授权才能注册系统计划任务。</span><Button size="small" disabled={!api.schedule.reauthorize || reauthorizingSchedule} onClick={() => void reauthorizeSchedule()}>{reauthorizingSchedule ? "授权中…" : "重新授权注册"}</Button></div>}
         {scheduleQuery.isLoading || (!scheduleQuery.isError && !draft) ? <div className="si-query-loading" role="status">正在加载定时计划…</div> : scheduleQuery.isError || !scheduleState || !draft ? <ApiErrorNotice label="定时计划加载失败。" error={scheduleQuery.error} onRetry={() => void scheduleQuery.refetch()} /> : <>
-          <div className="si-schedule-plan-status"><Chip tone={scheduleState.registered ? "ok" : "warn"}>{scheduleState.registered ? "已注册到任务计划程序" : "尚未注册"}</Chip><span>执行设备：{runnerState?.runner?.device_name ?? currentDevice}</span></div>
+          <div className="si-schedule-plan-status" data-testid="runs-schedule-plan-status"><Chip tone={scheduleState.registered ? "ok" : "warn"}>{scheduleState.registered ? "已注册到任务计划程序" : "尚未注册"}</Chip><span>执行设备：{runnerState?.runner?.device_name ?? currentDevice}</span></div>
           <div className="si-schedule-rows">{scheduleItems.map((item) => {
             const jobSchedule = draft[item.key];
             const monthly = item.key === "monthly";
             const nextRun = scheduleState.next_runs.find((run) => run.job === item.key)?.at ?? null;
-            return <article className="si-schedule-row" key={item.key}>
+            return <article className="si-schedule-row" data-testid={`runs-schedule-row-${item.key}`} key={item.key}>
               <div className="si-schedule-row-title"><strong>{item.title}</strong><small>{item.hint}</small></div>
               <div className="si-schedule-row-meta"><Chip tone={jobSchedule.enabled ? "ok" : "neutral"}>{jobSchedule.enabled ? "已启用" : "已停用"}</Chip><span>{monthly ? `每月 ${jobSchedule.day_of_month ?? 1} 日 ${jobSchedule.time}` : `${weekdaySummary(jobSchedule.days)} · ${jobSchedule.time}`}</span><span>下次：{jobSchedule.enabled ? nextRun ? formatDateTime(nextRun) : "等待计算" : "—"}</span></div>
               <Button size="small" icon={<Pencil size={13} />} onClick={() => openScheduleEditor(item.key)}>编辑</Button>

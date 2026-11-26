@@ -69,6 +69,15 @@ async function renderRunsPageWithLogState(status: "running" | "ok" | "failed") {
 }
 
 describe("RunsPage 媒体任务历史", () => {
+  it("为每日计划行和计划任务状态提供稳定验收选择器", async () => {
+    await renderRunsPage([]);
+
+    const dailyScheduleRow = await screen.findByTestId("runs-schedule-row-daily");
+    expect(dailyScheduleRow.tagName).toBe("ARTICLE");
+    expect(dailyScheduleRow.classList.contains("si-schedule-row")).toBe(true);
+    expect(await screen.findByTestId("runs-schedule-plan-status")).toBeTruthy();
+  });
+
   it.each(["running", "ok", "failed"] as const)("%s 状态在深色控制台展示 info、warn、error 日志", async (status) => {
     await renderRunsPageWithLogState(status);
     const console = await screen.findByRole("log", { name: "运行日志" });
