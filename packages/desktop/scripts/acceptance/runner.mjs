@@ -109,10 +109,11 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
     let redirect;
     let session;
     let installed = false;
+    let handler;
     const consoleMessages = [];
     const context = { id, noteIpc: (operation) => { context.lastIpc = operation; }, lastIpc: null };
     try {
-      const handler = requiredHandler(handlers, id);
+      handler = requiredHandler(handlers, id);
       phase = "profile";
       profile = await deps.createProfile();
       redirect = deps.redirectWindowsAppData(profile);
@@ -164,6 +165,27 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
         try { assertNormalExit(await deps.exitNormally(session)); session = null; }
         catch (error) { await report.failure({ id, phase: "cleanup-exit", error, kind: "harness_error",
           page: session?.page, consoleMessages, lastIpc: context.lastIpc, outputDir }); cleanupFailed = true; }
+      }
+      if (installed && profile && !session && typeof handler?.cleanupSystem === "function") {
+        let cleanupSession;
+        try {
+          cleanupSession = await deps.launchInstalledApp({
+            executable: path.join(profile.layout.installDir, "SiteIndex.exe"), profile,
+          });
+          await handler.cleanupSystem({ ...context, page: cleanupSession.page, profile });
+          assertNormalExit(await deps.exitNormally(cleanupSession));
+          cleanupSession = null;
+        } catch (error) {
+          await report.failure({ id, phase: "cleanup-system", error,
+            kind: error?.acceptanceStatus ?? "harness_error", page: cleanupSession?.page,
+            consoleMessages, lastIpc: context.lastIpc, outputDir });
+          cleanupFailed = true;
+          if (cleanupSession) {
+            try { assertNormalExit(await deps.exitNormally(cleanupSession)); }
+            catch (exitError) { await report.failure({ id, phase: "cleanup-system-exit", error: exitError,
+              kind: "harness_error", outputDir }); }
+          }
+        }
       }
       if (installed && !session) {
         try { await deps.uninstallWindowsNsis(profile); }
