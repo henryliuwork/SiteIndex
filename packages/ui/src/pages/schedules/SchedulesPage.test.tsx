@@ -106,8 +106,10 @@ describe("SchedulesPage", () => {
   it("keeps row controls keyboard-operable without triggering row navigation", async () => {
     await renderSchedules();
     const row = await screen.findByRole("row", { name: /Cedar Shop/ });
+    const verifyButton = within(row).getByRole("button", { name: "校验" });
+    expect(verifyButton.closest("td")?.classList.contains("is-sticky-right")).toBe(true);
 
-    fireEvent.keyDown(within(row).getByRole("button", { name: "校验" }), { key: "Enter" });
+    fireEvent.keyDown(verifyButton, { key: "Enter" });
     expect(screen.getByTestId("current-route").textContent).toBe("/");
 
     fireEvent.keyDown(row, { key: "Enter" });
@@ -135,7 +137,9 @@ describe("SchedulesPage", () => {
     expect(mismatch).toBeTruthy();
 
     const mismatchRow = await screen.findByRole("row", { name: /Cedar Shop/ });
-    fireEvent.click(within(mismatchRow).getByRole("button", { name: "修复" }));
+    const repairButton = within(mismatchRow).getByRole("button", { name: "修复" });
+    expect(repairButton.closest("td")?.classList.contains("is-sticky-right")).toBe(true);
+    fireEvent.click(repairButton);
     expect(await within(mismatchRow).findByText("系统计划任务路径已修复。")).toBeTruthy();
     await expectToast("系统计划任务已修复。", "success");
     expect(verifySpy).toHaveBeenNthCalledWith(1, "cedar", undefined);

@@ -62,15 +62,11 @@ type ScheduleVerificationUiState = {
   error: string;
 };
 
-function ScheduleStatusCell({ project, registered, verification, canVerify, onVerify }: {
-  project: ProjectSummary;
+function ScheduleStatusCell({ registered, verification }: {
   registered: boolean;
   verification?: ScheduleVerificationUiState;
-  canVerify: boolean;
-  onVerify: (projectId: string, repair?: boolean) => void;
 }) {
   const result = verification?.result ?? null;
-  const checking = verification?.checking ?? false;
   const error = verification?.error ?? "";
   const state = result?.state ?? (registered ? "ok" : "unregistered");
   const status = state === "ok" ? { label: "已注册", tone: "ok" as const }
@@ -81,10 +77,6 @@ function ScheduleStatusCell({ project, registered, verification, canVerify, onVe
 
   return <div className="si-schedule-status-cell">
     <Chip tone={status.tone}>{status.label}</Chip>
-    {canVerify && <div className="si-schedule-status-actions">
-      <Button size="small" disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id); }}>{checking ? "校验中…" : "校验"}</Button>
-      {result?.state === "path_mismatch" && <Button size="small" variant="primary" disabled={checking} onClick={(event) => { event.stopPropagation(); onVerify(project.id, true); }}>{checking ? "修复中…" : "修复"}</Button>}
-    </div>}
     {(result?.message || error) && <small className={error || result?.state === "error" ? "si-schedule-status-error" : "si-schedule-status-message"} role={error || result?.state === "error" ? "alert" : "status"}>{error || result?.message}</small>}
   </div>;
 }
@@ -281,10 +273,20 @@ export function SchedulesPage() {
     { id: "project", accessorFn: (row) => `${row.project.name} ${row.project.domain}`, header: "项目", meta: { width: 180, grow: 0, minWidth: 150, text: "clamp2" }, cell: ({ row }) => <div className="si-schedule-project"><strong>{row.original.project.name}</strong><small>{row.original.project.domain}</small></div> },
     { id: "daily", accessorFn: (row) => row.schedule?.config.daily.time ?? "", header: "每日同步", meta: { width: 156, grow: 0, minWidth: 144, text: "single" }, cell: ({ row }) => row.original.schedule ? <ScheduleCadence enabled={row.original.schedule.config.daily.enabled} time={row.original.schedule.config.daily.time} /> : row.original.scheduleError ? <ApiErrorNotice label="计划读取失败。" error={row.original.scheduleError} onRetry={row.original.refetchSchedule} /> : <span className="si-muted">正在读取…</span> },
     { id: "weekly", accessorFn: (row) => row.schedule?.config.weekly.time ?? "", header: "每周抓取", meta: { width: 156, grow: 0, minWidth: 144, text: "single" }, cell: ({ row }) => row.original.schedule ? <ScheduleCadence enabled={row.original.schedule.config.weekly.enabled} time={row.original.schedule.config.weekly.time} /> : row.original.scheduleError ? <span className="si-muted">—</span> : <span className="si-muted">正在读取…</span> },
+    { id: "system_status", accessorFn: (row) => row.schedule?.registered ? "已注册" : "未注册", header: "系统计划任务", meta: { width: 200, grow: 0, minWidth: 180 }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">读取失败</span> : row.original.schedule ? <ScheduleStatusCell registered={row.original.schedule.registered} verification={verificationByProject[row.original.project.id]} /> : <span className="si-muted">正在读取…</span> },
     { id: "last_run", accessorFn: (row) => row.lastRun?.finished_at ?? row.lastRun?.started_at ?? "", header: "最近一次运行", meta: { width: 196, grow: 0, minWidth: 180, text: "single" }, cell: ({ row }) => row.original.historyError ? <ApiErrorNotice label="运行记录读取失败。" error={row.original.historyError} /> : row.original.historyLoading ? <span className="si-muted">正在读取…</span> : row.original.lastRun ? <div className="si-schedule-last-run"><Chip tone={runStatus(row.original.lastRun).tone}>{runStatus(row.original.lastRun).label}</Chip><time>{formatDateTime(row.original.lastRun.finished_at ?? row.original.lastRun.started_at)}</time></div> : <span className="si-muted">暂无运行记录</span> },
     { id: "next_run", accessorFn: (row) => row.schedule ? nextRun(row.schedule)?.at ?? "" : "", header: "下一次运行", meta: { width: 210, grow: 1, minWidth: 180, text: "single" }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">—</span> : row.original.schedule ? nextRun(row.original.schedule) ? <span>{nextRun(row.original.schedule)!.job} · {formatDateTime(nextRun(row.original.schedule)!.at)}</span> : <span className="si-muted">暂无计划</span> : <span className="si-muted">正在读取…</span> },
-    { id: "system_status", accessorFn: (row) => row.schedule?.registered ? "已注册" : "未注册", header: "系统计划任务", meta: { width: 200, grow: 0, minWidth: 180 }, cell: ({ row }) => row.original.scheduleError ? <span className="si-muted">读取失败</span> : row.original.schedule ? <ScheduleStatusCell project={row.original.project} registered={row.original.schedule.registered} verification={verificationByProject[row.original.project.id]} canVerify={typeof api.schedule.verify === "function"} onVerify={(projectId, repair) => { void runVerification(projectId, repair); }} /> : <span className="si-muted">正在读取…</span> },
-    { id: "actions", accessorFn: (row) => row.project.id, header: "操作", enableSorting: false, meta: { width: 104, grow: 0, minWidth: 96, text: "single", sticky: "right", align: "end" }, cell: ({ row }) => <Link className="si-button si-button-small" to={`/p/${row.original.project.id}/runs`}>去配置</Link> },
+    { id: "actions", accessorFn: (row) => row.project.id, header: "操作", enableSorting: false, meta: { width: 208, grow: 0, minWidth: 200, text: "single", sticky: "right", align: "end" }, cell: ({ row }) => {
+      const project = row.original.project;
+      const verification = verificationByProject[project.id];
+      const checking = verification?.checking ?? false;
+      const canVerify = typeof api.schedule.verify === "function";
+      return <div className="si-schedule-row-actions">
+        {canVerify && <Button size="small" disabled={checking} onClick={(event) => { event.stopPropagation(); void runVerification(project.id); }}>{checking ? "校验中…" : "校验"}</Button>}
+        {canVerify && verification?.result?.state === "path_mismatch" && <Button size="small" variant="primary" disabled={checking} onClick={(event) => { event.stopPropagation(); void runVerification(project.id, true); }}>{checking ? "修复中…" : "修复"}</Button>}
+        <Link className="si-button si-button-small" to={`/p/${project.id}/runs`}>去配置</Link>
+      </div>;
+    } },
   ];
 
   const openProjectRuns = (row: ScheduleProjectRow) => navigate(`/p/${row.project.id}/runs`);

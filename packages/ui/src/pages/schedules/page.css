@@ -12,7 +12,7 @@
 .si-schedule-cadence, .si-schedule-last-run { display: flex; min-width: 0; align-items: center; gap: var(--space-2); white-space: nowrap; }
 .si-schedule-cadence time, .si-schedule-last-run time { color: var(--color-ink-2); font: var(--fw-mono) var(--fs-mono)/var(--lh-mono) var(--font-mono); }
 .si-schedule-status-cell { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gap-inline); }
-.si-schedule-status-actions { display: flex; flex-wrap: wrap; gap: var(--gap-inline); }
+.si-schedule-row-actions { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: var(--gap-inline); white-space: nowrap; }
 .si-schedule-status-cell > small { flex-basis: 100%; }
 .si-schedule-status-message, .si-schedule-status-error { color: var(--color-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); white-space: normal; }
 .si-schedule-status-error, .si-schedule-cleanup-error { color: var(--color-danger); }
