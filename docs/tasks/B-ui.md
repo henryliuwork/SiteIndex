@@ -195,6 +195,7 @@
 
 ## v0.8.5 · G8.5-1 UI 共享层
 - [x] B-2：Button small、Segmented、SearchInput 与可排序表头按共享尺寸规范收敛；清理 spacing exception 并将上限降至 2；紧凑按钮保留不小于 50px 的命中宽度。27 路由 × 4 视口 `ui:check`：108/108 通过，0 新违规、0 例外、0 基线、0 时间告警 — 本 PR
+- [x] 清理已解决的 section-page 基线：删除 SEO `seo@1280`（D #844 后 1280×800 实测 10 行、无 findings）；只删过期记录，不改阈值 — 本 PR
 
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。
