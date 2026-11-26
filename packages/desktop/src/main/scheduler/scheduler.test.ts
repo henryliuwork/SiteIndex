@@ -374,6 +374,29 @@ describe("system schedule definitions", () => {
     await expect(scheduler.verify(project)).resolves.toMatchObject({ state: "unregistered" });
   });
 
+  it("preserves verify state:error while exposing redacted command diagnostics", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "siteindex-schedule-detail-test-"));
+    try {
+      const scheduler = createSystemScheduler({ platform: "win32", executablePath: "C:\\Synthetic\\SiteIndex.exe",
+        runCommand: async (file) => {
+          if (file === "whoami.exe") return "synthetic-user";
+          throw Object.assign(new Error("schtasks failed password=CANARY_PASSWORD"), {
+            code: 5, stderr: "Authorization: Basic CANARY_BASIC C:\\Users\\CANARY_USER\\task.xml",
+          });
+        } });
+      const result = await scheduler.verify({ projectId: "synthetic-project", projectPath: directory,
+        config, isThisDevice: true });
+      expect(result).toMatchObject({ state: "error", error_detail: {
+        code: "SCHEDULE_COMMAND_FAILED", operation: "schedule.verify", exitCode: 5,
+        command: ["schtasks.exe", "/Query", "/TN", "[redacted]", "/XML"],
+      } });
+      expect(JSON.stringify(result)).not.toMatch(/CANARY_PASSWORD|CANARY_BASIC|CANARY_USER/u);
+      expect(result.error_detail?.stderr?.length).toBeLessThanOrEqual(2048);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("verifies a real Windows XML export using synthetic project and account values", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "siteindex-windows-query-verify-test-"));
     const projectPath = path.join(directory, "sample-store");

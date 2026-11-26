@@ -4,9 +4,10 @@ import type { IpcHandlerImplementations } from "../ipc-registry.js";
 import type { IpcContext } from "./context.js";
 import { invalidSchedule, isScheduleConfig } from "./validators.js";
 import type { ScheduleRuntimeStatus } from "../scheduler/schedule.js";
+import { scheduleErrorDetail, scheduleIpcError } from "../error-detail.js";
 
 export function createScheduleHandlers(context: IpcContext): IpcHandlerImplementations {
-  return {
+  const handlers: IpcHandlerImplementations = {
     "schedule.get": async (id) =>
       context.withProject(id, async (projectId) => {
         const state = await context.core.schedule.get(projectId);
@@ -56,8 +57,9 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
           } catch (error) {
             return {
               state: "error" as const,
-              message: `计划任务修复失败：${error instanceof Error ? error.message : String(error)}`,
+              message: "计划任务修复失败，请查看诊断信息。",
               repaired: false,
+              error_detail: scheduleErrorDetail("schedule.verify.repair", error),
             };
           }
           if (status.authorization_required) {
@@ -65,6 +67,8 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
               state: "error" as const,
               message: "计划任务需要管理员授权，授权后请重新核验。",
               repaired: false,
+              error_detail: scheduleErrorDetail("schedule.verify.repair",
+                Object.assign(new Error("计划任务需要管理员授权。"), { code: "AUTHORIZATION_REQUIRED" })),
             };
           }
           verification = await context.scheduler.verify(definition);
@@ -119,4 +123,10 @@ export function createScheduleHandlers(context: IpcContext): IpcHandlerImplement
       await context.scheduler.removeOrphan(orphan.taskName);
     },
   };
+  return Object.fromEntries(Object.entries(handlers).map(([operation, handler]) => [operation,
+    async (...args: unknown[]) => {
+      try { return await handler(...args); }
+      catch (error) { throw scheduleIpcError(operation, error); }
+    },
+  ])) as IpcHandlerImplementations;
 }

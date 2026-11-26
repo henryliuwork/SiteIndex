@@ -1,5 +1,6 @@
 import { API_INVOKE_METHODS, isSiteIndexError, type ApiInvokeMethod, type SiteIndexError } from "@siteindex/shared";
 import { IPC_PREFIX, ipcChannel } from "../shared/ipc-contract.js";
+import { sanitizeErrorDetail } from "./error-detail.js";
 
 const IPC_ERROR_PREFIX = "__SITEINDEX_IPC_ERROR__:";
 
@@ -62,10 +63,12 @@ function asSiteIndexError(value: unknown): IpcError {
 /** Electron invoke 错误只传 message；用受控前缀让 preload 还原错误码。 */
 export function serializeIpcError(value: unknown): Error {
   const error = asSiteIndexError(value);
+  const errorDetail = "error_detail" in error ? sanitizeErrorDetail(error.error_detail) : undefined;
   const payload = {
     code: error.code,
     message: error.message,
     ...(error.detail === undefined ? {} : { detail: error.detail }),
+    ...(errorDetail ? { error_detail: errorDetail } : {}),
   };
   return new Error(`${IPC_ERROR_PREFIX}${JSON.stringify(payload)}`);
 }

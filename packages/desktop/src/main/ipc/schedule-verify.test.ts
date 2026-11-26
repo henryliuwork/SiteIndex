@@ -88,4 +88,20 @@ describe("schedule.verify IPC", () => {
     await expect(verification).resolves.toMatchObject({ state: "ok" });
     expect(order).toEqual(["registration-start", "registration-finished", "verify"]);
   });
+
+  it("adds diagnostic detail to a thrown schedule IPC error without exposing a canary", async () => {
+    const { value } = context(vi.fn(async () => ({ state: "ok" as const })));
+    value.scheduler.getRuntimeStatus = vi.fn(async () => {
+      throw Object.assign(new Error("password=CANARY_PASSWORD"), {
+        code: 5, stderr: "Authorization: Basic CANARY_BASIC",
+        command: ["schtasks.exe", "/Query", "/TN", "CANARY_TASK"],
+      });
+    });
+    const error = await Promise.resolve()
+      .then(() => createScheduleHandlers(value)["schedule.status"]?.())
+      .catch((reason: unknown) => reason);
+    expect(error).toMatchObject({ code: "UNKNOWN", error_detail: { operation: "schedule.status",
+      exitCode: 5, command: ["schtasks.exe", "/Query", "/TN", "[redacted]"] } });
+    expect(JSON.stringify(error)).not.toMatch(/CANARY_PASSWORD|CANARY_BASIC|CANARY_TASK/u);
+  });
 });
