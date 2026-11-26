@@ -20,6 +20,8 @@ describe("SEO DataTable column contract", () => {
       expect(byId(columns, "title").enableHiding).toBe(false);
       expect(byId(columns, "url").header).toBe("URL");
       expect(byId(columns, "title").header).toBe("标题");
+      expect(byId(columns, "url").meta?.grow).toBe(2);
+      expect(byId(columns, "title").meta?.grow).toBe(2);
     };
     assertRequiredPageColumns(main);
     assertRequiredPageColumns(legacy);
