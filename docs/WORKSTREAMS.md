@@ -40,9 +40,9 @@
 
 ## 3. 分支与 PR
 
-- **`main` 只通过 PR 更新**（仓库 ruleset 强制：必须走 PR、三系统 CI 必须通过、禁止强推与删除）：
+- **`main` 只通过 PR 更新**（仓库 ruleset 强制：必须走 PR、Windows/macOS CI 必须通过、禁止强推与删除）：
   - 禁止直接 push 到 `main`；禁止合并自己的 PR
-  - PR 合并前 windows / macos / ubuntu 三个 `check` 必须全部通过；**本地通过不算**
+  - PR 合并前 windows / macos 两个 `check` 必须全部通过；**本地通过不算**
   - 仓库是公开的：不要提交任何密钥、token、Webhook 地址、真实客户数据；测试数据只用 fixtures 中的虚构数据
   - 由审核者（项目协调 agent）检查 CI、改动目录、契约后合并；用 **merge commit**（不用 squash）
   - 新增或升级依赖时，必须在同一个 PR 里提交更新后的根目录 `pnpm-lock.yaml`（CI 使用 `--frozen-lockfile`）
