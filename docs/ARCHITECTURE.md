@@ -159,6 +159,19 @@ macOS：`~/.local/bin/siteindex` → `/Applications/SiteIndex.app/Contents/MacOS
 - 列表接口一律分页：`{ page, pageSize, sort, filters, search } → { rows, total }`
 - 事件：`jobs.onProgress`、`projects.onChanged`（文件变化）、`schedule.onChanged`
 
+### 14.1 错误详情码
+
+`ErrorDetail` 是可选的脱敏诊断信息；原有 `SiteIndexError.code` 与 `schedule.verify` 的 `state` 返回语义不变。稳定码与来源如下：
+
+| `ErrorDetail.code` | 来源与含义 |
+|---|---|
+| `WRITE_FAILED` | Core 在项目配置或 README 写入遇到底层文件系统错误；原有 `SiteIndexError` 仍保留其已登记的 code。 |
+| `SCHEDULE_COMMAND_FAILED` | Desktop 计划任务命令失败，且底层没有字符串错误码；数字退出码另见 `exitCode`。 |
+| `AUTHORIZATION_REQUIRED` | 计划任务修复需要系统授权。 |
+| 底层 Node/OS 字符串码（如 `ENOENT`、`EACCES`） | Desktop 计划任务命令的原生错误码，经脱敏后透传，供定位系统差异；不是新增的产品错误类别。 |
+
+`operation` 指出失败操作；`command` 仅保留脱敏后的命令与参数，`stderr` 最多 2048 字符。凭据、Cookie 和用户路径不得写入 IPC 或应用日志，堆栈只写脱敏后的应用日志。
+
 ## 15. 打包与发布
 - electron-builder：Windows `nsis`（`oneClick: false`、`perMachine: false`、允许改目录）；macOS `dmg`（universal）
 - `resources/`：`cli.js`（tsup 打包 core+cli）、`skills/`、`templates/`、`schemas/`
