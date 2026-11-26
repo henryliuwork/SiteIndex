@@ -163,7 +163,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-table th.is-sticky-right { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-reserved { background: var(--color-neutral-reserved); color: var(--color-faint); }
 .si-sort-button { display: flex; width: calc(100% + var(--space-2) + var(--space-2)); min-height: var(--control-height-compact); align-items: center; justify-content: flex-start; gap: var(--gap-label-control); margin-inline: calc(0px - var(--space-2)); padding: 0 var(--space-2); border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
-.si-table th.is-align-end .si-sort-button { justify-content: flex-end; }
+.si-table th.is-align-end .si-sort-button { flex-direction: row-reverse; justify-content: flex-start; }
 .si-table th.is-align-center .si-sort-button { justify-content: center; }
 .si-table-heading { display: flex; width: 100%; align-items: center; gap: var(--gap-label-control); }
 .si-table-heading .si-sort-button { width: auto; flex: 1 1 auto; margin-left: calc(0px - var(--space-2)); margin-right: 0; }
