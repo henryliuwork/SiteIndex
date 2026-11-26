@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import { SEO_RULE_LABELS } from "@siteindex/shared";
 import type { ListQuery, PageType, SeoPageTableFilters, SeoPageTableQuery, SeoPageTableRow, SeoSummary, Severity } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../../api";
-import { ApiErrorNotice, Button, Chip, DataTable, FilterBar, SearchInput, SummaryLine, formatDateTime, useToast } from "../../components";
+import { ApiErrorNotice, Button, Chip, DataTable, FilterBar, InfoTooltip, SearchInput, SummaryLine, formatDateTime, useToast } from "../../components";
 import { SeoFilterChip, SeoMultiFilter, SeoSingleFilter } from "./filters";
 import { searchTextFromSearchParams, seoRouteFiltersFromSearchParams, updateSeoSearchParams } from "./query-params";
 
@@ -86,6 +86,10 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
     { id: "fixed", label: "已修复", value: pageSummary.fixed_pages },
   ] as const).map((item) => ({ ...item, active: filters.summary === item.id,
     onToggle: () => setFilter("summary", filters.summary === item.id ? undefined : item.id) })) : [];
+  const compactSummaryOptions = pageSummary ? [
+    { value: "all", label: "全部" },
+    ...summaryItems.map(({ id: value, label, value: count }) => ({ value, label, count })),
+  ] : [];
   const ruleOptions = (summary?.issue_counts ?? []).map((item) => ({ value: item.rule, label: item.label || ruleLabels[item.rule] || item.rule, count: item.count }));
   const selected = [
     ...(filters.severity ? [{ label: `严重级别 · ${severityLabels[filters.severity]}`, remove: () => setFilter("severity", undefined) }] : []),
@@ -125,12 +129,17 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
           </div> : <div className="si-seo-table-toolbar">
             <SearchInput value={query.search ?? ""} onSearch={(value) => { setQuery((current) => ({ ...current, page: 1, search: value || undefined })); write({ q: value || null }); }} label="搜索 SEO 页面" placeholder="搜索 URL、标题或问题" />
             <FilterBar className="si-seo-filterbar">
+              {compactSummaryOptions.length > 0 && <div className="si-seo-compact-summary-filter">
+                <SeoSingleFilter label="SEO 摘要" value={filters.summary ?? "all"} options={compactSummaryOptions}
+                  onChange={(value) => setFilter("summary", value === "all" ? undefined : value)} />
+              </div>}
               <SeoSingleFilter label="页面类型" value={filters.page_type ?? "all"} options={pageTypes} onChange={(value) => setFilter("page_type", value === "all" ? undefined : value)} />
               <SeoSingleFilter label="收录状态" value={filters.indexed ?? "all"} options={[...indexOptions]} onChange={(value) => setFilter("indexed", value === "all" ? undefined : value)} />
               <SeoSingleFilter label="严重级别" value={filters.severity ?? "all"} options={[{ value: "all", label: "全部" }, ...(["high", "mid", "low"] as const).map((value) => ({ value, label: severityLabels[value] }))]} onChange={(value) => setFilter("severity", value === "all" ? undefined : value)} />
               <SeoSingleFilter label="问题状态" value={filters.status ?? "all"} options={[{ value: "all", label: "全部" }, { value: "open", label: "待处理" }, { value: "fixed", label: "已处理" }, { value: "ignored", label: "已忽略" }]} onChange={(value) => setFilter("status", value === "all" ? undefined : value)} />
               <SeoMultiFilter label="问题类型" values={selectedRules} options={ruleOptions} onChange={(values) => setFilter("rules", values, "rule")} />
             </FilterBar><span className="si-seo-result-count">显示 {pageRows.data?.rows.length ?? 0} / {pageRows.data?.total ?? 0} 页</span>
+            {summary?.crawled_at && <span className="si-seo-compact-data-note"><InfoTooltip label="SEO 数据来源时间" content={`SEO 抓取于 ${formatDateTime(summary.crawled_at)}`} /></span>}
           </div>} />}
   </>;
 }
