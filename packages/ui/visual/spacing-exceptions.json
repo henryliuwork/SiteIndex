@@ -1,25 +1,4 @@
 {
   "version": 1,
-  "exceptions": [
-    {
-      "id": "table-header-help-4px",
-      "rule": "S3",
-      "reason": "DESIGN.md §3.5 规定排序表头文字与 InfoTooltip 说明按钮间距为 4px；仅适用于共享 DataTable 的 si-table-heading 组合。"
-    },
-    {
-      "id": "info-tooltip-20px",
-      "rule": "S1",
-      "reason": "共享 InfoTooltip 在全站统一使用精确 20×20px 的轻量图标命中区。"
-    },
-    {
-      "id": "table-heading-controls-zero-padding",
-      "rule": "S2",
-      "reason": "共享表格 th 内 28px 高的排序按钮为表头基线使用零左右内边距。"
-    },
-    {
-      "id": "info-tooltip-zero-padding",
-      "rule": "S2",
-      "reason": "共享 InfoTooltip 的精确 20×20px 圆形按钮使用零左右内边距。"
-    }
-  ]
+  "exceptions": []
 }

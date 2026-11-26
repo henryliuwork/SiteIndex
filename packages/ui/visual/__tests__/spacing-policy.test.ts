@@ -5,8 +5,8 @@ import type { SpacingFinding } from "../spacing-inspect";
 const finding = (rule: SpacingFinding["rule"], key: string): SpacingFinding => ({ rule, key, message: key });
 
 describe("spacing baseline", () => {
-  const tableHeaderHelp: SpacingException = {
-    id: "table-header-help-4px", rule: "S3", reason: "共享表头说明按设计规范保留 4px 间距",
+  const registeredException: SpacingException = {
+    id: "fixture-explicit-exception", rule: "S3", reason: "仅用于验证显式注册的例外匹配逻辑",
   };
 
   it("fails a new violation even if a different old violation was resolved", () => {
@@ -22,26 +22,26 @@ describe("spacing baseline", () => {
     expect(result.resolvedKeys).toEqual(["S3:resolved"]);
   });
 
-  it("allows only the named table header help exception; other S3 gaps still fail", () => {
+  it("allows only an explicitly registered rule/id pair; unrelated findings still fail", () => {
     const findings = [
-      { ...finding("S3", "S3:header"), exceptionId: tableHeaderHelp.id },
+      { ...finding("S3", "S3:registered"), exceptionId: registeredException.id },
       finding("S3", "S3:other"),
-      { ...finding("S2", "S2:header"), exceptionId: tableHeaderHelp.id },
+      { ...finding("S2", "S2:wrong-rule"), exceptionId: registeredException.id },
     ];
-    const result = compareSpacingFindings(findings, [], [tableHeaderHelp]);
-    expect(result.introduced.map(({ key }) => key)).toEqual(["S3:other", "S2:header"]);
+    const result = compareSpacingFindings(findings, [], [registeredException]);
+    expect(result.introduced.map(({ key }) => key)).toEqual(["S3:other", "S2:wrong-rule"]);
     expect(result.legacyCount).toBe(0);
   });
 
-  it("requires a reason and caps registered exceptions at ten", () => {
-    expect(() => validateSpacingExceptions({ version: 1, exceptions: [tableHeaderHelp] })).not.toThrow();
-    expect(() => validateSpacingExceptions({ version: 1, exceptions: [{ ...tableHeaderHelp, reason: "" }] })).toThrow();
-    expect(() => validateSpacingExceptions({ version: 1, exceptions: Array.from({ length: 11 }, (_, index) => ({ ...tableHeaderHelp, id: `exception-${index}` })) })).toThrow();
+  it("requires a reason and caps registered exceptions at two", () => {
+    expect(() => validateSpacingExceptions({ version: 1, exceptions: [registeredException] })).not.toThrow();
+    expect(() => validateSpacingExceptions({ version: 1, exceptions: [{ ...registeredException, reason: "" }] })).toThrow();
+    expect(() => validateSpacingExceptions({ version: 1, exceptions: Array.from({ length: 3 }, (_, index) => ({ ...registeredException, id: `exception-${index}` })) })).toThrow();
   });
 
   it("does not require a baseline when all findings are registered exceptions", () => {
-    const excepted = { ...finding("S3", "S3:header"), exceptionId: tableHeaderHelp.id };
-    expect(hasMissingSpacingBaseline(undefined, compareSpacingFindings([excepted], undefined, [tableHeaderHelp]).introduced)).toBe(false);
-    expect(hasMissingSpacingBaseline(undefined, compareSpacingFindings([excepted, finding("S3", "S3:other")], undefined, [tableHeaderHelp]).introduced)).toBe(true);
+    const excepted = { ...finding("S3", "S3:registered"), exceptionId: registeredException.id };
+    expect(hasMissingSpacingBaseline(undefined, compareSpacingFindings([excepted], undefined, [registeredException]).introduced)).toBe(false);
+    expect(hasMissingSpacingBaseline(undefined, compareSpacingFindings([excepted, finding("S3", "S3:other")], undefined, [registeredException]).introduced)).toBe(true);
   });
 });

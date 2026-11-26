@@ -6,10 +6,10 @@ export interface SpacingException { id: string; rule: SpacingFinding["rule"]; re
 export interface SpacingExceptions { version: 1; exceptions: SpacingException[] }
 
 export function validateSpacingExceptions(config: SpacingExceptions): void {
-  if (config.version !== 1 || config.exceptions.length > 10
+  if (config.version !== 1 || config.exceptions.length > 2
     || new Set(config.exceptions.map(({ id }) => id)).size !== config.exceptions.length
     || config.exceptions.some(({ id, rule, reason }) => !id.trim() || !rule.trim() || !reason.trim())) {
-    throw new Error("spacing-exceptions.json 必须是版本 1、至多 10 条且每条有唯一 ID、规则和理由。");
+    throw new Error("spacing-exceptions.json 必须是版本 1、至多 2 条且每条有唯一 ID、规则和理由。");
   }
 }
 

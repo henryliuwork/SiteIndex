@@ -193,6 +193,9 @@
 - [x] #781：共享 SearchInput 内层内边距、Segmented 选项高度、紧凑按钮文字留白对齐 S1/S2/S4；不调整检查阈值或 D 页面 — 本 PR
 - [x] #781 后续：共享 FilterPill 按 32px 高、左右 12px 对齐 S1/S2，内容和 EDM 筛选按钮随组件统一 — 本 PR
 
+## v0.8.5 · G8.5-1 UI 共享层
+- [x] B-2：Button small、Segmented、SearchInput 与可排序表头按共享尺寸规范收敛；清理 spacing exception 并将上限降至 2；紧凑按钮保留不小于 50px 的命中宽度。27 路由 × 4 视口 `ui:check`：108/108 通过，0 新违规、0 例外、0 基线、0 时间告警 — 本 PR
+
 ## 交付给其他工作流
 - [x] v0.7.5 B-1 / G7.5-0：五个板块页规范写入 DESIGN、AGENTS 与 PR 模板；共享 SummaryLine；ui:check §3.5 量化断言与五页现状基线 — 本 PR。页面结构迁移仍归 D，基线随对应页面达标逐页删除。
 - [x] v0.7.5 G7.5-4（B 范围）：README 来源时间移入说明，状态格移除相对日期，控件高度与库存颜色使用现有 token；其余 B 页面时间显示已核对 — 本 PR。

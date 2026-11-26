@@ -95,6 +95,7 @@
 
   --control-height: 32px;
   --control-height-compact: 28px;
+  --control-min-width-compact: 50px;
   --input-with-action-gap: var(--space-2);
   --project-tab-row-height: 44px;
   --project-header-height: 48px;

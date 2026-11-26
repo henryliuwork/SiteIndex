@@ -564,8 +564,16 @@ async function inspectPage(page: Page): Promise<{
           clip.bottom = Math.min(clip.bottom, ancestorRect.bottom);
         }
       }
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
+      const visibleRect = {
+        left: Math.max(rect.left, clip.left),
+        top: Math.max(rect.top, clip.top),
+        right: Math.min(rect.right, clip.right),
+        bottom: Math.min(rect.bottom, clip.bottom),
+      };
+      if (visibleRect.right - visibleRect.left < 2 || visibleRect.bottom - visibleRect.top < 2) continue;
+      // Sample the visible intersection, not the offscreen center of a partially clipped control.
+      const centerX = visibleRect.left + (visibleRect.right - visibleRect.left) / 2;
+      const centerY = visibleRect.top + (visibleRect.bottom - visibleRect.top) / 2;
       if (centerX < clip.left || centerX > clip.right || centerY < clip.top || centerY > clip.bottom) continue;
       const hit = document.elementFromPoint(centerX, centerY);
       if (hit !== target && !target.contains(hit) && hit?.closest("button, a[href], summary, [role='button']") !== target) {

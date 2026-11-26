@@ -446,11 +446,12 @@ export function DataTable<T, F = Record<string, unknown>>({
                   const reserved = Boolean(header.column.columnDef.meta?.reserved);
                   const align = header.column.columnDef.meta?.align;
                   const help = header.column.columnDef.meta?.help;
+                  const sortable = header.column.getCanSort();
                   const stickyRight = header.column.columnDef.meta?.sticky === "right" || header.column.id === "actions";
                   const stickyLeft = header.column.columnDef.meta?.sticky === "left" && !stickyRight;
-                  const className = [reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right"].filter(Boolean).join(" ");
+                  const className = [reserved && "is-reserved", stickyLeft && "is-sticky-left", stickyRight && "is-sticky-right", sortable && "is-sortable", align && `is-align-${align}`].filter(Boolean).join(" ");
                   const style = { ...(align ? { textAlign: align === "end" ? "right" as const : align === "center" ? "center" as const : "left" as const } : {}), ...(stickyLeft ? { left: stickyLeftOffsets.get(header.column.id) ?? 0 } : {}), ...(stickyRight ? { right: stickyRightOffsets.get(header.column.id) ?? 0 } : {}) };
-                  const headerContent = header.column.getCanSort() ? (
+                  const headerContent = sortable ? (
                     <button className="si-sort-button" type="button" onClick={() => sortBy(header.column.id)}>
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       <span className="si-sort-indicator" aria-hidden="true">{sorted === "asc" ? <ArrowUp size={12} /> : sorted === "desc" ? <ArrowDown size={12} /> : <ArrowUpDown size={12} />}</span>
