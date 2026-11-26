@@ -71,7 +71,7 @@ function requiredHandler(handlers, id) {
 
 /** Lifecycle only. Item adapters and the workflow are added in later PRs. */
 export async function runAcceptance({ itemIds, baseline, candidate, handlers, outputDir, runner = "windows-hosted",
-  osBuild = os.release(), dependencies = {} }) {
+  osBuild = os.release(), secrets = [], dependencies = {} }) {
   const deps = { verifyPinnedInstallers, verifyRemoteSources,
     createProfile, redirectWindowsAppData, cleanupProfile,
     installWindowsNsis, uninstallWindowsNsis, launchInstalledApp, exitNormally, ...dependencies };
@@ -83,7 +83,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
   const sources = { baseline: pinnedSource(baseline, "Baseline"), candidate: pinnedSource(candidate, "Candidate") };
   await mkdir(outputDir, { recursive: true });
   const report = createReport({ baseline: reportSource(sources.baseline), candidate: reportSource(sources.candidate),
-    runner, osBuild });
+    runner, osBuild, secrets });
   const reportFile = path.join(outputDir, "report.json");
   let verified = false;
   try {
@@ -164,7 +164,8 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       phase = "candidate-reopen-exit";
       assertNormalExit(await deps.exitNormally(session));
       session = null;
-      report.add({ id, phase: "upgrade-readback", status: "passed" });
+      report.add({ id, phase: "upgrade-readback", status: "passed",
+        evidence: typeof handler.reportEvidence === "function" ? [handler.reportEvidence()] : [] });
     } catch (error) {
       const kind = error?.acceptanceStatus ?? (ASSERTION_PHASES.has(phase) ? "assertion_failed" : "harness_error");
       await report.failure({ id, phase, error, kind, page: session?.page,
