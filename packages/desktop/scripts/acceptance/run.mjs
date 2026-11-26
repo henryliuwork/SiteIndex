@@ -18,7 +18,7 @@ export function parseAcceptanceArgs(args) {
     options[key] = args[index + 1];
   }
   if (Object.keys(options).length !== 5) throw new Error("Items, baseline, candidate, manifest and output-dir are required");
-  return { itemIds: parseItemRange(options["--items"]), baselineRef: options["--baseline"],
+  return { itemIds: parseItemRange(options["--items"]), itemsArgument: options["--items"], baselineRef: options["--baseline"],
     candidateRef: options["--candidate"], manifest: options["--manifest"], outputDir: options["--output-dir"] };
 }
 
@@ -40,7 +40,7 @@ export async function runFromManifest(options, { run = runAcceptance } = {}) {
   }
   const credentials = { username: `synthetic-user-${randomBytes(8).toString("hex")}`,
     applicationPassword: randomBytes(24).toString("hex") };
-  return run({ itemIds: options.itemIds, baseline: sources.baseline, candidate: sources.candidate,
+  return run({ itemIds: options.itemIds, itemsArgument: options.itemsArgument, baseline: sources.baseline, candidate: sources.candidate,
     handlers: acceptanceHandlers(options.itemIds, credentials), outputDir: options.outputDir,
     secrets: [credentials.username, credentials.applicationPassword] });
 }

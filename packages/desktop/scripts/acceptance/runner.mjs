@@ -69,9 +69,29 @@ function requiredHandler(handlers, id) {
   return handler;
 }
 
+async function recordExit(report, id, phase, session, exitNormally) {
+  let result;
+  try { result = await exitNormally(session); }
+  catch (error) {
+    let remainingProcesses = null;
+    try {
+      const observed = await session?.inspect?.(session.executable);
+      if (Number.isInteger(observed)) remainingProcesses = observed;
+    } catch { /* The process query may be the reason exit failed. */ }
+    error.exitResult = { method: "window.close", exitCode: session?.child?.exitCode ?? null,
+      remainingProcesses };
+    throw error;
+  }
+  const evidence = { method: result?.method ?? null, exitCode: result?.exitCode ?? null,
+    remainingProcesses: result?.remainingProcesses ?? null };
+  try { assertNormalExit(result); }
+  catch (error) { error.exitResult = evidence; throw error; }
+  report.add({ id, phase, status: "passed", evidence: [evidence] });
+}
+
 /** Lifecycle only. Item adapters and the workflow are added in later PRs. */
 export async function runAcceptance({ itemIds, baseline, candidate, handlers, outputDir, runner = "windows-hosted",
-  osBuild = os.release(), secrets = [], dependencies = {} }) {
+  osBuild = os.release(), itemsArgument, secrets = [], dependencies = {} }) {
   const deps = { verifyPinnedInstallers, verifyRemoteSources,
     createProfile, redirectWindowsAppData, cleanupProfile,
     installWindowsNsis, uninstallWindowsNsis, launchInstalledApp, exitNormally, ...dependencies };
@@ -83,7 +103,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
   const sources = { baseline: pinnedSource(baseline, "Baseline"), candidate: pinnedSource(candidate, "Candidate") };
   await mkdir(outputDir, { recursive: true });
   const report = createReport({ baseline: reportSource(sources.baseline), candidate: reportSource(sources.candidate),
-    runner, osBuild, secrets });
+    runner, osBuild, itemsArgument: itemsArgument ?? itemIds.join(","), itemIds, secrets });
   const reportFile = path.join(outputDir, "report.json");
   let verified = false;
   try {
@@ -118,6 +138,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       handler = requiredHandler(handlers, id);
       phase = "profile";
       profile = await deps.createProfile();
+      report.setProfileId(id, `synthetic-profile-${id}`);
       redirect = deps.redirectWindowsAppData(profile);
       const executable = path.join(profile.layout.installDir, "SiteIndex.exe");
       phase = "baseline-install";
@@ -134,7 +155,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       snapshot = await session.page.screenshot?.({
         ...(id === 82 ? { mask: [session.page.getByRole("textbox", { name: "WordPress 用户名" })] } : {}) });
       phase = "baseline-exit";
-      assertNormalExit(await deps.exitNormally(session));
+      await recordExit(report, id, phase, session, deps.exitNormally);
       session = null;
       phase = "baseline-file";
       await handler.verifyBaselineFile({ ...context, profile });
@@ -144,7 +165,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       phase = "baseline-reopen-ipc";
       await handler.verifyBaselineIpc({ ...context, page: session.page, profile });
       phase = "baseline-reopen-exit";
-      assertNormalExit(await deps.exitNormally(session));
+      await recordExit(report, id, phase, session, deps.exitNormally);
       session = null;
       phase = "candidate-install";
       deps.installWindowsNsis(sources.candidate.file, profile);
@@ -159,7 +180,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       snapshot = await session.page.screenshot?.({
         ...(id === 82 ? { mask: [session.page.getByRole("textbox", { name: "WordPress 用户名" })] } : {}) });
       phase = "candidate-exit";
-      assertNormalExit(await deps.exitNormally(session));
+      await recordExit(report, id, phase, session, deps.exitNormally);
       session = null;
       phase = "candidate-file";
       await handler.verifyCandidateFile({ ...context, profile });
@@ -169,7 +190,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       phase = "candidate-reopen-ipc";
       await handler.verifyCandidateIpc({ ...context, page: session.page, profile });
       phase = "candidate-reopen-exit";
-      assertNormalExit(await deps.exitNormally(session));
+      await recordExit(report, id, phase, session, deps.exitNormally);
       session = null;
       report.add({ id, phase: "upgrade-readback", status: "passed",
         evidence: typeof handler.reportEvidence === "function" ? [handler.reportEvidence()] : [] });
@@ -179,7 +200,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
         snapshot, consoleMessages, lastIpc: context.lastIpc, outputDir });
     } finally {
       if (session) {
-        try { assertNormalExit(await deps.exitNormally(session)); session = null; }
+        try { await recordExit(report, id, "cleanup-exit", session, deps.exitNormally); session = null; }
         catch (error) { await report.failure({ id, phase: "cleanup-exit", error, kind: "harness_error",
           page: session?.page, consoleMessages, lastIpc: context.lastIpc, outputDir }); cleanupFailed = true; }
       }
@@ -190,7 +211,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
             executable: path.join(profile.layout.installDir, "SiteIndex.exe"), profile,
           });
           await handler.cleanupSystem({ ...context, page: cleanupSession.page, profile });
-          assertNormalExit(await deps.exitNormally(cleanupSession));
+          await recordExit(report, id, "cleanup-system-exit", cleanupSession, deps.exitNormally);
           cleanupSession = null;
         } catch (error) {
           await report.failure({ id, phase: "cleanup-system", error,
@@ -198,7 +219,7 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
             consoleMessages, lastIpc: context.lastIpc, outputDir });
           cleanupFailed = true;
           if (cleanupSession) {
-            try { assertNormalExit(await deps.exitNormally(cleanupSession)); }
+            try { await recordExit(report, id, "cleanup-system-exit", cleanupSession, deps.exitNormally); }
             catch (exitError) { await report.failure({ id, phase: "cleanup-system-exit", error: exitError,
               kind: "harness_error", outputDir }); }
           }
