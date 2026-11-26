@@ -117,6 +117,21 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("redacts runtime credential canaries from failure messages and saved reports", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-credential-canary-"));
+    const secret = "synthetic-runtime-password-canary";
+    try {
+      const deps = fakeLifecycle(root);
+      const bad = { ...handler(), baselineUi: async () => { throw new Error(`Save failed: ${secret}`); } };
+      const outputDir = path.join(root, "out");
+      const report = await runAcceptance({ itemIds: [82], baseline: source("baseline.exe", "v0.8.0"),
+        candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 82: bad },
+        outputDir, secrets: [secret], dependencies: deps });
+      assert.equal(JSON.stringify(report).includes(secret), false);
+      assert.equal((await readFile(path.join(outputDir, "report.json"), "utf8")).includes(secret), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("runs system cleanup in a fresh installed session before NSIS uninstall", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-system-cleanup-"));
     try {

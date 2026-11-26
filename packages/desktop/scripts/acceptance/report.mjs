@@ -46,7 +46,8 @@ export function createReport({ baseline, candidate, runner, osBuild, secrets = [
     if (page && outputDir) {
       const filename = `${String(id).replace(/[^a-z0-9_-]/giu, "_")}.png`;
       try {
-        await page.screenshot({ path: path.join(outputDir, filename) });
+        await page.screenshot({ path: path.join(outputDir, filename),
+          ...(id === 82 ? { mask: [page.getByRole("textbox", { name: "WordPress 用户名" })] } : {}) });
         evidence.push({ screenshot: filename });
       } catch (captureError) {
         evidence.push({ screenshot_error: captureError?.message ?? String(captureError) });

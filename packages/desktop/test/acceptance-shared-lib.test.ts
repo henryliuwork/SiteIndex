@@ -88,6 +88,19 @@ describe("shared packaged acceptance primitives", () => {
     ]);
   });
 
+  it("masks the username field in row 82 failure screenshots", async () => {
+    const screenshot = vi.fn().mockResolvedValue(undefined);
+    const username = { synthetic: "named username field" };
+    const getByRole = vi.fn(() => username);
+    const recorder = createReport({ ...run, secrets: ["synthetic-runtime-password"] });
+    await recorder.failure({ id: 82, phase: "baseline-ui", kind: "assertion_failed",
+      error: new Error("synthetic-runtime-password"), page: { screenshot, getByRole },
+      outputDir: "/tmp/synthetic" });
+    expect(screenshot).toHaveBeenCalledWith({ path: expect.stringMatching(/82\.png$/u), mask: [username] });
+    expect(getByRole).toHaveBeenCalledWith("textbox", { name: "WordPress 用户名" });
+    expect(JSON.stringify(recorder.report)).not.toContain("synthetic-runtime-password");
+  });
+
   it("requires both installer digests before recording any acceptance", () => {
     expect(() => createReport({ ...run, candidate: { ref: "candidate" } })).toThrow("SHA256");
   });
