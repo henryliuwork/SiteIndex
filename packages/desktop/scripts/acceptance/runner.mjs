@@ -9,7 +9,7 @@ import {
 } from "./session.mjs";
 
 const ASSERTION_PHASES = new Set(["baseline-ipc", "baseline-file", "candidate-ipc", "candidate-file",
-  "baseline-exit", "candidate-exit"]);
+  "baseline-exit", "baseline-reopen-ipc", "baseline-reopen-exit", "candidate-exit"]);
 
 export function parseItemRange(input) {
   if (typeof input !== "string" || !input.trim()) throw new Error("--items requires a range such as 1-83");
@@ -132,6 +132,14 @@ export async function runAcceptance({ itemIds, baseline, candidate, handlers, ou
       session = null;
       phase = "baseline-file";
       await handler.verifyBaselineFile({ ...context, profile });
+      phase = "baseline-reopen";
+      session = await deps.launchInstalledApp({ executable, profile });
+      session.page.on?.("console", (message) => consoleMessages.push(message.text()));
+      phase = "baseline-reopen-ipc";
+      await handler.verifyBaselineIpc({ ...context, page: session.page, profile });
+      phase = "baseline-reopen-exit";
+      assertNormalExit(await deps.exitNormally(session));
+      session = null;
       phase = "candidate-install";
       deps.installWindowsNsis(sources.candidate.file, profile);
       phase = "candidate-launch";

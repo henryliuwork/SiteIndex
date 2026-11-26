@@ -93,7 +93,7 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
       assert.deepEqual(report.items.filter((item) => item.phase === "upgrade-readback").map((item) => item.id), [1, 2]);
       assert.equal(deps.createProfile.mock.calls.length, 2);
       assert.equal(deps.installWindowsNsis.mock.calls.length, 4);
-      assert.equal(deps.exitNormally.mock.calls.length, 4);
+      assert.equal(deps.exitNormally.mock.calls.length, 6);
       assert.equal(deps.uninstallWindowsNsis.mock.calls.length, 2);
       assert.equal(deps.cleanupProfile.mock.calls.length, 2);
       assert.notEqual(deps.installWindowsNsis.mock.calls[0][1], deps.installWindowsNsis.mock.calls[2][1]);
