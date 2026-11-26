@@ -1428,3 +1428,17 @@ describe("EdmPage media preparation prototype", () => {
     expect(button.hasAttribute("disabled")).toBe(true);
   }, 15_000);
 });
+
+describe("EdmPage DataTable 列契约", () => {
+  it("SKU 和产品名称必显，并保留手动首图 URL 编辑控件", async () => {
+    enableTableRows();
+    const sku = "DEMO-TABLE-001";
+    await renderEdmPage(false, true, [mediaImageRow(sku, null)]);
+    const table = await screen.findByRole("region", { name: "edm.images 数据表" });
+    expect(within(table).getByRole("textbox", { name: `${sku} 手动首图地址` })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "列设置" }));
+    expect(screen.getByRole("checkbox", { name: "SKU" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("checkbox", { name: "产品 / 变体" }).hasAttribute("disabled")).toBe(true);
+  });
+});

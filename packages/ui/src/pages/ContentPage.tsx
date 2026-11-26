@@ -47,29 +47,36 @@ function downloadCsv(filename: string, header: string[], rows: unknown[][]) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
-function blogColumns(): ColumnDef<BlogPost, unknown>[] {
+function isAllMissing<T>(rows: readonly T[], valueFor: (row: T) => unknown): boolean {
+  return rows.length > 0 && rows.every((row) => {
+    const value = valueFor(row);
+    return value == null || (typeof value === "string" && value.trim() === "");
+  });
+}
+
+export function blogColumns(rows: readonly BlogPost[] = []): ColumnDef<BlogPost, unknown>[] {
   return [
-    { id: "title", accessorKey: "title", header: "标题", meta: { width: 320, grow: 2, minWidth: 220, text: "clamp2" }, cell: ({ row }) => <span className="si-content-title-cell"><strong>{row.original.title}</strong><code>{row.original.slug}</code></span>, enableSorting: true },
+    { id: "title", accessorKey: "title", header: "标题", meta: { width: 320, grow: 2, minWidth: 220, text: "clamp2" }, enableHiding: false, cell: ({ row }) => <span className="si-content-title-cell"><strong>{row.original.title}</strong><code>{row.original.slug}</code></span>, enableSorting: true },
     { id: "published_at", accessorKey: "published_at", header: "发布", meta: { width: 112, grow: 0, minWidth: 100, text: "single" }, cell: ({ row }) => <code className="si-content-date">{row.original.published_at}</code>, enableSorting: true },
-    { id: "word_count", accessorKey: "word_count", header: "字数", meta: { width: 76, grow: 0, minWidth: 68, align: "end", text: "single" }, cell: ({ row }) => row.original.word_count ?? "—", enableSorting: true },
-    { id: "primary_keyword", accessorKey: "primary_keyword", header: "主关键词", meta: { width: 180, grow: 1, minWidth: 140, text: "single", defaultHidden: true }, cell: ({ row }) => row.original.primary_keyword || <span className="si-muted">未登记</span>, enableSorting: true },
+    { id: "word_count", accessorKey: "word_count", header: "字数", meta: { width: 76, grow: 0, minWidth: 68, align: "end", text: "single", ...(isAllMissing(rows, (row) => row.word_count) ? { allEmpty: true } : {}) }, cell: ({ row }) => row.original.word_count ?? "—", enableSorting: true },
+    { id: "primary_keyword", accessorKey: "primary_keyword", header: "主关键词", meta: { width: 180, grow: 1, minWidth: 140, text: "single", defaultHidden: true, ...(isAllMissing(rows, (row) => row.primary_keyword) ? { allEmpty: true } : {}) }, cell: ({ row }) => row.original.primary_keyword || <span className="si-muted">未登记</span>, enableSorting: true },
     { id: "links_internal", accessorKey: "links_internal", header: "内链 出/入", meta: { width: 104, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => (row.original.links_internal.length + " / " + (row.original.links_in ?? 0)), enableSorting: false },
-    { id: "links_products", accessorKey: "links_products", header: "链接产品", meta: { width: 108, grow: 0, minWidth: 96, text: "single" }, cell: ({ row }) => row.original.linked_out_of_stock?.length ? <Chip tone="warn">{row.original.linked_out_of_stock.length} · 含缺货</Chip> : <Chip tone="neutral">{row.original.links_products.length}</Chip>, enableSorting: false },
+    { id: "links_products", accessorKey: "links_products", header: "链接产品", meta: { width: 108, grow: 0, minWidth: 96, align: "end", text: "single" }, cell: ({ row }) => row.original.linked_out_of_stock?.length ? <Chip tone="warn">{row.original.linked_out_of_stock.length} · 含缺货</Chip> : <Chip tone="neutral">{row.original.links_products.length}</Chip>, enableSorting: false },
     { id: "schema", accessorKey: "has_faq", header: "Schema", meta: { width: 152, grow: 0, minWidth: 140, text: "single" }, cell: ({ row }) => row.original.has_faq ? <Chip tone="ok">BlogPosting · FAQ</Chip> : <Chip tone="danger">缺失</Chip>, enableSorting: true },
     { id: "impressions", header: "展现", meta: { width: 88, grow: 0, minWidth: 80, defaultHidden: true, text: "single" }, cell: () => "—" },
     { id: "clicks", header: "点击", meta: { width: 88, grow: 0, minWidth: 80, defaultHidden: true, text: "single" }, cell: () => "—" },
   ];
 }
 
-function keywordColumns(): ColumnDef<Keyword, unknown>[] {
+export function keywordColumns(rows: readonly Keyword[] = []): ColumnDef<Keyword, unknown>[] {
   return [
-    { id: "keyword", accessorKey: "keyword", header: "关键词", meta: { width: 260, grow: 2, minWidth: 200, text: "clamp2" }, cell: ({ row }) => <span className="si-content-keyword-cell"><strong>{row.original.keyword}</strong><small>{intentLabels[row.original.intent]}</small></span>, enableSorting: true },
+    { id: "keyword", accessorKey: "keyword", header: "关键词", meta: { width: 260, grow: 2, minWidth: 200, text: "clamp2" }, enableHiding: false, cell: ({ row }) => <span className="si-content-keyword-cell"><strong>{row.original.keyword}</strong><small>{intentLabels[row.original.intent]}</small></span>, enableSorting: true },
     { id: "role", accessorKey: "role", header: "类型", meta: { width: 84, grow: 0, minWidth: 76, text: "single" }, cell: ({ row }) => <Chip tone={row.original.role === "primary" ? "info" : "neutral"}>{row.original.role === "primary" ? "主词" : "次词"}</Chip>, enableSorting: true },
-    { id: "target_url", accessorKey: "target_url", header: "目标页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single" }, cell: ({ row }) => <code className="si-content-url">{displayPath(row.original.target_url)}</code>, enableSorting: true },
+    { id: "target_url", accessorKey: "target_url", header: "目标页面", meta: { width: 320, grow: 2, minWidth: 220, text: "single", ...(isAllMissing(rows, (row) => row.target_url) ? { allEmpty: true } : {}) }, cell: ({ row }) => <code className="si-content-url">{displayPath(row.original.target_url)}</code>, enableSorting: true },
     { id: "cluster", accessorKey: "cluster", header: "主题簇", meta: { width: 170, grow: 1, minWidth: 130, text: "single" }, enableSorting: true },
     { id: "status", accessorKey: "status", header: "状态", meta: { width: 86, grow: 0, minWidth: 78, text: "single" }, cell: ({ row }) => <Chip tone={row.original.status === "live" ? "ok" : row.original.status === "drafting" ? "warn" : "neutral"}>{keywordStatusLabels[row.original.status]}</Chip>, enableSorting: true },
-    { id: "search_volume", accessorKey: "search_volume", header: "搜索量", meta: { width: 92, grow: 0, minWidth: 84, align: "end", reserved: true, text: "single" }, cell: ({ row }) => row.original.search_volume ?? "—" },
-    { id: "current_rank", accessorKey: "current_rank", header: "排名", meta: { width: 76, grow: 0, minWidth: 68, align: "end", reserved: true, text: "single" }, cell: ({ row }) => row.original.current_rank ?? "—" },
+    { id: "search_volume", accessorKey: "search_volume", header: "搜索量", meta: { width: 92, grow: 0, minWidth: 84, align: "end", reserved: true, text: "single", ...(isAllMissing(rows, (row) => row.search_volume) ? { allEmpty: true } : {}) }, cell: ({ row }) => row.original.search_volume ?? "—" },
+    { id: "current_rank", accessorKey: "current_rank", header: "排名", meta: { width: 76, grow: 0, minWidth: 68, align: "end", reserved: true, text: "single", ...(isAllMissing(rows, (row) => row.current_rank) ? { allEmpty: true } : {}) }, cell: ({ row }) => row.original.current_rank ?? "—" },
   ];
 }
 
@@ -135,8 +142,8 @@ export function ContentPage() {
     ...(SHOW_KEYWORD_MAPPING ? [{ value: "keywords" as const, label: "关键词映射" }] : []),
   ];
   const activeQuery = view === "blog" ? blogListQuery : keywordListQuery;
-  const blogColumnDefs = useMemo(blogColumns, []);
-  const keywordColumnDefs = useMemo(keywordColumns, []);
+  const blogColumnDefs = useMemo(() => blogColumns(blogs?.rows ?? []), [blogs?.rows]);
+  const keywordColumnDefs = useMemo(() => keywordColumns(keywords?.rows ?? []), [keywords?.rows]);
 
   useEffect(() => {
     if (!recrawlRunId) return;
