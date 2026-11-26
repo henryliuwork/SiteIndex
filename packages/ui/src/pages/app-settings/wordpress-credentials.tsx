@@ -200,7 +200,7 @@ export function WordPressCredentialsCard() {
           <label htmlFor="si-wp-username">WordPress 用户名</label>
           <input id="si-wp-username" className="si-setting-input" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required />
           <label htmlFor="si-wp-application-password">应用程序密码</label>
-          <input id="si-wp-application-password" className="si-setting-input" type="password" autoComplete="new-password" value={applicationPassword} onChange={(event) => setApplicationPassword(event.target.value)} required />
+          <input id="si-wp-application-password" data-testid="app-settings-wordpress-application-password" className="si-setting-input" type="password" autoComplete="new-password" value={applicationPassword} onChange={(event) => setApplicationPassword(event.target.value)} required />
           <small>提交后输入框会清空。密码不会回显，也不会写入项目文件。</small>
         </form>
       </Drawer>

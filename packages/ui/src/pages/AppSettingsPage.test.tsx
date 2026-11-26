@@ -83,6 +83,19 @@ async function renderSettings(options: { settings?: AppSettings; wordpress?: boo
 }
 
 describe("AppSettingsPage background options", () => {
+  it("exposes stable selectors for the Webhook and WordPress password fields", async () => {
+    const bridge = createCredentialBridge();
+    await renderSettings({ wordpress: true, bridge });
+
+    fireEvent.click(await screen.findByRole("button", { name: "配置凭据" }));
+    expect(await screen.findByTestId("app-settings-wordpress-application-password")).toBe(screen.getByLabelText("应用程序密码"));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByRole("tab", { name: "通知" }));
+    expect(await screen.findByTestId("app-settings-dingtalk-webhook")).toBe(screen.getByLabelText("钉钉机器人 Webhook"));
+  });
+
   it("keeps another session's notification change and retries only the edited field after refresh", async () => {
     const { mockApi, save, externalUpdate } = await renderSettings();
     fireEvent.click(await screen.findByRole("tab", { name: "通知" }));

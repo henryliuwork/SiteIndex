@@ -313,7 +313,7 @@ export function AppSettingsPage() {
         </div>
         <div className="si-app-setting-row">
           <label htmlFor="si-dingtalk-webhook">钉钉机器人 Webhook</label>
-          <input id="si-dingtalk-webhook" className="si-setting-input si-setting-mono" type="password" autoComplete="new-password" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…" value={draft.notify.dingtalk_webhook ?? ""} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, dingtalk_webhook: event.target.value || null } })} onBlur={() => void saveSettings({ notify: { dingtalk_webhook: draft.notify.dingtalk_webhook } })} />
+          <input id="si-dingtalk-webhook" data-testid="app-settings-dingtalk-webhook" className="si-setting-input si-setting-mono" type="password" autoComplete="new-password" placeholder="https://oapi.dingtalk.com/robot/send?access_token=…" value={draft.notify.dingtalk_webhook ?? ""} onChange={(event) => setDraft({ ...draft, notify: { ...draft.notify, dingtalk_webhook: event.target.value || null } })} onBlur={() => void saveSettings({ notify: { dingtalk_webhook: draft.notify.dingtalk_webhook } })} />
           {api.settings.sendTestNotification && <Button disabled={sendingTestNotification} onClick={() => void sendTestNotification()}>{sendingTestNotification ? "发送中…" : "发送测试"}</Button>}
         </div>
       </Card>}
