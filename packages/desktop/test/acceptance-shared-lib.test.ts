@@ -1,12 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
+import { chromium } from "playwright-core";
 import { assertNormalExit, assertPersisted, createReport, redactEvidence, verifyInstallerDigest } from "../scripts/acceptance/report.mjs";
-import { cleanupProfile, isolatedEnvironment, waitForObserved } from "../scripts/acceptance/session.mjs";
+import { cleanupProfile, connectInstalledBrowser, isolatedEnvironment, waitForObserved } from "../scripts/acceptance/session.mjs";
 
 const run = { baseline: { ref: "v0.8.0", sha256: "a".repeat(64) },
   candidate: { ref: "v0.8.5-rc.1", sha256: "b".repeat(64) },
   runner: "synthetic", osBuild: "test" };
 
 describe("shared packaged acceptance primitives", () => {
+  it("keeps the Chromium receiver on the default CDP connection", async () => {
+    const connect = vi.spyOn(chromium, "connectOverCDP").mockImplementation(function () {
+      expect(this).toBe(chromium);
+      return Promise.reject(new Error("synthetic CDP connection"));
+    });
+    try {
+      await expect(connectInstalledBrowser("http://127.0.0.1:1", { timeout: 1 }))
+        .rejects.toThrow("synthetic CDP connection");
+      expect(connect).toHaveBeenCalledWith("http://127.0.0.1:1", { timeout: 1 });
+    } finally { connect.mockRestore(); }
+  });
+
   it("waits for observed state and reports a bounded timeout", async () => {
     let attempts = 0;
     expect(await waitForObserved(() => ++attempts === 3, { timeoutMs: 100, intervalMs: 1 })).toBe(true);

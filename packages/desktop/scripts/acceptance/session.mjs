@@ -9,6 +9,8 @@ import { createWindowsProfileLayout, windowsProfileEnvironment } from "../e-wind
 
 const SENSITIVE_ENV = ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "NODE_AUTH_TOKEN", "NPM_TOKEN"];
 
+export const connectInstalledBrowser = (endpoint, options) => chromium.connectOverCDP(endpoint, options);
+
 export async function waitForObserved(observe, { timeoutMs = 30_000, intervalMs = 200, label = "state" } = {}) {
   const until = Date.now() + timeoutMs;
   let lastError;
@@ -93,7 +95,7 @@ export function installedProcessCount(executable, { run = spawnSync } = {}) {
 }
 
 export async function launchInstalledApp({ executable, profile, port = 9348, timeoutMs = 60_000,
-  launch = spawn, connect = chromium.connectOverCDP, inspect = installedProcessCount } = {}) {
+  launch = spawn, connect = connectInstalledBrowser, inspect = installedProcessCount } = {}) {
   if (!executable || !profile) throw new Error("Installed executable and isolated profile are required");
   const endpoint = `http://127.0.0.1:${port}`;
   if (await fetch(`${endpoint}/json/version`).then((response) => response.ok).catch(() => false)) {
