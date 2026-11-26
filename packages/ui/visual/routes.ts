@@ -1,5 +1,6 @@
 export function isDataTableRoute(routePath: string): boolean {
-  return /\/p\/[^/]+\/(?:seo|products|inventory|edm|content|settings\/categories)$/.test(routePath);
+  return routePath === "/" || routePath === "/schedules"
+    || /\/p\/[^/]+\/(?:seo|products|inventory|edm|content|todos|settings\/(?:config|categories|files))$/.test(routePath);
 }
 
 export function routeCaseUrl(baseUrl: string, mockQuery: string, routePath: string, routeName: string): string {
