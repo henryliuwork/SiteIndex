@@ -7,7 +7,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, InfoTooltip, Input, InputWithAction, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Select, SummaryLine, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, InfoTooltip, Input, InputWithAction, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { getEdmDiscountTierCapability, type EdmDiscountTierCapability } from "./edm/discount-tier-capability";
@@ -28,7 +28,7 @@ function viewFromUrl(params: URLSearchParams): ImageView {
 const stockLabels: Record<StockStatus, string> = { in_stock: "有货", out_of_stock: "缺货", preorder: "预售", unknown: "未知" };
 const EMPTY_DISCOUNT_TIERS: number[] = [];
 const viewOptions: { value: ImageView; label: string }[] = [
-  { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "no_feed", label: "未抓取到首图" },
+  { value: "all", label: "全部" }, { value: "in_stock", label: "有货" }, { value: "none", label: "缺图" }, { value: "no_feed", label: "未抓取到首图" },
   { value: "has_manual", label: "已填手动图" },
 ];
 
@@ -718,7 +718,6 @@ export function EdmPage() {
       </ul>}
     </div> : null}
     </div>}
-    {missingImageCount !== undefined && <div className="si-edm-summary"><SummaryLine ariaLabel="EDM 可处理摘要" items={[{ id: "missing-image", label: currentView === "none" ? "缺图 SKU" : "缺图产品", value: missingImageCount, active: currentView === "none", onToggle: () => setView(currentView === "none" ? "all" : "none") }]} /><InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />{(discountTiers.length === 0 || !discountTierCapability.available) && <InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} />}</div>}
     {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
       tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
@@ -726,9 +725,13 @@ export function EdmPage() {
       emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-left"><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />
-          <FilterBar className="si-edm-filterbar">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setView(value || "all")}>{item.label}</FilterPill>)}</FilterBar>
+          <FilterBar className="si-edm-filterbar">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setView(value || "all")}>{item.value === "none" && missingImageCount !== undefined ? `缺图 ${missingImageCount}` : item.label}</FilterPill>)}</FilterBar>
         </div>
         <div className="si-edm-toolbar-right">
+          {missingImageCount !== undefined && <div className="si-edm-summary">
+            <InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />
+            {(discountTiers.length === 0 || !discountTierCapability.available) && <InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} />}
+          </div>}
           <label className="si-edm-parent-toggle"><input type="checkbox" aria-label="仅展示父 SKU" checked={Boolean(query.filters?.parent_only && groupingEnabled)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>
           <span className="si-content-total">显示 {listQuery.data?.rows.length ?? 0} / {listQuery.data?.total ?? 0} 条</span>
         </div>
