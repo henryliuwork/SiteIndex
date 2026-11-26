@@ -12,6 +12,28 @@ describe("project storage error contract", () => {
     expect(isSiteIndexError(error)).toBe(true);
   });
 
+  it("keeps structured diagnostic details optional and IPC-serializable", () => {
+    const legacy: SiteIndexError = { code: "WRITE_FAILED", message: "保存失败。", detail: "旧版详情" };
+    const diagnostic: SiteIndexError = {
+      code: "WRITE_FAILED",
+      message: "保存失败。",
+      error_detail: {
+        code: "FILE_BUSY",
+        operation: "settings.set",
+        command: ["siteindex", "settings", "set", "--project", "~\\sample"],
+        exitCode: 4,
+        stderr: "resource temporarily unavailable",
+        cause: "The target file is busy.",
+      },
+    };
+    const roundTrip: unknown = JSON.parse(JSON.stringify(diagnostic));
+
+    expect(legacy.error_detail).toBeUndefined();
+    expect(isSiteIndexError(legacy)).toBe(true);
+    expect(roundTrip).toEqual(diagnostic);
+    expect(isSiteIndexError(roundTrip)).toBe(true);
+  });
+
   it("marks known sync roots without claiming unknown roots are local", () => {
     const knownSyncLocation: Pick<ProjectSummary, "storage_location"> = {
       storage_location: "known_cloud_sync",
