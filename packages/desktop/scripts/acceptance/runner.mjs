@@ -70,7 +70,18 @@ function requiredHandler(handlers, id) {
 }
 
 async function recordExit(report, id, phase, session, exitNormally) {
-  const result = await exitNormally(session);
+  let result;
+  try { result = await exitNormally(session); }
+  catch (error) {
+    let remainingProcesses = null;
+    try {
+      const observed = await session?.inspect?.(session.executable);
+      if (Number.isInteger(observed)) remainingProcesses = observed;
+    } catch { /* The process query may be the reason exit failed. */ }
+    error.exitResult = { method: "window.close", exitCode: session?.child?.exitCode ?? null,
+      remainingProcesses };
+    throw error;
+  }
   const evidence = { method: result?.method ?? null, exitCode: result?.exitCode ?? null,
     remainingProcesses: result?.remainingProcesses ?? null };
   try { assertNormalExit(result); }

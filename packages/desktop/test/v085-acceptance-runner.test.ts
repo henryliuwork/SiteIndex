@@ -115,7 +115,8 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
           assert.deepEqual(exit?.evidence, [{ method: "window.close", exitCode: 0, remainingProcesses: 0 }]);
         }
       }
-      assert.deepEqual(JSON.parse(await readFile(path.join(root, "out", "report.json"), "utf8")), report);
+      assert.deepEqual(JSON.parse(await readFile(path.join(root, "out", "report.json"), "utf8")),
+        JSON.parse(JSON.stringify(report)));
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
@@ -127,7 +128,8 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
       const report = await runAcceptance({ itemIds: [7], baseline: source("baseline.exe", "v0.8.0"),
         candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 7: bad },
         outputDir: path.join(root, "out"), dependencies: deps });
-      assert.equal(report.items.find((item) => item.id === 7)?.status, "assertion_failed");
+      assert.equal(report.items.find((item) => item.id === 7 && item.phase === "baseline-file")?.status,
+        "assertion_failed");
       assert.equal(report.cleanup.status, "passed");
       assert.equal(deps.uninstallWindowsNsis.mock.calls.length, 1);
       assert.equal((await readFile(path.join(root, "out", "7.png"), "utf8")), "synthetic-image");
@@ -142,8 +144,33 @@ describe("v0.8.5 packaged acceptance lifecycle", () => {
       const report = await runAcceptance({ itemIds: [8], baseline: source("baseline.exe", "v0.8.0"),
         candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 8: bad },
         outputDir: path.join(root, "out"), dependencies: deps });
-      assert.equal(report.items.find((item) => item.id === 8)?.status, "assertion_failed");
+      assert.equal(report.items.find((item) => item.id === 8 && item.phase === "candidate-file")?.status,
+        "assertion_failed");
       assert.equal((await readFile(path.join(root, "out", "8.png"), "utf8")), "synthetic-image");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("keeps observed exit state when normal shutdown throws", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-exit-evidence-"));
+    try {
+      const deps = fakeLifecycle(root);
+      let exits = 0;
+      const exitNormally = async (session: any) => {
+        if (++exits === 1) {
+          session.child.exitCode = 3;
+          session.executable = "synthetic.exe";
+          session.inspect = () => 1;
+          throw new Error("Synthetic normal exit failed");
+        }
+        return { method: "window.close", exitCode: 0, remainingProcesses: 0 };
+      };
+      const report = await runAcceptance({ itemIds: [9], baseline: source("baseline.exe", "v0.8.0"),
+        candidate: source("candidate.exe", "v0.8.5-rc.1"), handlers: { 9: handler() },
+        outputDir: path.join(root, "out"), dependencies: { ...deps, exitNormally } });
+      const failure = report.items.find((item) => item.id === 9 && item.phase === "baseline-exit");
+      assert.equal(failure?.status, "assertion_failed");
+      assert.deepEqual(failure?.evidence[0].exit_result,
+        { method: "window.close", exitCode: 3, remainingProcesses: 1 });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

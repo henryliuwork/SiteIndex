@@ -38,7 +38,8 @@ export async function negativeSelfTest() {
         throw new Error("Synthetic UI reported saved, but file readback disagreed");
       } } },
       outputDir: path.join(root, "missing-file"), dependencies: fakeDependencies(root, normal) });
-    assert.equal(missingFile.items.find((item) => item.id === 1)?.status, "assertion_failed",
+    assert.equal(missingFile.items.find((item) => item.id === 1 && item.phase === "baseline-file")?.status,
+      "assertion_failed",
       "Missing persistence was not rejected");
     assert.equal((await readFile(path.join(root, "missing-file", "1.png"), "utf8")), "synthetic-pre-exit-image");
     const forced = async () => ({ method: "kill", exitCode: 1, remainingProcesses: 0 });
