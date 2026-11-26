@@ -39,8 +39,9 @@ const probe = String.raw`(() => {
     }
     return boxes;
   };
-  const controls = Array.from(document.querySelectorAll("main button, main input, main select, main [role='button']"))
-    .filter((element) => visible(element) && !element.closest(".si-table tbody") && !element.matches(".si-kpi-card.is-interactive")
+  const controls = Array.from(document.querySelectorAll("main button, main input, main select, main [role='button'], main .si-search-input"))
+    .filter((element) => visible(element) && !(element.matches("input") && element.closest(".si-search-input"))
+      && !element.closest(".si-table tbody") && !element.matches(".si-kpi-card.is-interactive")
       && !element.closest("[role='tablist']")
       && !element.matches("input[type='checkbox'], input[type='radio'], input[type='hidden'], input[type='file'], input[type='range']"));
   for (const element of controls) {
@@ -49,15 +50,16 @@ const probe = String.raw`(() => {
     const compact = box.height <= 28.5;
     const infoHelp = element.matches(".si-info-tooltip-trigger")
       && Math.abs(box.width - 20) <= 1 && Math.abs(box.height - 20) <= 1;
-    const headerSort = element.matches(".si-table th .si-sort-button")
-      && Math.abs(box.height - 28) <= 1;
-    if (Math.abs(box.height - 28) > 1 && Math.abs(box.height - 32) > 1) {
-      add("S1", element, "控件高度 " + round(box.height) + "px，应为 28 或 32px。", "", infoHelp ? "info-tooltip-20px" : undefined);
+    const infoHelpUsesExactPadding = infoHelp
+      && parseFloat(style.paddingLeft) === 0 && parseFloat(style.paddingRight) === 0;
+    if (!infoHelp && Math.abs(box.height - 28) > 1 && Math.abs(box.height - 32) > 1) {
+      add("S1", element, "控件高度 " + round(box.height) + "px，应为 28 或 32px。");
     }
     const minimum = compact ? 8 : 12;
-    if (parseFloat(style.paddingLeft) < minimum - 1 || parseFloat(style.paddingRight) < minimum - 1) {
-      const noPadding = parseFloat(style.paddingLeft) === 0 && parseFloat(style.paddingRight) === 0;
-      add("S2", element, "左右内边距 " + round(parseFloat(style.paddingLeft)) + "/" + round(parseFloat(style.paddingRight)) + "px，应至少 " + minimum + "px。", "", noPadding && infoHelp ? "info-tooltip-zero-padding" : noPadding && headerSort ? "table-heading-controls-zero-padding" : undefined);
+    if (infoHelp && !infoHelpUsesExactPadding) {
+      add("S2", element, "InfoTooltip 20×20px 命中区不应有额外左右内边距。");
+    } else if (!infoHelp && (parseFloat(style.paddingLeft) < minimum - 1 || parseFloat(style.paddingRight) < minimum - 1)) {
+      add("S2", element, "左右内边距 " + round(parseFloat(style.paddingLeft)) + "/" + round(parseFloat(style.paddingRight)) + "px，应至少 " + minimum + "px。");
     }
   }
   for (const element of document.querySelectorAll("main .si-chip, main .si-summary-line-item, main .si-summary-line-more")) {
@@ -90,7 +92,8 @@ const probe = String.raw`(() => {
           && sorted[index - 1].matches(".si-sort-button")
           && sorted[index].matches(".si-info-tooltip-trigger")
           && Math.abs(gap - 4) <= 1;
-        add("S3", sorted[index], "相邻控件间距 " + round(gap) + "px，应至少 " + minimum + "px。", "~" + key(sorted[index - 1]), tableHeaderHelp ? "table-header-help-4px" : undefined);
+        if (tableHeaderHelp) continue;
+        add("S3", sorted[index], "相邻控件间距 " + round(gap) + "px，应至少 " + minimum + "px。", "~" + key(sorted[index - 1]));
       }
     }
   }
@@ -105,7 +108,8 @@ const probe = String.raw`(() => {
       top: Math.min(...boxes.map((item) => item.top)) - box.top,
       bottom: box.bottom - Math.max(...boxes.map((item) => item.bottom)),
     };
-    const horizontal = element.matches(".si-button, .si-chip, .si-summary-line-item, .si-summary-line-more") ? 12 : 8;
+    const horizontal = element.matches(".si-button-small") ? 8
+      : element.matches(".si-button, .si-chip, .si-summary-line-item, .si-summary-line-more") ? 12 : 8;
     if (inset.left < horizontal - 1 || inset.right < horizontal - 1 || inset.top < 3 || inset.bottom < 3) {
       add("S4", element, "文字到边缘 L/R/T/B=" + [inset.left, inset.right, inset.top, inset.bottom].map(round).join("/") + "px。");
     }

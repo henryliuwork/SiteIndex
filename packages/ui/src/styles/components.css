@@ -22,7 +22,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-button-secondary, .si-button-default { border-color: var(--color-line); background: var(--color-surface); color: var(--color-ink-2); }
 .si-button-ghost, .si-button-quiet { border-color: transparent; background: transparent; color: var(--color-muted); }
 .si-button-ghost:hover:not(:disabled), .si-button-quiet:hover:not(:disabled) { border-color: transparent; background: var(--color-neutral-soft); color: var(--color-ink); }
-.si-button-small { height: var(--control-height-compact); padding: 0 var(--space-3); font-size: var(--fs-body); }
+.si-button-small { height: var(--control-height-compact); min-width: var(--control-min-width-compact); padding: 0 var(--space-2); font-size: var(--fs-body); }
 .si-button-icon { display: inline-grid; place-items: center; }
 .si-input-with-action { display: flex; min-width: 0; align-items: center; gap: var(--input-with-action-gap); }
 .si-input-with-action > input { width: 100%; min-width: 0; height: var(--control-height); flex: 1 1 auto; }
@@ -47,7 +47,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-filter-pill:hover { border-color: var(--color-line-strong); background: var(--color-subtle); }
 .si-filter-pill.active { border-color: var(--color-brand); background: var(--color-brand); color: var(--color-surface); }
 .si-segmented { display: inline-flex; min-height: var(--control-height); gap: var(--space-1); padding: var(--pad-segmented-inner); border: 0; border-radius: 7px; background: var(--color-subtle); box-shadow: inset 0 0 0 1px var(--color-line); }
-.si-segmented button { height: var(--control-height-compact); min-width: 54px; padding: 0 var(--space-3); border: 0; border-radius: 5px; background: transparent; color: var(--color-ink-2); font-size: var(--fs-body); }
+.si-segmented button { height: var(--control-height-compact); min-width: 54px; padding: 0 var(--space-2); border: 0; border-radius: 5px; background: transparent; color: var(--color-ink-2); font-size: var(--fs-body); }
 .si-segmented button.active { background: var(--color-ink); color: var(--color-surface); }
 .si-segmented button:disabled { cursor: not-allowed; opacity: 0.45; }
 .si-segmented button:focus-visible, .si-tabs button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 4px; }
@@ -137,10 +137,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-status-preorder { background: var(--color-stock-preorder); }
 .si-status-unknown { background: var(--color-stock-unknown); }
 .si-status-not-listed { background: var(--color-stock-not-listed); border: 1px solid var(--color-line-muted); }
-.si-search-input { position: relative; display: inline-flex; width: min(240px, 100%); height: var(--control-height); align-items: center; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-muted); }
+.si-search-input { position: relative; display: inline-flex; width: min(240px, 100%); height: var(--control-height); align-items: center; padding: 0 var(--space-3); border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-surface); color: var(--color-muted); }
 .si-search-input:focus-within { border-color: var(--color-brand); box-shadow: 0 0 0 2px var(--color-focus); }
 .si-search-input > svg { position: absolute; left: var(--space-3); pointer-events: none; }
-.si-search-input input { width: 100%; min-width: 0; padding: 0 var(--space-3) 0 calc(var(--space-3) + var(--space-4) + var(--space-2)); border: 0; outline: 0; background: transparent; color: var(--color-ink); font-size: var(--fs-body); }
+.si-search-input input { width: 100%; min-width: 0; padding: 0 0 0 calc(var(--space-4) + var(--space-2)); border: 0; outline: 0; background: transparent; color: var(--color-ink); font-size: var(--fs-body); }
 .si-search-input input::placeholder { color: var(--color-faint); }
 
 .si-data-table { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
@@ -162,7 +162,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visib
 .si-table th.is-sticky-left { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-sticky-right { z-index: 5; background: var(--color-subtle); }
 .si-table th.is-reserved { background: var(--color-neutral-reserved); color: var(--color-faint); }
-.si-sort-button { display: inline-flex; min-height: var(--control-height-compact); align-items: center; gap: var(--gap-label-control); padding: 0; border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
+.si-sort-button { display: inline-flex; min-height: var(--control-height-compact); align-items: center; gap: var(--gap-label-control); padding: 0 var(--space-2); border: 0; background: transparent; color: inherit; font-size: inherit; font-weight: inherit; }
 .si-table-heading { display: inline-flex; align-items: center; gap: var(--gap-label-control); }
 .si-sort-indicator { display: inline-grid; width: 12px; place-items: center; color: var(--color-faint); }
 .si-table td { height: 40px; padding: 0 var(--space-3); border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink-2); font-size: var(--fs-body); white-space: nowrap; }
