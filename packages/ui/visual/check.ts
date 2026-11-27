@@ -116,7 +116,6 @@ async function advanceWizardCase(page: Page, route: RouteCase): Promise<void> {
     await page.getByRole("textbox", { name: "网站地址" }).fill("woo.example.test");
     await page.getByRole("button", { name: "检测", exact: true }).click();
     await page.getByRole("list", { name: "Sitemap 类型" }).waitFor({ state: "visible", timeout: 20_000 });
-    await page.getByText("网站检测完成。").waitFor({ state: "visible", timeout: 5_000 });
     await page.getByRole("button", { name: "关闭通知" }).evaluateAll((buttons) => {
       for (const button of buttons) if (button.isConnected) (button as HTMLButtonElement).click();
     });
@@ -291,7 +290,22 @@ async function waitForRoute(page: Page, route: RouteCase): Promise<DataSurfaceSt
   await page.locator(".si-page, .si-placeholder, .si-api-error-state, .si-empty-state, [data-table-empty], .si-content-blog-empty").first().waitFor({ state: "visible", timeout: 20_000 });
   if (route.waitForDataSurface) {
     await page.waitForLoadState("networkidle", { timeout: 20_000 });
-    const state = await waitForDataSurface(() => readDataSurfaceState(page));
+    const timeline: string[] = [];
+    const startedAt = Date.now();
+    let state: DataSurfaceState;
+    try {
+      state = await waitForDataSurface(async () => {
+        const current = await readDataSurfaceState(page);
+        if (route.name === "project-center") {
+          timeline.push(`${Date.now() - startedAt}ms:${current}`);
+          if (timeline.length > 20) timeline.shift();
+        }
+        return current;
+      });
+    } catch (error) {
+      if (route.name !== "project-center") throw error;
+      throw new Error(`${asErrorMessage(error)}；最近状态：${timeline.join(" → ") || "未采样"}`);
+    }
     await page.evaluate(() => document.fonts.ready);
     return state;
   }
@@ -751,7 +765,19 @@ async function inspectProductVariantSku(page: Page): Promise<CheckFailure[]> {
     return variant.length ? checkSkuTables("variant", variant)
       : [{ rule: "sku-variant-missing", message: "变体库存表已打开，但无法读取其列。" }];
   } catch (error) {
-    return [{ rule: "sku-variant-check", message: `无法验证可触达的变体库存表：${asErrorMessage(error)}` }];
+    const buttonState = await page.getByRole("button", { name: "变体库存", exact: true }).evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const center = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return {
+        visible: rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== "hidden",
+        enabled: !(element as HTMLButtonElement).disabled,
+        bbox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        animations: element.getAnimations().filter((animation) => animation.playState === "running").length,
+        panelAnimations: element.closest(".si-detail-panel")?.getAnimations().filter((animation) => animation.playState === "running").length ?? 0,
+        hitTarget: center ? { tag: center.tagName, className: typeof center.className === "string" ? center.className : "" } : null,
+      };
+    }).catch(() => null);
+    return [{ rule: "sku-variant-check", message: `无法验证可触达的变体库存表：${asErrorMessage(error)}；按钮状态：${JSON.stringify(buttonState)}` }];
   }
 }
 
@@ -800,6 +826,13 @@ async function main(): Promise<void> {
     browser = await launchLocalBrowser();
     const projectId = await discoverMockProjectId(server);
     const routes = await discoverRoutes(server, projectId);
+    const pageRoot = path.join(uiRoot, "src", "pages");
+    const pageModules = (await readdir(pageRoot)).filter((name) => name.endsWith("Page.tsx")).map((name) => path.join(pageRoot, name));
+    const moduleUrls = [path.join(uiRoot, "src", "App.tsx"), ...await routeFilesUnder(pageRoot), ...pageModules]
+      .map((file) => "/" + path.relative(uiRoot, file).split(path.sep).join("/"));
+    await Promise.all(moduleUrls.map(async (url) => {
+      if (!await server!.transformRequest(url)) throw new Error(`无法预热页面模块：${url}`);
+    }));
     const unknownBaselineRoutes = Object.keys(frameBaseline.legacyRoutes).filter((name) => !routes.some((route) => route.name === name));
     if (unknownBaselineRoutes.length) throw new Error(`外框基线包含已不存在的路由：${unknownBaselineRoutes.join("、")}`);
     const spacingKeys = new Set(routes.flatMap((route) => [1280, 1920].map((width) => `${route.name}@${width}`)));
@@ -834,7 +867,7 @@ async function main(): Promise<void> {
         currentConsoleErrors = consoleErrors;
         try {
           const mockQuery = mockModeOverride && route.path === mockModeRoute ? `/?mock=${encodeURIComponent(mockModeOverride)}` : "/";
-          await page.goto(routeCaseUrl(baseUrl, mockQuery, route.name.startsWith("new-project-") ? "/new/url" : route.path, route.name), { waitUntil: "domcontentloaded", timeout: 20_000 });
+          await page.goto(routeCaseUrl(baseUrl, mockQuery, route.name.startsWith("new-project-") ? "/new/url" : route.path, route.name), { waitUntil: "commit", timeout: 20_000 });
           await advanceWizardCase(page, route);
           const dataSurfaceState = await waitForRoute(page, route);
           if (route.name === "schedules-system" || route.name === "schedules-orphans") {
