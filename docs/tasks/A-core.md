@@ -241,3 +241,8 @@
 ### v0.9.0 · 抓取新品可靠性（G9.0-0）
 
 - [x] A-1 诊断：C1–C11 使用合成 loopback 测试；记录 B1–B4 根因与 P6 保护路径证据，测试未改生产行为
+
+#### G9.0-1 · 实现
+
+- [x] A-2a（B1）：weekly sitemap 按 `lastmod` 优先保留较新的 URL；记录 `sitemap_urls`、`crawled`、`truncated`，截断时返回 `partial` 和说明
+- [ ] A-2b（B2）：daily Feed 丢弃计数写入运行记录

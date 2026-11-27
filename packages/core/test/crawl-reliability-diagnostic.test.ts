@@ -227,18 +227,51 @@ describe("v0.9.0 A-1 synthetic crawl diagnostic C1–C11", () => {
     expect(daily.counts).toMatchObject({ feed_items: 3, written: 2, dropped_duplicate: 1 });
   });
 
-  it.fails("C7: records the number of sitemap URLs and marks a max_pages truncation partial", async () => {
+  it("C7: prioritizes the newest sitemap lastmod and reports max_pages truncation", async () => {
     const loopback = await startLoopback();
     const { projectPath } = await makeProject({ feedUrls: [], maxPages: 2 });
-    const paths = ["/products/first", "/products/second", "/products/newest"];
-    loopback.set("/sitemap.xml", { body: sitemapXml(paths.map((pathname) => `${SITE}${pathname}`)) });
-    for (const [index, pathname] of paths.entries()) {
+    const pages = [
+      { pathname: "/products/oldest", lastmod: "2026-01-01" },
+      { pathname: "/products/middle", lastmod: "2026-02-01" },
+      { pathname: "/products/newest", lastmod: "2026-03-01" },
+    ];
+    loopback.set("/sitemap.xml", { body: `<urlset>${pages.map(({ pathname, lastmod }) =>
+      `<url><loc>${SITE}${pathname}</loc><lastmod>${lastmod}</lastmod></url>`).join("")}</urlset>` });
+    for (const [index, { pathname }] of pages.entries()) {
       loopback.set(pathname, { body: productPage(`DEMO-C7-${index + 1}`), contentType: "text/html; charset=utf-8" });
     }
     const weekly = await runPages(projectPath);
     expect({ status: weekly.status, counts: weekly.counts }).toMatchObject({
       status: "partial", counts: { sitemap_urls: 3, crawled: 2, truncated: 1 },
     });
+    expect(weekly.errors?.join(" ")).toMatch(/max_pages|跳过/iu);
+    const rows = await readJsonl(path.join(projectPath, PATHS.seoPages));
+    expect(rows.map((row) => String(row.url)).sort()).toEqual([`${SITE}/products/middle`, `${SITE}/products/newest`].sort());
+    const run = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.job === "weekly");
+    expect(run?.counts).toMatchObject({ sitemap_urls: 3, crawled: 2, truncated: 1 });
+  });
+
+  it("keeps original order for equally undated sitemap URLs after dated URLs", async () => {
+    const loopback = await startLoopback();
+    const { projectPath } = await makeProject({ feedUrls: [], maxPages: 2 });
+    const pages = [
+      { pathname: "/products/dated", lastmod: "2026-03-01" },
+      { pathname: "/products/no-date-first" },
+      { pathname: "/products/no-date-second" },
+    ];
+    loopback.set("/sitemap.xml", { body: `<urlset>${pages.map(({ pathname, lastmod }) =>
+      `<url><loc>${SITE}${pathname}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}</url>`).join("")}</urlset>` });
+    for (const [index, { pathname }] of pages.entries()) {
+      loopback.set(pathname, { body: productPage(`DEMO-C7-STABLE-${index + 1}`), contentType: "text/html; charset=utf-8" });
+    }
+
+    const weekly = await runPages(projectPath);
+    const rows = await readJsonl(path.join(projectPath, PATHS.seoPages));
+
+    expect(weekly.status).toBe("partial");
+    expect(rows.map((row) => String(row.url)).sort()).toEqual([
+      `${SITE}/products/dated`, `${SITE}/products/no-date-first`,
+    ].sort());
   });
 
   it("C8: a new item_group_id variant remains in the SKU catalog and product variant list", async () => {
