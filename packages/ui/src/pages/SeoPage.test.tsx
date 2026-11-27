@@ -71,6 +71,27 @@ async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = 
 }
 
 describe("SeoPage 问题处理", () => {
+  it.fails("待处理问题数列应有可排序的汇总值和排序按钮", async () => {
+    const [{ DataTable }, { seoPageTableColumns }] = await Promise.all([
+      import("../components/table"),
+      import("./seo/page-table"),
+    ]);
+    const page = await createMockApi().seo.listPageRows!("demo", { page: 1, pageSize: 50 });
+    render(<DataTable
+      tableId="seo.pageRows.sort-audit"
+      rows={page.rows.slice(0, 2)}
+      total={2}
+      columns={seoPageTableColumns(page.rows)}
+      query={{ page: 1, pageSize: 50, filters: {} }}
+      onQueryChange={vi.fn()}
+      getRowId={(row) => row.url}
+      height={300}
+      showPagination={false}
+    />);
+
+    expect(screen.getByRole("button", { name: "待处理问题" })).toBeTruthy();
+  });
+
   it.fails("SEO 兼容列表刷新期间搜索框保持挂载与焦点", async () => {
     const mockApi = createMockApi();
     const originalListIssues = mockApi.seo.listIssues.bind(mockApi.seo);
