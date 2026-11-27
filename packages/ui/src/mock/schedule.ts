@@ -54,15 +54,25 @@ const systemTaskSeed: SystemTaskRow[] = [
 ];
 
 export function createScheduleMock(): SiteIndexApi["schedule"] {
+  const states = clone(scheduleStates);
+  states.demo2 = {
+    ...states.demo2,
+    config: {
+      ...states.demo2.config,
+      daily: { ...states.demo2.config.daily, time: "01:00" },
+      weekly: { ...states.demo2.config.weekly, time: "01:00" },
+    },
+    next_runs: [{ job: "weekly", at: "2026-10-22T01:00:00+08:00" }],
+  };
   const orphanSchedules = clone(orphanScheduleSeed);
   const systemTasks = clone(systemTaskSeed);
   const verificationResults = new Map<string, { state: "ok" | "unregistered" | "path_mismatch" | "orphaned" | "error"; message?: string; repaired?: boolean }>();
   return {
-    get: (id) => projectCenterErrorMode ? Promise.reject(projectCenterError()) : reply(scheduleStates[projectKey(id)]),
+    get: (id) => projectCenterErrorMode ? Promise.reject(projectCenterError()) : reply(states[projectKey(id)]),
     save: (id, config) => reply(() => {
       const key = projectKey(id);
-      scheduleStates[key] = { ...scheduleStates[key], config: clone(config), registered: true };
-      return scheduleStates[key];
+      states[key] = { ...states[key], config: clone(config), registered: true };
+      return states[key];
     }),
     status: () => reply<ScheduleRuntimeStatus>(() => ({ mode: scheduleRuntimeMode, authorization_required: scheduleAuthorizationRequired })),
     reauthorize: () => reply<ScheduleRuntimeStatus>(() => {
@@ -73,11 +83,11 @@ export function createScheduleMock(): SiteIndexApi["schedule"] {
       const key = projectKey(id);
       const current = verificationResults.get(id) ?? (key === "demo"
         ? { state: "path_mismatch" as const, message: "系统计划任务仍指向旧项目路径。" }
-        : scheduleStates[key].registered
+        : states[key].registered
           ? { state: "ok" as const }
           : { state: "unregistered" as const, message: "尚未注册系统计划任务。" });
       if (options?.repair && current.state === "path_mismatch") {
-        scheduleStates[key] = { ...scheduleStates[key], registered: true };
+        states[key] = { ...states[key], registered: true };
         const repaired = { state: "ok" as const, repaired: true, message: "系统计划任务路径已修复。" };
         verificationResults.set(id, repaired);
         return repaired;

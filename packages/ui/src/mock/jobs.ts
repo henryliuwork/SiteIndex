@@ -1,5 +1,5 @@
 import type { JobName, RunLog, RunLogStep, SiteIndexApi } from "@siteindex/shared";
-import { activeRuns, beginRun, delay, finishRun, finishedListeners, progressListeners, projectCenterError, projectCenterErrorMode, reply, runHistory } from "./context";
+import { activeRuns, beginRun, delay, finishRun, finishedListeners, progressListeners, projectCenterError, projectCenterErrorMode, projectKey, reply, runHistory } from "./context";
 
 const stepsByJob: Partial<Record<JobName, string[]>> = {
   daily: ["load_project", "fetch_feed", "sync_products", "sync_inventory", "generate_report", "rebuild_views"],
@@ -32,7 +32,10 @@ export function createJobsMock(): SiteIndexApi["jobs"] {
   return {
     run: async (request) => { await delay(); return { runId: beginRun(request.projectPath, request.job) }; },
     cancel: (runId) => reply(() => finishRun(runId, "skipped")),
-    history: (_id, limit = 20) => projectCenterErrorMode ? Promise.reject(projectCenterError()) : reply(() => runHistory.slice(0, limit).map(addMockSteps)),
+    history: (id, limit = 20) => projectCenterErrorMode ? Promise.reject(projectCenterError()) : reply(() => {
+      const start = projectKey(id) === "demo2" ? 2 : 0;
+      return runHistory.slice(start, start + limit).map(addMockSteps);
+    }),
     running: () => reply(() => {
       const active = [...activeRuns.entries()][0];
       return active ? { runId: active[0], job: active[1].job } : null;

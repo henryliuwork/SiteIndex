@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import type { ProjectSummary, ScheduleState, SiteIndexError } from "@siteindex/shared";
+import type { ProjectSummary, RunLog, ScheduleState, SiteIndexError } from "@siteindex/shared";
 import { createMockApi } from "../../mock";
 
 afterEach(() => {
@@ -36,7 +36,7 @@ async function expectToast(message: string, tone: "success" | "error") {
   await waitFor(() => expect([...document.querySelectorAll(`.si-toast-${tone}`)].some((toast) => toast.textContent?.includes(message))).toBe(true));
 }
 
-async function renderSchedules(options: { failProjectList?: boolean; failScheduleFor?: string; failVerify?: boolean; withoutVerify?: boolean; withoutOrphanListing?: boolean; withoutOrphanRemoval?: boolean; withoutSystemTasks?: boolean } = {}) {
+async function renderSchedules(options: { failProjectList?: boolean; failScheduleFor?: string; failVerify?: boolean; withoutVerify?: boolean; withoutOrphanListing?: boolean; withoutOrphanRemoval?: boolean; withoutSystemTasks?: boolean; reverseProjects?: boolean } = {}) {
   const mockApi = createMockApi();
   const sourceProjects = await mockApi.projects.list();
   const projects: ProjectSummary[] = sourceProjects.map((project, index) => ({
@@ -44,6 +44,7 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
     id: index === 0 ? "cedar" : "maple",
     name: index === 0 ? "Cedar Shop" : "Maple Shop",
   }));
+  if (options.reverseProjects) projects.reverse();
   const sourceSchedule = await mockApi.schedule.get("demo");
   mockApi.projects.list = vi.fn(async () => {
     if (options.failProjectList) throw { code: "UNKNOWN", message: "项目列表无法读取。" } satisfies SiteIndexError;
@@ -53,11 +54,13 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
     if (id === options.failScheduleFor) throw { code: "PROJECT_UNREADABLE", message: "计划文件无法读取。" } satisfies SiteIndexError;
     return {
       ...sourceSchedule,
-      registered: true,
       config: {
         ...sourceSchedule.config,
         daily: { ...sourceSchedule.config.daily, time: id === "cedar" ? "03:00" : "02:00" },
+        weekly: { ...sourceSchedule.config.weekly, time: id === "cedar" ? "04:00" : "01:00" },
       },
+      registered: id === "cedar",
+      next_runs: [{ job: "daily", at: id === "cedar" ? "2026-10-24T03:00:00Z" : "2026-10-23T02:00:00Z" }],
     } satisfies ScheduleState;
   });
   const verify = mockApi.schedule.verify;
@@ -74,7 +77,11 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
   if (options.withoutOrphanListing) delete mockApi.schedule.listOrphans;
   if (options.withoutOrphanRemoval) delete mockApi.schedule.removeOrphan;
   if (options.withoutSystemTasks) delete mockApi.schedule.listSystemTasks;
-  mockApi.jobs.history = vi.fn(async () => []);
+  mockApi.jobs.history = vi.fn(async (id) => [{
+    run_id: `${id}-daily`, job: "daily", trigger: "schedule", status: "ok",
+    started_at: id === "cedar" ? "2026-10-22T03:00:00Z" : "2026-10-21T02:00:00Z",
+    finished_at: id === "cedar" ? "2026-10-22T03:01:00Z" : "2026-10-21T02:01:00Z",
+  } satisfies RunLog]);
 
   vi.doMock("../../api", () => ({
     api: mockApi,
@@ -90,16 +97,32 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
 }
 
 describe("SchedulesPage", () => {
-  it.fails("reorders schedule rows when sorting distinct daily times", async () => {
-    await renderSchedules();
+  it.each([
+    ["项目", "Cedar Shop"], ["每日同步", "Maple Shop"], ["每周抓取", "Maple Shop"],
+    ["系统计划任务", "Maple Shop"], ["最近一次运行", "Maple Shop"], ["下一次运行", "Maple Shop"],
+  ])("sorts %s before pagination and restores the default order on the third click", async (column, firstAscending) => {
+    await renderSchedules({ reverseProjects: column === "项目" });
     const firstDataRow = () => screen.getAllByRole("row").slice(1)[0];
-    expect(firstDataRow()?.textContent).toContain("Cedar Shop");
+    await waitFor(() => {
+      expect(screen.getAllByRole("row").slice(1)).toHaveLength(2);
+      expect(screen.queryAllByText("正在读取…")).toHaveLength(0);
+    });
+    const defaultFirst = column === "项目" ? "Maple Shop" : "Cedar Shop";
+    expect(firstDataRow()?.textContent).toContain(defaultFirst);
+    expect(firstAscending).not.toBe(defaultFirst);
 
-    const dailyHeader = screen.getByRole("button", { name: /每日同步/ });
-    fireEvent.click(dailyHeader);
+    const header = within(screen.getByRole("columnheader", { name: column })).getByRole("button");
+    fireEvent.click(header);
+    expect(header.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+    await waitFor(() => expect(firstDataRow()?.textContent).toContain(firstAscending));
 
-    expect(dailyHeader.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
-    expect(firstDataRow()?.textContent).toContain("Maple Shop");
+    fireEvent.click(header);
+    expect(header.closest("th")?.getAttribute("aria-sort")).toBe("descending");
+    await waitFor(() => expect(firstDataRow()?.textContent).toContain(firstAscending === "Cedar Shop" ? "Maple Shop" : "Cedar Shop"));
+
+    fireEvent.click(header);
+    expect(header.closest("th")?.getAttribute("aria-sort")).toBe("none");
+    await waitFor(() => expect(firstDataRow()?.textContent).toContain(defaultFirst));
   });
 
   it("filters the project list", async () => {
@@ -140,7 +163,7 @@ describe("SchedulesPage", () => {
 
     expect(await screen.findByText("计划读取失败。")).toBeTruthy();
     expect(screen.getByRole("row", { name: /Maple Shop/ })).toBeTruthy();
-    expect(await screen.findByText("已注册")).toBeTruthy();
+    expect(await screen.findByText("未注册")).toBeTruthy();
     expect(screen.queryByText("项目列表加载失败。")).toBeNull();
   });
 
