@@ -4,6 +4,7 @@ import path from "node:path";
 import { PATHS, type SiteConfig } from "@siteindex/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runWeekly } from "../src/jobs/weekly";
+import { createCoreService } from "../src/service";
 
 const BASE = "http://127.0.0.1:43123";
 const roots: string[] = [];
@@ -77,7 +78,7 @@ describe("weekly crawl audit characterization", () => {
     expect(rows.map((row) => row.url)).toEqual([`${BASE}/products/known`]);
   });
 
-  it.fails("reports a page HTTP 429 as a crawl failure", async () => {
+  it("reports a page HTTP 429 as a crawl failure", async () => {
     const routes = new Map<string, Route>([
       ["/sitemap.xml", { body: `<urlset><url><loc>${BASE}/products/demo</loc></url></urlset>` }],
       ["/products/demo", { body: "rate limited", status: 429 }],
@@ -91,21 +92,44 @@ describe("weekly crawl audit characterization", () => {
     expect(result.errors.join(" ")).toMatch(/429/u);
   });
 
-  it.fails("preserves the previous SEO row after a page HTTP 429", async () => {
+  it("preserves the previous SEO row when a page HTTP 429 occurs in an otherwise successful crawl", async () => {
+    const successfulPages = Array.from({ length: 5 }, (_, index) => `${BASE}/products/ok-${index + 1}`);
     const routes = new Map<string, Route>([
-      ["/sitemap.xml", { body: `<urlset><url><loc>${BASE}/products/demo</loc></url></urlset>` }],
+      ["/sitemap.xml", { body: `<urlset>${[`/products/demo`, ...successfulPages.map((url) => new URL(url).pathname)]
+        .map((pathname) => `<url><loc>${BASE}${pathname}</loc></url>`).join("")}</urlset>` }],
       ["/products/demo", { body: "rate limited", status: 429 }],
+      ...successfulPages.map((url) => [new URL(url).pathname, { body: `<html><head><title>${new URL(url).pathname}</title></head><body><main><h1>Product</h1></main></body></html>` }] as const),
     ]);
     stubRoutes(routes);
     const root = await project();
     const previous = { url: `${BASE}/products/demo`, title: "Previous successful title", status_code: 200 };
     await writeFile(path.join(root, PATHS.seoPages), `${JSON.stringify(previous)}\n`, "utf8");
 
-    await runWeekly(root, config(), { date: "2026-11-27", only: "pages" });
+    const result = await runWeekly(root, config(), { date: "2026-11-27", only: "pages" });
     const rows = (await readFile(path.join(root, PATHS.seoPages), "utf8")).trim().split(/\r?\n/u)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
 
+    expect(result).toMatchObject({ status: "failed", counts: {} });
+    expect(result.errors.join(" ")).toMatch(/429/u);
     expect(rows).toEqual([previous]);
+  });
+
+  it("records an HTTP 429 as a failed weekly run", async () => {
+    stubRoutes(new Map<string, Route>([
+      ["/sitemap.xml", { body: `<urlset><url><loc>${BASE}/products/demo</loc></url></urlset>` }],
+      ["/products/demo", { body: "rate limited", status: 429 }],
+    ]));
+    const root = await project();
+    await writeFile(path.join(root, PATHS.site), `${JSON.stringify(config())}\n`, "utf8");
+    const service = createCoreService({ resolveProject: () => root, deviceId: "synthetic-device",
+      cacheDir: path.join(root, "cache") });
+
+    const result = await service.runJob({ projectPath: root, job: "weekly", trigger: "manual", date: "2026-11-27" }, () => undefined);
+    const run = (await readFile(path.join(root, PATHS.runs), "utf8")).trim().split(/\r?\n/u)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)[0];
+
+    expect(result).toMatchObject({ status: "failed", errors: [expect.stringContaining("429")] });
+    expect(run).toMatchObject({ job: "weekly", status: "failed", errors: [expect.stringContaining("429")] });
   });
 
 });
