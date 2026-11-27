@@ -237,3 +237,7 @@
 
 - [x] A-2：`projects.updateConfig` 与 `readme.*` 失败带脱敏 `ErrorDetail`；可选 logger hook 只接收脱敏堆栈；金丝雀不出现在返回错误或日志中。Desktop IPC 与应用日志接线由 C 完成
 - [x] A-3：配置保存、README 与升级任务回归保持 I1–I8 覆盖；虚构数据测试通过
+
+### v0.9.0 · 抓取新品可靠性（G9.0-0）
+
+- [x] A-1 诊断：C1–C11 使用合成 loopback 测试；记录 B1–B4 根因与 P6 保护路径证据，测试未改生产行为
