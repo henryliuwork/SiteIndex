@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createCategoryScheduleFixture } from "./category-schedule-fixture.mjs";
+import { verifyOfflineFonts, verifyPackagedRunJob } from "./release-invariants.mjs";
 import { assertSortScopeSnapshots } from "./sort-state-probe.mjs";
 import { cleanupProfile, createProfile, exitNormally, launchInstalledApp, waitForObserved } from "./session.mjs";
 
@@ -79,9 +80,12 @@ async function inspectSecondDevice(profile, projectDir, firstDeviceId) {
 
 export function sortStateAdapter() {
   let fixture;
+  let otherFixture;
   let firstDeviceId;
   let initialSku;
   let otherDeviceState;
+  let fontEvidence;
+  let runJobEvidence;
   const verifyScopes = async (page) => assertSortScopeSnapshots({
     primary: await state(page, PROJECT), otherProject: await state(page, OTHER_PROJECT),
     otherDevice: otherDeviceState ?? { sorts: {} }, tableId: TABLE, peerTableId: PEER_TABLE,
@@ -90,7 +94,8 @@ export function sortStateAdapter() {
   });
   return {
     reportEvidence: () => ({ three_states: ["asc", "desc", "default"],
-      scopes: ["table", "project", "device"], legacy_state_preserved: true }),
+      scopes: ["table", "project", "device"], legacy_state_preserved: true,
+      packaged_fonts: fontEvidence, packaged_run_job: runJobEvidence }),
     async baselineUi({ page, profile, noteIpc }) {
       noteIpc({ operation: "settings.set/projects.addExisting/uiState.set", itemId: 84 });
       const settings = await page.evaluate(async ({ root, cache }) => {
@@ -99,13 +104,13 @@ export function sortStateAdapter() {
       }, { root: profile.layout.projectRoot, cache: path.join(profile.root, "sort-cache") });
       firstDeviceId = settings.device_id;
       fixture = await createCategoryScheduleFixture(profile, 84, firstDeviceId);
-      const other = await createCategoryScheduleFixture(profile, 85, firstDeviceId);
+      otherFixture = await createCategoryScheduleFixture(profile, 85, firstDeviceId);
       await page.evaluate(async ({ first, second, columns }) => {
         await window.siteindex.projects.addExisting(first);
         await window.siteindex.projects.addExisting(second);
         await window.siteindex.uiState.set("matrix-84", { columns: { "products.merged": columns },
           page_sizes: { "products.merged": 20 } });
-      }, { first: fixture.projectDir, second: other.projectDir, columns: LEGACY_COLUMNS });
+      }, { first: fixture.projectDir, second: otherFixture.projectDir, columns: LEGACY_COLUMNS });
       initialSku = await firstSku(await productTable(page, PROJECT));
     },
     async verifyBaselineIpc({ page, noteIpc }) {
@@ -122,8 +127,9 @@ export function sortStateAdapter() {
         throw mismatch("Official baseline UI state is not a legacy file without sorts");
       }
     },
-    async candidateUi({ page, noteIpc }) {
+    async candidateUi({ page, profile, noteIpc }) {
       noteIpc({ operation: "products.merged UI sort", itemId: 84 });
+      fontEvidence = await verifyOfflineFonts(page, path.join(profile.layout.installDir, "SiteIndex.exe"));
       const table = await productTable(page, PROJECT);
       const before = await firstSku(table);
       if (before !== initialSku) throw mismatch("Candidate changed default product order before sorting");
@@ -162,6 +168,8 @@ export function sortStateAdapter() {
         || JSON.stringify(saved.columns?.[TABLE]) !== JSON.stringify(LEGACY_COLUMNS)) {
         throw mismatch("Candidate did not persist sort and legacy state to local file");
       }
+      runJobEvidence = await verifyPackagedRunJob(path.join(profile.layout.installDir, "SiteIndex.exe"),
+        profile, otherFixture.projectDir);
       otherDeviceState = await inspectSecondDevice(profile, fixture.projectDir, firstDeviceId);
     },
   };
