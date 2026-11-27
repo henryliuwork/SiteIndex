@@ -39,7 +39,7 @@ export function seoPageTableColumns(rows: readonly Pick<SeoPageTableRow, "links_
     { id: "page_type", accessorKey: "page_type", header: "类型", meta: { width: 80, grow: 0, minWidth: 80, text: "single" }, cell: ({ row }) => pageTypeLabels[row.original.page_type], enableSorting: true },
     { id: "google_indexed", accessorKey: "google_indexed", header: "收录", meta: { width: 88, grow: 0, minWidth: 88, text: "single" }, cell: ({ row }) =>
       <Chip tone={row.original.google_indexed === true ? "ok" : row.original.google_indexed === false ? "danger" : "neutral"}>{row.original.google_indexed === true ? "已收录" : row.original.google_indexed === false ? "未收录" : "未检查"}</Chip>, enableSorting: true },
-    { id: "open_high", header: "待处理问题", meta: { width: 152, grow: 0, minWidth: 152, align: "end", text: "single" }, cell: ({ row }) => {
+    { id: "open_high", accessorFn: (row) => row.open_issue_counts.high, header: "待处理问题", meta: { width: 152, grow: 0, minWidth: 152, align: "end", text: "single" }, cell: ({ row }) => {
       const counts = row.original.open_issue_counts;
       return counts.high + counts.mid + counts.low ? <span className="si-seo-counts">高 {counts.high} · 中 {counts.mid} · 低 {counts.low}</span> : "—";
     }, enableSorting: true },

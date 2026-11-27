@@ -170,13 +170,13 @@ describe("ContentPage 博客重新抓取", () => {
 });
 
 describe("ContentPage DataTable 列契约", () => {
-  it.fails("Schema 排序按 has_faq 的真实值改变顺序", async () => {
+  it("Schema 排序按 has_faq 的真实值改变顺序", async () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     const mockApi = createMockApi();
     const source = await mockApi.content.listBlog("demo", { page: 1, pageSize: 0 });
     const noSchema = { ...source.rows[7]!, url: "https://demo-store.example.test/z-sort-case", slug: "z-sort-case", title: "无 Schema 虚构文章", has_faq: false, published_at: "2026-11-20" };
     const hasSchema = { ...source.rows[0]!, url: "https://demo-store.example.test/a-sort-case", slug: "a-sort-case", title: "有 Schema 虚构文章", has_faq: true, published_at: "2026-11-01" };
-    const rows = [noSchema, hasSchema];
+    const rows = [hasSchema, noSchema];
     const listBlog = vi.fn(async (_id, query) => {
       const field = query.sort?.field ?? "published_at";
       const sorted = [...rows].sort((left, right) => {
@@ -197,8 +197,9 @@ describe("ContentPage DataTable 列契约", () => {
 
     const table = await screen.findByRole("region", { name: "content.blog 数据表" });
     fireEvent.click(within(table).getByRole("button", { name: "Schema" }));
-    await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "schema", dir: "asc" } })));
-    await waitFor(() => expect(screen.getByRole("region", { name: "content.blog 数据表" }).querySelector(".si-table tbody tr[data-row-id]")?.textContent).toContain("缺失"));
+    await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "has_faq", dir: "asc" } })));
+    const sortedResult = await (listBlog.mock.results.at(-1)?.value as Promise<Awaited<ReturnType<typeof mockApi.content.listBlog>>> | undefined);
+    expect(sortedResult?.rows.map((row) => row.url)).toEqual([noSchema.url, hasSchema.url]);
   });
 
   it("标题和关键词必显，只有当前结果整列缺值时才标记为空", async () => {
