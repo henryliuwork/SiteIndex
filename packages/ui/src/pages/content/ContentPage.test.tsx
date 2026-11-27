@@ -18,13 +18,35 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function typeSearchAt100ms(input: HTMLInputElement, value: string) {
+  for (const [index, character] of [...value].entries()) {
+    fireEvent.change(input, { target: { value: value.slice(0, index + 1) } });
+    expect(input.value).toBe(value.slice(0, index + 1));
+    if (index < value.length - 1) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+function expectSearchSurfaceStable(table: HTMLElement, input: HTMLInputElement) {
+  expect(table.isConnected).toBe(true);
+  expect(table.contains(input)).toBe(true);
+  expect(document.activeElement).toBe(input);
+  expect(input.value).toBe("abc");
+  expect(table.closest(".si-content-table-frame")?.querySelector(".si-query-loading")).toBeNull();
+}
+
 describe("ContentPage 博客重新抓取", () => {
-  it("搜索结果刷新时博客搜索框保持挂载、焦点与输入内容", async () => {
+  it.each([0, 300, 1000])("博客搜索延迟 %ims 时输入框保持挂载、焦点与 abc", async (delayMs) => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     const mockApi = createMockApi();
     const originalListBlog = mockApi.content.listBlog.bind(mockApi.content);
+    let searchSettled = false;
     const listBlog = vi.fn(async (projectId, query) => {
-      if (query.search) return new Promise<Awaited<ReturnType<typeof originalListBlog>>>(() => {});
+      if (query.search) {
+        if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const result = await originalListBlog(projectId, query);
+        searchSettled = true;
+        return result;
+      }
       return originalListBlog(projectId, query);
     });
     mockApi.content.listBlog = listBlog;
@@ -37,12 +59,14 @@ describe("ContentPage 博客重新抓取", () => {
     const table = await screen.findByRole("region", { name: "content.blog 数据表" });
     const input = within(table).getByRole("searchbox", { name: "搜索内容" }) as HTMLInputElement;
     input.focus();
-    fireEvent.change(input, { target: { value: "abc" } });
+    await typeSearchAt100ms(input, "abc");
     await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
 
-    expect(await within(table).findByText("正在更新博客文章…")).toBeTruthy();
-    expect(table.isConnected).toBe(true);
-    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
+    if (delayMs > 0) expect(searchSettled).toBe(false);
+    expectSearchSurfaceStable(table, input);
+    if (delayMs > 0) expect(await within(table).findByText("正在更新博客文章…")).toBeTruthy();
+    await waitFor(() => expect(searchSettled).toBe(true), { timeout: delayMs + 1500 });
+    expectSearchSurfaceStable(table, input);
   });
 
   it("空博客识别状态开始搜索时搜索框保持原位", async () => {
