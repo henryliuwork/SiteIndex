@@ -663,6 +663,30 @@ describe("createCoreService initial namespaces", () => {
     expect(products.rows.map((row) => row.handle)).toEqual(["feeder-2"]);
   }, 20_000);
 
+  it("ignores unsupported sort fields and keeps valid sorting", async () => {
+    const { projectPath } = await makeProject();
+    const rows: BlogPost[] = [
+      { url: "https://demo.invalid/blog/c-post", slug: "c-post", title: "Zulu", published_at: "2026-01-01", updated_at: null, category: null, author: null, tags: [], meta_description: null, word_count: null, links_internal: [], links_products: [], last_crawled: "2026-01-03" },
+      { url: "https://demo.invalid/blog/a-post", slug: "a-post", title: "Alpha", published_at: "2026-03-01", updated_at: null, category: null, author: null, tags: [], meta_description: null, word_count: null, links_internal: [], links_products: [], last_crawled: "2026-01-03" },
+      { url: "https://demo.invalid/blog/b-post", slug: "b-post", title: "Mike", published_at: "2026-02-01", updated_at: null, category: null, author: null, tags: [], meta_description: null, word_count: null, links_internal: [], links_products: [], last_crawled: "2026-01-03" },
+    ];
+    await writeFile(path.join(projectPath, PATHS.blogIndex), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+    const api = service(projectPath);
+    const query = { page: 1, pageSize: 0 } as const;
+
+    const original = (await api.content.listBlog("fixture", query)).rows.map((row) => row.slug);
+    const unsupported = (await api.content.listBlog("fixture", {
+      ...query, sort: { field: "unknown_field", dir: "asc" },
+    })).rows.map((row) => row.slug);
+    const supported = (await api.content.listBlog("fixture", {
+      ...query, sort: { field: "title", dir: "asc" },
+    })).rows.map((row) => row.slug);
+
+    expect(original).toEqual(["c-post", "b-post", "a-post"]);
+    expect(unsupported).toEqual(original);
+    expect(supported).toEqual(["a-post", "b-post", "c-post"]);
+  }, 20_000);
+
   it("groups product rows by configured parent SKU rules without changing persisted views", async () => {
     const { projectPath } = await makeProject();
     const fixture = JSON.parse(await readFile(path.resolve(process.cwd(), "fixtures/inputs/v030-products-parent-view.json"), "utf8")) as {
