@@ -198,6 +198,18 @@ function findCell(row: HTMLElement, headerName: string): string | undefined {
 }
 
 describe("合并后的产品管理表", () => {
+  it("产品名称排序按真实标题值重排列", async () => {
+    const products = [
+      makeProduct({ handle: "sort-z", title: "Zulu 虚构商品", product_id: "DEMO-SORT-Z", row_kind: "single" }),
+      makeProduct({ handle: "sort-a", title: "Alpha 虚构商品", product_id: "DEMO-SORT-A", row_kind: "single" }),
+    ];
+    await renderProductsPage({ products, parentStocks: [], stockRows: [] });
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByRole("button", { name: "产品名称" }));
+
+    await waitFor(() => expect(table.querySelector(".si-table tbody tr[data-row-id] .si-product-main-cell strong")?.textContent).toBe("Alpha 虚构商品"));
+  });
+
   it("筛选弹层使用可见标签和共享复选框", async () => {
     const mockApi = await renderProductsPage();
     await screen.findByRole("table");
@@ -507,6 +519,56 @@ describe("合并后的产品管理表", () => {
     fireEvent.click(within(drawer).getByRole("button", { name: "历史" }));
     expect(await within(drawer).findByRole("heading", { name: "子 SKU 价格历史" })).toBeTruthy();
     expect(within(drawer).getByRole("combobox", { name: "价格历史 SKU" })).toBeTruthy();
+  });
+
+  it.fails("变体库存按标题排序后应改变行顺序", async () => {
+    const variants = childStocks.map((stock, index) => ({
+      sku: stock.sku,
+      title: index === 0 ? "Zulu 虚构变体" : "Alpha 虚构变体",
+      stock_status: stock.stock_status,
+      since: stock.since,
+      days_in_status: stock.days_in_status,
+      price: stock.price,
+      history_30d: stock.history_30d,
+      online_rate_30d: stock.online_rate_30d,
+    }));
+    const detail: ProductFull = { product: parent, skus: [], details: null, seo: null, variants };
+    await renderProductsPage({ detail });
+    const productTable = await screen.findByRole("table");
+    await within(productTable).findByText("虚构组合商品", { selector: "strong" });
+    fireEvent.click(screen.getByRole("button", { name: "查看 DEMO001A 详情" }));
+    const drawer = await screen.findByRole("dialog");
+    fireEvent.click(await within(drawer).findByRole("button", { name: "变体库存" }));
+    const variantTable = await within(drawer).findByRole("table");
+    fireEvent.click(within(variantTable).getByRole("button", { name: "变体" }));
+
+    await waitFor(() => expect(variantTable.querySelector(".si-table tbody tr[data-row-id]")?.textContent).toContain("Alpha 虚构变体"));
+  });
+
+  it.fails("变体库存按 SKU 降序后应反转行顺序", async () => {
+    const variants = childStocks.map((stock) => ({
+      sku: stock.sku,
+      title: stock.variant_title ?? "虚构变体",
+      stock_status: stock.stock_status,
+      since: stock.since,
+      days_in_status: stock.days_in_status,
+      price: stock.price,
+      history_30d: stock.history_30d,
+      online_rate_30d: stock.online_rate_30d,
+    }));
+    const detail: ProductFull = { product: parent, skus: [], details: null, seo: null, variants };
+    await renderProductsPage({ detail });
+    const productTable = await screen.findByRole("table");
+    await within(productTable).findByText("虚构组合商品", { selector: "strong" });
+    fireEvent.click(screen.getByRole("button", { name: "查看 DEMO001A 详情" }));
+    const drawer = await screen.findByRole("dialog");
+    fireEvent.click(await within(drawer).findByRole("button", { name: "变体库存" }));
+    const variantTable = await within(drawer).findByRole("table");
+    const skuHeader = within(variantTable).getByRole("button", { name: "SKU" });
+    fireEvent.click(skuHeader);
+    fireEvent.click(skuHeader);
+
+    await waitFor(() => expect(variantTable.querySelector(".si-table tbody tr[data-row-id]")?.textContent).toContain("DEMO001A02"));
   });
 
   it("保留趋势抽屉，并把今日日报与标签管理收在更多菜单", async () => {

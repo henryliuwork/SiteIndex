@@ -1441,4 +1441,72 @@ describe("EdmPage DataTable 列契约", () => {
     expect(screen.getByRole("checkbox", { name: "SKU" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("checkbox", { name: "产品 / 变体" }).hasAttribute("disabled")).toBe(true);
   });
+
+  it.fails("搜索结果刷新期间 SKU 图片搜索框保持挂载与焦点", async () => {
+    enableTableRows();
+    const rows = [mediaImageRow("DEMO-SEARCH-001", null), mediaImageRow("DEMO-SEARCH-002", null)];
+    const { listImages } = await renderEdmPage(false, true, rows, false, false, {
+      listImagesImplementation: async (_id, query) => query.search
+        ? new Promise<{ rows: SkuImageRow[]; total: number }>(() => {})
+        : { rows, total: rows.length },
+    });
+    const table = await screen.findByRole("region", { name: "edm.images 数据表" });
+    const input = within(table).getByRole("searchbox", { name: "搜索 SKU 图片" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "abc" } });
+    await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
+
+    expect({ mounted: input.isConnected, focused: document.activeElement === input }).toEqual({ mounted: true, focused: true });
+  });
+
+  it.fails("产品 / 变体排序使用标题值，而不是仍按 SKU 顺序展示", async () => {
+    enableTableRows();
+    const rows = [
+      { ...mediaImageRow("DEMO-SORT-A", null), title: "Zulu 虚构商品" },
+      { ...mediaImageRow("DEMO-SORT-Z", null), title: "Alpha 虚构商品" },
+    ];
+    const { listImages } = await renderEdmPage(false, true, rows, false, false, {
+      listImagesImplementation: async (_id, query) => {
+        const field = query.sort?.field ?? "sku";
+        const sorted = [...rows].sort((left, right) => {
+          const a = (left as unknown as Record<string, unknown>)[field];
+          const b = (right as unknown as Record<string, unknown>)[field];
+          const primary = a == null || b == null ? 0 : String(a).localeCompare(String(b));
+          return primary || left.sku.localeCompare(right.sku);
+        });
+        const start = (query.page - 1) * query.pageSize;
+        return { rows: sorted.slice(start, start + query.pageSize), total: sorted.length };
+      },
+    });
+    const table = await screen.findByRole("region", { name: "edm.images 数据表" });
+    fireEvent.click(within(table).getByRole("button", { name: "产品 / 变体" }));
+    await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "product", dir: "asc" } })));
+    await waitFor(() => expect(table.querySelector(".si-table tbody tr[data-row-id] .si-edm-product strong")?.textContent).toBe("Alpha 虚构商品"));
+  });
+
+  it.fails("手动首图 URL 有不同值时按该 URL 改变行顺序", async () => {
+    enableTableRows();
+    const rows = [
+      mediaImageRow("DEMO-MANUAL-A", null, "https://images.example.test/zulu.jpg"),
+      mediaImageRow("DEMO-MANUAL-Z", null, "https://images.example.test/alpha.jpg"),
+    ];
+    const { listImages } = await renderEdmPage(false, true, rows, false, false, {
+      listImagesImplementation: async (_id, query) => {
+        const field = query.sort?.field ?? "sku";
+        const sorted = [...rows].sort((left, right) => {
+          const a = (left as unknown as Record<string, unknown>)[field];
+          const b = (right as unknown as Record<string, unknown>)[field];
+          const primary = a == null || b == null ? 0 : String(a).localeCompare(String(b));
+          return primary || left.sku.localeCompare(right.sku);
+        });
+        const start = (query.page - 1) * query.pageSize;
+        return { rows: sorted.slice(start, start + query.pageSize), total: sorted.length };
+      },
+    });
+    const table = await screen.findByRole("region", { name: "edm.images 数据表" });
+    fireEvent.click(within(table).getByRole("button", { name: "手动输入的首图 URL" }));
+
+    await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "manual_image_url", dir: "asc" } })));
+    await waitFor(() => expect(table.querySelector(".si-table tbody tr[data-row-id] .si-edm-sku")?.textContent).toBe("DEMO-MANUAL-Z"));
+  });
 });

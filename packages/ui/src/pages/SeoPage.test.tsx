@@ -71,6 +71,22 @@ async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = 
 }
 
 describe("SeoPage 问题处理", () => {
+  it.fails("SEO 兼容列表刷新期间搜索框保持挂载与焦点", async () => {
+    const mockApi = createMockApi();
+    const originalListIssues = mockApi.seo.listIssues.bind(mockApi.seo);
+    const listIssues = vi.fn(async (projectId, query) => query.search
+      ? new Promise<Awaited<ReturnType<typeof originalListIssues>>>(() => {})
+      : originalListIssues(projectId, query));
+    mockApi.seo.listIssues = listIssues;
+    await renderSeoPage(mockApi, "/p/demo/seo", false);
+    const input = await screen.findByRole("searchbox", { name: "搜索 SEO 数据" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "abc" } });
+    await waitFor(() => expect(listIssues).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
+
+    expect({ mounted: input.isConnected, focused: document.activeElement === input }).toEqual({ mounted: true, focused: true });
+  });
+
   it("SEO 抓取日期只显示在数据说明行，项目头和页底不重复", async () => {
     await renderSeoPage(createMockApi());
 
