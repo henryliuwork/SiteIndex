@@ -158,6 +158,23 @@ describe("RunsPage 媒体任务历史", () => {
     expect(screen.queryByText("未在指定执行设备运行")).toBeNull();
   });
 
+  it("每日同步有 Feed 丢弃时显示原因数量，零丢弃时不显示", async () => {
+    await renderRunsPage([
+      { run_id: "demo-dropped", job: "daily", started_at: "2026-11-20T08:00:00+08:00",
+        finished_at: "2026-11-20T08:01:00+08:00", status: "partial",
+        counts: { feed_items: 5, written: 2, dropped_no_id: 1, dropped_duplicate: 1, dropped_missing_price_or_link: 1 } },
+      { run_id: "demo-clean", job: "daily", started_at: "2026-11-19T08:00:00+08:00",
+        finished_at: "2026-11-19T08:01:00+08:00", status: "ok",
+        counts: { feed_items: 2, written: 2, dropped_no_id: 0, dropped_duplicate: 0, dropped_missing_price_or_link: 0 } },
+    ]);
+
+    await screen.findByText("Feed 丢弃 3 条：缺 SKU 1 · 重复 SKU 1 · 缺价格或链接 1");
+    const [dropped, clean] = document.querySelectorAll<HTMLElement>(".si-run-history-item");
+    expect(dropped?.querySelector(".si-run-history-summary")?.textContent).toContain("Feed 丢弃 3");
+    expect(dropped?.querySelector(".si-run-history-summary")?.textContent).not.toContain("dropped_");
+    expect(clean?.textContent).not.toContain("Feed 丢弃");
+  });
+
   it("从概览失败任务链接进入时展开对应运行日志", async () => {
     await renderRunsPage([{
       run_id: "demo-failed-run", job: "weekly", started_at: "2026-11-20T08:00:00+08:00",

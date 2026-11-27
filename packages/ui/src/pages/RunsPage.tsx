@@ -50,6 +50,19 @@ function runDuration(run: RunLog): string {
   return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
 
+function feedDroppedSummary(run: RunLog): { total: number; detail: string } | null {
+  if (run.job !== "daily") return null;
+  const dropped = [
+    ["缺 SKU", run.counts?.dropped_no_id ?? 0],
+    ["重复 SKU", run.counts?.dropped_duplicate ?? 0],
+    ["缺价格或链接", run.counts?.dropped_missing_price_or_link ?? 0],
+  ] as const;
+  const included = dropped.filter(([, count]) => count > 0);
+  if (!included.length) return null;
+  const total = included.reduce((sum, [, count]) => sum + count, 0);
+  return { total, detail: `Feed 丢弃 ${total} 条：${included.map(([label, count]) => `${label} ${count}`).join(" · ")}` };
+}
+
 function runSummary(run: RunLog): string {
   if (run.job === "media") {
     const recovery = getMediaRecoveryDisplay(run);
@@ -68,8 +81,12 @@ function runSummary(run: RunLog): string {
   if (run.errors?.length) return run.errors.join("；");
   const counts = run.counts;
   if (!counts || !Object.keys(counts).length) return run.status === "skipped" ? "任务已跳过" : run.status === "failed" ? "任务执行失败" : "任务已完成";
-  const labels: Record<string, string> = { restock: "补货", out_of_stock: "缺货", price: "调价", new: "上新", removed: "下架", error: "错误", missing: "缺失" };
-  return Object.entries(counts).map(([key, count]) => `${labels[key] ?? key} ${count}`).join(" · ");
+  const labels: Record<string, string> = { restock: "补货", out_of_stock: "缺货", price: "调价", new: "上新", removed: "下架", error: "错误", missing: "缺失",
+    feed_items: "Feed 条目", written: "写入", new_sku: "新增 SKU" };
+  const summary = Object.entries(counts).filter(([key]) => run.job !== "daily" || !key.startsWith("dropped_")).map(([key, count]) => `${labels[key] ?? key} ${count}`);
+  const dropped = feedDroppedSummary(run);
+  if (dropped) summary.push(`Feed 丢弃 ${dropped.total}`);
+  return summary.join(" · ");
 }
 
 function statusLabel(status: RunLog["status"]): string {
@@ -342,6 +359,7 @@ export function RunsPage() {
           {history.map((run) => <details className="si-run-history-item" key={`${run.run_id}:${focusedRunId ?? ""}`} open={run.run_id === focusedRunId ? true : undefined}>
             <summary><span className="si-run-history-time">{formatDateTime(run.started_at)}</span><strong>{jobLabels[run.job]}</strong><span className="si-run-history-trigger">{triggerLabel(run.trigger)}</span><Chip tone={statusTone(run.status)}>{statusLabel(run.status)}</Chip><span className="si-run-history-duration">{runDuration(run)}</span><span className="si-run-history-summary">{runSummary(run)}</span></summary>
             <div className="si-run-history-detail"><div className="si-run-history-context"><span>执行设备：{run.device_name ?? "—"}</span><span>结束：{run.finished_at ? formatDateTime(run.finished_at) : "进行中"}</span></div>
+              {feedDroppedSummary(run) && <div className="si-run-history-context"><span>{feedDroppedSummary(run)?.detail}</span></div>}
               {run.steps?.length ? <ol className="si-run-history-steps">{run.steps.map((step, index) => <li key={`${step.key}-${index}`} className={`is-${step.status}`}><span className="si-run-step-number">{index + 1}</span><div><strong>{stepLabel(step.key, index)}</strong>{step.message && <p>{step.message}</p>}</div><Chip tone={stepStatusTone(step.status)}>{stepStatusLabel(step.status)}</Chip></li>)}</ol> : <p className="si-run-history-empty">这条记录没有返回分步结果。</p>}
               {run.errors?.length ? <div className="si-run-history-errors"><strong>失败原因</strong>{run.errors.map((error, index) => <p key={index}>{error}</p>)}</div> : null}
             </div>
