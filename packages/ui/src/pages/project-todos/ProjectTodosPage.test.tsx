@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ProjectTodosResult, SiteIndexApi } from "@siteindex/shared";
@@ -57,6 +57,28 @@ async function renderTodos(configure?: (todos: NonNullable<SiteIndexApi["todos"]
 }
 
 describe("ProjectTodosPage", () => {
+  it.fails("待办标题排序后应重排数据行，而不是只更新表头箭头", async () => {
+    await renderTodos((todos) => {
+      const originalList = todos.list.bind(todos);
+      todos.list = async (id) => {
+        const result = await originalList(id);
+        const [first, second, ...rest] = result.items;
+        return {
+          ...result,
+          items: [
+            { ...first!, finding: { ...first!.finding, title: "Zulu 虚构待办" } },
+            { ...second!, finding: { ...second!.finding, title: "Alpha 虚构待办" } },
+            ...rest,
+          ],
+        };
+      };
+    });
+    const table = await screen.findByRole("table");
+    fireEvent.click(await within(table).findByRole("button", { name: "待办事项" }));
+
+    await waitFor(() => expect(table.querySelector(".si-table tbody tr[data-row-id] .si-todo-finding-cell strong")?.textContent).toBe("Alpha 虚构待办"));
+  });
+
   it("显示规则状态、来源、备注和操作历史", async () => {
     const mockApi = await renderTodos();
     const history = vi.spyOn(mockApi.todos!, "history");

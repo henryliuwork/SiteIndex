@@ -19,6 +19,30 @@ afterEach(() => {
 });
 
 describe("ContentPage 博客重新抓取", () => {
+  it.fails("搜索结果刷新时博客搜索框保持挂载与焦点", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const mockApi = createMockApi();
+    const originalListBlog = mockApi.content.listBlog.bind(mockApi.content);
+    const listBlog = vi.fn(async (projectId, query) => {
+      if (query.search) return new Promise<Awaited<ReturnType<typeof originalListBlog>>>(() => {});
+      return originalListBlog(projectId, query);
+    });
+    mockApi.content.listBlog = listBlog;
+    vi.doMock("../../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ ContentPage }, { ToastProvider }] = await Promise.all([import("../ContentPage"), import("../../components")]);
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>
+      <MemoryRouter initialEntries={["/p/demo/content"]}><Routes><Route path="/p/:id/content" element={<ContentPage />} /></Routes></MemoryRouter>
+    </ToastProvider></QueryClientProvider>);
+
+    const table = await screen.findByRole("region", { name: "content.blog 数据表" });
+    const input = within(table).getByRole("searchbox", { name: "搜索内容" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "abc" } });
+    await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
+
+    expect({ mounted: input.isConnected, focused: document.activeElement === input }).toEqual({ mounted: true, focused: true });
+  });
+
   it("从概览深链恢复博客问题筛选，并同步后续切换到 URL", async () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     const mockApi = createMockApi();
@@ -119,6 +143,37 @@ describe("ContentPage 博客重新抓取", () => {
 });
 
 describe("ContentPage DataTable 列契约", () => {
+  it.fails("Schema 排序按 has_faq 的真实值改变顺序", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const mockApi = createMockApi();
+    const source = await mockApi.content.listBlog("demo", { page: 1, pageSize: 0 });
+    const noSchema = { ...source.rows[7]!, url: "https://demo-store.example.test/z-sort-case", slug: "z-sort-case", title: "无 Schema 虚构文章", has_faq: false, published_at: "2026-11-20" };
+    const hasSchema = { ...source.rows[0]!, url: "https://demo-store.example.test/a-sort-case", slug: "a-sort-case", title: "有 Schema 虚构文章", has_faq: true, published_at: "2026-11-01" };
+    const rows = [noSchema, hasSchema];
+    const listBlog = vi.fn(async (_id, query) => {
+      const field = query.sort?.field ?? "published_at";
+      const sorted = [...rows].sort((left, right) => {
+        const a = (left as unknown as Record<string, unknown>)[field];
+        const b = (right as unknown as Record<string, unknown>)[field];
+        const primary = a == null || b == null ? 0 : String(a).localeCompare(String(b));
+        return primary || left.url.localeCompare(right.url);
+      });
+      const start = (query.page - 1) * query.pageSize;
+      return query.pageSize === 0 ? { rows: sorted, total: sorted.length } : { rows: sorted.slice(start, start + query.pageSize), total: sorted.length };
+    });
+    mockApi.content.listBlog = listBlog;
+    vi.doMock("../../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ ContentPage }, { ToastProvider }] = await Promise.all([import("../ContentPage"), import("../../components")]);
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>
+      <MemoryRouter initialEntries={["/p/demo/content"]}><Routes><Route path="/p/:id/content" element={<ContentPage />} /></Routes></MemoryRouter>
+    </ToastProvider></QueryClientProvider>);
+
+    const table = await screen.findByRole("region", { name: "content.blog 数据表" });
+    fireEvent.click(within(table).getByRole("button", { name: "Schema" }));
+    await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "schema", dir: "asc" } })));
+    await waitFor(() => expect(screen.getByRole("region", { name: "content.blog 数据表" }).querySelector(".si-table tbody tr[data-row-id]")?.textContent).toContain("缺失"));
+  });
+
   it("标题和关键词必显，只有当前结果整列缺值时才标记为空", async () => {
     const mockApi = createMockApi();
     vi.doMock("../../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
