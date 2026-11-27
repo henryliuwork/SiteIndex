@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { InventorySummary, ListQuery, ProductFilters, ProductFull, ProductView, SkuStockFilters, SkuStockView } from "@siteindex/shared";
 import { createMockApi } from "../mock";
-import { formatInStockVariants, matchesFilteredStockRows, mergeProductAndStockRows } from "./products/merged-rows";
+import { formatInStockVariants, matchesFilteredStockRows, mergeProductAndStockRows, productManagementSortValue } from "./products/merged-rows";
+import { sortRows } from "../components/utils";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -198,6 +199,38 @@ function findCell(row: HTMLElement, headerName: string): string | undefined {
 }
 
 describe("合并后的产品管理表", () => {
+  it("产品管理每个可排序字段都按展示字段重排", () => {
+    const makeSortableParent = (name: "alpha" | "zulu"): ProductView => {
+      const values = name === "alpha"
+        ? { sku: "DEMO-A", title: "Alpha 虚构商品", status: "in_stock" as const, days: 2, rate: 0.25, variants: 1, price: 20, category: "Alpha 分类", rating: 2 }
+        : { sku: "DEMO-Z", title: "Zulu 虚构商品", status: "out_of_stock" as const, days: 12, rate: 0.85, variants: 4, price: 80, category: "Zulu 分类", rating: 4.8 };
+      return makeProduct({
+        handle: name, title: values.title, product_id: values.sku, row_kind: "parent", skus: [`${values.sku}-01`],
+        stock_status: values.status, price_min: values.price, price_max: values.price, category: values.category, categories: [values.category],
+        in_stock_variants: values.variants, variant_count: 5, rating: values.rating,
+      });
+    };
+    const products = [makeSortableParent("zulu"), makeSortableParent("alpha")];
+    const stocks = products.map((product) => {
+      const isAlpha = product.handle === "alpha";
+      return makeStock(product.product_id, isAlpha ? 20 : 80, {
+        is_parent: true,
+        stock_status: isAlpha ? "in_stock" : "out_of_stock",
+        days_in_status: isAlpha ? 2 : 12,
+        online_rate_30d: isAlpha ? 0.25 : 0.85,
+        category: isAlpha ? "Alpha 分类" : "Zulu 分类",
+        last_change_at: isAlpha ? "2026-11-01" : "2026-11-12",
+      });
+    });
+    const rows = mergeProductAndStockRows(products, stocks, false);
+    const sortableFields = ["sku", "product", "stock_status", "days_in_status", "online_rate_30d", "in_stock_variants", "price", "category", "last_change", "rating"];
+
+    for (const field of sortableFields) {
+      expect(sortRows(rows, { field, dir: "asc" }, productManagementSortValue).map((row) => row.product.handle), field)
+        .toEqual(["alpha", "zulu"]);
+    }
+  });
+
   it("产品名称排序按真实标题值重排列", async () => {
     const products = [
       makeProduct({ handle: "sort-z", title: "Zulu 虚构商品", product_id: "DEMO-SORT-Z", row_kind: "single" }),
@@ -524,7 +557,7 @@ describe("合并后的产品管理表", () => {
     expect(within(drawer).getByRole("combobox", { name: "价格历史 SKU" })).toBeTruthy();
   });
 
-  it.fails("变体库存按标题排序后应改变行顺序", async () => {
+  it("变体库存按标题排序后应改变行顺序", async () => {
     const variants = childStocks.map((stock, index) => ({
       sku: stock.sku,
       title: index === 0 ? "Zulu 虚构变体" : "Alpha 虚构变体",
@@ -548,7 +581,7 @@ describe("合并后的产品管理表", () => {
     await waitFor(() => expect(variantTable.querySelector(".si-table tbody tr[data-row-id]")?.textContent).toContain("Alpha 虚构变体"));
   });
 
-  it.fails("变体库存按 SKU 降序后应反转行顺序", async () => {
+  it("变体库存按 SKU 降序后应反转行顺序", async () => {
     const variants = childStocks.map((stock) => ({
       sku: stock.sku,
       title: stock.variant_title ?? "虚构变体",
@@ -572,6 +605,38 @@ describe("合并后的产品管理表", () => {
     fireEvent.click(skuHeader);
 
     await waitFor(() => expect(variantTable.querySelector(".si-table tbody tr[data-row-id]")?.textContent).toContain("DEMO001A02"));
+  });
+
+  it("变体库存状态、持续天数和在线率排序都会改变行序", async () => {
+    const firstStock = childStocks[0]!;
+    const secondStock = childStocks[1]!;
+    const variants = [
+      { sku: firstStock.sku, title: "Zulu 虚构变体", stock_status: "out_of_stock" as const, since: firstStock.since, days_in_status: 10, price: 27, history_30d: firstStock.history_30d, online_rate_30d: 0.8 },
+      { sku: secondStock.sku, title: "Alpha 虚构变体", stock_status: "in_stock" as const, since: secondStock.since, days_in_status: 2, price: 40, history_30d: secondStock.history_30d, online_rate_30d: 0.2 },
+    ];
+    const detail: ProductFull = { product: parent, skus: [], details: null, seo: null, variants };
+    const variantStocks = [
+      makeStock("DEMO001A01", 27, { parent_sku: "DEMO001A", stock_status: "out_of_stock", days_in_status: 10, online_rate_30d: 0.8 }),
+      makeStock("DEMO001A02", 40, { parent_sku: "DEMO001A", stock_status: "in_stock", days_in_status: 2, online_rate_30d: 0.2 }),
+    ];
+    await renderProductsPage({ detail, stockRows: [parentStock, ...variantStocks] });
+    const productTable = await screen.findByRole("table");
+    await within(productTable).findByText("虚构组合商品", { selector: "strong" });
+    fireEvent.click(screen.getByRole("button", { name: "查看 DEMO001A 详情" }));
+    const drawer = await screen.findByRole("dialog");
+    fireEvent.click(await within(drawer).findByRole("button", { name: "变体库存" }));
+    const variantTable = await within(drawer).findByRole("table");
+    const expectedFirstSku = [
+      ["库存", "DEMO001A02"],
+      ["持续", "DEMO001A02"],
+      ["30 天在线率", "DEMO001A02"],
+    ] as const;
+
+    for (const [header, expectedSku] of expectedFirstSku) {
+      fireEvent.click(within(variantTable).getByRole("button", { name: header }));
+      await waitFor(() => expect(variantTable.querySelector(".si-table tbody tr[data-row-id]")?.textContent).toContain(expectedSku));
+    }
+    expect(within(variantTable).queryByRole("button", { name: "近 30 天" })).toBeNull();
   });
 
   it("保留趋势抽屉，并把今日日报与标签管理收在更多菜单", async () => {

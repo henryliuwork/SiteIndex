@@ -7,12 +7,13 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import type { HistoryRange, InventorySummary, ListQuery, ProductFilters, ProductFull, ProductVariantStock, ProductView, SkuGroupingRule, SkuRecord, SkuStockFilters, SkuStockView, StockStatus, TagStat } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
+import { sortRows } from "../components/utils";
 import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, Drawer, FilterBar, FilterCheckbox, FilterField, FilterGroup, FilterPopover, formatDateTime, Input, InputWithAction, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Segmented, Select, SummaryLine, useToast, stockTone } from "../components";
 import { formatInventoryDetailDuration, formatInventoryTableDuration, InventoryHistoryCell, InventoryRateCell } from "./inventory/table-cells";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { hasFeedlessProductCollection } from "./project-settings-config/product-source";
 import { CategoryPanel, GroupingPreview, historyRanges, requestInventorySummary, stockNames, TrendChart } from "./products/inventory-widgets";
-import { formatInStockVariants, formatProductPrice, matchesFilteredStockRows, matchesProductManagementSearch, mergeProductAndStockRows, type ProductManagementRow } from "./products/merged-rows";
+import { formatInStockVariants, formatProductPrice, matchesFilteredStockRows, matchesProductManagementSearch, mergeProductAndStockRows, productManagementSortValue, type ProductManagementRow } from "./products/merged-rows";
 import { ProductScenarioSection, productScenarioOptions, type ProductScenarioTab } from "./products/drawer/scenario-sections";
 
 const stockOptions = [
@@ -117,15 +118,26 @@ function drawerVariantColumns(): ColumnDef<DrawerVariant, unknown>[] {
     } },
     { id: "days_in_status", accessorFn: (row) => row.stock?.days_in_status ?? row.variant?.days_in_status ?? null, header: "持续", meta: { width: 86, grow: 0, minWidth: 78, align: "end", text: "single" }, cell: ({ row }) => row.original.stock ? formatInventoryDetailDuration(row.original.stock) : row.original.variant ? `${row.original.variant.days_in_status} 天` : "—" },
     { id: "online_rate_30d", accessorFn: (row) => row.stock?.online_rate_30d ?? row.variant?.online_rate_30d ?? null, header: "30 天在线率", meta: { width: 116, grow: 0, minWidth: 104, align: "end", text: "single" }, cell: ({ row }) => <InventoryRateCell value={row.original.stock?.online_rate_30d ?? row.original.variant?.online_rate_30d} /> },
-    { id: "history_30d", accessorFn: (row) => row.stock?.history_30d ?? row.variant?.history_30d ?? "", header: "近 30 天", meta: { width: 174, grow: 0, minWidth: 156, text: "single" }, cell: ({ row }) => row.original.stock ? <InventoryHistoryCell row={row.original.stock} /> : row.original.variant ? <span className="si-status-cells-text">{row.original.variant.history_30d}</span> : <span className="si-muted">—</span> },
+    { id: "history_30d", accessorFn: (row) => row.stock?.history_30d ?? row.variant?.history_30d ?? "", header: "近 30 天", meta: { width: 174, grow: 0, minWidth: 156, text: "single" }, cell: ({ row }) => row.original.stock ? <InventoryHistoryCell row={row.original.stock} /> : row.original.variant ? <span className="si-status-cells-text">{row.original.variant.history_30d}</span> : <span className="si-muted">—</span>, enableSorting: false },
   ];
 }
 
 function ProductVariantInventory({ variants }: { variants: DrawerVariant[] }) {
   const [query, setQuery] = useState<ListQuery>({ page: 1, pageSize: 50, filters: {} });
   const columns = useMemo(drawerVariantColumns, []);
+  const sortedVariants = useMemo(() => sortRows(variants, query.sort, (row, field) => {
+    switch (field) {
+      case "sku": return row.sku;
+      case "title": return row.title;
+      case "stock_status": return row.stock?.stock_status ?? row.variant?.stock_status ?? null;
+      case "days_in_status": return row.stock?.days_in_status ?? row.variant?.days_in_status ?? null;
+      case "online_rate_30d": return row.stock?.online_rate_30d ?? row.variant?.online_rate_30d ?? null;
+      case "history_30d": return row.stock?.history_30d ?? row.variant?.history_30d ?? "";
+      default: return undefined;
+    }
+  }), [query.sort, variants]);
   const start = query.pageSize === 0 ? 0 : (query.page - 1) * query.pageSize;
-  const rows = query.pageSize === 0 ? variants : variants.slice(start, start + query.pageSize);
+  const rows = query.pageSize === 0 ? sortedVariants : sortedVariants.slice(start, start + query.pageSize);
   return <DataTable tableId="products.variant-stock" rows={rows} total={variants.length} columns={columns} query={query} onQueryChange={setQuery} getRowId={(row) => row.sku} height={360} rowHeight={52} emptyTitle="暂无变体库存数据" emptyDescription="Core 尚未返回该产品的变体库存。" />;
 }
 
@@ -299,28 +311,7 @@ export function ProductsPage() {
     && !productListQuery.isFetching && !inventoryListQuery.isFetching
     && !matchesFilteredStockRows(mergedRows, allStockRows));
   const sortedRows = useMemo(() => {
-    const sort = query.sort;
-    if (!sort) return mergedRows;
-    const value = (row: ProductManagementRow): string | number | null => {
-      switch (sort.field) {
-        case "product": return row.product.title;
-        case "stock_status": return row.stock?.stock_status ?? row.product.stock_status;
-        case "days_in_status": return row.stock?.days_in_status ?? null;
-        case "online_rate_30d": return row.stock?.online_rate_30d ?? null;
-        case "in_stock_variants": return row.product.in_stock_variants;
-        case "price": return row.kind === "parent" ? row.product.price_min : row.stock?.price ?? row.product.price_min;
-        case "category": return row.stock?.category ?? row.product.category;
-        case "last_change": return row.stock?.last_change_at ?? null;
-        case "rating": return row.product.rating ?? null;
-        default: return row.sku ?? row.product.handle;
-      }
-    };
-    return mergedRows.map((row, index) => ({ row, index })).sort((left, right) => {
-      const a = value(left.row);
-      const b = value(right.row);
-      const result = a == null ? (b == null ? 0 : 1) : b == null ? -1 : typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "zh-CN", { numeric: true });
-      return (sort.dir === "desc" ? -result : result) || left.index - right.index;
-    }).map(({ row }) => row);
+    return sortRows(mergedRows, query.sort, productManagementSortValue);
   }, [mergedRows, query.sort]);
   const columns = useMemo(() => {
     const empty = new Set<string>();

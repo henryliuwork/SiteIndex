@@ -8,6 +8,22 @@ export interface ProductManagementRow {
   stock: SkuStockView | null;
 }
 
+export function productManagementSortValue(row: ProductManagementRow, field: string): unknown {
+  switch (field) {
+    case "sku": return row.sku ?? row.product.handle;
+    case "product": return row.product.title;
+    case "stock_status": return row.product.status === "removed" ? "removed" : row.stock?.stock_status ?? row.product.stock_status;
+    case "days_in_status": return row.stock?.days_in_status ?? null;
+    case "online_rate_30d": return row.stock?.online_rate_30d ?? null;
+    case "in_stock_variants": return row.product.in_stock_variants;
+    case "price": return row.kind === "parent" ? row.product.price_min : row.stock?.price ?? row.product.price_min;
+    case "category": return row.stock?.category ?? row.product.category;
+    case "last_change": return row.stock?.last_change_at ?? null;
+    case "rating": return row.product.rating ?? null;
+    default: return undefined;
+  }
+}
+
 export function mergeProductAndStockRows(
   products: readonly ProductView[],
   stockRows: readonly SkuStockView[],
