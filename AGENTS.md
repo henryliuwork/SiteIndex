@@ -3,7 +3,7 @@
 你是 SiteIndex 的并行工作流之一（A / B / C / D / E）。开始任何工作前：
 
 1. 读 `docs/WORKSTREAMS.md` §1，确认你是 **A（Core）/ B（UI 共享层）/ C（Desktop）/ D（UI 项目页面）/ E（真实项目验收）** 中的哪一个，以及你**只能修改的目录**
-2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；**当前执行计划 v0.8.5（规范化收口：共享层界面规范、验收脚本规范、错误可诊断、小版本准入）以 `docs/plan/2026-11-26-v085-hardening-roadmap.md` 为准；v0.8.2（间距规范、概览模块化、设置保存可靠性）见 `docs/plan/2026-11-23-v082-spacing-overview-settings-roadmap.md`；v0.8.0 外框规范见 `docs/plan/2026-11-20-v080-ui-frame-spec-roadmap.md`；v0.7.0 / v0.7.5 见 `docs/plan/2026-11-18-v070-v075-roadmap.md`，目标模式运行手册（lead、汇报、缺陷流程）见 `docs/plan/2026-11-18-v07-lead-playbook.md`**；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
+2. A/B/C 读各自任务清单 `docs/tasks/A-core.md` / `B-ui.md` / `C-desktop.md`；D/E 按当前收敛计划认领任务。v0.6.0 规范见 `docs/plan/2026-11-16-v060-ui-spec-roadmap.md`，v0.6.1–v0.6.5（UI 细节收口 + WooCommerce 全面支持）以 `docs/plan/2026-11-17-v061-v065-roadmap.md` 为准；**当前执行计划 v0.8.5（规范化收口：共享层界面规范、验收脚本规范、错误可诊断、小版本准入）以 `docs/plan/2026-11-26-v085-hardening-roadmap.md` 为准；**下一版 v0.9.0（抓取新品可靠性、搜索输入、表格排序与持久化、产品首图 Skill，v0.8.5 发布后开工）见 `docs/plan/2026-11-26-v090-crawl-table-skill-roadmap.md`**；v0.8.2（间距规范、概览模块化、设置保存可靠性）见 `docs/plan/2026-11-23-v082-spacing-overview-settings-roadmap.md`；v0.8.0 外框规范见 `docs/plan/2026-11-20-v080-ui-frame-spec-roadmap.md`；v0.7.0 / v0.7.5 见 `docs/plan/2026-11-18-v070-v075-roadmap.md`，目标模式运行手册（lead、汇报、缺陷流程）见 `docs/plan/2026-11-18-v07-lead-playbook.md`**；v0.3 表格标准仍以 `docs/plan/2026-11-05-v030-roadmap.md` 为参考；历史计划 `docs/plan/2026-10-30-v020-wave2-execution.md`、总计划 `docs/plan/2026-10-29-v020-convergence.md`、`docs/plan/2026-10-29-feedback-v2.md` 保留为需求背景
 3. 按任务清单"必读"列表阅读 `docs/` 中的相关章节；数据格式以 `docs/DATA_SPEC.md` 为准，界面以 `design/demo/` 画板为准
 
 ## 项目一句话
@@ -49,6 +49,9 @@ SiteIndex 是一个本地桌面软件（Windows 为主，兼容 macOS，下载�
 - **错误可诊断（v0.8.5）**：设置、配置、README、定时任务相关错误必须携带 `ErrorDetail`（错误码、操作、脱敏命令、退出码、脱敏 stderr）；堆栈只写应用日志，不经 IPC 返回界面；脱敏须通过金丝雀测试，绝不输出凭据值或文件内容。禁止只报泛化的 “Error”。
 - **验收脚本规范 H1–H10（v0.8.5）**：正常退出不强杀；每个设置项独立会话；等待状态不用固定 sleep；用 role 或 `data-testid` 定位；失败必留消息、堆栈、截图、控制台与最近一次 IPC；只用合成数据并清理；统一报告 schema；区分 `assertion_failed` 与 `harness_error`，后者不得推动产品代码修改；基线与候选包 SHA 校验；单一入口工作流。启动、退出、清理逻辑全仓只允许一份实现。详见 `docs/ACCEPTANCE.md` 与 v0.8.5 roadmap §3.4。
 - **小版本准入（v0.8.5 起，适用于所有执行者，包括用户直接发起的 codex 会话）**：小版本（x.y.Z）只允许 R/D/B 类缺陷修复、冻结清单内的样式违例、依赖与版本号；行为改动必须有计划文档。任何发版必须有计划文档或补丁说明（`docs/plan/YYYY-MM-DD-vXYZ-patch.md`）、看板 issue、Windows/macOS CI、`ui:check` 输出与手册 §7 发布清单；同一工作日最多发布 1 个版本（B 类阻断除外）。
+- **搜索输入（v0.9.0）**：输入过程中不得失焦、丢字符或被回填覆盖；防抖 250ms，输入法组合期间不触发，Enter 与清空立即触发；草稿保存原始文本，查询时才裁剪。**数据刷新不得卸载含输入控件的容器**：查询键变化用 `keepPreviousData`，表格与工具栏保持挂载。详见 v0.9.0 roadmap §3.2。
+- **表格排序（v0.9.0，T7）**：可排序列点击必须生效，否则不得显示排序标识；客户端分页的页面在分页前排序，统一使用共享 `sortRows`。排序状态按（设备、项目、表）持久化，用户手动改变前一直保持，只持久化排序，不含搜索、筛选、页码。详见 v0.9.0 roadmap §3.3。
+- **任务完成后刷新（v0.9.0）**：同步等任务结束后，该项目的产品、库存、EDM、SEO、内容列表查询必须失效重取，不得只刷新项目摘要。
 - 涉及 UI 的 PR 必须附 `pnpm ui:check` 输出；样式扫描中新违规会使检查失败，日期/时间重复启发式只给人工复核告警。
 - **板块页（SEO、内容、EDM、产品管理、概览）**：按 `docs/DESIGN.md` §3 的固定骨架组织；项目头之后最多一行可操作 `SummaryLine`，同一数字与时间不得重复，表格为首屏主体。SEO 的问题/页面/内链属于同一实体，应合并进页面表与行抽屉；其他页内分段仅用于不同实体，且无计数徽标。v0.7.5 迁移前先交合并矩阵，`ui:check` §3.5 指标必须达标。
 
