@@ -331,8 +331,15 @@ describe("EdmPage D-5", () => {
   });
 
   it("显示标准 DataTable 分页与父 SKU 筛选，并向 IPC 传入 parent_only", async () => {
-    const { listImages } = await renderEdmPage(true);
-    await screen.findByRole("checkbox", { name: "仅展示父 SKU" });
+    const { listImages } = await renderEdmPage(true, true, undefined, false, false, {
+      summaryImplementation: async () => ({ total: 18, feed: 10, manual: 2, none: 6 }),
+    });
+    const parentFilter = await screen.findByRole("checkbox", { name: "仅展示父 SKU" });
+    expect(parentFilter.closest(".si-filter-popover-checkbox")?.querySelector(".si-checkbox-row")).toBeTruthy();
+    const imageRuleTooltip = screen.getByRole("button", { name: "首图选择规则" });
+    expect(imageRuleTooltip.closest(".si-edm-info-item")?.textContent).toContain("首图");
+    const discountTooltip = screen.getByRole("button", { name: "折扣档位说明" });
+    expect(discountTooltip.closest(".si-edm-info-item")?.textContent).toContain("折扣");
     const skuHeader = screen.getByRole("table").querySelector<HTMLTableCellElement>("thead th:nth-child(2)");
     expect(skuHeader?.textContent).toContain("SKU");
     expect(skuHeader?.classList.contains("is-sticky-left")).toBe(true);
