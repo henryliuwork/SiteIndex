@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import type { ProjectDetail, ProjectSummary, SeoIssue, SiteIndexApi, SiteIndexError } from "@siteindex/shared";
+import type { ProjectDetail, ProjectSummary, RunLog, SeoIssue, SiteIndexApi, SiteIndexError } from "@siteindex/shared";
 import { createMockApi } from "../mock";
 
 const pendingEmptyWorkspaceHandlers = [
@@ -146,6 +146,32 @@ describe("ProjectCenterPage add existing project flow", () => {
     fireEvent.click(screen.getByRole("link", { name: "Cedar Shop" }));
     expect(screen.getByTestId("current-route").textContent).toBe("/p/cedar-shop");
   }, 25_000);
+});
+
+describe("ProjectCenterPage recent-run sort audit", () => {
+  it.fails("sorts the displayed run summary values instead of an absent raw field", async () => {
+    const mockApi = createMockApi();
+    const runs: RunLog[] = [
+      { run_id: "synthetic-zebra", job: "daily", started_at: "2026-01-02T03:00:00.000Z", finished_at: "2026-01-02T03:01:00.000Z", status: "failed", errors: ["Zebra synthetic result"] },
+      { run_id: "synthetic-alpha", job: "weekly", started_at: "2026-01-01T03:00:00.000Z", finished_at: "2026-01-01T03:01:00.000Z", status: "failed", errors: ["Alpha synthetic result"] },
+    ];
+    mockApi.jobs.history = vi.fn(async () => runs);
+    vi.doMock("../api", () => ({
+      api: mockApi,
+      isMockApi: true,
+      apiErrorMessage: (_error: unknown, fallback: string) => fallback,
+    }));
+    const [{ ProjectCenterPage }, { ToastProvider }] = await Promise.all([import("./ProjectCenterPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<ToastProvider><QueryClientProvider client={queryClient}><MemoryRouter><ProjectCenterPage /></MemoryRouter></QueryClientProvider></ToastProvider>);
+
+    expect(await screen.findByText("Zebra synthetic result")).toBeTruthy();
+    const summaryHeader = screen.getByRole("button", { name: /执行摘要/ });
+    fireEvent.click(summaryHeader);
+
+    expect(summaryHeader.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+    expect(screen.getAllByRole("row").slice(1)[0]?.textContent).toContain("Alpha synthetic result");
+  });
 });
 
 describe("ProjectCenterPage attention list", () => {
