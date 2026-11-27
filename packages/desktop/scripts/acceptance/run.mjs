@@ -7,6 +7,7 @@ import { categoryScheduleHandlers } from "./category-schedule-adapters.mjs";
 import { sensitiveSystemHandlers } from "./credential-schedule-adapters.mjs";
 import { independentHandlers } from "./independent-adapters.mjs";
 import { projectConfigHandlers } from "./project-config-adapters.mjs";
+import { productDiscoveryAdapter } from "./product-discovery-adapter.mjs";
 import { searchInputAdapter } from "./search-input-adapter.mjs";
 import { parseItemRange, runAcceptance } from "./runner.mjs";
 
@@ -43,6 +44,7 @@ export function acceptanceHandlers(ids, credentials, extraHandlers = {}) {
     ...appSettingsHandlers(slice(67, 81)),
     ...sensitiveSystemHandlers(slice(82, 83), credentials),
     ...(ids.includes(85) ? { 85: searchInputAdapter() } : {}),
+    ...(ids.includes(86) ? { 86: productDiscoveryAdapter() } : {}),
     ...Object.fromEntries(ids.filter((id) => id >= 84 && extraHandlers[id]).map((id) => [id, extraHandlers[id]])) };
 }
 

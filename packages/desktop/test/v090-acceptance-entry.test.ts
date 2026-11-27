@@ -51,7 +51,7 @@ describe("v0.9.0 configurable acceptance entry", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("connects only packaged search row 85 while sorting and discovery stay fail-closed", async () => {
+  it("connects packaged search and discovery rows while sorting stays fail-closed", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-v090-search-entry-"));
     try {
       const manifest = path.join(root, "synthetic-pins.json");
@@ -66,7 +66,13 @@ describe("v0.9.0 configurable acceptance entry", () => {
         outputDir: path.join(root, "out") };
       await runFromManifest(options, { run });
       assert.equal(run.mock.calls.length, 1);
-      for (const id of [84, 86]) {
+      const discovery = { ...options, itemIds: [86], itemsArgument: "86" };
+      await runFromManifest(discovery, { run: vi.fn(async (input: { handlers: Record<number, Record<string, unknown>> }) => {
+        assert.deepEqual(Object.keys(input.handlers), ["86"]);
+        assert.equal(typeof input.handlers[86]?.candidateUi, "function");
+        return { items: [], cleanup: { status: "passed" } };
+      }) });
+      for (const id of [84]) {
         await assert.rejects(() => runFromManifest({ ...options, itemIds: [id], itemsArgument: String(id) }, { run }),
           new RegExp(`adapter ${id} is not connected`, "u"));
       }
