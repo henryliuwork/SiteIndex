@@ -296,7 +296,8 @@ export const mockSkills: SkillInfo[] = [
   { name: "stock-report", version: "1.0.0", description: "库存日报、周报、趋势分析（只读）", has_update: false, reads: ["index/reports/daily/", "index/inventory/", "index/logs/runs.jsonl"], writes: [] },
   { name: "blog-writer", version: "1.1.0", description: "选题、蚕食检查、brief、带内链正文、关键词登记", has_update: true, reads: ["index/content/*", "index/seo/pages.jsonl", "index/seo/links.jsonl", "index/views/products.jsonl"], writes: ["内容/drafts/{date}-{slug}/", "index/content/keywords.jsonl"] },
   { name: "link-prospect", version: "1.0.0", description: "外链搜集 → linkflow + 去重台账", has_update: false, reads: ["index/site.json", "index/ledgers/outreach.jsonl"], writes: ["linkflow（MCP）", "index/ledgers/outreach.jsonl"] },
-  { name: "sku-media-enrich", version: "1.0.0", description: "Mailchimp 图片匹配、标签与优先级", has_update: false, reads: ["index/catalog/skus.jsonl"], writes: ["index/ledgers/sku_media.csv", "index/ledgers/sku_tags.csv"] },
+  { name: "siteindex-edm-manual-image", version: "1.0.0", description: "按 SKU 设置 EDM 商品手动首图", has_update: false, reads: ["README.md", "index/catalog/skus.jsonl", "index/catalog/product_details.jsonl", "index/ledgers/sku_media.csv", "index/views/products.jsonl"], writes: ["index/ledgers/sku_media.csv", "index/views/products.jsonl"] },
+  { name: "sku-media-enrich", version: "1.2.0", description: "维护产品标签与 EDM 优先级；商品手动首图由独立 Skill 处理", has_update: false, reads: ["README.md", "index/catalog/skus.jsonl", "index/ledgers/sku_tags.csv", "index/views/products.jsonl"], writes: ["index/ledgers/sku_tags.csv"] },
   { name: "page-design", version: "1.0.0", description: "按网站设计规范做页面、Banner、邮件模板", has_update: false, reads: ["index/design/tokens.json", "index/design/brand.md"], writes: ["设计/"] },
   { name: "project-readme", version: "1.0.0", description: "更新 README 用户区块并保留自动区块", has_update: false, reads: ["README.md"], writes: ["README.md 用户区块"] },
 ];
@@ -305,7 +306,8 @@ export const mockSkillBodies: Record<string, string> = {
   "stock-report": "# stock-report\n先检查 runs.jsonl 最后一次 daily 是否成功。\n日报：结论 → 新到货/新缺货 → 需要行动。\n只读汇报，不修改项目数据。",
   "blog-writer": "# blog-writer\n1. 检查主关键词是否已有目标页面。\n2. 生成大纲与内链计划，只使用数据文件中的 URL。\n3. 写 draft.md 与 meta.json。\n4. 提供反向内链建议。",
   "link-prospect": "# link-prospect\n检查外链候选并排除台账重复项。\n联系方式必须来自页面实际内容。\n完成后更新去重台账。",
-  "sku-media-enrich": "# sku-media-enrich\n按 SKU、handle、文件名顺序匹配图片。\n一对多或多对一时先请求确认。\n标签与已有值合并，不覆盖。",
+  "siteindex-edm-manual-image": "# siteindex-edm-manual-image\n核对用户给出的 SKU、handle 或唯一产品名称；不唯一时先确认。\n只接受用户提供的非临时 http/https 图片链接。\n通过 siteindex edm set-image 写入，默认整组子 SKU；仅此变体时使用 --only-child。\n完成后运行 siteindex views 重建视图。",
+  "sku-media-enrich": "# sku-media-enrich\n只维护产品标签与 EDM 优先级。\n商品手动首图交给 siteindex-edm-manual-image；本 Skill 不直接写入 sku_media.csv。",
   "page-design": "# page-design\n颜色只使用设计 token 与 palette。\n字体、字号、按钮、间距、圆角遵照项目设计规范。\n规范超过 60 天时提醒重新提取。",
   "project-readme": "# project-readme\n只编辑 README 用户区块，不修改自动区块、index/ 或 _agent/。\n编辑前先展示对比，保存后确认用户区块内容。",
 };

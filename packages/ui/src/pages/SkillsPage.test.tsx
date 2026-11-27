@@ -11,7 +11,29 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe("SkillsPage retired skills", () => {
+describe("SkillsPage skill catalog", () => {
+  it("lists the manual image Skill and keeps media writes out of sku-media-enrich", async () => {
+    const mockApi = createMockApi();
+    vi.doMock("../api", () => ({ api: mockApi, isMockApi: true, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ SkillsPage }, { ToastProvider }] = await Promise.all([import("./SkillsPage"), import("../components/overlays")]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ToastProvider><MemoryRouter><SkillsPage /></MemoryRouter></ToastProvider></QueryClientProvider>);
+
+    const imageRadio = await screen.findByRole("radio", { name: /siteindex-edm-manual-image/ });
+    expect(imageRadio.closest(".si-skill-choice")?.textContent).toContain("1.0.0");
+    fireEvent.click(imageRadio);
+    expect(await screen.findByText(/通过 siteindex edm set-image 写入/)).toBeTruthy();
+    expect(await mockApi.skills.get("siteindex-edm-manual-image")).toMatchObject({
+      info: { version: "1.0.0", writes: ["index/ledgers/sku_media.csv", "index/views/products.jsonl"] },
+    });
+
+    const tagRadio = screen.getByRole("radio", { name: /sku-media-enrich/ });
+    expect(tagRadio.closest(".si-skill-choice")?.textContent).toContain("1.2.0");
+    fireEvent.click(tagRadio);
+    expect(await screen.findByText(/本 Skill 不直接写入 sku_media.csv/)).toBeTruthy();
+    expect((await mockApi.skills.get("sku-media-enrich")).info.writes).toEqual(["index/ledgers/sku_tags.csv"]);
+  });
+
   it("renders a top-level empty state when the Skills API returns no items", async () => {
     const mockApi = createMockApi();
     vi.spyOn(mockApi.skills, "list").mockResolvedValue([]);
