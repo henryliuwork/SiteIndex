@@ -249,7 +249,7 @@ export interface SkuRecord {
   mpn?: string | null;
   brand?: string | null;
   status: "active" | "removed";
-  removed_reason?: "feed_absent_404" | "feed_absent_aged";
+  removed_reason?: "feed_absent_404" | "feed_absent_aged" | "superseded_by_feed";
   first_seen: ISODate;
   last_seen: ISODate;
   updated_at: ISODate;

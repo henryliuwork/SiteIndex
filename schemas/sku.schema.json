@@ -105,7 +105,8 @@
     "removed_reason": {
       "enum": [
         "feed_absent_404",
-        "feed_absent_aged"
+        "feed_absent_aged",
+        "superseded_by_feed"
       ]
     },
     "first_seen": {
