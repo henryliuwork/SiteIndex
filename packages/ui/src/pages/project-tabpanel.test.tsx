@@ -31,7 +31,7 @@ const pageCases = [
     normal: "si-edm-summary",
     loading: "listQuery.isLoading",
     error: "listQuery.isError",
-    empty: 'emptyTitle="没有 SKU 图片记录"',
+    empty: 'emptyTitle={listQuery.isFetching ? "正在更新 SKU 图片…" : "没有 SKU 图片记录"}',
   },
   {
     file: "DesignPage.tsx",
