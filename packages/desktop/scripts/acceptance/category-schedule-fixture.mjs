@@ -11,7 +11,9 @@ const disabledSchedule = () => ({
 
 /** Reuses the existing synthetic Woo fixture without a real site or local customer data. */
 export async function createCategoryScheduleFixture(profile, id, deviceId) {
-  if (!Number.isInteger(id) || id < 46 || id > 60 || !deviceId) throw new Error("Invalid synthetic matrix fixture");
+  if (!Number.isInteger(id) || !((id >= 46 && id <= 60) || id === 85) || !deviceId) {
+    throw new Error("Invalid synthetic matrix fixture");
+  }
   const projectId = `matrix-${id}`;
   const projectDir = path.join(profile.layout.projectRoot, projectId);
   const index = path.join(projectDir, "index");
