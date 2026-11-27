@@ -780,14 +780,16 @@ function paginate<T extends object>(
   const filtered = needle
     ? rows.filter((row) => searchFields(row).some((value) => searchable(value).includes(needle)))
     : [...rows];
-  const field = query.sort?.field ?? defaultSortField;
-  const direction = query.sort?.dir === "desc" ? -1 : 1;
+  const requestedSort = query.sort;
+  const hasSortField = requestedSort ? filtered.some((row) => Object.hasOwn(row, requestedSort.field)) : false;
+  const field = requestedSort && hasSortField ? requestedSort.field : defaultSortField;
+  const direction = requestedSort && hasSortField && requestedSort.dir === "desc" ? -1 : 1;
   const compareRows = (left: T, right: T) => {
     const a = (left as Record<string, unknown>)[field];
     const b = (right as Record<string, unknown>)[field];
     return compareValue(a, b) * direction || codeUnitCompare(defaultKey(left), defaultKey(right));
   };
-  let alreadySorted = !query.sort;
+  let alreadySorted = !requestedSort || !hasSortField;
   for (let index = 1; alreadySorted && index < filtered.length; index += 1) {
     if (compareRows(filtered[index - 1]!, filtered[index]!) > 0) alreadySorted = false;
   }
