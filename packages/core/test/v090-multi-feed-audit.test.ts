@@ -3,7 +3,7 @@ import { readFeeds, toSnapshot } from "../src/crawl/gmc-feed";
 
 afterEach(() => vi.unstubAllGlobals());
 
-it.fails("keeps a later valid duplicate SKU when an earlier feed item has no price", async () => {
+it("keeps a later valid duplicate SKU when an earlier feed item has no price", async () => {
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     const price = url.pathname === "/valid.xml" ? "<price>19.99 USD</price>" : "";
