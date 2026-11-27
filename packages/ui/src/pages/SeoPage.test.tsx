@@ -23,6 +23,22 @@ afterEach(() => {
   vi.resetModules();
 });
 
+async function typeSearchAt100ms(input: HTMLInputElement, value: string) {
+  for (const [index] of [...value].entries()) {
+    const typed = value.slice(0, index + 1);
+    fireEvent.change(input, { target: { value: typed } });
+    expect(input.value).toBe(typed);
+    if (index < value.length - 1) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+function expectSearchSurfaceStable(table: HTMLElement, input: HTMLInputElement) {
+  expect(table.isConnected).toBe(true);
+  expect(table.contains(input)).toBe(true);
+  expect(document.activeElement).toBe(input);
+  expect(input.value).toBe("abc");
+}
+
 function SearchProbe() {
   const location = useLocation();
   return <output data-testid="search-params">{location.search}</output>;
@@ -102,41 +118,98 @@ describe("SeoPage 问题处理", () => {
     await waitFor(() => expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ sort: { field: "open_high", dir: "asc" } })));
   });
 
-  it("SEO 兼容列表刷新期间搜索框保持挂载、焦点与输入内容", async () => {
+  it.each([0, 300, 1000])("SEO 兼容问题列表延迟 %ims 时搜索框保持挂载、焦点与 abc", async (delayMs) => {
     const mockApi = createMockApi();
     const originalListIssues = mockApi.seo.listIssues.bind(mockApi.seo);
-    const listIssues = vi.fn(async (projectId, query) => query.search
-      ? new Promise<Awaited<ReturnType<typeof originalListIssues>>>(() => {})
-      : originalListIssues(projectId, query));
+    let searchSettled = false;
+    const listIssues = vi.fn(async (projectId, query) => {
+      if (!query.search) return originalListIssues(projectId, query);
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      const result = await originalListIssues(projectId, query);
+      searchSettled = true;
+      return result;
+    });
     mockApi.seo.listIssues = listIssues;
     await renderSeoPage(mockApi, "/p/demo/seo", false);
     const table = await screen.findByRole("table", { name: "seo.issues.v2 数据表" });
     const input = within(table).getByRole("searchbox", { name: "搜索 SEO 数据" }) as HTMLInputElement;
     input.focus();
-    fireEvent.change(input, { target: { value: "abc" } });
+    await typeSearchAt100ms(input, "abc");
     await waitFor(() => expect(listIssues).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
 
-    expect(table.isConnected).toBe(true);
-    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
+    if (delayMs > 0) expect(searchSettled).toBe(false);
+    expectSearchSurfaceStable(table, input);
+    await waitFor(() => expect(searchSettled).toBe(true), { timeout: delayMs + 1500 });
+    expectSearchSurfaceStable(table, input);
   });
 
-  it("SEO 聚合页面表刷新期间搜索框保持挂载、焦点与输入内容", async () => {
+  it.each([0, 300, 1000])("SEO 聚合页面表延迟 %ims 时搜索框保持挂载、焦点与 abc", async (delayMs) => {
     const mockApi = createMockApi();
     const originalListPageRows = mockApi.seo.listPageRows!.bind(mockApi.seo);
-    const listPageRows = vi.fn(async (projectId, query) => query.search
-      ? new Promise<Awaited<ReturnType<typeof originalListPageRows>>>(() => {})
-      : originalListPageRows(projectId, query));
+    let searchSettled = false;
+    const listPageRows = vi.fn(async (projectId, query) => {
+      if (!query.search) return originalListPageRows(projectId, query);
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      const result = await originalListPageRows(projectId, query);
+      searchSettled = true;
+      return result;
+    });
     mockApi.seo.listPageRows = listPageRows;
     await renderSeoPage(mockApi, "/p/demo/seo", true);
     const table = await screen.findByRole("table", { name: "seo.pageRows 数据表" });
     const input = within(table).getByRole("searchbox", { name: "搜索 SEO 页面" }) as HTMLInputElement;
     input.focus();
-    fireEvent.change(input, { target: { value: "abc" } });
+    await typeSearchAt100ms(input, "abc");
     await waitFor(() => expect(listPageRows).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
 
-    expect(table.isConnected).toBe(true);
-    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
+    if (delayMs > 0) expect(searchSettled).toBe(false);
+    expectSearchSurfaceStable(table, input);
+    await waitFor(() => expect(searchSettled).toBe(true), { timeout: delayMs + 1500 });
+    expectSearchSurfaceStable(table, input);
   });
+
+  it.each(((["pages", "links"] as const).flatMap((view) => [0, 300, 1000].map((delayMs) => ({ view, delayMs })))))(
+    "SEO 兼容 $view 视图延迟 $delayMs ms 时搜索框保持挂载、焦点与 abc",
+    async ({ view, delayMs }) => {
+      const mockApi = createMockApi();
+      let searchSettled = false;
+      if (view === "pages") {
+        const original = mockApi.seo.listPages.bind(mockApi.seo);
+        mockApi.seo.listPages = vi.fn(async (projectId, query) => {
+          if (!query.search) return original(projectId, query);
+          if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+          const result = await original(projectId, query);
+          searchSettled = true;
+          return result;
+        });
+      } else {
+        const original = mockApi.seo.listLinks.bind(mockApi.seo);
+        mockApi.seo.listLinks = vi.fn(async (projectId, query) => {
+          if (!query.search) return original(projectId, query);
+          if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+          const result = await original(projectId, query);
+          searchSettled = true;
+          return result;
+        });
+      }
+
+      await renderSeoPage(mockApi, "/p/demo/seo", false);
+      const viewGroup = await screen.findByRole("group", { name: "SEO 视图" });
+      if (view === "pages") fireEvent.click(within(viewGroup).getByRole("button", { name: /页面/ }));
+      else fireEvent.click(within(viewGroup).getByRole("button", { name: /内链/ }));
+      const table = await screen.findByRole("table", { name: `seo.${view} 数据表` });
+      const input = within(table).getByRole("searchbox", { name: "搜索 SEO 数据" }) as HTMLInputElement;
+      input.focus();
+      await typeSearchAt100ms(input, "abc");
+
+      const searchMethod = view === "pages" ? mockApi.seo.listPages : mockApi.seo.listLinks;
+      await waitFor(() => expect(searchMethod).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
+      if (delayMs > 0) expect(searchSettled).toBe(false);
+      expectSearchSurfaceStable(table, input);
+      await waitFor(() => expect(searchSettled).toBe(true), { timeout: delayMs + 1500 });
+      expectSearchSurfaceStable(table, input);
+    },
+  );
 
   it("SEO 抓取日期只显示在数据说明行，项目头和页底不重复", async () => {
     await renderSeoPage(createMockApi());
