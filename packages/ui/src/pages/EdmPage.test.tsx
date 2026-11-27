@@ -1449,24 +1449,35 @@ describe("EdmPage DataTable 列契约", () => {
     expect(screen.getByRole("checkbox", { name: "产品 / 变体" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("搜索结果刷新期间 SKU 图片搜索框保持挂载、焦点与输入内容", async () => {
+  it.each([0, 300, 1000])("搜索请求延迟 %ims 时逐字输入 abc 不失焦或闪现整表加载", async (delayMs) => {
     enableTableRows();
-    const rows = [mediaImageRow("DEMO-SEARCH-001", null), mediaImageRow("DEMO-SEARCH-002", null)];
+    const rows = [
+      { ...mediaImageRow("DEMO-SEARCH-001", null), title: "abc 虚构商品 1" },
+      { ...mediaImageRow("DEMO-SEARCH-002", null), title: "abc 虚构商品 2" },
+    ];
     const { listImages } = await renderEdmPage(false, true, rows, false, false, {
-      listImagesImplementation: async (_id, query) => query.search
-        ? new Promise<{ rows: SkuImageRow[]; total: number }>(() => {})
-        : { rows, total: rows.length },
+      listImagesImplementation: async (_id, query) => {
+        if (!query.search) return { rows, total: rows.length };
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return { rows: [rows[1]!, rows[0]!], total: rows.length };
+      },
     });
     const table = await screen.findByRole("region", { name: "edm.images 数据表" });
     const input = within(table).getByRole("searchbox", { name: "搜索 SKU 图片" }) as HTMLInputElement;
     input.focus();
-    fireEvent.change(input, { target: { value: "abc" } });
+    for (const value of ["a", "ab", "abc"]) {
+      fireEvent.change(input, { target: { value } });
+      expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value });
+      expect(within(table).queryByText("正在更新 SKU 图片…")).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
-
-    expect(await within(table).findByText("正在更新 SKU 图片…")).toBeTruthy();
-    expect(table.isConnected).toBe(true);
+    expect(within(table).queryByText("正在更新 SKU 图片…")).toBeNull();
+    if (delayMs > 0) expect(table.querySelector('.si-table tbody tr[data-row-id] .si-edm-sku')?.textContent).toBe("DEMO-SEARCH-001");
     expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
-  });
+    await waitFor(() => expect(table.querySelector('.si-table tbody tr[data-row-id] .si-edm-sku')?.textContent).toBe("DEMO-SEARCH-002"), { timeout: 2500 });
+    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
+  }, 5000);
 
   it("产品 / 变体排序使用标题值，而不是仍按 SKU 顺序展示", async () => {
     enableTableRows();

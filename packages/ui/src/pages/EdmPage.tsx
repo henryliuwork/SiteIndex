@@ -723,10 +723,10 @@ export function EdmPage() {
     {listQuery.isLoading && !listQuery.data ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError && !listQuery.data ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <>
     {listQuery.isError && <ApiErrorNotice label="SKU 图片列表更新失败，仍显示上次结果。" error={listQuery.error} onRetry={() => void listQuery.refetch()} />}
     <DataTable
-      tableId="edm.images" rows={listQuery.isFetching ? [] : listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
+      tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
       selectable={isMockApi || mediaCapability.available} onSelectionChange={isMockApi || mediaCapability.available ? setSelectedRows : undefined}
-      emptyTitle={listQuery.isFetching ? "正在更新 SKU 图片…" : "没有 SKU 图片记录"} emptyDescription={listQuery.isFetching ? "" : "检查产品目录与 Feed 图片地址。"}
+      emptyTitle={listQuery.isFetching && !listQuery.data?.rows.length ? "正在更新 SKU 图片…" : "没有 SKU 图片记录"} emptyDescription={listQuery.isFetching ? "" : "检查产品目录与 Feed 图片地址。"}
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-left"><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />
           <FilterBar className="si-edm-filterbar">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setView(value || "all")}>{item.value === "none" && missingImageCount !== undefined ? `缺图 ${missingImageCount}` : item.label}</FilterPill>)}</FilterBar>

@@ -142,6 +142,32 @@ describe("ProjectTodosPage", () => {
     expect(await screen.findByText("没有匹配的待办")).toBeTruthy();
   });
 
+  it("本地筛选每隔 100ms 输入 abc 时保持搜索框焦点和表格行", async () => {
+    await renderTodos((todos) => {
+      const originalList = todos.list.bind(todos);
+      todos.list = async (id) => {
+        const result = await originalList(id);
+        return { ...result, items: result.items.map((item, index) => index === 0
+          ? { ...item, finding: { ...item.finding, title: "abc 虚构待办" } } : item) };
+      };
+    });
+    const table = await screen.findByRole("region", { name: "project.todos 数据表" });
+    const input = within(table).getByRole("searchbox", { name: "搜索项目待办" }) as HTMLInputElement;
+    await within(table).findByText("abc 虚构待办");
+    input.focus();
+    for (const value of ["a", "ab", "abc"]) {
+      fireEvent.change(input, { target: { value } });
+      expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value });
+      expect(within(table).queryByText("正在读取项目待办…")).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(table.isConnected).toBe(true);
+    expect(within(table).getByText("abc 虚构待办")).toBeTruthy();
+    expect(within(table).queryByText("正在读取项目待办…")).toBeNull();
+    expect(document.activeElement).toBe(input);
+  });
+
   it("概览深链选中未完成待办并打开对应详情", async () => {
     const key = "demo:inventory.stock-mismatch:DEMO001CP01";
     await renderTodos(undefined, false, `/p/demo/todos?status=active&todo=${encodeURIComponent(key)}`);
