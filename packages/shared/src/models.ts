@@ -225,6 +225,8 @@ export interface SkuAttributes {
 export interface SkuRecord {
   sku: string;
   product_id: string;
+  /** 入库来源；旧台账缺少此字段时保持兼容，Core 可将其视为现有 feed 记录。 */
+  source?: "feed" | "page";
   parent_sku?: string | null;
   handle: string;
   title: string;
