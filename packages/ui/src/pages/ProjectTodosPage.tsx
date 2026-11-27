@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, ClipboardList, Clock3, FileSearch, MinusCirc
 import { ApiErrorNotice, Button, Chip, DataTable, Drawer, EmptyState, FilterBar, formatDateTime, Input, Notice, PageFrame, PageHeader, ProjectHeader, ProjectTabPanel, SearchInput, Select, useToast } from "../components";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
+import { sortRows } from "../components/utils";
 import "./project-todos/page.css";
 
 type TodoQueryFilters = { status?: TodoManualStatus | "active" };
@@ -33,6 +34,19 @@ const statusTones: Record<TodoManualStatus, "neutral" | "info" | "warn" | "ok"> 
 
 const severityLabels = { high: "高", mid: "中", low: "低" } as const;
 const severityTones = { high: "danger", mid: "warn", low: "neutral" } as const;
+const statusOrder: Record<TodoManualStatus, number> = { open: 0, in_progress: 1, pending_review: 2, done: 3, ignored: 4 };
+const severityOrder = { high: 0, mid: 1, low: 2 } as const;
+
+function todoSortValue(item: ProjectTodo, field: string): unknown {
+  switch (field) {
+    case "finding": return item.finding.title;
+    case "rule": return item.finding.rule_id;
+    case "status": return statusOrder[item.state.status];
+    case "severity": return item.finding.severity ? severityOrder[item.finding.severity] : null;
+    case "last_seen": return Date.parse(item.finding.last_seen_at);
+    default: return undefined;
+  }
+}
 const pathLabels: Partial<Record<PathKey, string>> = {
   site: "项目配置",
   skus: "商品 Feed",
@@ -144,9 +158,10 @@ export function ProjectTodosPage() {
     () => allItems.filter((item) => filterFinding(item, search, statusFilter)),
     [allItems, search, statusFilter],
   );
+  const sortedItems = useMemo(() => sortRows(filteredItems, query.sort, todoSortValue), [filteredItems, query.sort]);
   const pageSize = query.pageSize > 0 ? query.pageSize : filteredItems.length;
   const pageOffset = Math.max(0, query.page - 1) * pageSize;
-  const rows = filteredItems.slice(pageOffset, pageOffset + pageSize);
+  const rows = sortedItems.slice(pageOffset, pageOffset + pageSize);
   const selectTodo = (item: ProjectTodo) => {
     setSelectedTodo(item);
     setDraftStatus(item.state.status);
