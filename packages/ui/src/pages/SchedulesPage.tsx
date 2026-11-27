@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
-import type { ProjectSummary, RunLog, ScheduleState, SystemTaskRow } from "@siteindex/shared";
+import type { ListQuery, ProjectSummary, RunLog, ScheduleState, SystemTaskRow } from "@siteindex/shared";
 import { api, apiErrorMessage } from "../api";
 import { projectQueryKeys } from "../project-queries";
 import { ApiErrorNotice, Button, Card, Chip, DataTable, EmptyState, formatDateTime, Notice, PageFrame, PageHeader, Select, TableSection, useToast } from "../components";
+import { sortRows } from "../components/utils";
 import type { ColumnDef } from "@tanstack/react-table";
 import "./schedules/page.css";
 
@@ -199,7 +200,7 @@ export function SchedulesPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [selectedProject, setSelectedProject] = useState("all");
-  const [query, setQuery] = useState({ page: 1, pageSize: 50 });
+  const [query, setQuery] = useState<ListQuery>({ page: 1, pageSize: 50 });
   const [verificationByProject, setVerificationByProject] = useState<Record<string, ScheduleVerificationUiState>>({});
   const [openUtility, setOpenUtility] = useState<"system" | "orphans" | null>(null);
   const projectsQuery = useQuery({ queryKey: projectQueryKeys.list, queryFn: () => api.projects.list() });
@@ -266,7 +267,18 @@ export function SchedulesPage() {
       historyLoading: Boolean(historyQuery?.isLoading),
     };
   });
-  const pageRows = query.pageSize === 0 ? rows : rows.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
+  const sortedRows = sortRows(rows, query.sort, (row, field) => {
+    switch (field) {
+      case "project": return row.project.name;
+      case "daily": return row.schedule?.config.daily.time;
+      case "weekly": return row.schedule?.config.weekly.time;
+      case "system_status": return (verificationByProject[row.project.id]?.result?.state ?? (row.schedule?.registered ? "ok" : "unregistered")) === "ok" ? 1 : 0;
+      case "last_run": return row.lastRun?.finished_at ?? row.lastRun?.started_at;
+      case "next_run": return row.schedule ? nextRun(row.schedule)?.at : undefined;
+      default: return undefined;
+    }
+  });
+  const pageRows = query.pageSize === 0 ? sortedRows : sortedRows.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
   const mode = runtimeStatusQuery.data?.mode === "system" ? "系统计划任务" : runtimeStatusQuery.data?.mode === "resident" ? "软件常驻（关闭软件后不执行）" : undefined;
 
   const columns: ColumnDef<ScheduleProjectRow, unknown>[] = [
