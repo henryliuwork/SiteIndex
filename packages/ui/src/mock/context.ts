@@ -445,7 +445,9 @@ export const tagNamesByProject: Record<MockProjectId, Set<string>> = {
 };
 for (const projectId of ["demo", "demo2"] as const) {
   for (const [index, record] of recordsByProject[projectId].entries()) {
-    if ((index === 3 || index === 4) && record.image_url) manualImages.set(projectId + ":" + record.sku, "https://images.example.test/demo/" + record.sku + ".jpg");
+    if ([3, 6, 10, 13].includes(index)) {
+      manualImages.set(projectId + ":" + record.sku, "https://images.example.test/manual/" + record.sku + "-cover.webp");
+    }
   }
 }
 export function mockFeedImageUrl(record: SkuRecord): string | null {
@@ -557,13 +559,13 @@ export const seoPages = [
   }),
 ];
 export const seoIssues: SeoIssue[] = [
-  { url: "https://demo-store.example.test/blog/missing-article", rule: "http_4xx", severity: "high", detail: "页面 404，仍出现在 sitemap 中", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
-  { url: "https://demo-store.example.test/demo/product-2", rule: "canonical_other", severity: "mid", detail: "Canonical 指向 /demo/product-2-redirect", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
-  { url: "https://demo-store.example.test/demo/product-1", rule: "desc_missing", severity: "mid", detail: "Meta description 缺失 · 示例产品页", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
-  { url: "https://demo-store.example.test/blog/example-guide", rule: "schema_missing", severity: "mid", detail: "缺少 Article / BlogPosting schema", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
-  { url: "https://demo-store.example.test/demo/page-3", rule: "noindex", severity: "low", detail: "noindex · 确认是否有意不收录", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+  { url: "https://demo-store.example.test/blog/missing-article", rule: "http_4xx", severity: "high", detail: "页面 404，仍出现在 sitemap 中", status: "open", first_seen: "2026-10-13", last_seen: FIXED_TODAY },
+  { url: "https://demo-store.example.test/demo/product-2", rule: "canonical_other", severity: "mid", detail: "Canonical 指向 /demo/product-2-redirect", status: "open", first_seen: "2026-10-16", last_seen: FIXED_TODAY },
+  { url: "https://demo-store.example.test/demo/product-1", rule: "desc_missing", severity: "mid", detail: "Meta description 缺失 · 示例产品页", status: "open", first_seen: "2026-10-14", last_seen: FIXED_TODAY },
+  { url: "https://demo-store.example.test/blog/example-guide", rule: "schema_missing", severity: "mid", detail: "缺少 Article / BlogPosting schema", status: "open", first_seen: "2026-10-17", last_seen: FIXED_TODAY },
+  { url: "https://demo-store.example.test/demo/page-3", rule: "noindex", severity: "low", detail: "noindex · 确认是否有意不收录", status: "open", first_seen: "2026-10-12", last_seen: FIXED_TODAY },
   { url: "https://demo-store.example.test/blog/example-guide", rule: "thin_content", severity: "low", detail: "内容过短且无站内链接 · 15 词", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
-  { url: "https://demo-store.example.test/", rule: "title_length", severity: "low", detail: "Title 过短 · 16 字符，建议 30–60", status: "open", first_seen: "2026-10-20", last_seen: FIXED_TODAY },
+  { url: "https://demo-store.example.test/", rule: "title_length", severity: "low", detail: "Title 过短 · 16 字符，建议 30–60", status: "open", first_seen: "2026-10-11", last_seen: FIXED_TODAY },
 ];
 export function seoIssuesForProject(id: ProjectId): SeoIssue[] {
   const domain = projectSummaries[projectKey(id)].domain.toLocaleLowerCase();
