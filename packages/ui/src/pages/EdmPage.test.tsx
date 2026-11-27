@@ -1481,10 +1481,10 @@ describe("EdmPage DataTable 列契约", () => {
     const table = await screen.findByRole("region", { name: "edm.images 数据表" });
     fireEvent.click(within(table).getByRole("button", { name: "产品 / 变体" }));
     await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "product", dir: "asc" } })));
-    await waitFor(() => expect(table.querySelector(".si-table tbody tr[data-row-id] .si-edm-product strong")?.textContent).toBe("Alpha 虚构商品"));
+    await waitFor(() => expect(screen.getByRole("region", { name: "edm.images 数据表" }).querySelector(".si-table tbody tr[data-row-id] .si-edm-product strong")?.textContent).toBe("Alpha 虚构商品"));
   });
 
-  it.fails("手动首图 URL 有不同值时按该 URL 改变行顺序", async () => {
+  it("手动首图 URL 有不同值时按该 URL 改变行顺序", async () => {
     enableTableRows();
     const rows = [
       mediaImageRow("DEMO-MANUAL-A", null, "https://images.example.test/zulu.jpg"),
@@ -1507,6 +1507,7 @@ describe("EdmPage DataTable 列契约", () => {
     fireEvent.click(within(table).getByRole("button", { name: "手动输入的首图 URL" }));
 
     await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "manual_image_url", dir: "asc" } })));
-    await waitFor(() => expect(table.querySelector(".si-table tbody tr[data-row-id] .si-edm-sku")?.textContent).toBe("DEMO-MANUAL-Z"));
+    await waitFor(() => expect(screen.getByRole("region", { name: "edm.images 数据表" }).querySelector(".si-table tbody tr[data-row-id] .si-edm-sku")?.textContent).toBe("DEMO-MANUAL-Z"));
   });
+
 });
