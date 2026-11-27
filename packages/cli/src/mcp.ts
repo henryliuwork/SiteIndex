@@ -48,7 +48,7 @@ async function readOnlyResponse(work: () => Promise<unknown>) {
 
 /** Only registers deterministic reads. Mutation, job, media and export tools are deliberately absent. */
 export function createReadOnlyMcpServer(service: ScenarioMcpService, projectId: ProjectId): McpServer {
-  const server = new McpServer({ name: "siteindex", version: "0.8.4" });
+  const server = new McpServer({ name: "siteindex", version: "0.8.5" });
 
   server.registerTool("seo_page_brief", {
     description: "读取指定页面的本地 SEO 摘要与来源元数据。只读，不抓取页面。",
