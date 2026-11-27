@@ -428,11 +428,11 @@ export function toSnapshot(items: readonly FeedItem[], site: FeedSiteConfig, tod
     const sku = String(item[skuField] || item.id || "").trim();
     if (!sku) { count("no_id"); continue; }
     if (seen.has(sku)) { count("duplicate"); continue; }
-    seen.add(sku);
     const url = cleanUrl(String(item.link || item.mobile_link || ""), site.base_url);
     const [basePrice, baseCurrency] = parsePrice(typeof item.price === "string" ? item.price : undefined);
     const [salePrice, saleCurrency] = parsePrice(typeof item.sale_price === "string" ? item.sale_price : undefined);
     if (basePrice === null || !url) { count("missing_price_or_link"); continue; }
+    seen.add(sku);
     let price = basePrice;
     let compareAt: number | null = null;
     if (salePrice !== null && salePrice < basePrice && saleActive(typeof item.sale_price_effective_date === "string" ? item.sale_price_effective_date : undefined, today)) {
