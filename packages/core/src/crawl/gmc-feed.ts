@@ -257,10 +257,18 @@ function parsePrice(value: string | undefined): [number | null, string | null] {
   return [Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null, currency];
 }
 
-function saleActive(value: string | undefined, today: string): boolean {
+function saleActive(value: string | undefined, today: string, timezone?: string): boolean {
   if (!value || !value.includes("/")) return true;
   try {
-    const [start, end] = value.split("/", 2).map((part) => part.trim().slice(0, 10));
+    const [rawStart, rawEnd] = value.split("/", 2).map((part) => part.trim());
+    if (rawStart && rawEnd && today === localDate(timezone)
+      && [rawStart, rawEnd].every((part) => /(?:Z|[+-]\d{2}:\d{2})$/iu.test(part))) {
+      const startAt = Date.parse(rawStart);
+      const endAt = Date.parse(rawEnd);
+      const now = Date.now();
+      if (Number.isFinite(startAt) && Number.isFinite(endAt)) return startAt <= now && now <= endAt;
+    }
+    const [start, end] = [rawStart?.slice(0, 10), rawEnd?.slice(0, 10)];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(end ?? "")) return true;
     const startTime = Date.parse(`${start}T00:00:00Z`);
     const endTime = Date.parse(`${end}T00:00:00Z`);
@@ -435,7 +443,7 @@ export function toSnapshot(items: readonly FeedItem[], site: FeedSiteConfig, tod
     seen.add(sku);
     let price = basePrice;
     let compareAt: number | null = null;
-    if (salePrice !== null && salePrice < basePrice && saleActive(typeof item.sale_price_effective_date === "string" ? item.sale_price_effective_date : undefined, today)) {
+    if (salePrice !== null && salePrice < basePrice && saleActive(typeof item.sale_price_effective_date === "string" ? item.sale_price_effective_date : undefined, today, site.timezone)) {
       price = salePrice;
       compareAt = basePrice;
     }
