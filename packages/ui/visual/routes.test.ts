@@ -3,6 +3,7 @@ import { isDataTableRoute, routeCaseUrl } from "./routes";
 
 describe("ui:check data table routes", () => {
   it.each([
+    "/",
     "/p/demo/products",
     "/p/demo/inventory",
     "/p/demo/edm",
@@ -13,7 +14,7 @@ describe("ui:check data table routes", () => {
     expect(isDataTableRoute(route)).toBe(true);
   });
 
-  it.each(["/", "/p/demo", "/p/demo/overview", "/p/demo/readme"])("does not require a table on %s", (route) => {
+  it.each(["/p/demo", "/p/demo/overview", "/p/demo/readme"])("does not require a table on %s", (route) => {
     expect(isDataTableRoute(route)).toBe(false);
   });
 });
