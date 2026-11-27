@@ -246,8 +246,9 @@ function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), cat
 }
 
 async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<string>, categorySlugs: ReadonlySet<string>,
-  wooCategories: readonly JsonObject[] = []): Promise<{ rows: Parsed[]; errors: string[]; attempts: number; blogUrls: Set<string>; categoryUrls: Set<string>; sitemapDepthSkipped: number }> {
+  wooCategories: readonly JsonObject[] = []): Promise<{ rows: Parsed[]; errors: string[]; attempts: number; blogUrls: Set<string>; categoryUrls: Set<string>; sitemapDepthSkipped: number; sitemapUrls: number; crawled: number; truncated: number }> {
   const urls = new Map<string, string>();
+  const sitemapUrls = new Set<string>();
   const blogUrls = new Set<string>();
   const categoryUrls = new Set<string>();
   const seen = new Set<string>();
@@ -322,6 +323,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
       else for (const row of locs(tree, "url")) {
         const page = cleanUrl(row.loc);
         if (page && !pattern(page, config.crawl.exclude_url_patterns)) {
+          sitemapUrls.add(page);
           urls.set(page, row.lastmod ?? urls.get(page) ?? "");
           if (isBlogSitemap) blogUrls.add(page);
           if (isCategorySitemap) categoryUrls.add(page);
@@ -367,8 +369,20 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     urls.set(page, urls.get(page) ?? "");
     categoryUrls.add(page);
   }
+  const allUrls = [...urls.entries()];
+  const prioritizedUrls = allUrls.length > maximum
+    ? allUrls.map((entry, index) => ({ entry, index, lastmod: Date.parse(entry[1]) }))
+      .sort((a, b) => {
+        const aHasLastmod = Number.isFinite(a.lastmod);
+        const bHasLastmod = Number.isFinite(b.lastmod);
+        if (aHasLastmod !== bHasLastmod) return aHasLastmod ? -1 : 1;
+        return aHasLastmod ? b.lastmod - a.lastmod || a.index - b.index : a.index - b.index;
+      }).map(({ entry }) => entry)
+    : allUrls;
+  const crawlUrls = prioritizedUrls.slice(0, maximum);
+  const truncated = allUrls.length - crawlUrls.length;
   const rows: Parsed[] = [];
-  for (const [url, lastmod] of [...urls.entries()].slice(0, maximum)) {
+  for (const [url, lastmod] of crawlUrls) {
     try {
       const response = await request(url);
       if (response.status === 429) throw new Error("HTTP 429: crawl rate limited");
@@ -415,7 +429,8 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     } catch (error) { errors.push(url + ": " + (error instanceof Error ? error.message : String(error))); }
   }
   if (!urls.size) errors.push("sitemap has no crawlable URLs");
-  return { rows, errors, attempts, blogUrls, categoryUrls, sitemapDepthSkipped };
+  return { rows, errors, attempts, blogUrls, categoryUrls, sitemapDepthSkipped,
+    sitemapUrls: sitemapUrls.size, crawled: crawlUrls.length, truncated };
 }
 
 function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, date: string): SeoIssue[] {
@@ -1221,13 +1236,16 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     legacyUrlPatterns: config.crawl.blog_url_patterns ?? [],
   };
   const errors = [...crawlResult.errors];
-  const counts: Record<string, number> = {};
-  if (crawlResult.sitemapDepthSkipped) counts.sitemap_depth_skipped = crawlResult.sitemapDepthSkipped;
+  const metrics: Record<string, number> = { sitemap_urls: crawlResult.sitemapUrls, crawled: crawlResult.crawled, truncated: crawlResult.truncated };
+  if (crawlResult.sitemapDepthSkipped) metrics.sitemap_depth_skipped = crawlResult.sitemapDepthSkipped;
+  const counts: Record<string, number> = { ...metrics };
+  const truncationMessage = crawlResult.truncated ? `每周抓取达到 max_pages 上限，已截断 ${crawlResult.truncated} 个 URL。` : null;
+  const resultErrors = () => truncationMessage ? [...errors, truncationMessage] : [...errors];
   if (errors.some((error) => /\bHTTP 429\b/u.test(error)))
-    return { status: "failed", counts, errors };
+    return { status: "failed", counts, errors: resultErrors() };
   const denominator = rows.length + errors.length;
   if (!rows.length || (denominator > 0 && errors.length / denominator > 0.2 && !wooApi.length))
-    return { status: "failed", counts, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
+    return { status: "failed", counts, errors: resultErrors().length ? resultErrors() : ["抓取结果为空，未覆盖现有数据。"] };
   const oldIssues = selected.includes("issues") ? await readJsonl(path.join(projectPath, paths.seoIssues)) as unknown as SeoIssue[] : [];
   const issues = selected.includes("issues") ? makeIssues(rows, oldIssues, config, date) : [];
   const stock = config.platform === "woocommerce" ? await readJsonl(path.join(projectPath, paths.inventoryLatest)) : [];
@@ -1269,6 +1287,9 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     await atomicWrite(techPath, JSON.stringify(techProfile, null, 2) + "\n");
   }
   const failed = crawlResult.attempts > 0 && errors.filter((error) => !error.endsWith("结果为空，未覆盖现有数据。")).length / Math.max(1, denominator) > 0.2;
-  if (failed && !counts.categories) return { status: "failed", counts: {}, errors };
-  return { status: errors.length ? Object.keys(counts).length ? "partial" : "failed" : "ok", counts, errors };
+  if (failed && !counts.categories) return { status: "failed", counts: metrics, errors: resultErrors() };
+  const finalErrors = resultErrors();
+  const hasOutput = Object.keys(counts).some((key) => key !== "sitemap_urls" && key !== "crawled"
+    && key !== "truncated" && key !== "sitemap_depth_skipped");
+  return { status: finalErrors.length ? hasOutput ? "partial" : "failed" : "ok", counts, errors: finalErrors };
 }
