@@ -12,15 +12,15 @@ const ASSERTION_PHASES = new Set(["baseline-ipc", "baseline-file", "candidate-ip
   "baseline-exit", "baseline-reopen-ipc", "baseline-reopen-exit", "candidate-exit",
   "candidate-reopen-ipc", "candidate-reopen-exit"]);
 
-export function parseItemRange(input) {
-  if (typeof input !== "string" || !input.trim()) throw new Error("--items requires a range such as 1-83");
+export function parseItemRange(input, { min = 1, max = 83 } = {}) {
+  if (typeof input !== "string" || !input.trim()) throw new Error(`--items requires a range such as ${min}-${max}`);
   const items = new Set();
   for (const segment of input.split(",")) {
     const match = /^(\d+)(?:-(\d+))?$/u.exec(segment.trim());
     if (!match) throw new Error(`Invalid acceptance item range: ${segment}`);
     const first = Number(match[1]);
     const last = Number(match[2] ?? match[1]);
-    if (first < 1 || last > 83 || first > last) throw new Error(`Acceptance item outside 1-83: ${segment}`);
+    if (first < min || last > max || first > last) throw new Error(`Acceptance item outside ${min}-${max}: ${segment}`);
     for (let id = first; id <= last; id++) {
       if (items.has(id)) throw new Error(`Duplicate acceptance item: ${id}`);
       items.add(id);
@@ -91,12 +91,12 @@ async function recordExit(report, id, phase, session, exitNormally) {
 
 /** Lifecycle only. Item adapters and the workflow are added in later PRs. */
 export async function runAcceptance({ itemIds, baseline, candidate, handlers, outputDir, runner = "windows-hosted",
-  osBuild = os.release(), itemsArgument, secrets = [], dependencies = {} }) {
+  osBuild = os.release(), itemsArgument, itemBounds = { min: 1, max: 83 }, secrets = [], dependencies = {} }) {
   const deps = { verifyPinnedInstallers, verifyRemoteSources,
     createProfile, redirectWindowsAppData, cleanupProfile,
     installWindowsNsis, uninstallWindowsNsis, launchInstalledApp, exitNormally, ...dependencies };
   if (!Array.isArray(itemIds) || !itemIds.length || new Set(itemIds).size !== itemIds.length
-    || itemIds.some((id) => !Number.isInteger(id) || id < 1 || id > 83)) {
+    || itemIds.some((id) => !Number.isInteger(id) || id < itemBounds.min || id > itemBounds.max)) {
     throw new Error("Valid acceptance item IDs are required");
   }
   if (!outputDir) throw new Error("An isolated acceptance output directory is required");
