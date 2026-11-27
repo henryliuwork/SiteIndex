@@ -186,17 +186,20 @@ describe("v0.9.0 A-1 synthetic crawl diagnostic C1–C11", () => {
 
   // Expected failures document diagnostics gaps without changing crawler behavior in this phase.
 
-  it.fails.each([
-    { label: "C3 missing price", item: { id: "DEMO-C3-NO-PRICE", price: "" }, reason: "缺价格" },
-    { label: "C4 missing link", item: { id: "DEMO-C4-NO-LINK", link: "" }, reason: "缺链接" },
-  ])("$label: returns a readable reason and feed drop counts", async ({ item, reason }) => {
+  it.each([
+    { label: "C3 missing id", item: { id: "" }, reason: "无 SKU", drop: "dropped_no_id" },
+    { label: "C3 missing price", item: { id: "DEMO-C3-NO-PRICE", price: "" }, reason: "缺价格", drop: "dropped_missing_price_or_link" },
+    { label: "C4 missing link", item: { id: "DEMO-C4-NO-LINK", link: "" }, reason: "缺链接", drop: "dropped_missing_price_or_link" },
+  ])("$label: returns a readable reason and feed drop counts", async ({ item, reason, drop }) => {
     const loopback = await startLoopback();
     const { projectPath } = await makeProject();
     loopback.set("/feed.xml", { body: feedXml(item) });
     const daily = await serviceFor(projectPath).runJob({ projectPath, job: "daily", trigger: "manual", date: "2026-11-27" }, () => undefined);
     expect(daily.status).toBe("failed");
     expect(daily.errors?.join(" ")).toContain(reason);
-    expect(daily.counts).toMatchObject({ feed_items: 1, written: 0, dropped_missing_price_or_link: 1 });
+    expect(daily.counts).toMatchObject({ feed_items: 1, written: 0, new_sku: 0, [drop]: 1 });
+    const run = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.job === "daily");
+    expect(run?.counts).toMatchObject({ feed_items: 1, written: 0, [drop]: 1 });
   });
 
   it("C5: honors configured SKU field and falls back to feed id when that field is absent", async () => {
@@ -212,7 +215,7 @@ describe("v0.9.0 A-1 synthetic crawl diagnostic C1–C11", () => {
       .toEqual(["DEMO-C5-CONFIGURED", "DEMO-C5-FALLBACK"]);
   });
 
-  it.fails("C6: merges multiple feed files in order, deduplicates id, and reports every feed count", async () => {
+  it("C6: merges multiple feed files in order, deduplicates id, and reports every feed count", async () => {
     const loopback = await startLoopback();
     const { projectPath } = await makeProject({ feedUrls: [`${SITE}/feed-first.xml`, `${SITE}/feed-second.xml`] });
     loopback.set("/feed-first.xml", { body: feedXml({ id: "DEMO-C6-DUP", title: "First feed", slug: "same" }) });
@@ -224,7 +227,12 @@ describe("v0.9.0 A-1 synthetic crawl diagnostic C1–C11", () => {
     const rows = await readJsonl(path.join(projectPath, PATHS.skus));
     expect(rows).toHaveLength(2);
     expect(rows.find((row) => row.sku === "DEMO-C6-DUP")?.title).toBe("First feed");
-    expect(daily.counts).toMatchObject({ feed_items: 3, written: 2, dropped_duplicate: 1 });
+    expect(daily.counts).toMatchObject({
+      feed_items: 3, written: 2, new_sku: 0,
+      dropped_no_id: 0, dropped_duplicate: 1, dropped_missing_price_or_link: 0,
+    });
+    const run = (await readJsonl(path.join(projectPath, PATHS.runs))).find((row) => row.job === "daily");
+    expect(run?.counts).toMatchObject({ feed_items: 3, written: 2, dropped_duplicate: 1 });
   });
 
   it("C7: prioritizes the newest sitemap lastmod and reports max_pages truncation", async () => {

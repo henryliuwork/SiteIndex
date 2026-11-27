@@ -381,13 +381,15 @@ interface ProductSourceSnapshot {
   emptyReason: string;
   warnings: string[];
   filtered?: Record<string, number>;
+  feedItems?: number;
 }
 
 async function productSourceSnapshot(config: SiteConfig, date: string): Promise<ProductSourceSnapshot | null> {
   if (feedUrlsFromConfig(config).length) {
     const items = await readFeeds(config as FeedSiteConfig);
     const snapshot = toSnapshot(items, config as FeedSiteConfig, date);
-    return { rows: snapshot.rows, emptyReason: emptySnapshotReason(items, snapshot), warnings: [] };
+    return { rows: snapshot.rows, emptyReason: emptySnapshotReason(items, snapshot), warnings: [],
+      filtered: snapshot.filtered, feedItems: items.length };
   }
   if (!config.crawl.auto_collect_products) return null;
   let storeReason = "";
@@ -401,6 +403,18 @@ async function productSourceSnapshot(config: SiteConfig, date: string): Promise<
   const fallback = await collectWooSitemapHtml(config);
   return { rows: fallback.rows, emptyReason: [storeReason, fallback.emptyReason].filter(Boolean).join("；"),
     warnings: fallback.warnings, filtered: fallback.filtered };
+}
+
+function dailyResultCounts(source: ProductSourceSnapshot, daily: { status: string; counts: Record<string, number> }): Record<string, number> {
+  const counts = { ...daily.counts };
+  if (source.feedItems === undefined) return { ...counts, ...(source.filtered ?? {}) };
+  counts.feed_items = source.feedItems;
+  counts.written = daily.status === "failed" ? 0 : daily.counts.snapshot ?? 0;
+  counts.new_sku = daily.counts.new_sku ?? 0;
+  counts.dropped_no_id = source.filtered?.no_id ?? 0;
+  counts.dropped_duplicate = source.filtered?.duplicate ?? 0;
+  counts.dropped_missing_price_or_link = source.filtered?.missing_price_or_link ?? 0;
+  return counts;
 }
 
 function normalizeSiteFeedConfig(config: SiteConfig): SiteConfig {
@@ -1920,7 +1934,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
               const snapshot = (await productSourceSnapshot(config, requestedDate))!;
               const daily = await runDaily(executionPath, snapshot.rows, { date: requestedDate, force: req.force,
                 emptyFeedReason: snapshot.emptyReason });
-              Object.assign(counts, daily.counts, snapshot.filtered);
+              Object.assign(counts, dailyResultCounts(snapshot, daily));
               const message = daily.status === "failed"
                 ? `每日同步失败：${daily.errors.join("；") || "数据源未生成有效数据。"}`
                 : daily.status === "partial" ? `每日同步部分完成：${daily.errors.join("；") || "部分库存状态未知。"}`
@@ -2013,7 +2027,7 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
               status: daily.status,
               exitCode: daily.exitCode,
               summary: daily.status === "failed" ? "每日同步失败。" : daily.status === "partial" ? "每日同步完成，包含库存未知项。" : `每日同步完成。${snapshot.warnings.join("；")}`,
-              counts: { ...daily.counts, ...snapshot.filtered },
+              counts: dailyResultCounts(snapshot, daily),
               ...(daily.errors.length ? { errors: daily.errors } : {}),
             };
           }

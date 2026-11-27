@@ -245,4 +245,4 @@
 #### G9.0-1 · 实现
 
 - [x] A-2a（B1）：weekly sitemap 按 `lastmod` 优先保留较新的 URL；记录 `sitemap_urls`、`crawled`、`truncated`，截断时返回 `partial` 和说明
-- [ ] A-2b（B2）：daily Feed 丢弃计数写入运行记录
+- [x] A-2b（B2）：daily Feed 丢弃计数写入运行记录
