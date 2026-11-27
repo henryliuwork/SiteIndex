@@ -54,28 +54,28 @@ afterEach(async () => {
 });
 
 describe("weekly crawl audit characterization", () => {
-  it.fails("reports a sitemap branch skipped beyond depth five with a count, reason, and non-ok state", async () => {
+  it("reports a sitemap branch skipped beyond depth five with a count, reason, and non-ok state", async () => {
+    const knownPages = Array.from({ length: 5 }, (_, index) => `${BASE}/products/known-${index + 1}`);
     const routes = new Map<string, Route>();
     routes.set("/sitemap.xml", { body: `<sitemapindex><sitemap><loc>${BASE}/depth-1.xml</loc></sitemap><sitemap><loc>${BASE}/known.xml</loc></sitemap></sitemapindex>` });
     for (let depth = 1; depth <= 5; depth += 1) {
       routes.set(`/depth-${depth}.xml`, { body: `<sitemapindex><sitemap><loc>${BASE}/depth-${depth + 1}.xml</loc></sitemap></sitemapindex>` });
     }
-    routes.set("/known.xml", { body: `<urlset><url><loc>${BASE}/products/known</loc></url></urlset>` });
+    routes.set("/known.xml", { body: `<urlset>${knownPages.map((url) => `<url><loc>${url}</loc></url>`).join("")}</urlset>` });
     routes.set("/depth-6.xml", { body: `<urlset><url><loc>${BASE}/products/deep</loc></url></urlset>` });
-    routes.set("/products/known", { body: "<html><head><title>Known</title></head><body><main><h1>Known</h1></main></body></html>" });
+    for (const url of knownPages) routes.set(new URL(url).pathname,
+      { body: "<html><head><title>Known</title></head><body><main><h1>Known</h1></main></body></html>" });
     const requests = stubRoutes(routes);
     const root = await project();
 
     const result = await runWeekly(root, config(), { date: "2026-11-27", only: "pages" });
     const rows = JSON.parse(`[${(await readFile(path.join(root, PATHS.seoPages), "utf8")).trim().replace(/\n/gu, ",")}]`) as Array<Record<string, unknown>>;
 
-    const violations: string[] = [];
-    if (result.status === "ok") violations.push("weekly status stayed ok after a branch was skipped");
-    if (result.counts.sitemap_depth_skipped !== 1) violations.push("counts.sitemap_depth_skipped was not 1");
-    if (!result.errors.some((error) => /sitemap.*depth|sitemap.*嵌套深度/iu.test(error))) violations.push("no readable sitemap depth reason was reported");
-    expect(violations).toEqual([]);
+    expect(result.status).toBe("partial");
+    expect(result.counts.sitemap_depth_skipped).toBe(1);
+    expect(result.errors.some((error) => /sitemap.*depth|sitemap.*嵌套深度/iu.test(error))).toBe(true);
     expect(requests.mock.calls.map(([input]) => new URL(String(input)).pathname)).not.toContain("/depth-6.xml");
-    expect(rows.map((row) => row.url)).toEqual([`${BASE}/products/known`]);
+    expect(rows.map((row) => row.url)).toEqual(knownPages);
   });
 
   it("reports a page HTTP 429 as a crawl failure", async () => {

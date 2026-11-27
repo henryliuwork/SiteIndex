@@ -246,13 +246,14 @@ function pageType(url: string, productUrls: ReadonlySet<string> = new Set(), cat
 }
 
 async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<string>, categorySlugs: ReadonlySet<string>,
-  wooCategories: readonly JsonObject[] = []): Promise<{ rows: Parsed[]; errors: string[]; attempts: number; blogUrls: Set<string>; categoryUrls: Set<string> }> {
+  wooCategories: readonly JsonObject[] = []): Promise<{ rows: Parsed[]; errors: string[]; attempts: number; blogUrls: Set<string>; categoryUrls: Set<string>; sitemapDepthSkipped: number }> {
   const urls = new Map<string, string>();
   const blogUrls = new Set<string>();
   const categoryUrls = new Set<string>();
   const seen = new Set<string>();
   const seenBlog = new Set<string>();
   const errors: string[] = [];
+  let sitemapDepthSkipped = 0;
   let nextAt = 0;
   let attempts = 0;
   const delay = Math.max(0, Number(config.crawl.rate_limit_ms ?? 1500));
@@ -305,7 +306,12 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     isBlogSitemap ||= /(?:^|\/)(?:post-sitemap|wp-sitemap-posts-post-)/iu.test(pathname);
     isCategorySitemap ||= /(?:^|\/)(?:product_cat|product-category|wp-sitemap-taxonomies-product_cat)/iu.test(pathname);
     const visited = isBlogSitemap ? seenBlog : seen;
-    if (!url || visited.has(url) || depth > 5) return;
+    if (!url || visited.has(url)) return;
+    if (depth > 5) {
+      sitemapDepthSkipped += 1;
+      errors.push(url + ": sitemap nesting depth exceeded 5; branch skipped.");
+      return;
+    }
     visited.add(url);
     try {
       const result = await request(url);
@@ -409,7 +415,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     } catch (error) { errors.push(url + ": " + (error instanceof Error ? error.message : String(error))); }
   }
   if (!urls.size) errors.push("sitemap has no crawlable URLs");
-  return { rows, errors, attempts, blogUrls, categoryUrls };
+  return { rows, errors, attempts, blogUrls, categoryUrls, sitemapDepthSkipped };
 }
 
 function makeIssues(rows: Parsed[], oldIssues: SeoIssue[], config: SiteConfig, date: string): SeoIssue[] {
@@ -1215,11 +1221,13 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     legacyUrlPatterns: config.crawl.blog_url_patterns ?? [],
   };
   const errors = [...crawlResult.errors];
+  const counts: Record<string, number> = {};
+  if (crawlResult.sitemapDepthSkipped) counts.sitemap_depth_skipped = crawlResult.sitemapDepthSkipped;
   if (errors.some((error) => /\bHTTP 429\b/u.test(error)))
-    return { status: "failed", counts: {}, errors };
+    return { status: "failed", counts, errors };
   const denominator = rows.length + errors.length;
   if (!rows.length || (denominator > 0 && errors.length / denominator > 0.2 && !wooApi.length))
-    return { status: "failed", counts: {}, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
+    return { status: "failed", counts, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
   const oldIssues = selected.includes("issues") ? await readJsonl(path.join(projectPath, paths.seoIssues)) as unknown as SeoIssue[] : [];
   const issues = selected.includes("issues") ? makeIssues(rows, oldIssues, config, date) : [];
   const stock = config.platform === "woocommerce" ? await readJsonl(path.join(projectPath, paths.inventoryLatest)) : [];
@@ -1241,7 +1249,6 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     await writeJsonl(path.join(projectPath, relative), data as Record<string, unknown>[], schema);
     counts[step] = data.length;
   };
-  const counts: Record<string, number> = {};
   await output("pages", paths.seoPages, rows.map((row) => ({ ...row.page, links_internal_in: rows.reduce((n, candidate) => n + candidate.links.filter((link) => link.url === row.page.url).length, 0) })), "seo_page", counts);
   await output("issues", paths.seoIssues, issues, "seo_issue", counts);
   await output("links", paths.seoLinks, linkRows(rows, productUrls, blog), "seo_link", counts);
