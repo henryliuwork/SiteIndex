@@ -68,6 +68,56 @@ function renderTable(props: {
 }
 
 describe("DataTable v2", () => {
+  it("cycles asc, desc, default and persists only sorting", () => {
+    const onQueryChange = renderTable();
+    const sortButton = screen.getByRole("button", { name: "名称" });
+    fireEvent.click(sortButton);
+    expect(onQueryChange).toHaveBeenLastCalledWith(expect.objectContaining({ sort: { field: "label", dir: "asc" } }));
+    expect(localStorage.getItem("si.sort.global.test.table-v2")).toBe('{"field":"label","dir":"asc"}');
+    fireEvent.click(sortButton);
+    expect(onQueryChange).toHaveBeenLastCalledWith(expect.objectContaining({ sort: { field: "label", dir: "desc" } }));
+    fireEvent.click(sortButton);
+    expect(onQueryChange).toHaveBeenLastCalledWith(expect.objectContaining({ sort: undefined }));
+    expect(localStorage.getItem("si.sort.global.test.table-v2")).toBe("null");
+  });
+
+  it("restores one table sort from uiState and ignores a removed column", async () => {
+    const uiState = api.uiState!;
+    vi.spyOn(uiState, "get").mockResolvedValue({ columns: {}, page_sizes: {}, sorts: { "test.table-v2": { field: "kind", dir: "desc" } } });
+    const onQueryChange = renderTable({ scopeId: "demo" });
+    await waitFor(() => expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ sort: { field: "kind", dir: "desc" } })));
+    cleanup();
+    const setState = vi.spyOn(uiState, "set").mockResolvedValue({ columns: {}, page_sizes: {}, sorts: {} });
+    vi.mocked(uiState.get).mockResolvedValue({ columns: {}, page_sizes: {}, sorts: { "test.table-v2": { field: "removed", dir: "asc" } } });
+    renderTable({ scopeId: "demo" });
+    await waitFor(() => expect(setState).toHaveBeenCalledWith("demo", { sorts: { "test.table-v2": null } }));
+  });
+
+  it("keeps a project sort in localStorage when an old bridge rejects sorts", async () => {
+    const uiState = api.uiState!;
+    vi.spyOn(uiState, "get").mockResolvedValue({ columns: {}, page_sizes: {} });
+    vi.spyOn(uiState, "set").mockRejectedValue(new Error("unsupported"));
+    const onQueryChange = renderTable({ scopeId: "demo" });
+    fireEvent.click(screen.getByRole("button", { name: "类别" }));
+    expect(localStorage.getItem("si.sort.demo.test.table-v2")).toBe('{"field":"kind","dir":"asc"}');
+    cleanup();
+    const restored = renderTable({ scopeId: "demo" });
+    await waitFor(() => expect(restored).toHaveBeenCalledWith(expect.objectContaining({ sort: { field: "kind", dir: "asc" } })));
+    expect(onQueryChange).toHaveBeenCalled();
+  });
+
+  it("does not apply one project's saved sort to another project", async () => {
+    const uiState = api.uiState!;
+    vi.spyOn(uiState, "get").mockResolvedValue({ columns: {}, page_sizes: {} });
+    vi.spyOn(uiState, "set").mockRejectedValue(new Error("unsupported"));
+    renderTable({ scopeId: "demo" });
+    fireEvent.click(screen.getByRole("button", { name: "类别" }));
+    cleanup();
+    const other = renderTable({ scopeId: "other" });
+    await waitFor(() => expect(uiState.get).toHaveBeenCalledWith("other"));
+    expect(other).not.toHaveBeenCalledWith(expect.objectContaining({ sort: { field: "kind", dir: "asc" } }));
+    expect(localStorage.getItem("si.sort.other.test.table-v2")).toBeNull();
+  });
   it("omits the pagination footer when showPagination is false", () => {
     const onQueryChange = renderTable({ showPagination: false });
     expect(document.querySelector(".si-pagination")).toBeNull();
