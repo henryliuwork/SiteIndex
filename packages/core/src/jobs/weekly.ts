@@ -1,9 +1,10 @@
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
 import { parseDocument } from "htmlparser2";
-import { DEFAULT_DESCRIPTION_RANGE, DEFAULT_TITLE_RANGE, pathsFor, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type ProductFaqItem, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig, type SiteKeyPageType, type SitePolicyFact, type SiteTechProfile } from "@siteindex/shared";
+import { DEFAULT_DESCRIPTION_RANGE, DEFAULT_TITLE_RANGE, pathsFor, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type ProductFaqItem, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig, type SiteKeyPageType, type SitePolicyFact, type SiteTechProfile, type SkuRecord, type TodoRuleFinding } from "@siteindex/shared";
 import { atomicWrite } from "../io/atomic-write";
 import { compareKeys } from "../io/compare";
 import { readJsonl, writeJsonl } from "../io/jsonl";
@@ -793,6 +794,190 @@ function productDetails(rows: Parsed[], date: string, storeGalleries: ReadonlyMa
   });
   return [...new Map(result.map((item) => [item.handle, item])).values()];
 }
+interface PageCatalogObservation {
+  url: string;
+  sku: string | null;
+  price: number | null;
+  title: string;
+  missing: ("sku" | "price")[];
+  record?: SkuRecord;
+}
+
+function catalogUrlKey(value: string): string | null {
+  const cleaned = cleanUrl(value);
+  if (!cleaned) return null;
+  const url = new URL(cleaned);
+  url.searchParams.sort();
+  return url.toString();
+}
+
+function pageCatalogObservation(row: Parsed, date: string, currency: string): PageCatalogObservation | null {
+  if (row.page.page_type !== "product" || row.page.status_code !== 200) return null;
+  const product = jsonLd(row.doc).find((item) => hasSchemaType(item, "product"));
+  const sku = typeof product?.sku === "string" && product.sku.trim() ? product.sku.trim() : null;
+  const offers = asObjects(product?.offers).flatMap((offer) => [offer, ...asObjects(offer.offers)]);
+  const offerPrices = offers.flatMap((offer) => [
+    offer.price,
+    offer.lowPrice,
+    ...asObjects(offer.priceSpecification).map((specification) => specification.price),
+  ]).map(finiteNumber).filter((price): price is number => price !== null && price >= 0);
+  const price = offerPrices.length ? Math.min(...offerPrices) : null;
+  const missing: PageCatalogObservation["missing"] = [];
+  if (!sku) missing.push("sku");
+  if (price === null) missing.push("price");
+  const title = typeof product?.name === "string" && product.name.trim()
+    ? product.name.trim() : row.page.title?.trim() || urlSlug(row.page.url) || row.page.url;
+  const url = cleanUrl(row.page.url) ?? row.page.url;
+  const detectedCurrency = offers.map((offer) => offer.priceCurrency).find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const normalizedCurrency = detectedCurrency?.trim().toUpperCase() ?? "";
+  const currencyValue = /^[A-Z]{3}$/.test(normalizedCurrency) ? normalizedCurrency : currency.trim().toUpperCase();
+  const image = asList(product?.image).flatMap((value) => {
+    if (typeof value === "string") return [value];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const item = value as JsonObject;
+      return [item.url, item.contentUrl].filter((source): source is string => typeof source === "string");
+    }
+    return [];
+  }).map((value) => cleanUrl(value, url)).find((value): value is string => !!value) ?? null;
+  const record = sku && price !== null ? {
+    sku,
+    product_id: typeof product?.productID === "string" && product.productID.trim() ? product.productID.trim() : sku,
+    source: "page" as const,
+    handle: urlSlug(url),
+    title,
+    variant_title: null,
+    url,
+    category: "uncategorized",
+    categories: ["uncategorized"],
+    category_source: "none" as const,
+    price,
+    compare_at_price: null,
+    currency: currencyValue,
+    image_url: image,
+    status: "active" as const,
+    first_seen: date,
+    last_seen: date,
+    updated_at: date,
+  } satisfies SkuRecord : undefined;
+  return { url, sku, price, title, missing, ...(record ? { record } : {}) };
+}
+
+function catalogGapFinding(observation: PageCatalogObservation, observedAt: string): TodoRuleFinding {
+  const labels = observation.missing.map((field) => field === "sku" ? "SKU" : "价格");
+  const identity = JSON.stringify(["catalog_gap", "page", observation.url]);
+  const digest = createHash("sha256").update(identity).digest("hex");
+  return {
+    dedupe_key: `todo:v1:${digest}`,
+    rule_id: "catalog_gap",
+    subject: { kind: "page", key: observation.url, label: observation.title },
+    title: "产品页未入库",
+    detail: `未能从页面结构提取必填字段：${labels.join("、")}。`,
+    severity: "high",
+    sources: [{ path: "seoPages", record_key: observation.url, collected_at: observedAt }],
+    first_seen_at: observedAt,
+    last_seen_at: observedAt,
+  };
+}
+
+interface PageCatalogResult {
+  skus: SkuRecord[];
+  latest: JsonObject[];
+  changed: number;
+  gaps: PageCatalogObservation[];
+  reconciledUrls: Set<string>;
+}
+
+function reconcilePageCatalog(
+  rows: readonly Parsed[], skuRows: readonly JsonObject[], latestRows: readonly JsonObject[], date: string, currency: string,
+): PageCatalogResult {
+  const nextBySku = new Map(skuRows.map((row) => [String(row.sku ?? ""), { ...row }]));
+  const stockBySku = new Map(latestRows.map((row) => [String(row.sku ?? ""), { ...row }]));
+  const activeRows = [...nextBySku.values()].filter((row) => row.status === "active");
+  const feedSkus = new Set(activeRows.filter((row) => row.source !== "page").map((row) => String(row.sku ?? "")));
+  const feedUrls = new Set(activeRows.filter((row) => row.source !== "page")
+    .map((row) => catalogUrlKey(String(row.url ?? ""))).filter((url): url is string => !!url));
+  const observations = rows.flatMap((row) => {
+    const observation = pageCatalogObservation(row, date, currency);
+    return observation ? [observation] : [];
+  }).sort((left, right) => compareKeys(left.url, right.url));
+  const reconciledUrls = new Set(rows.filter((row) => row.page.status_code < 400)
+    .map((row) => catalogUrlKey(row.page.url)).filter((url): url is string => !!url));
+  const gaps: PageCatalogObservation[] = [];
+  let changed = 0;
+  const pageSkuFields = ["product_id", "handle", "title", "url", "category", "categories", "category_source", "price", "compare_at_price", "currency", "image_url"] as const;
+  for (const observation of observations) {
+    const urlKey = catalogUrlKey(observation.url);
+    const sku = observation.sku;
+    if ((sku && feedSkus.has(sku)) || (urlKey && feedUrls.has(urlKey))) continue;
+
+    const existingBySku = sku ? nextBySku.get(sku) : undefined;
+    const existingByUrl = urlKey ? activeRows.find((item) => catalogUrlKey(String(item.url ?? "")) === urlKey) : undefined;
+    const existing = existingBySku?.status === "active" ? existingBySku : existingByUrl;
+    if (existing && existing.source !== "page") continue;
+    if (!observation.record) {
+      if (!existing) gaps.push(observation);
+      continue;
+    }
+
+    if (existing && String(existing.sku ?? "") !== observation.record.sku) continue;
+    const previous = existing ?? nextBySku.get(observation.record.sku);
+    const firstSeen = typeof previous?.first_seen === "string" ? previous.first_seen : date;
+    const same = previous && pageSkuFields.every((field) => JSON.stringify(previous[field] ?? null) === JSON.stringify(observation.record![field] ?? null));
+    const next: JsonObject = {
+      ...(previous ?? {}),
+      ...observation.record,
+      first_seen: firstSeen,
+      last_seen: date,
+      updated_at: same && previous?.status === "active" && previous.source === "page"
+        ? String(previous.updated_at ?? date) : date,
+    };
+    delete next.removed_reason;
+    nextBySku.set(observation.record.sku, next);
+    let stockAdded = false;
+    if (!stockBySku.has(observation.record.sku)) {
+      stockBySku.set(observation.record.sku, { sku: observation.record.sku, stock_status: "unknown", qty: null, since: date, checked_at: new Date().toISOString() });
+      stockAdded = true;
+    }
+    if (!previous || !same || previous.status !== "active" || previous.source !== "page" || previous.last_seen !== date || stockAdded) changed += 1;
+  }
+  return {
+    skus: [...nextBySku.values()] as unknown as SkuRecord[],
+    latest: [...stockBySku.values()],
+    changed,
+    gaps,
+    reconciledUrls,
+  };
+}
+
+async function writeCatalogGapFindings(
+  projectPath: string, relativePath: string, catalog: PageCatalogResult, observedAt: string,
+): Promise<number> {
+  const file = path.join(projectPath, relativePath);
+  const previous = await readJsonl(file);
+  const previousGaps = previous.filter((row) => row.rule_id === "catalog_gap");
+  const previousByUrl = new Map<string, JsonObject>();
+  const gapsByUrl = new Map<string, JsonObject>();
+  for (const finding of previousGaps) {
+    const subject = finding.subject && typeof finding.subject === "object" ? finding.subject as JsonObject : {};
+    const url = typeof subject.key === "string" ? subject.key : "";
+    if (!url) continue;
+    previousByUrl.set(url, finding);
+    if (!catalog.reconciledUrls.has(catalogUrlKey(url) ?? url)) gapsByUrl.set(url, finding);
+  }
+  for (const observation of catalog.gaps) {
+    const finding = catalogGapFinding(observation, observedAt) as unknown as JsonObject;
+    const old = previousByUrl.get(observation.url);
+    if (old && typeof old.first_seen_at === "string") finding.first_seen_at = old.first_seen_at;
+    gapsByUrl.set(observation.url, finding);
+  }
+  const retained = previous.filter((row) => row.rule_id !== "catalog_gap");
+  await writeJsonl(file, [...retained, ...gapsByUrl.values()], {
+    primaryKey: ["dedupe_key"],
+    fieldOrder: ["dedupe_key", "rule_id", "subject", "title", "detail", "severity", "sources", "first_seen_at", "last_seen_at"],
+  });
+  return gapsByUrl.size;
+}
+
 function categoryMetadataFromRow(row: Parsed | undefined): Partial<Pick<Category, "title" | "meta_description" | "intro_excerpt">> {
   if (!row) return {};
   const intro = extractFirstParagraphExcerpt(row.doc, 240);
@@ -1254,7 +1439,7 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     return { status: "failed", counts, errors: resultErrors().length ? resultErrors() : ["抓取结果为空，未覆盖现有数据。"] };
   const oldIssues = selected.includes("issues") ? await readJsonl(path.join(projectPath, paths.seoIssues)) as unknown as SeoIssue[] : [];
   const issues = selected.includes("issues") ? makeIssues(rows, oldIssues, config, date) : [];
-  const stock = config.platform === "woocommerce" ? await readJsonl(path.join(projectPath, paths.inventoryLatest)) : [];
+  const stock = await readJsonl(path.join(projectPath, paths.inventoryLatest));
   const stockBySku = new Map(stock.map((item) => [item.sku, item.stock_status]));
   const productStocks = new Map<string, unknown[]>();
   for (const sku of skuRows) {
@@ -1274,6 +1459,15 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     counts[step] = data.length;
   };
   await output("pages", paths.seoPages, rows.map((row) => ({ ...row.page, links_internal_in: rows.reduce((n, candidate) => n + candidate.links.filter((link) => link.url === row.page.url).length, 0) })), "seo_page", counts);
+  if (selected.includes("pages")) {
+    const catalog = reconcilePageCatalog(rows, skuRows, stock, date, config.currency);
+    if (catalog.changed) {
+      await writeJsonl(path.join(projectPath, paths.skus), catalog.skus as unknown as Record<string, unknown>[], "sku");
+      await writeJsonl(path.join(projectPath, paths.inventoryLatest), catalog.latest, "inventory_latest");
+      counts.page_catalog_changed = catalog.changed;
+    }
+    counts.catalog_gap = await writeCatalogGapFindings(projectPath, paths.todos, catalog, new Date().toISOString());
+  }
   await output("issues", paths.seoIssues, issues, "seo_issue", counts);
   await output("links", paths.seoLinks, linkRows(rows, productUrls, blog), "seo_link", counts);
   await output("blog", paths.blogIndex, blogs(rows, date, productUrls, skuRows, outOfStockUrls), "blog_post", counts);

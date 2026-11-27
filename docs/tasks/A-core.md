@@ -246,3 +246,4 @@
 
 - [x] A-2a（B1）：weekly sitemap 按 `lastmod` 优先保留较新的 URL；记录 `sitemap_urls`、`crawled`、`truncated`，截断时返回 `partial` 和说明
 - [x] A-2b（B2）：daily Feed 丢弃计数写入运行记录
+- [x] A-4（P7）：weekly 对账 200 个合成产品页；完整 JSON-LD SKU/价格以 `source: "page"` 入 SKU 库并记为未知库存，缺字段生成高优先级 `catalog_gap`；daily 按 SKU 或归一化 URL 让 Feed 接管并保留旧历史
