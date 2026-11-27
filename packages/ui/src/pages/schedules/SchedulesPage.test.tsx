@@ -51,7 +51,14 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
   });
   mockApi.schedule.get = vi.fn(async (id) => {
     if (id === options.failScheduleFor) throw { code: "PROJECT_UNREADABLE", message: "计划文件无法读取。" } satisfies SiteIndexError;
-    return { ...sourceSchedule, registered: true } satisfies ScheduleState;
+    return {
+      ...sourceSchedule,
+      registered: true,
+      config: {
+        ...sourceSchedule.config,
+        daily: { ...sourceSchedule.config.daily, time: id === "cedar" ? "03:00" : "02:00" },
+      },
+    } satisfies ScheduleState;
   });
   const verify = mockApi.schedule.verify;
   const verifySpy = verify ? vi.fn(verify) : undefined;
@@ -83,6 +90,18 @@ async function renderSchedules(options: { failProjectList?: boolean; failSchedul
 }
 
 describe("SchedulesPage", () => {
+  it.fails("reorders schedule rows when sorting distinct daily times", async () => {
+    await renderSchedules();
+    const firstDataRow = () => screen.getAllByRole("row").slice(1)[0];
+    expect(firstDataRow()?.textContent).toContain("Cedar Shop");
+
+    const dailyHeader = screen.getByRole("button", { name: /每日同步/ });
+    fireEvent.click(dailyHeader);
+
+    expect(dailyHeader.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+    expect(firstDataRow()?.textContent).toContain("Maple Shop");
+  });
+
   it("filters the project list", async () => {
     await renderSchedules();
     expect(await screen.findByRole("row", { name: /Cedar Shop/ })).toBeTruthy();
