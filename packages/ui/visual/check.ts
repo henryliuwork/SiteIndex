@@ -11,6 +11,7 @@ import { createServer, type ViteDevServer } from "vite";
 import { classifyDataSurface, classifyPageSurface, getVerticalScrollDelta, waitForDataSurface, waitForPageSurface, type DataSurfaceState, type PageSurfaceSnapshot } from "./readiness";
 import { isDataTableRoute, routeCaseUrl } from "./routes";
 import { checkSectionPageMetrics, SECTION_PAGE_NAMES, type SectionPageBaseline, type SectionPageMetrics } from "./section-page-policy";
+import { inspectT7Sort } from "./t7-inspect";
 import { compareStyleFindings, scanUiStyles, timeDisplayPatternSource, type StyleBaseline } from "./style-policy";
 
 type BrowserChannel = "msedge" | "chrome";
@@ -1022,6 +1023,10 @@ async function main(): Promise<void> {
           failures.push({ rule: "screenshot", message: asErrorMessage(error) });
         });
         if (!failures.some((failure) => failure.rule === "route-load")) failures.push(...await inspectTooltips(page));
+        if (route.waitForDataSurface && isDataTableRoute(route.path) && !failures.some((failure) => failure.rule === "route-load")) {
+          if (metrics.dataSurfaceState === "table" || metrics.dataSurfaceState === "empty") failures.push(...await inspectT7Sort(page));
+          else failures.push({ rule: "t7-sort", message: `表格未就绪（${String(metrics.dataSurfaceState)}），无法核对可排序列。` });
+        }
         if (route.name === "products" && frameStatus === "strict" && metrics.dataSurfaceState === "table") {
           failures.push(...await inspectProductVariantSku(page));
         }
