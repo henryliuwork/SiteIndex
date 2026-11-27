@@ -16,7 +16,17 @@ export async function probeSearchInput({ page, label, isQueryComplete, hasWholeT
   const input = page.getByRole("searchbox", { name: label });
   if (await input.count() !== 1) throw searchFailure(`Search input ${label} is not unique`);
   await input.focus();
-  await input.pressSequentially(query, { delay: 100 });
+  for (let index = 0; index < query.length; index += 1) {
+    await input.pressSequentially(query[index], { delay: 100 });
+    const value = await input.inputValue();
+    const focused = await input.evaluate((element) => document.activeElement === element);
+    if (value !== query.slice(0, index + 1) || !focused) {
+      throw searchFailure(`Search input ${label} lost its value or focus while typing`);
+    }
+    if (await hasWholeTableLoading()) {
+      throw searchFailure(`Search input ${label} showed a whole-table loading state`);
+    }
+  }
 
   let violation;
   try {

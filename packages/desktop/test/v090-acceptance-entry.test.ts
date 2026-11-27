@@ -50,4 +50,27 @@ describe("v0.9.0 configurable acceptance entry", () => {
         { run, extraHandlers: { 84: handler } }), /do not match/u);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+
+  it("connects only packaged search row 85 while sorting and discovery stay fail-closed", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-v090-search-entry-"));
+    try {
+      const manifest = path.join(root, "synthetic-pins.json");
+      await writeFile(manifest, JSON.stringify({ baseline: { ref: "v0.8.5", kind: "release" },
+        candidate: { ref: "c/version-0.9.0", kind: "run-artifact" } }));
+      const run = vi.fn(async (input: { handlers: Record<number, Record<string, unknown>> }) => {
+        assert.deepEqual(Object.keys(input.handlers), ["85"]);
+        assert.equal(typeof input.handlers[85]?.candidateUi, "function");
+        return { items: [], cleanup: { status: "passed" } };
+      });
+      const options = { ...parseAcceptanceArgs(args("85", "v090")), manifest,
+        outputDir: path.join(root, "out") };
+      await runFromManifest(options, { run });
+      assert.equal(run.mock.calls.length, 1);
+      for (const id of [84, 86]) {
+        await assert.rejects(() => runFromManifest({ ...options, itemIds: [id], itemsArgument: String(id) }, { run }),
+          new RegExp(`adapter ${id} is not connected`, "u"));
+      }
+      assert.equal(run.mock.calls.length, 1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
 });

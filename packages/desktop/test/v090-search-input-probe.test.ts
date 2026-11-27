@@ -7,7 +7,7 @@ function syntheticSearch() {
   const input = {
     count: vi.fn(async () => 1),
     focus: vi.fn(async () => { focused = true; }),
-    pressSequentially: vi.fn(async (text: string) => { value = text; }),
+    pressSequentially: vi.fn(async (text: string) => { value += text; }),
     inputValue: vi.fn(async () => value),
     evaluate: vi.fn(async () => focused),
   };
@@ -24,7 +24,7 @@ describe("v0.9.0 packaged search input probe", () => {
         isQueryComplete: () => Date.now() - started >= delay,
         hasWholeTableLoading: async () => false, intervalMs: 5, timeoutMs: 1200 });
       expect(search.page.getByRole).toHaveBeenCalledWith("searchbox", { name: "搜索产品与 SKU" });
-      expect(search.input.pressSequentially).toHaveBeenCalledWith("abc", { delay: 100 });
+      expect(search.input.pressSequentially.mock.calls.map(([text]) => text)).toEqual(["a", "b", "c"]);
     }
   });
 
