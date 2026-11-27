@@ -29,12 +29,18 @@ async function startLoopback(profile) {
     env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, TEMP: profile.layout.tempRoot },
   });
   child.on("error", () => undefined);
-  const port = await waitForObserved(async () => {
-    if (child.exitCode !== null) throw new Error("Synthetic loopback exited before startup");
-    const value = await readFile(path.join(workDir, "port.txt"), "utf8").catch(() => "");
-    const parsed = Number(value.trim());
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-  }, { timeoutMs: 15_000, label: "synthetic product discovery loopback" });
+  let port;
+  try {
+    port = await waitForObserved(async () => {
+      if (child.exitCode !== null) throw new Error("Synthetic loopback exited before startup");
+      const value = await readFile(path.join(workDir, "port.txt"), "utf8").catch(() => "");
+      const parsed = Number(value.trim());
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    }, { timeoutMs: 15_000, label: "synthetic product discovery loopback" });
+  } catch (error) {
+    child.kill();
+    throw error;
+  }
   return {
     origin: `http://127.0.0.1:${port}`,
     async metrics() {
