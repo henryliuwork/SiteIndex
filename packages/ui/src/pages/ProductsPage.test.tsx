@@ -349,6 +349,27 @@ describe("合并后的产品管理表", () => {
     expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "不存在的虚构商品" });
   });
 
+  it("本地筛选每隔 100ms 输入 abc 时保持搜索框焦点和表格行", async () => {
+    const mockApi = await renderProductsPage({ products: [{ ...parent, title: "abc 虚构组合商品" }, child] });
+    const table = await screen.findByRole("region", { name: "products.merged 数据表" });
+    const input = within(table).getByRole("searchbox", { name: "搜索产品与 SKU" }) as HTMLInputElement;
+    await within(table).findByText("abc 虚构组合商品");
+    const listCalls = vi.mocked(mockApi.products.list).mock.calls.length;
+    input.focus();
+    for (const value of ["a", "ab", "abc"]) {
+      fireEvent.change(input, { target: { value } });
+      expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value });
+      expect(within(table).queryByText("正在更新产品与库存…")).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(table.isConnected).toBe(true);
+    expect(within(table).getByText("abc 虚构组合商品")).toBeTruthy();
+    expect(within(table).queryByText("正在更新产品与库存…")).toBeNull();
+    expect(document.activeElement).toBe(input);
+    expect(vi.mocked(mockApi.products.list).mock.calls.length).toBe(listCalls);
+  });
+
   it("历史不足的摘要项不显示虚构 0", async () => {
     await renderProductsPage({ productManagement: { ...productManagement, out_of_stock_7d_rows: null, fluctuating_30d_rows: null } });
     expect(await screen.findByText("历史数据不足，部分摘要指标暂不可用。")).toBeTruthy();
