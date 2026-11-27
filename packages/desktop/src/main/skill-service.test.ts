@@ -49,18 +49,42 @@ describe("desktop skill service", () => {
       [],
     );
     const skills = await service.list();
-    expect(skills).toHaveLength(10);
+    expect(skills).toHaveLength(11);
     expect(skills.every((skill) => skill.reads.length > 0)).toBe(true);
     expect(skills.find((skill) => skill.name === "siteindex-data")?.version).toBe("1.1.0");
     for (const name of ["siteindex-edm-plan", "siteindex-edm-build", "siteindex-edm-mc-send"]) {
       expect(skills.find((skill) => skill.name === name)?.version).toBe("1.0.0");
     }
+    expect(skills.find((skill) => skill.name === "siteindex-edm-manual-image")?.version).toBe("1.0.0");
+    expect(skills.find((skill) => skill.name === "sku-media-enrich")?.version).toBe("1.2.0");
     expect(skills.find((skill) => skill.name === "stock-report")?.writes).toEqual([]);
     expect(skills.some((skill) => skill.name === "edm-builder")).toBe(false);
     await expect(service.get("edm-builder")).rejects.toMatchObject({ code: "CONFIG_INVALID" });
     const data = await service.get("siteindex-data");
     expect(data.body).toContain("UTF-8 无 BOM、LF 换行");
     expect(data.body).toContain("不得编造 SKU、价格、库存状态或数量、图片 URL");
+  });
+
+  it("routes manual images through the CLI while the older skill only writes tags", async () => {
+    const service = skillService(
+      path.resolve(process.cwd(), "skills"),
+      await temporaryDirectory("siteindex-manual-image-home-"),
+      [],
+    );
+    const image = await service.get("siteindex-edm-manual-image");
+    const tags = await service.get("sku-media-enrich");
+
+    expect(image.info.reads).toContain("index/catalog/skus.jsonl");
+    expect(image.info.writes).toContain("index/ledgers/sku_media.csv");
+    expect(image.body).toContain("siteindex edm set-image <项目路径> --sku <sku> --url");
+    expect(image.body).toContain("--only-child");
+    expect(image.body).toContain("siteindex views <项目路径>");
+    expect(image.body).toContain("多个商品");
+    expect(image.body).toContain("签名或到期参数");
+    expect(tags.info.writes).toEqual(["index/ledgers/sku_tags.csv"]);
+    expect(tags.info.reads).not.toContain("index/ledgers/sku_media.csv");
+    expect(tags.body).toContain("siteindex-edm-manual-image");
+    expect(tags.body).toContain("不得在本 Skill 中直接写入 `sku_media.csv`");
   });
 
   it("installs a project skill, updates its manifest, and reports stale versions", async () => {
