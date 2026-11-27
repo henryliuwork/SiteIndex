@@ -109,7 +109,9 @@ export function ContentPage() {
   const summaryQuery = useQuery({ queryKey: ["content", "summary", id], queryFn: () => api.content.summary(id) });
   const seoSummaryQuery = useQuery({ queryKey: ["seo", "summary", id], queryFn: () => api.seo.summary(id) });
   const jobHistoryQuery = useQuery({ queryKey: ["job-history", id], queryFn: () => api.jobs.history(id, 30) });
-  const blogListQuery = useQuery({ queryKey: ["content", "blogs", id, blogQuery], queryFn: () => api.content.listBlog(id, blogQuery), placeholderData: keepPreviousData });
+  const blogListQuery = useQuery({ queryKey: ["content", "blogs", id, blogQuery], queryFn: () => api.content.listBlog(id, blogQuery.sort?.field === "schema"
+    ? { ...blogQuery, sort: { ...blogQuery.sort, field: "has_faq" } }
+    : blogQuery), placeholderData: keepPreviousData });
   const keywordListQuery = useQuery({ queryKey: ["content", "keywords", id, keywordQuery], queryFn: () => api.content.listKeywords(id, keywordQuery), placeholderData: keepPreviousData });
   const project = projectQuery.data?.summary;
   const summary = summaryQuery.data;

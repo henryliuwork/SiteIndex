@@ -79,25 +79,27 @@ describe("SeoPage 问题处理", () => {
     expect(input.getAttribute("placeholder")).toBe("搜索 URL 或标题");
   });
 
-  it.fails("待处理问题数列应有可排序的汇总值和排序按钮", async () => {
+  it("待处理问题数列按高优先级问题数排序", async () => {
     const [{ DataTable }, { seoPageTableColumns }] = await Promise.all([
       import("../components/table"),
       import("./seo/page-table"),
     ]);
     const page = await createMockApi().seo.listPageRows!("demo", { page: 1, pageSize: 50 });
+    const onQueryChange = vi.fn();
     render(<DataTable
       tableId="seo.pageRows.sort-audit"
       rows={page.rows.slice(0, 2)}
       total={2}
       columns={seoPageTableColumns(page.rows)}
       query={{ page: 1, pageSize: 50, filters: {} }}
-      onQueryChange={vi.fn()}
+      onQueryChange={onQueryChange}
       getRowId={(row) => row.url}
       height={300}
       showPagination={false}
     />);
 
-    expect(screen.getByRole("button", { name: "待处理问题" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "待处理问题" }));
+    await waitFor(() => expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ sort: { field: "open_high", dir: "asc" } })));
   });
 
   it("SEO 兼容列表刷新期间搜索框保持挂载、焦点与输入内容", async () => {
