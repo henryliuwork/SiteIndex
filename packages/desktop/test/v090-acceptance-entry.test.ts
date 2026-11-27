@@ -22,7 +22,7 @@ describe("v0.9.0 configurable acceptance entry", () => {
     assert.throws(() => parseAcceptanceArgs(args("84", "unknown")), /Unknown acceptance matrix/u);
   });
 
-  it("uses pinned v0.8.5 baseline and candidate refs, but refuses unwired new adapters", async () => {
+  it("uses pinned v0.8.5 baseline and candidate refs with a packaged sort adapter", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-v090-entry-"));
     try {
       const manifest = path.join(root, "synthetic-pins.json");
@@ -31,14 +31,15 @@ describe("v0.9.0 configurable acceptance entry", () => {
       const options = { ...parseAcceptanceArgs(args("84", "v090")), manifest,
         outputDir: path.join(root, "out") };
       const run = vi.fn(async (_input: Record<string, unknown>) => ({ items: [], cleanup: { status: "passed" } }));
-      await assert.rejects(() => runFromManifest(options, { run }), /adapter 84 is not connected/u);
-      assert.equal(run.mock.calls.length, 0);
+      await runFromManifest(options, { run });
+      assert.equal(run.mock.calls.length, 1);
+      assert.equal(typeof (run.mock.calls[0]![0] as { handlers: Record<number, { candidateUi: unknown }> }).handlers[84]?.candidateUi, "function");
 
       const noop = async () => undefined;
       const handler = { baselineUi: noop, verifyBaselineIpc: noop, verifyBaselineFile: noop,
         candidateUi: noop, verifyCandidateIpc: noop, verifyCandidateFile: noop };
       await runFromManifest(options, { run, extraHandlers: { 84: handler } });
-      const submitted = run.mock.calls[0]![0] as {
+      const submitted = run.mock.calls[1]![0] as {
         itemIds: number[]; itemBounds: { min: number; max: number; baselineRef: string };
         baseline: { ref: string }; candidate: { ref: string };
       };
@@ -51,7 +52,7 @@ describe("v0.9.0 configurable acceptance entry", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it("connects packaged search and discovery rows while sorting stays fail-closed", async () => {
+  it("connects packaged sort, search and discovery rows", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-v090-search-entry-"));
     try {
       const manifest = path.join(root, "synthetic-pins.json");
@@ -72,10 +73,11 @@ describe("v0.9.0 configurable acceptance entry", () => {
         assert.equal(typeof input.handlers[86]?.candidateUi, "function");
         return { items: [], cleanup: { status: "passed" } };
       }) });
-      for (const id of [84]) {
-        await assert.rejects(() => runFromManifest({ ...options, itemIds: [id], itemsArgument: String(id) }, { run }),
-          new RegExp(`adapter ${id} is not connected`, "u"));
-      }
+      await runFromManifest({ ...options, itemIds: [84], itemsArgument: "84" }, { run: vi.fn(async (input: { handlers: Record<number, Record<string, unknown>> }) => {
+        assert.deepEqual(Object.keys(input.handlers), ["84"]);
+        assert.equal(typeof input.handlers[84]?.candidateUi, "function");
+        return { items: [], cleanup: { status: "passed" } };
+      }) });
       assert.equal(run.mock.calls.length, 1);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
