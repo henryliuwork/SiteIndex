@@ -7,7 +7,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { EdmCommandInput, EdmSkuIndexExportResult, JobResult, ListQuery, MediaPrepareSkuResult, RunLog, SkuGroupingRule, SkuImageFilters, SkuImageRow, StockStatus } from "@siteindex/shared";
 import { api, apiErrorMessage, isMockApi } from "../api";
 import { projectQueryKeys } from "../project-queries";
-import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterPill, InfoTooltip, Input, InputWithAction, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
+import { ApiErrorNotice, Button, Chip, ConfirmDialog, DataTable, DetailPanel, Drawer, FilterBar, FilterCheckbox, FilterPill, InfoTooltip, Input, InputWithAction, Notice, PageFrame, ProjectHeader, ProjectTabPanel, SearchInput, Select, stockTone, useToast } from "../components";
 import { fetchSkuGroupingPreview, skuGroupingPreviewQueryKey } from "./project-settings-config/sku-grouping-preview";
 import { getEdmMediaCapability } from "./edm/media-capability";
 import { getEdmDiscountTierCapability, type EdmDiscountTierCapability } from "./edm/discount-tier-capability";
@@ -729,10 +729,10 @@ export function EdmPage() {
         </div>
         <div className="si-edm-toolbar-right">
           {missingImageCount !== undefined && <div className="si-edm-summary">
-            <InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" />
-            {(discountTiers.length === 0 || !discountTierCapability.available) && <InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} />}
+            <span className="si-edm-info-item"><span>首图</span><InfoTooltip label="首图选择规则" content="优先使用抓取首图；手动地址用于补充且不会被同步覆盖；两者都没有时显示缺图。" /></span>
+            {(discountTiers.length === 0 || !discountTierCapability.available) && <span className="si-edm-info-item"><span>折扣</span><InfoTooltip label="折扣档位说明" content={discountTiers.length === 0 ? "当前项目未配置折扣档位；配置可选百分比后即可逐行选择。" : `折扣档位暂时只读。${discountTierCapability.message}`} /></span>}
           </div>}
-          <label className="si-edm-parent-toggle"><input type="checkbox" aria-label="仅展示父 SKU" checked={Boolean(query.filters?.parent_only && groupingEnabled)} onChange={(event) => onParentOnlyChange(event.target.checked)} /><span>仅展示父 SKU</span></label>
+          <FilterCheckbox label="仅展示父 SKU" checked={Boolean(query.filters?.parent_only && groupingEnabled)} onCheckedChange={onParentOnlyChange} />
           <span className="si-content-total">显示 {listQuery.data?.rows.length ?? 0} / {listQuery.data?.total ?? 0} 条</span>
         </div>
       </div>}

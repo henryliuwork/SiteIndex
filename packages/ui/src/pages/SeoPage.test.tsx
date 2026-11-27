@@ -71,6 +71,13 @@ async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = 
 }
 
 describe("SeoPage 问题处理", () => {
+  it("搜索占位文案适配窄工具栏宽度", async () => {
+    await renderSeoPage(createMockApi());
+
+    const input = await screen.findByRole("searchbox", { name: "搜索 SEO 数据" });
+    expect(input.getAttribute("placeholder")).toBe("搜索 URL 或标题");
+  });
+
   it.fails("待处理问题数列应有可排序的汇总值和排序按钮", async () => {
     const [{ DataTable }, { seoPageTableColumns }] = await Promise.all([
       import("../components/table"),
