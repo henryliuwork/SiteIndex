@@ -172,7 +172,7 @@ describe("v0.9.0 A-1 synthetic crawl diagnostic C1–C11", () => {
     expect((await readJsonl(path.join(projectPath, PATHS.seoPages))).some((row) => row.url === `${SITE}/products/demo-c1`)).toBe(true);
   }, 30_000);
 
-  it.fails("C2: a valid sitemap-only product enters the product catalog after P7 approval", async () => {
+  it("C2: a valid sitemap-only product enters the product catalog after P7 approval", async () => {
     const loopback = await startLoopback();
     const { projectPath } = await makeProject({ feedUrls: [] });
     const sku = "DEMO-C2-SITEMAP-ONLY";

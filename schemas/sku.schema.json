@@ -11,6 +11,12 @@
     "product_id": {
       "type": "string"
     },
+    "source": {
+      "enum": [
+        "feed",
+        "page"
+      ]
+    },
     "parent_sku": {
       "type": ["string", "null"],
       "minLength": 1

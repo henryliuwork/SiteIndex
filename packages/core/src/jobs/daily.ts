@@ -69,6 +69,19 @@ interface StockVerifyCursor {
 const TRACKED = ["product_id", "handle", "title", "variant_title", "url", "category", "categories", "category_source",
   "price", "compare_at_price", "currency", "image_url", "parent_sku"] as const;
 const OPTIONAL_TRACKED = ["product_type_raw", "description", "highlights", "attributes", "custom_labels"] as const;
+const TRACKING_QUERY = /^(utm_|gclid$|gbraid$|wbraid$|srsltid$|fbclid$|mc_|_ga$|attribute_pa_)/i;
+
+function catalogUrlKey(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
+    for (const key of [...url.searchParams.keys()]) if (TRACKING_QUERY.test(key)) url.searchParams.delete(key);
+    url.searchParams.sort();
+    url.hash = "";
+    return url.toString();
+  } catch { return null; }
+}
 
 function hasMeaningfulOptionalValue(value: unknown): boolean {
   if (value === null || value === undefined) return false;
@@ -335,10 +348,14 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     events.push({ date: day, sku, type, from, to, category: source.category ?? null, title: eventLabel(source) });
   };
 
-  const active = new Set([...skus].filter(([, row]) => row.status === "active").map(([sku]) => sku));
-  const gone = [...active].filter((sku) => !snapBy.has(sku)).sort(compareKeys);
-  const previousRunDate = [...active].map((sku) => String(skus.get(sku)?.last_seen ?? "")).sort(compareKeys).at(-1);
-  const seenLast = [...active].filter((sku) => skus.get(sku)?.last_seen === previousRunDate);
+  const activeFeed = new Set([...skus].filter(([, row]) => row.status === "active" && row.source !== "page").map(([sku]) => sku));
+  const incomingUrls = new Set([...snapBy.values()].map((row) => catalogUrlKey(row.url)).filter((url): url is string => !!url));
+  const supersededPageSkus = [...skus].filter(([, row]) => row.status === "active" && row.source === "page"
+    && !snapBy.has(String(row.sku)) && !!catalogUrlKey(row.url) && incomingUrls.has(catalogUrlKey(row.url)!))
+    .map(([sku]) => sku).sort(compareKeys);
+  const gone = [...activeFeed].filter((sku) => !snapBy.has(sku)).sort(compareKeys);
+  const previousRunDate = [...activeFeed].map((sku) => String(skus.get(sku)?.last_seen ?? "")).sort(compareKeys).at(-1);
+  const seenLast = [...activeFeed].filter((sku) => skus.get(sku)?.last_seen === previousRunDate);
   const newlyGone = gone.filter((sku) => seenLast.includes(sku));
   const ratio = options.maxRemovedRatio ?? site.crawl?.max_removed_ratio ?? 0.1;
   const ratioExceeded = seenLast.length > 0 && newlyGone.length / seenLast.length > ratio;
@@ -376,10 +393,21 @@ async function runDailyWithinLock(project: string, snapshot: readonly DailySnaps
     }
     const changed = TRACKED.some((key) => key === "category_source" && !site.categories ? false : !equalValue(old[key], rowForCatalog[key]))
       || OPTIONAL_TRACKED.some((key) => Object.hasOwn(rowForCatalog, key) && !equalValue(old[key], rowForCatalog[key]))
-      || old.status !== "active";
+      || old.status !== "active" || old.source !== undefined;
     Object.assign(old, rowForCatalog, { status: "active", last_seen: day });
+    delete old.source;
     if (!rowForCatalog.parent_sku) delete old.parent_sku;
     if (changed) old.updated_at = day;
+  }
+
+  for (const sku of supersededPageSkus) {
+    const row = skus.get(sku);
+    if (!row || row.status !== "active") continue;
+    row.status = "removed";
+    row.removed_reason = "superseded_by_feed";
+    row.updated_at = day;
+    addEvent(sku, "removed_sku", "active", "removed", row);
+    latest.delete(sku);
   }
 
   const shouldVerifyMissing = site.crawl?.stock_verify?.enabled === true && !ratioExceeded;

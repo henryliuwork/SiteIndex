@@ -2048,6 +2048,10 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
             only: req.only,
             onProgress: (step, message) => progress(15 + Math.round(70 * (["pages", "issues", "links", "blog", "product_details", "categories"].indexOf(step) + 1) / 6), step, message),
           });
+          if (weekly.status !== "failed" && Number(weekly.counts.page_catalog_changed ?? 0) > 0) {
+            progress(90, "views", "正在更新新发现产品的产品与库存视图");
+            await buildViews(executionPath, { date: requestedDate });
+          }
           jobResult = {
             runId, job: req.job, status: weekly.status,
             exitCode: weekly.status === "failed" ? EXIT.SOURCE_FAILED : EXIT.OK,
@@ -3257,6 +3261,12 @@ export function createCoreService(ctx: CoreServiceContext): CoreService {
               edm_candidates: { status: edmStatus, collected_at: edmResult.metadata.collected_at, rows: edmCandidates },
               runs: ruleSnapshot(snapshot.runs, await collectedAt(PATHS.runs)),
             });
+            const catalogGaps = previous.filter((finding) => finding.rule_id === "catalog_gap");
+            if (catalogGaps.length) {
+              const findingsByKey = new Map(generated.findings.map((finding) => [finding.dedupe_key, finding]));
+              for (const finding of catalogGaps) if (!findingsByKey.has(finding.dedupe_key)) findingsByKey.set(finding.dedupe_key, finding);
+              generated = { ...generated, findings: [...findingsByKey.values()] };
+            }
           } catch {
             generated = null;
           }
