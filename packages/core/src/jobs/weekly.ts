@@ -1,5 +1,6 @@
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
 import { parseDocument } from "htmlparser2";
 import { DEFAULT_DESCRIPTION_RANGE, DEFAULT_TITLE_RANGE, pathsFor, gradeDescriptionLength, gradeTitleLength, type BlogPost, type Category, type ProductDetails, type ProductFaqItem, type SeoIssue, type SeoLink, type SeoPage, type SeoRule, type SiteConfig, type SiteKeyPageType, type SitePolicyFact, type SiteTechProfile } from "@siteindex/shared";
@@ -263,7 +264,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
     nextAt = Date.now() + delay;
   };
-  const request = async (input: string): Promise<FetchData> => {
+  const request = async (input: string, sitemapBody = false): Promise<FetchData> => {
     const started = Date.now();
     const redirects: string[] = [];
     let target = input;
@@ -298,7 +299,12 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     }
     if (!response) throw new Error("fetch returned no response");
     const pages = Number(response.headers.get("x-wp-totalpages"));
-    return { status: response.status, body: await response.text(), url: target, redirects, ms: Date.now() - started,
+    let body: string;
+    if (sitemapBody) {
+      const data = new Uint8Array(await response.arrayBuffer());
+      body = new TextDecoder().decode(data[0] === 0x1f && data[1] === 0x8b ? gunzipSync(data) : data);
+    } else body = await response.text();
+    return { status: response.status, body, url: target, redirects, ms: Date.now() - started,
       xRobotsTag: response.headers.get("x-robots-tag"), totalPages: Number.isInteger(pages) && pages > 0 ? pages : null };
   };
   const sitemap = async (input: string, depth = 0, isBlogSitemap = false, isCategorySitemap = false): Promise<void> => {
@@ -315,7 +321,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
     }
     visited.add(url);
     try {
-      const result = await request(url);
+      const result = await request(url, true);
       if (result.status < 200 || result.status >= 400) throw new Error("HTTP " + result.status);
       const tree = XML.parse(result.body);
       const nested = locs(tree, "sitemap");
