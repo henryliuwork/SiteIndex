@@ -14,7 +14,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-it.fails("indexes a product URL from an application/x-gzip sitemap without Content-Encoding", async () => {
+it("indexes a product URL from an application/x-gzip sitemap without Content-Encoding", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-v090-gzip-audit-"));
   roots.push(root);
   await mkdir(path.dirname(path.join(root, PATHS.skus)), { recursive: true });
