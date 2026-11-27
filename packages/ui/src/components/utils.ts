@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { gradeDescriptionLength, gradeTitleLength } from "@siteindex/shared";
+import { gradeDescriptionLength, gradeTitleLength, type ListQuery } from "@siteindex/shared";
 import { api } from "../api";
 
 export function nextFilterValue<T extends string>(current: T | undefined, candidate: T): T | undefined {
@@ -117,6 +117,92 @@ export function useTablePageSize(tableId: string, scopeId?: string) {
   }, [current, projectId, tableId]);
 
   return { pageSize: current?.pageSize ?? 50, ready: current?.ready ?? false, setPageSize };
+}
+
+type TableSort = NonNullable<ListQuery["sort"]>;
+const sortKey = (tableId: string, projectId?: string) => `si.sort.${projectId ?? "global"}.${tableId}`;
+
+function normalizeSort(value: unknown, fields: readonly string[]): TableSort | null | undefined {
+  if (value === null) return null;
+  if (!value || typeof value !== "object") return undefined;
+  const field = Reflect.get(value, "field");
+  const dir = Reflect.get(value, "dir");
+  return typeof field === "string" && fields.includes(field) && (dir === "asc" || dir === "desc") ? { field, dir } : undefined;
+}
+
+function readTableSort(tableId: string, projectId: string | undefined, fields: readonly string[]): TableSort | null | undefined {
+  try {
+    const raw = localStorage.getItem(sortKey(tableId, projectId));
+    return raw === null ? undefined : normalizeSort(JSON.parse(raw), fields);
+  } catch { return undefined; }
+}
+
+function writeTableSort(tableId: string, projectId: string | undefined, sort: TableSort | null): void {
+  try { localStorage.setItem(sortKey(tableId, projectId), JSON.stringify(sort)); }
+  catch { /* 存储不可用时保留当前会话状态。 */ }
+}
+
+/** 排序只保存于当前设备；桌面项目优先读 uiState，旧桥接拒绝新字段时读本机缓存。 */
+export function useTableSort(tableId: string, fields: readonly string[], scopeId?: string) {
+  const { id: routeProjectId } = useParams<{ id?: string }>();
+  const projectId = scopeId ?? routeProjectId;
+  const fieldsKey = fields.join("\u0000");
+  const requestId = useRef(0);
+  const [state, setState] = useState(() => ({ tableId, projectId, fieldsKey, sort: readTableSort(tableId, projectId, fields) }));
+  const current = state.tableId === tableId && state.projectId === projectId && state.fieldsKey === fieldsKey ? state : null;
+
+  useEffect(() => {
+    const request = ++requestId.current;
+    const fallback = readTableSort(tableId, projectId, fields);
+    setState({ tableId, projectId, fieldsKey, sort: fallback });
+    const uiState = api.uiState;
+    if (!projectId || !uiState) return;
+    void uiState.get(projectId).then((saved) => {
+      if (request !== requestId.current) return;
+      const stored = saved.sorts?.[tableId];
+      const sort = stored === undefined ? fallback : normalizeSort(stored, fields);
+      if (stored !== undefined && sort === undefined) {
+        writeTableSort(tableId, projectId, null);
+        void uiState.set(projectId, { sorts: { [tableId]: null } }).catch(() => undefined);
+      }
+      setState({ tableId, projectId, fieldsKey, sort });
+    }).catch(() => {
+      if (request === requestId.current) setState({ tableId, projectId, fieldsKey, sort: fallback });
+    });
+    return () => { requestId.current += 1; };
+  }, [tableId, projectId, fieldsKey]);
+
+  const save = useCallback((sort: TableSort | null) => {
+    requestId.current += 1;
+    const next = normalizeSort(sort, fields) ?? null;
+    setState({ tableId, projectId, fieldsKey, sort: next });
+    writeTableSort(tableId, projectId, next);
+    if (projectId && api.uiState) {
+      void api.uiState.set(projectId, { sorts: { [tableId]: next } }).catch(() => undefined);
+    }
+  }, [tableId, projectId, fieldsKey]);
+
+  return { sort: current?.sort, save };
+}
+
+const sortCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
+
+/** 客户端数据须先排序再分页；未知字段由调用方传 undefined，保持原始行序。 */
+export function sortRows<T>(rows: readonly T[], sort: ListQuery["sort"], valueForField: (row: T, field: string) => unknown): T[] {
+  if (!sort) return [...rows];
+  const values = rows.map((row) => valueForField(row, sort.field));
+  if (values.every((value) => value === undefined)) return [...rows];
+  return rows.map((row, index) => ({ row, index, value: values[index] })).sort((left, right) => {
+    if (left.value == null && right.value == null) return left.index - right.index;
+    if (left.value == null) return 1;
+    if (right.value == null) return -1;
+    const a = left.value instanceof Date ? left.value.getTime() : left.value;
+    const b = right.value instanceof Date ? right.value.getTime() : right.value;
+    const order = typeof a === "number" && typeof b === "number" ? a - b
+      : typeof a === "boolean" && typeof b === "boolean" ? Number(a) - Number(b)
+      : sortCollator.compare(String(a), String(b));
+    return order === 0 ? left.index - right.index : sort.dir === "desc" ? -order : order;
+  }).map(({ row }) => row);
 }
 
 export type LengthKind = "title" | "description";

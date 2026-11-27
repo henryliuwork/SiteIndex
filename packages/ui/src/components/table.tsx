@@ -12,7 +12,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Columns3, Grip
 import type { ListQuery } from "@siteindex/shared";
 import { Button, ColumnCheckbox, Pagination, Popover } from "./primitives";
 import { InfoTooltip } from "./info-tooltip";
-import { normalizeColumnPrefs, useColumnPrefs, useTablePageSize } from "./utils";
+import { normalizeColumnPrefs, useColumnPrefs, useTablePageSize, useTableSort } from "./utils";
 import { assertCompatibleRowText, calculateColumnWidths, findColumnsWithoutWidthContract } from "./table-layout";
 
 const warnedWidthContracts = new Set<string>();
@@ -93,6 +93,9 @@ export function DataTable<T, F = Record<string, unknown>>({
   const lockedEnd = useMemo(() => columns.flatMap((column, index) => column.meta?.sticky === "right" || getColumnId(column, index) === "actions" ? [getColumnId(column, index)] : []), [columns]);
   const columnPrefs = useColumnPrefs(tableId, scopeId);
   const pageSizeState = useTablePageSize(tableId, scopeId);
+  const sortableIds = useMemo(() => columns.flatMap((column, index) => column.enableSorting !== false && ("accessorKey" in column || "accessorFn" in column) ? [getColumnId(column, index)] : []), [columns]);
+  const sortState = useTableSort(tableId, sortableIds, scopeId);
+  const activeSort = sortState.sort === undefined ? query.sort : sortState.sort ?? undefined;
   const columnIdsKey = columnIds.join("\u0000");
   const defaultsKey = defaultVisible.join("\u0000");
   const requiredKey = requiredColumnIds.join("\u0000");
@@ -118,7 +121,7 @@ export function DataTable<T, F = Record<string, unknown>>({
     return [...lockedStart, ...movable, ...lockedEnd];
   }, [columnIds, lockedEnd, lockedStart, visibleColumnIds]);
   const columnVisibility = useMemo(() => Object.fromEntries(columnIds.map((id) => [id, visibleColumnIds.includes(id)])), [columnIds, visibleColumnIds]);
-  const sorting: SortingState = query.sort ? [{ id: query.sort.field, desc: query.sort.dir === "desc" }] : [];
+  const sorting: SortingState = activeSort ? [{ id: activeSort.field, desc: activeSort.dir === "desc" }] : [];
   const table = useReactTable({
     data: rows,
     columns,
@@ -179,6 +182,11 @@ export function DataTable<T, F = Record<string, unknown>>({
   useEffect(() => {
     if (pageSizeState.ready && query.pageSize !== pageSize) onQueryChange({ ...query, page: 1, pageSize });
   }, [onQueryChange, pageSize, pageSizeState.ready, query]);
+
+  useEffect(() => {
+    if (sortState.sort === undefined || (query.sort?.field === activeSort?.field && query.sort?.dir === activeSort?.dir)) return;
+    onQueryChange({ ...query, page: 1, sort: activeSort });
+  }, [activeSort?.field, activeSort?.dir, onQueryChange, query, sortState.sort]);
 
   const notifySelection = (next: Set<string>) => {
     setSelectedRowIds([...next]);
@@ -294,8 +302,10 @@ export function DataTable<T, F = Record<string, unknown>>({
   }
 
   const sortBy = (columnId: string) => {
-    const dir = query.sort?.field === columnId && query.sort.dir === "asc" ? "desc" : "asc";
-    onQueryChange({ ...query, page: 1, sort: { field: columnId, dir } });
+    const next = activeSort?.field !== columnId ? { field: columnId, dir: "asc" as const }
+      : activeSort.dir === "asc" ? { field: columnId, dir: "desc" as const } : null;
+    sortState.save(next);
+    onQueryChange({ ...query, page: 1, sort: next ?? undefined });
   };
 
   const changeColumnMenuOpen = (open: boolean) => {

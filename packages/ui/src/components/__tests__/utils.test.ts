@@ -1,5 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatDateTime, formatPlatformLabel, getLengthGrade, getPaginationModel, nextFilterValue, normalizeColumnPrefs, normalizeTablePageSize, readColumnPrefs, writeColumnPrefs } from "../utils";
+import { formatDateTime, formatPlatformLabel, getLengthGrade, getPaginationModel, nextFilterValue, normalizeColumnPrefs, normalizeTablePageSize, readColumnPrefs, sortRows, writeColumnPrefs } from "../utils";
+
+describe("共享客户端排序", () => {
+  const rows = [{ sku: "C-2", stock: 4 }, { sku: "C-10", stock: 1 }, { sku: "C-1", stock: 1 }];
+  it("在分页前按数字或自然文本排序，不改原数组", () => {
+    expect(sortRows(rows, { field: "stock", dir: "asc" }, (row, field) => row[field as keyof typeof row]).map((row) => row.sku)).toEqual(["C-10", "C-1", "C-2"]);
+    expect(sortRows(rows, { field: "sku", dir: "desc" }, (row, field) => row[field as keyof typeof row]).map((row) => row.sku)).toEqual(["C-10", "C-2", "C-1"]);
+    expect(rows[0]?.sku).toBe("C-2");
+  });
+  it("未知字段保持原顺序，缺失值排在末尾", () => {
+    expect(sortRows(rows, { field: "removed", dir: "asc" }, (row) => Reflect.get(row, "removed"))).toEqual(rows);
+    expect(sortRows([{ n: 2 }, { n: null }, { n: 1 }], { field: "n", dir: "desc" }, (row) => row.n).map((row) => row.n)).toEqual([2, 1, null]);
+  });
+});
 
 describe("日期和时间格式", () => {
   const now = new Date(2026, 10, 9, 12, 0);
