@@ -6,7 +6,7 @@ import { describe, it } from "vitest";
 import { createCategoryScheduleFixture } from "../scripts/acceptance/category-schedule-fixture.mjs";
 
 describe("v0.9.0 packaged search fixture", () => {
-  it("reuses synthetic product, SEO and content rows for matrix 85 only", async () => {
+  it("reuses synthetic product, SEO and content rows for matrices 84 and 85", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "siteindex-v090-search-"));
     try {
       const profile = { layout: { projectRoot: root } };
@@ -18,7 +18,8 @@ describe("v0.9.0 packaged search fixture", () => {
         assert.ok(rows.length > 0, `${file} has synthetic search rows`);
       }
       assert.match(await readFile(fixture.siteFile, "utf8"), /fixture\.example\.test/u);
-      await assert.rejects(() => createCategoryScheduleFixture(profile, 84, "synthetic-device"), /Invalid synthetic/u);
+      const sortFixture = await createCategoryScheduleFixture(profile, 84, "synthetic-device");
+      assert.equal(sortFixture.projectId, "matrix-84");
       await assert.rejects(() => createCategoryScheduleFixture(profile, 86, "synthetic-device"), /Invalid synthetic/u);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
