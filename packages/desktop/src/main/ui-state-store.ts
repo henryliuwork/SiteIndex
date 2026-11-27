@@ -24,6 +24,8 @@ function copyState(state: ProjectUiState): ProjectUiState {
   return {
     columns: Object.fromEntries(Object.entries(state.columns).map(([tableId, columns]) => [tableId, [...columns]])),
     page_sizes: { ...state.page_sizes },
+    ...(state.sorts ? { sorts: Object.fromEntries(Object.entries(state.sorts).map(([tableId, sort]) =>
+      [tableId, sort ? { ...sort } : null])) } : {}),
   };
 }
 
@@ -48,7 +50,19 @@ function normalizeState(value: unknown): ProjectUiState {
     }
   }
 
-  return { columns, page_sizes: pageSizes };
+  const sorts: NonNullable<ProjectUiState["sorts"]> = {};
+  if (isRecord(value.sorts)) {
+    for (const [tableId, sort] of Object.entries(value.sorts)) {
+      if (!tableId) continue;
+      if (sort === null) sorts[tableId] = null;
+      else if (isRecord(sort) && typeof sort.field === "string" && sort.field.trim()
+        && (sort.dir === "asc" || sort.dir === "desc")) {
+        sorts[tableId] = { field: sort.field, dir: sort.dir };
+      }
+    }
+  }
+
+  return { columns, page_sizes: pageSizes, ...(isRecord(value.sorts) ? { sorts } : {}) };
 }
 
 function validateProjectId(value: unknown): asserts value is ProjectId {
@@ -69,7 +83,7 @@ function validatePatch(value: unknown): asserts value is Partial<ProjectUiState>
   if (!isRecord(value)) throw uiStateError("CONFIG_INVALID", "界面状态更新格式无效");
 
   for (const key of Object.keys(value)) {
-    if (key !== "columns" && key !== "page_sizes") {
+    if (key !== "columns" && key !== "page_sizes" && key !== "sorts") {
       throw uiStateError("CONFIG_INVALID", `不支持修改界面状态字段 ${key}。`);
     }
   }
@@ -88,6 +102,16 @@ function validatePatch(value: unknown): asserts value is Partial<ProjectUiState>
     for (const [tableId, pageSize] of Object.entries(value.page_sizes)) {
       if (!tableId || typeof pageSize !== "number" || !PAGE_SIZES.has(pageSize)) {
         throw uiStateError("CONFIG_INVALID", "每页条数只能是 20、50 或 100。", tableId);
+      }
+    }
+  }
+
+  if ("sorts" in value) {
+    if (!isRecord(value.sorts)) throw uiStateError("CONFIG_INVALID", "sorts 必须是表格排序对象。");
+    for (const [tableId, sort] of Object.entries(value.sorts)) {
+      if (!tableId || (sort !== null && (!isRecord(sort) || typeof sort.field !== "string"
+        || !sort.field.trim() || (sort.dir !== "asc" && sort.dir !== "desc")))) {
+        throw uiStateError("CONFIG_INVALID", "每张表的排序必须为字段与 asc/desc 方向，或 null。", tableId);
       }
     }
   }
@@ -182,6 +206,7 @@ export function createUiStateStore(getCacheDirectory: CacheDirectoryProvider): U
               ) : {}),
             },
             page_sizes: { ...current.page_sizes, ...patch.page_sizes },
+            ...(current.sorts || patch.sorts ? { sorts: { ...current.sorts, ...patch.sorts } } : {}),
           };
           await writeAtomically(filePath, next);
           return copyState(next);
