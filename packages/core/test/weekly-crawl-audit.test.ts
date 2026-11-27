@@ -109,9 +109,9 @@ describe("weekly crawl audit characterization", () => {
     const rows = (await readFile(path.join(root, PATHS.seoPages), "utf8")).trim().split(/\r?\n/u)
       .map((line) => JSON.parse(line) as Record<string, unknown>);
 
+    expect(rows).toEqual([previous]);
     expect(result).toMatchObject({ status: "failed", counts: {} });
     expect(result.errors.join(" ")).toMatch(/429/u);
-    expect(rows).toEqual([previous]);
   });
 
   it("records an HTTP 429 as a failed weekly run", async () => {
