@@ -1468,7 +1468,7 @@ describe("EdmPage DataTable 列契约", () => {
     expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
   });
 
-  it.fails("产品 / 变体排序使用标题值，而不是仍按 SKU 顺序展示", async () => {
+  it("产品 / 变体排序使用标题值，而不是仍按 SKU 顺序展示", async () => {
     enableTableRows();
     const rows = [
       { ...mediaImageRow("DEMO-SORT-A", null), title: "Zulu 虚构商品" },
@@ -1489,7 +1489,7 @@ describe("EdmPage DataTable 列契约", () => {
     });
     const table = await screen.findByRole("region", { name: "edm.images 数据表" });
     fireEvent.click(within(table).getByRole("button", { name: "产品 / 变体" }));
-    await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "product", dir: "asc" } })));
+    await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ sort: { field: "title", dir: "asc" } })));
     await waitFor(() => expect(screen.getByRole("region", { name: "edm.images 数据表" }).querySelector(".si-table tbody tr[data-row-id] .si-edm-product strong")?.textContent).toBe("Alpha 虚构商品"));
   });
 

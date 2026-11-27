@@ -57,18 +57,17 @@ async function renderTodos(configure?: (todos: NonNullable<SiteIndexApi["todos"]
 }
 
 describe("ProjectTodosPage", () => {
-  it.fails("待办标题排序后应重排数据行，而不是只更新表头箭头", async () => {
+  it("待办标题排序后应重排数据行，而不是只更新表头箭头", async () => {
     await renderTodos((todos) => {
       const originalList = todos.list.bind(todos);
       todos.list = async (id) => {
         const result = await originalList(id);
-        const [first, second, ...rest] = result.items;
+        const [first, second] = result.items;
         return {
           ...result,
           items: [
             { ...first!, finding: { ...first!.finding, title: "Zulu 虚构待办" } },
             { ...second!, finding: { ...second!.finding, title: "Alpha 虚构待办" } },
-            ...rest,
           ],
         };
       };
@@ -76,6 +75,30 @@ describe("ProjectTodosPage", () => {
     const table = await screen.findByRole("table");
     fireEvent.click(await within(table).findByRole("button", { name: "待办事项" }));
 
+    await waitFor(() => expect(table.querySelector(".si-table tbody tr[data-row-id] .si-todo-finding-cell strong")?.textContent).toBe("Alpha 虚构待办"));
+  });
+
+  it("待办先排序再分页，后页的字母最小项能进入第一页", async () => {
+    await renderTodos((todos) => {
+      const originalList = todos.list.bind(todos);
+      todos.list = async (id) => {
+        const result = await originalList(id);
+        const sample = result.items[0]!;
+        return {
+          ...result,
+          items: Array.from({ length: 51 }, (_, index) => ({
+            ...sample,
+            finding: {
+              ...sample.finding,
+              dedupe_key: `demo:sort-${index}`,
+              title: index === 50 ? "Alpha 虚构待办" : `Zulu 虚构待办 ${String(index).padStart(2, "0")}`,
+            },
+          })),
+        };
+      };
+    });
+    const table = await screen.findByRole("table");
+    fireEvent.click(await within(table).findByRole("button", { name: "待办事项" }));
     await waitFor(() => expect(table.querySelector(".si-table tbody tr[data-row-id] .si-todo-finding-cell strong")?.textContent).toBe("Alpha 虚构待办"));
   });
 

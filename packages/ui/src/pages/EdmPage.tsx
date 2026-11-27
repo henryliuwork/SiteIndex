@@ -347,7 +347,9 @@ export function EdmPage() {
   const [scenarioDrawerOpen, setScenarioDrawerOpen] = useState(false);
   const [mediaHistoryDrawerOpen, setMediaHistoryDrawerOpen] = useState(false);
   const summaryQueryKey = ["edm", "summary", id] as const;
-  const imageQueryKey = ["edm", "images", id, query] as const;
+  const imageRequest = useMemo(() => query.sort?.field === "product"
+    ? { ...query, sort: { ...query.sort, field: "title" } } : query, [query]);
+  const imageQueryKey = ["edm", "images", id, imageRequest] as const;
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: summaryQueryKey, queryFn: () => {
     recordEdmQueryFetchStart(queryClient, summaryQueryKey);
@@ -355,7 +357,7 @@ export function EdmPage() {
   } });
   const listQuery = useQuery({ queryKey: imageQueryKey, queryFn: () => {
     recordEdmQueryFetchStart(queryClient, imageQueryKey);
-    return api.edm.listImages(id, query);
+    return api.edm.listImages(id, imageRequest);
   }, placeholderData: keepPreviousData });
   const mediaHistoryQuery = useQuery({
     queryKey: ["job-history", id],
