@@ -328,16 +328,94 @@ function dateLabel(index: number, length: number): string {
 
 export function SearchInput({ value, onSearch, label = "搜索", placeholder = "搜索" }: { value: string; onSearch: (value: string) => void; label?: string; placeholder?: string }) {
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  const draftRef = useRef(value);
+  const onSearchRef = useRef(onSearch);
+  const lastPropValueRef = useRef(value);
+  const lastSubmittedRef = useRef<string | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const composingRef = useRef(false);
+  onSearchRef.current = onSearch;
+
+  const clearTimer = () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const setDraftValue = (next: string) => {
+    draftRef.current = next;
+    setDraft(next);
+  };
+
+  const submit = (raw: string) => {
+    clearTimer();
+    const query = raw.trim();
+    lastSubmittedRef.current = query;
+    onSearchRef.current(query);
+  };
+
+  const schedule = (raw: string) => {
+    clearTimer();
+    if (composingRef.current) return;
+    const query = raw.trim();
+    if (query === value || query === lastSubmittedRef.current) return;
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      submit(raw);
+    }, 250);
+  };
+
   useEffect(() => {
-    if (draft === value) return;
-    const timer = window.setTimeout(() => onSearch(draft.trim()), 50);
-    return () => window.clearTimeout(timer);
-  }, [draft, onSearch, value]);
+    if (value === lastPropValueRef.current) return;
+    lastPropValueRef.current = value;
+    if (value === lastSubmittedRef.current) {
+      lastSubmittedRef.current = null;
+      return;
+    }
+    lastSubmittedRef.current = null;
+    clearTimer();
+    setDraftValue(value);
+  }, [value]);
+
+  useEffect(() => () => clearTimer(), []);
+
   return (
     <label className="si-search-input">
       <Search size={15} aria-hidden="true" />
-      <input type="search" aria-label={label} placeholder={placeholder} value={draft} onChange={(event) => setDraft(event.target.value)} />
+      <input
+        type="search"
+        aria-label={label}
+        placeholder={placeholder}
+        value={draft}
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          setDraftValue(next);
+          if (composingRef.current || (event.nativeEvent as InputEvent).isComposing) {
+            clearTimer();
+            return;
+          }
+          if (next === "") submit("");
+          else schedule(next);
+        }}
+        onCompositionStart={() => {
+          composingRef.current = true;
+          clearTimer();
+        }}
+        onCompositionEnd={(event) => {
+          composingRef.current = false;
+          const next = event.currentTarget.value;
+          setDraftValue(next);
+          if (next === "") submit("");
+          else schedule(next);
+        }}
+        onKeyDown={(event) => {
+          const nativeEvent = event.nativeEvent as KeyboardEvent;
+          if (event.key !== "Enter" || composingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) return;
+          event.preventDefault();
+          submit(draftRef.current);
+        }}
+      />
     </label>
   );
 }

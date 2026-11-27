@@ -220,3 +220,7 @@
 - 2026-11-10 mock 复核：1280×800 与 1920×1080 下 Tab 均完整可见；EDM 的两个右侧操作都在固定槽内可见。共享“更多”菜单的键盘路径由 `project-header.test.tsx` 覆盖。仍需 D 把 `OverviewPage`、`ProductsPage`、`SeoPage`、`InventoryPage` 的独立 `PageHeader` 并入 `ProjectHeader`；截图显示这些页面仍保留第三行标题/操作区，业务页不在本 PR 修改范围。
 - Products mock 在 1280×800 下，旧结构表格滚动区 320px；合并标题行并移除独立 `PageHeader` 后 417px，增加 97px。截图：[改造前](../../packages/ui/screenshots/compact-project-header-before-1280.png) / [改造后](../../packages/ui/screenshots/compact-project-header-after-1280.png)
 - [x] v0.5.5 新建项目网址步骤“检测”按钮与 44px 输入框顶边/高度对齐；1280/1920/640 mock Playwright 量测并验证检测交互 — 本 PR
+
+## v0.9.0 · 搜索与排序
+- [x] B-1 共享层：`SearchInput` 满足 S1–S3（250ms 防抖、输入法组合保护、Enter/清空立即提交、原始草稿保留），并覆盖受控刷新时保持挂载的共享行为测试 — 本 PR
+- [ ] S-4 页面集成移交：已有 `it.fails` 证据位于 `content/ContentPage.test.tsx`、`EdmPage.test.tsx`、`SeoPage.test.tsx`。Content、EDM、SEO 主列表在查询键变化时以 `isLoading` 替换 `DataTable`；`seo/page-table.tsx` 虽用 `keepPreviousData`，但 `DataTable key={selectionReset}` 仍会重挂载含搜索框的表格。`ProductsPage` 已用 `placeholderData`；`ProjectTodosPage` 搜索为本地筛选且表格保持挂载（当前 `WORKSTREAMS.md` 未明确列出该页归属）。页面代码与证据测试未改，交页面负责人完成 `keepPreviousData` 集成及逐页 0/300/1000ms 测试。
