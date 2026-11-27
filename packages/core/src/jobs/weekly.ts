@@ -365,6 +365,7 @@ async function crawl(config: SiteConfig, date: string, productUrls: ReadonlySet<
   for (const [url, lastmod] of [...urls.entries()].slice(0, maximum)) {
     try {
       const response = await request(url);
+      if (response.status === 429) throw new Error("HTTP 429: crawl rate limited");
       const doc = parseDocument(response.body) as unknown as HtmlNode;
       const content = text(area(doc));
       const headings = walk(doc, (n) => n.name === "h1").map((n) => text(n)).filter(Boolean);
@@ -1214,6 +1215,8 @@ export async function runWeekly(projectPath: string, config: SiteConfig, options
     legacyUrlPatterns: config.crawl.blog_url_patterns ?? [],
   };
   const errors = [...crawlResult.errors];
+  if (errors.some((error) => /\bHTTP 429\b/u.test(error)))
+    return { status: "failed", counts: {}, errors };
   const denominator = rows.length + errors.length;
   if (!rows.length || (denominator > 0 && errors.length / denominator > 0.2 && !wooApi.length))
     return { status: "failed", counts: {}, errors: errors.length ? errors : ["抓取结果为空，未覆盖现有数据。"] };
