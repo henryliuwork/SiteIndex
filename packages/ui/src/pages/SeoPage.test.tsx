@@ -50,7 +50,7 @@ async function renderSeoPage(mockApi: ReturnType<typeof createMockApi>, route = 
       {rows.slice(0, 1).map((row, rowIndex) => <div role="row" key={`${tableId}-${rowIndex}`}>
         {selectable && <input type="checkbox" aria-label={`选择第 ${rowIndex + 1} 行`} onChange={() => onSelectionChange?.([row])} />}
         {columns.map((column, columnIndex) => <div role="cell" key={column.id ?? column.accessorKey ?? columnIndex}>
-          {column.cell ? column.cell({ row: { original: row } } as never) : String(row[column.accessorKey ?? ""] ?? "")}
+          {column.cell ? column.cell({ row: { original: row, index: rowIndex } } as never) : String(row[column.accessorKey ?? ""] ?? "")}
         </div>)}
       </div>)}
     </div>,
@@ -74,7 +74,8 @@ describe("SeoPage 问题处理", () => {
   it("搜索占位文案适配窄工具栏宽度", async () => {
     await renderSeoPage(createMockApi());
 
-    const input = await screen.findByRole("searchbox", { name: "搜索 SEO 数据" });
+    const table = await screen.findByRole("table", { name: "seo.issues.v2 数据表" });
+    const input = within(table).getByRole("searchbox", { name: "搜索 SEO 数据" }) as HTMLInputElement;
     expect(input.getAttribute("placeholder")).toBe("搜索 URL 或标题");
   });
 
@@ -99,7 +100,7 @@ describe("SeoPage 问题处理", () => {
     expect(screen.getByRole("button", { name: "待处理问题" })).toBeTruthy();
   });
 
-  it.fails("SEO 兼容列表刷新期间搜索框保持挂载与焦点", async () => {
+  it("SEO 兼容列表刷新期间搜索框保持挂载、焦点与输入内容", async () => {
     const mockApi = createMockApi();
     const originalListIssues = mockApi.seo.listIssues.bind(mockApi.seo);
     const listIssues = vi.fn(async (projectId, query) => query.search
@@ -107,12 +108,32 @@ describe("SeoPage 问题处理", () => {
       : originalListIssues(projectId, query));
     mockApi.seo.listIssues = listIssues;
     await renderSeoPage(mockApi, "/p/demo/seo", false);
-    const input = await screen.findByRole("searchbox", { name: "搜索 SEO 数据" });
+    const table = await screen.findByRole("table", { name: "seo.issues.v2 数据表" });
+    const input = within(table).getByRole("searchbox", { name: "搜索 SEO 数据" }) as HTMLInputElement;
     input.focus();
     fireEvent.change(input, { target: { value: "abc" } });
     await waitFor(() => expect(listIssues).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
 
-    expect({ mounted: input.isConnected, focused: document.activeElement === input }).toEqual({ mounted: true, focused: true });
+    expect(table.isConnected).toBe(true);
+    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
+  });
+
+  it("SEO 聚合页面表刷新期间搜索框保持挂载、焦点与输入内容", async () => {
+    const mockApi = createMockApi();
+    const originalListPageRows = mockApi.seo.listPageRows!.bind(mockApi.seo);
+    const listPageRows = vi.fn(async (projectId, query) => query.search
+      ? new Promise<Awaited<ReturnType<typeof originalListPageRows>>>(() => {})
+      : originalListPageRows(projectId, query));
+    mockApi.seo.listPageRows = listPageRows;
+    await renderSeoPage(mockApi, "/p/demo/seo", true);
+    const table = await screen.findByRole("table", { name: "seo.pageRows 数据表" });
+    const input = within(table).getByRole("searchbox", { name: "搜索 SEO 页面" }) as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "abc" } });
+    await waitFor(() => expect(listPageRows).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
+
+    expect(table.isConnected).toBe(true);
+    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
   });
 
   it("SEO 抓取日期只显示在数据说明行，项目头和页底不重复", async () => {

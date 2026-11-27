@@ -335,6 +335,7 @@ export function ProductsPage() {
   }, [mergedRows, parentOnly]);
   const start = query.pageSize === 0 ? 0 : (query.page - 1) * query.pageSize;
   const tableRows = filteredStockMismatch ? [] : query.pageSize === 0 ? sortedRows : sortedRows.slice(start, start + query.pageSize);
+  const tableIsUpdating = Boolean((productListQuery.isFetching && productListQuery.data) || (inventoryListQuery.isFetching && inventoryListQuery.data));
   const categoryOptions = [...new Set(productRows.flatMap((row) => [...row.categories, row.category]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
   const detail = detailQuery.data;
   const scenarioOptions = productScenarioOptions(api.products, Boolean(isMockApi), selectedRow?.sku ?? null);
@@ -474,7 +475,7 @@ export function ProductsPage() {
       {inventoryListQuery.isError && <ApiErrorNotice className="si-inventory-query-state" label="库存指标加载失败。" error={inventoryListQuery.error} onRetry={() => void inventoryListQuery.refetch()} />}
       {filteredStockMismatch && <Notice tone="warn" title="筛选结果暂不可显示">产品行与库存筛选结果不一致，请同步后重试。</Notice>}
       {productListQuery.isLoading || inventoryListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载产品与库存数据…</div> : <div className="si-products-table-frame">
-        <DataTable tableId="products.merged" scopeId={id} rows={tableRows} total={filteredStockMismatch ? 0 : sortedRows.length} columns={columns} query={query} onQueryChange={onTableQueryChange} onRowClick={(row) => { setSelectedRow(row); setDrawerSegment("overview"); }} getRowId={(row) => row.id} height="fill" rowHeight={52} emptyTitle={filteredStockMismatch ? "产品与库存行尚未对齐" : "没有匹配的产品或 SKU"} emptyDescription={filteredStockMismatch ? "请同步后重试；当前不展示不准确的筛选结果。" : query.filters?.watched_only ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或筛选条件。"}
+        <DataTable tableId="products.merged" scopeId={id} rows={tableIsUpdating ? [] : tableRows} total={filteredStockMismatch ? 0 : sortedRows.length} columns={columns} query={query} onQueryChange={onTableQueryChange} onRowClick={(row) => { setSelectedRow(row); setDrawerSegment("overview"); }} getRowId={(row) => row.id} height="fill" rowHeight={52} emptyTitle={tableIsUpdating ? "正在更新产品与库存…" : filteredStockMismatch ? "产品与库存行尚未对齐" : "没有匹配的产品或 SKU"} emptyDescription={tableIsUpdating ? "" : filteredStockMismatch ? "请同步后重试；当前不展示不准确的筛选结果。" : query.filters?.watched_only ? "关注分类中没有符合当前筛选条件的 SKU。" : "请修改搜索文字或筛选条件。"}
           toolbar={<div className="si-products-toolbar">
             <div className="si-products-summary-inline">{summaryQuery.isLoading ? <span className="si-products-summary-state" role="status">正在加载产品管理摘要…</span> : summaryQuery.isError || !summary ? <ApiErrorNotice label="产品管理摘要加载失败。" error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summaryItems.length ? <><SummaryLine items={summaryItems} ariaLabel="产品管理摘要" />
               {summaryItems.length < 4 && <span className="si-products-summary-state" role="status">历史数据不足，部分摘要指标暂不可用。</span>}</> : <span className="si-products-summary-state" role="status">{!productManagement ? "当前运行环境未提供产品管理摘要。" : productManagement.as_of ? "历史数据不足，产品管理摘要暂不可用。" : "尚无产品管理业务日期，摘要暂不可用。"}</span>}</div>

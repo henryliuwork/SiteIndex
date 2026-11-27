@@ -110,8 +110,11 @@ describe("ProjectTodosPage", () => {
 
     expect(await screen.findByText("价格历史存在日期缺口")).toBeTruthy();
     expect(screen.queryByText("库存状态与 Feed 记录不一致")).toBeNull();
-    fireEvent.change(screen.getByRole("searchbox", { name: "搜索项目待办" }), { target: { value: "DEMO002CP01" } });
+    const input = screen.getByRole("searchbox", { name: "搜索项目待办" }) as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "DEMO002CP01" } });
     expect(await screen.findByText("价格历史存在日期缺口")).toBeTruthy();
+    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "DEMO002CP01" });
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索项目待办" }), { target: { value: "not-a-demo-sku" } });
     expect(await screen.findByText("没有匹配的待办")).toBeTruthy();
   });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -109,8 +109,8 @@ export function ContentPage() {
   const summaryQuery = useQuery({ queryKey: ["content", "summary", id], queryFn: () => api.content.summary(id) });
   const seoSummaryQuery = useQuery({ queryKey: ["seo", "summary", id], queryFn: () => api.seo.summary(id) });
   const jobHistoryQuery = useQuery({ queryKey: ["job-history", id], queryFn: () => api.jobs.history(id, 30) });
-  const blogListQuery = useQuery({ queryKey: ["content", "blogs", id, blogQuery], queryFn: () => api.content.listBlog(id, blogQuery) });
-  const keywordListQuery = useQuery({ queryKey: ["content", "keywords", id, keywordQuery], queryFn: () => api.content.listKeywords(id, keywordQuery) });
+  const blogListQuery = useQuery({ queryKey: ["content", "blogs", id, blogQuery], queryFn: () => api.content.listBlog(id, blogQuery), placeholderData: keepPreviousData });
+  const keywordListQuery = useQuery({ queryKey: ["content", "keywords", id, keywordQuery], queryFn: () => api.content.listKeywords(id, keywordQuery), placeholderData: keepPreviousData });
   const project = projectQuery.data?.summary;
   const summary = summaryQuery.data;
   const blogs = blogListQuery.data;
@@ -231,17 +231,19 @@ export function ContentPage() {
     {SHOW_KEYWORD_MAPPING && <div className="si-content-view-switch">
       <Segmented value={view} options={viewOptions} onChange={setView} ariaLabel="内容视图" />
     </div>}
-    {view === "blog" && showBlogRecognitionEmpty && <div className="si-content-empty-toolbar">{tableToolbar}</div>}
-    <div className="si-content-table-frame">
-      {activeQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "blog" ? "博客文章" : "关键词映射"}…</div> : activeQuery.isError ? <ApiErrorNotice label={`${view === "blog" ? "博客文章" : "关键词映射"}加载失败。`} error={activeQuery.error} onRetry={() => void activeQuery.refetch()} /> : <>
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "unconfigured" && <div className="si-content-blog-empty"><strong>尚未配置博客识别</strong><p>请添加博客 Sitemap 或 URL 规则，设置后系统会在 SEO 抓取中识别博客文章。</p><Link to={`/p/${id}/settings/config?section=blog-recognition`}>去设置</Link></div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "checking" && <div className="si-content-blog-empty"><p role="status">正在确认最近一次 SEO 抓取是否使用了当前博客配置…</p></div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "stale" && <div className="si-content-blog-empty"><strong>博客识别配置已更新，需重新抓取后才会识别。</strong><p>重新抓取会使用当前博客 Sitemap 和 URL 规则。</p></div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "never-crawled" && <div className="si-content-blog-empty"><strong>已配置博客识别，但尚无成功的 SEO 抓取记录。</strong><p>重新抓取后，系统会按当前博客 Sitemap 和 URL 规则识别文章。</p></div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "history-error" && <div className="si-content-blog-empty"><strong>已配置博客识别，但暂时无法读取最近抓取记录。</strong><p>可重新抓取以确认当前配置对应的博客数据。</p></div>}
-        {view === "blog" && showBlogRecognitionEmpty && blogEmptyState === "no-match" && <div className="si-content-blog-empty"><strong>已配置博客识别，最近抓取未发现符合规则的文章。</strong><p>请检查博客 Sitemap 和 URL 规则。</p></div>}
-        {view === "blog" && !showBlogRecognitionEmpty && <DataTable tableId="content.blog" rows={blogs?.rows ?? []} total={blogs?.total ?? 0} columns={blogColumnDefs} query={blogQuery} onQueryChange={setBlogQuery} onRowClick={setSelected} getRowId={(row) => row.slug} height="fill" rowHeight={52} showPagination emptyTitle="没有博客文章" emptyDescription="调整筛选条件或检查内容目录。" toolbar={tableToolbar} />}
-        {view === "keywords" && <DataTable tableId="content.keywords" rows={keywords?.rows ?? []} total={keywords?.total ?? 0} columns={keywordColumnDefs} query={keywordQuery} onQueryChange={setKeywordQuery} onRowClick={setSelected} getRowId={(row) => row.keyword} height="fill" rowHeight={52} showPagination emptyTitle="没有关键词" emptyDescription="在关键词台账中添加目标关键词。" toolbar={tableToolbar} />}
+    <div className={`si-content-table-frame${view === "blog" && showBlogRecognitionEmpty ? " is-recognition-empty" : ""}`}>
+      {activeQuery.isLoading && !activeQuery.data ? <div className="si-query-loading" role="status">正在加载{view === "blog" ? "博客文章" : "关键词映射"}…</div> : activeQuery.isError && !activeQuery.data ? <ApiErrorNotice label={`${view === "blog" ? "博客文章" : "关键词映射"}加载失败。`} error={activeQuery.error} onRetry={() => void activeQuery.refetch()} /> : <>
+        {activeQuery.isError && <ApiErrorNotice label={`${view === "blog" ? "博客文章" : "关键词映射"}更新失败，仍显示上次结果。`} error={activeQuery.error} onRetry={() => void activeQuery.refetch()} />}
+        {view === "blog" && <DataTable tableId="content.blog" rows={activeQuery.isFetching || showBlogRecognitionEmpty ? [] : blogs?.rows ?? []} total={showBlogRecognitionEmpty ? 0 : blogs?.total ?? 0} columns={blogColumnDefs} query={blogQuery} onQueryChange={setBlogQuery} onRowClick={setSelected} getRowId={(row) => row.slug} height="fill" rowHeight={52} showPagination emptyTitle={activeQuery.isFetching ? "正在更新博客文章…" : showBlogRecognitionEmpty ? "" : "没有博客文章"} emptyDescription={activeQuery.isFetching || showBlogRecognitionEmpty ? "" : "调整筛选条件或检查内容目录。"} toolbar={tableToolbar} />}
+        {view === "keywords" && <DataTable tableId="content.keywords" rows={activeQuery.isFetching ? [] : keywords?.rows ?? []} total={keywords?.total ?? 0} columns={keywordColumnDefs} query={keywordQuery} onQueryChange={setKeywordQuery} onRowClick={setSelected} getRowId={(row) => row.keyword} height="fill" rowHeight={52} showPagination emptyTitle={activeQuery.isFetching ? "正在更新关键词…" : "没有关键词"} emptyDescription={activeQuery.isFetching ? "" : "在关键词台账中添加目标关键词。"} toolbar={tableToolbar} />}
+        {view === "blog" && showBlogRecognitionEmpty && <div className="si-content-blog-empty">
+          {blogEmptyState === "unconfigured" && <><strong>尚未配置博客识别</strong><p>请添加博客 Sitemap 或 URL 规则，设置后系统会在 SEO 抓取中识别博客文章。</p><Link to={`/p/${id}/settings/config?section=blog-recognition`}>去设置</Link></>}
+          {blogEmptyState === "checking" && <p role="status">正在确认最近一次 SEO 抓取是否使用了当前博客配置…</p>}
+          {blogEmptyState === "stale" && <><strong>博客识别配置已更新，需重新抓取后才会识别。</strong><p>重新抓取会使用当前博客 Sitemap 和 URL 规则。</p></>}
+          {blogEmptyState === "never-crawled" && <><strong>已配置博客识别，但尚无成功的 SEO 抓取记录。</strong><p>重新抓取后，系统会按当前博客 Sitemap 和 URL 规则识别文章。</p></>}
+          {blogEmptyState === "history-error" && <><strong>已配置博客识别，但暂时无法读取最近抓取记录。</strong><p>可重新抓取以确认当前配置对应的博客数据。</p></>}
+          {blogEmptyState === "no-match" && <><strong>已配置博客识别，最近抓取未发现符合规则的文章。</strong><p>请检查博客 Sitemap 和 URL 规则。</p></>}
+        </div>}
       </>}
     </div>
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected && "title" in selected ? selected.title : selected && "keyword" in selected ? selected.keyword : "内容详情"}>

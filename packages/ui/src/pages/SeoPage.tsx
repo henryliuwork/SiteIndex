@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { AlertTriangle, ExternalLink, FileDown, Globe2, MoreHorizontal, RefreshCw, Settings2 } from "lucide-react";
@@ -182,7 +182,6 @@ export function SeoPage() {
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [selectedLink, setSelectedLink] = useState<SeoLink | null>(null);
   const [selectedIssues, setSelectedIssues] = useState<SeoIssue[]>([]);
-  const [selectionReset, setSelectionReset] = useState(0);
   const [ruleSettingsOpen, setRuleSettingsOpen] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runKind, setRunKind] = useState<"crawl" | "index-check" | null>(null);
@@ -190,9 +189,9 @@ export function SeoPage() {
   const [progressPct, setProgressPct] = useState<number | null>(null);
   const projectQuery = useQuery({ queryKey: projectQueryKeys.detail(id), queryFn: () => api.projects.get(id) });
   const summaryQuery = useQuery({ queryKey: ["seo", "summary", id], queryFn: () => api.seo.summary(id) });
-  const issuesQuery = useQuery({ queryKey: ["seo", "issues", id, issueQuery], queryFn: () => api.seo.listIssues(id, issueQuery) });
-  const pagesQuery = useQuery({ queryKey: ["seo", "pages", id, pageQuery], queryFn: () => api.seo.listPages(id, pageQuery) });
-  const linksQuery = useQuery({ queryKey: ["seo", "links", id, linkQuery], queryFn: () => api.seo.listLinks(id, linkQuery) });
+  const issuesQuery = useQuery({ queryKey: ["seo", "issues", id, issueQuery], queryFn: () => api.seo.listIssues(id, issueQuery), placeholderData: keepPreviousData });
+  const pagesQuery = useQuery({ queryKey: ["seo", "pages", id, pageQuery], queryFn: () => api.seo.listPages(id, pageQuery), placeholderData: keepPreviousData });
+  const linksQuery = useQuery({ queryKey: ["seo", "links", id, linkQuery], queryFn: () => api.seo.listLinks(id, linkQuery), placeholderData: keepPreviousData });
   const orphansQuery = useQuery({ queryKey: ["seo", "orphans", id], queryFn: () => api.seo.orphanPages(id) });
   const detailQuery = useQuery({ queryKey: ["seo", "page", id, selectedUrl], queryFn: () => api.seo.getPage(id, selectedUrl ?? ""), enabled: Boolean(selectedUrl) });
   const getRuleSettings = api.seo.getRuleSettings;
@@ -244,6 +243,33 @@ export function SeoPage() {
   const filteredIssueCount = issueList?.total ?? 0;
   const setIssueStatus = api.seo.setIssueStatus;
   const setRuleIgnored = api.seo.setRuleIgnored;
+  const canSelectIssues = Boolean(setIssueStatus && issueQuery.filters?.status === "open");
+  const issueRows = issueList?.rows ?? [];
+  const selectedIssueKeys = useMemo(() => new Set(selectedIssues.map(({ url, rule }) => `${url}:${rule}`)), [selectedIssues]);
+  const issueSelectionColumn = useMemo<ColumnDef<SeoIssue, unknown> | null>(() => {
+    if (!canSelectIssues) return null;
+    return {
+      id: "selection", header: () => <input type="checkbox" aria-label="选择当前页全部行" checked={issueRows.length > 0 && issueRows.every((issue) => selectedIssueKeys.has(`${issue.url}:${issue.rule}`))} onChange={(event) => {
+        const checked = event.currentTarget.checked;
+        setSelectedIssues((current) => {
+          const next = new Map(current.map((issue) => [`${issue.url}:${issue.rule}`, issue]));
+          for (const issue of issueRows) {
+            const key = `${issue.url}:${issue.rule}`;
+            if (checked) next.set(key, issue); else next.delete(key);
+          }
+          return [...next.values()];
+        });
+      }} />, enableSorting: false, enableHiding: false,
+      meta: { width: 40, grow: 0, minWidth: 40, align: "center", text: "single", sticky: "left" },
+      cell: ({ row }) => <input type="checkbox" aria-label={`选择第 ${row.index + 1} 行`} checked={selectedIssueKeys.has(`${row.original.url}:${row.original.rule}`)} onChange={(event) => {
+        const issue = row.original;
+        const checked = event.currentTarget.checked;
+        setSelectedIssues((current) => checked
+          ? current.some((item) => item.url === issue.url && item.rule === issue.rule) ? current : [...current, issue]
+          : current.filter((item) => item.url !== issue.url || item.rule !== issue.rule));
+      }} />,
+    };
+  }, [canSelectIssues, issueRows, selectedIssueKeys]);
   const selectionScope = JSON.stringify({ page: issueQuery.page, search: issueQuery.search, filters: issueQuery.filters, sort: issueQuery.sort });
   const writeSearchParams = (patch: SeoSearchParamPatch) => setSearchParams((current) => updateSeoSearchParams(current, patch), { replace: true });
 
@@ -270,7 +296,6 @@ export function SeoPage() {
       await refreshIssueData();
       toast.success(`已更新 ${result.updated} 条`);
       setSelectedIssues([]);
-      setSelectionReset((value) => value + 1);
     } catch (cause) { toast.error(apiErrorMessage(cause, "SEO 问题更新失败。")); }
   }, [id, refreshIssueData, setIssueStatus, toast]);
 
@@ -301,7 +326,7 @@ export function SeoPage() {
     } : {}),
     ...(setRuleIgnored ? { ignoreRule: (issue: SeoIssue) => void ignoreIssueRule(issue.rule, true) } : {}),
   }), [ignoreIssueRule, setIssueStatus, setRuleIgnored, updateIssueStatus]);
-  const issueColumnDefs = useMemo(() => issueColumns(issueActionHandlers), [issueActionHandlers]);
+  const issueColumnDefs = useMemo(() => [...(issueSelectionColumn ? [issueSelectionColumn] : []), ...issueColumns(issueActionHandlers)], [issueActionHandlers, issueSelectionColumn]);
 
   useEffect(() => {
     const routeFilters = seoRouteFiltersFromSearchParams(searchParams);
@@ -314,7 +339,6 @@ export function SeoPage() {
 
   useEffect(() => {
     setSelectedIssues([]);
-    setSelectionReset((value) => value + 1);
   }, [selectionScope]);
 
   useEffect(() => {
@@ -354,7 +378,6 @@ export function SeoPage() {
       await refreshIssueData();
       toast.success(`已更新 ${result.updated} 条`);
       setSelectedIssues([]);
-      setSelectionReset((value) => value + 1);
     } catch (cause) { toast.error(apiErrorMessage(cause, "批量处理 SEO 问题失败。")); }
   };
 
@@ -496,14 +519,12 @@ export function SeoPage() {
       {selectedConditions.length > 0 && <div className="si-seo-selected-filters" aria-label="已选筛选条件">
         {selectedConditions.map((condition) => <SeoFilterChip key={condition.label} label={condition.label} onRemove={condition.onRemove} />)}
       </div>}
-      {activeListQuery.isLoading ? <div className="si-query-loading" role="status">正在加载{view === "issues" ? "问题清单" : view === "pages" ? "页面列表" : "内链列表"}…</div> : activeListQuery.isError ? <ApiErrorNotice label={`${view === "issues" ? "SEO 问题清单" : view === "pages" ? "SEO 页面列表" : "SEO 内链列表"}加载失败。`} error={activeListQuery.error} onRetry={() => void activeListQuery.refetch()} /> : <>
+      {activeListQuery.isLoading && !activeListQuery.data ? <div className="si-query-loading" role="status">正在加载{view === "issues" ? "问题清单" : view === "pages" ? "页面列表" : "内链列表"}…</div> : activeListQuery.isError && !activeListQuery.data ? <ApiErrorNotice label={`${view === "issues" ? "SEO 问题清单" : view === "pages" ? "SEO 页面列表" : "SEO 内链列表"}加载失败。`} error={activeListQuery.error} onRetry={() => void activeListQuery.refetch()} /> : <>
+        {activeListQuery.isError && <ApiErrorNotice label="SEO 列表更新失败，仍显示上次结果。" error={activeListQuery.error} onRetry={() => void activeListQuery.refetch()} />}
         {view === "issues" && <DataTable
-          key={selectionReset}
-          tableId="seo.issues.v2" rows={issueList?.rows ?? []} total={issueList?.total ?? 0} columns={issueColumnDefs}
+          tableId="seo.issues.v2" rows={activeListQuery.isFetching ? [] : issueRows} total={issueList?.total ?? 0} columns={issueColumnDefs}
           query={issueQuery} onQueryChange={setIssueQuery} onRowClick={(row) => showPageDetail(row.url)}
           getRowId={(row) => row.url + ":" + row.rule} height="fill" rowHeight={52}
-          selectable={Boolean(setIssueStatus && issueQuery.filters?.status === "open")}
-          onSelectionChange={setSelectedIssues}
           toolbar={selectedIssues.length > 0 ? <div className="si-seo-selection-toolbar"><span>已选择 {selectedIssues.length} 条待处理问题</span>
             <Button size="small" onClick={() => void handleSelectedIssues("fixed")}>标记已处理</Button>
             <Button size="small" onClick={() => void handleSelectedIssues("ignored")}>忽略所选</Button>
@@ -514,10 +535,10 @@ export function SeoPage() {
             ]} onChange={setStatusFilter} />
             <SeoMultiFilter label="问题类型" values={selectedRules} options={ruleFilters.map(({ rule, label, count }) => ({ value: rule, label, count }))} onChange={setRules} />
           </FilterBar><span className="si-seo-result-count">显示 {issueList?.rows.length ?? 0} / {issueList?.total ?? 0} 条</span></div>}
-          emptyTitle="没有待处理问题" emptyDescription="当前筛选条件下没有 SEO 问题。"
+          emptyTitle={activeListQuery.isFetching ? "正在更新 SEO 问题…" : "没有待处理问题"} emptyDescription={activeListQuery.isFetching ? "" : "当前筛选条件下没有 SEO 问题。"}
         />}
-        {view === "pages" && <DataTable tableId="seo.pages" rows={pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={40} emptyTitle="没有页面数据" emptyDescription="重新抓取后会显示页面详情。" toolbar={<div className="si-seo-table-toolbar"><SearchInput value={pageQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索 URL 或标题" /><FilterBar className="si-seo-filterbar"><SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} /><SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[{ value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" }]} onChange={setIndexed} /></FilterBar><span className="si-seo-result-count">显示 {pageList?.rows.length ?? 0} / {pageList?.total ?? 0} 条</span></div>} />}
-        {view === "links" && <DataTable tableId="seo.links" rows={linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} emptyTitle="没有内链数据" emptyDescription="重新抓取后会检查站内链接。" toolbar={<div className="si-seo-table-toolbar"><SearchInput value={linkQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索 URL 或标题" /><span className="si-seo-result-count">显示 {linkList?.rows.length ?? 0} / {linkList?.total ?? 0} 条</span></div>} />}
+        {view === "pages" && <DataTable tableId="seo.pages" rows={activeListQuery.isFetching ? [] : pageList?.rows ?? []} total={pageList?.total ?? 0} columns={pageColumnDefs} query={pageQuery} onQueryChange={setPageQuery} onRowClick={(row) => showPageDetail(row.url)} getRowId={(row) => row.url} height="fill" rowHeight={40} emptyTitle={activeListQuery.isFetching ? "正在更新 SEO 页面…" : "没有页面数据"} emptyDescription={activeListQuery.isFetching ? "" : "重新抓取后会显示页面详情。"} toolbar={<div className="si-seo-table-toolbar"><SearchInput value={pageQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索 URL 或标题" /><FilterBar className="si-seo-filterbar"><SeoSingleFilter label="页面类型" value={pageQuery.filters?.page_type ?? "all"} options={pageTypes} onChange={setPageType} /><SeoSingleFilter label="收录状态" value={pageQuery.filters?.indexed ?? "all"} options={[{ value: "all", label: "全部" }, { value: "yes", label: "已收录" }, { value: "no", label: "未收录" }, { value: "unchecked", label: "未检查" }]} onChange={setIndexed} /></FilterBar><span className="si-seo-result-count">显示 {pageList?.rows.length ?? 0} / {pageList?.total ?? 0} 条</span></div>} />}
+        {view === "links" && <DataTable tableId="seo.links" rows={activeListQuery.isFetching ? [] : linkList?.rows ?? []} total={linkList?.total ?? 0} columns={linkColumnDefs} query={linkQuery} onQueryChange={setLinkQuery} onRowClick={(row) => showPageDetail(row.to, row)} getRowId={(row) => row.from + ":" + row.to + ":" + row.anchor} height="fill" rowHeight={52} emptyTitle={activeListQuery.isFetching ? "正在更新 SEO 内链…" : "没有内链数据"} emptyDescription={activeListQuery.isFetching ? "" : "重新抓取后会检查站内链接。"} toolbar={<div className="si-seo-table-toolbar"><SearchInput value={linkQuery.search ?? ""} onSearch={setSearch} label="搜索 SEO 数据" placeholder="搜索 URL 或标题" /><span className="si-seo-result-count">显示 {linkList?.rows.length ?? 0} / {linkList?.total ?? 0} 条</span></div>} />}
       </>}
       {view === "links" && <details className="si-seo-orphans">
         <summary><AlertTriangle size={14} />孤立页面 {orphansQuery.data?.length ?? "—"} 个</summary>

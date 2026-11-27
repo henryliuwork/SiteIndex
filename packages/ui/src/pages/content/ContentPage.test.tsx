@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe("ContentPage 博客重新抓取", () => {
-  it.fails("搜索结果刷新时博客搜索框保持挂载与焦点", async () => {
+  it("搜索结果刷新时博客搜索框保持挂载、焦点与输入内容", async () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     const mockApi = createMockApi();
     const originalListBlog = mockApi.content.listBlog.bind(mockApi.content);
@@ -35,12 +35,39 @@ describe("ContentPage 博客重新抓取", () => {
     </ToastProvider></QueryClientProvider>);
 
     const table = await screen.findByRole("region", { name: "content.blog 数据表" });
-    const input = within(table).getByRole("searchbox", { name: "搜索内容" });
+    const input = within(table).getByRole("searchbox", { name: "搜索内容" }) as HTMLInputElement;
     input.focus();
     fireEvent.change(input, { target: { value: "abc" } });
     await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
 
-    expect({ mounted: input.isConnected, focused: document.activeElement === input }).toEqual({ mounted: true, focused: true });
+    expect(await within(table).findByText("正在更新博客文章…")).toBeTruthy();
+    expect(table.isConnected).toBe(true);
+    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
+  });
+
+  it("空博客识别状态开始搜索时搜索框保持原位", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const mockApi = createMockApi();
+    const listBlog = vi.fn(async (_projectId, query) => query.search
+      ? new Promise<{ rows: never[]; total: number }>(() => {})
+      : { rows: [], total: 0 });
+    mockApi.content.listBlog = listBlog;
+    vi.doMock("../../api", () => ({ api: mockApi, apiErrorMessage: (_error: unknown, fallback: string) => fallback }));
+    const [{ ContentPage }, { ToastProvider }] = await Promise.all([import("../ContentPage"), import("../../components")]);
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider>
+      <MemoryRouter initialEntries={["/p/demo/content"]}><Routes><Route path="/p/:id/content" element={<ContentPage />} /></Routes></MemoryRouter>
+    </ToastProvider></QueryClientProvider>);
+
+    const table = await screen.findByRole("region", { name: "content.blog 数据表" });
+    expect(await screen.findByText(/尚未配置博客识别|已配置博客识别/)).toBeTruthy();
+    const input = within(table).getByRole("searchbox", { name: "搜索内容" }) as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "abc" } });
+    await waitFor(() => expect(listBlog).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
+
+    expect(await within(table).findByText("正在更新博客文章…")).toBeTruthy();
+    expect(table.isConnected).toBe(true);
+    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
   });
 
   it("从概览深链恢复博客问题筛选，并同步后续切换到 URL", async () => {

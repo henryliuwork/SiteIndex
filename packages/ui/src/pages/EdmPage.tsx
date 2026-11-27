@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, Image as ImageIcon } from "lucide-react";
@@ -356,7 +356,7 @@ export function EdmPage() {
   const listQuery = useQuery({ queryKey: imageQueryKey, queryFn: () => {
     recordEdmQueryFetchStart(queryClient, imageQueryKey);
     return api.edm.listImages(id, query);
-  } });
+  }, placeholderData: keepPreviousData });
   const mediaHistoryQuery = useQuery({
     queryKey: ["job-history", id],
     queryFn: () => api.jobs.history(id, EDM_MEDIA_HISTORY_LIMIT),
@@ -718,11 +718,13 @@ export function EdmPage() {
       </ul>}
     </div> : null}
     </div>}
-    {listQuery.isLoading ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <DataTable
-      tableId="edm.images" rows={listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
+    {listQuery.isLoading && !listQuery.data ? <div className="si-query-loading" role="status">正在加载 SKU 图片…</div> : listQuery.isError && !listQuery.data ? <ApiErrorNotice label="SKU 图片列表加载失败。" error={listQuery.error} onRetry={() => void listQuery.refetch()} /> : <>
+    {listQuery.isError && <ApiErrorNotice label="SKU 图片列表更新失败，仍显示上次结果。" error={listQuery.error} onRetry={() => void listQuery.refetch()} />}
+    <DataTable
+      tableId="edm.images" rows={listQuery.isFetching ? [] : listQuery.data?.rows ?? []} total={listQuery.data?.total ?? 0} columns={columns}
       query={query} onQueryChange={setQuery} onRowClick={setSelected} getRowId={(row) => row.sku} height="fill" rowHeight={48}
       selectable={isMockApi || mediaCapability.available} onSelectionChange={isMockApi || mediaCapability.available ? setSelectedRows : undefined}
-      emptyTitle="没有 SKU 图片记录" emptyDescription="检查产品目录与 Feed 图片地址。"
+      emptyTitle={listQuery.isFetching ? "正在更新 SKU 图片…" : "没有 SKU 图片记录"} emptyDescription={listQuery.isFetching ? "" : "检查产品目录与 Feed 图片地址。"}
       toolbar={<div className="si-edm-toolbar">
         <div className="si-edm-toolbar-left"><SearchInput value={query.search ?? ""} onSearch={setSearch} label="搜索 SKU 图片" placeholder="搜索 SKU、标题" />
           <FilterBar className="si-edm-filterbar">{viewOptions.map((item) => <FilterPill key={item.value} currentValue={currentView} value={item.value} onValueChange={(value) => setView(value || "all")}>{item.value === "none" && missingImageCount !== undefined ? `缺图 ${missingImageCount}` : item.label}</FilterPill>)}</FilterBar>
@@ -736,7 +738,8 @@ export function EdmPage() {
           <span className="si-content-total">显示 {listQuery.data?.rows.length ?? 0} / {listQuery.data?.total ?? 0} 条</span>
         </div>
       </div>}
-    />}
+    />
+    </>}
     <DetailPanel open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.title ?? "SKU 图片详情"}>
       {selected && <div className="si-edm-detail">
         {selected.gallery_urls?.length ? <section className="si-edm-gallery full" aria-label="已抓取图片">

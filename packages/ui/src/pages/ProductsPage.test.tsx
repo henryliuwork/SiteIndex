@@ -308,9 +308,12 @@ describe("合并后的产品管理表", () => {
   it("从摘要进入后搜索时不把本地搜索结果误报为库存行不一致", async () => {
     await renderProductsPage({ productManagement, metricRows: { in_stock: [parentStock] }, initialPath: "/p/demo/products?summary_metric=in_stock" });
     await screen.findByRole("group", { name: "产品管理摘要" });
-    fireEvent.change(screen.getByRole("searchbox", { name: "搜索产品与 SKU" }), { target: { value: "不存在的虚构商品" } });
+    const input = screen.getByRole("searchbox", { name: "搜索产品与 SKU" }) as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "不存在的虚构商品" } });
     expect(await screen.findByText("没有匹配的产品或 SKU")).toBeTruthy();
     expect(screen.queryByText("产品与库存行尚未对齐")).toBeNull();
+    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "不存在的虚构商品" });
   });
 
   it("历史不足的摘要项不显示虚构 0", async () => {

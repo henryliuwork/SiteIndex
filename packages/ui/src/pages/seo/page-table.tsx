@@ -63,12 +63,36 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
   const toast = useToast();
   const [query, setQuery] = useState<ListQuery<SeoPageTableFilters>>(() => queryFromUrl(searchParams));
   const [selectedPages, setSelectedPages] = useState<SeoPageTableRow[]>([]);
-  const [selectionReset, setSelectionReset] = useState(0);
   const [updating, setUpdating] = useState(false);
   useEffect(() => { setQuery((current) => ({ ...current, ...queryFromUrl(searchParams) })); }, [searchParams]);
-  useEffect(() => { setSelectedPages([]); setSelectionReset((value) => value + 1); }, [query]);
+  useEffect(() => { setSelectedPages([]); }, [query]);
   const pageRows = useQuery({ queryKey: ["seo", "pageRows", id, query], queryFn: () => api.seo.listPageRows!(id, query as SeoPageTableQuery), placeholderData: keepPreviousData });
-  const defs = useMemo(() => seoPageTableColumns(pageRows.data?.rows ?? []), [pageRows.data?.rows]);
+  const visibleRows = pageRows.data?.rows ?? [];
+  const selectedPageUrls = useMemo(() => new Set(selectedPages.map((page) => page.url)), [selectedPages]);
+  const selectionColumn = useMemo<ColumnDef<SeoPageTableRow, unknown> | null>(() => {
+    if (!api.seo.setIssueStatus) return null;
+    return {
+      id: "selection", header: () => <input type="checkbox" aria-label="选择当前页全部行" checked={visibleRows.length > 0 && visibleRows.every((page) => selectedPageUrls.has(page.url))} onChange={(event) => {
+        const checked = event.currentTarget.checked;
+        setSelectedPages((current) => {
+          const next = new Map(current.map((page) => [page.url, page]));
+          for (const page of visibleRows) {
+            if (checked) next.set(page.url, page); else next.delete(page.url);
+          }
+          return [...next.values()];
+        });
+      }} />, enableSorting: false, enableHiding: false,
+      meta: { width: 40, grow: 0, minWidth: 40, align: "center", text: "single", sticky: "left" },
+      cell: ({ row }) => <input type="checkbox" aria-label={`选择第 ${row.index + 1} 行`} checked={selectedPageUrls.has(row.original.url)} onChange={(event) => {
+        const page = row.original;
+        const checked = event.currentTarget.checked;
+        setSelectedPages((current) => checked
+          ? current.some((item) => item.url === page.url) ? current : [...current, page]
+          : current.filter((item) => item.url !== page.url));
+      }} />,
+    };
+  }, [selectedPageUrls, visibleRows]);
+  const defs = useMemo(() => [...(selectionColumn ? [selectionColumn] : []), ...seoPageTableColumns(visibleRows)], [selectionColumn, visibleRows]);
   const filters = query.filters ?? {};
   const write = (patch: Record<string, string | string[] | null>) =>
     setSearchParams((current) => updateSeoSearchParams(current, patch), { replace: true });
@@ -109,7 +133,6 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
       await queryClient.invalidateQueries({ queryKey: ["overview", id] });
       toast.success(`已更新 ${result.updated} 条`);
       setSelectedPages([]);
-      setSelectionReset((value) => value + 1);
     } catch (cause) { toast.error(apiErrorMessage(cause, "批量处理 SEO 问题失败。")); }
     finally { setUpdating(false); }
   };
@@ -118,12 +141,13 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
     {pageSummary && <SummaryLine items={summaryItems} ariaLabel="SEO 摘要"
       timeNote={summary?.crawled_at ? `SEO 抓取于 ${formatDateTime(summary.crawled_at)}` : undefined} />}
     {selected.length > 0 && <div className="si-seo-selected-filters" aria-label="已选筛选条件">{selected.map((item) => <SeoFilterChip key={item.label} label={item.label} onRemove={item.remove} />)}</div>}
-    {pageRows.isLoading ? <div className="si-query-loading" role="status">正在加载 SEO 页面…</div>
-      : pageRows.isError ? <ApiErrorNotice label="SEO 页面列表加载失败。" error={pageRows.error} onRetry={() => void pageRows.refetch()} />
-        : <DataTable key={selectionReset} tableId="seo.pageRows" rows={pageRows.data?.rows ?? []} total={pageRows.data?.total ?? 0} columns={defs}
+    {pageRows.isLoading && !pageRows.data ? <div className="si-query-loading" role="status">正在加载 SEO 页面…</div>
+      : pageRows.isError && !pageRows.data ? <ApiErrorNotice label="SEO 页面列表加载失败。" error={pageRows.error} onRetry={() => void pageRows.refetch()} />
+        : <>
+          {pageRows.isError && <ApiErrorNotice label="SEO 页面更新失败，仍显示上次结果。" error={pageRows.error} onRetry={() => void pageRows.refetch()} />}
+          <DataTable tableId="seo.pageRows" rows={pageRows.isFetching ? [] : visibleRows} total={pageRows.data?.total ?? 0} columns={defs}
           query={query} onQueryChange={setQuery} getRowId={(row) => row.url} onRowClick={(row) => onOpen(row.url)} height="fill" rowHeight={40}
-          selectable={Boolean(api.seo.setIssueStatus)} onSelectionChange={setSelectedPages}
-          emptyTitle="没有匹配的页面" emptyDescription="调整筛选条件，或重新抓取 SEO 数据。"
+          emptyTitle={pageRows.isFetching ? "正在更新 SEO 页面…" : "没有匹配的页面"} emptyDescription={pageRows.isFetching ? "" : "调整筛选条件，或重新抓取 SEO 数据。"}
           toolbar={selectedPages.length ? <div className="si-seo-selection-toolbar"><span>已选 {selectedPages.length} 页 · 待处理问题 {targets.length} 条</span>
             <Button size="small" disabled={!targets.length || updating} onClick={() => void markSelected()}>{updating ? "处理中…" : "标记所选页面的待处理问题"}</Button>
           </div> : <div className="si-seo-table-toolbar">
@@ -140,6 +164,7 @@ export function SeoPageTable({ id, summary, onOpen }: { id: string; summary?: Se
               <SeoMultiFilter label="问题类型" values={selectedRules} options={ruleOptions} onChange={(values) => setFilter("rules", values, "rule")} />
             </FilterBar><span className="si-seo-result-count">显示 {pageRows.data?.rows.length ?? 0} / {pageRows.data?.total ?? 0} 页</span>
             {summary?.crawled_at && <span className="si-seo-compact-data-note"><InfoTooltip label="SEO 数据来源时间" content={`SEO 抓取于 ${formatDateTime(summary.crawled_at)}`} /></span>}
-          </div>} />}
+          </div>} />
+        </>}
   </>;
 }

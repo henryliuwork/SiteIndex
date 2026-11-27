@@ -266,7 +266,7 @@ export function ProjectTodosPage() {
     <DataTable<ProjectTodo, TodoQueryFilters>
       tableId="project.todos"
       scopeId={id}
-      rows={rows}
+      rows={todosQuery.isFetching ? [] : rows}
       total={filteredItems.length}
       columns={columns}
       query={query}
@@ -275,8 +275,8 @@ export function ProjectTodosPage() {
       getRowId={(item) => item.finding.dedupe_key}
       height="fill"
       rowHeight={58}
-      emptyTitle={emptyTitle}
-      emptyDescription={emptyDescription}
+      emptyTitle={todosQuery.isFetching ? "正在更新项目待办…" : emptyTitle}
+      emptyDescription={todosQuery.isFetching ? "" : emptyDescription}
       toolbar={<div className="si-todo-toolbar"><div className="si-todo-toolbar-left">
         <SearchInput label="搜索项目待办" placeholder="搜索标题、规则、来源或备注" value={query.search ?? ""} onSearch={(search) => setQuery((current) => ({ ...current, page: 1, search: search || undefined }))} />
         <FilterBar className="si-todo-filter-bar"><Select
