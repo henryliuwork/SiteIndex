@@ -150,6 +150,11 @@ describe("ProjectCenterPage add existing project flow", () => {
 
 describe("ProjectCenterPage recent-run sort audit", () => {
   it.fails("sorts the displayed run summary values instead of an absent raw field", async () => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
     const mockApi = createMockApi();
     const runs: RunLog[] = [
       { run_id: "synthetic-zebra", job: "daily", started_at: "2026-01-02T03:00:00.000Z", finished_at: "2026-01-02T03:01:00.000Z", status: "failed", errors: ["Zebra synthetic result"] },
