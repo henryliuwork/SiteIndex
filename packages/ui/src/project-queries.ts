@@ -6,6 +6,30 @@ export const projectQueryKeys = {
   detail: (id: ProjectId) => ["projects", id] as const,
 };
 
+const projectDataKeys = new Set([
+  "products-merged", "product", "product-tags", "inventory-summary", "inventory-skus",
+  "inventory-skus-merged", "inventory-detail-skus",
+]);
+
+function projectPathKey(path: string): string {
+  return path.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+function isProjectDataQuery(queryKey: readonly unknown[], id: ProjectId): boolean {
+  const root = queryKey[0];
+  if (root === "seo" || root === "content" || root === "edm") {
+    return queryKey[root === "edm" && queryKey[1] === "scenario" ? 3 : 2] === id;
+  }
+  if (root === "products" && (queryKey[1] === "changes" || queryKey[1] === "skuBrief" || queryKey[1] === "groupFamily")) {
+    return queryKey[2] === id;
+  }
+  return typeof root === "string" && projectDataKeys.has(root) && queryKey[1] === id;
+}
+
+export async function invalidateProjectDataQueries(queryClient: QueryClient, id: ProjectId): Promise<void> {
+  await queryClient.invalidateQueries({ predicate: ({ queryKey }) => isProjectDataQuery(queryKey, id) });
+}
+
 export async function invalidateProjectSummary(queryClient: QueryClient, id: ProjectId): Promise<void> {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: projectQueryKeys.list, exact: true }),
@@ -36,10 +60,20 @@ export function subscribeToProjectChanges(
 }
 
 export function subscribeToProjectJobCompletion(
-  jobsApi: Pick<SiteIndexApi["jobs"], "onFinished">,
+  jobsApi: Pick<SiteIndexApi["jobs"], "onProgress" | "onFinished">,
   queryClient: QueryClient,
 ): Unsubscribe {
-  return jobsApi.onFinished(() => {
-    void invalidateAllProjectSummaries(queryClient);
+  const pathsByRunId = new Map<string, string>();
+  const stopProgress = jobsApi.onProgress(({ runId, projectPath }) => {
+    pathsByRunId.set(runId, projectPathKey(projectPath));
   });
+  const stopFinished = jobsApi.onFinished(({ runId }) => {
+    const projectPath = pathsByRunId.get(runId);
+    pathsByRunId.delete(runId);
+    const projectId = projectPath && queryClient.getQueryData<ProjectSummary[]>(projectQueryKeys.list)
+      ?.find(({ path }) => projectPathKey(path) === projectPath)?.id;
+    void invalidateAllProjectSummaries(queryClient);
+    if (projectId) void invalidateProjectDataQueries(queryClient, projectId);
+  });
+  return () => { stopProgress(); stopFinished(); pathsByRunId.clear(); };
 }
