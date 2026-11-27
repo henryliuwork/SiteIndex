@@ -220,6 +220,8 @@ export interface ConfigSaveOptions {
 export interface ProjectUiState {
   columns: Record<string, string[]>;
   page_sizes: Record<string, 20 | 50 | 100>;
+  /** 已保存的表格排序；缺省表示尚未保存，null 表示清除该表的排序。 */
+  sorts?: Record<string, NonNullable<ListQuery["sort"]> | null>;
 }
 
 export interface BrowserStatus {
