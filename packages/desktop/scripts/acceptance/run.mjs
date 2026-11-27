@@ -9,39 +9,60 @@ import { independentHandlers } from "./independent-adapters.mjs";
 import { projectConfigHandlers } from "./project-config-adapters.mjs";
 import { parseItemRange, runAcceptance } from "./runner.mjs";
 
+export const ACCEPTANCE_MATRICES = Object.freeze({
+  v085: { min: 1, max: 83, baselineRef: "v0.8.4" },
+  v090: { min: 84, max: 86, baselineRef: "v0.8.5" },
+});
+const REQUIRED_PHASES = ["baselineUi", "verifyBaselineIpc", "verifyBaselineFile",
+  "candidateUi", "verifyCandidateIpc", "verifyCandidateFile"];
+
 export function parseAcceptanceArgs(args) {
   const options = {};
   for (let index = 0; index < args.length; index += 2) {
     const key = args[index];
-    if (!["--items", "--baseline", "--candidate", "--manifest", "--output-dir"].includes(key)
+    if (!["--items", "--baseline", "--candidate", "--manifest", "--output-dir", "--matrix"].includes(key)
       || !args[index + 1] || options[key]) throw new Error(`Invalid acceptance argument: ${key}`);
     options[key] = args[index + 1];
   }
-  if (Object.keys(options).length !== 5) throw new Error("Items, baseline, candidate, manifest and output-dir are required");
-  return { itemIds: parseItemRange(options["--items"]), itemsArgument: options["--items"], baselineRef: options["--baseline"],
+  if (["--items", "--baseline", "--candidate", "--manifest", "--output-dir"].some((key) => !options[key])) {
+    throw new Error("Items, baseline, candidate, manifest and output-dir are required");
+  }
+  const matrix = options["--matrix"] ?? "v085";
+  const bounds = ACCEPTANCE_MATRICES[matrix];
+  if (!bounds) throw new Error(`Unknown acceptance matrix: ${matrix}`);
+  return { matrix, itemIds: parseItemRange(options["--items"], bounds), itemsArgument: options["--items"], baselineRef: options["--baseline"],
     candidateRef: options["--candidate"], manifest: options["--manifest"], outputDir: options["--output-dir"] };
 }
 
-export function acceptanceHandlers(ids, credentials) {
+export function acceptanceHandlers(ids, credentials, extraHandlers = {}) {
   const slice = (first, last) => ids.filter((id) => id >= first && id <= last);
   return { ...projectConfigHandlers(slice(1, 45)),
     ...categoryScheduleHandlers(slice(46, 60)),
     ...independentHandlers(slice(61, 66)),
     ...appSettingsHandlers(slice(67, 81)),
-    ...sensitiveSystemHandlers(slice(82, 83), credentials) };
+    ...sensitiveSystemHandlers(slice(82, 83), credentials),
+    ...Object.fromEntries(ids.filter((id) => id >= 84 && extraHandlers[id]).map((id) => [id, extraHandlers[id]])) };
 }
 
-export async function runFromManifest(options, { run = runAcceptance } = {}) {
+export async function runFromManifest(options, { run = runAcceptance, extraHandlers = {} } = {}) {
+  const matrix = options.matrix ?? "v085";
+  const bounds = ACCEPTANCE_MATRICES[matrix];
+  if (!bounds) throw new Error(`Unknown acceptance matrix: ${matrix}`);
+  const itemIds = parseItemRange(options.itemsArgument ?? options.itemIds.join(","), bounds);
   const sources = JSON.parse(await readFile(options.manifest, "utf8"));
-  if (options.baselineRef !== "v0.8.4" || sources.baseline?.kind !== "release"
+  if (options.baselineRef !== bounds.baselineRef || sources.baseline?.kind !== "release"
     || sources.baseline?.ref !== options.baselineRef || sources.candidate?.kind !== "run-artifact"
     || sources.candidate?.ref !== options.candidateRef) {
     throw new Error("Acceptance refs and pinned source manifest do not match");
   }
   const credentials = { username: `synthetic-user-${randomBytes(8).toString("hex")}`,
     applicationPassword: randomBytes(24).toString("hex") };
-  return run({ itemIds: options.itemIds, itemsArgument: options.itemsArgument, baseline: sources.baseline, candidate: sources.candidate,
-    handlers: acceptanceHandlers(options.itemIds, credentials), outputDir: options.outputDir,
+  const handlers = acceptanceHandlers(itemIds, credentials, extraHandlers);
+  for (const id of itemIds) if (REQUIRED_PHASES.some((phase) => typeof handlers[id]?.[phase] !== "function")) {
+    throw new Error(`Acceptance adapter ${id} is not connected`);
+  }
+  return run({ itemIds, itemsArgument: options.itemsArgument, itemBounds: bounds, baseline: sources.baseline, candidate: sources.candidate,
+    handlers, outputDir: options.outputDir,
     secrets: [credentials.username, credentials.applicationPassword] });
 }
 
