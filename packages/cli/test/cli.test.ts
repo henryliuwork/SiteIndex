@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CoreService } from "@siteindex/core";
-import { EXIT, PATHS, type CliJsonOutput, type CreateProjectInput, type ProductGroupFamily, type ScenarioQueryResult, type SeoIssue, type SiteConfig, type ScheduleConfig, type SkillInfo, type ValidationReport } from "@siteindex/shared";
+import { EXIT, PATHS, type CliJsonOutput, type CreateProjectInput, type ProductGroupFamily, type ProductView, type ScenarioQueryResult, type SeoIssue, type SiteConfig, type ScheduleConfig, type SkillInfo, type SkuImageRow, type ValidationReport } from "@siteindex/shared";
 import { main, type CliIO } from "../src";
 
 const projectFixture = fileURLToPath(new URL("../../../fixtures/expected/project/", import.meta.url));
@@ -115,6 +115,7 @@ function mockService() {
     content: { listBlog: vi.fn(async () => queryResult), listKeywords: vi.fn(async () => queryResult) },
     edm: {
       listImages: vi.fn(async () => queryResult),
+      setManualImage: vi.fn(async (_id: string, sku: string, url: string | null) => ({ sku, manual_image_url: url })),
       candidates: vi.fn(async (_id: string, _query: unknown) => ({
         data: { rows: [], total: 0 },
         metadata: { sources: [], collected_at: null, missing_fields: [], quality: "complete" as const, anomalies: [] },
@@ -148,6 +149,64 @@ function mockService() {
 }
 
 describe("siteindex CLI", () => {
+  it("sets a parent image on every child and reports the old manual values", async () => {
+    const { service, methods } = mockService();
+    const imageRows = new Map<string, string | null>([["CHILD-A", "https://cdn.example.test/old.jpg"], ["CHILD-B", null]]);
+    vi.mocked(service.edm.listImages).mockImplementation(async () => ({
+      rows: [...imageRows].map(([sku, manual_image_url]) => ({
+        sku, title: sku, variant_title: null, stock_status: "in_stock", feed_image_url: null,
+        manual_image_url, used: manual_image_url ? "manual" : "none",
+      } satisfies SkuImageRow)), total: imageRows.size,
+    }));
+    vi.mocked(service.products.list).mockResolvedValue({ rows: [{
+      product_id: "PARENT", row_kind: "parent", skus: ["CHILD-A", "CHILD-B"],
+    } as ProductView], total: 1 });
+    methods.edm.setManualImage.mockImplementation(async (_id, sku, url) => {
+      imageRows.set(sku, url);
+      return { sku, manual_image_url: url };
+    });
+    const t = collect(service);
+    const argv = ["edm", "set-image", "kingsyard", "--sku", "PARENT", "--url", "https://cdn.example.test/new.jpg", "--json"];
+    expect(await main(argv, t.io)).toBe(EXIT.OK);
+    const first = parseEnvelope<{ written_skus: string[]; previous: { sku: string; manual_image_url: string | null }[];
+      replaced: { sku: string }[]; unchanged_skus: string[] }>(t.stdout.at(-1)!);
+    expect(first.data?.written_skus).toEqual(["CHILD-A", "CHILD-B"]);
+    expect(first.data?.previous).toEqual([
+      { sku: "CHILD-A", manual_image_url: "https://cdn.example.test/old.jpg" },
+      { sku: "CHILD-B", manual_image_url: null },
+    ]);
+    expect(first.data?.replaced.map((row) => row.sku)).toEqual(["CHILD-A"]);
+    expect(methods.edm.setManualImage.mock.calls.map((call) => call[1])).toEqual(["CHILD-A", "CHILD-B"]);
+    expect(await main(["edm", "set-image", "kingsyard", "--sku", "CHILD-B", "--url", "https://cdn.example.test/new.jpg", "--json"], t.io)).toBe(EXIT.OK);
+    const repeated = parseEnvelope<{ written_skus: string[]; unchanged_skus: string[] }>(t.stdout.at(-1)!);
+    expect(repeated.data).toMatchObject({ written_skus: [], unchanged_skus: ["CHILD-A", "CHILD-B"] });
+    expect(methods.edm.setManualImage).toHaveBeenCalledTimes(2);
+  });
+
+  it("limits --only-child to one real SKU and rejects missing or unsafe image targets", async () => {
+    const { service, methods } = mockService();
+    vi.mocked(service.edm.listImages).mockResolvedValue({ rows: [{
+      sku: "CHILD-A", title: "A", variant_title: null, stock_status: "in_stock",
+      feed_image_url: null, manual_image_url: null, used: "none",
+    }], total: 1 });
+    const t = collect(service);
+    expect(await main(["edm", "set-image", "kingsyard", "--sku", "CHILD-A", "--url", "https://cdn.example.test/a.jpg", "--only-child", "--json"], t.io)).toBe(EXIT.OK);
+    expect(methods.edm.setManualImage).toHaveBeenCalledWith("kingsyard", "CHILD-A", "https://cdn.example.test/a.jpg");
+    expect(methods.products.list).toHaveBeenCalledWith("kingsyard", { page: 1, pageSize: 0, filters: { parent_only: true } });
+    vi.mocked(service.products.list).mockResolvedValue({ rows: [{
+      product_id: "PARENT", row_kind: "parent", skus: ["PARENT", "CHILD-A"],
+    } as ProductView], total: 1 });
+    expect(await main(["edm", "set-image", "kingsyard", "--sku", "PARENT", "--url", "https://cdn.example.test/a.jpg", "--only-child", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+    for (const url of ["file:///tmp/a.jpg", "https://user:secret@cdn.example.test/a.jpg", "https://cdn.example.test/a.jpg?X-Amz-Signature=test"]) {
+      expect(await main(["edm", "set-image", "kingsyard", "--sku", "CHILD-A", "--url", url, "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+      expect(parseEnvelope(t.stdout.at(-1)!).error?.code).toBe("BAD_ARGS");
+    }
+    expect(await main(["edm", "set-image", "kingsyard", "--sku", "UNKNOWN", "--url", "https://cdn.example.test/a.jpg", "--only-child", "--json"], t.io)).toBe(EXIT.BAD_ARGS);
+    expect(methods.edm.setManualImage).toHaveBeenCalledTimes(1);
+    vi.mocked(service.edm.listImages).mockRejectedValueOnce(new Error("项目不存在"));
+    expect(await main(["edm", "set-image", "missing-project", "--sku", "CHILD-A", "--url", "https://cdn.example.test/a.jpg", "--json"], t.io)).toBe(EXIT.SOURCE_FAILED);
+    expect(parseEnvelope(t.stdout.at(-1)!).error?.message).toContain("项目不存在");
+  });
   it("keeps cloud-storage rejection structured for run and direct project writes", async () => {
     const cloudRoot = path.join(tempRoot, "synthetic-cloud-sync");
     const cloudProject = path.join(cloudRoot, "legacy-project");

@@ -154,7 +154,7 @@ async function writeEdmIndexNoClobber(outputPath: string, content: string): Prom
   }
 }
 
-const BOOLEAN_OPTIONS = new Set(["allow-oos", "force", "json", "repair", "parent-only", "include-excluded", "auto-collect"]);
+const BOOLEAN_OPTIONS = new Set(["allow-oos", "force", "json", "repair", "parent-only", "include-excluded", "auto-collect", "only-child"]);
 const QUERY_CONTROL_OPTIONS = new Set(["page", "size", "search", "sort", "order"]);
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -375,7 +375,21 @@ async function createRuntime(io: CliIO, browserExecutablePath?: string, projectP
 function outputHelp(): string {
   return "用法: " + CLI_BIN + " <命令> [参数]\n命令: " + [...CLI_COMMANDS.filter((command) => command !== "folders"), "mcp"].join(", ")
     + "\ninit <dir> --url <url> (--feed <url> | --auto-collect) [--category-rule <pattern>]"
+    + "\nedm set-image <p> --sku <sku> --url <http(s) 图片地址> [--only-child]"
     + "\n运行 design / index-check 时使用 --browser <Chrome/Edge 可执行文件路径>。";
+}
+
+function manualImageUrl(raw: string): string {
+  let parsed: URL;
+  try { parsed = new URL(raw); }
+  catch { throw new CliError("BAD_ARGS", "--url 必须是有效的 HTTP 或 HTTPS 图片地址。"); }
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new CliError("BAD_ARGS", "--url 必须是无账号密码的 HTTP 或 HTTPS 图片地址。");
+  }
+  if ([...parsed.searchParams.keys()].some((key) => /^(x-amz-|x-goog-|signature$|sig$|token$|expires$|key-pair-id$)/i.test(key))) {
+    throw new CliError("BAD_ARGS", "--url 不能使用带签名或凭据的临时链接。");
+  }
+  return parsed.href;
 }
 
 function success(data: unknown, message?: string): Outcome {
@@ -777,7 +791,39 @@ async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
   }
 
   if (command === "edm") {
-    const operation = requiredArg(rest, 0, "edm export-index <p> --output <path> | render <p> <campaignDir> [--allow-oos]");
+    const operation = requiredArg(rest, 0, "edm set-image <p> --sku <sku> --url <url> [--only-child] | export-index <p> --output <path> | render <p> <campaignDir>");
+    if (operation === "set-image") {
+      const project = projectId(requiredArg(rest, 1, "edm set-image <p> --sku <sku> --url <url> [--only-child]"));
+      const sku = option(parsed.options, "sku")?.trim();
+      const rawUrl = option(parsed.options, "url");
+      if (rest.length !== 2 || !sku || !rawUrl || parsed.options.get("sku")?.length !== 1 || parsed.options.get("url")?.length !== 1) {
+        throw new CliError("BAD_ARGS", "用法: siteindex edm set-image <p> --sku <sku> --url <url> [--only-child]");
+      }
+      const onlyChild = booleanOption(parsed.options, "only-child");
+      const url = manualImageUrl(rawUrl);
+      const images = await runtime.service.edm.listImages(project, { page: 1, pageSize: 0 });
+      const previousBySku = new Map(images.rows.map((row) => [row.sku, row.manual_image_url]));
+      const parents = await runtime.service.products.list(project, { page: 1, pageSize: 0, filters: { parent_only: true } });
+      const groups = parents.rows.filter((row) => row.row_kind === "parent" && (row.product_id === sku || row.skus.includes(sku)));
+      if (groups.length > 1) throw new CliError("BAD_ARGS", "SKU 命中多个父子分组，请先确认目标。");
+      if (onlyChild && groups[0]?.product_id === sku) throw new CliError("BAD_ARGS", "--only-child 需要指定子 SKU。");
+      let targets = [sku];
+      if (!onlyChild && groups.length === 1) targets = groups[0]!.skus.filter((child) => child !== groups[0]!.product_id);
+      if (!targets.length || targets.some((target) => !previousBySku.has(target))) {
+        throw new CliError("BAD_ARGS", "找不到指定的有效 SKU 或其子 SKU，请先核对项目商品目录。");
+      }
+      const previous = targets.map((target) => ({ sku: target, manual_image_url: previousBySku.get(target) ?? null }));
+      const writtenSkus: string[] = [];
+      const unchangedSkus: string[] = [];
+      for (const target of targets) {
+        if (previousBySku.get(target) === url) { unchangedSkus.push(target); continue; }
+        await runtime.service.edm.setManualImage(project, target, url);
+        writtenSkus.push(target);
+      }
+      const replaced = previous.filter((row) => row.manual_image_url !== null && row.manual_image_url !== url);
+      return success({ requested_sku: sku, target_skus: targets, written_skus: writtenSkus, unchanged_skus: unchangedSkus, previous, replaced },
+        `手动首图已处理 ${targets.length} 个 SKU，写入 ${writtenSkus.length} 个。`);
+    }
     if (operation === "export-index") {
       const project = projectId(requiredArg(rest, 1, "edm export-index <p> --output <path>"));
       const output = option(parsed.options, "output");
@@ -788,7 +834,7 @@ async function execute(runtime: Runtime, parsed: ParsedArgs): Promise<Outcome> {
       return success({ status, output: outputPath, sku_count: rendered.sku_count, missing_image_count: rendered.missing_image_count },
         status === "created" ? "EDM SKU 清单已创建。" : "EDM SKU 清单内容未变化。");
     }
-    if (operation !== "render") throw new CliError("BAD_ARGS", "用法: siteindex edm export-index <p> --output <path> | render <p> <campaignDir> [--allow-oos]");
+    if (operation !== "render") throw new CliError("BAD_ARGS", "用法: siteindex edm set-image <p> --sku <sku> --url <url> [--only-child] | export-index <p> --output <path> | render <p> <campaignDir> [--allow-oos]");
     const project = requiredArg(rest, 1, "edm render <p> <campaignDir>");
     const campaignDir = requiredArg(rest, 2, "edm render <p> <campaignDir>");
     const result = await renderEdm(resolveProjectPath(project, runtime.cwd, runtime.settings), campaignDir, { allowOos: optionEnabled(parsed.options, "allow-oos") });
