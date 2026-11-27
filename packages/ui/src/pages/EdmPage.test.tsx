@@ -1449,7 +1449,7 @@ describe("EdmPage DataTable 列契约", () => {
     expect(screen.getByRole("checkbox", { name: "产品 / 变体" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it.fails("搜索结果刷新期间 SKU 图片搜索框保持挂载与焦点", async () => {
+  it("搜索结果刷新期间 SKU 图片搜索框保持挂载、焦点与输入内容", async () => {
     enableTableRows();
     const rows = [mediaImageRow("DEMO-SEARCH-001", null), mediaImageRow("DEMO-SEARCH-002", null)];
     const { listImages } = await renderEdmPage(false, true, rows, false, false, {
@@ -1458,12 +1458,14 @@ describe("EdmPage DataTable 列契约", () => {
         : { rows, total: rows.length },
     });
     const table = await screen.findByRole("region", { name: "edm.images 数据表" });
-    const input = within(table).getByRole("searchbox", { name: "搜索 SKU 图片" });
+    const input = within(table).getByRole("searchbox", { name: "搜索 SKU 图片" }) as HTMLInputElement;
     input.focus();
     fireEvent.change(input, { target: { value: "abc" } });
     await waitFor(() => expect(listImages).toHaveBeenCalledWith("demo", expect.objectContaining({ search: "abc" })));
 
-    expect({ mounted: input.isConnected, focused: document.activeElement === input }).toEqual({ mounted: true, focused: true });
+    expect(await within(table).findByText("正在更新 SKU 图片…")).toBeTruthy();
+    expect(table.isConnected).toBe(true);
+    expect({ mounted: input.isConnected, focused: document.activeElement === input, value: input.value }).toEqual({ mounted: true, focused: true, value: "abc" });
   });
 
   it.fails("产品 / 变体排序使用标题值，而不是仍按 SKU 顺序展示", async () => {
